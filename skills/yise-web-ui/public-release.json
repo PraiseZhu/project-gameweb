@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "identity": "yise-web-ui",
+  "description": "Local release boundary for the reusable Figma-to-Web UI verification Skill.",
+  "publishable": [
+    "SKILL.md",
+    "README.md",
+    "PUBLIC-RELEASE.md",
+    "public-release.json",
+    "LICENSE",
+    "package.json",
+    "package-lock.json",
+    "scripts/",
+    "templates/",
+    "docs/",
+    "fonts/"
+  ],
+  "private": [
+    "demos/",
+    "artifacts/",
+    "_hero-shots/",
+    "evolution/",
+    "FIGMA-ADAPT.md",
+    "audit-report-*.md",
+    "*.png",
+    "truth-run.out",
+    ".env",
+    "node_modules/"
+  ],
+  "privateReasons": {
+    "demos/": "Etheria/伊瑟 fixtures, captures, generated truth, assets, and page-specific evidence.",
+    "artifacts/": "Local browser evidence and temporary verification output.",
+    "_hero-shots/": "Unreviewed visual evidence, not generic Skill source.",
+    "evolution/": "Local evolution ledger and private case evidence.",
+    "FIGMA-ADAPT.md": "Historical adaptation notes with upstream/private context.",
+    "audit-report-*.md": "Page-specific audit reports and node-level evidence.",
+    "*.png": "Generated screenshots or source captures.",
+    "truth-run.out": "Local command output.",
+    ".env": "Credentials and machine-local configuration.",
+    "node_modules/": "Installed dependencies are never release content.",
+    "fonts/** (only registry-referenced binaries)": "fonts/ 现随 Skill 捆绑发布：仅 registry.json 登记的已验证二进制。许可待人工审查的字体经 fonts:check 的 licenseReview 如实上报，不虚构安全。"
+  },
+  "requiredAudit": [
+    "package.name=yise-web-ui",
+    "SKILL.frontmatter.name=yise-web-ui",
+    "README.heading=yise-web-ui",
+    "no-credentials-or-machine-paths-in-publishable-files",
+    "private-boundary-is-explicit"
+  ]
+}

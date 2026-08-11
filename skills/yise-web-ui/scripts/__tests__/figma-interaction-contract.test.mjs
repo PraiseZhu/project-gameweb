@@ -1,0 +1,190 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { deriveInteractionModel } from '../lib/figma-interaction-contract.mjs';
+
+test('derives section navigation and shared switch indexes from owner truth', () => {
+  const nodes = [
+    { id: 'sec-a', type: 'FRAME', name: 'sec/a@target=sec-b', ancestorNames: [] },
+    { id: 'sw', type: 'INSTANCE', name: 'switch/role', ownerPath: ['root', 'sw'] },
+    { id: 'tab-0', type: 'FRAME', name: 'tab/one', ancestorNames: ['switch/role'], ownerPath: ['root', 'sw', 'tab-0'] },
+    { id: 'tab-1', type: 'FRAME', name: 'tab/two', ancestorNames: ['switch/role'], ownerPath: ['root', 'sw', 'tab-1'] },
+    { id: 'page-0', type: 'FRAME', name: 'swpage/one', ancestorNames: ['switch/role'], ownerPath: ['root', 'sw', 'page-0'] },
+    { id: 'page-1', type: 'FRAME', name: 'swpage/two', ancestorNames: ['switch/role'], ownerPath: ['root', 'sw', 'page-1'] },
+    { id: 'ind-0', type: 'ELLIPSE', name: 'ind/one', ancestorNames: ['switch/role'], ownerPath: ['root', 'sw', 'ind-0'] },
+  ];
+  const model = deriveInteractionModel(nodes);
+  assert.equal(model.stats.sectionTargets, 1);
+  assert.equal(model.stats.switches, 1);
+  assert.equal(model.stats.swpages, 5);
+  assert.deepEqual(model.attributes.find((x) => x.id === 'tab-1').attrs, {
+    'data-node': 'tab-1', 'data-switch': 'sw', 'data-swpage': '1', 'data-tab': 'true',
+  });
+});
+
+test('fails closed when controls lack switch owner or hscroll structure', () => {
+  const model = deriveInteractionModel([
+    { id: 'tab', type: 'FRAME', name: 'tab/orphan' },
+    { id: 'scroll', type: 'FRAME', name: 'scroll/list', clipsContent: false },
+  ]);
+  assert.equal(model.attributes.length, 0);
+  assert.equal(model.unresolved.length, 2);
+});
+
+test('accepts a one-child Figma scroll track only when its source geometry overflows the clipped viewport', () => {
+  const model = deriveInteractionModel([
+    { id: 'scroll', type: 'FRAME', name: 'scroll/list', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'scroll', box: { x: 0, y: 0, w: 240, h: 40 } },
+  ]);
+  const attrs = model.attributes.find((entry) => entry.id === 'scroll')?.attrs;
+  assert.equal(attrs['data-hscroll'], 'x');
+  assert.equal(model.unresolved.length, 0);
+});
+
+test('does not infer hscroll from a clipped container without source overflow', () => {
+  const model = deriveInteractionModel([
+    { id: 'scroll', type: 'FRAME', name: 'scroll/list', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'scroll', box: { x: 0, y: 0, w: 100, h: 40 } },
+  ]);
+  assert.equal(model.attributes.length, 0);
+  assert.match(model.unresolved[0].reason, /geometry overflow/);
+});
+
+test('resolves tab/indicator/button siblings to a switch owner', () => {
+  const nodes = [
+    { id: 'switch', type: 'INSTANCE', name: 'switch/role', parentId: 'section' },
+    { id: 'tab', type: 'FRAME', name: 'tab/role', parentId: 'section' },
+    { id: 'ind', type: 'INSTANCE', name: 'ind/progress', parentId: 'slider', ownerPath: ['section', 'slider', 'ind'] },
+    { id: 'slider', type: 'FRAME', name: 'Slider', parentId: 'section' },
+    { id: 'prev', type: 'BOOLEAN_OPERATION', name: 'btn/prev', parentId: 'section' },
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+  ];
+  const model = deriveInteractionModel(nodes);
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
+  assert.equal(byId.get('tab')['data-switch'], 'switch');
+  assert.equal(byId.get('ind')['data-switch'], 'switch');
+  assert.equal(byId.get('prev')['data-switch-action'], 'prev');
+  assert.equal(byId.get('prev')['data-swpage'], undefined);
+});
+
+test('does not turn previous/next commands into selectable switch indexes', () => {
+  const model = deriveInteractionModel([
+    { id: 'switch', type: 'INSTANCE', name: 'switch/role', parentId: 'section' },
+    { id: 'ind-a', type: 'INSTANCE', name: 'ind/a', parentId: 'section' },
+    { id: 'ind-b', type: 'INSTANCE', name: 'ind/b', parentId: 'section' },
+    { id: 'prev', type: 'BOOLEAN_OPERATION', name: 'btn/prev', parentId: 'section' },
+    { id: 'next', type: 'BOOLEAN_OPERATION', name: 'btn/next', parentId: 'section' },
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+  ]);
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
+  assert.equal(byId.get('ind-a')['data-swpage'], '0');
+  assert.equal(byId.get('ind-b')['data-swpage'], '1');
+  assert.equal(byId.get('prev')['data-swpage'], undefined);
+  assert.equal(byId.get('next')['data-swpage'], undefined);
+});
+
+test('does not promote arbitrary direct switch children into carousel pages', () => {
+  /* Owner preservation keeps these nodes renderable, but generic FRAME/GROUP
+     descendants are often one static component snapshot (artwork, copy, or
+     decoration). Only a source-labelled swpage may authorize page hiding or
+     a sliding track. */
+  const model = deriveInteractionModel([
+    { id: 'switch', type: 'INSTANCE', name: 'switch/card', parentId: 'section' },
+    { id: 'art', type: 'FRAME', name: 'Artwork', parentId: 'switch' },
+    { id: 'copy', type: 'GROUP', name: 'Content', parentId: 'switch' },
+    { id: 'tab', type: 'FRAME', name: 'tab/card', parentId: 'section' },
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+  ]);
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
+  assert.equal(model.stats.swpages, 1, 'the tab is a control index, not a rendered page');
+  assert.equal(byId.has('art'), false);
+  assert.equal(byId.has('copy'), false);
+  assert.ok(model.unresolved.some((x) => x.id === 'switch' && /no swpage children/.test(x.reason)));
+});
+
+test('accepts a complete component-set variant graph as immediate state replacement only', () => {
+  const graph = {
+    componentSetId: 'set-1',
+    variants: [
+      { componentId: 'component-a', name: 'State=A', interactions: [] },
+      { componentId: 'component-b', name: 'State=B', interactions: [] },
+      { componentId: 'component-c', name: 'State=C', interactions: [] },
+    ],
+  };
+  const model = deriveInteractionModel([
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+    { id: 'switch', type: 'INSTANCE', name: 'switch/example', parentId: 'section', componentVariantGraph: graph },
+    { id: 'tab-owner', type: 'FRAME', name: 'tab/example', parentId: 'section' },
+    { id: 'tab-a', type: 'INSTANCE', name: 'btn/example', parentId: 'tab-owner', ownerPath: ['section', 'tab-owner', 'tab-a'], componentProperties: { State: { value: 'highlight', type: 'VARIANT' } } },
+    { id: 'tab-b', type: 'INSTANCE', name: 'btn/example', parentId: 'tab-owner', ownerPath: ['section', 'tab-owner', 'tab-b'], componentProperties: { State: { value: 'normal', type: 'VARIANT' } } },
+    { id: 'tab-c', type: 'INSTANCE', name: 'btn/example', parentId: 'tab-owner', ownerPath: ['section', 'tab-owner', 'tab-c'], componentProperties: { State: { value: 'normal', type: 'VARIANT' } } },
+  ]);
+  const sw = model.components.find((entry) => entry.id === 'switch');
+  assert.deepEqual(sw.variantGraph, {
+    componentSetId: 'set-1', variants: 3, pageSource: 'component-set-variant',
+    transition: 'immediate', motionEvidence: 'explicit-empty', selectableControls: 3,
+    disabledControls: 0, controlMapping: 'complete-source-order',
+  });
+  assert.equal(model.stats.componentVariantGraphs, 1);
+  assert.equal(model.stats.componentVariantPages, 3);
+  assert.equal(model.stats.componentVariantControls, 3);
+  assert.equal(model.components.find((entry) => entry.id === 'tab-b').variantIndex, 1);
+  /* No synthetic carousel pages or motion attributes before a renderer has
+     materialized the alternate source variant trees. */
+  assert.equal(model.attributes.find((entry) => entry.id === 'tab-b').attrs['data-swpage'], undefined);
+});
+
+test('fails closed when disabled or incomplete controls cannot cover component-set variants', () => {
+  const model = deriveInteractionModel([
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+    { id: 'switch', type: 'INSTANCE', name: 'switch/example', parentId: 'section', componentVariantGraph: { componentSetId: 'set-1', variants: [{ componentId: 'a', interactions: [] }, { componentId: 'b', interactions: [] }, { componentId: 'c', interactions: [] }] } },
+    { id: 'tab-owner', type: 'FRAME', name: 'tab/example', parentId: 'section' },
+    { id: 'tab-a', type: 'INSTANCE', name: 'btn/example', parentId: 'tab-owner', ownerPath: ['section', 'tab-owner', 'tab-a'], componentProperties: { State: { value: 'highlight', type: 'VARIANT' } } },
+    { id: 'tab-b', type: 'INSTANCE', name: 'btn/example', parentId: 'tab-owner', ownerPath: ['section', 'tab-owner', 'tab-b'], componentProperties: { State: { value: 'disable', type: 'VARIANT' } } },
+  ]);
+  assert.ok(model.unresolved.some((entry) => /component-set variant graph has 3 variants/.test(entry.reason)));
+  assert.equal(model.stats.componentVariantControls, 0);
+});
+
+test('does not promote an unnamed component instance into a switch', () => {
+  const model = deriveInteractionModel([
+    { id: 'title', type: 'INSTANCE', name: '标题' },
+    { id: 'button', type: 'INSTANCE', name: '按钮' },
+  ]);
+  assert.equal(model.stats.switches, 0);
+  assert.equal(model.components.length, 0);
+});
+
+test('maps adjacent directional arrows only to a unique source-backed variant graph', () => {
+  const model = deriveInteractionModel([
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+    { id: 'switch-wrap', type: 'FRAME', name: 'content', parentId: 'section', ownerPath: ['section', 'switch-wrap'] },
+    { id: 'switch', type: 'INSTANCE', name: 'switch/example', parentId: 'switch-wrap', ownerPath: ['section', 'switch-wrap', 'switch'], componentVariantGraph: { componentSetId: 'set', variants: [{ componentId: 'a', interactions: [] }, { componentId: 'b', interactions: [] }] } },
+    { id: 'next', type: 'BOOLEAN_OPERATION', name: 'btn/next', parentId: 'section', ownerPath: ['section', 'next'] },
+  ]);
+  assert.equal(model.attributes.find((entry) => entry.id === 'next').attrs['data-switch'], 'switch');
+  assert.equal(model.attributes.find((entry) => entry.id === 'next').attrs['data-switch-action'], 'next');
+});
+
+test('maps directional commands beside a component graph without consuming variant indexes', () => {
+  const graph = {
+    componentSetId: 'set',
+    variants: [{ componentId: 'a', interactions: [] }, { componentId: 'b', interactions: [] }],
+  };
+  const model = deriveInteractionModel([
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+    { id: 'switch', type: 'INSTANCE', name: 'switch/example', parentId: 'section', ownerPath: ['section', 'switch'], componentVariantGraph: graph },
+    { id: 'wrap', type: 'FRAME', name: 'content', parentId: 'section', ownerPath: ['section', 'wrap'] },
+    { id: 'ind-a', type: 'INSTANCE', name: 'ind/a', parentId: 'controls', ownerPath: ['section', 'controls', 'ind-a'], componentProperties: { State: { value: 'highlight', type: 'VARIANT' } } },
+    { id: 'ind-b', type: 'INSTANCE', name: 'ind/b', parentId: 'controls', ownerPath: ['section', 'controls', 'ind-b'], componentProperties: { State: { value: 'normal', type: 'VARIANT' } } },
+    { id: 'controls', type: 'FRAME', name: 'controls', parentId: 'section', ownerPath: ['section', 'controls'] },
+    { id: 'prev', type: 'BOOLEAN_OPERATION', name: 'btn/prev', parentId: 'section', ownerPath: ['section', 'prev'] },
+    { id: 'next', type: 'BOOLEAN_OPERATION', name: 'btn/next', parentId: 'section', ownerPath: ['section', 'next'] },
+  ]);
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
+  assert.equal(model.stats.componentVariantControls, 2);
+  assert.equal(byId.get('ind-b')['data-swpage'], '1');
+  assert.equal(byId.get('prev')['data-swpage'], undefined);
+  assert.equal(byId.get('next')['data-swpage'], undefined);
+  assert.equal(byId.get('prev')['data-switch-action'], 'prev');
+  assert.equal(byId.get('next')['data-switch-action'], 'next');
+});
