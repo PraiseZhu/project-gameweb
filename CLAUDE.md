@@ -15,21 +15,25 @@
 
 ## 目录约定
 
+仓库顶层只有两类目录：`skills/` 装按项目切分的交付物，`standards/` 装被多个 skill 共用的横切规范。
+
 ```
 Project Gameweb/
 ├── CLAUDE.md           # 本文件 — 项目指引
 ├── VERSIONING.md       # 版本管理规范
 ├── README.md           # 用户向项目说明
 ├── .gitignore          # Git 忽略规则
-├── src/                # 源代码
-├── docs/               # 文档
-├── tests/              # 测试
-├── data/               # 数据文件（大数据用 Git LFS 或外置存储）
-├── config/             # 配置（不含 .env）
-└── history/            # ECC 会话数据（不入 git）
-    ├── checkpoints/
-    └── daily/
+├── skills/             # 按项目切：一个游戏宣发页一个 skill
+│   └── yise-web-ui/    # 伊瑟宣发页 UI skill
+└── standards/          # 横切复用：被多个 skill 共同引用的规范与工具链
+    └── figma-naming/   # 图层命名规范 + 体检工具 + Figma 插件
 ```
+
+**`skills/` — 按项目切。** 一个游戏宣发页对应一个 skill，每个 skill **自包含**：自己的 `SKILL.md`（含 frontmatter）、`package.json`、`scripts/` 与 `__tests__/`、`docs/`、以及自己的发布边界清单。skill 之间不互相 import，各自可以独立发布。
+
+**`standards/` — 横切复用。** 放不属于任何单个游戏、而是被多个 skill 共同引用的规范与工具链。首个成员是 `standards/figma-naming/`：命名规范正文（`spec/`）、体检工具（CLI）、以及 Figma 插件。
+
+**落位规则**：新增一个游戏宣发页 skill → 放 `skills/<name>/`；新增一份跨项目共用的规范或工具链 → 放 `standards/<name>/`。判断不清时，看它是否只服务于单个游戏：是则进 `skills/`，否则进 `standards/`。
 
 ## 协作约定
 

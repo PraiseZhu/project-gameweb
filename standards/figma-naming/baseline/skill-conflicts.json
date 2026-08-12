@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "doc": "skills/ 侧用了、而规范总表（src/spec.mjs 的 PREFIXES）没有的角色。登记 ≠ 认可：每条都必须写明冲突性质与 reviewBy，过了 reviewBy 自动升级为硬拦，防止这份名单变成垃圾桶。",
+  "known": [
+    {
+      "skill": "yise-web-ui",
+      "role": "txt",
+      "why": "与规范正面抵触：规范 §3 明写「TEXT 节点不需要任何前缀」，skill 却把 txt 当合法角色。解法是规范升版讨论——要么 §3 松口，要么 skill 去掉。",
+      "reviewBy": "2026-11-12",
+      "status": "pending-adoption"
+    },
+    {
+      "skill": "yise-web-ui",
+      "role": "swpage",
+      "why": "规范未覆盖的新概念（switch 内的页/态项），不是抵触，属于规范该不该扩。",
+      "reviewBy": "2026-11-12",
+      "status": "pending-adoption"
+    }
+  ]
+}

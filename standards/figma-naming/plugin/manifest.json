@@ -1,0 +1,16 @@
+{
+  "name": "Figma 命名（预览版）",
+  "id": "1470120260811990001",
+  "api": "1.0.0",
+  "editorType": [
+    "figma"
+  ],
+  "main": "main.js",
+  "ui": "ui.html",
+  "networkAccess": {
+    "allowedDomains": [
+      "none"
+    ],
+    "reasoning": "只读取当前文件的图层结构，不发任何网络请求"
+  }
+}

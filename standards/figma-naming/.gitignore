@@ -1,0 +1,12 @@
+.env
+.cache/
+node_modules/
+dist/
+data/
+baseline/findings/
+report/
+report-summary/
+.verify/
+history/
+test/.tmp/
+.DS_Store

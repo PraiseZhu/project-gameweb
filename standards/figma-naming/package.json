@@ -1,0 +1,25 @@
+{
+  "name": "figma-naming-lint",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "按 spec/naming-spec.md 体检 Figma 设计稿的图层命名，输出哪里错了、为什么、怎么改",
+  "bin": {
+    "figma-naming-lint": "bin/cli.mjs"
+  },
+  "scripts": {
+    "lint": "node bin/cli.mjs",
+    "test": "node --test test/*.test.mjs && node scripts/check-skill-sync.mjs",
+    "test:private": "node scripts/run-private-tests.mjs",
+    "rules": "node scripts/gen-rules-doc.mjs",
+    "check:skills": "node scripts/check-skill-sync.mjs",
+    "build:plugin": "node scripts/build-plugin.mjs",
+    "release:audit": "node scripts/public-release-audit.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

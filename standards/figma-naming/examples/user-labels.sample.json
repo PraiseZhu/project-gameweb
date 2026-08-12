@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "__sample__": "合成示例标签，不是任何真实稿件的裁决记录。随仓分发，供公开仓 clone 后能直接构建插件、跑通测试。真账本用 `node scripts/build-plugin.mjs --labels <path>` 传入。nodeId 全是编造的（9xxx: 段），不会命中任何真实图层。",
+  "labels": [
+    {
+      "nodeId": "9001:1001",
+      "kind": "rename",
+      "nodeNameAtLabelTime": "箭头",
+      "prefix": "btn",
+      "body": "箭头-左",
+      "confirmedBy": "user",
+      "date": "2026-01-01",
+      "note": "示例：人看过后确认这层点得动，是翻页按钮",
+      "why": "示例标签。真账本里这一档记的是「判据判成 img/箭头，但人当面确认可点击」——不改的话翻页按钮会被切成装饰图。",
+      "pageName": "示例页（合成数据）",
+      "sectionId": "9001:1000"
+    },
+    {
+      "nodeId": "9002:1002",
+      "kind": "confirmed-ok",
+      "nodeNameAtLabelTime": "bg",
+      "prefix": "img",
+      "body": "bg",
+      "confirmedBy": "user",
+      "date": "2026-01-01",
+      "note": "示例：人确认判据给的「img/bg」是对的",
+      "why": "示例标签。名字要完整存下来——判据以后改坏了，这条能说明「这层人确认过就叫这个」。",
+      "pageName": "示例页（合成数据）",
+      "sectionId": "9001:1000"
+    },
+    {
+      "nodeId": "9003:1003",
+      "kind": "no-prefix",
+      "nodeNameAtLabelTime": "轮播点2",
+      "prefix": null,
+      "body": null,
+      "confirmedBy": "user",
+      "date": "2026-01-01",
+      "note": "示例：人明确说这层不用命名",
+      "why": "示例标签。记下来是为了下次不再问同一层。",
+      "pageName": "示例页（合成数据）",
+      "sectionId": null
+    },
+    {
+      "nodeId": "9004:1004",
+      "kind": "undecided",
+      "nodeNameAtLabelTime": "3",
+      "prefix": null,
+      "body": null,
+      "confirmedBy": "user",
+      "date": "2026-01-01",
+      "note": "示例：人看过了但现在定不了",
+      "why": "示例标签。下次还要问，但会标明上次也没定——不记的话人会以为自己那一下没点上。",
+      "pageName": "示例页（合成数据）",
+      "sectionId": null
+    },
+    {
+      "nodeId": "9005:1005",
+      "kind": "needs-regroup",
+      "nodeNameAtLabelTime": "Frame 9005",
+      "confirmedBy": "user",
+      "date": "2026-01-01",
+      "note": "示例：三个页签与三个内容帧平级摆着，命名器造不出分组",
+      "why": "示例标签。插件只能改名字、造不出分组，所以这条只报「要这样命名请先这样分组」，不在错分组上硬凑合规名。",
+      "requiredStructure": "按规范应是三层分离：父容器下 tab/（包住三个页签）与 switch/（包住三个内容帧）互为兄弟。",
+      "pageName": "示例页（合成数据）",
+      "sectionId": "9001:1000"
+    },
+    {
+      "nodeId": "9006:1006",
+      "kind": "component-role",
+      "nodeNameAtLabelTime": "示例按钮组件",
+      "prefix": "btn",
+      "confirmedBy": "user",
+      "date": "2026-01-01",
+      "note": "示例：人认定这组组件是按钮，对以后新增的实例自动生效",
+      "why": "示例标签。结构判据分不开「按钮」与「带底色压着字的方块」，人认组件是唯一不靠猜的路。",
+      "appliesTo": "instances",
+      "pageName": "示例页（合成数据）",
+      "sectionId": "9001:1000"
+    }
+  ]
+}

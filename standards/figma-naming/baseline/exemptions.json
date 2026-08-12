@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "active": [
+    {
+      "id": "ex-scroll-reward-assets",
+      "rule": "N-IMG-FILL-NO-NAME",
+      "reason": "设计师判定奖励列表内的道具图不走网页切图流程；已知风险：将来 scroll/ 内放入需要网页切图的大图也会被这条豁免静默放过，需在复审时重新确认。",
+      "createdAt": "2026-08-07",
+      "reviewBy": "2026-11-07",
+      "specVersion": "v2.6 (2026-08-07)",
+      "condition": {
+        "nearestPrefix": ["scroll"]
+      }
+    }
+  ],
+  "candidate": []
+}

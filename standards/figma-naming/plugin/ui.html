@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Figma 命名</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f3ec;
+      --card: #fffdf7;
+      --ink: #20221e;
+      --muted: #77736a;
+      --line: #ded9cc;
+      --red: #c2412e;
+      --amber: #a97414;
+      --blue: #35608f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 13px/1.5 "PingFang SC", "Noto Sans SC", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--line);
+      background: #efe9dd;
+    }
+    h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: .04em; }
+    #meta { color: var(--muted); font-size: 12px; }
+    /* 示例标签这一档要看得出不一样：它意味着「你确认过的裁决这个包里没有」。
+       同色同字号会让人扫过去，跟规范版本号混成一片。 */
+    #labels-source { font-size: 12px; margin-top: 2px; color: var(--muted); }
+    #labels-source.sample { color: var(--red); font-weight: 700; }
+    main { padding: 12px 16px 116px; }
+    section { margin-bottom: 12px; }
+    label { display: block; font-weight: 700; margin-bottom: 6px; }
+    select, button, textarea, input {
+      font: inherit;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--card);
+      color: var(--ink);
+    }
+    select { width: 100%; padding: 7px 8px; }
+    textarea { width: 100%; min-height: 120px; padding: 7px 8px; resize: vertical; }
+    .row { display: flex; gap: 8px; margin-top: 8px; }
+    .row[hidden] { display: none; }
+    button {
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+    .warn {
+      border-left: 3px solid var(--amber);
+      background: #fff7e3;
+      padding: 8px 10px;
+      margin: 6px 0;
+      white-space: pre-line;
+    }
+    #status { min-height: 20px; color: var(--muted); }
+    #status.error { color: var(--red); }
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0;
+      font-weight: 700;
+    }
+    .summary span { background: var(--card); border: 1px solid var(--line); padding: 6px 8px; border-radius: 6px; }
+    .result-meta { background: var(--card); border: 1px solid var(--line); padding: 8px 10px; margin: 8px 0; }
+    h2 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: .06em; }
+    .finding {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 100%;
+      text-align: left;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 9px;
+      margin: 5px 0;
+      background: var(--card);
+    }
+    .finding:hover { border-color: var(--blue); }
+    .finding .name { font-weight: 700; }
+    .finding .path { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .code-group { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 8px 0; background: #fbf8f0; }
+    .code-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .group-toggle {
+      flex: 1;
+      min-width: 0;
+      padding: 3px 2px;
+      border: 0;
+      background: transparent;
+      font-weight: 700;
+      text-align: left;
+    }
+    .group-toggle::before { content: "▸"; display: inline-block; width: 16px; color: var(--muted); }
+    .group-toggle[aria-expanded="true"]::before { content: "▾"; }
+    .group-body[hidden] { display: none; }
+    .code-actions { display: flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 62%; }
+    .code-actions button { padding: 4px 6px; }
+    #apply-panel[hidden] { display: none; }
+    #apply-panel { margin-top: 8px; }
+    #apply-preview { margin-top: 8px; }
+    .apply-row {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 9px;
+      margin: 5px 0;
+      background: var(--card);
+      white-space: pre-line;
+    }
+    .apply-row.apply-ok { border-left: 3px solid var(--blue); }
+    .apply-row.apply-rejected { border-left: 3px solid var(--amber); }
+    .finding .name { display: block; font-weight: 700; }
+    .finding .path { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    footer {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      padding: 10px 16px;
+      background: var(--card);
+      border-top: 1px solid var(--line);
+    }
+    footer { display: flex; gap: 8px; }
+    footer button { flex: 1; }
+    /* 导出结果框：footer 是 position:fixed，普通流里的元素会被它压在下面——
+       用户 2026-08-11 的截图里那行「记录了 37 条裁决…」只露出半行，
+       被三个按钮盖住了。所以这个框也得 fixed，贴在 footer 正上方。 */
+    #verdict-export-box {
+      position: fixed;
+      left: 0; right: 0; bottom: 52px;
+      max-height: 45vh; overflow: auto;
+      padding: 10px 16px;
+      background: var(--card);
+      border-top: 1px solid var(--line);
+      z-index: 2;
+    }
+    #verdict-export-box[hidden] { display: none; }
+    #verdict-export-box .path { white-space: normal; overflow: visible; }
+    #progress { display: none; margin: 8px 0; }
+    #progress.visible { display: block; }
+    #progress .stage { font-weight: 700; }
+    #progress .detail { color: var(--muted); }
+    .progress-track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 6px; }
+    .progress-bar { height: 100%; width: 0; background: var(--blue); transition: width .12s linear; }
+    #stuck {
+      display: none;
+      border-left: 3px solid var(--red);
+      background: #fdece8;
+      padding: 8px 10px;
+      margin: 8px 0;
+    }
+    #stuck.visible { display: flex; align-items: center; gap: 8px; }
+    #stuck button { flex: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Figma 命名</h1>
+    <div id="meta">规范 · 假定 · 构建</div>
+    <div id="labels-source">标签来源待确认</div>
+  </header>
+
+  <main>
+    <section>
+      <label for="root-select">要命名的范围</label>
+      <select id="root-select"><option value="">请先选择</option></select>
+      <div class="row">
+        <button id="naming-run">开始命名</button>
+      </div>
+    </section>
+
+    <div id="status"></div>
+    <div id="progress">
+      <div class="stage">准备中</div>
+      <div class="detail"></div>
+      <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+    </div>
+    <div id="stuck">
+      <span id="stuck-text">运行可能卡住了</span>
+      <button id="abort">中止</button>
+    </div>
+    <section id="apply-controls">
+      <div id="apply-panel" hidden>
+        <label for="apply-input">粘贴 apply-plan JSON</label>
+        <textarea id="apply-input" placeholder="粘贴 scripts/build-apply-plan.mjs 生成的计划 JSON；计划只存在内存，不写入图档"></textarea>
+        <div class="row">
+          <button id="apply-dry-run">校验并预览</button>
+          <button id="apply-commit" disabled>应用</button>
+          <button id="apply-abort" hidden>中止应用</button>
+        </div>
+        <label for="apply-run-list">撤回 runId</label>
+        <div class="row">
+          <select id="apply-run-list" size="4"></select>
+          <input id="apply-undo-run" placeholder="可从运行列表选择，或粘贴 runId">
+        </div>
+        <div class="row">
+          <button id="apply-refresh-runs">刷新运行列表</button>
+          <button id="apply-undo" disabled>撤回本次运行</button>
+        </div>
+        <div id="apply-preview"></div>
+      </div>
+    </section>
+    <section id="naming-panel" hidden>
+      <div id="naming-summary" class="summary"></div>
+      <div id="naming-groups"></div>
+      <div id="naming-preview"></div>
+    </section>
+  </main>
+
+  <!-- 导出结果放在页脚正上方：人判完裁决时面板已经滚到底，
+       写在顶部的状态条他根本看不见（真机反馈「点击导出裁决没反应」）。 -->
+  <div id="verdict-export-box" hidden></div>
+  <footer>
+    <button id="naming-apply" disabled>写入</button>
+    <button id="verdict-export">导出裁决</button>
+    <button id="toggle-apply-panel">高级</button>
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const rootSelect = $("root-select");
+    const namingRunButton = $("naming-run");
+    const namingPanel = $("naming-panel");
+    const namingApplyButton = $("naming-apply");
+    const applyPanel = $("apply-panel");
+    const applyInput = $("apply-input");
+    const applyDryRunButton = $("apply-dry-run");
+    const applyCommitButton = $("apply-commit");
+    const applyAbortButton = $("apply-abort");
+    const applyRunList = $("apply-run-list");
+    const applyUndoRun = $("apply-undo-run");
+    const applyUndoButton = $("apply-undo");
+    const status = $("status");
+    const progress = $("progress");
+    const progressBar = $("progress-bar");
+    const stuck = $("stuck");
+    const stuckText = $("stuck-text");
+    let latestNaming = null;
+    let running = false;
+    let namingCommitPending = false;
+    const groupExpanded = new Map();
+    let applyRunId = null;
+    let applyPreviewSucceeded = false;
+    let applyRunsLoaded = false;
+
+    function setStatus(text, isError = false) {
+      status.textContent = text || "";
+      status.classList.toggle("error", isError);
+    }
+
+    function showProgress(stageLabel, detail, ratio = null) {
+      progress.classList.add("visible");
+      progress.querySelector(".stage").textContent = stageLabel;
+      progress.querySelector(".detail").textContent = detail;
+      progressBar.style.width = ratio === null ? "0" : `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+    }
+
+    function hideProgress() {
+      progress.classList.remove("visible");
+      progressBar.style.width = "0";
+    }
+
+    function showStuck(stageLabel, seconds) {
+      stuck.classList.add("visible");
+      stuckText.textContent = `卡在 ${stageLabel}，已 ${seconds} 秒`;
+    }
+
+    function hideStuck() {
+      stuck.classList.remove("visible");
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      }[ch]));
+    }
+
+    function renderCandidates(msg) {
+      rootSelect.replaceChildren();
+      if (!msg.selectionName) {
+        setStatus("请选中一个页面 frame 或其中的节点");
+        rootSelect.append(new Option("请先选中节点", ""));
+        return;
+      }
+      if (!msg.candidates.length) {
+        setStatus("没找到含 sec/ 的 FRAME 祖先，确认选对了吗");
+        rootSelect.append(new Option("没有候选根", ""));
+        return;
+      }
+      setStatus("");
+      for (const candidate of msg.candidates) {
+        const suffix = candidate.isSelf ? "（当前节点）" : "";
+        const option = new Option(
+          `${candidate.name} · sec/ × ${candidate.secTotal}${suffix}`,
+          candidate.id,
+        );
+        option.dataset.name = candidate.name;
+        rootSelect.append(option);
+      }
+      if (msg.candidates.length > 1) {
+        setStatus("找到多个候选根，请选择要命名的那一个");
+      }
+    }
+
+    function createGroupBody(group, toggle, key, defaultExpanded) {
+      const expanded = groupExpanded.has(key) ? groupExpanded.get(key) : defaultExpanded;
+      group.dataset.collapsibleGroup = key;
+      toggle.dataset.toggleGroup = key;
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      const body = document.createElement("div");
+      body.className = "group-body";
+      body.dataset.groupBody = key;
+      body.hidden = !expanded;
+      return body;
+    }
+
+    /** 预检行的纯 DOM 渲染，跟目标容器无关——命名面板的自动预检和「高级」面板
+     *  手动跑的 apply-dry-run 是同一段核对结果，只是显示的地方不同。 */
+    function renderApplyPreviewRows(box, msg) {
+      box.replaceChildren();
+      const heading = document.createElement("div");
+      heading.className = "result-meta";
+      heading.textContent = `预览：将应用 ${msg.okCount} 条，拒绝 ${msg.rejectedCount} 条；runId ${msg.plan?.runId ?? "未知"}`;
+      box.append(heading);
+      for (const row of msg.rows ?? []) {
+        const div = document.createElement("div");
+        div.className = row.willApply ? "apply-row apply-ok" : "apply-row apply-rejected";
+        const arrow = row.willApply ? "→" : "✕";
+        div.textContent = row.willApply
+          ? `${arrow} ${row.nodeId}  ${row.from} → ${row.to}\n${row.fullPath}`
+          : `${arrow} ${row.nodeId}  ${row.from} → ${row.to}\n${row.fullPath}\n${row.reason ?? ""}`;
+        box.append(makeRevealable(div, row.nodeId));
+      }
+    }
+
+    function renderApplyPreview(msg) {
+      renderApplyPreviewRows($("apply-preview"), msg);
+      applyRunId = msg.plan?.runId ?? applyRunId;
+      applyUndoRun.value = applyRunId ?? "";
+      // 用代码赋 .value 不会触发 input 事件，按钮的 disabled 解不开——
+      // 实测：应用成功后点「撤回本次运行」毫无反应，因为它根本没被按下。
+      applyUndoButton.disabled = !applyUndoRun.value.trim();
+      applyPreviewSucceeded = true;
+      applyCommitButton.disabled = false;
+      applyAbortButton.hidden = true;
+      setStatus(`预览完成：${msg.okCount} 条可应用，${msg.rejectedCount} 条拒绝`);
+    }
+
+
+    /**
+     * 让改名条目可点：点一下就在画布上选中并居中到那一层。
+     * 没有它，人拿到「已应用 40 条」也只能对着 nodeId 在几千层图层树里手动找。
+     */
+    function makeRevealable(div, nodeId) {
+      if (!nodeId) return div;
+      div.style.cursor = "pointer";
+      div.title = "点击跳转到这一层";
+      div.addEventListener("click", () => {
+        parent.postMessage({ pluginMessage: { type: "reveal-node", nodeId } }, "*");
+      });
+      return div;
+    }
+
+    /** 应用结果的纯 DOM 渲染，跟目标容器无关——命名面板走页脚「写入」和「高级」
+     *  面板走自己的「应用」按钮，都会收到同一条 apply-commit-result，只是显示
+     *  的地方要按来源分开（见 renderApplyResult 里的 msg.source 判断）。 */
+    function renderApplyResultRows(box, msg) {
+      const summary = document.createElement("div");
+      summary.className = "result-meta";
+      summary.textContent = `已应用 ${msg.applied?.length ?? 0} 条；拒绝 ${msg.rejected?.length ?? 0} 条；runId ${applyRunId ?? "未知"}`;
+      box.replaceChildren(summary);
+      for (const item of msg.applied ?? []) {
+        const div = document.createElement("div");
+        div.className = "apply-row apply-ok";
+        div.textContent = `✓ ${item.from} → ${item.to}`;
+        makeRevealable(div, item.nodeId);
+        box.append(div);
+      }
+      for (const item of msg.rejected ?? []) {
+        const div = document.createElement("div");
+        div.className = "apply-row apply-rejected";
+        div.textContent = `✕ ${item.from} → ${item.to}\n${item.reason ?? ""}`;
+        box.append(makeRevealable(div, item.nodeId));
+      }
+    }
+
+    function renderApplyResult(msg) {
+      applyPreviewSucceeded = true;
+      applyCommitButton.disabled = true;
+      applyAbortButton.hidden = true;
+      applyRunId = msg.runId ?? applyRunId;
+      applyUndoRun.value = applyRunId ?? "";
+      // 用代码赋 .value 不会触发 input 事件，按钮的 disabled 解不开——
+      // 实测：应用成功后点「撤回本次运行」毫无反应，因为它根本没被按下。
+      applyUndoButton.disabled = !applyUndoRun.value.trim();
+      const box = msg.source === "naming" ? $("naming-preview") : $("apply-preview");
+      renderApplyResultRows(box, msg);
+      const total = (msg.applied?.length ?? 0) + (msg.rejected?.length ?? 0);
+      const appliedCount = msg.applied?.length ?? 0;
+      if (appliedCount === 0) {
+        setStatus(`应用未生效：没有应用任何改名（共 ${total} 条）。请查看下方被拒绝的原因。`, true);
+      } else {
+        setStatus(`应用完成：${appliedCount} / ${total}，runId ${applyRunId ?? "未知"}`);
+      }
+      if (msg.source === "naming") {
+        namingCommitPending = false;
+        namingApplyButton.disabled = true;
+      }
+    }
+
+    function renderApplyRuns(msg) {
+      applyRunList.replaceChildren();
+      for (const run of msg.runs ?? []) {
+        const option = new Option(
+          `${run.runId} · ${run.nodeCount} 层 · ${run.sampleNames?.join("、") ?? ""}`,
+          run.runId,
+        );
+        applyRunList.append(option);
+      }
+      if (msg.runs?.length) {
+        applyRunList.selectedIndex = 0;
+        applyUndoRun.value = applyRunList.value;
+      }
+      applyUndoButton.disabled = !applyUndoRun.value.trim();
+      applyRunsLoaded = true;
+      const scanned = msg.scanned ?? {};
+      const failedPages = scanned.pagesFailed?.length ?? 0;
+      const statusText = `找到 ${msg.runs?.length ?? 0} 次改名运行（扫了 ${scanned.pages ?? 0} 个 page / ${scanned.nodesWalked ?? 0} 层${failedPages ? `，${failedPages} 个 page 读取失败` : ""}）`;
+      if (scanned.fatalError) {
+        setStatus(`${statusText}；扫描失败：${scanned.fatalError}`, true);
+      } else if (!status.classList.contains("error")) {
+        setStatus(statusText);
+      }
+    }
+
+    function refreshApplyRuns() {
+      parent.postMessage({ pluginMessage: { type: "apply-list-runs" } }, "*");
+    }
+
+    /** 判据档 → 人话。面板里不出现 functionWord / carousel 这种内部代号。 */
+    const NAMING_TIER_LABEL = {
+      sec: "屏幕分区", carousel: "轮播", componentRole: "你确认过的组件",
+      userConfirmed: "你确认过的", btnBackground: "按钮底框", img: "图片",
+      functionWord: "名字里写着功能", switch: "疑似切换器", statePair: "有选中/未选中两态",
+      scroll: "疑似可滑动", ind: "疑似指示点", bg: "疑似背景", staleLabel: "你的旧判断已过期",
+    };
+
+    function namingEntryRow(entry) {
+      const div = document.createElement("div");
+      div.className = "finding";
+
+      // 第一行：这层现在叫什么、要改成什么
+      const text = document.createElement("div");
+      text.className = "name";
+      text.textContent = entry.newName && entry.newName !== entry.oldName
+        ? `${entry.oldName} → ${entry.newName}`
+        : entry.oldName;
+      div.append(text);
+
+      // 第二行：它是什么、多大——不给这些，人对着「第 1 组 · 5 条」根本无从判断
+      const facts = document.createElement("div");
+      facts.className = "path";
+      const size = entry.width != null && entry.height != null
+        ? `${Math.round(entry.width)}×${Math.round(entry.height)}`
+        : null;
+      facts.textContent = [
+        NAMING_TIER_LABEL[entry.tier] ?? entry.tier,
+        entry.nodeType,
+        size,
+        entry.childCount ? `${entry.childCount} 个子层` : null,
+      ].filter(Boolean).join(" · ");
+      div.append(facts);
+
+      // 第三行：候选前缀。判不准时这是最有用的一行——直接告诉人在哪几个里选
+      if (entry.candidatePrefixes?.length) {
+        const cands = document.createElement("div");
+        cands.className = "path";
+        cands.textContent = `可能是：${entry.candidatePrefixes.map((p) => p + "/").join("  ")}`;
+        div.append(cands);
+      }
+
+      // 「判断不了」那档没有 reason，只有一串「不是 X 档」的否定式排除理由——
+      // 对人毫无用处。这里换成一句结论：机器判不出来，你看一眼这是什么。
+      // 名字是 Figma 自动生成的（Mask group / Vector / Rectangle 123）多半是
+      // 美术素材内部零件，规范里没有对应前缀，本来就不该命名。
+      if (entry.disposition === "unknown") {
+        const hint = document.createElement("div");
+        hint.className = "path";
+        const auto = /^(Mask group|Vector|Rectangle|Ellipse|Group|Union|Subtract|Frame|Polygon|Star|矩形|直线|组|图层|椭圆)/i.test(entry.oldName ?? "");
+        hint.textContent = auto
+          ? "名字是 Figma 自动生成的，多半是美术素材的内部零件，通常不需要命名"
+          : "所有判据都不匹配，需要你看一眼这是什么";
+        div.append(hint);
+      }
+
+      // 第四行：为什么拿不准。原来把整段理由塞进一行灰字，读不动也换不了行，
+      // 现在单独一段、允许换行，并砍掉「实测反例」那些写给开发看的括号注释。
+      const why = String(entry.reason ?? "").split("\n")[0].replace(/（[^）]*）/g, "").trim();
+      if (why) {
+        const reason = document.createElement("div");
+        reason.className = "warn";
+        reason.textContent = why;
+        div.append(reason);
+      }
+
+      return makeRevealable(div, entry.nodeId);
+    }
+
+    function renderNamingGroups(container, groups, tierKey) {
+      groups.forEach((group, index) => {
+        const box = document.createElement("div");
+        box.className = "code-group";
+        const toggle = document.createElement("button");
+        toggle.className = "group-toggle";
+        // 组标题要说清这组是什么。原来只写「第 N 组 · 5 条」——人点开之前
+        // 完全不知道里面是什么，真机反馈就是「我都不知道是什么，怎么判断」。
+        const first = group.entries[0] ?? {};
+        const tierName = NAMING_TIER_LABEL[first.tier] ?? first.tier ?? "";
+        const sample = first.newName && first.newName !== first.oldName
+          ? `${first.oldName} → ${first.newName}`
+          : first.oldName ?? "";
+        toggle.textContent = [tierName, sample, `${group.count} 条`]
+          .filter(Boolean).join(" · ");
+        const body = createGroupBody(box, toggle, `naming:${tierKey}:${index}`, false);
+        for (const entry of group.entries) body.append(namingEntryRow(entry));
+        box.append(toggle);
+        // 裁决按钮放在组一级，不放在每个条目上：一组是「同档+同名+同类型+同尺寸」，
+        // 判断必然一致，逐条点等于让人把同一个判断重复 26 遍（火炬页最大一组 26 条）。
+        if (tierKey !== "confirmed") box.append(verdictBar(group));
+        box.append(body);
+        container.append(box);
+      });
+    }
+
+    /**
+     * 一组的裁决条：对 / 改成 X / 跳过。
+     *
+     * 这是用户要的闭环的最后一段——「我判断后的决策，或者被我发现错误的命名内容，
+     * 都会积累沉淀下来」。点完存进节点的 pluginData，再用页脚「导出裁决」
+     * 拿到一段 JSON 交给 Cindy 并进 data/user-labels.json。
+     *
+     * 「可直接改」那档不给裁决条：那些判据本来就有把握，写进标签库没有信息量。
+     */
+    // nodeId → 那一组的状态文字元素。每次重新渲染命名结果时清空。
+    const verdictStatusEls = new Map();
+
+    function verdictBar(group) {
+      const first = group.entries[0] ?? {};
+      const nodeIds = group.entries.map((e) => e.nodeId);
+      const bar = document.createElement("div");
+      bar.className = "row";
+      bar.style.cssText = "gap:6px;padding:6px 8px;flex-wrap:wrap;align-items:center";
+
+      const send = (kind, prefix) => {
+        parent.postMessage({ pluginMessage: {
+          type: "verdict-save",
+          kind,
+          prefix: prefix ?? null,
+          nodeId: first.nodeId,
+          nodeIds,
+          nodeNameAtVerdict: first.oldName ?? "",
+          proposedName: first.newName ?? null,
+          tier: first.tier ?? null,
+        } }, "*");
+      };
+
+      const accept = document.createElement("button");
+      accept.textContent = first.newName ? `对，就叫 ${first.newName}` : "这层不用命名";
+      accept.onclick = () => send("accept");
+      bar.append(accept);
+
+      // 候选前缀直接做成按钮。判不准时人最需要的就是「在这几个里选一个」，
+      // 让他自己敲前缀等于把规范总表背下来的活推给他。
+      const candidates = first.candidatePrefixes?.length
+        ? first.candidatePrefixes
+        : ["btn", "img", "ind", "switch", "tab"];
+      for (const prefix of candidates) {
+        if (first.newName && first.newName.startsWith(prefix + "/")) continue;
+        const btn = document.createElement("button");
+        btn.textContent = `改成 ${prefix}/`;
+        btn.onclick = () => send("correct", prefix);
+        bar.append(btn);
+      }
+
+      const skip = document.createElement("button");
+      skip.textContent = "现在定不了";
+      skip.onclick = () => send("skip");
+      bar.append(skip);
+
+      const status = document.createElement("span");
+      status.className = "path";
+      status.dataset.verdictStatus = first.nodeId;
+      status.textContent = `这一下管 ${group.count} 条`;
+      bar.append(status);
+      verdictStatusEls.set(first.nodeId, status);
+
+      return bar;
+    }
+
+    function renderNamingResult(msg) {
+      latestNaming = msg;
+      namingPanel.hidden = false;
+      const summary = $("naming-summary");
+      summary.replaceChildren();
+      const chips = [
+        `可直接改 ${msg.summary.confirmedEntries}`,
+        `需要确认 ${msg.summary.needsRecheckEntries}`,
+        `判断不了 ${msg.summary.unknownEntries}`,
+      ];
+      if (msg.summary.pendingEntries) chips.push(`待定（父层未定）${msg.summary.pendingEntries}`);
+      for (const text of chips) {
+        const span = document.createElement("span");
+        span.textContent = text;
+        summary.append(span);
+      }
+
+      const groups = $("naming-groups");
+      groups.replaceChildren();
+      // 上一次跑的状态元素已经不在 DOM 里了，留着会让回显打到孤儿节点上——
+      // 人点了裁决，界面上什么也不动。
+      verdictStatusEls.clear();
+      const section = (title, items, tierKey) => {
+        if (!items.length) return;
+        const h2 = document.createElement("h2");
+        h2.textContent = title;
+        groups.append(h2);
+        renderNamingGroups(groups, items, tierKey);
+      };
+      section(`可直接改（${msg.confirmed.length} 组）`, msg.confirmed, "confirmed");
+      section(`需要确认（${msg.needsRecheck.length} 组）`, msg.needsRecheck, "needsRecheck");
+      section(`判断不了（${msg.unknown.length} 组）`, msg.unknown, "unknown");
+
+      // 命名判定跑完就自带写入前预检（见 main.mjs 的 runNaming），不用再点一次
+      // 「写入」才看到会应用几条、拒绝几条——这里直接把预检结果画在命名面板里，
+      // 页脚「写入」变成看完预检之后唯一要点的一步。
+      const previewBox = $("naming-preview");
+      if (msg.preview) {
+        renderApplyPreviewRows(previewBox, msg.preview);
+      } else {
+        previewBox.replaceChildren();
+      }
+      namingApplyButton.disabled = !msg.applyPlan;
+      setStatus(`命名判定完成：可直接改 ${msg.summary.confirmedEntries} / 需要确认 ${msg.summary.needsRecheckEntries} / 判断不了 ${msg.summary.unknownEntries}`);
+    }
+
+    /**
+     * 标签来源那一行。三档各自说清「你手上这个包带的是什么」：
+     *   sample  随仓合成示例——公开仓的默认包，人确认过的裁决不在里面
+     *   custom  真账本
+     *   其它    没注入来源标记的开发 bundle：不知道就说不知道，不谎报成任一档
+     * 只有 sample 走高亮：它是唯一一档「界面看着正常、结果其实少了人的判断」。
+     */
+    function renderLabelsSource(msg) {
+      const box = $("labels-source");
+      const total = Number.isInteger(msg.labelsTotal) ? msg.labelsTotal : null;
+      const count = total === null ? "标签数未知" : `${total} 条标签`;
+      if (msg.labelsSource === "sample") {
+        box.className = "sample";
+        box.textContent = `⚠ 示例标签（随仓合成，非真实裁决）· ${count}`;
+        box.title = "构建时没有传 --labels，用的是 examples/user-labels.sample.json。"
+          + "人工确认过的裁决不在这个包里，判定结果会比真账本差。";
+        return;
+      }
+      if (msg.labelsSource === "custom") {
+        box.className = "";
+        box.textContent = `人工标签账本 · ${count}`;
+        box.title = "构建时通过 --labels 传入了标签账本。";
+        return;
+      }
+      box.className = "";
+      box.textContent = `标签来源未标记（开发构建）· ${count}`;
+      box.title = "这个包没有注入标签来源标记，通常是直接跑 esbuild 打的开发 bundle。";
+    }
+
+    window.onmessage = (event) => {
+      const msg = event.data?.pluginMessage;
+      if (!msg) return;
+      if (msg.type === "versions") {
+        $("meta").textContent = `规范 ${msg.spec} · 假定 ${msg.assumptions} · 构建 ${msg.buildDate}`;
+        renderLabelsSource(msg);
+      } else if (msg.type === "candidates") {
+        renderCandidates(msg);
+      } else if (msg.type === "verdict-saved") {
+        // 就地回显，不弹 toast：人连着判十几组，每组弹一次没法看。
+        //
+        // 用一张 nodeId → 状态元素的表，不用 document.querySelector：
+        // 查全局要依赖 DOM 结构和属性选择器，改一次渲染结构就断，而且
+        // 出错时是静默失效（找不到就什么也不显示），人以为裁决没存下。
+        const status = verdictStatusEls.get(msg.nodeId);
+        if (status) {
+          status.textContent = msg.missing?.length
+            ? `已记下 ${msg.saved} 条，有 ${msg.missing.length} 层找不到（可能已被删）`
+            : `已记下，管 ${msg.saved} 条`;
+        }
+        // 找不到的层必须报出来，不能静默少存——人以为一组都记下了，实际漏了几层。
+        if (msg.missing?.length) setStatus(`有 ${msg.missing.length} 层找不到，裁决没落到它们身上`, true);
+      } else if (msg.type === "verdict-progress") {
+        // 进度也写进页脚上方那个框——点了按钮必须立刻有东西动，
+        // 否则人只能盯着不动的界面猜是不是又坏了。
+        const box = $("verdict-export-box");
+        box.hidden = false;
+        box.replaceChildren();
+        const line = document.createElement("div");
+        line.className = "path";
+        line.textContent = msg.text;
+        box.append(line);
+      } else if (msg.type === "verdict-exported") {
+        // 结果一律显示在页脚正上方，不用 setStatus。
+        //
+        // 真机上踩的坑：人判完裁决时面板已经滚到底（页脚按钮在眼前），
+        // 而 setStatus 写在面板顶部——点了「导出裁决」什么都看不到，
+        // 反馈是「点击导出裁决没反应」。同理，退路那个 textarea 原来插在
+        // naming-groups 顶部，也在视野之外。
+        const box = $("verdict-export-box");
+        box.hidden = false;
+        box.replaceChildren();
+        const say = (text) => {
+          const p = document.createElement("div");
+          p.className = "path";
+          p.textContent = text;
+          box.append(p);
+        };
+        if (!msg.total) {
+          say("这份稿子里还没有任何裁决记录——先在「需要确认」那些组上点按钮。");
+          return;
+        }
+        if (!msg.labelCount) {
+          // 只点了「对」或「定不了」时会走到这：不是失败，但也没东西可导，
+          // 得说清楚为什么，否则人以为导出坏了。
+          say(`记录了 ${msg.total} 条裁决，但没有一条是「改成 X」——`);
+          say("只有「改成 X」才进标签库：「对」说明判据本来就对，写进去没有信息量。");
+          return;
+        }
+        say(`${msg.labelCount} 条裁决（共记录 ${msg.total} 条）。全选下面这段，粘给 Cindy：`);
+        const area = document.createElement("textarea");
+        area.value = msg.json;
+        area.style.cssText = "width:100%;height:140px;font-family:monospace;font-size:11px";
+        area.readOnly = true;
+        box.append(area);
+        area.select();
+        // 剪贴板在 Figma 插件 iframe 里经常被拒，所以先摊出来再顺手试一下复制，
+        // 成功就多说一句、失败也不影响人手动选。
+        navigator.clipboard?.writeText(msg.json).then(
+          () => say("（已同时复制到剪贴板）"),
+          () => {},
+        );
+        if (msg.broken?.length) say(`另有 ${msg.broken.length} 条裁决记录已损坏，读不出来。`);
+      } else if (msg.type === "status") {
+        setStatus(msg.text, msg.isError);
+        if (msg.isError && running) {
+          running = false;
+        }
+        if (msg.isError) hideStuck();
+        if (msg.isError) hideProgress();
+        // commitApplyPlan 在 ensureCanApply/parseApplyPlan 失败时只发 status，
+        // 不会有 apply-commit-result——写入按钮点了就锁死的话，人只能重新跑一次
+        // 命名判定才能再点，白白多绕一圈。这里让失败状态把锁解开，可以直接重试。
+        if (msg.isError && namingCommitPending) {
+          namingCommitPending = false;
+          namingApplyButton.disabled = !latestNaming?.applyPlan;
+        }
+      } else if (msg.type === "progress") {
+        const detail = msg.phase === "components"
+          ? `主组件 ${msg.processed}/${msg.total} · ${msg.elapsedMs}ms`
+          : msg.total
+            ? `${msg.processed}/${msg.total} · ${msg.elapsedMs}ms`
+            : `${msg.elapsedMs}ms`;
+        showProgress(
+          msg.stageLabel,
+          detail,
+          msg.phase === "components" ? null : (msg.total ? msg.processed / msg.total : null),
+        );
+      } else if (msg.type === "stuck") {
+        showStuck(msg.stageLabel, msg.seconds);
+      } else if (msg.type === "aborted") {
+        running = false;
+        hideStuck();
+        hideProgress();
+        setStatus("已中止");
+      } else if (msg.type === "naming-result") {
+        renderNamingResult(msg);
+        running = false;
+        hideStuck();
+        hideProgress();
+      } else if (msg.type === "apply-dry-run-result") {
+        renderApplyPreview(msg);
+      } else if (msg.type === "apply-commit-result") {
+        renderApplyResult(msg);
+      } else if (msg.type === "apply-list-runs-result") {
+        renderApplyRuns(msg);
+      } else if (msg.type === "apply-undo-result") {
+        if (msg.restored === 0) {
+          const scanned = msg.scanned ?? {};
+          const runIdText = msg.runId || applyUndoRun.value || "(空)";
+          setStatus(`撤回未生效：runId「${runIdText}」在扫描范围内没有匹配（扫了 ${scanned.pages ?? 0} 个 page / ${scanned.nodesWalked ?? 0} 层${(scanned.pagesFailed?.length ?? 0) ? `，${scanned.pagesFailed.length} 个 page 读取失败` : ""}）。`, true);
+        } else {
+          setStatus(`还原 ${msg.restored} 层`);
+        }
+        refreshApplyRuns();
+      }
+    };
+
+    parent.postMessage({ pluginMessage: { type: "ready" } }, "*");
+
+    namingRunButton.addEventListener("click", () => {
+      if (!rootSelect.value) return;
+      running = true;
+      hideStuck();
+      showProgress("准备中", "开始命名判定");
+      parent.postMessage({ pluginMessage: { type: "naming-run", nodeId: rootSelect.value } }, "*");
+    });
+
+    // 命名判定跑完已经带着预检结果（见 renderNamingResult），这个按钮不用再跑一次
+    // 预览、也不用把计划倒进「高级」面板——点它就是真正写入，等价于「高级」面板
+    // 里手动跑完预览后点的「应用」（同一条 apply-commit 通道，同一段 commit 逻辑）。
+    namingApplyButton.addEventListener("click", () => {
+      if (!latestNaming?.applyPlan) return;
+      namingApplyButton.disabled = true;
+      namingCommitPending = true;
+      setStatus(`正在写入 ${latestNaming.applyPlan.entries.length} 条改名…`);
+      parent.postMessage({
+        pluginMessage: {
+          type: "apply-commit",
+          planText: JSON.stringify(latestNaming.applyPlan),
+          source: "naming",
+        },
+      }, "*");
+    });
+
+    rootSelect.addEventListener("change", () => {
+      const name = rootSelect.selectedOptions[0]?.dataset.name ?? null;
+      parent.postMessage({
+        pluginMessage: {
+          type: "select-root",
+          nodeId: rootSelect.value,
+          nodeName: name,
+        },
+      }, "*");
+    });
+
+    $("abort").addEventListener("click", () => {
+      parent.postMessage({ pluginMessage: { type: "abort" } }, "*");
+    });
+
+    // 命名面板的折叠也要能点。原来这个监听只挂在 #findings 上，而命名结果渲染在
+    // #naming-groups 里——点组标题没有任何反应，条目永远展不开，人只能看到「N 条」
+    // 却看不到具体是什么。真机反馈就是「具体什么需要我判断我一概不知」。
+    $("naming-groups").addEventListener("click", (event) => {
+      const toggle = event.target.closest("[data-toggle-group]");
+      if (!toggle) return;
+      const group = toggle.closest("[data-collapsible-group]");
+      const body = group?.querySelector("[data-group-body]");
+      if (!body) return;
+      const expanded = body.hidden;
+      body.hidden = !expanded;
+      groupExpanded.set(toggle.dataset.toggleGroup, expanded);
+      toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+    });
+
+    $("verdict-export").addEventListener("click", () => {
+      // 点下去立刻在页脚上方显示一行字，不等 main 侧回消息。
+      // 这样即使 main 那边彻底挂了，人也能看出「按钮是响应了的」，
+      // 而不是像之前那样完全分不清是没点上还是点了没用。
+      const box = $("verdict-export-box");
+      box.hidden = false;
+      box.replaceChildren();
+      const line = document.createElement("div");
+      line.className = "path";
+      line.textContent = "已点击导出，正在收集……";
+      box.append(line);
+      parent.postMessage({ pluginMessage: { type: "verdict-export" } }, "*");
+    });
+
+    $("toggle-apply-panel").addEventListener("click", () => {
+      applyPanel.hidden = !applyPanel.hidden;
+    });
+
+    applyDryRunButton.addEventListener("click", () => {
+      applyPreviewSucceeded = false;
+      applyCommitButton.disabled = true;
+      parent.postMessage({
+        pluginMessage: { type: "apply-dry-run", planText: applyInput.value },
+      }, "*");
+    });
+
+    applyCommitButton.addEventListener("click", () => {
+      if (!applyPreviewSucceeded) {
+        setStatus("请先校验并预览，再应用", true);
+        return;
+      }
+      applyAbortButton.hidden = false;
+      setStatus("正在应用改名…");
+      parent.postMessage({
+        pluginMessage: { type: "apply-commit", planText: applyInput.value },
+      }, "*");
+    });
+
+    applyAbortButton.addEventListener("click", () => {
+      parent.postMessage({ pluginMessage: { type: "apply-abort" } }, "*");
+    });
+
+    applyRunList.addEventListener("change", () => {
+      applyUndoRun.value = applyRunList.value ?? "";
+      applyUndoButton.disabled = !applyUndoRun.value.trim();
+    });
+
+    applyUndoRun.addEventListener("input", () => {
+      applyUndoButton.disabled = !applyUndoRun.value.trim();
+    });
+
+    $("apply-refresh-runs").addEventListener("click", refreshApplyRuns);
+
+    applyUndoButton.addEventListener("click", () => {
+      if (!applyUndoRun.value.trim()) {
+        setStatus("请先从运行列表里选一条", true);
+        return;
+      }
+      parent.postMessage({
+        pluginMessage: { type: "apply-undo", runId: applyUndoRun.value.trim() },
+      }, "*");
+    });
+
+    // Runs are persisted on nodes, so re-request after every panel open.
+    refreshApplyRuns();
+  </script>
+</body>
+</html>
