@@ -1,7 +1,7 @@
 # 设计稿命名规范
 
 > 版本 **v2.8**（2026-08-13）。本文件是本项目判定命名对错的**唯一事实来源**。
-> `src/spec.mjs` 是它的机器可读镜像，`test/spec-drift.test.mjs` 锁住两者一致（前缀表、参数表、前缀语法参数、§4.2 两道排除闸门、§6 规则清单、§7 名字形态、版本号）。
+> 同目录 `spec.mjs` 是它的机器可读镜像，`tool/test/spec-drift.test.mjs` 锁住两者一致（前缀表、参数表、前缀语法参数、§4.2 两道排除闸门、§6 规则清单、§7 名字形态、版本号）。
 > 规则的 `why` / `fix` 文案属于实现侧解释，在 `src/rules.mjs` 里维护，不在本文件锁定范围内。
 > 判定后果所依赖的下游假定见 [`consumer-assumptions.md`](consumer-assumptions.md)。
 
@@ -111,7 +111,7 @@
 - **全角斜杠 `／` 与反斜杠 `\` 仍算写错**，报 `N-PREFIX-SLASH`——下游按半角 `/` 识别（假定 A0），这两种分隔符匹配不上；
 - **总表外的词**不管大小写、空格与否，仍按 `N-PREFIX-NOT-IN-TABLE` 报（§4.3）。
 
-判定参数（机器镜像见 `src/spec.mjs` 的 `PREFIX_SYNTAX`）：
+判定参数（机器镜像见同目录 `spec.mjs` 的 `PREFIX_SYNTAX`）：
 
 <!-- PREFIX_SYNTAX -->
 | 参数 | 值 | 含义 |

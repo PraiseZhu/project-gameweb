@@ -44,9 +44,9 @@
 
 | 文件 | 职责 | 改动约束 |
 |---|---|---|
-| `spec/naming-spec.md` | 命名规范正文（含 §6 规则清单、§7 豁免机制设计） | 改这里必然要同步 `src/spec.mjs` 与 `src/rules.mjs` 的元信息，否则漂移测试报错 |
+| `spec/naming-spec.md` | 命名规范正文（含 §6 规则清单、§7 豁免机制设计） | 改这里必然要同步 `spec/spec.mjs` 与 `src/rules.mjs` 的元信息，否则漂移测试报错 |
 | `spec/consumer-assumptions.md` | 下游消费假定 A0–A7，规则 `why` 成立的前提 | 改假定要重新评估引用它的规则是否还成立；版本号受锁 |
-| `src/spec.mjs` | 前缀表 / 参数表 / 前缀形态参数 / 排除词表的机器可读镜像 | 只做镜像，不新增规则。升版时同步两个版本号 |
+| `spec/spec.mjs` | 前缀表 / 参数表 / 前缀形态参数 / 排除词表的机器可读镜像 | 只做镜像，不新增规则。升版时同步两个版本号。`src/spec.mjs` 只做兼容转发 |
 | `src/parse.mjs` | 图层名 → 结构。**不判对错**，只拆开并标出可疑处 | 判定参数全部来自 `PREFIX_SYNTAX`，不许在这里写死数值；严重度判定不许写进这里 |
 | `src/rules.mjs` | 20 条错误码的 `why` / `fix`（元信息是 §6 的镜像） | 新增规则要先进 §6 清单表。写不出 `why` 或指不到假定编号的规则不要加 |
 | `src/lint.mjs` | 遍历树产出 findings + 体检根自检。纯函数，不碰网络与文件系统 | 新增规则必须在 `rules.mjs` 先登记，否则 `push()` 抛错 |
@@ -84,7 +84,7 @@
 
 1. 改 `spec/naming-spec.md`，更新版本行与 §8 变更表（附证据，别只写结论）
 2. 跑 `npm test` —— **应该立刻因漂移测试失败**。这一步在验证测试本身有效
-3. 同步 `src/spec.mjs`：`SPEC_VERSION` + 相关表
+3. 同步 `spec/spec.mjs`：`SPEC_VERSION` + 相关表
 4. 涉及新判定 → 先进 §6 清单表（code / 级别 / 处置 / 依据性质 / 假定），再在 `rules.mjs` 补 `why` / `fix`
 5. 涉及新后果 → 先看 `spec/consumer-assumptions.md` 有没有对应假定；没有就先加假定并升 `ASSUMPTIONS_VERSION`
 6. 两头测：dirty 触发 + clean 保持 0

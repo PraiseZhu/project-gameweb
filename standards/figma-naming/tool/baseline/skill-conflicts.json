@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "doc": "skills/ 侧用了、而规范总表（src/spec.mjs 的 PREFIXES）没有的角色。登记 ≠ 认可：每条都必须写明冲突性质与 reviewBy，过了 reviewBy 自动升级为硬拦，防止这份名单变成垃圾桶。",
+  "doc": "skills/ 侧用了、而规范总表（spec/spec.mjs 的 PREFIXES）没有的角色。登记 ≠ 认可：每条都必须写明冲突性质与 reviewBy，过了 reviewBy 自动升级为硬拦，防止这份名单变成垃圾桶。",
   "known": [
     {
       "skill": "yise-web-ui",

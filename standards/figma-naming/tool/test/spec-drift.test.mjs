@@ -26,8 +26,9 @@ import {
 import { RULES, SEVERITIES } from "../src/rules.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const DOC = readFileSync(resolve(ROOT, SPEC_DOC), "utf8");
-const ASSUMPTIONS = readFileSync(resolve(ROOT, ASSUMPTIONS_DOC), "utf8");
+const SPEC_DIR = resolve(ROOT, "..", "spec");
+const DOC = readFileSync(resolve(SPEC_DIR, "naming-spec.md"), "utf8");
+const ASSUMPTIONS = readFileSync(resolve(SPEC_DIR, "consumer-assumptions.md"), "utf8");
 const LINES = DOC.split("\n");
 
 /** 取某个 HTML 注释标记之后、到空行为止的表格/段落行 */
@@ -115,7 +116,7 @@ test("§7 复合默认名与 FIGMA_DEFAULT_COMPOUND_NAMES 一致", () => {
   const doc = [...line.matchAll(/`([a-z ]+)`/g)].map((m) => m[1]).sort();
   const code = [...FIGMA_DEFAULT_COMPOUND_NAMES].sort();
   assert.deepEqual(code, doc,
-    "复合默认名漂移：正文与 src/spec.mjs 必须保持相同的复合名");
+    "复合默认名漂移：正文与 spec/spec.mjs 必须保持相同的复合名");
 });
 
 test("§7 中文默认名与 FIGMA_DEFAULT_CN_NAMES 一致", () => {
@@ -123,7 +124,7 @@ test("§7 中文默认名与 FIGMA_DEFAULT_CN_NAMES 一致", () => {
   const doc = [...line.matchAll(/`([^`]+)`/g)].map((m) => m[1]).sort();
   const code = [...FIGMA_DEFAULT_CN_NAMES].sort();
   assert.deepEqual(code, doc,
-    "中文默认名漂移：正文与 src/spec.mjs 必须保持相同的中文默认名");
+    "中文默认名漂移：正文与 spec/spec.mjs 必须保持相同的中文默认名");
 });
 
 test("§4.2 结构性排除表与 STRUCTURAL_NON_PREFIX 逐条一致", () => {
@@ -137,7 +138,7 @@ test("§4.2 结构性排除表与 STRUCTURAL_NON_PREFIX 逐条一致", () => {
     id: normalize(id), criterion: normalize(criterion), why: normalize(why),
   }));
   assert.deepEqual(code, doc,
-    "结构性排除表漂移：正文与 src/spec.mjs 必须逐条保持相同的 id / 判据 / 为什么");
+    "结构性排除表漂移：正文与 spec/spec.mjs 必须逐条保持相同的 id / 判据 / 为什么");
 });
 
 /* ── §7 豁免条件 ───────────────────────────────────────── */
@@ -155,7 +156,7 @@ test("§7 名字形态表与 NAME_PATTERNS 逐条一致", () => {
     value: normalize(value), criterion: normalize(criterion), priority,
   }));
   assert.deepEqual(code, doc,
-    "§7 名字形态表漂移：正文与 src/spec.mjs 必须逐条保持相同的值 / 判据 / 优先级");
+    "§7 名字形态表漂移：正文与 spec/spec.mjs 必须逐条保持相同的值 / 判据 / 优先级");
 });
 
 /* ── §6 规则清单 ───────────────────────────────────────── */

@@ -2,7 +2,7 @@
 /**
  * check-skill-sync.mjs —— 跨目录（skills/ ↔ standards/figma-naming/）角色词表冲突检查。
  *
- * 为什么需要它：规范的唯一事实来源是 `src/spec.mjs` 的 `PREFIXES`（`spec/naming-spec.md`
+ * 为什么需要它：规范的唯一事实来源是 `spec/spec.mjs` 的 `PREFIXES`（`spec/naming-spec.md`
  * 的机器可读镜像）。而 `skills/<name>/` 各自带着自己的角色词表去解析图层名。
  * 两边一旦漂移，skill 会把规范不认的角色当成合法声明——设计师以为标了、体检工具根本不认。
  * 这个检查把漂移在 CI 里显出来。
