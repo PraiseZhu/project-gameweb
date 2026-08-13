@@ -23,6 +23,7 @@ Project Gameweb/
 ├── VERSIONING.md       # 版本管理规范
 ├── README.md           # 用户向项目说明
 ├── .gitignore          # Git 忽略规则
+├── .github/workflows/  # 合进 main 前的 e2e-review
 ├── skills/             # 按项目切：一个游戏宣发页一个 skill
 │   └── yise-web-ui/    # 伊瑟宣发页 UI skill
 └── standards/          # 横切复用：被多个 skill 共同引用的规范与工具链
@@ -38,8 +39,8 @@ Project Gameweb/
 ## 协作约定
 
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
-- **代码评审**：通过 `/review` 触发
-- **测试覆盖**：参见 VERSIONING.md
+- **代码评审**：本地 `/review` 仍可用；合进 `main` 只走 PR，以 GitHub `e2e-review` 为准（规范 + 现有检查 + 审这次改动，不开游戏页）
+- **测试覆盖**：参见 VERSIONING.md 与下方「测试与守卫」
 
 ## 代码规范
 
@@ -58,11 +59,34 @@ Project Gameweb/
 
 ## 测试与守卫
 
-（按项目实际填写）
+合进远端 `main` 只走 PR。本地随手 commit 不拦；推的是功能分支，开向 `main` 的 PR 后跑 `e2e-review`。
 
-- 运行测试：`（待定）`
-- Lint：`（待定）`
-- 类型检查：`（待定）`
+禁止直推 `main`：
+
+1. 本机 hook（已装）：`scripts/pre-push-main.sh` 拒绝更新远端 `main`
+2. 远端硬锁：PraiseZhu 保护 `main`——必须 PR，required checks 勾 `mechanical` 和 `review`，不要给自己留 bypass
+
+日常改法：`git switch -c feat/<说明>` → `git push -u origin HEAD` → 开 PR → 两关绿了再合。
+
+验的是「提交是否符合规范、现有项目还能跑」，不是打开某一张游戏页。
+
+| 关 | 命令 / 动作 | 过关标准 |
+|----|-------------|----------|
+| 机械 | `standards/figma-naming/tool` 的 `npm test` + `npm run release:audit` | 退出码 0 |
+| 机械 | `skills/yise-web-ui` 的 `npm run release:audit` + `npm run fonts:check` | 退出码 0 |
+| 审查 | 公司网关 `codex/gpt-5.6-luna`（最大力度）对照本文件 + VERSIONING.md 审这次改动 | 评论第一行 `REVIEW_VERDICT: PASS` |
+
+不做的：
+
+- 不跑伊瑟 Playwright / `verify.mjs` / `pr-block`（公开仓没有 `demos/`，也不每次开游戏页）
+- 不把 `skills/yise-web-ui` 全量 `npm test` 当合入闸（本机已有失败，且大量用例要本机 Figma/Playwright）
+- 审查只评论，不改代码，不代替人点 Merge
+
+本机 hook 只能挡这台电脑，`--no-verify` 能绕过。要全员都不能直推，PraiseZhu 必须锁 `main`：
+
+1. Secret `ANTHROPIC_API_KEY`：公司网关 CI key，不是 [console.anthropic.com](https://console.anthropic.com/) 的官方 key
+2. 可选变量 `ANTHROPIC_BASE_URL`：默认 `https://llm-proxy.tapsvc.com`
+3. 保护 `main`：勾选 **Require a pull request before merging**；required checks 勾 `mechanical` 和 `review`；不要勾 Allow administrators to bypass（否则他自己还能直推）
 
 ## 版本管理
 
