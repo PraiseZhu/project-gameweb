@@ -1,24 +1,26 @@
-# figma-naming-lint Public Release Boundary
+# figma-naming Public Release Boundary
 
-`figma-naming-lint` 是一个可复用的 Figma 图层命名体检工具：规范正文 + linter + Figma 插件。它要并入 PUBLIC 仓库 `PraiseZhu/project-gameweb`，所以这里必须先把「什么能公开、什么不能」写成机器可核对的清单。
+`standards/figma-naming/` 下有两个分组独立的东西：`spec/` 是人读的命名规范，`tool/`（package 名 `figma-naming-lint`）是按规范体检 Figma 稿的实现。它们并入 PUBLIC 仓库 `PraiseZhu/project-gameweb`，所以「什么能公开、什么不能」必须写成机器可核对的清单。
 
-本目录的发布纪律与 `skills/yise-web-ui/` 同构：`public-release.json`（机器清单）+ `PUBLIC-RELEASE.md`（人读边界）+ `scripts/public-release-audit.mjs`（确定性、fail-closed 的扫描器）。
+**边界只有一套，在本目录，不在 `tool/`。** 分组独立不等于边界独立：两半是一起出门的，各写一份清单就是两个「唯一事实来源」，谁都不知道该信哪个，而漏掉的那半会变成没人管的路径。清单里的路径因此一律以本目录为起点（`spec/…`、`tool/…`）。
+
+发布纪律与 `skills/yise-web-ui/` 同构：`public-release.json`（机器清单）+ `PUBLIC-RELEASE.md`（人读边界）+ `scripts/public-release-audit.mjs`（确定性、fail-closed 的扫描器）。
 
 ## Publish
 
 可发布的是**方法本身**，不是跑过的那一稿：
 
-- `spec/` —— 命名规范正文与下游消费假定，这是这个工具的公共价值所在
-- `src/` / `plugin/` / `bin/` —— 解析、判定、报告、Figma 插件与命令行入口
-- `test/` / `scripts/` —— 测试与工具脚本
-- `docs/` —— 规则清单与实施计划
-- `baseline/exemptions.json` —— 随包分发的默认豁免账本（条件是结构性字段，不含真稿图层枚举）
-- `examples/` —— 合成示例标签，公开仓 clone 后据此就能构建插件、跑通测试
-- `README.md` / `CLAUDE.md` / `package.json` / `package-lock.json` / `.env.example` / `.gitignore`
+- `spec/` —— 命名规范正文与下游消费假定，这是公共价值所在，拿掉工具照样能用来指导命名
+- `tool/src/` / `tool/plugin/` / `tool/bin/` —— 解析、判定、报告、Figma 插件与命令行入口
+- `tool/test/` / `tool/test-private/` / `tool/scripts/` —— 测试与工具脚本。`test-private/` 只是**跑起来需要**本地真稿快照，它的源码本身不含真稿信息，所以公开、但在没有证据时显式非零退出
+- `tool/docs/` —— 规则清单、实施计划与判据挖掘记录
+- `tool/baseline/exemptions.json` —— 随包分发的默认豁免账本（条件是结构性字段，不含真稿图层枚举）
+- `tool/examples/` —— 合成示例标签，公开仓 clone 后据此就能构建插件、跑通测试
+- 两级的 `README.md`，以及 `tool/CLAUDE.md` / `package.json` / `package-lock.json` / `.env.example` / `.gitignore`
 
-`baseline/` 与 `data/` 都是「一半发布一半私有」（`baseline/exemptions.json` 发布、`baseline/findings/` 私有），所以边界覆盖检查是**逐叶子文件**判的，不是逐顶层目录判的。
+`tool/baseline/` 与 `tool/data/` 都是「一半发布一半私有」（`exemptions.json` 发布、`findings/` 私有），所以边界覆盖检查是**逐叶子文件**判的，不是逐顶层目录判的。
 
-跑一次边界体检：
+跑一次边界体检（在 `tool/` 下，脚本在上一级）：
 
 ```bash
 npm run release:audit

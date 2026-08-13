@@ -330,6 +330,154 @@ export function paintedBlock(node) {
  *
  * 2% 的尺寸容差沿用 sizeEqual。样本支撑：真稿四帧 91 层、生稿 8 层。
  */
+/**
+ * 透明热区：一块被纯色遮罩裁出来、盖着一张压暗封面的可点区域。
+ *
+ * 规范 §1：`hot/` = 透明热区，可点击但本身不是视觉元素。
+ *
+ * **样本不足，这条是低置信度判据。** 参照页 hot/ 真值 = 0，唯一样本是
+ * 新稿的视频播放区 7 个形态。没有任何一份稿子标过 hot/，
+ * 所以这条判据的「精度」无法用真值验证，只能证明它命中的形态是对的、
+ * 且在别的稿子上不大面积误伤。落 needsRecheck 让人确认，不进「可直接改」。
+ *
+ * 新稿上那 7 个的形态完全一致：
+ *   GROUP 1907x1073  fills=[] isMask=false clips=false 无文字 2 个叶子子层
+ *   ├─ VECTOR    1907x1073  isMask=true  ALPHA  fills=SOLID       ← 纯色遮罩当模板
+ *   └─ RECTANGLE 2036x1101  isMask=false        fills=IMAGE,SOLID@0.6  ← 封面 + 60% 压暗
+ *
+ * 判据必须查「填充分工」，只查结构分不开——实测（scripts/probe-hot-vs-mask.mjs）
+ * 视频播放区和火炬生稿那 88 个「Mask group」美术碎片**逐字段相同**：
+ * 都是 GROUP / fills=空 / isMask=false / clips=false / PASS_THROUGH / 2 个叶子子层 /
+ * ALPHA 遮罩 + 一张更大的图。唯一的不对称在填充：
+ *   热区     遮罩层 fills=SOLID（纯色形状当模板），被遮的图带 IMAGE + 半透明 SOLID
+ *   美术碎片 遮罩层 fills=IMAGE（图本身就是遮罩），被遮的是 SOLID
+ * 语义上说得通：播放区是「一块纯色区域 + 一张压暗的封面」，压暗是为了让播放键
+ * 看得清；美术碎片是「拿一张图去裁另一张图」。
+ *
+ * 七份缓存稿实测（scripts/probe-hot-final.mjs）：
+ *   新稿           命中 8，**全部是视频播放区**（4 个 + 同母版的 4 个实例），
+ *                  「划动区域」误伤 0
+ *   参照页 1-15    命中 0
+ *   火炬生稿       命中 0（那 88 个 Mask group 一个都没进来）
+ *   1-180 / 2-8588 / 2-26836   各 0
+ *   2-1987         命中 1，误报：`Mask group` 1624×1125，ELLIPSE 遮罩裁的椭圆
+ *                  美术图，在 kv 里。**这是已知误报，没有排掉**——排它要么靠
+ *                  遮罩形状（ELLIPSE vs VECTOR），要么靠名字，两条都太脆
+ *
+ * 为什么不能只用「自己无填充 + 子层全叶子 + 有图溢出 + 无文字」那版：
+ * 命中数是 47/4/90/1/147/332/1，火炬和 2-8588 上几乎全是 Mask group 美术碎片。
+ *
+ * 「划动区域」（真值该判 scroll/）靠两条排掉，都不是名字：
+ *   子层必须全是叶子 —— 划动区域的子层里还套着好几层内容
+ *   必须恰好 2 个子层 —— 划动区域只有 1 个
+ *
+ * 32px 下限沿用 imgPattern 那条。**这个数在 hot/ 上没有验证集支撑**——
+ * 7 个样本最小的是 319×177，离 32 很远，取 32 只是跟别处保持一致。
+ */
+/**
+ * 图标砖：一块近方形、无文字、里面居中套着一个更小的层、底下垫着图的组件实例。
+ *
+ * 从人工标签里提炼出来的（scripts/mine-cluster-*.mjs）。标签那 21 条可查的
+ * rename 里，最扎眼的一簇是这个形态：12 条判成 btn/（箭头、框1、社媒 icon 底、
+ * 日历icon、icon）。但标签那一边只有 13 个样本，拿参照页四帧一验才见真章：
+ *
+ *   裸形态（近方形+无文字+居中内层+子树有图）    命中 256、真btn 45、精度 18%
+ *   + 自己是 INSTANCE                          命中  70、真btn 36、精度 51%
+ *   + 子树 >= 8 层                              命中  71、真btn 38、精度 54%
+ *   + 上面两条并起来                           命中  48、真btn 36、精度 75%
+ *   + 最长边 >= 80（排掉 36×45 的小图标）       命中  36、真btn 36、**精度 100%**
+ *
+ * 为什么用它挡 artBesideText 而不是当独立档：
+ * 这 36 层里四帧各有 6 层落在「祖先已被认领」的桶里（walk 根本走不到它们，
+ * 新档也救不了），真正会被判错的是每帧 3 层——它们被 artBesideText 当成
+ * 「文字旁边的美术块」整块切走（img/），而真值是 btn/。用户在标签里判过
+ * 同样的东西：箭头、icon 这类图标按钮在文字旁边时点得动，不是装饰图。
+ * 所以这条的用法是**从 artBesideText 的猎物里摘出 btn/**，不是自己产出条目
+ * （摘出来后由 btnPattern 在正常路径上接走）。
+ *
+ * 那条矛盾的标签：142×142 的「社媒 icon 底」人判成 img/，结构跟判成 btn/
+ * 的 85/108/134 一模一样。参照页 36/36 全是 btn，标签 13:1 —— 参照页证据
+ * 占压倒多数，按 btn 处理，矛盾如实记录。
+ *
+ * 召回只有 19%（36/189）——大多数按钮不长得像图标砖，这条只是补 artBesideText
+ * 的漏。80px 下限来自实测：36×45 的 img/图标icon 是唯一误伤，正好被它排掉。
+ * 32px 下限沿用 imgPattern 那条。
+ */
+export function iconTilePattern(node) {
+  if (node.visible === false) return false;
+  if (node.type !== "INSTANCE") return false;
+  if (textCount(node) > 0) return false;
+  const box = node.absoluteBoundingBox;
+  if (!box || !box.width || !box.height) return false;
+  const ratio = Math.max(box.width, box.height) / Math.min(box.width, box.height);
+  if (ratio > 1.3) return false;
+  if (Math.min(box.width, box.height) < 32) return false;
+  if (Math.max(box.width, box.height) < 80) return false;
+  if (subtreeNodes(node) < 8) return false;
+  const kids = (node.children || []).filter((c) => c.visible !== false);
+  if (!kids.length) return false;
+  // 一个居中且明显更小的子层——图标压在底上的形态
+  let hasConcentric = false;
+  for (const c of kids) {
+    const cb = c.absoluteBoundingBox;
+    if (!cb) continue;
+    if (cb.width >= box.width * 0.9 && cb.height >= box.height * 0.9) continue;
+    const dx = Math.abs((cb.x + cb.width / 2) - (box.x + box.width / 2));
+    const dy = Math.abs((cb.y + cb.height / 2) - (box.y + box.height / 2));
+    if (dx > box.width * 0.15 || dy > box.height * 0.15) continue;
+    hasConcentric = true;
+    break;
+  }
+  if (!hasConcentric) return false;
+  // 子树里得有一张图（自己带或下面垫着）
+  let imageBelow = false;
+  (function walk(n) {
+    if (imageBelow) return;
+    if (Array.isArray(n.fills) && n.fills.some((f) => f.visible !== false && f.type === "IMAGE")) {
+      imageBelow = true;
+      return;
+    }
+    for (const c of n.children || []) walk(c);
+  })(node);
+  return imageBelow;
+}
+
+export function hotZonePattern(node) {
+  if (node.visible === false) return null;
+  if (Array.isArray(node.fills) && node.fills.some((f) => f.visible !== false)) return null;
+  if (textCount(node) > 0) return null;
+  const kids = (node.children || []).filter((c) => c.visible !== false);
+  // 恰好 2 个叶子子层：多一层少一层都不是这个形态（划动区域只有 1 个子层，
+  // 且那个子层里还套着内容）
+  if (kids.length !== 2) return null;
+  if (!kids.every((c) => (c.children || []).length === 0)) return null;
+  const box = node.absoluteBoundingBox;
+  if (!box || Math.min(box.width, box.height) < 32) return null;
+
+  const visibleFills = (n) => (Array.isArray(n.fills) ? n.fills : []).filter((f) => f.visible !== false);
+
+  // 遮罩层：纯色形状当模板。填充是图的话那是「拿图裁图」，是美术碎片
+  const mask = kids.find((c) => c.isMask === true);
+  if (!mask) return null;
+  const maskFills = visibleFills(mask);
+  if (!maskFills.length) return null;
+  if (maskFills.some((f) => f.type === "IMAGE")) return null;
+
+  // 被遮的那张封面：带位图，且上面压着一层半透明纯色（压暗层）
+  const cover = kids.find((c) => c !== mask);
+  if (!cover) return null;
+  const coverFills = visibleFills(cover);
+  if (!coverFills.some((f) => f.type === "IMAGE")) return null;
+  if (!coverFills.some((f) => f.type === "SOLID" && f.opacity != null && f.opacity < 1)) return null;
+
+  // 封面比容器大 —— 被容器裁掉一圈，这是「一个窗口露出一块画面」的签名
+  const coverBox = cover.absoluteBoundingBox;
+  if (!coverBox) return null;
+  if (!(coverBox.width > box.width + 1 || coverBox.height > box.height + 1)) return null;
+
+  return { size: `${Math.round(box.width)}x${Math.round(box.height)}` };
+}
+
 export function instanceRowPattern(node, parent) {
   if (node.type !== "INSTANCE") return null;
   if (node.visible === false) return null;

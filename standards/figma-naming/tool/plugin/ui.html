@@ -139,6 +139,16 @@
     }
     #verdict-export-box[hidden] { display: none; }
     #verdict-export-box .path { white-space: normal; overflow: visible; }
+    #mark-box {
+      margin: 8px 0;
+      padding: 10px 12px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    #mark-box .mark-title { font-weight: 600; margin-bottom: 4px; }
+    #mark-box .mark-hint { opacity: 0.75; margin: 4px 0; }
+    #mark-status:empty { display: none; }
     #progress { display: none; margin: 8px 0; }
     #progress.visible { display: block; }
     #progress .stage { font-weight: 700; }
@@ -170,6 +180,24 @@
       <div class="row">
         <button id="naming-run">开始命名</button>
       </div>
+    </section>
+
+    <!-- 人工指认区。
+         放在顶部而不是页脚：页脚是 fixed 的，之前用户的反馈被它压住过
+         （「点击导出裁决没反应」，实际是结果写在了看不见的地方）。
+
+         modal/ 走人工指认而不是判据，是量过之后的结论：弹窗和页面分区在
+         静态几何上没有稳定差别（五个方向全塌，见 scripts/probe-modal-*.mjs），
+         参照页那 3 个 modal/ 真值和一批 sec/ 是同父层兄弟、宽度尺寸全撞。
+         与其塞一条 50% 误伤的判据，不如让人一键指认。 -->
+    <section id="mark-box">
+      <div class="mark-title">人工指认</div>
+      <div id="mark-hint" class="mark-hint">选中一个 frame 后可用</div>
+      <div class="row">
+        <button id="mark-modal" disabled>标为弹窗 modal/</button>
+        <button id="mark-clear" disabled>取消标记</button>
+      </div>
+      <div id="mark-status" class="mark-hint"></div>
     </section>
 
     <div id="status"></div>
@@ -233,6 +261,10 @@
     const applyRunList = $("apply-run-list");
     const applyUndoRun = $("apply-undo-run");
     const applyUndoButton = $("apply-undo");
+    const markModalButton = $("mark-modal");
+    const markClearButton = $("mark-clear");
+    const markHint = $("mark-hint");
+    const markStatus = $("mark-status");
     const status = $("status");
     const progress = $("progress");
     const progressBar = $("progress-bar");
@@ -303,6 +335,55 @@
       if (msg.candidates.length > 1) {
         setStatus("找到多个候选根，请选择要命名的那一个");
       }
+    }
+
+    /**
+     * 当前选中的那一层，供「标为弹窗」用。
+     *
+     * 存整个对象而不是只存 id：点按钮时要把 name 一起发回去当 body 和
+     * nodeNameAtVerdict，重新去 DOM 里捞会依赖渲染结构（而且捞不到时是静默失效）。
+     */
+    let markTarget = null;
+
+    /**
+     * 按选中情况更新「人工指认」区。
+     *
+     * 规范原话：「modal/ 应是独立 frame，不叠画在页面稿内」——所以只在
+     * 恰好选中 1 个 FRAME 时才让点。其余情况置灰**并说明原因**：
+     * 只置灰不说话的话，人不知道是自己选错了还是插件坏了。
+     */
+    function renderMarkBox(msg) {
+      markTarget = null;
+      markStatus.textContent = "";
+      const count = msg.selectionCount ?? 0;
+      const node = msg.selectionNode ?? null;
+
+      if (count === 0) {
+        markHint.textContent = "选中一个 frame 后可用（现在没选中任何图层）";
+      } else if (count > 1) {
+        markHint.textContent = `选中了 ${count} 个图层——一次只能标一个，请只选中弹窗那个 frame`;
+      } else if (!node) {
+        markHint.textContent = "选中一个 frame 后可用";
+      } else if (node.type !== "FRAME") {
+        // 规范要求弹窗是独立 frame。选中 GROUP / INSTANCE 时告诉他差在哪，
+        // 而不是只说「不可用」。
+        markHint.textContent = `选中的是 ${node.type}，不是 FRAME——`
+          + "规范要求弹窗是独立 frame，不叠画在页面稿内";
+      } else {
+        markTarget = node;
+        markHint.textContent = node.marked
+          ? `「${node.name}」已标为 ${node.marked}`
+          : `将标记「${node.name}」→ modal/${node.name}`;
+        // 名字是 Figma 默认名时提醒，但不拦着——他可能就是想先标上。
+        if (node.isDefaultName) {
+          markStatus.textContent = "这层没有有意义的名字（是 Figma 默认名），"
+            + "建议先在 Figma 里改个名再标，否则标签库里会留下一条看不懂的记录";
+        }
+      }
+      markModalButton.disabled = !markTarget;
+      // 取消标记只在「这层确实标过」时可用——没标过还能点的话，
+      // 点了什么也不会发生，人会以为按钮坏了。
+      markClearButton.disabled = !markTarget || !markTarget.marked;
     }
 
     function createGroupBody(group, toggle, key, defaultExpanded) {
@@ -683,6 +764,29 @@
         renderLabelsSource(msg);
       } else if (msg.type === "candidates") {
         renderCandidates(msg);
+        // 选中变了就刷新指认区。跟候选根走同一条消息，不另开一条：
+        // 两条消息各自到达时会出现「候选根已更新、指认区还是上一次的选中」
+        // 这种半新半旧的界面。
+        renderMarkBox(msg);
+      } else if (msg.type === "mark-saved") {
+        // 就地回显。这里不能复用 verdict-saved 那条分支：那条是按
+        // nodeId 去 verdictStatusEls 里找条目行的状态元素，而指认区的层
+        // 根本不在结果列表里，找不到就静默什么也不显示。
+        markStatus.textContent = msg.ok
+          ? (msg.cleared ? `已取消「${msg.nodeName}」的标记` : `已标记「${msg.nodeName}」→ ${msg.newName}`)
+          : `没标上：${msg.reason}`;
+        if (!msg.ok) setStatus(`标记失败：${msg.reason}`, true);
+        if (msg.ok) {
+          // 标完立刻更新按钮状态，不等下一次 selectionchange——
+          // 人标完之后不一定会再��画布，按钮停在旧状态会让他以为没生效。
+          if (markTarget && markTarget.id === msg.nodeId) {
+            markTarget.marked = msg.cleared ? null : msg.newName;
+            markClearButton.disabled = !markTarget.marked;
+            markHint.textContent = markTarget.marked
+              ? `「${markTarget.name}」已标为 ${markTarget.marked}`
+              : `将标记「${markTarget.name}」→ modal/${markTarget.name}`;
+          }
+        }
       } else if (msg.type === "verdict-saved") {
         // 就地回显，不弹 toast：人连着判十几组，每组弹一次没法看。
         //
@@ -872,6 +976,41 @@
       line.textContent = "已点击导出，正在收集……";
       box.append(line);
       parent.postMessage({ pluginMessage: { type: "verdict-export" } }, "*");
+    });
+
+    /**
+     * 「标为弹窗」。
+     *
+     * 走的是既有裁决链路，不新建机制：这一下等价于人在需确认区点「改成 modal/」，
+     * 落进节点的 sharedPluginData，再由「导出裁决」→ merge-verdicts.mjs
+     * 并进 data/user-labels.json。
+     *
+     * body 用图层原名，不编——用户那份新稿里两个弹窗都叫「视频弹窗」，
+     * 那就该是 modal/视频弹窗。
+     *
+     * 本轮只做 modal 一个前缀。以后要加「标为热区 hot/」时，
+     * 把 prefix 提成参数即可，现在不提前抽象。
+     */
+    markModalButton.addEventListener("click", () => {
+      if (!markTarget) return;
+      // 立刻回显，不等 main 那边异步写完。点了没反应是这个项目反复被投诉的问题。
+      markStatus.textContent = "正在标记…";
+      parent.postMessage({ pluginMessage: {
+        type: "mark-node",
+        nodeId: markTarget.id,
+        prefix: "modal",
+        nodeName: markTarget.name,
+      } }, "*");
+    });
+
+    markClearButton.addEventListener("click", () => {
+      if (!markTarget) return;
+      markStatus.textContent = "正在取消…";
+      parent.postMessage({ pluginMessage: {
+        type: "mark-node-clear",
+        nodeId: markTarget.id,
+        nodeName: markTarget.name,
+      } }, "*");
     });
 
     $("toggle-apply-panel").addEventListener("click", () => {

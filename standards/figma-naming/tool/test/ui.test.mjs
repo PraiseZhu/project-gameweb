@@ -518,3 +518,137 @@ test("UI：标签来源三档各自可辨，只有示例那档高亮", () => {
   ui.window.onmessage({ data: { pluginMessage: versions({ labelsSource: "sample" }) } });
   assert.match(box.textContent, /标签数未知/, "缺字段要说未知，不许兜底成 0");
 });
+
+/**
+ * 人工指认 modal/。
+ *
+ * modal/ 走人工而不是判据，是量过之后的结论：弹窗和页面分区在静态几何上
+ * 没有稳定差别（五个方向全塌，见 scripts/probe-modal-*.mjs），参照页那 3 个
+ * modal/ 真值和一批 sec/ 是同父层兄弟、宽度尺寸 clipsContent 全撞。
+ *
+ * 规范原话「modal/ 应是独立 frame，不叠画在页面稿内」——所以只在恰好选中
+ * 1 个 FRAME 时可用。下面每条断言都对着一种「不该可用」的选中情况。
+ */
+test("UI：只有选中恰好 1 个 FRAME 时「标为弹窗」可用，其余置灰且说明原因", () => {
+  const ui = uiHarness();
+  const modalBtn = ui.elements.get("mark-modal");
+  const clearBtn = ui.elements.get("mark-clear");
+  const hint = () => ui.elements.get("mark-hint").textContent;
+  const send = (payload) => ui.window.onmessage({ data: { pluginMessage: {
+    type: "candidates", candidates: [], runTarget: null, ...payload,
+  } } });
+
+  // 没选中
+  send({ selectionName: null, selectionCount: 0, selectionNode: null });
+  assert.equal(modalBtn.disabled, true, "没选中时不能点");
+  assert.match(hint(), /没选中/, "置灰要说清原因，否则人分不出是自己选错还是插件坏了");
+
+  // 选中多个：必须能说出「选了几个」——只看 selection[0] 的话
+  // 「选了 1 个」和「选了 5 个」在 UI 上没有区别
+  send({ selectionName: "视频弹窗", selectionCount: 5,
+    selectionNode: { id: "1:1", name: "视频弹窗", type: "FRAME", marked: null, isDefaultName: false } });
+  assert.equal(modalBtn.disabled, true, "选中多个时不能点——一次只标一个");
+  assert.match(hint(), /5 个/, "要说出选了几个");
+
+  // 选中的不是 FRAME
+  send({ selectionName: "视频框", selectionCount: 1,
+    selectionNode: { id: "1:2", name: "视频框", type: "GROUP", marked: null, isDefaultName: false } });
+  assert.equal(modalBtn.disabled, true, "GROUP 不是独立 frame");
+  assert.match(hint(), /GROUP/, "要告诉他选中的是什么类型");
+  assert.match(hint(), /frame/i, "要说清规范要求的是 frame");
+
+  // 恰好 1 个 FRAME
+  send({ selectionName: "视频弹窗", selectionCount: 1,
+    selectionNode: { id: "1:3", name: "视频弹窗", type: "FRAME", marked: null, isDefaultName: false } });
+  assert.equal(modalBtn.disabled, false, "恰好选中 1 个 FRAME → 可用");
+  assert.match(hint(), /modal\/视频弹窗/, "要预告标完叫什么，body 用原名不编");
+
+  // 没标过时「取消标记」不该能点——点了什么也不会发生，人会以为按钮坏了
+  assert.equal(clearBtn.disabled, true, "没标过时取消标记要置灰");
+  send({ selectionName: "视频弹窗", selectionCount: 1,
+    selectionNode: { id: "1:3", name: "视频弹窗", type: "FRAME", marked: "modal/视频弹窗", isDefaultName: false } });
+  assert.equal(clearBtn.disabled, false, "标过之后才能取消");
+  assert.match(hint(), /已标为 modal\/视频弹窗/, "要让人看见这层已经标过什么，免得重复标");
+});
+
+test("UI：图层名是 Figma 默认名时提醒，但不阻止", () => {
+  const ui = uiHarness();
+  ui.window.onmessage({ data: { pluginMessage: {
+    type: "candidates", candidates: [], runTarget: null,
+    selectionName: "Frame 123", selectionCount: 1,
+    selectionNode: { id: "1:4", name: "Frame 123", type: "FRAME", marked: null, isDefaultName: true },
+  } } });
+  assert.equal(ui.elements.get("mark-modal").disabled, false,
+    "只提醒不阻止——他可能就是想先标上，回头再改名");
+  assert.match(ui.elements.get("mark-status").textContent, /建议先/,
+    "标签库里留一条 modal/Frame 123 没人看得懂，要提醒");
+});
+
+test("UI：点「标为弹窗」发出的消息形状正确，且立刻回显", () => {
+  const ui = uiHarness();
+  ui.window.onmessage({ data: { pluginMessage: {
+    type: "candidates", candidates: [], runTarget: null,
+    selectionName: "视频弹窗", selectionCount: 1,
+    selectionNode: { id: "399:49120", name: "视频弹窗", type: "FRAME", marked: null, isDefaultName: false },
+  } } });
+
+  ui.elements.get("mark-modal").listeners.get("click")[0]();
+  const sent = ui.sent.find((m) => m.type === "mark-node");
+  assert.ok(sent, "点了要发 mark-node");
+  assert.equal(sent.nodeId, "399:49120");
+  assert.equal(sent.prefix, "modal");
+  assert.equal(sent.nodeName, "视频弹窗", "body 用原名，不编");
+
+  // 点了必须立刻有东西动。这个项目为「点了没反应」被投诉过三次。
+  assert.match(ui.elements.get("mark-status").textContent, /正在标记/,
+    "不能等异步写完才给反馈");
+
+  // 写完的回显
+  ui.window.onmessage({ data: { pluginMessage: {
+    type: "mark-saved", ok: true, cleared: false,
+    nodeId: "399:49120", nodeName: "视频弹窗", newName: "modal/视频弹窗",
+  } } });
+  assert.match(ui.elements.get("mark-status").textContent, /已标记.*modal\/视频弹窗/);
+  assert.equal(ui.elements.get("mark-clear").disabled, false,
+    "标完「取消标记」要立刻可用，不等下一次 selectionchange——"
+    + "人标完不一定会再动画布，按钮停在旧状态会让他以为没生效");
+});
+
+test("UI：取消标记发出 mark-node-clear，回显后按钮复位", () => {
+  const ui = uiHarness();
+  ui.window.onmessage({ data: { pluginMessage: {
+    type: "candidates", candidates: [], runTarget: null,
+    selectionName: "视频弹窗", selectionCount: 1,
+    selectionNode: { id: "399:49120", name: "视频弹窗", type: "FRAME",
+      marked: "modal/视频弹窗", isDefaultName: false },
+  } } });
+
+  ui.elements.get("mark-clear").listeners.get("click")[0]();
+  const sent = ui.sent.find((m) => m.type === "mark-node-clear");
+  assert.ok(sent, "点了要发 mark-node-clear");
+  assert.equal(sent.nodeId, "399:49120");
+  assert.match(ui.elements.get("mark-status").textContent, /正在取消/);
+
+  ui.window.onmessage({ data: { pluginMessage: {
+    type: "mark-saved", ok: true, cleared: true, nodeId: "399:49120", nodeName: "视频弹窗",
+  } } });
+  assert.match(ui.elements.get("mark-status").textContent, /已取消/);
+  assert.equal(ui.elements.get("mark-clear").disabled, true, "取消之后不该还能再取消一次");
+});
+
+test("UI：标记失败要报出来，不静默", () => {
+  const ui = uiHarness();
+  ui.window.onmessage({ data: { pluginMessage: {
+    type: "candidates", candidates: [], runTarget: null,
+    selectionName: "视频弹窗", selectionCount: 1,
+    selectionNode: { id: "399:49120", name: "视频弹窗", type: "FRAME", marked: null, isDefaultName: false },
+  } } });
+  ui.window.onmessage({ data: { pluginMessage: {
+    type: "mark-saved", ok: false, nodeId: "399:49120", nodeName: "视频弹窗",
+    reason: "找不到这一层（可能已被删除）",
+  } } });
+  assert.match(ui.elements.get("mark-status").textContent, /没标上/);
+  assert.match(ui.elements.get("status").textContent, /标记失败/,
+    "失败要同时进状态条——静默失败是这个项目反复栽的坑");
+  assert.equal(ui.elements.get("mark-clear").disabled, true, "没标成功就不该让他取消");
+});

@@ -183,8 +183,15 @@ export function toUserLabels(verdicts, { pageName, sectionId, date } = {}) {
       confirmedBy: "user",
       date: v.at ?? date ?? null,
       note: v.note ?? `面板裁决：判据给的是「${v.proposedName ?? "(无名)"}」，人改成 ${v.prefix}/`,
-      why: `人在插件面板上直接裁决。判据走的是 ${v.tier ?? "(未知档)"} 档，`
-        + `给出「${v.proposedName ?? "(无名)"}」，与人的判断不一致。`,
+      // 人工指认（人选中一层直接标 modal/）和「推翻判据的答案」是两回事：
+      // 前者判据压根没出过条目，谈不上「与人的判断不一致」。
+      // 靠 proposedName 区分——判据给过名字才有得推翻。
+      why: v.proposedName
+        ? `人在插件面板上直接裁决。判据走的是 ${v.tier ?? "(未知档)"} 档，`
+          + `给出「${v.proposedName}」，与人的判断不一致。`
+        : `人在面板上直接指认这层是 ${v.prefix}/。判据没有给出过这一层的名字`
+          + `（要么没判出来，要么这层根本没进过清单），所以这条不是推翻判据，`
+          + `是人补上了判据答不出来的那部分。`,
       pageName: pageName ?? null,
       sectionId: sectionId ?? null,
     }))

@@ -9,6 +9,10 @@
  *   1. 只扫 publishable 清单里的文件（.cache/ 66MB 真稿快照不进扫描面）。
  *   2. 不许静默跳过：声明了却不存在的路径、读不动的文件、未分类的文件，一律报错。
  *   3. 命中要指到「哪个文件、哪一行、命中什么模式、命中了什么片段」。
+ *
+ * 边界根是 standards/figma-naming/，不是 tool/。`spec/` 与 `tool/` 分组独立，
+ * 但公开发布时它们一起出门，边界只能有一套清单——两套清单就是两个「唯一事实来源」，
+ * 谁都不知道该信哪个。清单路径因此一律以边界根为起点（`spec/…`、`tool/…`）。
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
@@ -47,13 +51,13 @@ const privateReasons = manifest?.privateReasons ?? {};
 if (manifest) {
   if (manifest.identity !== IDENTITY) fail(`manifest.identity=${manifest.identity ?? '(missing)'}，必须是 ${IDENTITY}`);
 
-  // spec/ 不在此列：规范正文是 ../spec/（tool/ 的同级目录），不属于工具的发布范围。
-  // 它归 standards/figma-naming/ 那一层管，本闸门只扫 tool/ 内部。
-  for (const required of ['README.md', 'PUBLIC-RELEASE.md', 'public-release.json', 'package.json', 'package-lock.json', 'src/', 'plugin/', 'bin/', 'scripts/', 'docs/']) {
+  // spec/ 与 tool/ 都在此列：两者分组独立，但公开发布时是同一批出门的东西。
+  // 少了 spec/，规范正文就成了没人管的路径；少了 tool/…，工具代码同理。
+  for (const required of ['README.md', 'PUBLIC-RELEASE.md', 'public-release.json', 'spec/', 'tool/README.md', 'tool/package.json', 'tool/package-lock.json', 'tool/src/', 'tool/plugin/', 'tool/bin/', 'tool/scripts/', 'tool/docs/']) {
     if (!publishable.includes(required)) fail(`publishable 缺少 ${required}`);
   }
-  // 本目录的私有边界事实，逐条钉死；漏一条就是把真稿资产放出去。
-  for (const required of ['.cache/', 'data/user-labels.json', 'baseline/findings/', 'report/', 'report-summary/', '.verify/', 'history/', 'dist/', 'node_modules/', '.env']) {
+  // 私有边界事实，逐条钉死；漏一条就是把真稿资产放出去。
+  for (const required of ['tool/.cache/', 'tool/data/user-labels.json', 'tool/baseline/findings/', 'tool/report/', 'tool/report-summary/', 'tool/.verify/', 'tool/history/', 'tool/dist/', 'tool/node_modules/', 'tool/.env']) {
     if (!privatePaths.includes(required)) fail(`private 边界缺少 ${required}`);
   }
   // 检查项 4：每条 private 必须写明为什么不能公开。
@@ -73,17 +77,19 @@ if (manifest) {
  * 检查项 5：身份一致性
  * ------------------------------------------------------------------ */
 
+// 身份长在工具那一半：package.json 与 README 标题都在 tool/ 下，
+// 边界根自己只是这两半的容器，不带 package 身份。
 try {
-  const pkg = JSON.parse(readRel('package.json'));
+  const pkg = JSON.parse(readRel('tool/package.json'));
   if (pkg.name !== IDENTITY) fail(`package.name=${pkg.name ?? '(missing)'}，必须是 ${IDENTITY}`);
 } catch (error) {
-  fail(`package.json 不是有效 JSON: ${error.message}`);
+  fail(`tool/package.json 不是有效 JSON: ${error.message}`);
 }
 
-if (existsSync(join(ROOT, 'README.md'))) {
-  if (!new RegExp(`^#\\s+${IDENTITY}\\b`, 'm').test(readRel('README.md'))) fail(`README.md 缺少 "# ${IDENTITY}" 标题（身份与 package.name 对不上）`);
+if (existsSync(join(ROOT, 'tool/README.md'))) {
+  if (!new RegExp(`^#\\s+${IDENTITY}\\b`, 'm').test(readRel('tool/README.md'))) fail(`tool/README.md 缺少 "# ${IDENTITY}" 标题（身份与 package.name 对不上）`);
 } else {
-  fail('缺少 README.md');
+  fail('缺少 tool/README.md');
 }
 
 /* ------------------------------------------------------------------ *

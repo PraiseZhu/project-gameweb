@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "identity": "figma-naming-lint",
+  "description": "Release boundary for standards/figma-naming: the spec (spec/) and its lint tool (tool/) are grouped separately but ship together, so the boundary is declared once, here.",
+  "publishable": [
+    "README.md",
+    "PUBLIC-RELEASE.md",
+    "public-release.json",
+    "scripts/public-release-audit.mjs",
+    "spec/",
+    "tool/README.md",
+    "tool/CLAUDE.md",
+    "tool/package.json",
+    "tool/package-lock.json",
+    "tool/.env.example",
+    "tool/.gitignore",
+    "tool/src/",
+    "tool/plugin/",
+    "tool/bin/",
+    "tool/test/",
+    "tool/scripts/",
+    "tool/docs/",
+    "tool/examples/",
+    "tool/baseline/exemptions.json",
+    "tool/baseline/skill-conflicts.json",
+    "tool/test-private/"
+  ],
+  "private": [
+    "tool/.cache/",
+    "tool/data/user-labels.json",
+    "tool/baseline/findings/",
+    "tool/report/",
+    "tool/report-summary/",
+    "tool/.verify/",
+    "tool/history/",
+    "tool/dist/",
+    "tool/node_modules/",
+    "tool/.env",
+    "tool/test/.tmp/"
+  ],
+  "privateReasons": {
+    "tool/.cache/": "真稿 Figma REST 快照，含未发布页面完整图层结构与图层名。",
+    "tool/data/user-labels.json": "人工逐层裁决记录，含真实图层名与业务模块名。",
+    "tool/baseline/findings/": "真稿全量 findings 基线，含完整图层路径。",
+    "tool/report/": "逐层诊断产物，含真稿图层路径。",
+    "tool/report-summary/": "真稿诊断汇总产物，含图层信息。",
+    "tool/.verify/": "本地验证临时产物。",
+    "tool/history/": "本地运行历史，非可复用源码。",
+    "tool/dist/": "插件构建产物，不作为发布内容。",
+    "tool/node_modules/": "已安装依赖永远不是发布内容。",
+    "tool/.env": "Figma Personal Access Token 等凭证。",
+    "tool/test/.tmp/": "测试运行临时目录。"
+  },
+  "requiredAudit": [
+    "package.name=figma-naming-lint",
+    "README.heading=figma-naming-lint",
+    "no-figma-filekey-in-publishable-files",
+    "no-credentials-in-publishable-files",
+    "no-absolute-machine-paths-in-publishable-files",
+    "private-boundary-is-explicit",
+    "declared-publishable-paths-exist"
+  ]
+}

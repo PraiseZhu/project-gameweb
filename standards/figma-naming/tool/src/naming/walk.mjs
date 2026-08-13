@@ -38,7 +38,7 @@ import { namePatternOf } from "../lint.mjs";
 import {
   placeholderPattern, scrollPattern, statePairPattern, indPattern, bgPattern,
   imgPattern, paintedBlock, indContainerPattern, wholeGroupIsArt, artSiblingsBesideText,
-  instanceRowPattern, textCount, maxEdge, round1, round2, stripName,
+  instanceRowPattern, hotZonePattern, iconTilePattern, textCount, maxEdge, round1, round2, stripName,
 } from "./shape.mjs";
 import {
   switchPattern, tabPattern, functionWordPattern, scanSubtreeFunctionWords, scanSubtreeRepeatGroups,
@@ -312,6 +312,19 @@ export function computeNamingPlan(section, options) {
       // 那个桶的语义是「祖先被认领了」，而母版通常不是实例的祖先（母版在
       // 组件库页、实例散在各功能页），归错桶会让 D2 核算漏算这些层。
       followsMaster: new Set(),
+      // 分区根自己。walk 是从 section.children 开始的，根永远走不到判据，
+      // 所以它必须在这里单独归桶。
+      //
+      // 原来这层是靠「根含文字 → 进 textContainer」顺手归的，于是**不含文字的
+      // 分区根整个掉进 D2 兜底当场抛错**（真机复现：拿新稿 399:49120「视频弹窗」
+      // 3840×2160、textCount=0 当分区根跑 → 「层 399:49120 未能归入任何
+      // accounting 类别」）。弹窗常常整块没有文字，用户在插件里选中一个弹窗
+      // 跑命名就崩。
+      //
+      // 不并回 textContainer：那个桶的语义是「含文字的排版壳，不该命名」，
+      // 而分区根不含文字时这句话是假的。归错桶会让「这层为什么没出条目」
+      // 讲不通，也会让 textContainer 计数忽大忽小取决于根有没有字。
+      sectionRoot: new Set(),
       invisible: new Set(),
       text: new Set(),
       textContainer: new Set(),
@@ -1201,6 +1214,57 @@ export function computeNamingPlan(section, options) {
       return;
     }
 
+    // 透明热区：被纯色遮罩裁出来、盖着一张压暗封面的可点区域（视频播放区）。
+    //
+    // 位置很讲究，前面有三个档会把它抢走，一个一个试出来的：
+    //   img/ 系列（paintedBlock / wholeGroupArt / imgPattern）——
+    //     热区子树无文字、里面那张封面带图片填充，正中 img/ 判据，整块被当成
+    //     一张图切走，下游拿到压暗封面，点不了、视频也播不了
+    //   btn/ —— 热区做成组件实例时（新稿「点击视频播放弹出区域」446×247）近方形、
+    //     <900px，正中 btnPattern，被判成 btn/ 再被 btnBackground 把两个子层
+    //     拆成 img/…-底 和 img/…-底-2
+    //   功能词档 —— **最靠前的那个**，也是最后才发现的。这些区域名字里带「点击」，
+    //     而功能词表里「按钮/点击/btn/button」那一行的候选正是 ["btn", "hot"]，
+    //     于是 confidentPrefix 直接给了 btn。名字早就摆明了这里有歧义，
+    //     真正能分开的是形态，所以 hot/ 必须排在功能词档前面
+    //     （诊断过程见 scripts/diag-hot-leak.mjs）
+    //
+    // hot/ 判据比上面几条都具体（纯色遮罩 + 压暗封面 + 溢出裁切三条同时成立），
+    // 越具体的越先判。
+    //
+    // 样本不足（参照页 hot/ 真值 = 0，只有新稿 7 个形态），所以一律落
+    // needsRecheck 让人确认，不进「可直接改」。判据本身见 shape.mjs 的 hotZonePattern。
+    //
+    // 不生成 @go= / @link=：那两个参数的值是前端的状态机命名，稿子里没有这个
+    // 信息，编一个会引出 P0 的 N-NAV-TARGET-MISSING。产出就是光秃秃的 hot/<名字>。
+    const hotZone = underClaimedArtOrButton(node) ? null : hotZonePattern(node);
+    if (hotZone) {
+      const body = sanitizeBody(node.name);
+      const name = body ? `hot/${body}` : null;
+      if (name && nameValid(name, "hot")) {
+        const claim = addClaim(node, {
+          tier: "hotZone",
+          prefix: "hot",
+          evidence: `一块自己不涂色的区域（${hotZone.size}），里面是纯色遮罩 + 一张被裁掉一圈`
+            + `、还压着半透明压暗层的封面图——这是「盖在画面上的可点区域」的形态。`
+            + `七份缓存稿实测这个形态只在新稿的视频播放区上出现（命中 8 个，全部是播放区）。`,
+        }, "needsRecheck",
+        `热区判据的样本只有这一份稿子里的视频播放区，别的稿子一个 hot/ 都没标过，`
+          + `所以这条拿不出精度数字。请确认这块区域是不是真的可点（点了会播放视频 / 跳转）。`
+          + `如果它只是一张压暗的封面图，那应该是 img/。`,
+        { subtreeFunctionWords, subtreeRepeats });
+        if (claim) {
+          state.tierHits.hotZone = (state.tierHits.hotZone || 0) + 1;
+          claim.candidatePrefixes = ["hot", "img"];
+        }
+        // 关子树：热区整块就是一个可点区域，里面那张封面不单独切。
+        // 用户 2026-08-12：「暂定不要」——那张图名字是 PS 默认名、上面压着 60% 遮罩，
+        // 切出来是压暗版，不是设计师想要的素材。
+        for (const child of children) markSubtree(state.accounting.claimedSubtree, child);
+        return;
+      }
+    }
+
     // 祖先已经是 img/ 或 btn/ 的层，功能词档整档跳过——不给名字，也不出条目。
     //
     // 只把 confident 置空还不够：那些层照样落进「需要确认」，人看到的是
@@ -1477,7 +1541,22 @@ export function computeNamingPlan(section, options) {
     //   btn/ 祖先 —— 用户第 8 条「已经是 btn 了，下面的东西如果没有文案，
     //                直接以 img 图片的形式整合命名」，整合 = 跟着按钮走，不单独出条目
     // 不加这两条会冒出一堆 btn/源器 里的 Union/Subtract 碎片（mobile 实测 +20 条）。
-    if (!hasFunctionWords && !underClaimedArtOrButton(node)
+    // 裹着热区的壳不给 img/ —— 这道守卫要挡住 img/ 家族的**每一档**，不能只挡一档。
+    //
+    // 同 wrapsConfirmedButton 那条的道理：新稿「视频框」里装着热区 +
+    // 一张底图 +「播放按钮」，壳自己符合 img/ 判据，于是整块被判成 img/
+    // 并关掉子树——热区判据根本走不到，下游拿到一张压暗封面，点不了、视频也播不了。
+    // 实测去掉这道守卫，新稿 4 个热区丢 3 个（scripts/diag-hot-in-walk.mjs）。
+    //
+    // 之所以放在这里而不是只放在 imgPattern 那一档：壳子简单一点（只有热区 +
+    // 一张底图、子树无文字）时先中的是 wholeGroupArt，不是 imgPattern。
+    // 只挡 imgPattern 的话这种壳照样把热区吃掉——测试就是这么抓到的。
+    const wrapsHotZone = (node.children || []).some(function deep(child) {
+      if (hotZonePattern(child)) return true;
+      return (child.children || []).some(deep);
+    });
+
+    if (!hasFunctionWords && !underClaimedArtOrButton(node) && !wrapsHotZone
       && wholeGroupIsArt(node, hasFunctionWords, imgSubtreeCount(node), sectionSubtreeCount)) {
       const claim = addClaim(node, {
         tier: "wholeGroupArt",
@@ -1502,9 +1581,28 @@ export function computeNamingPlan(section, options) {
       if (artBlocks) {
         for (const art of artBlocks) {
           if (scanSubtreeFunctionWords(art, COMPONENT_ROLE_BY_NAME).hits.length) continue;
+          // 图标砖不登记成美术块。它是「文字旁边的一个图标按钮」——
+          // 人判过的东西（箭头、icon、框1 全是点得动的按钮），真值也是：
+          // 参照页四帧上这个形态 36 层全是 btn/（scripts/mine-cluster-*.mjs）。
+          // 不挡的话 artBesideText 把它整块切走（img/），下游拿到一张点不了的图。
+          // 挡下来之后它走正常路径，由 btnPattern 在 btn/ 档接走。
+          if (iconTilePattern(art)) continue;
           pendingArtBesideText.set(art.id, node.name);
         }
       }
+    }
+
+    // 同上：imgPattern 这一档也要挡（wrapsHotZone 在 wholeGroupArt 前面就算好了）。
+    if (imgPattern(node) && wrapsHotZone) {
+      state.unknown.push(createEntry(node, "unknown", {
+        prefix: null,
+        tier: null,
+        evidence: null,
+        reason: null,
+        excludedReasons: ["子树里裹着一块可点热区，这层是壳不是图；给它 img/ 会把热区一起切走"],
+      }));
+      for (const child of children) walk(child, node.type, node);
+      return;
     }
 
     if (imgPattern(node)) {
@@ -1746,7 +1844,10 @@ export function computeNamingPlan(section, options) {
 
   moveEntriesToPending();
   collectCarouselSuspicions(section);
-  if (hasText(section)) state.accounting.textContainer.add(section.id);
+  // 分区根一律归 sectionRoot，不再看它含不含文字。
+  // 原来写的是 `if (hasText(section)) ... textContainer.add(...)`，
+  // 不含文字的根就一个桶都不进、掉进 D2 兜底抛错。
+  state.accounting.sectionRoot.add(section.id);
 
   // D1 反证：轮播嫌疑命中的认领条目一律降级到 ③（只降级、不改名、不删条目）。
   const suspicionNodeIds = new Set();
@@ -1816,6 +1917,9 @@ export function computeNamingPlan(section, options) {
 
   // D2 全量层数核算：分区内每个节点必须且只能归入一类。
   for (const node of allSectionNodes(section)) {
+    // 分区根排在最前面：它已经单独归桶了，再往下走会被别的桶重复收一次，
+    // D2 是按各桶 size 求和的，双计当场就是「accounting 总数 != 分区总层数」。
+    if (state.accounting.sectionRoot.has(node.id)) continue;
     if (state.accounting.invisible.has(node.id) || state.accounting.ref.has(node.id)) continue;
     if (state.accounting.componentDef.has(node.id)) continue;
     if (state.accounting.artFragment.has(node.id)) continue;
@@ -1849,6 +1953,7 @@ export function computeNamingPlan(section, options) {
     state.accounting.other.add(node.id);
   }
   for (const node of allSectionNodes(section)) {
+    if (state.accounting.sectionRoot.has(node.id)) continue;
     if (state.accounting.invisible.has(node.id) || state.accounting.ref.has(node.id)) continue;
     if (state.accounting.componentDef.has(node.id)) continue;
     if (state.accounting.artFragment.has(node.id)) continue;
@@ -1869,6 +1974,7 @@ export function computeNamingPlan(section, options) {
     pending: state.accounting.pending.size,
     claimedSubtree: state.accounting.claimedSubtree.size,
     followsMaster: state.accounting.followsMaster.size,
+    sectionRoot: state.accounting.sectionRoot.size,
     invisible: state.accounting.invisible.size,
     text: state.accounting.text.size,
     textContainer: state.accounting.textContainer.size,

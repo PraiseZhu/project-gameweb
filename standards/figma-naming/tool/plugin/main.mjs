@@ -77,7 +77,8 @@ function postVersions() {
 }
 
 function sendCandidates() {
-  const selection = figma.currentPage.selection[0] ?? null;
+  const all = figma.currentPage.selection ?? [];
+  const selection = all[0] ?? null;
   const change = onSelectionChange(
     { result: null, selectedCandidateId },
     selection,
@@ -87,7 +88,57 @@ function sendCandidates() {
     selectionName: selection?.name ?? null,
     candidates: change.candidates,
     runTarget: change.runTarget,
+    // 人工指认区要的信息。跟候选根走同一条消息，不另开一条——
+    // 两条各自到达时界面会出现「候选根已更新、指认区还是上一次的选中」。
+    //
+    // selectionCount 要的是**全部**选中数，不是 selection[0]：
+    // 选中多个时得能说出「选了 N 个」，只看第一个的话 UI 分不出
+    // 「选了 1 个」和「选了 5 个」。
+    selectionCount: all.length,
+    selectionNode: selection ? describeMarkTarget(selection) : null,
   });
+}
+
+/**
+ * 把选中的层描述给 UI，供「标为弹窗」用。
+ *
+ * marked 读的是已经存在这层上的裁决——按钮要据此决定「取消标记」能不能点，
+ * 也要让人看见这层已经标过什么，免得重复标。
+ */
+function describeMarkTarget(node) {
+  let marked = null;
+  try {
+    const raw = node.getSharedPluginData?.(SHARED_NS, VERDICT_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.kind === "correct" && parsed.prefix) {
+        marked = `${parsed.prefix}/${parsed.body ?? parsed.nodeNameAtVerdict ?? ""}`;
+      }
+    }
+  } catch {
+    // 存坏了就当没标过：这里只影响按钮亮不亮，不该把整个选中处理搞挂。
+    marked = null;
+  }
+  return {
+    id: node.id,
+    name: node.name,
+    type: node.type,
+    marked,
+    // 名字是 Figma 自动名时 UI 要提醒（但不阻止）——
+    // 标签库里留一条「modal/Frame 123」没人看得懂。
+    isDefaultName: isFigmaDefaultName(node.name),
+  };
+}
+
+/**
+ * Figma 给新图层的默认名：`Frame 123` / `Group 5` / `Rectangle 12` 这类。
+ *
+ * 只认「英文类型名 + 空格 + 数字」和光秃秃的类型名两种，不做更聪明的推断——
+ * 这里只是给个提醒，判宽了会对着设计师起的正常名字唠叨。
+ */
+const DEFAULT_NAME_RE = /^(Frame|Group|Rectangle|Ellipse|Vector|Line|Star|Polygon|Union|Subtract|Intersect|Exclude|Component|Instance|Slice|Text|Mask group)(\s+\d+)?$/i;
+function isFigmaDefaultName(name) {
+  return DEFAULT_NAME_RE.test(String(name ?? "").trim());
 }
 
 function initializeUi() {
@@ -473,6 +524,92 @@ function handleUiMessage(msg) {
     runAsync("导出裁决", exportVerdicts());
     return;
   }
+  // 人工指认：选中一个 frame，一键标成 modal/。
+  //
+  // modal/ 走人工而不是判据，是量过之后的结论——弹窗和页面分区在静态几何上
+  // 没有稳定差别（五个方向全塌，见 scripts/probe-modal-*.mjs）。
+  if (msg?.type === "mark-node") {
+    runAsync("标记图层", markNode(msg));
+    return;
+  }
+  if (msg?.type === "mark-node-clear") {
+    runAsync("取消标记", clearMarkedNode(msg));
+    return;
+  }
+}
+
+/**
+ * 把选中的层标成某个前缀，落进既有裁决链路。
+ *
+ * 这一下和人在需确认区点「改成 modal/」完全等价：同样是一条
+ * kind:"correct" 的裁决，同样存 sharedPluginData，同样由「导出裁决」
+ * → merge-verdicts.mjs 并进 data/user-labels.json。不新建存储/导出/合并。
+ *
+ * body 用图层原名，不编（用户新稿里两个弹窗都叫「视频弹窗」→ modal/视频弹窗）。
+ * validateVerdict 会挡住不在规范 15 个前缀里的值，这里不重复校验。
+ */
+async function markNode(msg) {
+  const node = await figma.getNodeByIdAsync(msg.nodeId);
+  if (!node || typeof node.setSharedPluginData !== "function") {
+    figma.ui.postMessage({
+      type: "mark-saved", ok: false, nodeId: msg.nodeId,
+      nodeName: msg.nodeName ?? "", reason: "找不到这一层（可能已被删除）",
+    });
+    return;
+  }
+  // 名字从**活节点**上读，不用 UI 传来的那个：面板上的信息可能是几秒前的，
+  // 这中间人可能在 Figma 里改过名。nodeNameAtVerdict 记错会让过期检测失灵。
+  const liveName = node.name;
+  const checked = validateVerdict({
+    nodeId: msg.nodeId,
+    kind: "correct",
+    prefix: msg.prefix,
+    body: liveName,
+    nodeNameAtVerdict: liveName,
+    note: `人工指认：在面板上直接标为 ${msg.prefix}/`,
+    at: new Date().toISOString().slice(0, 10),
+  });
+  if (!checked.ok) {
+    figma.ui.postMessage({
+      type: "mark-saved", ok: false, nodeId: msg.nodeId,
+      nodeName: liveName, reason: checked.reason,
+    });
+    return;
+  }
+  node.setSharedPluginData(SHARED_NS, VERDICT_KEY, JSON.stringify(checked.verdict));
+  figma.ui.postMessage({
+    type: "mark-saved",
+    ok: true,
+    cleared: false,
+    nodeId: msg.nodeId,
+    nodeName: liveName,
+    newName: `${checked.verdict.prefix}/${checked.verdict.body}`,
+  });
+}
+
+/**
+ * 取消标记：把这层的裁决清掉。
+ *
+ * 标错了要能撤，不然人得去改 JSON。写空串而不是别的哨兵值——
+ * 读取侧（describeMarkTarget / exportVerdicts）都是「空就当没标过」。
+ */
+async function clearMarkedNode(msg) {
+  const node = await figma.getNodeByIdAsync(msg.nodeId);
+  if (!node || typeof node.setSharedPluginData !== "function") {
+    figma.ui.postMessage({
+      type: "mark-saved", ok: false, nodeId: msg.nodeId,
+      nodeName: msg.nodeName ?? "", reason: "找不到这一层（可能已被删除）",
+    });
+    return;
+  }
+  node.setSharedPluginData(SHARED_NS, VERDICT_KEY, "");
+  figma.ui.postMessage({
+    type: "mark-saved",
+    ok: true,
+    cleared: true,
+    nodeId: msg.nodeId,
+    nodeName: node.name,
+  });
 }
 
 async function saveVerdict(msg) {
