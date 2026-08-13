@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const DEMO = join(ROOT, 'demos', 'yise-ss5-preview');
+const HAS_DEMO = existsSync(join(DEMO, 'truth.json')) && existsSync(join(DEMO, 'spec.json'));
+if (!HAS_DEMO) console.log('[skip] hero-scroll-slot: 缺私有 demo fixture（source-only 发布不含 demo 树）；公开门已由合成 fixture 与 source 契约覆盖，fail-closed 跳过');
 
 const unwrap = (v) => {
   if (v && typeof v === 'object' && !Array.isArray(v) && 'value' in v && v.provenance) return unwrap(v.value);
@@ -14,7 +16,7 @@ const unwrap = (v) => {
   return v;
 };
 
-test('hero scroll-slot 的 Node 守卫来自 page frame 结构而不是 demo 命名', () => {
+test('hero scroll-slot 的 Node 守卫来自 page frame 结构而不是 demo 命名', { skip: !HAS_DEMO }, () => {
   const truth = unwrap(JSON.parse(readFileSync(join(DEMO, 'truth.json'), 'utf8')));
   const render = readFileSync(join(ROOT, 'templates', 'figma-render.js'), 'utf8');
   const pc = truth.platforms?.pc || truth;
@@ -39,7 +41,7 @@ test('hero scroll-slot 的 Node 守卫来自 page frame 结构而不是 demo 命
   assert.doesNotMatch(render, /slotOffset/);
 });
 
-test('无 tablet Figma truth 时 spec 明确记录 fallback/TODO', () => {
+test('无 tablet Figma truth 时 spec 明确记录 fallback/TODO', { skip: !HAS_DEMO }, () => {
   const spec = JSON.parse(readFileSync(join(DEMO, 'spec.json'), 'utf8'));
   const tablet = (spec.adaptation?.knownDeviations || []).find((x) => String(x.item || '').includes('tablet'));
   assert.ok(tablet, '缺 tablet 适配台账');

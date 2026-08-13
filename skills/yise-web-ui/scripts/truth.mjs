@@ -7,7 +7,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { failJson, failProblems, isPlainObject, safeJsonForScript, stableJson } from './lib/fs-utils.mjs';
 import { validateTruth } from './lib/schema.mjs';
@@ -56,7 +56,7 @@ if (allIdx !== -1) {
     let parsed = null;
     try { parsed = JSON.parse(res.stdout); } catch {}
     results.push({
-      demo: dir.split('/').pop(),
+      demo: basename(dir),
       ok: res.status === 0,
       drift: parsed?.drift ?? null,
       driftedPaths: parsed?.driftedPaths ?? undefined,

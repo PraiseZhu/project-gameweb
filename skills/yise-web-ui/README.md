@@ -14,6 +14,12 @@ also wires the directory's click-to-section and scroll-following selected state;
 it fails closed instead of guessing incomplete target or variant evidence.
 See [docs/skill-architecture.md](docs/skill-architecture.md).
 
+Semantic title line breaks are not inferred intelligently across languages. They
+are explicit node+locale truth only; the current validated Etheria example has
+two approved Japanese section-03 breaks, while other titles use source/Figma,
+translation, font, slot, and CSS behavior or remain evidence-gated. See
+[docs/semantic-line-break-contract.md](docs/semantic-line-break-contract.md).
+
 高保真可交互 QA demo 工作流（Claude Code skill）——从产品源码机械提取带 provenance 的真值、
 生成可交互 HTML demo、七道门自动验收、部署后产出防伪的 PR 附贴块，让 reviewer 不启动沙盒
 就能完整走一遍功能。
@@ -43,6 +49,27 @@ UI 功能 PR 的验证有两个老大难：
   输入漂移、增量报告冒充全量、脚本被篡改、部署旧版,全部拒绝出块。
 
 ## 快速开始
+
+**干净机器上手（推荐一条命令）**：你只需给三样——Figma 设计/帧链接、只读 `FIGMA_TOKEN`、翻译表（可选）。
+
+```bash
+# 0) 一次性：设只读 token（只需 file_content/file_metadata/file_versions:read，不要写权限）。
+#    方式 A：环境变量   export FIGMA_TOKEN=<read-only-figma-token>
+#              Windows: set FIGMA_TOKEN=<read-only-figma-token>
+#    方式 B：在工作区根放 .env，写一行  FIGMA_TOKEN=<read-only-figma-token>
+#              token 绝不写进任何产物
+
+# 1) 上手：规格化链接 → 生成 demo 骨架 → 填 spec.figma → 可选导入翻译表 → 预检
+node scripts/onboard.mjs --dir <demo-dir> \
+  --figma-url "https://www.figma.com/design/<fileKey>/<标题>?node-id=1-15" \
+  --translation <翻译表.csv|json>            # 可选；.xlsx 请先「另存为 CSV UTF-8」
+
+# 2) 拉取设计稿快照（联网只读）+ 预检（token / fileKey 可达性）
+node scripts/figma-fetch.mjs --demo <demo-dir>
+node scripts/onboard.mjs --demo <demo-dir> --check
+```
+
+翻译表约定：首行是语言列表头，支持 `zh-CN / en / ko / ja / zh-TW` 及常见别名（简中/英文/韩文/日文/繁中…）；首列须为简中（作为匹配分母）。`.xlsx` 不直接读（本 Skill 零外部依赖），另存为 UTF-8 CSV 即可。Windows 上也只用上面的 Node 命令把 CSV/JSON 文件路径交给 `onboard.mjs`，不要用 `Get-Content | node`、`ConvertFrom-Json`、`Set-Content` 这类 PowerShell 文本管道处理中文 JSON。
 
 ```bash
 # 1. 脚手架(生成 spec/extract/index 四件套骨架,内联标准 chrome 运行时)

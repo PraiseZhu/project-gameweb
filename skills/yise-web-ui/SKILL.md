@@ -76,6 +76,14 @@ merged into an older page fixture.
 
 Multilingual typography is a separate verification axis from copy mapping. Preserve Figma TEXT style and `autoResize`; report font/glyph/weight availability and measured browser range before making any fit or visual claim. The reusable translation interface is `scripts/lib/translation/index.mjs`; see `docs/translation-skill-typography.md` and `docs/typography-diagnostics.md`.
 
+Semantic title line breaks are explicit evidence, not a broad multilingual
+segmentation feature. Only consume `semantic-layout/v1` entries keyed by exact
+node id and locale; do not infer line breaks from string length, language,
+viewport, or neighboring examples. The current validated Etheria example scope
+is limited to two approved Japanese section-03 card-title breaks. Other title
+behavior remains source/Figma, translation, font, slot, and CSS driven or
+evidence-gated. See `docs/semantic-line-break-contract.md`.
+
 Hero scroll motion is a separate reusable capability. Use `scripts/lib/hero-scroll-slot.mjs` and the renderer's state attributes to verify `HERO_LOCKED -> HERO_EXITING -> CONTENT_RELEASED`, including resize and return-to-top. A DOM count or static screenshot does not prove the slot; the Chrome gate must measure later-section visibility and all state transitions. Figma is the static geometry truth, while any official-site observation is behavior reference only.
 
 Motion behavior follows a three-way evidence boundary: Figma truth proves static end state, real Chrome or authoritative bundle measurements prove observed behavior, and a local adapter proves only semantic wiring. Generic keyframes must preserve captured Figma transforms by composing through `translate`/`scale`; scroll observers must use the actual app scroll container; gates must cover desktop, tablet fallback/truth, mobile fallback, and reduced-motion before claiming reusable motion fidelity.

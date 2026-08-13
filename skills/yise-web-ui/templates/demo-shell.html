@@ -58,10 +58,22 @@ window.__qaDemo = {
 };
 </script>
 <script>
+/* FIGMA_RENDER_BEGIN — 通用渲染器,由 figma-inline.mjs 机械内联;勿手改。
+   升级:node <skill>/scripts/figma-inline.mjs --demo <dir> --only render */
+{{FIGMA_RENDER}}
+/* FIGMA_RENDER_END */
+</script>
+<script>
 /* QA_CHROME_BEGIN — 标准 chrome 运行时,由 init.mjs 内联;勿手改。
    升级:node <skill>/scripts/init.mjs --dir <demo-dir> --update-chrome */
 {{QA_CHROME}}
 /* QA_CHROME_END */
+</script>
+<script>
+/* FIGMA_CHROME_BEGIN — Figma 验收壳,由 figma-inline.mjs 机械内联;勿手改。
+   升级:node <skill>/scripts/figma-inline.mjs --demo <dir> --only chrome */
+{{FIGMA_CHROME}}
+/* FIGMA_CHROME_END */
 </script>
 </body>
 </html>

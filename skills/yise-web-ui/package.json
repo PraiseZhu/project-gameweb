@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "onboard": "node scripts/onboard.mjs",
+    "onboard:check": "node scripts/onboard.mjs --check",
     "release:audit": "node scripts/public-release-audit.mjs",
     "prototype:truth": "node scripts/figma-prototype-truth.mjs",
     "prototype:audit": "node scripts/figma-prototype-truth.mjs --require-observed",

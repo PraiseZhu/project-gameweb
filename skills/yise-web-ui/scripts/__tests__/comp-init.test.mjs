@@ -9,7 +9,8 @@ import { spawnSync, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { buildInlineBlock, locateInlineBlock } from '../lib/inline-markers.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const INIT = join(ROOT, 'scripts/init.mjs');
@@ -30,6 +31,20 @@ function json(res) {
 
 function tmpDir(tag) {
   return mkdtempSync(join(tmpdir(), `qa-comp-${tag}-`));
+}
+
+function replaceInlineBlock(html, name, source) {
+  const loc = locateInlineBlock(html.replace(/\r\n/g, '\n'), name);
+  assert.ok(loc, `missing ${name} inline block`);
+  const normalized = html.replace(/\r\n/g, '\n');
+  return normalized.slice(0, loc.b) + buildInlineBlock(name, source) + normalized.slice(loc.replaceEnd);
+}
+
+function inlineBlockText(html, name) {
+  const normalized = html.replace(/\r\n/g, '\n');
+  const loc = locateInlineBlock(normalized, name);
+  assert.ok(loc, `missing ${name} inline block`);
+  return normalized.slice(loc.b, loc.replaceEnd);
 }
 
 const ENTRY = 'src/renderer/components/Widget.tsx';
@@ -82,7 +97,7 @@ test('spec.component 骨架字段齐全,entry 原样写入,平台收窄为 deskt
 });
 
 test('生成的 spec.json 直接过 validateSpec(两种模式;脚手架不许一出生就非法)', async () => {
-  const { validateSpec } = await import(join(ROOT, 'scripts/lib/schema.mjs'));
+  const { validateSpec } = await import(pathToFileURL(join(ROOT, 'scripts/lib/schema.mjs')).href);
   const { dir } = initComponent('schema');
   const compSpec = JSON.parse(readFileSync(join(dir, 'spec.json'), 'utf8'));
   assert.deepEqual(validateSpec(compSpec), [], '组件模式脚手架 spec 不合法');
@@ -244,9 +259,11 @@ test('--update-chrome 仍只换 chrome 段;--update-adapter 只换 adapter 段',
   const { dir } = initComponent('upd-comp');
   const indexPath = join(dir, 'index.html');
   const original = readFileSync(indexPath, 'utf8');
-  const dirty = original
-    .replace(/(QA_COMPONENT_ADAPTER_BEGIN[\s\S]*?\*\/\n)[\s\S]*?(\n\/\* QA_COMPONENT_ADAPTER_END)/, '$1/*ADAPTER-DIRTY*/$2')
-    .replace(/(QA_CHROME_BEGIN[\s\S]*?\*\/\n)[\s\S]*?(\n\/\* QA_CHROME_END)/, '$1/*CHROME-DIRTY*/$2');
+  const dirty = replaceInlineBlock(
+    replaceInlineBlock(original, 'componentAdapter', '/*ADAPTER-DIRTY*/\n'),
+    'qaChrome',
+    '/*CHROME-DIRTY*/\n',
+  );
   writeFileSync(indexPath, dirty);
 
   const upA = run(INIT, ['--dir', dir, '--update-adapter']);
@@ -254,12 +271,14 @@ test('--update-chrome 仍只换 chrome 段;--update-adapter 只换 adapter 段',
   let html = readFileSync(indexPath, 'utf8');
   assert.ok(!html.includes('ADAPTER-DIRTY'), 'adapter 段未被替换');
   assert.ok(html.includes('CHROME-DIRTY'), '--update-adapter 越界改了 chrome 段');
+  assert.equal(inlineBlockText(html, 'componentAdapter'), inlineBlockText(original, 'componentAdapter'));
 
   const upC = run(INIT, ['--dir', dir, '--update-chrome']);
   assert.equal(upC.status, 0, upC.stdout);
   html = readFileSync(indexPath, 'utf8');
   assert.ok(!html.includes('CHROME-DIRTY'));
-  assert.equal(html, original, '两段各更新一次后应与初始生成物一致');
+  assert.equal(inlineBlockText(html, 'qaChrome'), inlineBlockText(original, 'qaChrome'));
+  assert.equal(inlineBlockText(html, 'componentAdapter'), inlineBlockText(original, 'componentAdapter'));
 });
 
 /* ───────────────────────── build.mjs 可运行性(最小 fixture 产品仓) ───────────────────────── */

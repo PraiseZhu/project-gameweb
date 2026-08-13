@@ -26,6 +26,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { failJson } from './lib/fs-utils.mjs';
+import { INLINE_MARKERS, buildInlineBlock, locateInlineBlock, markerFor } from './lib/inline-markers.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -45,15 +46,25 @@ const updateAdapter = args.includes('--update-adapter');
 const inlineSafe = (code) => code.replaceAll('</script', '<\\/script');
 const chromeJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/qa-chrome.js'), 'utf8'));
 const adapterJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/qa-component-adapter.js'), 'utf8'));
+// Figma 通用渲染器 + 验收壳:由 init 按 canonical 契约(inline-markers.mjs)内联,与 figma-inline 同源。
+const figmaRenderJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates', INLINE_MARKERS.render.template), 'utf8'));
+const figmaChromeJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates', INLINE_MARKERS.chrome.template), 'utf8'));
 
 /** 只替换 index.html 里某个标记段(chrome / adapter 共用一套语义)。 */
 function replaceMarkedBlock(marker, code, flag) {
   const indexPath = join(dir, 'index.html');
   if (!existsSync(indexPath)) failJson(`${flag} 需要已存在的 index.html:${indexPath}`);
-  const html = readFileSync(indexPath, 'utf8');
-  const re = new RegExp(`(\\/\\* ${marker}_BEGIN[\\s\\S]*?\\*\\/\\n)[\\s\\S]*?(\\n\\/\\* ${marker}_END \\*\\/)`);
-  if (!re.test(html)) failJson(`index.html 缺 ${marker}_BEGIN/END 标记段——不是 init.mjs 生成的结构(或不是组件模式 demo),手动升级`);
-  writeFileSync(indexPath, html.replace(re, `$1${code}$2`));
+  const markerName = marker === 'QA_CHROME' ? 'qaChrome'
+    : marker === 'QA_COMPONENT_ADAPTER' ? 'componentAdapter'
+      : null;
+  if (!markerName) failJson(`未知内联段 ${marker}`);
+  const html = readFileSync(indexPath, 'utf8').replace(/\r\n/g, '\n');
+  const loc = locateInlineBlock(html, markerName);
+  if (!loc) {
+    const part = markerFor(markerName);
+    failJson(`index.html 缺 ${part.begin} / ${part.end} 标记段——不是 init.mjs 生成的结构(或不是组件模式 demo),手动升级`);
+  }
+  writeFileSync(indexPath, html.slice(0, loc.b) + buildInlineBlock(markerName, code) + html.slice(loc.replaceEnd), 'utf8');
   console.log(JSON.stringify({ ok: true, updated: indexPath, block: marker }));
   process.exit(0);
 }
@@ -218,6 +229,20 @@ let shell = readFileSync(join(SKILL_ROOT, isComponent ? 'templates/component-she
   .replaceAll('{{PR}}', pr ? String(Number(pr)) : 'null');
 if (isComponent) shell = shell.replace('{{QA_COMPONENT_ADAPTER}}', adapterJs);
 shell = shell.replace('{{QA_CHROME}}', chromeJs);
+shell = shell.replace('{{FIGMA_RENDER}}', figmaRenderJs);
+shell = shell.replace('{{FIGMA_CHROME}}', figmaChromeJs);
+for (const [markerName, source] of Object.entries({
+  ...(isComponent ? { componentAdapter: adapterJs } : {}),
+  qaChrome: chromeJs,
+  render: figmaRenderJs,
+  chrome: figmaChromeJs,
+})) {
+  const loc = locateInlineBlock(shell.replace(/\r\n/g, '\n'), markerName);
+  if (loc) {
+    const normalized = shell.replace(/\r\n/g, '\n');
+    shell = normalized.slice(0, loc.b) + buildInlineBlock(markerName, source) + normalized.slice(loc.replaceEnd);
+  }
+}
 writeFileSync(join(dir, 'index.html'), shell);
 
 // 组件模式四件套:build.mjs / src/bootstrap.tsx / shims 骨架

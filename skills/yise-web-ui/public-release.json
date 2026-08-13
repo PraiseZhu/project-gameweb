@@ -11,6 +11,7 @@
     "package.json",
     "package-lock.json",
     "scripts/",
+    "scripts/onboard.mjs",
     "templates/",
     "docs/",
     "fonts/"

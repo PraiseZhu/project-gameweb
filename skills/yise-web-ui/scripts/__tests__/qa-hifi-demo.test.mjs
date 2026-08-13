@@ -5,7 +5,7 @@ import { copyFileSync, mkdtempSync, writeFileSync, mkdirSync, readFileSync, syml
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createSafeStaticServer } from '../lib/safe-server.mjs';
 import { hashFile, safeJsonForScript, stableJson } from '../lib/fs-utils.mjs';
 import { comparePngs } from '../lib/png-compare.mjs';
@@ -142,7 +142,14 @@ test('P0-9 safe static server blocks encoded traversal and symlink escape', asyn
   const outsideDir = tmpDemo('outside');
   const outsideFile = join(outsideDir, 'secret.txt');
   writeFileSync(outsideFile, 'secret');
-  symlinkSync(outsideFile, join(dir, 'secret-link.txt'));
+  try {
+    symlinkSync(outsideFile, join(dir, 'secret-link.txt'));
+  } catch (error) {
+    if (error?.code === 'EPERM') {
+      return; // Windows without Developer Mode/admin cannot create symlinks.
+    }
+    throw error;
+  }
   const srv = createSafeStaticServer(dir);
   const base = await srv.listen();
   try {
@@ -491,7 +498,8 @@ function writeWritebackDemo() {
     join(dir, 'extract.mjs'),
     `import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-const src = new URL('consts.txt', import.meta.url).pathname;
+import { fileURLToPath } from 'node:url';
+const src = fileURLToPath(new URL('consts.txt', import.meta.url));
 const content = readFileSync(src, 'utf8');
 const width = Number(/width:\\s*(\\d+)/.exec(content)[1]);
 const hash = createHash('sha256').update(readFileSync(src)).digest('hex');
@@ -748,7 +756,7 @@ test('extract-helpers: findRepoRoot 走 git,与目录深度解耦', () => {
   const nested = join(repo, 'docs/design-previews/x-hifi');
   mkdirSync(nested, { recursive: true });
   const probe = join(nested, 'probe.mjs');
-  writeFileSync(probe, `import { findRepoRoot } from ${JSON.stringify(join(ROOT, 'scripts/lib/extract-helpers.mjs'))};\nprocess.stdout.write(findRepoRoot());\n`);
+  writeFileSync(probe, `import { findRepoRoot } from ${JSON.stringify(pathToFileURL(join(ROOT, 'scripts/lib/extract-helpers.mjs')).href)};\nprocess.stdout.write(findRepoRoot());\n`);
   const res = run(probe, [], { cwd: nested });
   assert.equal(res.status, 0, res.stdout + res.stderr);
   assert.equal(execFileSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim(), res.stdout.trim());
@@ -759,7 +767,7 @@ test('extract-helpers: makeLeaf 产出可过 validateTruth 的 provenance;坏 lo
   const source = join(dir, 'consts.txt');
   writeFileSync(source, 'width: 16');
   const probe = join(dir, 'probe.mjs');
-  writeFileSync(probe, `import { makeLeaf } from ${JSON.stringify(join(ROOT, 'scripts/lib/extract-helpers.mjs'))};
+  writeFileSync(probe, `import { makeLeaf } from ${JSON.stringify(pathToFileURL(join(ROOT, 'scripts/lib/extract-helpers.mjs')).href)};
 const ok = makeLeaf(16, ${JSON.stringify(source)}, { locator: 'w', locatorPattern: 'width:\\\\s*(\\\\d+)', demoDir: ${JSON.stringify(dir)} });
 let badCaught = false;
 try { makeLeaf(1, ${JSON.stringify(source)}, { locator: 'w', locatorPattern: '(a)(b)', demoDir: ${JSON.stringify(dir)} }); } catch { badCaught = true; }
