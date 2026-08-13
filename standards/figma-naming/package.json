@@ -12,6 +12,7 @@
     "test": "node --test test/*.test.mjs && node scripts/check-skill-sync.mjs",
     "test:private": "node scripts/run-private-tests.mjs",
     "rules": "node scripts/gen-rules-doc.mjs",
+    "proposals": "node scripts/derive-proposals.mjs",
     "check:skills": "node scripts/check-skill-sync.mjs",
     "build:plugin": "node scripts/build-plugin.mjs",
     "release:audit": "node scripts/public-release-audit.mjs"
