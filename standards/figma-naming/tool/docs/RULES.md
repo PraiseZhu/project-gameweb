@@ -1,8 +1,8 @@
 # 检查规则表
 
 > 本文件由 `npm run rules` 从 `src/rules.mjs` 生成，**不要手改**。
-> 依据规范：v2.7 (2026-08-07) — `spec/naming-spec.md`
-> 下游假定：A-v1.5 (2026-08-07) — `spec/consumer-assumptions.md`
+> 依据规范：v2.7 (2026-08-07) — `../spec/naming-spec.md`
+> 下游假定：A-v1.5 (2026-08-07) — `../spec/consumer-assumptions.md`
 
 ## 三个维度
 
@@ -58,119 +58,119 @@
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
 - **不改会怎样**：总表外的词不被识别（A0），这层声明的意图会被整个忽略——设计师以为标了，实际等于没标，而且不会有任何报错。真稿实测有 117 层因此静默失效。
 - **怎么改**：改成总表内的前缀；这层本就不需要被消费的话，去掉斜杠前的英文词；确实需要新语义的走规范升版加进总表。
-- **规范依据**：`spec/naming-spec.md` §4.3 ｜ **依赖假定**：A0（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §4.3 ｜ **依赖假定**：A0（见 `../spec/consumer-assumptions.md`）
 
 ### `N-PARAM-EMPTY` @参数缺值
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
 - **不改会怎样**：`@link=` / `@go=` / `@sec=` 后面空着，等于声明了动作却没说动作是什么。下游据此生成的元素点了没反应（A3），且不会报错。
 - **怎么改**：补上值，或去掉该参数。
-- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `../spec/consumer-assumptions.md`）
 
 ### `N-PARAM-BAD-VALUE` @参数取值不合法
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
 - **不改会怎样**：`@sec=` 必须是正整数、`@parallax=` 必须在 0–1、`@x`/`@y` 是纯标记不能带值。取值越界会让跳转指错分区或视差计算失真（依据 A3）。
 - **怎么改**：按 §2 参数表修正取值。
-- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `../spec/consumer-assumptions.md`）
 
 ### `N-SEC-DUP-NUMBER` 分区编号重复
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
 - **不改会怎样**：下游在体检根子树内搜集所有 `sec/`；两个分区同号时，竖排顺序取决于遍历顺序而非声明，且 `@sec=N` 跳转目标二义（A2）。
 - **怎么改**：重新编号，保证全稿唯一。
-- **规范依据**：`spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `../spec/consumer-assumptions.md`）
 
 ### `N-SEC-SCATTERED` 分区分散在多个逻辑父层
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
 - **不改会怎样**：下游在体检根子树内搜集 `sec/`，纯布局容器透明后仍要求形成单一编号序列（A2）。剩余分区分散在多个逻辑父层时，两组之间的交错顺序没有定义，页面顺序和导航跳转目标会不稳定。
 - **怎么改**：把偏离基准父层的 `sec/` 放回同一逻辑分区流（纯布局容器可以保留），或去掉不应参与分区流的 `sec/` 前缀。
-- **规范依据**：`spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `../spec/consumer-assumptions.md`）
 
 ### `N-SEC-NESTED` 分区嵌在语义节点内
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
 - **不改会怎样**：下游在体检根子树内搜集 `sec/`，但分区祖先链上已有语义前缀或另一个 `sec/` 时，分区归属二义（A2）。切图祖先会整块栅格化并丢失结构，`switch/`、`tab/`、`modal/` 内的内容也会被误当成页面分区。
 - **怎么改**：把该 `sec/` 移出带语义前缀的子树并放入逻辑分区流；如果它不是页面分区，去掉 `sec/` 前缀。
-- **规范依据**：`spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `../spec/consumer-assumptions.md`）
 
 ### `N-IND-NO-CAROUSEL` 作用域内没有轮播候选
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
 - **不改会怎样**：`ind/` 的作用域是最近的 `sec/` 祖先（没有时用体检根），作用域内没有任何 `switch/` 时，下游没有可绑定的轮播对象（A4），点击圆点不会驱动内容切换。`COMPONENT` / `COMPONENT_SET` 定义本身没有页面上下文，不适用这条联动判定。
 - **怎么改**：在同一作用域内把所属轮播容器命名成 `switch/<名称>`，或移除不再使用的 `ind/`。
-- **规范依据**：`spec/naming-spec.md` §1 ｜ **依赖假定**：A4（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 ｜ **依赖假定**：A4（见 `../spec/consumer-assumptions.md`）
 
 ### `N-IND-CAROUSEL-AMBIGUOUS` 作用域内轮播候选不唯一
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
 - **不改会怎样**：`ind/` 的作用域是最近的 `sec/` 祖先（没有时用体检根）。作用域内有多个 `switch/` 且指示器不在任一轮播内部时，下游无法确定绑定对象，可能把圆点联动到错误内容（A4）。`COMPONENT` / `COMPONENT_SET` 定义本身没有页面上下文，不适用这条联动判定。
 - **怎么改**：把指示器移进它对应的 `switch/<名称>` 内部，或拆分作用域使每组指示器只面对一个候选轮播。
-- **规范依据**：`spec/naming-spec.md` §1 ｜ **依赖假定**：A4（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 ｜ **依赖假定**：A4（见 `../spec/consumer-assumptions.md`）
 
 ### `N-NAV-TARGET-MISSING` @sec 指向的分区不存在
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
 - **不改会怎样**：导航项指向体检根子树里不存在的分区号，点击后滚动不到任何位置（A2）——验收时表现为导航失灵。
 - **怎么改**：改成实际存在的分区编号，或补上缺失的那屏 `sec/`。
-- **规范依据**：`spec/naming-spec.md` §1 / §2 ｜ **依赖假定**：A2（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 / §2 ｜ **依赖假定**：A2（见 `../spec/consumer-assumptions.md`）
 
 ### `N-PREFIX-CASE` 前缀大小写错误
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
 - **不改会怎样**：下游按小写匹配前缀（A0），`Img/` `BTN/` 不会被识别。该切的图不切、该接的交互不接，这层退化成普通图层。
 - **怎么改**：前缀改全小写。
-- **规范依据**：`spec/naming-spec.md` §1 / §4.1 ｜ **依赖假定**：A0（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 / §4.1 ｜ **依赖假定**：A0（见 `../spec/consumer-assumptions.md`）
 
 ### `N-PREFIX-SLASH` 分隔符不是半角斜杠（或斜杠两侧有空格）
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
 - **不改会怎样**：全角 ／、反斜杠 \、`img / 名称` 这类写法匹配不上前缀语法（A0），同上会退化成普通图层。
 - **怎么改**：改成半角 `/`，斜杠两侧不留空格。
-- **规范依据**：`spec/naming-spec.md` §1 / §4.1 ｜ **依赖假定**：A0（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 / §4.1 ｜ **依赖假定**：A0（见 `../spec/consumer-assumptions.md`）
 
 ### `N-PARAM-UNKNOWN` 未知 @参数
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
 - **不改会怎样**：不在参数表里的参数会被整个忽略，设计意图（跳转/视差/滑动方向）静默丢失（依据 A3）。
 - **怎么改**：改成建议的参数名，或删掉。
-- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `../spec/consumer-assumptions.md`）
 
 ### `N-PARAM-MISPLACED` @参数用在了不支持它的前缀上
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
 - **不改会怎样**：参数只在特定前缀上有意义（`@parallax` 只对 kv/、`@sec` 只对 btn/、`@x`/`@y` 只对 scroll/），挂错位置一律无效（依据 A3）。
 - **怎么改**：把参数挪到正确的前缀节点上，或改用该前缀支持的参数。
-- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `../spec/consumer-assumptions.md`）
 
 ### `N-SEC-NO-NUMBER` 分区缺编号
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
 - **不改会怎样**：下游在体检根子树内搜集所有 `sec/`，按 `sec/N-名称` 的编号排竖屏顺序（A2）。缺编号的分区无法参与确定排序，且导航 `@sec=N` 无法指向它。
 - **怎么改**：改成 `sec/<编号>-<名称>`，如 `sec/1-首屏`。
-- **规范依据**：`spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `../spec/consumer-assumptions.md`）
 
 ### `N-MODAL-INLINE` 弹窗叠画在页面稿上
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
 - **不改会怎样**：`modal/` 约定是独立 frame（A7）。叠在页面稿里会被当成页面的一部分参与分区与层序，正常态页面上就多出一个弹窗。
 - **怎么改**：把弹窗移成页面稿外的独立 frame。
-- **规范依据**：`spec/naming-spec.md` §1 ｜ **依赖假定**：A7（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 ｜ **依赖假定**：A7（见 `../spec/consumer-assumptions.md`）
 
 ### `N-SCROLL-NO-TRACK` 滑动区没有内容轨道
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
 - **不改会怎样**：下游把 `scroll/` 的第一个子层当内容轨道、轨道的直接子项当 item（A5）。空容器产不出 item，滑动区会是一片空白。
 - **怎么改**：在容器内放一层内容轨道组，item 作为它的直接子层。
-- **规范依据**：`spec/naming-spec.md` §1 ｜ **依赖假定**：A5（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 ｜ **依赖假定**：A5（见 `../spec/consumer-assumptions.md`）
 
 ### `N-NAME-DUPLICATE` 两个图层同名
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语义层
 - **不改会怎样**：命名是资产身份的来源（A1）。两个资产同名，下游按名字取用时无法确定拿到哪一个——切图会互相覆盖，引用会指向错误对象，而且不会报错。
 - **怎么改**：给其中一个换个能区分它们的名字。加数字后缀通常不够：`img/头像-1` 与 `img/头像-2` 若来自两组不同列表，编号并没说明它们各自是什么。
-- **规范依据**：`spec/naming-spec.md` §6 ｜ **依赖假定**：A1（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §6 ｜ **依赖假定**：A1（见 `../spec/consumer-assumptions.md`）
 
 ## 必须回答 · `must_answer`（1 条）
 
@@ -179,7 +179,7 @@
 - **级别**：P1 返工 ｜ **依据性质**：启发式（经验推断意图） ｜ **层面**：语义层
 - **不改会怎样**：命名是资产身份的来源（A1）；但 `ind/` 最近语义前缀已承载指示器点状构件的身份，同一图形的重复实例不需要逐叶声明。其它最近前缀下，带图像填充的叶子没有视觉前缀，资产标识只能由结构位置推断，改稿后引用会失配。
 - **怎么改**：确实要切的补 `img/`（或 `bg/` `kv/`）；`ind/` 最近前缀下的重复点状构件无需另加前缀；属于 `dyn/` 样例素材或参考稿的，把父层标 `dyn/` / `ref/` 让整棵子树豁免；不该出现在交付稿里的删掉。
-- **规范依据**：`spec/naming-spec.md` §0 / §1 ｜ **依赖假定**：A1（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §0 / §1 ｜ **依赖假定**：A1（见 `../spec/consumer-assumptions.md`）
 
 ## 核实一下 · `confirm`（3 条）
 
@@ -188,21 +188,21 @@
 - **级别**：P2 建议 ｜ **依据性质**：启发式（经验推断意图） ｜ **层面**：结构层
 - **不改会怎样**：断号本身不影响接入，但通常意味着漏了一屏或改稿时删了没重排——需要人确认是有意还是遗漏（依据 A2 的整树分区流）。
 - **怎么改**：确认无遗漏后连续重排，或忽略本条。
-- **规范依据**：`spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §1 ｜ **依赖假定**：A2（见 `../spec/consumer-assumptions.md`）
 
 ### `N-KV-SINGLE-LAYER` KV 只有单层
 
 - **级别**：P2 建议 ｜ **依据性质**：启发式（经验推断意图） ｜ **层面**：结构层
 - **不改会怎样**：`kv/` 的用途是视差分层（背景/角色/前景各一张叠着走不同速度）。同一父层下只有一个 kv/ 时视差无从体现，用 `img/` 表达更准确（依据 A1）。
 - **怎么改**：补齐分层并各自声明 `@parallax=`，或改用 `img/`。
-- **规范依据**：`spec/naming-spec.md` §5 ｜ **依赖假定**：A1（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §5 ｜ **依赖假定**：A1（见 `../spec/consumer-assumptions.md`）
 
 ### `N-TEXT-FIXED-SIZE` 文字是固定尺寸文本框
 
 - **级别**：P2 建议 ｜ **依据性质**：启发式（经验推断意图） ｜ **层面**：语义层
 - **不改会怎样**：紧凑控件内的文案尺寸会被下游按定宽定高还原（A6），固定尺寸在换语言后可能溢出或被裁；独立长段落则按定宽自动换行。
 - **怎么改**：紧凑控件内的文本设成下游可还原的定宽定高；长段落设成定宽自动换行；确认不会变长的可忽略。
-- **规范依据**：`spec/naming-spec.md` §3 ｜ **依赖假定**：A6（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`../spec/naming-spec.md` §3 ｜ **依赖假定**：A6（见 `../spec/consumer-assumptions.md`）
 
 ## 前缀总表（机器可读镜像）
 

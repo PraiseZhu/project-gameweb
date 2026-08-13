@@ -47,7 +47,9 @@ const privateReasons = manifest?.privateReasons ?? {};
 if (manifest) {
   if (manifest.identity !== IDENTITY) fail(`manifest.identity=${manifest.identity ?? '(missing)'}，必须是 ${IDENTITY}`);
 
-  for (const required of ['README.md', 'PUBLIC-RELEASE.md', 'public-release.json', 'package.json', 'package-lock.json', 'spec/', 'src/', 'plugin/', 'bin/', 'scripts/', 'docs/']) {
+  // spec/ 不在此列：规范正文是 ../spec/（tool/ 的同级目录），不属于工具的发布范围。
+  // 它归 standards/figma-naming/ 那一层管，本闸门只扫 tool/ 内部。
+  for (const required of ['README.md', 'PUBLIC-RELEASE.md', 'public-release.json', 'package.json', 'package-lock.json', 'src/', 'plugin/', 'bin/', 'scripts/', 'docs/']) {
     if (!publishable.includes(required)) fail(`publishable 缺少 ${required}`);
   }
   // 本目录的私有边界事实，逐条钉死；漏一条就是把真稿资产放出去。

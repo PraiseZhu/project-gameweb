@@ -25,8 +25,8 @@ import { fileURLToPath } from "node:url";
 import { PREFIX_NAMES, SPEC_VERSION, SPEC_DOC } from "../src/spec.mjs";
 
 export const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-/** 仓库根：standards/figma-naming → standards → <repo> */
-export const REPO_ROOT = resolve(PROJECT_ROOT, "..", "..");
+/** 仓库根：standards/figma-naming/tool → figma-naming → standards → <repo> */
+export const REPO_ROOT = resolve(PROJECT_ROOT, "..", "..", "..");
 export const SKILLS_DIR = resolve(REPO_ROOT, "skills");
 export const LEDGER_PATH = resolve(PROJECT_ROOT, "baseline/skill-conflicts.json");
 

@@ -7,11 +7,11 @@
  */
 
 export const SPEC_VERSION = "v2.7 (2026-08-07)";
-export const SPEC_DOC = "spec/naming-spec.md";
+export const SPEC_DOC = "../spec/naming-spec.md";
 
 /** 下游消费假定（判定后果的前提），见 spec/consumer-assumptions.md */
 export const ASSUMPTIONS_VERSION = "A-v1.5 (2026-08-07)";
-export const ASSUMPTIONS_DOC = "spec/consumer-assumptions.md";
+export const ASSUMPTIONS_DOC = "../spec/consumer-assumptions.md";
 
 /**
  * §1 前缀总表。字段含义：
