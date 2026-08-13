@@ -652,3 +652,20 @@ test("UI：标记失败要报出来，不静默", () => {
     "失败要同时进状态条——静默失败是这个项目反复栽的坑");
   assert.equal(ui.elements.get("mark-clear").disabled, true, "没标成功就不该让他取消");
 });
+
+test("UI：无 sec/ 的 FRAME 候选显示「尚未有 sec/」，不挡下拉", () => {
+  const ui = uiHarness();
+  ui.window.onmessage({ data: { pluginMessage: {
+    type: "candidates",
+    selectionName: "cn_pc",
+    candidates: [{ id: "1:1", name: "cn_pc", type: "FRAME", secTotal: 0, isSelf: true }],
+    runTarget: "cn_pc",
+    selectionCount: 1,
+    selectionNode: { id: "1:1", name: "cn_pc", type: "FRAME", marked: null, isDefaultName: false },
+  } } });
+  const select = ui.elements.get("root-select");
+  assert.equal(select.children.length, 1);
+  assert.match(select.children[0].textContent, /尚未有 sec/);
+  assert.equal(select.children[0].value, "1:1");
+  assert.equal(ui.elements.get("status").textContent, "");
+});

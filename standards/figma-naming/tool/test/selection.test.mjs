@@ -41,6 +41,17 @@ test("onSelectionChange：候选下拉刷新与结果区互不影响", () => {
   assert.equal(next.stale, false);
 });
 
+test("onSelectionChange：选中无 sec/ 的 FRAME 时，当前节点仍是 runTarget", () => {
+  const page = node("page", "页面", "PAGE", [
+    node("cn_pc", "cn_pc", "FRAME", [node("leaf", "图层", "RECTANGLE")]),
+  ]);
+  const next = onSelectionChange({}, page.children[0]);
+  assert.equal(next.candidates.length, 1);
+  assert.equal(next.candidates[0].id, "cn_pc");
+  assert.equal(next.candidates[0].secTotal, 0);
+  assert.equal(next.runTarget, "cn_pc");
+});
+
 test("onSelectionChange：runTarget 跟随候选下拉当前选中项", () => {
   const page = node("page", "页面", "PAGE", [
     node("outer", "outer", "FRAME", [

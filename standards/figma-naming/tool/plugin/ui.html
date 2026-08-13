@@ -318,15 +318,18 @@
         return;
       }
       if (!msg.candidates.length) {
-        setStatus("没找到含 sec/ 的 FRAME 祖先，确认选对了吗");
+        setStatus("没找到可命名的 FRAME。请直接选中页面稿（或其中的节点），不要只选叶子图层");
         rootSelect.append(new Option("没有候选根", ""));
         return;
       }
       setStatus("");
       for (const candidate of msg.candidates) {
         const suffix = candidate.isSelf ? "（当前节点）" : "";
+        const secLabel = candidate.secTotal > 0
+          ? `sec/ × ${candidate.secTotal}`
+          : "尚未有 sec/";
         const option = new Option(
-          `${candidate.name} · sec/ × ${candidate.secTotal}${suffix}`,
+          `${candidate.name} · ${secLabel}${suffix}`,
           candidate.id,
         );
         option.dataset.name = candidate.name;

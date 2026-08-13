@@ -8,11 +8,22 @@ function node(id, name, type, children = []) {
   return n;
 }
 
-test("候选根：选区子树没有 sec/ 时返回零候选", () => {
+test("候选根：选区内层叶子、整条链都没有 sec/ 时返回零候选", () => {
   const page = node("page", "页面", "PAGE", [
     node("f", "没有分区", "FRAME", [node("leaf", "图层", "RECTANGLE")]),
   ]);
   assert.deepEqual(enumerateRootCandidates(page.children[0].children[0]), []);
+});
+
+test("候选根：选中自身是 FRAME 但子树没有 sec/ 时，把当前 FRAME 列为候选", () => {
+  const page = node("page", "页面", "PAGE", [
+    node("cn_pc", "cn_pc", "FRAME", [node("leaf", "图层", "RECTANGLE")]),
+  ]);
+  const candidates = enumerateRootCandidates(page.children[0]);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].node.id, "cn_pc");
+  assert.equal(candidates[0].secTotal, 0);
+  assert.equal(candidates[0].isSelf, true);
 });
 
 test("候选根：选区自身就是含 sec/ 的 FRAME 时返回单候选", () => {
