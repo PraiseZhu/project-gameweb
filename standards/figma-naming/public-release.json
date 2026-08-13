@@ -51,10 +51,17 @@
     "tool/.env": "Figma Personal Access Token 等凭证。",
     "tool/test/.tmp/": "测试运行临时目录。"
   },
+  "projectWordsNote": "未发布项目的稿名/代号没有可识别形态（不像 fileKey 的 22 位串、也不像 figd_ 前缀），形态类检测天然抓不到，只能按词表逐词比对：列在 projectWords 里的词一旦出现在任何 publishable 文件里，即视为泄漏未发布项目。词表为空或字段缺失一律报错——空词表意味着这项检查没生效，不是通过；词表里的空串/纯空白会匹配所有文件，同样报错。",
+  "projectWords": [
+    "伊瑟",
+    "新赛季前瞻",
+    "皮肤设计大赛"
+  ],
   "requiredAudit": [
     "package.name=figma-naming-lint",
     "README.heading=figma-naming-lint",
     "no-figma-filekey-in-publishable-files",
+    "no-project-words-in-publishable-files",
     "no-credentials-in-publishable-files",
     "no-absolute-machine-paths-in-publishable-files",
     "private-boundary-is-explicit",

@@ -48,6 +48,49 @@ const publishable = manifest?.publishable ?? [];
 const privatePaths = manifest?.private ?? [];
 const privateReasons = manifest?.privateReasons ?? {};
 
+/* ------------------------------------------------------------------ *
+ * 项目稿名词表
+ *
+ * 别的检测都认形态（22 位串、figd_ 前缀、KEY=值），不需要事先知道具体值。
+ * 未发布项目的稿名没有形态可认 —— 一个项目代号跟任何一个普通中文词长得一模一样，
+ * 只能按词表逐词比对。代价是词表漏登记就抓不到，所以下面还有一道从裁决账本
+ * 反查的提醒。
+ *
+ * 本文件跟别的 publishable 文件一样被这条规则完整扫描：这里只写机制，不写任何
+ * 一个真实稿名，所以不需要给自己开口子。
+ *
+ * 两条不许放宽的判定：
+ *   a. 词表为空或字段缺失 = 这项检查没生效，必须报出来。把「没检查」渲染成
+ *      「检查通过」正是这个仓最怕的沉默失败。
+ *   b. 空串 / 纯空白会匹配所有文件，等于把闸门焊死在红灯上（或者更糟 —— 让人
+ *      为了消红而删掉整条规则）。发现即报错，不静默丢弃该条。
+ * ------------------------------------------------------------------ */
+
+const rawProjectWords = manifest?.projectWords;
+const projectWords = [];
+
+if (manifest) {
+  if (rawProjectWords === undefined) {
+    fail('public-release.json 缺少 projectWords 字段 —— 项目稿名检查未配置、未生效（不是「通过」）');
+  } else if (!Array.isArray(rawProjectWords)) {
+    fail(`public-release.json 的 projectWords 必须是字符串数组，实际是 ${typeof rawProjectWords} —— 项目稿名检查未生效（不是「通过」）`);
+  } else if (rawProjectWords.length === 0) {
+    fail('public-release.json 的 projectWords 是空数组 —— 项目稿名检查未配置、未生效（不是「通过」）');
+  } else {
+    rawProjectWords.forEach((word, i) => {
+      if (typeof word !== 'string') {
+        fail(`projectWords[${i}] 不是字符串（${typeof word}）—— 词表必须逐条可用，不能静默跳过`);
+        return;
+      }
+      if (word.trim() === '') {
+        fail(`projectWords[${i}] 是空串或纯空白 —— 它会匹配到所有文件，词表必须逐词非空`);
+        return;
+      }
+      projectWords.push(word);
+    });
+  }
+}
+
 if (manifest) {
   if (manifest.identity !== IDENTITY) fail(`manifest.identity=${manifest.identity ?? '(missing)'}，必须是 ${IDENTITY}`);
 
@@ -309,6 +352,36 @@ for (const file of publishFiles) {
     record(idx, 'figma-filekey', 'Figma fileKey', token);
   }
 
+  /*
+   * 项目稿名。
+   *
+   * 刻意不套 looksPlaceholder()：那个函数认的是凭证的占位形态（xxxxxx、YOUR_、<…>）。
+   * 稿名没有占位形态，套上去只会让「示例某稿名」「<某稿名>」这类写法被静默放过 ——
+   * 而把稿名写进示例，泄漏的仍然是那个稿名。
+   *
+   * 唯一的例外是词表自己的声明：public-release.json 里 projectWords 数组的值就是
+   * 这些词，它不是泄漏、是判据本身。只跳过那一段的字节区间，同文件其余部分
+   * （description / privateReasons / 路径…）照扫 —— 整文件豁免会让稿名从
+   * description 里溜出去。
+   */
+  const wordListSpan = file === 'public-release.json'
+    ? (() => {
+        const m = /"projectWords"\s*:\s*\[[^\]]*\]/.exec(text);
+        return m ? [m.index, m.index + m[0].length] : null;
+      })()
+    : null;
+
+  for (const word of projectWords) {
+    let from = 0;
+    for (;;) {
+      const at = text.indexOf(word, from);
+      if (at === -1) break;
+      from = at + word.length;
+      if (wordListSpan && at >= wordListSpan[0] && at < wordListSpan[1]) continue;
+      record(lineOf(at), 'project-word', '项目稿名', word);
+    }
+  }
+
   // 凭证 / 机器路径
   for (const rule of LINE_RULES) {
     rule.re.lastIndex = 0;
@@ -321,8 +394,57 @@ for (const file of publishFiles) {
   }
 }
 
+/* 同一行同一词只报一条。
+ *
+ * project-word 按出现次数逐条记账：一行里「示例某稿名」「<某稿名>」是两个出现位置，
+ * 会产生两条 file/line/rule/match 一字不差的 finding。同处命中合并成一条 ——
+ * 重复记账不增加任何召回信息，只把报告刷成噪音；读者看到的第一条已经完整指出
+ * 文件、行、规则与片段。不同行 / 不同词 / 不同规则互不影响，各自照报。
+ * 这不是白名单：合并后该行该词仍然必报，泄漏信息一条不少。
+ */
+const seenFindings = new Set();
+const dedupedFindings = [];
 for (const f of findings) {
+  const key = `${f.file}:${f.line}:${f.rule}:${f.match}`;
+  if (seenFindings.has(key)) continue;
+  seenFindings.add(key);
+  dedupedFindings.push(f);
+}
+
+for (const f of dedupedFindings) {
   fail(`${f.file}:${f.line}: 命中 [${f.rule}] ${f.label} —— "${f.match}"  ｜ 上下文: ${f.context}`);
+}
+
+/* ------------------------------------------------------------------ *
+ * 词表反查：从裁决账本里的 pageName 找出还没登记的稿名
+ *
+ * 词表检测的软肋是「没登记就抓不到」。体检一份新稿就会产生一个新 pageName，
+ * 那个项目名此刻还没进词表，等它哪天被写进代码就是一次抓不到的泄漏。
+ * 所以拿账本反查一遍，把没被词表覆盖的 pageName 提出来。
+ *
+ * 这是提醒不是判决（进 notes，不进 problems）：账本里有 pageName 不等于代码里
+ * 有泄漏，把它当违规会逼着人往词表里塞用不上的词。
+ *
+ * 账本是 private 的，公开仓 clone 下来根本没有这个文件 —— 读不到就什么都不做，
+ * 那是正常情况，不是异常。
+ * ------------------------------------------------------------------ */
+
+const LEDGER_REL = 'tool/data/user-labels.json';
+
+if (existsSync(join(ROOT, LEDGER_REL))) {
+  try {
+    const ledger = JSON.parse(readRel(LEDGER_REL));
+    const pageNames = [...new Set((ledger?.labels ?? []).map((l) => l?.pageName).filter((n) => typeof n === 'string' && n.trim() !== ''))].sort();
+    // 子串匹配即算覆盖：词表里的「某稿名」应当覆盖「某稿名绑定页」这类派生稿名。
+    const uncovered = pageNames.filter((name) => !projectWords.some((w) => name.includes(w)));
+    notes.push(`裁决账本 ${LEDGER_REL}: ${pageNames.length} 个稿名，${uncovered.length} 个未被 projectWords 覆盖`);
+    for (const name of uncovered) {
+      notes.push(`账本里的稿名「${name}」不在 projectWords 中，若它会写进代码请补进词表`);
+    }
+  } catch (error) {
+    // 文件在但读不动 —— 这不是「公开仓没有它」那种正常缺席，要说出来。
+    notes.push(`裁决账本 ${LEDGER_REL} 存在但解析失败（${error.message}），本次未做词表反查`);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -330,7 +452,7 @@ for (const f of findings) {
  * ------------------------------------------------------------------ */
 
 const byRule = {};
-for (const f of findings) byRule[f.rule] = (byRule[f.rule] ?? 0) + 1;
+for (const f of dedupedFindings) byRule[f.rule] = (byRule[f.rule] ?? 0) + 1;
 
 if (skippedPrivate.length) notes.push(`按 private 边界跳过（未读取内容）: ${[...new Set(skippedPrivate)].sort().join(', ')}`);
 for (const [reason, tokens] of rejectedSamples) {
@@ -343,7 +465,7 @@ console.log(JSON.stringify({
   publishableFiles: publishFiles.length,
   unscannedFiles: unreadable,
   violationsByRule: byRule,
-  violations: findings,
+  violations: dedupedFindings,
   notes,
   problems,
 }, null, 2));
