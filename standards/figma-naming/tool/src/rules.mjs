@@ -25,19 +25,12 @@
  */
 export const RULES = {
   /* ── 语法层：图层名字符串本身 ───────────────────────────── */
-  "N-PREFIX-CASE": {
-    severity: "P1", disposition: "must_fix", basis: "deterministic",
-    layer: "语法", spec: "§1 / §4.1", assumes: ["A0"],
-    title: "前缀大小写错误",
-    why: "下游按小写匹配前缀（A0），`Img/` `BTN/` 不会被识别。该切的图不切、该接的交互不接，这层退化成普通图层。",
-    fix: "前缀改全小写。",
-  },
   "N-PREFIX-SLASH": {
     severity: "P1", disposition: "must_fix", basis: "deterministic",
     layer: "语法", spec: "§1 / §4.1", assumes: ["A0"],
-    title: "分隔符不是半角斜杠（或斜杠两侧有空格）",
-    why: "全角 ／、反斜杠 \\、`img / 名称` 这类写法匹配不上前缀语法（A0），同上会退化成普通图层。",
-    fix: "改成半角 `/`，斜杠两侧不留空格。",
+    title: "分隔符不是半角斜杠",
+    why: "全角 ／、反斜杠 \\ 匹配不上前缀语法（A0），该切的图不切、该接的交互不接，这层退化成普通图层。前缀大小写、斜杠两侧空格在消费侧都合法，不算错误。",
+    fix: "把全角 ／ 或反斜杠 \\ 改成半角 `/`。",
   },
   "N-PREFIX-NOT-IN-TABLE": {
     severity: "P0", disposition: "must_fix", basis: "deterministic",

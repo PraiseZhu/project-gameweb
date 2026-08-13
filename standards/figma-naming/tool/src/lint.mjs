@@ -106,13 +106,8 @@ export function lint(root) {
             ? `${parsed.suggestion}/${parsed.body}${parsed.params.map((p) => p.raw).join("")}`
             : undefined);
       }
-      if (prefix && parsed.prefixRaw !== prefix) {
-        add("N-PREFIX-CASE", `前缀写成了 \`${parsed.prefixRaw}\`，必须小写`,
-          n.name.replace(parsed.prefixRaw, prefix));
-      }
-      if (usesPrefixSyntax(parsed) && (parsed.slash !== "/" || parsed.spaced)) {
-        const what = parsed.slash !== "/" ? `分隔符是 \`${parsed.slash}\`` : "斜杠两侧有空格";
-        add("N-PREFIX-SLASH", `${what}，必须是紧贴的半角 \`/\``,
+      if (usesPrefixSyntax(parsed) && parsed.slash !== "/") {
+        add("N-PREFIX-SLASH", `分隔符是 \`${parsed.slash}\`，必须是半角 \`/\``,
           `${parsed.prefixRaw}/${parsed.body}${parsed.params.map((p) => p.raw).join("")}`);
       }
     }
