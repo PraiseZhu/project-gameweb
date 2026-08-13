@@ -1,8 +1,8 @@
 # 检查规则表
 
 > 本文件由 `npm run rules` 从 `src/rules.mjs` 生成，**不要手改**。
-> 依据规范：v2.7 (2026-08-07) — `../spec/naming-spec.md`
-> 下游假定：A-v1.5 (2026-08-07) — `../spec/consumer-assumptions.md`
+> 依据规范：v2.8 (2026-08-13) — `../spec/naming-spec.md`
+> 下游假定：A-v1.6 (2026-08-13) — `../spec/consumer-assumptions.md`
 
 ## 三个维度
 
@@ -29,8 +29,7 @@
 
 | 错误码 | 标题 | 级别 | 处置 | 依据性质 | 规范条 | 依赖假定 |
 |---|---|---|---|---|---|---|
-| `N-PREFIX-CASE` | 前缀大小写错误 | P1 | must_fix | deterministic | §1 / §4.1 | A0 |
-| `N-PREFIX-SLASH` | 分隔符不是半角斜杠（或斜杠两侧有空格） | P1 | must_fix | deterministic | §1 / §4.1 | A0 |
+| `N-PREFIX-SLASH` | 分隔符不是半角斜杠 | P1 | must_fix | deterministic | §1 / §4.1 | A0 |
 | `N-PREFIX-NOT-IN-TABLE` | 前缀词不在总表内 | P0 | must_fix | deterministic | §4.3 | A0 |
 | `N-PARAM-EMPTY` | @参数缺值 | P0 | must_fix | deterministic | §2 | A3 |
 | `N-PARAM-BAD-VALUE` | @参数取值不合法 | P0 | must_fix | deterministic | §2 | A3 |
@@ -51,7 +50,7 @@
 | `N-TEXT-FIXED-SIZE` | 文字是固定尺寸文本框 | P2 | confirm | heuristic | §3 | A6 |
 | `N-NAME-DUPLICATE` | 两个图层同名 | P1 | must_fix | deterministic | §6 | A1 |
 
-## 必须改 · `must_fix`（17 条）
+## 必须改 · `must_fix`（16 条）
 
 ### `N-PREFIX-NOT-IN-TABLE` 前缀词不在总表内
 
@@ -116,18 +115,11 @@
 - **怎么改**：改成实际存在的分区编号，或补上缺失的那屏 `sec/`。
 - **规范依据**：`../spec/naming-spec.md` §1 / §2 ｜ **依赖假定**：A2（见 `../spec/consumer-assumptions.md`）
 
-### `N-PREFIX-CASE` 前缀大小写错误
+### `N-PREFIX-SLASH` 分隔符不是半角斜杠
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
-- **不改会怎样**：下游按小写匹配前缀（A0），`Img/` `BTN/` 不会被识别。该切的图不切、该接的交互不接，这层退化成普通图层。
-- **怎么改**：前缀改全小写。
-- **规范依据**：`../spec/naming-spec.md` §1 / §4.1 ｜ **依赖假定**：A0（见 `../spec/consumer-assumptions.md`）
-
-### `N-PREFIX-SLASH` 分隔符不是半角斜杠（或斜杠两侧有空格）
-
-- **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
-- **不改会怎样**：全角 ／、反斜杠 \、`img / 名称` 这类写法匹配不上前缀语法（A0），同上会退化成普通图层。
-- **怎么改**：改成半角 `/`，斜杠两侧不留空格。
+- **不改会怎样**：全角 ／、反斜杠 \ 匹配不上前缀语法（A0），该切的图不切、该接的交互不接，这层退化成普通图层。前缀大小写、斜杠两侧空格在消费侧都合法，不算错误。
+- **怎么改**：把全角 ／ 或反斜杠 \ 改成半角 `/`。
 - **规范依据**：`../spec/naming-spec.md` §1 / §4.1 ｜ **依赖假定**：A0（见 `../spec/consumer-assumptions.md`）
 
 ### `N-PARAM-UNKNOWN` 未知 @参数

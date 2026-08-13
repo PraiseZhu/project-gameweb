@@ -15,7 +15,7 @@ import {
   resolveSkillRoles,
   todayISO,
 } from "../scripts/check-skill-sync.mjs";
-import { PREFIX_NAMES } from "../src/spec.mjs";
+import { PREFIX_NAMES, SPEC_VERSION } from "../src/spec.mjs";
 
 const SPEC_ROLES = ["sec", "img", "btn"];
 const NOW = new Date("2026-08-13T10:00:00");
@@ -172,7 +172,7 @@ test("check-skills：有契约时以契约为准，且输出不标「未接契�
   try {
     box.writeLedger([]);
     box.writeSkill("s1", {
-      [CONTRACT_FILENAME]: JSON.stringify({ targetSpecVersion: "v2.7 (2026-08-07)", rolesUsed: ["sec", "btn"] }),
+      [CONTRACT_FILENAME]: JSON.stringify({ targetSpecVersion: SPEC_VERSION, rolesUsed: ["sec", "btn"] }),
       // 词表里有一个总表没有的角色：如果实现忽略契约去扫词表，这里会硬拦。
       "scripts/lib/names.mjs": wordlistSource(["sec", "btn", "zzz"]),
     });

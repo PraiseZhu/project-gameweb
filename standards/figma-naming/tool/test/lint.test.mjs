@@ -10,7 +10,7 @@ import { cleanTree, dirtyTree } from "./fixtures.mjs";
 const codesOf = (r) => new Set(r.findings.map((f) => f.code));
 const byCode = (r, code) => r.findings.filter((f) => f.code === code);
 const PREFIX_SYNTAX_CODES = new Set([
-  "N-PREFIX-NOT-IN-TABLE", "N-PREFIX-SLASH", "N-PREFIX-CASE",
+  "N-PREFIX-NOT-IN-TABLE", "N-PREFIX-SLASH",
 ]);
 const SEC_CODES = new Set([
   "N-SEC-NO-NUMBER", "N-SEC-DUP-NUMBER", "N-SEC-GAP",
@@ -261,12 +261,12 @@ test("自造前缀（与任何总表项都不接近）也必须报，无建议",
   assert.equal(f.suggestion, undefined);
 });
 
-test("TEXT 自动名与文字内容相等时，三条前缀语法规则都不报", () => {
+test("TEXT 自动名与文字内容相等时，前缀语法规则都不报", () => {
   const r = lint(testRoot([
     // 尾随空白专门锁住「去空白后相等」，不能只用原字符串相等自证。
     testText("t-auto", "part / one ", "part / one"),
-    // 这一条命中 N-PREFIX-CASE；结构闸门必须覆盖三条规则而非只覆盖自造前缀。
-    testText("t-case", "IMG/装饰", "IMG/装饰"),
+    // 这一条命中 N-PREFIX-SLASH；结构闸门必须覆盖剩余两条语法规则而非只覆盖自造前缀。
+    testText("t-slash", "img／装饰", "img／装饰"),
   ]));
   const prefixFindings = r.findings.filter((f) => PREFIX_SYNTAX_CODES.has(f.code));
   assert.deepEqual(prefixFindings, [], "Figma 自动 TEXT 名不应被当作前缀声明");
@@ -278,8 +278,8 @@ test("TEXT 同名但文字内容不同，前缀语法照常报", () => {
   ]));
   const codes = byCode(r, "N-PREFIX-NOT-IN-TABLE").concat(byCode(r, "N-PREFIX-SLASH"))
     .map((f) => f.code).sort();
-  assert.deepEqual(codes, ["N-PREFIX-NOT-IN-TABLE", "N-PREFIX-SLASH"]);
-  assert.equal(r.findings.length, 2, "判别用例不应被其它规则噪音掩盖");
+  assert.deepEqual(codes, ["N-PREFIX-NOT-IN-TABLE"]);
+  assert.equal(r.findings.length, 1, "判别用例不应被其它规则噪音掩盖");
 });
 
 test("TEXT 的 characters 缺失时，坏前缀语法照常报", () => {
@@ -288,8 +288,8 @@ test("TEXT 的 characters 缺失时，坏前缀语法照常报", () => {
   ]));
   const findings = r.findings.filter((f) => f.nodeId === "t-missing-characters"
     && PREFIX_SYNTAX_CODES.has(f.code)).map((f) => f.code).sort();
-  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE", "N-PREFIX-SLASH"]);
-  assert.equal(r.findings.length, 2, "缺少 characters 不应把坏前缀静默豁免");
+  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE"]);
+  assert.equal(r.findings.length, 1, "缺少 characters 不应把坏前缀静默豁免");
 });
 
 test("TEXT 的 characters 为空串时，坏前缀语法照常报", () => {
@@ -298,8 +298,8 @@ test("TEXT 的 characters 为空串时，坏前缀语法照常报", () => {
   ]));
   const findings = r.findings.filter((f) => f.nodeId === "t-empty-characters"
     && PREFIX_SYNTAX_CODES.has(f.code)).map((f) => f.code).sort();
-  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE", "N-PREFIX-SLASH"]);
-  assert.equal(r.findings.length, 2, "空 characters 不应被 includes(\"\") 误豁免");
+  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE"]);
+  assert.equal(r.findings.length, 1, "空 characters 不应被 includes(\"\") 误豁免");
 });
 
 test("TEXT 名字包含 characters 但并不相等时，坏前缀语法照常报", () => {
@@ -308,8 +308,8 @@ test("TEXT 名字包含 characters 但并不相等时，坏前缀语法照常报
   ]));
   const findings = r.findings.filter((f) => f.nodeId === "t-characters-substring"
     && PREFIX_SYNTAX_CODES.has(f.code)).map((f) => f.code).sort();
-  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE", "N-PREFIX-SLASH"]);
-  assert.equal(r.findings.length, 2, "名字包含文字内容也代表设计师改过名，不能豁免");
+  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE"]);
+  assert.equal(r.findings.length, 1, "名字包含文字内容也代表设计师改过名，不能豁免");
 });
 
 test("TEXT characters 比名字更长时同样不满足结构性排除，坏前缀照常报", () => {
@@ -318,8 +318,8 @@ test("TEXT characters 比名字更长时同样不满足结构性排除，坏前�
   ]));
   const findings = r.findings.filter((f) => f.nodeId === "t-name-substring"
     && PREFIX_SYNTAX_CODES.has(f.code)).map((f) => f.code).sort();
-  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE", "N-PREFIX-SLASH"]);
-  assert.equal(r.findings.length, 2, "不相等就是不相等，不能只覆盖名字更长的方向");
+  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE"]);
+  assert.equal(r.findings.length, 1, "不相等就是不相等，不能只覆盖名字更长的方向");
 });
 
 test("TEXT 的 characters 不是字符串时不抛错，坏前缀语法照常报", () => {
@@ -328,8 +328,8 @@ test("TEXT 的 characters 不是字符串时不抛错，坏前缀语法照常报
   ]));
   const findings = r.findings.filter((f) => f.nodeId === "t-non-string-characters"
     && PREFIX_SYNTAX_CODES.has(f.code)).map((f) => f.code).sort();
-  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE", "N-PREFIX-SLASH"]);
-  assert.equal(r.findings.length, 2, "脏 characters 哨兵值不应让判定器崩溃或静默豁免");
+  assert.deepEqual(findings, ["N-PREFIX-NOT-IN-TABLE"]);
+  assert.equal(r.findings.length, 1, "脏 characters 哨兵值不应让判定器崩溃或静默豁免");
 });
 
 test("非 TEXT 节点即使名字与偶然的 characters 字段相等，也照报前缀语法", () => {
@@ -339,7 +339,7 @@ test("非 TEXT 节点即使名字与偶然的 characters 字段相等，也照�
   }]));
   const codes = r.findings.filter((f) => PREFIX_SYNTAX_CODES.has(f.code))
     .map((f) => f.code).sort();
-  assert.deepEqual(codes, ["N-PREFIX-NOT-IN-TABLE", "N-PREFIX-SLASH"]);
+  assert.deepEqual(codes, ["N-PREFIX-NOT-IN-TABLE"]);
 });
 
 test("视觉前缀内 TEXT 不再触发已退役的烙图规则", () => {
@@ -368,6 +368,48 @@ test("总表外的近似词一律报（nav/ ico/ pic/ 不再被放过）", () =>
     assert.equal(p.prefix, null, `${w}/ 不该被当成合法前缀`);
     assert.equal(p.unknownPrefix, w, `${w}/ 必须被报为总表外前缀`);
   }
+});
+
+/* ── v2.8 前缀容错：大小写不敏感、半角斜杠两侧空格合法 ── */
+
+test("大小写不敏感：IMG/、Sec/ 与 img/、sec/ 同义，不再报语法错", () => {
+  const r = lint(testRoot([
+    testFrame("IMG", "IMG/装饰"),
+    testFrame("Sec", "Sec/1-首屏"),
+  ]));
+  assert.equal(parseName("IMG/装饰").prefix, "img");
+  assert.equal(parseName("Sec/1-首屏").prefix, "sec");
+  assert.deepEqual(
+    r.findings.filter((f) => PREFIX_SYNTAX_CODES.has(f.code)),
+    [],
+    "大小写不再构成前缀语法错误",
+  );
+});
+
+test("半角斜杠两侧空格合法：img / 装饰 识别为 img 且 0 语法报错", () => {
+  const img = { fills: [{ type: "IMAGE", visible: true }] };
+  const r = lint(testRoot([
+    { id: "spaced-img", name: "img / 装饰", type: "RECTANGLE", absoluteBoundingBox: TEST_BOX, ...img },
+  ]));
+  assert.equal(parseName("img / 装饰").prefix, "img");
+  assert.deepEqual(
+    r.findings.filter((f) => PREFIX_SYNTAX_CODES.has(f.code)),
+    [],
+    "斜杠两侧空格不再构成 N-PREFIX-SLASH",
+  );
+});
+
+test("全角斜杠仍报 N-PREFIX-SLASH，半角修复建议保留", () => {
+  const img = { fills: [{ type: "IMAGE", visible: true }] };
+  const r = lint(testRoot([
+    { id: "fw", name: "img／装饰", type: "RECTANGLE", absoluteBoundingBox: TEST_BOX, ...img },
+  ]));
+  assert.equal(parseName("img／装饰").prefix, "img");
+  assert.equal(parseName("img／装饰").slash, "／");
+  const slash = byCode(r, "N-PREFIX-SLASH");
+  assert.equal(slash.length, 1);
+  assert.equal(slash[0].name, "img／装饰");
+  assert.equal(slash[0].suggestion, "img/装饰");
 });
 
 /* ── ind/ 与 switch/ 的作用域联动约束 ──────────────────── */

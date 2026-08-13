@@ -82,11 +82,10 @@ export function cleanTree() {
 export function dirtyTree() {
   seq = 0;
   return F("pc", [
-    F("Sec/1-首屏", [T("占位", "占位")]),                // N-PREFIX-CASE
-    R("img／装饰", IMG_FILL),                           // N-PREFIX-SLASH（全角）
-    R("img / 空格装饰", IMG_FILL),                      // N-PREFIX-SLASH（空格）
+    F("sec/1-首屏", [T("占位", "占位")]),               // 与 sec/1-重复 撞号 → N-SEC-DUP-NUMBER
+    R("img／装饰", IMG_FILL),                           // N-PREFIX-SLASH（全角斜杠）
     R("imge/背景", IMG_FILL),                           // N-PREFIX-NOT-IN-TABLE（拼错，带建议）
-    T("part / ten", "十"),                              // N-PREFIX-NOT-IN-TABLE（自造）+ N-PREFIX-SLASH
+    T("part / ten", "十"),                              // N-PREFIX-NOT-IN-TABLE（自造；空格合法，不再报 SLASH）
     G("btn/充值@link=", []),                            // N-PARAM-EMPTY
     G("btn/官网@lnk=official", []),                     // N-PARAM-UNKNOWN
     G("btn/跳转@sec=abc", []),                          // N-PARAM-BAD-VALUE

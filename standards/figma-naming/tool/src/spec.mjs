@@ -6,11 +6,11 @@
  * 规范升版时同步 SPEC_VERSION 与下表；test/spec-drift.test.mjs 会锁住两者一致。
  */
 
-export const SPEC_VERSION = "v2.7 (2026-08-07)";
+export const SPEC_VERSION = "v2.8 (2026-08-13)";
 export const SPEC_DOC = "../spec/naming-spec.md";
 
 /** 下游消费假定（判定后果的前提），见 spec/consumer-assumptions.md */
-export const ASSUMPTIONS_VERSION = "A-v1.5 (2026-08-07)";
+export const ASSUMPTIONS_VERSION = "A-v1.6 (2026-08-13)";
 export const ASSUMPTIONS_DOC = "../spec/consumer-assumptions.md";
 
 /**
