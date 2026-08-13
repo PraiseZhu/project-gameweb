@@ -62,6 +62,7 @@
 - **首次建仓**：`new-project` init 脚本会尝试自动创建 GitHub private repo 并首次 push main（失败则本地优先继续，不阻断项目创建）
 - **日常 push**：由用户显式触发（如喊"提交代码"），自动化不擅自 push
 - 项目 remote 默认指向创建者个人 GitHub 仓（可用 `NEW_PROJECT_GITHUB_OWNER` 覆盖）
+- **合进 main**：只走 PR。本机 hook 拒绝直推 `main`；远端由分支保护硬锁。本地未 push 的 commit 云端看不见，也不拦
 
 ## 7. 不可提交红线
 
