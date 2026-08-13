@@ -1,0 +1,179 @@
+# 向 main 开 PR 后跑一轮仓库健康检查：规范、现有测试、发布边界、模型审这次改动。
+# 不打开游戏页，不跑伊瑟 Playwright / verify / pr-block。
+# 合进 main 只走 PR。push main 仍保留机械关，防止保护规则尚未生效时有人直推。
+name: e2e-review
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+concurrency:
+  group: e2e-review-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mechanical:
+    name: mechanical
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            skills/yise-web-ui/package-lock.json
+            standards/figma-naming/tool/package-lock.json
+
+      - name: Install figma-naming
+        working-directory: standards/figma-naming/tool
+        run: npm ci
+
+      - name: figma-naming tests
+        working-directory: standards/figma-naming/tool
+        run: npm test
+
+      - name: figma-naming release audit
+        working-directory: standards/figma-naming/tool
+        run: npm run release:audit
+
+      - name: Install yise-web-ui
+        working-directory: skills/yise-web-ui
+        run: npm ci
+
+      - name: yise-web-ui release audit
+        working-directory: skills/yise-web-ui
+        run: npm run release:audit
+
+      - name: yise-web-ui fonts check
+        working-directory: skills/yise-web-ui
+        run: npm run fonts:check
+
+      # 不跑游戏页，也不跑 yise 全量 npm test：本机已有失败，且大量用例要 Figma/Playwright。
+
+  review:
+    name: review
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    env:
+      # 和本机一样走公司网关。审稿模型是网关里的 GPT 5.6 Luna，不是 Anthropic 官网型号。
+      ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL || 'https://llm-proxy.tapsvc.com' }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'codex/gpt-5.6-luna' }}
+      ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ vars.ANTHROPIC_MODEL || 'codex/gpt-5.6-luna' }}
+      ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ vars.ANTHROPIC_MODEL || 'codex/gpt-5.6-luna' }}
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ vars.ANTHROPIC_MODEL || 'codex/gpt-5.6-luna' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Review pull request
+        if: github.event_name == 'pull_request'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            这是进 main 前必须过的一轮审查。只审、不改代码、不 Approve。
+            不要要求打开游戏页，也不要因为公开仓没有 demos/ 就判 FAIL。
+
+            先读仓库根 CLAUDE.md 和 VERSIONING.md，再看这次 PR 的 diff。
+            对照这 8 个维度审：功能正确性、安全性、逻辑错误、错误处理、测试质量、性能、可读性、架构合规。
+            架构合规以本仓 CLAUDE.md 为准：skills/ 按游戏切、standards/ 横切复用、skill 之间不互相 import。
+            敏感数据进 git 一律算阻断：.env、密钥、token、PII。
+            还要看这次改动会不会把现有项目跑挂：破坏 figma-naming 体检、发布边界、字体校验、或 yise 不依赖 demo 的脚本契约。
+
+            判定只分两档：
+            - PASS：没有阻断项
+            - FAIL：有任意阻断项（正确性错、安全/泄密、和 CLAUDE.md 架构冲突、会把坏状态合进 main）
+
+            风格、命名偏好、可选重构不算 FAIL。
+            只评论，不要改工作区任何文件。
+
+            用 `gh pr comment` 发一条总评，第一行必须是下面两行之一：
+            REVIEW_VERDICT: PASS
+            REVIEW_VERDICT: FAIL
+            FAIL 时列出每条阻断项和文件路径。
+            具体行用 inline comment（mcp__github_inline_comment__create_inline_comment，confirmed: true）。
+          claude_args: |
+            --model codex/gpt-5.6-luna
+            --effort max
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+
+      - name: Review direct push to main
+        if: github.event_name == 'push'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            SHA: ${{ github.sha }}
+            BEFORE: ${{ github.event.before }}
+
+            这是一次直接 push 到 main，没有 PR。只审、不改代码。
+            不要要求打开游戏页，也不要因为公开仓没有 demos/ 就判 FAIL。
+            不要开 PR、不要 gh pr comment。
+
+            先读仓库根 CLAUDE.md 和 VERSIONING.md。
+            用 git 看 BEFORE..SHA 这次推进来的 diff（force-push 时 BEFORE 可能是空，就审当前提交）。
+            对照这 8 个维度审：功能正确性、安全性、逻辑错误、错误处理、测试质量、性能、可读性、架构合规。
+            架构合规以本仓 CLAUDE.md 为准：skills/ 按游戏切、standards/ 横切复用、skill 之间不互相 import。
+            敏感数据进 git 一律算阻断：.env、密钥、token、PII。
+            还要看这次改动会不会把现有项目跑挂。
+
+            判定只分两档：PASS 或 FAIL。风格问题不算 FAIL。
+            把完整审查写到仓库根 `.review-verdict.md`，第一行必须是：
+            REVIEW_VERDICT: PASS
+            或
+            REVIEW_VERDICT: FAIL
+          claude_args: |
+            --model codex/gpt-5.6-luna
+            --effort max
+            --allowedTools "Bash(git *),Read,Write(.review-verdict.md)"
+
+      - name: Enforce review verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            body="$(gh pr view "$PR_NUMBER" --json comments --jq '
+              [.comments[] | select(.author.login=="claude[bot]" or .author.login=="github-actions[bot]")]
+              | sort_by(.createdAt) | last | .body // ""
+            ')"
+          else
+            body=""
+            if [ -f .review-verdict.md ]; then
+              body="$(cat .review-verdict.md)"
+            fi
+          fi
+          if printf '%s\n' "$body" | grep -q '^REVIEW_VERDICT: PASS$'; then
+            echo "review passed"
+            exit 0
+          fi
+          if printf '%s\n' "$body" | grep -q '^REVIEW_VERDICT: FAIL$'; then
+            echo "review failed"
+            printf '%s\n' "$body"
+            exit 1
+          fi
+          echo "no REVIEW_VERDICT; fail closed"
+          printf '%s\n' "$body"
+          exit 1
