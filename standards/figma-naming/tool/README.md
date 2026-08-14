@@ -126,15 +126,9 @@ figma-naming-lint · pc 3840×17241 · 规范 v2.1 (2026-08-04) · 假定 A-v1.1
    人可选核对身份和弹窗入口，`unknown` 必须显式保留；保存 reviewed 清单不改变
    `status: "ready"`。移动端核对使用 `?inv=inventory-392-25877.json`。
 
-做页先消费清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、完整
-组件变体树和 modal 附件本体。`unknown` 节点只画样子，不赋交互；`unknown` 的
-`modal-trigger` 不自动接线。
-
 做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
 完整组件变体树和 modal 附件本体。`unknown` 节点只画样子，不赋交互；`unknown` 的
-`modal-trigger` 不自动接线。
-
-本轮不改做页、不发 issue、不写回 Figma，也不修改插件写回逻辑。
+`modal-trigger` 不自动接线。做页接入见 issue #5（指派 `zhanxinyi-lab`）。本工具不改 `skills/yise-web-ui/**`，不写回 Figma。
 
 ## 开发
 
