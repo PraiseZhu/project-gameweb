@@ -78,8 +78,8 @@ npm run inventory:review
 分区、背景/固定层、已解析的实例→变体关系、完整组件变体树和 modal 附件本体搭页。
 unknown 节点只画样子、不赋交互；unknown 的 `modal-trigger` 不自动接线。
 
-本轮两份 392 清单保持 ready，不重导、不改做页、不发 issue、不写回 Figma，也不实现
-未命名稿自动命名。
+规范稿清单保持 ready。做页接入由 issue #5 交给 `zhanxinyi-lab`；本侧不改
+`skills/yise-web-ui/**`，不写回 Figma。未命名稿自动命名留到后续。
 
 ## 每日台账（v3.1）
 

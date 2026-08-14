@@ -44,4 +44,7 @@ out/
 coverage/
 .turbo/
 
+# === Local one-off artifacts ===
+_tmp/
+
 # === Tip: 大数据目录建议加 .nosync 后缀 ===
