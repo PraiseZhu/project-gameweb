@@ -4,7 +4,27 @@
 
 按 `spec/naming-spec.md`（本项目自己的命名规范）体检 Figma 稿的图层命名，输出「哪里命名错了 / 后果是什么 / 怎么改」。
 
-**这是一个独立项目。** 不依赖、不对齐、不服务于任何其它项目的流水线；不产出切图、不产出页面、不产出文案表。唯一产物是报告与画布标注。
+**这是一个独立工具链。** 当前做页前的主入口是 `inventory/v2`：读取已规范命名、带 `node-id` 的 Figma 货架链接，生成并自验 `ready` 清单；人工核对页是可选复核。该链路不写回 Figma、不用插件做交接；插件/本机桥仍是仓内既有的命名实现，但不属于本轮交付入口。
+
+## 做页前交接链路（当前主入口）
+
+1. 人提供已规范命名、带 `node-id` 的 Figma 链接。链接的 `node-id` 始终指向整棵画布货架，覆盖页面本体、同货架 modal 和组件定义；未命名稿自动命名留到后续。
+2. 在本目录运行：
+
+   ```bash
+   npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc 或 mobile 页 id>
+   ```
+
+   链接里的 `node-id` 是拉稿根，`--page` 只在已拉取的树中选页面，不能拿 `--page` 代替拉稿根。
+3. 命令产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 为 `schema: "inventory/v2"`、`status: "ready"`。抓取、整理或自验失败即停止。
+4. 人可选运行 `npm run inventory:review`，复核页面身份、modal 入口、组件集/完整变体和实例关联。没有原型或 `@go` 证据的弹窗入口保持对应关系上的 `unknown`，不猜；复核保存不改变整份清单的 `ready` 状态。移动端用 `?inv=inventory-392-25877.json`。
+5. 做页先消费 `ready inventory/v2` 中的已确定项；unknown 节点只画样子、不赋交互，unknown 的 `modal-trigger` 不自动接线。
+
+做页消费边界：先按已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、完整
+组件变体树和 modal 附件本体搭页；`unknown` 节点只画样子、不赋交互；
+`unknown` 的 `modal-trigger` 不自动接线。
+
+本轮不改 `skills/yise-web-ui/**`，不发 issue，不写回 Figma，也不碰插件写回逻辑的功能实现。
 
 ## 事实来源的分层（别再写第二个「唯一事实来源」）
 
@@ -21,8 +41,10 @@
 
 | 形态 | 状态 | 说明 |
 |---|---|---|
+| `inventory/v2` CLI | **当前主入口** | `npm run inventory -- --file "<整棵货架链接>" --page <页面 id>` → `_tmp/inventory-<page>.json/.txt`，自验通过输出 `ready` |
+| `inventory:review` | 可选人工复核 | `npm run inventory:review` → 可视化核对身份和弹窗入口；移动端使用 `?inv=inventory-392-25877.json`，不改变 ready 状态 |
 | 命令行 | 已可用 | `npm run lint -- "<figma 链接>"` → 终端摘要 + `report/naming-report.{md,json}` |
-| Figma 插件 | **可用，真机验过** | 选中 frame → 运行 → 问题图层红框 + 编号角标 + 右侧说明卡 + 面板点击定位 + 三种处置标记。这是本项目的主要交付形态。装的是 `dist/plugin/manifest.json` |
+| 本机桥 / Figma 插件 | 已有实现，非本轮入口 | 仍服务既有命名实现；本轮不得用于 inventory 交接，也不在此轮修改写回逻辑 |
 
 插件里还没做的：只读模式、按错误码筛选、标注上限提示、Skill（Stage D）。处置标记、复制前重新体检、豁免账本读写与应用已经在阶段 A2/C1/C2 落地；清单见 `docs/PLAN.md`。
 
@@ -52,6 +74,9 @@
 | `src/lint.mjs` | 遍历树产出 findings + 体检根自检。纯函数，不碰网络与文件系统 | 新增规则必须在 `rules.mjs` 先登记，否则 `push()` 抛错 |
 | `src/report.mjs` | findings → 终端 / Markdown / JSON，按 `disposition` 分区 + 按组件归并 | 归并键四段「组件 + 错误码 + 实例内位置索引 + 图层名」，少任何一段都会少报动作数 |
 | `src/figma.mjs` | Figma REST 最小封装 + lastModified 缓存 | — |
+| `src/inventory.mjs` | 已规范命名稿 → `inventory/v2`，收页面、同货架 modal、实际引用组件/完整变体与关系 | 无原型或 `@go` 证据的弹窗入口必须保持 `unknown` |
+| `bin/inventory.mjs` | 解析货架链接与 `--page`，输出 `_tmp/inventory-<page>.json/.txt` | 拉稿根只能用链接 `node-id`；`--page` 只选页面端 |
+| `scripts/serve-inventory-review.mjs` | 提供 inventory/v2 可视化人工核对页 | 保存时覆盖页面与 attachments 全部节点计数，保持 `ready` |
 | `bin/cli.mjs` | 参数解析、体检根校验、退出码 | 有 P0 → 退出码 1；`--require-sec` 让选根失败直接退出 |
 | `scripts/gen-rules-doc.mjs` | 从 `rules.mjs` + `spec.mjs` 生成 `docs/RULES.md` | `docs/RULES.md` 不许手改 |
 | `plugin/marks.mjs` | 三种处置标记（已改 / 不用改 / 规则错了）的纯逻辑。存 `figma.root` 的 pluginData | **标记绝不改变 findings 与计数**（见下）；外观按标记分流，标记键固定为 `` `${code}::${nodeId}` `` |
