@@ -1,6 +1,6 @@
-# figma-naming-lint
+# figma-naming-lint · 命名规范与做页前清单
 
-给一个 Figma 稿链接，可做两件事：当场出**图层命名体检报告**，或把已规范命名稿编成做页前的 `inventory/v2` ready 清单。做页交接看下面「做页前交接：inventory/v2」。
+给一个 Figma 稿链接，可做两件事：把已规范命名稿编成做页前的 `inventory/v2` ready 清单，或对稿件出**图层命名体检报告**。做页前交接是当前主入口；命名体检是独立的既有工具。
 
 规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.8），20 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。
 
@@ -16,7 +16,49 @@
 
 真稿实测约四分之三的报警属于「事实确定、但是否可接受取决于设计意图」（该切的图没命名、文字烙图可能是美术字）。这类报告里给的是事实和几种可能的处置，不是判决。
 
-## 快速开始
+## 做页前交接：inventory/v2
+
+当前面向人的主入口是“已规范命名稿 → 抓取整棵货架 → 整理/自验 → `inventory/v2` ready”。本链路不
+开插件、不写回 Figma；人工核对页是可选复核，未命名稿如何自动命名留到后续。
+
+1. 人提供已规范命名、带 `node-id` 的 Figma 链接。链接的 `node-id` 始终指向整棵
+   画布货架，覆盖页面本体、同货架 modal 和组件定义；不要只给某个页面链接。
+2. 在 `standards/figma-naming/tool/` 运行：
+
+   ```bash
+   npm run inventory -- \
+     --file "<整棵画布货架的 Figma 链接>" \
+     --page <pc 或 mobile 页 id>
+   ```
+
+   例如：
+
+   ```bash
+   npm run inventory -- \
+     --file "https://www.figma.com/design/<fileKey>/...?node-id=392-18375" \
+     --page 392:24190
+   ```
+
+   链接里的 `node-id` 是拉稿根；`--page` 只在已拉取的树中选择页面，不改变拉稿范围。
+3. 命令自验通过后产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 的
+   `schema` 为 `inventory/v2`、`status` 为 `ready`。清单覆盖页面本体、同货架 modal、
+   页面实际引用的组件集/完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持
+   为对应关系上的 `unknown`，不改变整份清单的 ready 状态。
+4. 运行可视化核对页：
+
+   ```bash
+   npm run inventory:review
+   ```
+
+   人可选核对身份和弹窗入口，`unknown` 必须显式保留；保存 reviewed 清单不改变
+   `status: "ready"`。移动端核对使用 `?inv=inventory-392-25877.json`。
+
+做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
+完整组件变体树和 modal 附件本体。`unknown` 节点只画样子，不赋交互；`unknown` 的
+`modal-trigger` 不自动接线。做页接入见 issue #5（指派 `zhanxinyi-lab`）。本工具不改
+`skills/yise-web-ui/**`，不写回 Figma。
+
+## 命名体检快速开始
 
 ```bash
 cp .env.example .env          # 填入 Figma PAT（只需 File content: read）
@@ -88,47 +130,6 @@ figma-naming-lint · pc 3840×17241 · 规范 v2.1 (2026-08-04) · 假定 A-v1.1
 - `dyn/` `mix/` 子树的前缀与烙图问题（子树免前缀，内部自动拆）
 - 已有任何识别前缀的节点不报「该切没命名」——设计师已经声明过这层是什么
 - 整页预览导出节点内部的文字（按面积阈值判定为噪音，不构成切图）
-
-## 做页前交接：inventory/v2
-
-当前面向人的主入口是“已规范命名稿 → 抓取整理 → 自验 → `inventory/v2` ready”。本链路不
-开插件、不写回 Figma；人工核对页是可选复核，未命名稿如何自动命名留到后续。
-
-1. 人提供已规范命名、带 `node-id` 的 Figma 链接。链接的 `node-id` 始终指向整棵
-   画布货架，覆盖页面本体、同货架 modal 和组件定义；不要只给某个页面链接。
-2. 在 `standards/figma-naming/tool/` 运行：
-
-   ```bash
-   npm run inventory -- \
-     --file "<整棵画布货架的 Figma 链接>" \
-     --page <pc 或 mobile 页 id>
-   ```
-
-   例如：
-
-   ```bash
-   npm run inventory -- \
-     --file "https://www.figma.com/design/<fileKey>/...?node-id=392-18375" \
-     --page 392:24190
-   ```
-
-   拉稿根使用链接里的 `node-id`；`--page` 只在已拉取的树里选择页面，不改变拉稿范围。
-3. 命令自验通过后产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 的
-   `schema` 为 `inventory/v2`、`status` 为 `ready`。清单覆盖页面本体、同货架 modal、
-   页面实际引用的组件集/完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持
-   为对应关系上的 `unknown`，不改变整份清单的 ready 状态。
-4. 运行可视化核对页：
-
-   ```bash
-   npm run inventory:review
-   ```
-
-   人可选核对身份和弹窗入口，`unknown` 必须显式保留；保存 reviewed 清单不改变
-   `status: "ready"`。移动端核对使用 `?inv=inventory-392-25877.json`。
-
-做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
-完整组件变体树和 modal 附件本体。`unknown` 节点只画样子，不赋交互；`unknown` 的
-`modal-trigger` 不自动接线。做页接入见 issue #5（指派 `zhanxinyi-lab`）。本工具不改 `skills/yise-web-ui/**`，不写回 Figma。
 
 ## 开发
 

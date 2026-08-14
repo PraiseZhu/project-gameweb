@@ -1,15 +1,18 @@
-# figma-naming — 图层命名规范与体检工具
+# figma-naming — 图层命名规范与做页前清单
 
-设计稿的图层该怎么命名，以及一套按这份规范逐层体检的工具。
+设计稿图层怎么命名，以及把**已规范命名稿**编成做页前 `inventory/v2` ready 清单。
+体检命令和 Figma 插件仍在，但不是本轮交接入口。
 
 分成两半，各看各的：
 
 | 你是 | 看这里 |
 |---|---|
 | 设计师 —— 我该怎么给图层起名 | [`spec/naming-spec.md`](spec/naming-spec.md) |
-| 想体检自己的稿 | [`tool/README.md`](tool/README.md) 的「快速开始」 |
-| 要把已规范命名稿交给做页前链路 | [`tool/README.md`](tool/README.md) 的「做页前交接：inventory/v2」 |
+| 要把已规范命名稿交给做页 | [`tool/README.md`](tool/README.md) 的「做页前交接：inventory/v2」 |
+| 想体检自己的稿 | [`tool/README.md`](tool/README.md) 的「命名体检快速开始」 |
 | 要改判定逻辑 | [`tool/CLAUDE.md`](tool/CLAUDE.md) |
+
+现行交接：人给已规范命名、带 `node-id` 的货架链接 → `npm run inventory` → `_tmp/inventory-<page>.json`（`schema=inventory/v2`、`status=ready`）→ 做页先消费已确定项。不写回 Figma，不用插件交接。做页接入见 issue #5（指派 `zhanxinyi-lab`）。
 
 ## 为什么分成两半
 
@@ -18,9 +21,10 @@ figma-naming/
 ├── spec/     规范层 —— 人读正文 + 机器表
 │   ├── naming-spec.md            前缀总表、@参数、判定边界（当前 v2.8）
 │   ├── consumer-assumptions.md   规则「不改会怎样」所依赖的下游假定（A-v1.6）
-│   └── spec.mjs                  机器可读镜像（插件 / 体检 / skill 都读这里）
+│   ├── spec.mjs                  机器可读镜像（插件 / 体检 / skill 都读这里）
+│   └── inventory.mjs             inventory/v2 取值表
 └── tool/     工具层 —— 按规范查稿、抽取 inventory/v2、人工核对
-    ├── src/ bin/    判定代码与命令行
+    ├── src/ bin/    判定代码与命令行（含 inventory）
     ├── plugin/      Figma 插件（既有命名实现，非本轮交接入口）
     ├── test/        测试
     └── scripts/     构建、闸门、inventory 核对页
@@ -48,8 +52,9 @@ figma-naming/
 
 ## 与 skills/ 的关系
 
-`skills/` 下各个游戏页 skill 按这份规范解析图层名。
-`tool/scripts/check-skill-sync.mjs` 检查它们用的角色词表与规范总表是否一致：
+做页 skill 吃的是 `inventory/v2` ready 清单里的已确定项，不是再从裸图层名猜角色。
+`tool/scripts/check-skill-sync.mjs` 仍检查各 skill 用的角色词表与规范总表是否一致：
 用了总表没有的角色 → 硬拦；已登记待复审的 → 警告，过期自动升级为硬拦。
 
 在 `tool/` 下跑 `npm run check:skills`，或 `npm test` 时自动跑到。
+本工具不改 `skills/yise-web-ui/**`。
