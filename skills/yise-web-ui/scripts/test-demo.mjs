@@ -20,17 +20,12 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEMO_NAMED_TESTS } from './test-suites.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 /* 测试文件一律以 skill 包内绝对路径传入 node --test(它们物理住在 skill 包,与 cwd 无关);
    `_*.test.mjs` 由本入口自行展开成绝对路径,不依赖 node 的 glob 解析。 */
-const NAMED_TESTS = [
-  'scripts/__tests__/figma-auto-layout.test.mjs',
-  'scripts/__tests__/figma-prototype-truth.test.mjs',
-  'scripts/__tests__/figma-richtext.test.mjs',
-  'scripts/__tests__/font-routing.test.mjs',
-  'scripts/__tests__/hero-scroll-slot.test.mjs',
-];
+const NAMED_TESTS = DEMO_NAMED_TESTS;
 const PRIVATE_TESTS = readdirSync(join(ROOT, 'scripts/__tests__'))
   .filter((n) => n.startsWith('_') && n.endsWith('.test.mjs'))
   .sort()

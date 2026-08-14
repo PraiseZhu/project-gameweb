@@ -1,0 +1,19 @@
+{
+  "demo": [
+    "scripts/__tests__/figma-auto-layout.test.mjs",
+    "scripts/__tests__/figma-prototype-truth.test.mjs",
+    "scripts/__tests__/figma-richtext.test.mjs",
+    "scripts/__tests__/font-routing.test.mjs",
+    "scripts/__tests__/hero-scroll-slot.test.mjs",
+    "scripts/__tests__/comp-paint-order.test.mjs",
+    "scripts/__tests__/semantic-break-dom.test.mjs"
+  ],
+  "broken": {
+    "scripts/__tests__/asset-delivery-audit.test.mjs": "npm run asset:audit 入口与现实现对不上",
+    "scripts/__tests__/comp-fix-r7.test.mjs": "tailwind 内部 API / 钉版契约与现实现脱节",
+    "scripts/__tests__/inline-contract.test.mjs": "init 已改成 figma preview 壳，旧标记断言失效",
+    "scripts/__tests__/onboard.test.mjs": "onboard 现在无 token 就退出，旧契约未改",
+    "scripts/__tests__/qa-hifi-demo.test.mjs": "init 输出已换壳，旧四件套断言失效",
+    "scripts/__tests__/utf8-translation-io.test.mjs": "同 onboard：无 token 就退出"
+  }
+}

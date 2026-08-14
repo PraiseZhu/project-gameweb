@@ -37,6 +37,7 @@ Project Gameweb/
 
 ## 协作约定
 
+- **Figma 图层命名**：用户说「Figma 命名 / 设计稿命名 / 给这稿命名」→ 执行 `standards/figma-naming/SKILL.md`。先 `npm run ready`，等人在稿里打开插件并丢来带 node-id 的链接，再 `npm run name -- --file "<链接>"`。
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
 - **代码评审**：通过 `/review` 触发
 - **测试覆盖**：参见 VERSIONING.md
@@ -58,11 +59,11 @@ Project Gameweb/
 
 ## 测试与守卫
 
-（按项目实际填写）
+进仓契约：新内容只能放 `skills/<name>/` 或 `standards/<name>/`，必须能被夜间扫到。标准位置有 `package.json`（只有规范工具可放在 `tool/package.json`），且必须有可核验的 `npm test`（`echo` / `true` / `exit 0` 及其组合不算）。有 `release:audit` / `fonts:check` 会一并跑。没有自测、或把包丢在仓库根 / 分组根 / 隐藏目录 / 嵌套包 / 仓内其他目录里 → 夜间红，不静默跳过。伊瑟公开测试里依赖当前页的走 `test:demo`；实现已脱节的文件会在夜间日志里点名，不算已验证。
 
-- 运行测试：`（待定）`
-- Lint：`（待定）`
-- 类型检查：`（待定）`
+- 夜间：`.github/workflows/nightly-health.yml` 每天北京 0 点跑 `.github/scripts/nightly-health.mjs`，也可手点。挂了看 Actions 红点和 GitHub 失败邮件。
+- 伊瑟公开测试由 `scripts/test-public.mjs` 自动收 `scripts/__tests__/*.test.mjs`。`_*.test.mjs` 和依赖当前页的文件走 `test:demo`，不进夜间。实现已和断言脱节的文件暂列在该脚本的 `BROKEN_PUBLIC`，修完删掉即自动进夜间。
+- 这是仓内健康检查，不是页面 e2e。完整 e2e 要这个项目**当前那一页**（demo：能打开的 HTML 目录，含 `index.html` / `spec.json` / `truth.json`）。没有页，浏览器验不了今天的产出；skill 单测用的是假目录，代替不了。
 
 ## 版本管理
 

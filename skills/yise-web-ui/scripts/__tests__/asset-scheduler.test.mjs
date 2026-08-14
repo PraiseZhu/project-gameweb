@@ -6,8 +6,14 @@ import { launchChromium } from '../lib/resolve-playwright.mjs';
 const renderer = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
 const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
-test('asset scheduler selects active near assets, defers hidden/far assets, and has a generic full-ready boundary', async () => {
-  const { browser } = await launchChromium(process.cwd(), { headless: true });
+test('asset scheduler selects active near assets, defers hidden/far assets, and has a generic full-ready boundary', async (t) => {
+  let browser;
+  try {
+    ({ browser } = await launchChromium(process.cwd(), { headless: true }));
+  } catch (err) {
+    t.skip(`playwright/chromium 不可用: ${String(err.message || err).split('\n')[0]}`);
+    return;
+  }
   try {
     const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
     await page.setContent(`
