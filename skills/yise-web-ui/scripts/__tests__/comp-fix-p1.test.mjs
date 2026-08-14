@@ -260,7 +260,7 @@ test('#4 嵌套对象里的同名键不再被误当成顶层 light/dark', () => 
 });
 
 test('#4 回灸:cindy 真实 colors.ts 提取数不变,夹注释的 avatar-border 仍正确', (t) => {
-  const colors = '/Users/praise/AI-Agent/Claude/projects/Project CINDY/apps/desktop/src/renderer/themes/colors.ts';
+  const colors = process.env.CINDY_COLORS_TS || '';
   if (!existsSync(colors)) return t.skip('本机没有 cindy 产品仓,跳过回灸');
   const dir = mkdtempSync(join(tmpdir(), 'qa-hifi-p1-real-'));
   const skipped = [];

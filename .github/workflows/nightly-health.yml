@@ -1,0 +1,38 @@
+# 夜间健康检查：每天北京 0 点扫仓内 skills/* 与 standards/*，可手动触发。
+# 每个进仓目录必须有 npm test；有 release:audit / fonts:check 就一并跑。
+# 不打开宣发页，不是 e2e，不调模型。
+name: nightly-health
+
+on:
+  schedule:
+    - cron: '0 16 * * *'   # UTC 16:00 = 北京时间 0:00
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    name: health
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            skills/*/package-lock.json
+            standards/*/package-lock.json
+            standards/*/tool/package-lock.json
+
+      - name: Guard nightly discovery
+        run: node --test .github/scripts/nightly-health.test.mjs
+
+      - name: List packages under check
+        run: node .github/scripts/nightly-health.mjs --list
+
+      - name: Run nightly health
+        run: node .github/scripts/nightly-health.mjs

@@ -21,10 +21,11 @@ export function getChromeCandidates(env = process.env) {
     env.LOCALAPPDATA,
     env.APPDATA,
   ].map(cleanEnvPath).filter(Boolean);
+  const winJoin = (...parts) => parts.join('\\');
   const windows = windowsBases.flatMap((base) => [
-    join(base, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    join(base, 'Google', 'Chrome SxS', 'Application', 'chrome.exe'),
-    join(base, 'Chromium', 'Application', 'chrome.exe'),
+    winJoin(base, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    winJoin(base, 'Google', 'Chrome SxS', 'Application', 'chrome.exe'),
+    winJoin(base, 'Chromium', 'Application', 'chrome.exe'),
   ]);
   return [...new Set([
     cleanEnvPath(env.CHROME_PATH),

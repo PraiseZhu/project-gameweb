@@ -9,6 +9,8 @@
     "figma:onboard": "node scripts/onboard.mjs",
     "figma:preview:first": "node scripts/preview-first.mjs",
     "release:audit": "node scripts/public-release-audit.mjs",
+    "fonts:check": "node scripts/fonts-install.mjs --check",
+    "fonts:install": "node scripts/fonts-install.mjs --install",
     "prototype:truth": "node scripts/figma-prototype-truth.mjs",
     "prototype:audit": "node scripts/figma-prototype-truth.mjs --require-observed",
     "asset:audit": "node scripts/asset-delivery-audit.mjs"
