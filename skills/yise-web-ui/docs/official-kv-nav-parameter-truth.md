@@ -7,7 +7,7 @@ Evidence folders:
 - artifacts/official-kv-nav-20260812-site-v2
 
 Methodology
-- Headed Chrome on the local machine (`C:\Program Files\Google\Chrome\Application\chrome.exe`).
+- Headed Chrome selected through the configured `CHROME_PATH` or the browser resolver; no machine-specific executable path is part of this evidence contract.
 - Read-only public site capture only.
 - Viewports: 3840x734, 1920x1080, 2559x2160, 1404x2160.
 - States sampled by page scroll position: kv (scrollY=0), kv-to-01 (scrollY=900), 01 (scrollY=1800).
@@ -79,3 +79,16 @@ Addendum 2: directory state and active-row evidence
 - The candidate row shells and the fixed shell are identical across the sampled scroll states in the public DOM capture; state differences were not visible in the top-left fixed shell metrics. Any active-state differences are in the nested row/text/art fragments, not in a different container class.
 - The active row shell is not `position: fixed` on its own; it is a relative descendant inside the fixed directory container.
 - These measurements are evidence only; they do not prove the implementation worker’s local white-artifact cause.
+
+Addendum 3: section-title and locale evidence limit
+- The live official page remained browser-locale blind in a direct headed probe: setting `locale` to `zh-CN`, `en-US`, `ja-JP`, `ko-KR`, and `zh-TW` all produced the same Chinese body text and the same `document.documentElement.lang = "zh-CN"` sample on `https://yise.xd.cn/`.
+- Because the public site does not expose a usable locale-switch path, per-locale line-break measurements for `02`, `03`, `09`, and `More/navigation` could not be gathered from the live site alone in this pass.
+- The official capture bundle does, however, contain the target Chinese section-title rows and reusable geometry facts:
+  - `I1:820;12:47557` / text `源格觉醒` at `1920x1080` with `font-size: 100px`, `line-height: 140px`, `white-space: pre`.
+  - `1:849` / text `更多` at `1920x1080` with `font-size: 40px` in the source capture and a nested owner host `1:848`.
+  - The selected nav ornament is an exposed contained image node: `i_p24lgxvu0` at `1920x1080` is `7×24` with `background-image: image-set(...P3Uiapae.png...)` and `background-size: contain`; at `3840x734` it scales to `14×48`.
+- The current evidence therefore supports a fact table for fixed-shell geometry, selected-row ornament sizing, and Chinese title geometry, but not a true official multi-locale live-wrap matrix.
+- Unknowns remain open: explicit line counts and semantic break positions for non-Chinese locale titles, because the public site did not expose a locale switch in browser and the live probe stayed on Chinese content.
+
+Implementation-facing evidence gap
+- A regression that relies on browser locale alone will not be reliable for the official site. Any locale-wrap gate must use supplied locale content or a fixture-level locale source, then compare measured title container geometry and break positions against the documented role/language policy.

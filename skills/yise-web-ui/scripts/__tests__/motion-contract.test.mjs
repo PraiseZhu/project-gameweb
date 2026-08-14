@@ -5,7 +5,7 @@ import { deriveMotionRoles, deriveSectionMotionRole } from '../lib/motion-role.m
 import {
   MOTION_PATTERNS,
   MOTION_PRIMITIVES,
-  YISE_SEASON_MOTION_TEMPLATE,
+  OFFICIAL_MOTION_TEMPLATE,
   buildOfficialMotionAdapter,
   mouseParallaxState,
   buildMotionContract,
@@ -43,18 +43,27 @@ test('all reusable component motion patterns are schema-valid without page IDs',
 test('官网 adapter 只输出语义角色和通用 primitive，不泄漏 hashed selector/node id', () => {
   assert.ok(MOTION_PRIMITIVES.includes('blur-scale-in'));
   assert.ok(MOTION_PRIMITIVES.includes('fade-in-from-left'));
-  assert.equal(YISE_SEASON_MOTION_TEMPLATE.site, 'yise.xd.cn');
+  /* 公开包不绑定任何站点:模板 site 留空,适配器必须由使用方显式提供 site。 */
+  assert.equal(OFFICIAL_MOTION_TEMPLATE.site, '');
+  assert.equal(buildOfficialMotionAdapter({ evidence: [{ source: 'official-browser' }] }), null, '未显式声明站点不许隐式构建适配器');
   const adapter = buildOfficialMotionAdapter({
+    site: 'example.official.example',
+    sourceUrl: 'https://example.official.example/',
     evidence: [{ viewport: { width: 1440, height: 900 }, source: 'official-browser' }],
   });
   assert.equal(adapter.status, 'observed');
+  assert.equal(adapter.site, 'example.official.example');
   assert.equal(adapter.template.roles.kvTitle.entries[0].primitive, 'blur-scale-in');
   assert.equal(adapter.template.roles.kvTitle.entries[0].durationMs, 800);
   assert.equal(adapter.template.roles.kvPrimaryAction.entries[0].primitive, 'slide-up');
   assert.equal(adapter.template.roles.activityCalendar.trigger, 'intersection');
   assert.equal(adapter.template.roles.scrollIndicator.entries[0].primitive, 'arrow-loop-y');
   assert.equal(adapter.template.mouseParallax.minViewportWidth, 751);
-  assert.equal(buildOfficialMotionAdapter({ site: 'other.example' }), null);
+  /* 模板自身绑定站点时,站点不符不建适配器(防把 A 站观察套到 B 站)。 */
+  assert.equal(
+    buildOfficialMotionAdapter({ site: 'other.example', template: Object.freeze({ site: 'bound.example' }) }),
+    null,
+  );
   const serialized = JSON.stringify(adapter);
   assert.doesNotMatch(serialized, /i_[a-z0-9]{6,}/);
   assert.doesNotMatch(serialized, /\b(?:1|12):\d+\b/);
@@ -194,7 +203,7 @@ test('component-set variant mount keeps canvas roots out of the instance content
 });
 
 test('official adapter keeps component-variant fade evidence separate from fabricated carousel tracks', () => {
-  const adapter = buildOfficialMotionAdapter({ evidence: [{ source: 'official-browser' }] });
+  const adapter = buildOfficialMotionAdapter({ site: 'example.official.example', evidence: [{ source: 'official-browser' }] });
   const variant = adapter.template.interaction.componentVariantTransition;
   assert.equal(variant.schema, 'figma-motion-component-variant/v1');
   assert.equal(variant.pattern, 'fade-replace');

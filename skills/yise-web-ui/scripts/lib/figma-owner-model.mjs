@@ -63,7 +63,7 @@ export function checkStructContract(node) {
  * 全都没有 → 纯穿透容器（可穿过，孩子挂到最近有渲染的祖先）。 */
 export function isPassthroughContainer(node) {
   if (!node || typeof node !== 'object') return false;
-  const role = deriveRole(node).role;
+  const role = deriveRole(node, { legacy: true }).role;
   /* Structural/component owners remain addressable even when visually empty;
      otherwise extraction would flatten the owner and lose interaction truth. */
   if (['sec', 'fix', 'scroll', 'switch', 'tab', 'ind', 'swpage', 'mix'].includes(role)) return false;

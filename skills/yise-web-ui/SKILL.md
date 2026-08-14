@@ -76,14 +76,6 @@ merged into an older page fixture.
 
 Multilingual typography is a separate verification axis from copy mapping. Preserve Figma TEXT style and `autoResize`; report font/glyph/weight availability and measured browser range before making any fit or visual claim. The reusable translation interface is `scripts/lib/translation/index.mjs`; see `docs/translation-skill-typography.md` and `docs/typography-diagnostics.md`.
 
-Semantic title line breaks are explicit evidence, not a broad multilingual
-segmentation feature. Only consume `semantic-layout/v1` entries keyed by exact
-node id and locale; do not infer line breaks from string length, language,
-viewport, or neighboring examples. The current validated Etheria example scope
-is limited to two approved Japanese section-03 card-title breaks. Other title
-behavior remains source/Figma, translation, font, slot, and CSS driven or
-evidence-gated. See `docs/semantic-line-break-contract.md`.
-
 Hero scroll motion is a separate reusable capability. Use `scripts/lib/hero-scroll-slot.mjs` and the renderer's state attributes to verify `HERO_LOCKED -> HERO_EXITING -> CONTENT_RELEASED`, including resize and return-to-top. A DOM count or static screenshot does not prove the slot; the Chrome gate must measure later-section visibility and all state transitions. Figma is the static geometry truth, while any official-site observation is behavior reference only.
 
 Motion behavior follows a three-way evidence boundary: Figma truth proves static end state, real Chrome or authoritative bundle measurements prove observed behavior, and a local adapter proves only semantic wiring. Generic keyframes must preserve captured Figma transforms by composing through `translate`/`scale`; scroll observers must use the actual app scroll container; gates must cover desktop, tablet fallback/truth, mobile fallback, and reduced-motion before claiming reusable motion fidelity.
@@ -612,7 +604,7 @@ extractor / 自定义门放进 OS 级 sandbox —— 跨平台可靠性与成本
 | B 状态覆盖 | ✅ 进（`passed/total`） | canonical 浏览器重跑，**在任何 demo Node 脚本之前**、从同一 immutable snapshot 加载 | 哨兵结论同门 |
 | C 交互鲁棒 | ✅ 进（checks 列表） | 同 B（canonical 浏览器 + snapshot + 先于 demo 脚本） | |
 | D 渲染绑定 | ✅ 进（computed-style 条数；未配置则降级声明） | 同 B | |
-| E 像素基准 | ✅ 进（`compared/declared` + 最大 diff + WARN 的裁决人与理由） | **pr-block 亲自 spawn canonical `pixel-compare --report-out <demo 外>`**，真实解码/截图/odiff；trusted report 出块、自报只对账；**门 E 也从同一种整树 snapshot 观察（含 baseline PNG，r8 条目 A）**并做自己的双向 manifest；artifact 三图被 trusted 运行覆盖（manifest 通过后落盘），WARN 裁决必须绑定这三图的 sha256 + 本次现算的 `key`/`diffRatio`/`threshold`（r8） | 排在可信 verify **之前**（verify 末段会执行 demo 代码）；未声明 baseline 时出块写"未运行 pixel-compare"，不宣称已验 |
+| E 像素基准 | ✅ 进（`compared/declared` + 最大 diff + WARN 的裁决人与理由） | **pr-block 亲自 spawn canonical `pixel-compare --report-out <demo 外>`**，真实解码/截图/odiff；trusted report 出块、自报只对账；**门 E 也从同一种整树 snapshot 观察（含 baseline PNG，r8 条目 A）**并做自己的双向 manifest；artifact 三图被 trusted 运行覆盖（manifest 通过后落盘），WARN 裁决必须绑定这三图的 sha256 + 本次现算的 `key`/`diffRatio`/`threshold`（r8） | 排在可信 verify **之前**（verify 末段会执行 demo 代码）；**未声明 baseline 时 pr-block 硬阻断 exit 2 拒绝出块**（candidate 级不再放行，2026-08-14） |
 | F 适配还原 | ✅ 进（点数；未配置则降级声明） | 同 B | |
 | X 自定义门 | ✅ 进（gate id 列表，**降准表述**） | canonical verify 亲自执行注册脚本、记真实 exit code；执行前就地算脚本 sha256 并与观察前入链的那份比对 | **只能声称「精确 hash 的注册脚本被可信 runner 执行且 exit 0」这个执行事件** —— 脚本本身是 demo 代码，不证明它实现了正确的业务 oracle（r7 条目 10）。排在 A-D/F/E 核心观察之后；执行完整组回收子进程；隔离程度见下方残余风险 |
 | 资产体积闸门（非字母门） | ⚠️ 仅抬闸时进（抬闸理由 + 可信侧现算体积） | pr-block **自己**枚举 `assets/` 现算体积并与阀值比对；`report-assets.json` 自报数字仅对账 | 抬闸阀与理由是**作者的政策输入**、不是测量证据（见「资产抬闸的定性」） |
@@ -761,7 +753,9 @@ pr-block 会自己现算体积并把抬闸阀与理由原样印进 PR 附贴块�
 - **门 E 像素基准**（`scripts/pixel-compare.mjs`）：`baselines/<key>.png` = 真沙盒截图
   （桌面 dev 实例 / 手机模拟器采集），在 Node 可信侧解 PNG、比较 RGBA 并输出 baseline/demo/diff 三图。
   mask 只可跳过小面积动态区，超面积、缺图、尺寸错、ERROR/MISSING 都阻断；WARN 必须有人工裁决 artifact 才允许 PR 附贴，且该裁决必须绑定本次的 `key`/`diffRatio`/`threshold`/三图 sha256（旧裁决不得复用到变大的差异上）。
-  无基准时如实标注「像素级未比对」。
+  **无基准时报告强制携带机械证据分级** `verified:false` + `evidenceLevel:'candidate'`
+  （`validatePixelReport` 校验这两个字段，旧格式 skipped 报告点名重跑）——**视觉完成声明一律禁止**；
+  要 claim「视觉还原完成」必须先采基准重跑本门，candidate 只允许写「像素级未比对」。
   **比对内核（gate-e-v2）**：优先 **odiff**（`odiff-bin`，`antialiasing:true` 忽略抗锯齿像素、
   mask 映射 `ignoreRegions`），odiff 不可用时回退 pixelmatch（行为不变并记录 `engineNote`）；
   `QA_HIFI_COMPARE_ENGINE=odiff|pixelmatch` 可点名（A/B 对比/排障用，点名 odiff 失败直接报错不静默降级）。
@@ -806,8 +800,49 @@ pr-block 会自己现算体积并把抬闸阀与理由原样印进 PR 附贴块�
   「不含窗口拉伸行为」；配了必须全过。
 
 门 A/B/C/D/F/X FAIL → 修 demo（或修 spec 声明），重跑，绿灯前不许部署。
-门 E 有基准时 ERROR/MISSING/未裁决 WARN 也阻断；无基准时只降级承诺并如实进 PR 附贴块。
-PR 文案只允许承诺「数据层 truth 提取自源码（带 provenance）；渲染层由门 D 保证；像素层按门 E 结果说明」。
+门 E 有基准时 ERROR/MISSING/未裁决 WARN 也阻断；无基准时报告落 **candidate 级**（`verified:false`，
+机械字段，非「降级承诺」），且 pr-block **硬阻断 exit 2 拒绝出块**（2026-08-14 起，见「视觉完成声明」一节）。
+PR 文案只允许承诺「数据层 truth 提取自源码（带 provenance）；渲染层由门 D 保证；像素层按门 E 结果说明」；
+无 confirmed-final 证据时像素层只能写「像素级未比对（candidate）」。
+
+### 视觉完成声明：证据分级 + 实现隔离（写死）
+
+「视觉还原完成」是本 skill 能做出的**最强声明**，必须有 confirmed-final 证据；其余一切表述只能是
+candidate。这不是倡议——分级由 `report-pixel.json` 的机械字段承载，`validatePixelReport` 强制校验。
+
+**证据分级（机械字段，聚合取最保守一级）**：
+
+| 等级 | 成立条件 | 机械判据 | 允许的表述 |
+|---|---|---|---|
+| `confirmed-final` | 像素层与真实基准比对过：全 PASS；或 WARN 已全部附人工裁决（绑三图 sha256 + 本次现算的 key/diffRatio/threshold） | 可信 pixel-compare 重跑 ok、非 skipped，results 全 PASS/WARN 且 WARN 全部有裁决 | 可以写「视觉还原完成 / 像素级已验证」 |
+| `unverified` | spec 声明了 baseline，但像素比对尚未由可信侧产出结论（verify 报告自身永远只能到这一级） | verify 报告 `evidenceLevel:'unverified'` | 「视觉层待可信像素比对，未完成验证」 |
+| `candidate` | 无基准、未跑门 E、仅 DOM/computed-style 证据、QA 壳截图、无对照片的截图 | report 带 `verified:false` + `evidenceLevel:'candidate'`；或根本没有 report-pixel.json | **只允许写「像素级未比对 / 视觉未验证」；「完成」两个字禁止出现** |
+
+- 门 B/C/D/F/X 全绿**不产生** confirmed-final：它们验证 DOM 状态、computed-style 与几何，
+  不是「肉眼看对不对」；像素级结论只来自门 E。
+- 截图同样分级：与 Figma 栅格 / 官网画面**逐区域比对**过的截图（附比对说明与差异区域）可支撑
+  confirmed-final 的补充证据；无对照片的截图、QA 壳视图截图只是 candidate
+  （见 docs/figma-design-to-web-verification-skill.md §⑤）。
+- **机械落地（2026-08-14 用户拍板，candidate 不再放行）**：
+  - 唯一聚合实现 `aggregateEvidenceLevel`（`scripts/lib/report.mjs`），verify 与 pr-block 共用；
+  - `verify.mjs` 顶层 report 带 `evidenceLevel`（candidate / unverified，永不 confirmed-final）；
+  - `pr-block.mjs`：`spec.baselines` 为空 → **硬阻断 exit 2**（在可信 spawn 之前判定），
+    错误信息点名采集入口（capture-baseline.mjs）与 WARN 裁决路径；可信 pixel 结论 candidate →
+    同样阻断；全绿出块时 stderr 打印最终 `evidenceLevel: confirmed-final`；
+    verify 自报与可信重跑的 `evidenceLevel` 进投影比对（旧格式报告 → 重跑 verify）；
+  - `validatePixelReport` 拒绝旧格式 skipped 报告；PR 附贴块 gate E 行自带等级标注（`pr-render.mjs`）；
+  - 行为由 `scripts/__tests__/visual-evidence-gate.test.mjs` 锁定（硬阻断/聚合/阳性路径/源码契约）。
+
+**T4 与实现隔离（移植自团队 handbook）**：验证者要么给出可复现的通过证据，要么交付失败现场；
+不能降低门禁或顺手修改实现。`visual-fidelity-reviewer` / `silent-failure-hunter` 不修自己正在验证的
+实现；**实现者不能自己给自己的视觉结果盖章**——视觉语义判断（截图 vs Figma/官网是否一致）必须由
+非实现席位完成并署名，机械门（A-F/X/E）由 canonical 可信重跑独立执行。单人会话里同一 agent
+改完自验、自截一张壳图就报「完成」的做法不产生 confirmed-final。
+
+**残余待办（本轮未做，维护者留意）**：
+- demo 若只想交付「数据层」而不想配像素基准，目前没有豁免通道——需要产品决策是否引入
+  `spec.visualScope: 'data-only'` 之类的显式声明（引入即放宽口径，按 evolution 规则走 proposal，不自动落地）；
+- 截图与 Figma 栅格/官网的逐区域比对目前是人工环节，没有脚本化的辅助比对器。
 
 ### P4 部署 + PR 附贴
 
@@ -885,6 +920,7 @@ demo 是产品代码的**镜像视图**，改动的 source of truth 永远是产
 
 1. `truth.mjs --check` 零漂移（demo 与产品代码同步的最终证明）；
 2. `verify.mjs` 门 A-F 全绿 + （有基准时）`pixel-compare` 无未裁决 WARN；
+   无基准时 pr-block 直接 exit 2 拒绝出块（candidate 硬阻断，见「视觉完成声明」一节）；
 3. **产品仓自己的门禁**：受影响包 typecheck + 定向测试 + 仓库要求的全量门禁
    （cindy 仓 = 根目录 `pnpm test:unit`，见其 AGENTS.md）；
 4. **资产清单 + 体积闸门（demo 有 `assets/` 时是硬门，不是可选步骤）**：
@@ -1083,6 +1119,10 @@ proposal 点名维护者看 EVOLUTION.md；全是 isNew=false 时整组省略。
 3. **状态两边都不在 = 构建失败**——不存在"这个状态先不管"的中间态；要么进链路，要么进补齐 tab 并写理由。
 4. **对外动作（部署链接贴 PR、发评论）先经用户确认**。
 5. demo 是 QA 工件不是产品代码：禁止反向把 demo 里的实验改动"顺手"带回产品源码。
+6. **视觉「完成」必须挂 confirmed-final 证据**——无基准时 pr-block 硬阻断 exit 2 拒绝出块；
+   candidate/unverified 一律禁止写「视觉还原完成」；旧格式 skipped 报告会被 pr-block 拒绝。
+7. **实现者不得自验自己的视觉产出**——视觉语义判断（截图 vs Figma/官网）必须由非实现席位署名；
+   机械门由 canonical 可信重跑独立执行。
 
 ## 试点
 

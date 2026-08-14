@@ -21,16 +21,12 @@ export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, fi
   if (!valid) return null;
   const designHeight = viewport / factor;
   const extra = Math.max(0, designHeight - heroHeight);
-  const revealSections = (Array.isArray(followingSections) ? followingSections : [])
-    .map((section) => ({ id: section?.id == null ? null : String(section.id), y: Number(section?.y) }))
-    .filter((section) => section.id != null && Number.isFinite(section.y) && section.y < Number(pageOriginY || 0) + designHeight - 0.5)
-    .map((section) => ({ ...section, distance: Math.max(0, Number(pageOriginY || 0) + designHeight - section.y) }));
-  const revealDistance = Math.max(0, ...revealSections.map((section) => section.distance));
-  const releaseDistance = revealDistance;
+  const layoutOffsetDesign = extra;
+  const releaseDistance = extra * factor;
   const startsAtPageOrigin = Math.abs(firstY - Number(pageOriginY || 0)) <= 0.5;
   if (!startsAtPageOrigin || contentRootId == null) return null;
   return {
-    stateVersion: 'hero-scroll-slot/v2',
+    stateVersion: 'hero-scroll-slot/v3',
     sectionId: firstSection.id == null ? null : String(firstSection.id),
     contentRootId: String(contentRootId),
     viewportHeight: viewport,
@@ -38,14 +34,11 @@ export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, fi
     heroHeight,
     designHeight,
     extra,
+    layoutOffsetDesign,
     releaseDistance,
-    /* The extra range is visual reveal distance only. It must not become a
-       permanent offset on every later section: only the first following
-       section that would otherwise leak into the viewport consumes it, and
-       its translate returns to the Figma source coordinate by release. */
-    revealSections,
-    revealSectionId: revealSections[0]?.id || null,
-    revealDistance,
+    revealSections: [],
+    revealSectionId: null,
+    revealDistance: 0,
     stateAt(scrollTop = 0) {
       const top = Math.max(0, Number(scrollTop) || 0);
       if (top <= 0.5) return { state: 'HERO_LOCKED', progress: 0, scrollTop: top };

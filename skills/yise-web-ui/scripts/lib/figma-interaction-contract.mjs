@@ -7,7 +7,10 @@
  */
 import { deriveRole, parseLayerName } from './figma-name-semantics.mjs';
 
-const STRUCTURAL = new Set(['sec', 'switch', 'swpage', 'tab', 'ind', 'scroll', 'mix']);
+const STRUCTURAL = new Set(['sec', 'switch', 'swpage', 'switch-page', 'tab', 'ind', 'scroll', 'mix']);
+const SWITCH_PAGE_CONTAINER_TYPES = new Set(['FRAME', 'GROUP', 'INSTANCE', 'COMPONENT', 'COMPONENT_SET']);
+const SWITCH_CONTROL_ROLES = new Set(['tab', 'ind', 'btn', 'hot']);
+const SWITCH_PAGE_ROLES = new Set(['switch-page', 'swpage']);
 const asId = (v) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
 const idOf = (n) => asId(n?.id == null ? null : n.id);
 const str = (v) => (v == null ? '' : String(asId(v)));
@@ -66,13 +69,8 @@ function variantGraph(node) {
   };
 }
 
-/* `deriveRole()` intentionally keeps unnamed INSTANCE nodes structural for
- * extraction. The interaction bridge needs a narrower rule: an arbitrary
- * component instance (for example a title ornament) is not a switch unless a
- * source name says so or the same-snapshot component-set graph proves it. */
 function interactionRole(node) {
-  const derived = deriveRole(node);
-  if (derived.via === 'type:component' && derived.role === 'switch' && !variantGraph(node)) return null;
+  const derived = deriveRole(node, { legacy: true });
   return derived.role;
 }
 
@@ -133,8 +131,8 @@ function ownerSwitch(node, byId) {
 }
 
 function groupedIndex(node, siblings) {
-  const role = deriveRole(node).role;
-  const same = siblings.filter((n) => deriveRole(n).role === role);
+  const role = deriveRole(node, { legacy: true }).role;
+  const same = siblings.filter((n) => deriveRole(n, { legacy: true }).role === role);
   const index = same.findIndex((n) => String(idOf(n)) === String(idOf(node)));
   return index >= 0 ? index : null;
 }
@@ -164,6 +162,53 @@ function variantControlFamily(node, entry, byId) {
     return tab ? `tab-button:${tab}` : null;
   }
   return null;
+}
+
+function directChildrenOf(owner, list) {
+  const ownerId = String(idOf(owner));
+  return list.filter((candidate) => String(asId(candidate.parentId)) === ownerId);
+}
+
+function hasRenderablePageCandidate(node) {
+  const role = interactionRole(node);
+  if (['tab', 'ind', 'btn', 'hot', 'scroll', 'switch', 'sec', 'fix', 'ref'].includes(role)) return false;
+  const type = String(node?.type || '').toUpperCase();
+  return ['FRAME', 'GROUP', 'COMPONENT', 'INSTANCE'].includes(type);
+}
+
+function sourceBackedSwitchPages(switchNode, members, list) {
+  const legacyPages = members.filter(({ entry }) => entry.role === 'swpage');
+  if (legacyPages.length > 0) {
+    for (const member of legacyPages) member.entry.pageSource = 'legacy-swpage-prefix';
+    return { pages: legacyPages, source: 'legacy-swpage-prefix', unresolved: null };
+  }
+  const children = directChildrenOf(switchNode, list);
+  const candidates = children
+    .filter(hasRenderablePageCandidate)
+    .sort((a, b) => {
+      const ak = Array.isArray(a.orderKey) ? a.orderKey.join('.') : '';
+      const bk = Array.isArray(b.orderKey) ? b.orderKey.join('.') : '';
+      return ak.localeCompare(bk) || String(idOf(a)).localeCompare(String(idOf(b)));
+    });
+  if (candidates.length < 2) {
+    return { pages: [], source: 'direct-children', unresolved: 'switch direct children do not provide at least two source-backed page candidates' };
+  }
+  const pageMembers = [];
+  for (const child of candidates) {
+    const existing = members.find(({ entry }) => entry.id === String(idOf(child)));
+    const entry = existing?.entry || {
+      id: String(idOf(child)),
+      name: str(child.name),
+      role: 'switch-page',
+      evidence: 'truth:source-direct-child',
+      switchId: String(idOf(switchNode)),
+    };
+    entry.role = 'switch-page';
+    entry.switchId = String(idOf(switchNode));
+    entry.pageSource = 'switch-direct-child';
+    pageMembers.push({ node: child, entry });
+  }
+  return { pages: pageMembers, source: 'switch-direct-child', unresolved: null };
 }
 
 /* A Figma scroll viewport commonly has one direct content track. Counting
@@ -235,6 +280,7 @@ export function deriveInteractionModel(nodes = []) {
       if (ownerId != null) {
         const key = String(ownerId);
         if (!bySwitch.has(key)) bySwitch.set(key, []);
+        if (role === 'swpage') entry.evidence = 'truth:legacy-swpage-prefix';
         bySwitch.get(key).push({ node, entry });
         entry.switchId = key;
       } else if (role !== 'switch') {
@@ -247,11 +293,31 @@ export function deriveInteractionModel(nodes = []) {
   }
 
   for (const [switchId, members] of bySwitch) {
-    const pages = members.filter(({ entry }) => entry.role === 'swpage');
+    const switchMember = members.find(({ entry }) => entry.role === 'switch');
+    const pageResult = switchMember ? sourceBackedSwitchPages(switchMember.node, members, list) : { pages: [], source: 'missing-switch', unresolved: 'missing switch owner' };
+    const pages = pageResult.pages;
+    for (const page of pages) {
+      if (!components.some((entry) => entry.id === page.entry.id)) components.push(page.entry);
+      if (!members.some(({ entry }) => entry.id === page.entry.id)) members.push(page);
+    }
     const tabs = members.filter(({ entry }) => entry.role === 'tab');
     const inds = members.filter(({ entry }) => entry.role === 'ind');
-    const switchMember = members.find(({ entry }) => entry.role === 'switch');
     const graph = variantGraph(switchMember?.node);
+    const controlPageMismatch = pages.length > 0 && pageResult.source === 'switch-direct-child' && !graph
+      && ((tabs.length > 0 && tabs.length !== pages.length) || (inds.length > 0 && inds.length !== pages.length));
+    if (controlPageMismatch) {
+      unresolved.push({
+        id: switchId,
+        role: 'switch',
+        reason: 'switch direct-child pages require complete tab/indicator mapping when controls exist (pages=' + pages.length + ', tabs=' + tabs.length + ', indicators=' + inds.length + ')',
+      });
+      for (const page of pages) {
+        page.entry.swpage = null;
+        page.entry.switchId = null;
+        page.entry.pageSource = 'switch-direct-child-unresolved';
+      }
+      continue;
+    }
     const indexFor = (entry, set) => {
       const idx = set.findIndex(({ entry: e }) => e.id === entry.id);
       return idx >= 0 ? idx : null;
@@ -261,7 +327,7 @@ export function deriveInteractionModel(nodes = []) {
          their own indexes mixed command order into the shared state and let
          an arrow select an impossible page. Only source-backed selectable
          families receive an index, each in its own sibling order. */
-      const index = entry.role === 'swpage' ? indexFor(entry, pages)
+      const index = SWITCH_PAGE_ROLES.has(entry.role) ? indexFor(entry, pages)
         : entry.role === 'tab' ? indexFor(entry, tabs)
           : entry.role === 'ind' ? indexFor(entry, inds) : null;
       if (index != null) entry.swpage = index;
@@ -303,7 +369,7 @@ export function deriveInteractionModel(nodes = []) {
         });
       }
     } else if (pages.length === 0 && (tabs.length || inds.length)) {
-      unresolved.push({ id: switchId, role: 'switch', reason: 'switch has controls but no swpage children' });
+      unresolved.push({ id: switchId, role: 'switch', reason: pageResult.unresolved || 'switch has controls but no source-backed page candidates' });
     }
   }
 
@@ -339,6 +405,7 @@ export function deriveInteractionModel(nodes = []) {
       sectionTargets: components.filter((x) => x.secTarget).length,
       switches: new Set(components.filter((x) => x.switchId).map((x) => x.switchId)).size,
       swpages: components.filter((x) => x.swpage != null).length,
+      switchDirectChildPages: components.filter((x) => x.pageSource === 'switch-direct-child').length,
       componentVariantGraphs: components.filter((x) => x.variantGraph?.pageSource === 'component-set-variant').length,
       componentVariantPages: components.reduce((count, x) => count + (x.variantGraph?.variants || 0), 0),
       componentVariantControls: components.filter((x) => x.variantIndex != null).length,

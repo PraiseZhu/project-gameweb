@@ -10,7 +10,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFil
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { buildInlineBlock, locateInlineBlock } from '../lib/inline-markers.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const INIT = join(ROOT, 'scripts/init.mjs');
@@ -31,20 +30,6 @@ function json(res) {
 
 function tmpDir(tag) {
   return mkdtempSync(join(tmpdir(), `qa-comp-${tag}-`));
-}
-
-function replaceInlineBlock(html, name, source) {
-  const loc = locateInlineBlock(html.replace(/\r\n/g, '\n'), name);
-  assert.ok(loc, `missing ${name} inline block`);
-  const normalized = html.replace(/\r\n/g, '\n');
-  return normalized.slice(0, loc.b) + buildInlineBlock(name, source) + normalized.slice(loc.replaceEnd);
-}
-
-function inlineBlockText(html, name) {
-  const normalized = html.replace(/\r\n/g, '\n');
-  const loc = locateInlineBlock(normalized, name);
-  assert.ok(loc, `missing ${name} inline block`);
-  return normalized.slice(loc.b, loc.replaceEnd);
 }
 
 const ENTRY = 'src/renderer/components/Widget.tsx';
@@ -226,31 +211,46 @@ test('旧模式(不带 --mode)行为不变:四件套 + 无 component 段 + 无 a
   const res = run(INIT, ['--dir', dir, '--name', 'classic-demo', '--pr', '77']);
   assert.equal(res.status, 0, res.stderr);
   const out = json(res);
-  assert.deepEqual(out.files, ['spec.json', 'extract.mjs', 'extract-helpers.mjs', 'index.html']);
+  assert.deepEqual(out.files, ['spec.json', 'extract.mjs', 'extract-helpers.mjs', 'index.html', 'fixtures/device-presets.json']);
   assert.equal('mode' in out, false, '经典模式 stdout 不应新增字段');
   assert.deepEqual(out.next, [
     '1. 写 extract.mjs(P1 真值提取),跑 truth.mjs --demo <dir> --embed',
     '2. 填 spec.json states/verify + index.html __qaDemo 配置与 renderApp(P2)',
     '3. node scripts/states.mjs && node scripts/verify.mjs 验收(P3)',
+    '—— Figma 稿流程(首屏尽早可见):spec.json 加 figma 段(fileKey/fetchNodes/sections)',
+    '   → node scripts/figma-fetch.mjs --demo <dir>(稿 → fixtures 快照,唯一联网步骤)',
+    '   → node scripts/figma-lib-sync.mjs --demo <dir>(同步通用提取库副本)',
+    '   → extract.mjs 用 lib/figma-geo.mjs extractGeometry 读 fixtures 出 truth',
+    '   → node scripts/truth.mjs --demo <dir> --embed(空 truth 会 fail-closed,不许产空壳)',
+    '   → node scripts/figma-inline.mjs --demo <dir> --check',
+    '   → npm run figma:preview:first -- --demo <dir>(浏览器验证首屏有真实 Figma 节点)',
   ]);
   const spec = JSON.parse(readFileSync(join(dir, 'spec.json'), 'utf8'));
   assert.equal('component' in spec, false);
   assert.deepEqual(spec.matrix.platforms, ['desktop', 'mobile']);
   const html = readFileSync(join(dir, 'index.html'), 'utf8');
   assert.ok(!html.includes('QA_COMPONENT_ADAPTER'), '经典壳不该带 adapter 段');
-  assert.ok(html.includes('QA_CHROME_BEGIN'));
+  assert.ok(html.includes('FIGMA_CHROME_BEGIN'));
   assert.ok(html.includes('renderApp(ctx)'), '经典壳仍需手写 renderApp');
   assert.ok(!existsSync(join(dir, 'build.mjs')) && !existsSync(join(dir, 'shims')));
   assert.equal(spec.meta.pr, 77);
 });
 
 test('--update-chrome 仍只换 chrome 段;--update-adapter 只换 adapter 段', () => {
-  // 经典 demo:update-chrome 可用,update-adapter 因缺标记段被拒
+  // 经典 demo(figma 壳):update-chrome 换 FIGMA_CHROME 段,update-adapter 因缺标记段被拒
   const classicDir = join(tmpDir('upd-classic'), 'demo');
   run(INIT, ['--dir', classicDir, '--name', 'cc-demo']);
+  const classicIndex = join(classicDir, 'index.html');
+  const classicOrig = readFileSync(classicIndex, 'utf8');
+  const classicDirty = classicOrig
+    .replace(/(FIGMA_CHROME_BEGIN[\s\S]*?\*\/\n)[\s\S]*?(\n\/\* FIGMA_CHROME_END)/, '$1/*CHROME-DIRTY*/$2');
+  writeFileSync(classicIndex, classicDirty);
   const okChrome = run(INIT, ['--dir', classicDir, '--update-chrome']);
   assert.equal(okChrome.status, 0, okChrome.stdout + okChrome.stderr);
-  assert.equal(json(okChrome).block, 'QA_CHROME');
+  assert.equal(json(okChrome).block, 'FIGMA_CHROME');
+  const classicHtml = readFileSync(classicIndex, 'utf8');
+  assert.ok(!classicHtml.includes('CHROME-DIRTY'), 'figma chrome 段未被替换');
+  assert.equal(classicHtml, classicOrig, 'figma 壳只换 chrome 段,其余字节不动');
   const noAdapter = run(INIT, ['--dir', classicDir, '--update-adapter']);
   assert.notEqual(noAdapter.status, 0);
   assert.match(json(noAdapter).error, /QA_COMPONENT_ADAPTER/);
@@ -259,11 +259,9 @@ test('--update-chrome 仍只换 chrome 段;--update-adapter 只换 adapter 段',
   const { dir } = initComponent('upd-comp');
   const indexPath = join(dir, 'index.html');
   const original = readFileSync(indexPath, 'utf8');
-  const dirty = replaceInlineBlock(
-    replaceInlineBlock(original, 'componentAdapter', '/*ADAPTER-DIRTY*/\n'),
-    'qaChrome',
-    '/*CHROME-DIRTY*/\n',
-  );
+  const dirty = original
+    .replace(/(QA_COMPONENT_ADAPTER_BEGIN[\s\S]*?\*\/\n)[\s\S]*?(\n\/\* QA_COMPONENT_ADAPTER_END)/, '$1/*ADAPTER-DIRTY*/$2')
+    .replace(/(QA_CHROME_BEGIN[\s\S]*?\*\/\n)[\s\S]*?(\n\/\* QA_CHROME_END)/, '$1/*CHROME-DIRTY*/$2');
   writeFileSync(indexPath, dirty);
 
   const upA = run(INIT, ['--dir', dir, '--update-adapter']);
@@ -271,14 +269,12 @@ test('--update-chrome 仍只换 chrome 段;--update-adapter 只换 adapter 段',
   let html = readFileSync(indexPath, 'utf8');
   assert.ok(!html.includes('ADAPTER-DIRTY'), 'adapter 段未被替换');
   assert.ok(html.includes('CHROME-DIRTY'), '--update-adapter 越界改了 chrome 段');
-  assert.equal(inlineBlockText(html, 'componentAdapter'), inlineBlockText(original, 'componentAdapter'));
 
   const upC = run(INIT, ['--dir', dir, '--update-chrome']);
   assert.equal(upC.status, 0, upC.stdout);
   html = readFileSync(indexPath, 'utf8');
   assert.ok(!html.includes('CHROME-DIRTY'));
-  assert.equal(inlineBlockText(html, 'qaChrome'), inlineBlockText(original, 'qaChrome'));
-  assert.equal(inlineBlockText(html, 'componentAdapter'), inlineBlockText(original, 'componentAdapter'));
+  assert.equal(html, original, '两段各更新一次后应与初始生成物一致');
 });
 
 /* ───────────────────────── build.mjs 可运行性(最小 fixture 产品仓) ───────────────────────── */

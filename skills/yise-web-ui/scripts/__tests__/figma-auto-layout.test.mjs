@@ -120,6 +120,29 @@ test('HUG horizontal owner with FILL text and fixed flanks uses an intrinsic tex
   }
 });
 
+test('HUG horizontal owner gives each HUG text item its source-leaf floor, never its complete row width', () => {
+  const demo = loadDemo(demoDir);
+  const frame = renderFrame(demo, truth, rawTruth, { plat: 'pc' }, 'ja', 1920);
+  const truthNodes = Object.values(truth.sections || {}).flatMap((section) => section.nodes || []);
+  const byId = new Map(truthNodes.map((node) => [String(node.id), node]));
+  const tracks = [...frame.walk()].filter((entry) => {
+    const source = byId.get(String(entry.attrs?.['data-node']));
+    return entry.attrs?.['data-auto-layout-hug-text-track'] === 'source-leaf-floor'
+      && Number(source?.box?.w) > 0
+      && Number.parseFloat(entry.__p?.style?.minWidth) > Number(source.box.w) + 0.5;
+  });
+  assert.ok(tracks.length > 0, 'expected a HUG text track whose complete row is wider than the source leaf');
+  for (const track of tracks) {
+    const source = byId.get(String(track.attrs?.['data-node']));
+    const owner = track.__p;
+    assert.equal(owner?.attrs?.['data-auto-layout'], 'HORIZONTAL', 'track stays in its source horizontal Auto Layout row');
+    assert.equal(owner?.attrs?.['data-auto-layout-hug-text-track-owner'], '1', 'owner remains content-sized HUG');
+    assert.equal(track.style.width, 'max-content', 'translated glyphs determine the track width');
+    assert.equal(Number.parseFloat(track.style.minWidth), Number(source?.box?.w), 'only the source text leaf is the minimum');
+    assert.notEqual(Number.parseFloat(track.style.minWidth), Number(owner?.style?.minWidth), 'complete row width must not become the text floor');
+  }
+});
+
 test('synthetic HUG-FILL-text-fixed eligibility contract excludes ordinary fixed rows', () => {
   const isHugFillTextFixed = ({ layout, children }) => {
     const horizontalHug = String(layout?.layoutMode || '').toUpperCase() === 'HORIZONTAL'
@@ -146,6 +169,18 @@ test('synthetic HUG-FILL-text-fixed eligibility contract excludes ordinary fixed
     layout: { layoutMode: 'HORIZONTAL', layoutSizingHorizontal: 'HUG' },
     children: [fixed(), { ...fillText, layout: { ...fillText.layout, layoutSizingHorizontal: 'FIXED' } }, fixed()],
   }), false, 'without a FILL text sibling there is no HUG track to replace');
+});
+
+test('synthetic HUG-text-track eligibility excludes fixed rows and overlay text', () => {
+  const isHugTextTrack = ({ parent, child }) => String(parent?.layoutMode || '').toUpperCase() === 'HORIZONTAL'
+    && String(parent?.layoutSizingHorizontal || '').toUpperCase() === 'HUG'
+    && child?.type === 'TEXT'
+    && String(child?.layout?.layoutAlign || '').toUpperCase() === 'INHERIT'
+    && String(child?.layout?.layoutSizingHorizontal || '').toUpperCase() === 'HUG';
+  const text = { type: 'TEXT', layout: { layoutAlign: 'INHERIT', layoutSizingHorizontal: 'HUG' } };
+  assert.equal(isHugTextTrack({ parent: { layoutMode: 'HORIZONTAL', layoutSizingHorizontal: 'HUG' }, child: text }), true);
+  assert.equal(isHugTextTrack({ parent: { layoutMode: 'HORIZONTAL', layoutSizingHorizontal: 'FIXED' }, child: text }), false);
+  assert.equal(isHugTextTrack({ parent: { layoutMode: 'HORIZONTAL', layoutSizingHorizontal: 'HUG' }, child: { ...text, layout: { ...text.layout, layoutAlign: 'ABSOLUTE' } } }), false);
 });
 
 test('only INHERIT children participate in a source Auto Layout owner', () => {

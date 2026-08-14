@@ -9,7 +9,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildAssetsManifest, checkDemoNoNodeModules, checkDemoNoSymlinks, failProblems, sameInputHashes, TOOL_VERSION } from './lib/fs-utils.mjs';
 import { validateSpec } from './lib/schema.mjs';
-import { validatePixelForPr, validatePixelReport, validateReportIntegrity } from './lib/report.mjs';
+import { aggregateEvidenceLevel, validatePixelForPr, validatePixelReport, validateReportIntegrity } from './lib/report.mjs';
 /* 门字母 ⟷ runner 的唯一机读映射 + taint 标记(r7 条目 7)。
    本文件**不许**再手写第二份门列表 —— 门 E 那个 CRITICAL 就是两份手写清单各自漏了它。 */
 import { GATE_LETTERS, TRUSTED_GATES, gateKey, lettersFor, markTrustedRun } from './lib/gates.mjs';
@@ -112,6 +112,22 @@ const problems = [
   ...validateSpec(spec).map((p) => `spec: ${p}`),
   ...validateReportIntegrity(demoDir, spec, report).map((p) => `report: ${p}`),
 ];
+
+/* ══ 视觉证据硬门(2026-08-14 用户拍板):candidate 级必须脚本层拦截,不许只打标签放行 ══
+   spec 未声明任何 baseline → 视觉层零像素基准,pr-block 直接拒绝出块。
+   证据分级聚合见 lib/report.mjs 的 aggregateEvidenceLevel(verify 报告与这里共用一份实现);
+   candidate/unverified 都到不了 confirmed-final,而 confirmed-final 只认**可信侧**像素结论。 */
+const declaredBaselines = Array.isArray(spec.baselines) ? spec.baselines.length : 0;
+if (declaredBaselines === 0) {
+  problems.push(
+    'trusted-pixel: spec.baselines 为空——视觉层零像素基准(evidenceLevel=candidate,verified:false),pr-block 硬阻断,拒绝出块(2026-08-14 起 candidate 级不再放行)。'
+    + '\n修法:① 采集真实基准——node scripts/capture-baseline.mjs --url <真实产品沙盒实例> --key <key>'
+    + '(或 --electron-app <main入口/app目录> 起真实桌面壳、--from-png <真机截图>);基准必须来自真实产品渲染,截 demo 自己 = 自证,门 E 失去意义。'
+    + '\n② 在 spec.baselines 声明该 key(落图 baselines/<platform>/<key>.png)。'
+    + '\n③ 重跑 node scripts/pixel-compare.mjs --demo <dir> 与 node scripts/verify.mjs --demo <dir>。'
+    + '\n④ 比对结果为 WARN 时补 adjudications/<key>.json 人工裁决(必须同时声明 key/diffRatio/threshold/三图 sha256,reviewer 与 reason 必填)。',
+  );
+}
 
 // --require-committed(P6 定稿模式):demo 必须真的会随 PR 走——
 // ① demo 目录在 git 仓内且核心文件已被跟踪(否则 push 了分支 demo 也不在 diff 里);
@@ -282,7 +298,6 @@ if (problems.length === 0) {
      所以:先做像素观察,再去碰 demo 代码。禁止把这两段调换回去(源码契约测试锁住)。
      artifact 三图会被重跑覆盖成**可信侧生成的**那份,WARN 的人工裁决从此绑在可信产物上
      (裁决文件本身仍是作者署名的 —— 人工裁决的性质决定的,但它判的图是我们的)。 */
-    const declaredBaselines = Array.isArray(spec.baselines) ? spec.baselines.length : 0;
   if (declaredBaselines > 0) {
     const pxOut = join(mkdtempSync(join(tmpdir(), 'qa-hifi-trusted-px-')), 'report-pixel.json');
     const pxRun = spawnSync(process.execPath, [CANONICAL_PIXEL, '--demo', demoDir, '--report-out', pxOut], {
@@ -302,6 +317,10 @@ if (problems.length === 0) {
       // 可信产物同样过一遍完整校验(阈值/计数/engine/WARN 裁决与 artifact 均绑在这份上)
       const tv = validatePixelReport(demoDir, spec, trustedPx);
       problems.push(...tv.problems.map((p) => `trusted-pixel: ${p}`));
+      /* 防御性 fail-closed(2026-08-14):canonical pixel-compare 在 declared>0 时本不该产出
+         candidate/skipped——真出现说明脚本行为被改坏或基准被绕过,宁可误杀不静默放行。 */
+      if (trustedPx.verified === false || trustedPx.evidenceLevel === 'candidate' || trustedPx.skipped === true)
+        problems.push('trusted-pixel: 可信重跑结论为 candidate(未实际比对)——门 E 未形成像素证据,不得附贴。修法:核对 baselines/ 下基准图与 spec.baselines 声明一致后重跑 node scripts/pixel-compare.mjs');
       /* 对账:自报与可信结论必须一致。只比「PR 上会宣称的结论」——ok/skipped/declared/
          阈值 + 每个基准的 status;bad/total 是重新渲染后现算的像素计数,天然会有微小抖动,
          拿它做全等比对只会制造假阴性。 */
@@ -354,6 +373,7 @@ if (problems.length === 0) {
     const projection = (r) => ({
       ok: r.ok === true,
       partial: r.partial === true,
+      evidenceLevel: r.evidenceLevel ?? null,
       entryRenderProof: r.gateB?.entryRenderProof ?? null,
       // 门集合从 TRUSTED_GATES 派生(条目 7a):runner 为 verify 的那些门,一个不许漏
       gates: Object.fromEntries(lettersFor('verify').map((l) => [gateKey(l), r[gateKey(l)]?.pass === true])),
@@ -375,6 +395,10 @@ if (problems.length === 0) {
   }
 }
 if (problems.length) failProblems(problems);
+
+/* 最终视觉证据等级(2026-08-14):能走到这里 = 有基准且可信像素结论 ok,
+   聚合必然是 confirmed-final;打一行到 stderr 供上游/CI 直接判定。 */
+console.error(`evidenceLevel: ${aggregateEvidenceLevel({ declaredBaselines, trustedPixel: pixel.present ? pixel.report : null })}`);
 
 /* ── 出块:渲染器只接受打过可信标记的结果(r7 条目 7b) ──
    demo 自报的 report / report-pixel 从这里开始**再也不出现** —— 渲染器的签名里没有它们,

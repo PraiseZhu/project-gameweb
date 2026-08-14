@@ -82,18 +82,26 @@ const vpH = Number(baseVp.h ?? baseVp.height ?? 960);
 if (!Number.isFinite(vpW) || !Number.isFinite(vpH) || vpW < 320 || vpH < 320)
   failProblems(['baselineViewport 需要 ≥320 的 w/h']);
 
-/* 只报不判开关（任务 16，lead 裁决）：阈值还没实测拍板之前，门 E 的退出码恒 0 ——
-   一个还没定阈值的门，非零只会教人忽略它。报告里差异照出、reportOnly 标记照写；
-   阈值拍板后必须删掉这个开关（它在输出里很显眼，忘删会被看见）。 */
+/* 只报不判开关（任务 16，lead 裁决）：阈值还没实测拍板之前，门 E 对「完整跑完比对、
+   纯差异超阈值」的退出码恒 0 —— 一个还没定阈值的门，非零只会教人忽略它。报告里差异
+   照出、reportOnly 标记照写；阈值拍板后必须删掉这个开关（它在输出里很显眼，忘删会被看见）。
+   ⚠️ 2026-08-14 起该豁免不再覆盖硬故障：MISSING/ERROR/manifest 漂移无条件 exit 2（见收口处）。 */
 const reportOnly = spec.baselineReportOnly === true;
 
 const declared = spec.baselines ?? [];
 if (declared.length === 0) {
+  /* 无基准 ≠ 视觉验收通过(视觉完成声明规则,2026-08-14):报告强制携带机械证据分级字段
+     `verified:false` + `evidenceLevel:'candidate'` —— report.mjs 的 validatePixelReport
+     只认这两个字段同时存在才算格式合规,旧格式(只有 ok/skipped/reason)会被点名要求重跑。
+     exit 0 只表达「本门无可执行输入、未比对」,不表达任何视觉结论;「视觉还原完成」声明
+     必须有 confirmed-final 证据(见 SKILL.md「视觉完成声明:证据分级 + 实现隔离」)。 */
   const out = {
     ok: true,
     skipped: true,
+    verified: false,
+    evidenceLevel: 'candidate',
     toolVersion: TOOL_VERSION,
-    reason: 'spec.baselines 为空——像素级未比对',
+    reason: 'spec.baselines 为空——像素级未比对。candidate 级证据:不得据此在 PR/报告里写「视觉还原完成」或「视觉已验证」;要 claim 完成必须先用 capture-baseline.mjs 采集真实沙盒/Figma 栅格基准并重跑本门',
     inputHashes: buildInputHashes(demoDir, spec),
   };
   writeFileSync(reportOut, JSON.stringify(out, null, 2) + '\n');
@@ -346,6 +354,13 @@ const out = {
 };
 writeFileSync(reportOut, JSON.stringify(out, null, 2) + '\n');
 console.log(JSON.stringify(out, null, 2));
-/* reportOnly（阈值未拍板的过渡期，lead 2026-08-04 裁决）：ok 照算照报，退出码恒 0。
-   一个还没定阈值的门，非零只会教人忽略它。拍板后删 spec.baselineReportOnly 即恢复。 */
-process.exit(ok || reportOnly ? 0 : 2);
+/* reportOnly（阈值未拍板的过渡期，lead 2026-08-04 裁决）：只豁免「完整跑完比对、
+   纯差异超阈值」这一种非阻断结论。2026-08-14 GPT-5.4 review fix：MISSING/ERROR
+   （基准图缺失、比对未真正执行）与 manifest 漂移是硬故障，无条件 exit 2 ——
+   reportOnly 只报不判的是阈值，不是完整性；单独跑本脚本只看退出码的用法（README
+   标准流程第 3 步）必须能靠退出码区分「没跑成」与「跑成了但差异大」。 */
+const comparedComplete = manifest.all.length === 0
+  && results.length === declared.length
+  && results.length > 0
+  && results.every((r) => r.status === 'PASS' || r.status === 'WARN');
+process.exit(ok || (reportOnly && comparedComplete) ? 0 : 2);

@@ -39,9 +39,12 @@ export const MOTION_PRIMITIVES = Object.freeze([
   'mouse-parallax-x',
 ]);
 
-export const YISE_SEASON_MOTION_TEMPLATE = Object.freeze({
+/* 官方动效默认模板:来自真实产品线官网实测基线(私有证据,2026-08-06 观察记录,
+   不入发布面)。**公开包不绑定任何站点**:site 留空,适配器必须由使用方显式提供
+   site 才构建 —— 这是冻结的内部 fallback,不是对某个具体站点的通用声明。 */
+export const OFFICIAL_MOTION_TEMPLATE = Object.freeze({
   schema: 'official-motion-template/v1',
-  site: 'yise.xd.cn',
+  site: '',
   roles: Object.freeze({
     kvBrand: Object.freeze({
       trigger: 'mount',
@@ -136,16 +139,21 @@ export function mouseParallaxState({ clientX = 0, viewportWidth = 0, backgroundR
   };
 }
 
-export function buildOfficialMotionAdapter({ site = 'yise.xd.cn', sourceUrl = 'https://yise.xd.cn/', evidence = null } = {}) {
+export function buildOfficialMotionAdapter({ site = '', sourceUrl = '', evidence = null, template = OFFICIAL_MOTION_TEMPLATE } = {}) {
   const normalizedSite = String(site || '').trim().toLowerCase();
-  if (normalizedSite !== 'yise.xd.cn') return null;
+  /* fail-closed:使用方必须显式声明站点;站点未声明的调用不再隐式绑定任何站。 */
+  if (!normalizedSite) return null;
+  /* 模板自身绑定了站点时,站点不符不建适配器(防把 A 站观察的模板套到 B 站);
+     默认模板 site 为空 = 中性基线,任何显式站点都可构建,站点由使用方署名。 */
+  const templateSite = String(template?.site || '').trim().toLowerCase();
+  if (templateSite && templateSite !== normalizedSite) return null;
   const observations = Array.isArray(evidence) ? evidence : [];
   return {
     schema: 'official-motion-adapter/v1',
     site: normalizedSite,
     sourceUrl: String(sourceUrl),
     status: observations.length ? 'observed' : 'unverified',
-    template: YISE_SEASON_MOTION_TEMPLATE,
+    template,
     evidenceCount: observations.length,
   };
 }

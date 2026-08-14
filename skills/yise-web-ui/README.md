@@ -1,5 +1,24 @@
 # yise-web-ui
 
+## First visible Figma page
+
+Do not call a new season built until Chrome shows at least one real Figma-derived source node. The preview-first path is smaller than full-page acceptance: it proves URL/token readiness, creates a renderer-connected Figma shell, embeds source-only device presets, and checks a browser-visible first page. Missing translation is a warning for single-language preview and a hard failure only for multi-locale acceptance.
+
+Commands (each step must succeed; `truth.mjs` refuses to emit an empty `{}` shell):
+
+1. `npm run figma:onboard -- --url <figma-design-or-frame-url> --token-env FIGMA_TOKEN --check` — validates URL/token before anything else.
+2. `node scripts/init.mjs --dir <demo-dir> --name <slug>` — scaffolds spec/extract/index.
+3. Add a `figma` section to `spec.json`: `fileKey`, `fetchNodes` (the page frame + its siblings), and `sections`. `figma-fetch` fails with the exact missing field otherwise.
+4. `node scripts/figma-fetch.mjs --demo <demo-dir>` — the ONLY network step: pulls the design into `fixtures/` snapshots.
+5. `node scripts/figma-lib-sync.mjs --demo <demo-dir>` — copies the generic extraction libs into the demo.
+6. Write `extract.mjs` to read the fixtures and emit truth — the init scaffold ships a `{}` TODO on purpose; use `lib/figma-geo.mjs`'s `extractGeometry` for the geometry layer.
+7. `node scripts/truth.mjs --demo <demo-dir> --embed` — normalized `truth.json` + embedded into `index.html`.
+8. `node scripts/figma-inline.mjs --demo <demo-dir> --check` — syncs the renderer + chrome into the page.
+9. `npm run figma:preview:first -- --demo <demo-dir>` — opens the page in headless Chrome and fails unless at least one real Figma-derived node is visible (no placeholder/QA-only shell).
+
+Steps 4-8 can also run as one command: `node scripts/figma-build.mjs --demo <demo-dir> --fetch` (build only, never acceptance; run step 9 after it). Open `index.html?product=1` for the clean product view without the QA chrome.
+
+Full asset export, full-page Chrome gates, pixel comparison, multilingual acceptance, and project/private demo checks remain explicit later phases.
 Reusable Figma-to-Web UI verification Skill. The Etheria/伊瑟 page under `demos/yise-ss5-preview` is a verification example only; this repository is not an AppStore app.
 
 Architecture: the Main Skill owns Figma extraction, content/component/state/
@@ -13,12 +32,6 @@ When Figma supplies a complete fixed directory and section inventory, Main Skill
 also wires the directory's click-to-section and scroll-following selected state;
 it fails closed instead of guessing incomplete target or variant evidence.
 See [docs/skill-architecture.md](docs/skill-architecture.md).
-
-Semantic title line breaks are not inferred intelligently across languages. They
-are explicit node+locale truth only; the current validated Etheria example has
-two approved Japanese section-03 breaks, while other titles use source/Figma,
-translation, font, slot, and CSS behavior or remain evidence-gated. See
-[docs/semantic-line-break-contract.md](docs/semantic-line-break-contract.md).
 
 高保真可交互 QA demo 工作流（Claude Code skill）——从产品源码机械提取带 provenance 的真值、
 生成可交互 HTML demo、七道门自动验收、部署后产出防伪的 PR 附贴块，让 reviewer 不启动沙盒
@@ -50,28 +63,10 @@ UI 功能 PR 的验证有两个老大难：
 
 ## 快速开始
 
-**干净机器上手（推荐一条命令）**：你只需给三样——Figma 设计/帧链接、只读 `FIGMA_TOKEN`、翻译表（可选）。
-
 ```bash
-# 0) 一次性：设只读 token（只需 file_content/file_metadata/file_versions:read，不要写权限）。
-#    方式 A：环境变量   export FIGMA_TOKEN=<read-only-figma-token>
-#              Windows: set FIGMA_TOKEN=<read-only-figma-token>
-#    方式 B：在工作区根放 .env，写一行  FIGMA_TOKEN=<read-only-figma-token>
-#              token 绝不写进任何产物
+# 官方图片交付率审计（只读;--demo/--docs 换成你自己的 demo 与文档,skill 不再绑定任何私有 demo 路径）
+npm run asset:audit -- --demo <demo-dir> --docs <docs-file>
 
-# 1) 上手：规格化链接 → 生成 demo 骨架 → 填 spec.figma → 可选导入翻译表 → 预检
-node scripts/onboard.mjs --dir <demo-dir> \
-  --figma-url "https://www.figma.com/design/<fileKey>/<标题>?node-id=1-15" \
-  --translation <翻译表.csv|json>            # 可选；.xlsx 请先「另存为 CSV UTF-8」
-
-# 2) 拉取设计稿快照（联网只读）+ 预检（token / fileKey 可达性）
-node scripts/figma-fetch.mjs --demo <demo-dir>
-node scripts/onboard.mjs --demo <demo-dir> --check
-```
-
-翻译表约定：首行是语言列表头，支持 `zh-CN / en / ko / ja / zh-TW` 及常见别名（简中/英文/韩文/日文/繁中…）；首列须为简中（作为匹配分母）。`.xlsx` 不直接读（本 Skill 零外部依赖），另存为 UTF-8 CSV 即可。Windows 上也只用上面的 Node 命令把 CSV/JSON 文件路径交给 `onboard.mjs`，不要用 `Get-Content | node`、`ConvertFrom-Json`、`Set-Content` 这类 PowerShell 文本管道处理中文 JSON。
-
-```bash
 # 1. 脚手架(生成 spec/extract/index 四件套骨架,内联标准 chrome 运行时)
 node scripts/init.mjs --dir <demo-dir> --name my-feature --pr 123
 
@@ -93,12 +88,6 @@ node scripts/truth.mjs --check --all <previews-root>
 完整流程（P0 脚手架 → P7 自进化）见 [SKILL.md](SKILL.md)。
 
 依赖：Node ≥ 20；门 B-F 需要宿主项目可解析的 `playwright`（或 `playwright-core` + 本机 Chrome）；
-
-运行时字体：字体是运行时依赖而非页面资产。当前已验证的字体二进制随 Skill 捆绑在 `fonts/`，
-由 `fonts/registry.json` 记录（家族 → 文件 / postScriptName / 字重 / 来源 / 许可 / sha256 / 字节数）。
-clone 后跑 `npm run fonts:check` 校验捆绑字体（存在性 + 字节数 + sha256 + 家族字重映射）；
-缺文件或哈希不符时 `npm run fonts:install` 按 registry 登记的来源打印重装指引（不联网自动下载、不静默替换）。
-许可未确认的字体在 `licenseReview` 里如实上报为待人工审查，不虚构为安全。
 门 E 需要 `pixelmatch` + `pngjs`。
 
 ## 自进化台账（self-evolution ledger)
@@ -132,7 +121,6 @@ scripts/
 ├─ pr-block.mjs           # P4/P6 PR 附贴块(防伪校验全家桶)
 ├─ evolution-note.mjs     # P7 自进化台账唯一读写通道
 └─ lib/                   # schema/replay/防伪 hash/playwright 解析/extract-helpers
-fonts/                    # 运行时字体二进制 + registry.json(family/weight/source/license/sha256)
 templates/
 ├─ qa-chrome.js           # demo 合约标准运行时(__qa API/切换器/状态补齐 tab/拉伸手柄)
 ├─ demo-shell.html        # index.html 模板

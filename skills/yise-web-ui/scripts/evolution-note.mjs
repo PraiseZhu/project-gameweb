@@ -52,6 +52,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateTerminalNote, validatePartialDecisions, DECIDED_RE, TERMINAL_STATUSES } from './lib/ledger-policy.mjs';
 
 const SKILL_ROOT = process.env.QA_HIFI_SKILL_ROOT
   ? resolve(process.env.QA_HIFI_SKILL_ROOT)
@@ -85,7 +86,7 @@ function readCaseState(session) {
   return {
     file,
     exists: true,
-    cases: (text.match(/^## case /gm) ?? []).length,
+    cases: text.match(/^## case /gm)?.length ?? 0,
     declaredNone: /^> DECLARED-NONE /m.test(text),
   };
 }
@@ -319,9 +320,27 @@ try {
     if (!STATUSES.includes(status)) throw new Error(`--status 必须是 ${STATUSES.join('|')}`);
     const entry = ledger.entries.find((e) => e.fingerprint === fingerprint);
     if (!entry) throw new Error(`台账中没有 fingerprint=${fingerprint} 的条目`);
-    entry.status = status;
+    /* v3.1 终态纪律：新终态 note（landed/adopted/rejected/tracked）须以 [decided:YYYY-MM-DD] 开头；
+       部分采纳用 [part:N][adopted|rejected] 连续编号。旧条目已有 legacy note（无前缀）且本次未给新 note
+       → 不动它、不伪造历史，仅标记 noteLegacy 待 owner 补充。 */
     const note = arg('note');
-    if (note) entry.note = note;
+    const isTerminal = TERMINAL_STATUSES.includes(status);
+    if (isTerminal && note) {
+      const parts = note.split(/\n+/).filter((line) => /^\[part:/.test(line));
+      if (parts.length) {
+        const pv = validatePartialDecisions(parts);
+        if (!pv.ok) throw new Error('部分采纳语法不合法：' + pv.reason);
+      } else {
+        const tv = validateTerminalNote(status, note);
+        if (!tv.ok) throw new Error('终态 note 纪律不满足：' + tv.reason + '（新终态须 [decided:YYYY-MM-DD] 开头；部分采纳用 [part:1][adopted] …）');
+      }
+      entry.note = note;
+    } else if (isTerminal && !note && entry.note && !DECIDED_RE.test(entry.note) && !/^\[part:/.test(entry.note)) {
+      entry.noteLegacy = true;
+    } else if (note) {
+      entry.note = note;
+    }
+    entry.status = status;
     writeLedger(ledger);
     const sync = syncLedger(`evo: ledger ${fingerprint} status=${status}`);
     print({ ok: true, entry, sync, ledgerFile: LEDGER_FILE, mdFile: MD_FILE });

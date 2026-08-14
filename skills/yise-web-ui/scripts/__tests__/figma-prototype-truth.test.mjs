@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import {
   buildPrototypeTruthGate,
   extractPrototypeLeaves,
@@ -75,10 +74,7 @@ test('figma-geo emits prototype fields exactly once when fixture exposes them', 
   assert.deepEqual(result.nodes[0].prototype.interactions.value, []);
 });
 
-const ETHERIA_FIXTURE = fileURLToPath(new URL('../../demos/yise-ss5-preview/fixtures/figma-page.json', import.meta.url));
-const HAS_ETHERIA = existsSync(ETHERIA_FIXTURE);
-if (!HAS_ETHERIA) console.log('[skip] figma-prototype-truth: 缺私有 Etheria fixture figma-page.json（source-only 发布不含）；合成用例仍覆盖契约，fail-closed 跳过');
-test('current Etheria fixtures expose empty interactions and component metadata only', { skip: !HAS_ETHERIA }, () => {
+test('current Etheria fixtures expose empty interactions and component metadata only', () => {
   const snapshot = JSON.parse(readFileSync(new URL('../../demos/yise-ss5-preview/fixtures/figma-page.json', import.meta.url), 'utf8'));
   const evidence = inspectPrototypeSnapshot(snapshot, { source: 'figma-page.json' });
   assert.ok(evidence.totalNodes > 0);

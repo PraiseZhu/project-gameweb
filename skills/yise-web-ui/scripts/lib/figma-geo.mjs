@@ -92,7 +92,7 @@
 
 /** §5.3 前缀表（keys 用于解析前缀；语义字符串仅作文档）。 */
 import { extractPrototypeLeaves } from './figma-prototype-truth.mjs';
-import { deriveRole } from './figma-name-semantics.mjs';
+import { deriveRole, parseLayerName } from './figma-name-semantics.mjs';
 
 const PREFIX_SEMANTICS = {
   sec: '分区 → 顶层 z-index 层，按 y 序',
@@ -236,8 +236,8 @@ const CONTAINER_TYPES = new Set(['FRAME', 'GROUP', 'INSTANCE']);
 
 /** 从图层名解析已知前缀（`xxx/...` 且 xxx 在 §5.3 表里）；未知 `xxx/` 不算前缀。 */
 function parsePrefix(name) {
-  const m = /^([a-z]+)\//.exec(typeof name === 'string' ? name : '');
-  return m && Object.hasOwn(PREFIX_SEMANTICS, m[1]) ? m[1] : null;
+  const parsed = parseLayerName(name);
+  return parsed.errors?.length || !Object.hasOwn(PREFIX_SEMANTICS, parsed.role) ? null : parsed.role;
 }
 
 /** 数组里是否有可见成员（Figma 里 visible 缺省 = 可见）。 */

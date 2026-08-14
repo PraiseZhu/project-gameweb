@@ -73,17 +73,12 @@ export async function replay(page, steps = []) {
 // 真实可点击性判定:Playwright 的 visible 不查 opacity,故这里额外走祖先链核 effective
 // opacity>0 与 pointer-events!=none——挡 opacity:0 / pointer-events:none 的「假入口自证」
 // (codex 复审 P0-2/P0-3:原 main-world 合成 click 无 actionability 校验,隐藏入口也能取证)。
-async function firstActionable(page, selectors) {
-  for (const selector of selectors) {
-    const loc = page.locator(selector).first();
-    if ((await loc.count()) === 0) continue;
-    let visible = false;
-    try {
-      await loc.waitFor({ state: 'visible', timeout: 1500 });
-      visible = true;
-    } catch { visible = false; }
-    if (!visible) continue;
-    const renderable = await loc.evaluate((el) => {
+async function isRenderable(loc) {
+  try {
+    await loc.waitFor({ state: 'visible', timeout: 1500 });
+  } catch { return false; }
+  try {
+    return await loc.evaluate((el) => {
       let n = el;
       while (n) {
         const s = getComputedStyle(n);
@@ -93,25 +88,21 @@ async function firstActionable(page, selectors) {
       }
       return true;
     });
-    if (renderable) return loc;
+  } catch { return false; }
+}
+
+async function firstActionable(page, selectors) {
+  for (const selector of selectors) {
+    const loc = page.locator(selector).first();
+    if ((await loc.count()) === 0) continue;
+    if (await isRenderable(loc)) return loc;
   }
   return null;
 }
 
-export async function clickPref(page, key, value) {
-  /* A content dimension may legitimately be a native select (notably language:
-     the harness kit reserves segmented controls for short, mutually visible
-     sets and requires a select for a long locale list). Keep the existing
-     button contract first, then use the explicit generic select seam. */
-  const select = page.locator(`select[data-qa-pref-key="${key}"]`).first();
-  if (await select.count()) {
-    const hasOption = await select.locator(`option[value="${String(value).replace(/"/g, '\\"')}"]`).count();
-    if (hasOption) {
-      await select.selectOption(String(value));
-      return;
-    }
-  }
-  const candidates = [
+/* 按钮式偏好入口候选选择器(与 templates/demo-chrome.md 的切换入口约定同序)。 */
+function prefCandidates(key, value) {
+  return [
     `[data-qa-pref="${key}:${value}"]`,
     `[data-pref="${key}:${value}"]`,
     `[data-pref-key="${key}"][data-pref-value="${value}"]`,
@@ -120,10 +111,35 @@ export async function clickPref(page, key, value) {
     `[data-v="${value}"]`,
     `[data-seg="${value}"]`,
   ];
-  const loc = await firstActionable(page, candidates);
-  if (!loc) throw new Error(`无法通过可交互 DOM 入口切换偏好 ${key}=${value}(缺入口/隐藏/opacity:0/pointer-events:none)`);
-  // Playwright click 再次校验 actionability + hit-test(被遮挡则超时失败)
-  await loc.click({ timeout: 4000 });
+}
+
+/* DOM 入口优先的统一偏好应用:先按钮式候选,找不到可见按钮才回退 select。
+   成功应用返回 true;无可用入口返回 false(由调用方决定报错还是再走其它回退)。
+   2026-08-14 GPT-5.4 review fix:select 从「最先抢占」降为「按钮之后的回退」——
+   页面同时存在隐藏 select 与可见按钮时不再卡死在隐藏 select 上;且回退到 select
+   时同样先过可见/可交互校验(隐藏 select 直接判无入口,不做合成 selectOption)。 */
+async function tryPrefViaDom(page, key, value) {
+  const loc = await firstActionable(page, prefCandidates(key, value));
+  if (loc) {
+    // Playwright click 再次校验 actionability + hit-test(被遮挡则超时失败)
+    await loc.click({ timeout: 4000 });
+    return true;
+  }
+  const select = page.locator(`select[data-qa-pref-key="${key}"]`).first();
+  if ((await select.count()) === 0) return false;
+  if (!(await isRenderable(select))) return false;
+  const hasOption = await select.locator(`option[value="${String(value).replace(/"/g, '\\"')}"]`).count();
+  if (!hasOption) return false;
+  await select.selectOption(String(value));
+  return true;
+}
+
+export async function clickPref(page, key, value) {
+  /* 长列表维度(如语言)可以合法地是原生 select(harness kit 约定:短集合用分段控件、
+     长列表用 select)。select 是按钮候选之后的回退,且必须可见可交互。 */
+  const applied = await tryPrefViaDom(page, key, value);
+  if (!applied)
+    throw new Error(`无法通过可交互 DOM 入口切换偏好 ${key}=${value}(缺入口/隐藏/opacity:0/pointer-events:none)`);
 }
 
 export async function applyCase(page, testCase) {
@@ -136,18 +152,23 @@ export async function applyCase(page, testCase) {
           are not exposed as visible controls per the harness kit, so automation writes
           them through the explicit __qa.setPref API AFTER the viewport is settled —
           never a fake hidden button, and never before the plat click that would
-          re-derive (and could clobber) them. */
+          re-derive (and could clobber) them.
+       2026-08-14 GPT-5.4 review fix:lane 2 在 setPref 之前先找可见的 DOM 入口 ——
+       未来页面若真的把 os/mode 做成可见控件(如 SS6 的系统/主题按钮),点真实入口
+       优先于直写 API;找不到可见控件才回退 setPref;两者都没有才报错。 */
     for (const key of ['plat', 'region', 'lang']) {
       if (testCase.prefs?.[key] !== undefined) await clickPref(page, key, testCase.prefs[key]);
     }
     for (const key of ['os', 'mode']) {
       if (testCase.prefs?.[key] === undefined) continue;
+      const value = String(testCase.prefs[key]);
+      if (await tryPrefViaDom(page, key, value)) continue;
       const ok = await page.evaluate(
         ([k, v]) => (window.__qa && typeof window.__qa.setPref === 'function'
           ? (window.__qa.setPref(k, v), true) : false),
-        [key, String(testCase.prefs[key])],
+        [key, value],
       );
-      if (!ok) throw new Error(`无法通过 __qa.setPref 设置无视觉维度 ${key}=${testCase.prefs[key]}`);
+      if (!ok) throw new Error(`无法设置无视觉维度 ${key}=${value}(无可见 DOM 入口,且 __qa.setPref 未实现)`);
     }
   }
   const prefs = await page.evaluate(() => window.__qa.prefs());

@@ -751,13 +751,10 @@
     if (!valid || Math.abs(firstY - Number(pageOriginY || 0)) > 0.5 || contentRootId == null) return null;
     const designHeight = viewport / factor;
     const extra = Math.max(0, designHeight - heroHeight);
-    const revealSections = (Array.isArray(followingSections) ? followingSections : [])
-      .map((section) => ({ id: section?.id == null ? null : String(section.id), y: Number(section?.y) }))
-      .filter((section) => section.id != null && Number.isFinite(section.y) && section.y < Number(pageOriginY || 0) + designHeight - 0.5)
-      .map((section) => ({ ...section, distance: Math.max(0, Number(pageOriginY || 0) + designHeight - section.y) }));
-    const revealDistance = Math.max(0, ...revealSections.map((section) => section.distance));
+    const layoutOffsetDesign = extra;
+    const releaseDistance = extra * factor;
     return {
-      stateVersion: 'hero-scroll-slot/v2',
+      stateVersion: 'hero-scroll-slot/v3',
       sectionId: firstSection.id == null ? null : String(firstSection.id),
       contentRootId: String(contentRootId),
       viewportHeight: viewport,
@@ -765,15 +762,16 @@
       heroHeight,
       designHeight,
       extra,
-      releaseDistance: revealDistance,
-      revealSections,
-      revealSectionId: revealSections[0] ? revealSections[0].id : null,
-      revealDistance,
+      layoutOffsetDesign,
+      releaseDistance,
+      revealSections: [],
+      revealSectionId: null,
+      revealDistance: 0,
       stateAt(scrollTop = 0) {
         const top = Math.max(0, Number(scrollTop) || 0);
         if (top <= 0.5) return { state: 'HERO_LOCKED', progress: 0, scrollTop: top };
-        const progress = revealDistance > 0 ? Math.min(1, Math.max(0, top / revealDistance)) : 1;
-        return { state: top + 0.5 >= revealDistance ? 'CONTENT_RELEASED' : 'HERO_EXITING', progress, scrollTop: top };
+        const progress = releaseDistance > 0 ? Math.min(1, Math.max(0, top / releaseDistance)) : 1;
+        return { state: top + 0.5 >= releaseDistance ? 'CONTENT_RELEASED' : 'HERO_EXITING', progress, scrollTop: top };
       },
     };
   },
@@ -807,6 +805,7 @@
         '@keyframes figma-motion-clip-circle{from{clip-path:circle(0);opacity:0}to{clip-path:circle(100%);opacity:1}}',
         '@keyframes figma-motion-arrow-loop-y{0%,to{translate:0 -.0833rem}50%{translate:0 0}}',
         '@keyframes figma-motion-arrow-loop-x{0%,to{translate:10px 0}50%{translate:0 0}}',
+        '.frame[data-hero-scroll-slot="active"][data-hero-scroll-state="HERO_LOCKED"][data-hero-scroll-progress="0.0000"]>.fx-stage[data-hero-slot-role="after-hero"]{clip-path:inset(0 0 100% 0)}',
         '@media (prefers-reduced-motion: reduce){[data-motion-role]{animation:none!important;animation-name:none!important;transition:none!important;filter:none!important;opacity:1!important}[data-hero-slot-role="hero"]{transition:none!important}}',
       ].join('');
       doc.head.appendChild(style);
@@ -1097,6 +1096,7 @@
       frame.setAttribute('data-hero-scroll-progress', state.progress.toFixed(4));
       frame.setAttribute('data-hero-slot-release-scroll', String(releaseDistance));
       frame.setAttribute('data-hero-slot-state-version', contract.stateVersion);
+      frame.style.setProperty('--fx-hero-locked-viewport-height', Math.max(0, Number(frame.clientHeight) || 0) + 'px');
       const reduce = typeof window !== 'undefined'
         && typeof window.matchMedia === 'function'
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1282,6 +1282,8 @@
       : 0;
     const pagePaintOrder = Array.isArray(__activeTruth.pagePaintOrder) ? __activeTruth.pagePaintOrder : null;
     const rawPagePaintOrder = Array.isArray(__rawRoot.pagePaintOrder) ? __rawRoot.pagePaintOrder : null;
+    let pageStageScale = k;
+    let pageStageCropLeft = 0;
 
     /* ═══ 首屏 scroll-slot ═══
        Figma 的静态首屏分区高度不一定等于被模拟设备的可视高度：同一 3840 稿在
@@ -1308,29 +1310,53 @@
         return sectionIds.some((id) => String(__u(id)) === String(sectionId));
       });
       if (!startsAtPageOrigin || !contentRoot) return null;
-      /* 保留设计推导证据：designHeight = viewportH / k（契约测试与审计读取该关系）。 */
+      /* The official KV is a single source composition that is reframed by
+         cover-style horizontal crop at narrow/tall viewports. The page stage
+         and the hero slot must therefore use the same source-backed page
+         scale; fixed chrome keeps its own viewport-width scale. */
+      const slotScale = Math.max(k, viewportH / Number(first.height));
+      if (Number.isFinite(slotScale) && slotScale > 0) {
+        pageStageScale = slotScale;
+        pageStageCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
+      }
+      /* 保留设计推导证据：designHeight = viewportH / pageStageScale（契约测试与审计读取该关系）。 */
       const following = ids.map((id) => ({ id, meta: sections[id] && sections[id].meta }))
         .filter((entry) => String(entry.id) !== String(sectionId) && Number(entry.meta && entry.meta.y) > Number(first.y))
         .sort((a, b) => Number(a.meta.y) - Number(b.meta.y));
       return this._buildHeroScrollSlot({
         viewportHeight: viewportH,
-        scale: k,
+        scale: pageStageScale,
         pageOriginY,
         firstSection: { id: sectionId, y: first.y, height: first.height },
         followingSections: following.map((entry) => ({ id: entry.id, y: entry.meta.y })),
         contentRootId: String(__u(contentRoot.id)),
       });
     })();
-    const pageScrollHeight = pageContentHeight;
+    const heroLayoutOffsetDesign = heroSlot ? Number(heroSlot.layoutOffsetDesign || 0) : 0;
+    const shiftedSectionBottom = (id) => {
+      const m = sections[id] && sections[id].meta;
+      if (!m) return 0;
+      const afterHero = heroSlot && String(id) !== String(heroSlot.sectionId) && Number(m.y) > pageOriginY + 0.5;
+      return (Number(m.y || 0) + Number(m.height || 0) + (afterHero ? heroLayoutOffsetDesign : 0)) - pageOriginY;
+    };
+    const pageScrollHeight = pageScope && heroLayoutOffsetDesign > 0
+      ? Math.max(pageContentHeight, ...ids.map((id) => shiftedSectionBottom(id)))
+      : pageContentHeight;
     frame.setAttribute('data-hero-scroll-slot', heroSlot ? 'active' : 'fallback-missing-page-structure');
     if (heroSlot) {
       frame.setAttribute('data-hero-section', heroSlot.sectionId);
       frame.setAttribute('data-hero-content-root', heroSlot.contentRootId);
       frame.setAttribute('data-hero-slot-design-height', String(heroSlot.designHeight));
+      frame.setAttribute('data-hero-layout-offset-design', String(heroSlot.layoutOffsetDesign || 0));
+      frame.setAttribute('data-hero-page-scale', String(pageStageScale));
+      frame.setAttribute('data-hero-page-crop-left', String(pageStageCropLeft));
     } else {
       frame.removeAttribute('data-hero-section');
       frame.removeAttribute('data-hero-content-root');
       frame.removeAttribute('data-hero-slot-design-height');
+      frame.removeAttribute('data-hero-layout-offset-design');
+      frame.removeAttribute('data-hero-page-scale');
+      frame.removeAttribute('data-hero-page-crop-left');
     }
     const sectionLayerById = new Map();
 
@@ -1361,6 +1387,12 @@
       stage.className = 'fx-stage';
       stage.setAttribute('data-node', sid);
       stage.setAttribute('data-node-id', pageStageMode ? 'page-scope' : 'section-' + sid);
+      if (pageStageMode && pageScope) {
+        stage.style.position = 'relative';
+        stage.style.left = pageStageCropLeft + 'px';
+        stage.setAttribute('data-page-stage-scale', String(pageStageScale));
+        stage.setAttribute('data-page-stage-crop-left', String(pageStageCropLeft));
+      }
       /* Page composition has one continuous content-root coordinate system.
          A Figma section root is a sibling component, not an implicit crop
          viewport; only a concrete source node with clipsContent:true may
@@ -1400,7 +1432,10 @@
       if (pageScope && !pageStageMode) {
         stage.style.position = 'absolute';
         stage.style.left = (secX - pageX) + 'px';
-        stage.style.top = (secY - pageY) + 'px';
+        const afterHeroLayout = heroSlot && String(sid) !== String(heroSlot.sectionId) && Number(secY) > pageY + 0.5;
+        const responsiveSecTop = (secY - pageY) + (afterHeroLayout ? heroLayoutOffsetDesign : 0);
+        stage.style.top = responsiveSecTop + 'px';
+        if (afterHeroLayout) stage.setAttribute('data-hero-layout-shift-design', String(heroLayoutOffsetDesign));
         if (heroSlot) {
           stage.setAttribute('data-hero-slot-role', String(sid) === heroSlot.sectionId ? 'hero' : 'after-hero');
           const reveal = (heroSlot.revealSections || []).find((entry) => String(entry.id) === String(sid));
@@ -1417,7 +1452,7 @@
          zoom 让浏览器在**最终尺寸**下重新排版与光栅化，字形清晰一致。
          连带好处：zoom 改布局占位，stage 在文档流里就占缩放后的高度，
          transform 时代补占位的 .fx-spacer 就此退役（见本函数末尾）。 */
-      stage.style.zoom = String(pageScope && !pageStageMode ? 1 : k);
+      stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? 1 : k));
       if (pageStageMode && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes) {
         frame.style.position = frame.style.position || 'relative';
         fixedStage = document.createElement('div');
@@ -2403,6 +2438,17 @@
               && String(__u(child.layout?.layoutSizingHorizontal) || '').toUpperCase() === 'FILL')
             && sourceFlowChildren.filter((child) => String(__u(child.layout?.layoutAlign) || '').toUpperCase() === 'INHERIT'
               && String(__u(child.layout?.layoutSizingHorizontal) || '').toUpperCase() === 'FIXED').length >= 2;
+          /* A HUG text item in a horizontal HUG row is its own intrinsic
+             track.  The row's source width is the complete zh-CN snapshot
+             (text + gap + sibling badges), never the text item's minimum
+             width.  Treat it structurally, rather than by locale/copy: a
+             translated glyph run may grow and moves the following direct
+             sibling through the source itemSpacing. */
+          const hugTextIntrinsicTrack = parentAutoLayoutMode === 'HORIZONTAL'
+            && String(__u(parentLayout.layoutSizingHorizontal) || '').toUpperCase() === 'HUG'
+            && isText
+            && childLayoutAlign === 'INHERIT'
+            && childLayoutSizing === 'HUG';
           if (pel.getAttribute('data-auto-layout') !== parentAutoLayoutMode) {
             const padT = Number(__u(parentLayout.paddingTop) || 0);
             const padR = Number(__u(parentLayout.paddingRight) || 0);
@@ -2456,6 +2502,14 @@
             }
             pel.setAttribute('data-auto-layout-hug-fill-fixed-siblings', '1');
           }
+          if (hugTextIntrinsicTrack) {
+            const sourceOwnerWidth = Number(parent.box?.w);
+            /* Preserve the source row as a floor, while allowing its true
+               HUG contents to determine the final main-axis extent. */
+            pel.style.width = 'max-content';
+            if (Number.isFinite(sourceOwnerWidth) && sourceOwnerWidth > 0) pel.style.minWidth = sourceOwnerWidth + 'px';
+            pel.setAttribute('data-auto-layout-hug-text-track-owner', '1');
+          }
           el.style.position = 'relative';
           el.style.left = 'auto';
           el.style.top = 'auto';
@@ -2473,6 +2527,11 @@
                old track before the locale font finishes shaping. */
             el.style.minWidth = 'max-content';
             el.setAttribute('data-auto-layout-hug-fill-text-track', 'intrinsic-min-source');
+          }
+          if (hugTextIntrinsicTrack) {
+            /* The source leaf box, not its complete HUG-row owner, is the
+               translation-safe floor for this direct Auto Layout item. */
+            el.setAttribute('data-auto-layout-hug-text-track', 'source-leaf-floor');
           }
           const negativeGap = Number(parent.el.getAttribute('data-auto-layout-negative-gap') || 0);
           if (negativeGap < 0 && parent.el.children.length > 0) {
@@ -2762,14 +2821,30 @@
           /* 字体按【语言 + 语义角色】路由到 Figma 真源字体（见 _routeFontFamily），
              不再对所有语言一律用 zh 源字体。zh-CN 路由结果与源一致；其它语言换成
              各自的真源家族。缺本地文件的家族仍按真源路由（不拿别的字体冒充），
-             加载失败由 fonts-manifest.missing + 证据 font.loaded 如实暴露。 */
-          const fontRoute = this._routeFontFamily({
-            language: ctx.prefs && ctx.prefs.lang,
-            role: semantic.role,
-            semanticClass: semantic.role,
-            sourceFamily: tx.fontFamily,
-            sourceWeight: tx.fontWeight,
-          });
+             加载失败由 fonts-manifest.missing + 证据 font.loaded 如实暴露。
+
+             【2026-08-12 缺译字体回退】翻译采用判定必须早于字体路由：
+             缺译文本显示的是**源 Figma 原文**（多为中文），若仍按当前 locale 路由
+             （如 en→Bebas Neue / ja→Noto Sans JP），会用拉丁/日文字体渲染中文字形，
+             回退字体与源 Alimama ShuHeiTi 视觉不一致 —— 09「源格觉醒」标题即此错。
+             规则（通用、不看文案/node id）：仅当**采用了真实译文**才走 locale 路由；
+             缺译回退原文时保留源 Figma family/weight，不路由。data-copy-missing 在
+             下方照常打标留痕。 */
+          const _copyByNode = t.copy && t.copy.byNode ? t.copy.byNode[nid] : null;
+          const _adoptedVal = _copyByNode ? _copyByNode[ctx.prefs.lang] : null;
+          const _hasAdoptedCopy = _adoptedVal != null && _adoptedVal !== '';
+          const fontRoute = _hasAdoptedCopy
+            ? this._routeFontFamily({
+              language: ctx.prefs && ctx.prefs.lang,
+              role: semantic.role,
+              semanticClass: semantic.role,
+              sourceFamily: tx.fontFamily,
+              sourceWeight: tx.fontWeight,
+            })
+            : { family: tx.fontFamily, weight: tx.fontWeight, role: null, language: ctx.prefs && ctx.prefs.lang, routed: false };
+          if (!_hasAdoptedCopy && String(ctx.prefs.lang || '') !== 'zh-CN') {
+            el.setAttribute('data-font-source-fallback', 'unadopted-copy-keeps-source-family');
+          }
           const effectiveFamily = fontRoute.family || tx.fontFamily;
           if (fontRoute.routed) {
             el.setAttribute('data-font-routed', fontRoute.language + '/' + fontRoute.role + ':' + effectiveFamily);
@@ -3177,6 +3252,14 @@
             el.style.flexGrow = '0';
             el.style.width = 'max-content';
             el.style.minWidth = 'max-content';
+          }
+          if (el.getAttribute('data-auto-layout-hug-text-track') === 'source-leaf-floor') {
+            const sourceLeafWidth = Number(box.w);
+            el.style.flex = '0 0 auto';
+            el.style.flexGrow = '0';
+            el.style.width = 'max-content';
+            el.style.minWidth = Number.isFinite(sourceLeafWidth) && sourceLeafWidth > 0
+              ? sourceLeafWidth + 'px' : '0';
           }
           /* Step-fit shrink is an explicit-permission tool, not a default.
              Only Figma-explicit fixed/clip/truncate (or a truth fit authorization)

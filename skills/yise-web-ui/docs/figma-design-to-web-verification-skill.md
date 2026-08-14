@@ -86,6 +86,23 @@ Adapt 阶段只允许说明“可呈现方式”，不允许替 Figma 补设计�
 
 视觉问题以 Chrome 截图优先。截图不符合设计时，即使 DOM 有节点也不得报告完成。
 
+**视觉完成声明必须挂证据等级（candidate / unverified / confirmed-final），不许只说「完成」**：
+
+| 等级 | 成立条件 | 允许表述 |
+|---|---|---|
+| confirmed-final | 可信 pixel-compare 全 PASS；或 WARN 全部附人工裁决（绑定三图 sha256 + key/diffRatio/threshold）；或截图与 Figma 栅格/官网画面逐区域比对并附比对说明，且由非实现席位署名 | 视觉还原完成 / 像素级已验证 |
+| unverified | spec 声明了 baseline 但像素比对尚未由可信侧产出（verify 报告自身只能到这一级） | 视觉层待可信像素比对，未完成验证 |
+| candidate | 无 baseline、未跑门 E、仅 DOM/computed-style 证据、QA 壳截图、无对照片的截图 | 只能写「像素级未比对 / 视觉未验证」，「完成」禁止出现 |
+
+- 截图必须和**真实 Figma 栅格 / 官网画面**比对（同一 viewport、同区域裁剪、列出差异区域），
+  不能只贴一张本地截图就报完成；QA 壳截图（带切换器/状态补齐 tab/拉伸手柄）不是产品视图证据。
+- **candidate 是硬阻断不是标签**：`spec.baselines` 为空时 `pr-block` exit 2 拒绝出块，
+  错误信息点名采集入口（capture-baseline.mjs / --electron-app / --from-png）与 WARN 人工裁决路径；
+  `verify.mjs` 顶层 report 带 `evidenceLevel`（与 pr-block 共用 `aggregateEvidenceLevel` 聚合），
+  无基准 → candidate，声明基准 → unverified；「没基准就放行」的路已堵死（见 SKILL.md「视觉完成声明」）。
+- **T4 与实现隔离**：验证者要么给出可复现的通过证据，要么交付失败现场；不能降低门禁或顺手修改
+  实现。实现者不能自己给自己的视觉结果盖章通过——同一人改完 demo 自己截图比对不算独立验收。
+
 ## ⑥ Diagnose
 
 诊断阶段把失败定位到唯一链路阶段：Figma 输入 / 抓取、truth、资产、renderer、最终 CSS/Chrome、适配策略或验证工具。
@@ -120,7 +137,7 @@ Adapt 阶段只允许说明“可呈现方式”，不允许替 Figma 补设计�
 | 命令 | 交付前至少复跑 `figma-inline --check`、`truth --check`、`assets-manifest --check`、`render-coverage` 和相关 Chrome smoke；本地查看优先用仓库 `safe-server` / serve 脚本。 |
 | 输出 | 本地 URL、命令结果、截图证据、文件清单、未解决项、是否部署。 |
 | 证据 | 每个用户可见结论都能回到命令输出或截图；未验证事项保持 open/tracked。 |
-| 验收 | 报告不含 token；不声称未截图验证的内容已经完成；不自动关闭移动端真实稿、1:1/fit 裁决等未验证事项；不部署外网，除非任务明确要求。 |
+| 验收 | 报告不含 token；不声称未截图验证的内容已经完成；视觉结论必须标注 candidate/confirmed-final 证据等级；不自动关闭移动端真实稿、1:1/fit 裁决等未验证事项；不部署外网，除非任务明确要求。 |
 
 交付报告建议包含：
 

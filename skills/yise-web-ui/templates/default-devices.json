@@ -1,0 +1,29 @@
+{
+  "schema": "figma-harness-devices/v1",
+  "breakpoints": [
+    { "key": "mobile", "min": 0, "max": 750 },
+    { "key": "tablet", "min": 751, "max": 1023 },
+    { "key": "desktop", "min": 1024, "max": null }
+  ],
+  "deviceGroups": [
+    {
+      "key": "PC",
+      "label": "PC",
+      "freeResize": true,
+      "defaultIndex": 0,
+      "devices": [
+        { "name": "Desktop 1920", "width": 1920, "height": 1080, "dpr": 1 }
+      ]
+    },
+    {
+      "key": "Mobile",
+      "label": "Mobile",
+      "freeResize": false,
+      "defaultIndex": 0,
+      "devices": [
+        { "name": "Mobile 390", "width": 390, "height": 844, "dpr": 3 }
+      ]
+    }
+  ],
+  "otherReference": { "devices": [] }
+}

@@ -26,7 +26,6 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { failJson } from './lib/fs-utils.mjs';
-import { INLINE_MARKERS, buildInlineBlock, locateInlineBlock, markerFor } from './lib/inline-markers.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -44,41 +43,48 @@ const updateAdapter = args.includes('--update-adapter');
    (2026-07-30 集成实测:adapter 头注释里的一处结束标签让整段 adapter 报
    SyntaxError,页面只剩 chrome 抛「renderApp 必填」)。统一在内联时转义。 */
 const inlineSafe = (code) => code.replaceAll('</script', '<\\/script');
-const chromeJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/qa-chrome.js'), 'utf8'));
-const adapterJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/qa-component-adapter.js'), 'utf8'));
-// Figma 通用渲染器 + 验收壳:由 init 按 canonical 契约(inline-markers.mjs)内联,与 figma-inline 同源。
-const figmaRenderJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates', INLINE_MARKERS.render.template), 'utf8'));
-const figmaChromeJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates', INLINE_MARKERS.chrome.template), 'utf8'));
+const chromeJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/qa-chrome.js'), 'utf8').replace(/\r\n/g, '\n'));
+const adapterJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/qa-component-adapter.js'), 'utf8').replace(/\r\n/g, '\n'));
+const figmaRenderJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/figma-render.js'), 'utf8').replace(/\r\n/g, '\n'));
+const figmaChromeJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/figma-chrome.js'), 'utf8').replace(/\r\n/g, '\n'));
+const defaultDevicesJson = readFileSync(join(SKILL_ROOT, 'templates/default-devices.json'), 'utf8').trim();
 
 /** 只替换 index.html 里某个标记段(chrome / adapter 共用一套语义)。 */
 function replaceMarkedBlock(marker, code, flag) {
   const indexPath = join(dir, 'index.html');
   if (!existsSync(indexPath)) failJson(`${flag} 需要已存在的 index.html:${indexPath}`);
-  const markerName = marker === 'QA_CHROME' ? 'qaChrome'
-    : marker === 'QA_COMPONENT_ADAPTER' ? 'componentAdapter'
-      : null;
-  if (!markerName) failJson(`未知内联段 ${marker}`);
+  // 统一 LF(与 figma-inline 同政策):component-shell.html 是 CRLF,标记段正则要求 `*/\n`,
+  // 不归一化的话组件模式 --update-chrome / --update-adapter 会永远报「缺标记段」。
   const html = readFileSync(indexPath, 'utf8').replace(/\r\n/g, '\n');
-  const loc = locateInlineBlock(html, markerName);
-  if (!loc) {
-    const part = markerFor(markerName);
-    failJson(`index.html 缺 ${part.begin} / ${part.end} 标记段——不是 init.mjs 生成的结构(或不是组件模式 demo),手动升级`);
-  }
-  writeFileSync(indexPath, html.slice(0, loc.b) + buildInlineBlock(markerName, code) + html.slice(loc.replaceEnd), 'utf8');
+  const re = new RegExp(`(\\/\\* ${marker}_BEGIN[\\s\\S]*?\\*\\/\\n)[\\s\\S]*?(\\n\\/\\* ${marker}_END \\*\\/)`);
+  if (!re.test(html)) failJson(`index.html 缺 ${marker}_BEGIN/END 标记段——不是 init.mjs 生成的结构(或不是组件模式 demo),手动升级`);
+  writeFileSync(indexPath, html.replace(re, `$1${code}$2`));
   console.log(JSON.stringify({ ok: true, updated: indexPath, block: marker }));
   process.exit(0);
 }
 
-if (updateChrome) replaceMarkedBlock('QA_CHROME', chromeJs, '--update-chrome');
+if (updateChrome) {
+  const indexPath = join(dir, 'index.html');
+  const html = existsSync(indexPath) ? readFileSync(indexPath, 'utf8') : '';
+  // 两套壳各有各的标记段:figma 壳(经典模式)只带 FIGMA_CHROME,组件模式壳带 QA_CHROME。
+  // 2026-08-14 修:QA_CHROME 曾无条件 replace —— 经典 figma 壳没有该标记段,升级命令直接失败。
+  const hasFigma = html.includes('FIGMA_CHROME_BEGIN');
+  const hasQa = html.includes('QA_CHROME_BEGIN');
+  if (hasFigma) replaceMarkedBlock('FIGMA_CHROME', figmaChromeJs, '--update-chrome');
+  if (hasQa) replaceMarkedBlock('QA_CHROME', chromeJs, '--update-chrome');
+  if (!hasFigma && !hasQa) failJson('index.html 没有任何 chrome 标记段(FIGMA_CHROME/QA_CHROME)——不是 init.mjs 生成的壳,手动升级');
+}
 if (updateAdapter) replaceMarkedBlock('QA_COMPONENT_ADAPTER', adapterJs, '--update-adapter');
 
 const name = argOf('--name');
 if (!name || !/^[a-z0-9][a-z0-9-]{1,63}$/.test(name)) failJson('缺 --name <slug>(小写字母/数字/连字符)');
 const pr = argOf('--pr');
 
-const mode = argOf('--mode') ?? 'classic';
+const requestedMode = argOf('--mode');
+const mode = requestedMode === 'figma' ? 'classic' : (requestedMode ?? 'classic');
 if (!['classic', 'component'].includes(mode)) failJson(`--mode 只能是 classic | component(当前 "${mode}")`);
 const isComponent = mode === 'component';
+const isFigma = mode === 'figma' || mode === 'classic';
 const entry = argOf('--entry');
 if (isComponent && !entry) failJson('--mode component 必须给 --entry <组件入口(相对 repoRoot 的路径)>');
 if (!isComponent && entry) failJson('--entry 只在 --mode component 下有意义');
@@ -88,6 +94,7 @@ if (!isComponent && entryExport) failJson('--entry-export 只在 --mode componen
 
 mkdirSync(dir, { recursive: true });
 const files = ['spec.json', 'extract.mjs', 'extract-helpers.mjs', 'index.html'];
+if (isFigma) files.push('fixtures/device-presets.json');
 if (isComponent) files.push('build.mjs', 'component-build-core.mjs', 'repo-glob.mjs', 'src/bootstrap.tsx', 'shims/README.md', 'shims/_template.ts');
 const clash = files.filter((f) => existsSync(join(dir, f)));
 if (clash.length) failJson(`拒绝覆盖已存在文件:${clash.join(', ')}(init 只用于全新 demo)`);
@@ -216,6 +223,14 @@ const repoRoot = findRepoRoot();
 //       join(repoRoot, 'i18n/zh-CN/common.json'), { locator: 'login.title' }),
 //   },
 // };
+${isComponent ? '' : `// TODO(Figma 稿流程,可选):spec.json 填 figma 段(fileKey/fetchNodes/sections),
+//   跑 scripts/figma-fetch.mjs 拉 fixtures 快照 + scripts/figma-lib-sync.mjs 同步通用库副本后,
+//   这里改为读 fixtures 出几何 truth。参考形状(与 scripts/lib/figma-geo.mjs 约定一致):
+//   import { extractGeometry } from './lib/figma-geo.mjs';
+//   // 用 fixtures/figma-*.json 构造 snap + at/fig 工具(SS6 extract.mjs 同款 makeTools),
+//   // 再逐 section 调 extractGeometry({ snap, at, fig, sectionId }) 并入 truth.sections。
+//   注意:truth.mjs 对空 {} fail-closed —— 不写真提取器,首屏预览会被拒绝生成。
+`}
 const truth = {};
 ${isComponent ? THEME_VARS_TODO : ''}
 process.stdout.write(JSON.stringify(truth));
@@ -225,25 +240,23 @@ copyFileSync(join(SKILL_ROOT, 'scripts/lib/extract-helpers.mjs'), join(dir, 'ext
 
 // index.html:shell 模板 + 内联 chrome(组件模式再内联 adapter 段)
 let shell = readFileSync(join(SKILL_ROOT, isComponent ? 'templates/component-shell.html' : 'templates/demo-shell.html'), 'utf8')
+  .replace(/\r\n/g, '\n') /* 统一 LF:component-shell.html 是 CRLF,后续 --update-chrome/--update-adapter 的标记段正则依赖 LF */
   .replaceAll('{{NAME}}', name)
   .replaceAll('{{PR}}', pr ? String(Number(pr)) : 'null');
 if (isComponent) shell = shell.replace('{{QA_COMPONENT_ADAPTER}}', adapterJs);
-shell = shell.replace('{{QA_CHROME}}', chromeJs);
-shell = shell.replace('{{FIGMA_RENDER}}', figmaRenderJs);
-shell = shell.replace('{{FIGMA_CHROME}}', figmaChromeJs);
-for (const [markerName, source] of Object.entries({
-  ...(isComponent ? { componentAdapter: adapterJs } : {}),
-  qaChrome: chromeJs,
-  render: figmaRenderJs,
-  chrome: figmaChromeJs,
-})) {
-  const loc = locateInlineBlock(shell.replace(/\r\n/g, '\n'), markerName);
-  if (loc) {
-    const normalized = shell.replace(/\r\n/g, '\n');
-    shell = normalized.slice(0, loc.b) + buildInlineBlock(markerName, source) + normalized.slice(loc.replaceEnd);
-  }
+if (isComponent) {
+  shell = shell.replace('{{QA_CHROME}}', chromeJs);
+} else {
+  shell = shell
+    .replace('{{QA_DEVICES}}', defaultDevicesJson.replaceAll('</script', '<\\/script'))
+    .replace('{{FIGMA_RENDER}}', figmaRenderJs)
+    .replace('{{FIGMA_CHROME}}', figmaChromeJs);
 }
 writeFileSync(join(dir, 'index.html'), shell);
+if (isFigma) {
+  mkdirSync(join(dir, 'fixtures'), { recursive: true });
+  writeFileSync(join(dir, 'fixtures/device-presets.json'), defaultDevicesJson + '\n');
+}
 
 // 组件模式四件套:build.mjs / src/bootstrap.tsx / shims 骨架
 if (isComponent) {
@@ -282,5 +295,12 @@ console.log(JSON.stringify({
         '1. 写 extract.mjs(P1 真值提取),跑 truth.mjs --demo <dir> --embed',
         '2. 填 spec.json states/verify + index.html __qaDemo 配置与 renderApp(P2)',
         '3. node scripts/states.mjs && node scripts/verify.mjs 验收(P3)',
+        '—— Figma 稿流程(首屏尽早可见):spec.json 加 figma 段(fileKey/fetchNodes/sections)',
+        '   → node scripts/figma-fetch.mjs --demo <dir>(稿 → fixtures 快照,唯一联网步骤)',
+        '   → node scripts/figma-lib-sync.mjs --demo <dir>(同步通用提取库副本)',
+        '   → extract.mjs 用 lib/figma-geo.mjs extractGeometry 读 fixtures 出 truth',
+        '   → node scripts/truth.mjs --demo <dir> --embed(空 truth 会 fail-closed,不许产空壳)',
+        '   → node scripts/figma-inline.mjs --demo <dir> --check',
+        '   → npm run figma:preview:first -- --demo <dir>(浏览器验证首屏有真实 Figma 节点)',
       ],
 }, null, 2));

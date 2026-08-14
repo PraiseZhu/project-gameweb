@@ -35,6 +35,11 @@ if (manifest) {
   for (const required of ['demos/', 'artifacts/', 'evolution/', '.env', 'node_modules/']) {
     if (!manifest.private?.includes(required)) fail(`private 边界缺少 ${required}`);
   }
+  // 每个 private 条目必须有对应 privateReasons(2026-08-14:页面级证据文档被移入 private 后补的机械约束,
+  // 防止"列了边界却说不清为什么",发布复核时每条都能回指理由)。
+  for (const entry of manifest.private ?? []) {
+    if (!Object.hasOwn(manifest.privateReasons ?? {}, entry)) fail(`private 条目 ${entry} 缺 privateReasons 说明`);
+  }
 }
 
 try {
@@ -49,25 +54,43 @@ if (!/^# yise-web-ui\b/m.test(skill)) fail('SKILL.md 缺少 yise-web-ui 标题')
 if (!/^# yise-web-ui\b/m.test(read('README.md'))) fail('README.md 缺少 yise-web-ui 标题');
 
 const publishable = manifest?.publishable ?? [];
-const publishFiles = [...new Set(publishable.flatMap((entry) => entry.endsWith('/') ? walk(entry.slice(0, -1)) : walk(entry)))];
+// 私有边界必须真实生效:private 列表里的文件即使位于可发布目录(docs/ 等)下,也必须被机械排除,
+// 而不是只写个声明继续被扫描(2026-08-14:SS5 证据文档移入 private 后发现 publishFiles 没减)。
+const privateFiles = new Set((manifest?.private ?? []).flatMap((entry) => {
+  const abs = join(ROOT, entry);
+  if (!existsSync(abs)) return [];                 // 磁盘上不存在(如已删除的 fonts/):边界声明照旧,无文件可排除
+  return entry.endsWith('/') ? walk(entry.slice(0, -1)) : walk(entry);
+}));
+const publishFilesRaw = [...new Set(publishable.flatMap((entry) => entry.endsWith('/') ? walk(entry.slice(0, -1)) : walk(entry)))];
+const excludedFromPublish = publishFilesRaw.filter((f) => privateFiles.has(f));
+const publishFiles = publishFilesRaw.filter((f) => !privateFiles.has(f));
+if (excludedFromPublish.length) notes.push(`已按 private 列表从发布面机械排除 ${excludedFromPublish.length} 个文件(位于可发布目录内的私有条目)。`);
 const sensitive = [
   { re: /^\s*FIGMA_(?:TOKEN|FILE_KEY)\s*=\s*(?!<|YOUR_|\$\{|\.{3})[^\s#<>{}"']+/im, label: 'Figma credential assignment' },
   { re: /(?:Bearer\s+|figma_pat_|xox[baprs]-)[A-Za-z0-9._-]{12,}/i, label: 'credential-like token' },
-  { re: /['"]([A-Za-z]:[\\/](?:Users[\\/](?!(?:Test|Public|Default|All Users)[\\/])[^\\/]+[\\/]|OneDrive|Desktop|Documents|Downloads|AppData[\\/]Roaming)[^'"\r\n]+)/, label: 'absolute machine path' },
+  { re: /['"`]([A-Za-z]:[\\/][^'"`\r\n]+)/, label: 'absolute machine path' },
   { re: /https?:\/\/[^\s]*(?:feishu\.cn|larksuite\.com)/i, label: 'private design/source URL' }
 ];
 for (const file of publishFiles) {
   if (file === 'scripts/public-release-audit.mjs') continue;
   const text = read(file);
-  for (const rule of sensitive) if (rule.re.test(text)) fail(`${file}: ??? ${rule.label}`);
+  for (const rule of sensitive) if (rule.re.test(text)) fail(`${file}: 检测到 ${rule.label}`);
 }
 
 const identityFiles = ['SKILL.md', 'README.md', 'package.json', 'scripts/evolution-note.mjs', 'scripts/lib/fs-utils.mjs', 'scripts/lib/pr-render.mjs', 'templates/qa-chrome.js', 'templates/demo-chrome.md'];
 for (const file of identityFiles) {
   if (/qa-hifi-demo/.test(read(file))) fail(`${file}: 仍含未标注的旧公开身份 qa-hifi-demo`);
 }
-const figmaAdaptFile = join(ROOT, 'FIGMA-ADAPT.md');
-if (existsSync(figmaAdaptFile) && readFileSync(figmaAdaptFile, 'utf8').includes('qa-hifi-demo')) notes.push('FIGMA-ADAPT.md 保留 qa-hifi-demo 作为历史上游参考，未纳入 publishable。');
+if (existsSync(join(ROOT, 'FIGMA-ADAPT.md')) && read('FIGMA-ADAPT.md').includes('qa-hifi-demo')) notes.push('FIGMA-ADAPT.md 保留 qa-hifi-demo 作为历史上游参考，未纳入 publishable。');
+
+// 非阻断提示:可发布文件里出现的私有 demo 路径 / 官方页 URL 引用(发布复核时必须逐条过目,
+// 而不是只靠 4 条敏感正则)。SKILL.md/README/PUBLIC-RELEASE 里的 demos/yise-ss5-preview 是
+// 刻意保留的「仅本地验证示例」身份声明,列出来供复核,不判红。
+for (const file of publishFiles) {
+  const text = read(file);
+  if (/demos\/yise-ss5-preview/.test(text)) notes.push(`${file}: 引用私有 demo 路径 demos/yise-ss5-preview(发布复核需逐条确认是"示例"还是"证据")`);
+  if (/yise\.xd\.cn|etheria\.xd\.com/i.test(text)) notes.push(`${file}: 引用官方页 URL(私有行为证据,发布复核需逐条确认)`);
+}
 
 console.log(JSON.stringify({ ok: problems.length === 0, identity: 'yise-web-ui', publishableFiles: publishFiles.length, notes, problems }, null, 2));
 process.exit(problems.length ? 1 : 0);

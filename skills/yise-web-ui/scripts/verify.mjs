@@ -65,6 +65,7 @@ import {
   TOOL_VERSION,
 } from './lib/fs-utils.mjs';
 import { validateSpec, validateTruth, validateCustomGateFiles, truthAt, buildVerifyCases, prefsSubsetEqual, normalizeHash, countFixtureLeaves } from './lib/schema.mjs';
+import { aggregateEvidenceLevel } from './lib/report.mjs';
 /* 门字母的唯一真相源(r7 条目 7a):不许在本文件再手写一份门列表 —— 门 E 那个 CRITICAL
    的根因就是 verify 与 pr-block 各写了一份、两份都漏了 E。 */
 import { lettersFor } from './lib/gates.mjs';
@@ -1025,6 +1026,14 @@ try {
 
   const gatesRun = [gateA, gateB, gateC, gateD, gateF, gateX].filter((g) => !g.skipped);
   const allPass = gatesRun.every((g) => g.pass);
+  /* 视觉证据分级(2026-08-14,与 pr-block 共用 aggregateEvidenceLevel 一份实现):
+     像素层是唯一子检查,而 verify 从不比对像素(门 E 住在 pixel-compare.mjs)——
+     因此本报告最多给出 'candidate'(spec 未声明 baseline)/ 'unverified'(已声明,
+     结论待可信 pixel-compare 产出);'confirmed-final' 只能由 pr-block 拿到可信
+     pixel 结果后聚合得出。candidate 级在 pr-block 是硬阻断,不再放行。 */
+  const evidenceLevel = aggregateEvidenceLevel({
+    declaredBaselines: Array.isArray(spec.baselines) ? spec.baselines.length : 0,
+  });
   const statesResult = {
     total: spec.states.length,
     viaReachable: spec.states.filter((s) => Array.isArray(s.via)).length,
@@ -1052,6 +1061,7 @@ try {
     gateD,
     gateF,
     gateX,
+    evidenceLevel,
     generatedAt: new Date().toISOString(),
   };
   writeFileSync(reportOut, JSON.stringify(report, null, 2) + '\n');

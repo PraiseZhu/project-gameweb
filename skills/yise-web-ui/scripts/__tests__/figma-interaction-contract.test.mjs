@@ -11,11 +11,12 @@ test('derives section navigation and shared switch indexes from owner truth', ()
     { id: 'page-0', type: 'FRAME', name: 'swpage/one', ancestorNames: ['switch/role'], ownerPath: ['root', 'sw', 'page-0'] },
     { id: 'page-1', type: 'FRAME', name: 'swpage/two', ancestorNames: ['switch/role'], ownerPath: ['root', 'sw', 'page-1'] },
     { id: 'ind-0', type: 'ELLIPSE', name: 'ind/one', ancestorNames: ['switch/role'], ownerPath: ['root', 'sw', 'ind-0'] },
+    { id: 'ind-1', type: 'ELLIPSE', name: 'ind/two', ancestorNames: ['switch/role'], ownerPath: ['root', 'sw', 'ind-1'] },
   ];
   const model = deriveInteractionModel(nodes);
   assert.equal(model.stats.sectionTargets, 1);
   assert.equal(model.stats.switches, 1);
-  assert.equal(model.stats.swpages, 5);
+  assert.equal(model.stats.swpages, 6);
   assert.deepEqual(model.attributes.find((x) => x.id === 'tab-1').attrs, {
     'data-node': 'tab-1', 'data-switch': 'sw', 'data-swpage': '1', 'data-tab': 'true',
   });
@@ -82,11 +83,10 @@ test('does not turn previous/next commands into selectable switch indexes', () =
   assert.equal(byId.get('next')['data-swpage'], undefined);
 });
 
-test('does not promote arbitrary direct switch children into carousel pages', () => {
-  /* Owner preservation keeps these nodes renderable, but generic FRAME/GROUP
-     descendants are often one static component snapshot (artwork, copy, or
-     decoration). Only a source-labelled swpage may authorize page hiding or
-     a sliding track. */
+test('fails closed when direct switch children have incomplete controls', () => {
+  /* figma-naming v2.8 no longer requires swpage/. Direct children below a
+     source-labelled switch may be page candidates, but only as a bounded
+     source-backed state set; motion/track behavior remains unverified. */
   const model = deriveInteractionModel([
     { id: 'switch', type: 'INSTANCE', name: 'switch/card', parentId: 'section' },
     { id: 'art', type: 'FRAME', name: 'Artwork', parentId: 'switch' },
@@ -95,10 +95,41 @@ test('does not promote arbitrary direct switch children into carousel pages', ()
     { id: 'section', type: 'FRAME', name: 'sec/one' },
   ]);
   const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
-  assert.equal(model.stats.swpages, 1, 'the tab is a control index, not a rendered page');
-  assert.equal(byId.has('art'), false);
-  assert.equal(byId.has('copy'), false);
-  assert.ok(model.unresolved.some((x) => x.id === 'switch' && /no swpage children/.test(x.reason)));
+  assert.equal(model.stats.swpages, 0);
+  assert.equal(model.stats.switchDirectChildPages, 0);
+  assert.equal(byId.get('art')?.['data-swpage'], undefined);
+  assert.equal(byId.get('copy')?.['data-swpage'], undefined);
+  assert.equal(byId.get('tab')['data-swpage'], undefined, 'single incomplete tab control is not mapped to a page');
+  assert.ok(model.unresolved.some((x) => x.id === 'switch' && /complete tab\/indicator mapping/.test(x.reason)));
+});
+
+test('uses source-backed direct switch children as page candidates without requiring swpage prefix', () => {
+  const model = deriveInteractionModel([
+    { id: 'switch', type: 'FRAME', name: 'switch/card', parentId: 'section', ownerPath: ['section', 'switch'] },
+    { id: 'page-a', type: 'FRAME', name: 'State A', parentId: 'switch', ownerPath: ['section', 'switch', 'page-a'], orderKey: [0, 0] },
+    { id: 'page-b', type: 'GROUP', name: 'State B', parentId: 'switch', ownerPath: ['section', 'switch', 'page-b'], orderKey: [0, 1] },
+    { id: 'tab-a', type: 'FRAME', name: 'tab/a', parentId: 'section', ownerPath: ['section', 'tab-a'] },
+    { id: 'tab-b', type: 'FRAME', name: 'tab/b', parentId: 'section', ownerPath: ['section', 'tab-b'] },
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+  ]);
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
+  assert.equal(model.stats.switchDirectChildPages, 2);
+  assert.equal(byId.get('page-a')['data-swpage'], '0');
+  assert.equal(byId.get('page-b')['data-swpage'], '1');
+  assert.equal(byId.get('tab-b')['data-swpage'], '1');
+  assert.equal(model.components.find((entry) => entry.id === 'page-a').pageSource, 'switch-direct-child');
+});
+
+test('fails closed when direct switch child page candidates are ambiguous or insufficient', () => {
+  const model = deriveInteractionModel([
+    { id: 'switch', type: 'FRAME', name: 'switch/card', parentId: 'section' },
+    { id: 'page-a', type: 'FRAME', name: 'State A', parentId: 'switch' },
+    { id: 'page-b', type: 'FRAME', name: 'State B', parentId: 'switch' },
+    { id: 'tab-a', type: 'FRAME', name: 'tab/a', parentId: 'section' },
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+  ]);
+  assert.equal(model.stats.switchDirectChildPages, 0);
+  assert.ok(model.unresolved.some((x) => x.id === 'switch' && /complete tab\/indicator mapping/.test(x.reason)));
 });
 
 test('accepts a complete component-set variant graph as immediate state replacement only', () => {

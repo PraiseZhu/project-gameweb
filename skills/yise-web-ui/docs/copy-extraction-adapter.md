@@ -8,21 +8,24 @@
 
 context 由祖先链和 fixture 回查机械派生，支持 `contextKey`、`scene`、`nav`、`toggle`、`component`、`section`。mobile 只有 spec 声明真实 snapshot 时才处理。
 
-## 当前接线
+## 接线示例（仅为参考实例，非规范要求）
 
-`demos/yise-ss5-preview/extract.mjs` 已调用：
+示例 demo 的 `<demo-dir>/extract.mjs` 接线如下（伊瑟 SS5 实例，仅演示接入形态）：
 
 ```js
 const copyEnv = buildCopyEnvelope({ demoDir, spec, at, larkLeaf, pcSnap });
 ```
 
-输出分别进入 `truth.copy.byNode` 和 `extract-report.copy`，renderer 继续按语言读取 truth 叶子，不新增页面模板映射。当前本地证据：201 个 Figma TEXT、115 个绑定、251 个 unread、5 个 contextual、8 个 varied groups。
+输出分别进入 `truth.copy.byNode` 和 `extract-report.copy`，renderer 继续按语言读取
+truth 叶子，不新增页面模板映射。参考实例（伊瑟 SS5，非规范要求）当时的一次接线
+证据为：201 个 Figma TEXT、115 个绑定、251 个 unread、5 个 contextual、8 个
+varied groups——数字只说明该实例当时的覆盖状态，不是任何门禁阈值。
 
 ## 验证
 
 ```bash
-node scripts/copy-coverage.mjs --demo demos/yise-ss5-preview --json
+node scripts/copy-coverage.mjs --demo <demo-dir> --json
 node --test scripts/__tests__/copy-context.test.mjs
 ```
 
-coverage 通过只表示链路完整且缺口已登记，不表示 251 个 unresolved 已由人工完成语义裁决。
+coverage 通过只表示链路完整且缺口已登记，不表示 unresolved 已由人工完成语义裁决。

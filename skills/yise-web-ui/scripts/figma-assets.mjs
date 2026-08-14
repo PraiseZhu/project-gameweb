@@ -34,6 +34,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { PNG } from 'pngjs';
+import { deriveRole } from './lib/figma-name-semantics.mjs';
 
 const API = 'https://api.figma.com/v1';
 const SLICE_PREFIXES = new Set(['img', 'bg', 'kv']);
@@ -114,7 +115,7 @@ function roundBox(b) {
 }
 
 /** 从 truth 里挑出需要切图的节点 */
-function pickSliceNodes(truth, { minDim = 24 } = {}) {
+export function pickSliceNodes(truth, { minDim = 24 } = {}) {
   /* 非矩形类型（轮廓不是矩形的节点）。渲染层对它们只能按外接矩形画填充，
      够大的方块化一眼可见（第 13 项实测：官网点阵与细三角轮廓成了实心方块）。 */
   const NONRECT = new Set(['VECTOR', 'BOOLEAN_OPERATION', 'STAR', 'POLYGON', 'ELLIPSE', 'LINE']);
@@ -170,8 +171,10 @@ function pickSliceNodes(truth, { minDim = 24 } = {}) {
       if (!nid) continue;
       if (seenNodeIds.has(nid)) continue;
       seenNodeIds.add(nid);
-      if (n.type === 'TEXT') continue;                       // txt/ 永不切图
-      const pfx = /^([a-z]+)\//.exec(String(n.name ?? ''))?.[1] ?? null;
+      const derived = deriveRole(n);
+      if (derived.errors?.length) continue;
+      const pfx = SLICE_PREFIXES.has(derived.role) ? derived.role : null;
+      if (n.type === 'TEXT' && !pfx) continue;               // unprefixed TEXT is editable copy; visual names can override type
       /* Lead decision (2026-08-10): the page-background owner root (bg/*) is no
          longer baked as one giant PNG — its 233-node subtree is restored in truth
          with 4 ALPHA masks + 98 non-default blends that a single raster destroys.
@@ -180,7 +183,7 @@ function pickSliceNodes(truth, { minDim = 24 } = {}) {
          owners) still bake under the owner tree via the normal rules below. Only
          skip the empty owner root, not blend/mask/image descendants. */
       const ownFills = ((n.style || {}).fills || []).filter((fl) => fl && fl.visible !== false);
-      const isEmptyBgOwnerRoot = pfx === 'bg' && ownFills.length === 0 && Array.isArray(n.ownerPath);
+      const isEmptyBgOwnerRoot = pfx === 'bg' && n.type !== 'TEXT' && ownFills.length === 0 && Array.isArray(n.ownerPath);
       if (isEmptyBgOwnerRoot) continue;
       const fills = ((n.style || {}).fills || []).filter((f) => f && f.visible !== false);
       const kind = fillKind((n.style || {}).fills);
@@ -541,4 +544,7 @@ async function main() {
   console.log(JSON.stringify(out, null, 2));
 }
 
-main().catch((e) => fail(e?.message || String(e)));
+if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href) {
+  main().catch((e) => fail(e?.message || String(e)));
+}
+

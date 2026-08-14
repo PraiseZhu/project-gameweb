@@ -93,7 +93,7 @@ function main() {
   const a = parseArgs(process.argv);
   const demoDir = resolve(a.demo);
   // 用 import.meta.dirname，不要用 import.meta.url —— 路径里有中文时
-  // URL 形式会被百分号编码（詹欣仪 → %E8%A9%B9...），拼出来的路径根本不存在。
+  // URL 形式会被百分号编码（如「桌面」目录名 → %E6%A1%8C%E9%9D%A2...），拼出来的路径根本不存在。
   const skillDir = resolve(import.meta.dirname, '..');
   const truthPath = join(demoDir, 'truth.json');
   if (!existsSync(truthPath)) fail(`缺 ${truthPath}（先跑 scripts/truth.mjs）`);

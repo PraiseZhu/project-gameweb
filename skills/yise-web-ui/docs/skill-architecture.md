@@ -48,6 +48,18 @@ interaction attribute. The renderer consumes this contract through
 `data-sec-target`, `data-switch`, `data-swpage`, `data-hscroll`, `data-tab`, and
 `data-indicator` attributes.
 
+Naming compatibility note: upstream `standards/figma-naming` v2.8 / A-v1.6
+supersedes earlier naming assumptions and is now implemented in the public
+name parser. Unprefixed Figma `TEXT` is editable copy, while `TEXT` named with
+`img`, `bg`, or `kv` is a visual asset/slice where the name overrides node type.
+`txt` is not a standard prefix, and `swpage` is not required; source-backed
+direct children of a `switch/` owner can become bounded page candidates only
+when page/control mapping is unambiguous. `IMG/`, `Sec/`, and spaced forms such
+as `img / label` are equivalent to canonical lowercase no-space forms;
+full-width slash and backslash separators remain errors; unlabelled nodes are
+not inferred as `img` or `switch`. Legacy `txt`/`swpage` usage remains
+warning-only until 2026-11-12.
+
 ### Component-set variant graph
 
 An expanded Figma `INSTANCE` is only its selected state. Main Skill therefore
@@ -109,6 +121,12 @@ every extracted section/background/fixed/platform root, and all referenced
 component sets in one read-only versioned snapshot. Do not combine a newer
 variant probe with an older page or platform fixture.
 
+A **visual** completion claim is graded separately (see Invocation and gate
+policy item 7): green A/B/C/D/F/X gates prove DOM state, computed style, and
+geometry — not how the page looks to a human. Without a confirmed-final
+visual evidence grade, the run may only report `candidate` and must not say
+"complete".
+
 ## Invocation and gate policy
 
 1. Run the Main Skill for every demo. It performs Figma extraction, structure,
@@ -133,6 +151,36 @@ variant probe with an older page or platform fixture.
    non-zero unless explicit interaction/reaction/transition evidence is
    present. This failure is scoped to the audit request, not the default demo
    build or release audit.
+7. Visual-completion claims are evidence-graded (`candidate` < `unverified` <
+   `confirmed-final`, most conservative wins; one shared implementation,
+   `aggregateEvidenceLevel` in `scripts/lib/report.mjs`). `confirmed-final`
+   requires a real trusted baseline comparison — gate E all PASS, or every
+   WARN carrying an adjudication bound to the three trusted artifact sha256s
+   plus the recomputed `key`/`diffRatio`/`threshold` — or an independent
+   screenshot comparison against the Figma grid / official page with the
+   comparison and diff regions documented. `unverified` means baselines are
+   declared but the trusted pixel comparison has not produced a verdict —
+   the highest grade a verify report can reach on its own. Everything else —
+   no baselines, DOM/computed-style gates only, QA-shell screenshots,
+   unpaired screenshots — is `candidate` and must be reported as "pixel level
+   not compared / visual layer unverified"; the word "complete" is forbidden
+   at that grade, and gates B/C/D/F/X green never upgrades it. Candidate is a
+   hard block, not a label: `verify.mjs` exposes a top-level `evidenceLevel`
+   in its report, and `pr-block.mjs` exits 2 before any trusted respawn when
+   `spec.baselines` is empty, naming the capture entry point
+   (`capture-baseline.mjs`) and the WARN adjudication path; a trusted pixel
+   verdict of candidate is blocked the same way, and a passing run prints
+   `evidenceLevel: confirmed-final` on stderr.
+8. Implementer/verifier separation (T4). A verifier either delivers
+   reproducible passing evidence or delivers the failure scene; it must not
+   lower a gate or quietly patch the implementation it is verifying. The
+   `visual-fidelity-reviewer` / `silent-failure-hunter` roles never fix the
+   implementation they verify, and an implementer must not stamp their own
+   visual result as complete — visual-semantic judgment (screenshot vs
+   Figma/official page) must be performed and signed by a different seat,
+   while the mechanical gates are re-executed independently by the canonical
+   trusted runners. A solo session that edits the demo, screenshots its own
+   QA shell, and reports "complete" produces no confirmed-final evidence.
 
 ## Release surface
 

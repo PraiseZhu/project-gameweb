@@ -23,6 +23,7 @@ import { createSafeStaticServer } from './safe-server.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { loadNavRailTruth, probeNavRailContinuity } from './figma-nav-rail-browser-check.mjs';
 
 export async function runChromeBrowserCheck({ demoDir, timeoutMs = 180000 } = {}) {
   const results = [];   // [name, pass, why]
@@ -121,6 +122,7 @@ export async function runChromeBrowserCheck({ demoDir, timeoutMs = 180000 } = {}
         return !/drop-shadow/.test(cs.filter || '') || !normNone(cs.boxShadow);
       });
       const baked = assetHosts.filter((el) => el.getAttribute('data-shadow-via') === 'asset-baked' || el.getAttribute('data-blur-via') === 'asset-baked');
+      const assetManifest = JSON.parse(document.getElementById('qa-assets')?.textContent || '{}');
       const renderBoundHosts = assetHosts.filter((el) => el.getAttribute('data-asset-bounds') === 'render');
       const renderBoundBad = renderBoundHosts.filter((el) => {
         const raw = String(el.getAttribute('data-node-box') || '').split(',').map(Number);
@@ -140,6 +142,19 @@ export async function runChromeBrowserCheck({ demoDir, timeoutMs = 180000 } = {}
         const cs = getComputedStyle(img);
         const w = parseFloat(cs.width || '0');
         const h = parseFloat(cs.height || '0');
+        const rec = assetManifest[el.getAttribute('data-node')];
+        const ex = rec && rec.exportBox;
+        if (ex && Number.isFinite(Number(ex.w)) && Number.isFinite(Number(ex.h))) {
+          const expectedW = Number(ex.w);
+          const expectedH = Number(ex.h);
+          const expectedOverflowX = Math.max(0, expectedW - raw[2]);
+          const expectedOverflowY = Math.max(0, expectedH - raw[3]);
+          const measuredOverflowX = w - hw;
+          const measuredOverflowY = h - hh;
+          const meaningfulOverflow = 4;
+          return (expectedOverflowX > meaningfulOverflow && measuredOverflowX + 0.75 < expectedOverflowX)
+            || (expectedOverflowY > meaningfulOverflow && measuredOverflowY + 0.75 < expectedOverflowY);
+        }
         return w <= hw + 1 && h <= hh + 1;
       });
       /* A baked asset must not redraw its painted children. Structural
@@ -587,6 +602,14 @@ export async function runChromeBrowserCheck({ demoDir, timeoutMs = 180000 } = {}
     P('fixed directory active/normal Figma variants visibly change after scroll',
       !fixedNavSetup.variantVisual || (!!fixedNavBefore && !!fixedNavAfter && !fixedNavBefore.equals(fixedNavAfter)),
       fixedNavSetup.variantVisual ? `visualChanged=${!!fixedNavBefore && !!fixedNavAfter && !fixedNavBefore.equals(fixedNavAfter)}` : 'no paired source variants');
+    const navRailSource = loadNavRailTruth(demoDir);
+    const navRailProbe = await probeNavRailContinuity(page, navRailSource.source);
+    P('fixed directory rail is continuously painted through its source extent',
+      navRailProbe.ok,
+      JSON.stringify(navRailProbe.dom));
+    P('fixed directory rail source and markers keep source-backed sibling/anchor count',
+      navRailProbe.dom.markerCount >= 2 && navRailProbe.dom.labelCount >= 2,
+      JSON.stringify({ markerCount: navRailProbe.dom.markerCount, labelCount: navRailProbe.dom.labelCount, source: navRailSource.source }));
 
     const platDedup = await page.evaluate(() => {
       const rows = [...document.querySelectorAll('.bar .row')];

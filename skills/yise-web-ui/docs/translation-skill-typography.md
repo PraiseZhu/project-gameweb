@@ -279,8 +279,8 @@ The authoritative artifacts are the four `artifacts/translation-chrome-stable-*.
 reports and the corresponding stable screenshots. A final
 `figma-inline --check` is intentionally not claimed here: after the Motion
 worker finishes, the generated demo owner must run
-`node scripts/figma-inline.mjs --demo demos/yise-ss5-preview` and then rerun the
-inline check.
+`node scripts/figma-inline.mjs --demo <demo-dir>` and then rerun the inline
+check.
 
 
 ## 通用容器归属与 step-fit 授权（2026-08-06 修复）
@@ -306,9 +306,9 @@ inline check.
 ## 组级最小统一字号 / required-scale prepass（2026-08-10 落地）
 
 通用规则（无 section/node ID/文案特判）：同一组件组的同级标题/正文必须统一字号，
-最严格（最长/最易折行）成员决定全组等级，其余兄弟跟随；官网 etheria.xd.com 五语言实测
-证实所有组件组（02 奖励卡标题组、03 特别活动标题组、角色名组、06 列表组、正文组）都
-组内同字号，最长项折行也不单独缩小。
+最严格（最长/最易折行）成员决定全组等级，其余兄弟跟随；真实产品线五语言实测基线
+（私有证据，见 artifacts/）证实所有组件组（02 奖励卡标题组、03 特别活动标题组、
+角色名组、06 列表组、正文组）都组内同字号，最长项折行也不单独缩小。
 
 实现：
 - buildFitGroupKey：组标识 = 直接父容器名 + 语义角色 + 源字号。同级同位文本（各卡标题位/
@@ -328,9 +328,10 @@ prepass 对 02/03 正确保持源字号 60px——本地渲染忠实 Figma 静�
 ## 双真源 typography（2026-08-10 用户最终决策落地）
 
 zh-CN 严格遵守 Figma 静态视觉指标（字号/行高/几何），是唯一静态视觉真源；
-非 zh-CN 翻译语言以 Figma owner/位置/组件结构为底，组级视觉等级遵守官网实测的
-locale typography 逻辑。证据来自 etheria.xd.com 五语言真实 Chrome 实测（2026-08-10），
-跨 02 奖励卡、03 特别活动卡、角色名、06 列表等组件组，按语义角色归纳，不硬编码文案/节点。
+非 zh-CN 翻译语言以 Figma owner/位置/组件结构为底，组级视觉等级遵守实测归纳的
+locale typography 逻辑。证据来自真实产品线五语言 Chrome 实测基线（2026-08-10；
+私有证据，见 artifacts/），跨 02 奖励卡、03 特别活动卡、角色名、06 列表等组件组，
+按语义角色归纳，不硬编码文案/节点。
 
 关键实证：本地是 2× 高清稿（标题源 60px、正文源 30px），经 stage zoom≈0.398 缩放后的
 视觉字号已与官网对齐（标题≈24≈官网25、正文≈12=官网12）。因此本策略**不是盲目缩放源字号**，
@@ -349,10 +350,11 @@ figma-typography-browser-check 计算每节点的视觉字号（computed × stag
 zh-CN 严格保 Figma 静态指标；非 zh-CN 在保留 Figma 结构/位置/owner 的前提下，
 按官网实测的 locale+角色目标等级重算设计坐标字号/行高，并组内统一。
 
-模型（证据 artifacts/official-locale-typography-20260810.json，etheria.xd.com 五语言实测）：
-本地是 2× 高清稿，官网运行时布局约为一半，故 语言比 = 官网该语言视觉字号 / 官网 zh-CN 视觉字号，
+模型（证据 artifacts/official-locale-typography-20260810.json，真实产品线五语言实测基线；私有）：
+本地是 2× 高清稿，线上运行时布局约为一半，故 语言比 = 线上该语言视觉字号 / 线上 zh-CN 视觉字号，
 可作用于任意源字号档，不硬编码绝对像素/文案/node。实测：标题粗体(≥600)各语言同级
-（en 拉丁略 0.93）；正文常规(<600) ja/en/ko = zh 的 0.8（官网 12/15），zh-TW = 1.0。
+（en 拉丁略 0.93）；正文常规(<600) ja/en/ko = zh 的 0.8（线上 12/15），zh-TW = 1.0。
+该基线表是默认数据源：其它产品线可经 `localeFontScale({ overrides })` 注入自有实测表。
 
 实现：
 - policy `officialTargetDesignSize`/`localeFontScale`（truth 源 typography-policy.mjs）

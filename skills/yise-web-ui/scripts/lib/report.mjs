@@ -20,6 +20,27 @@ export function summarizeGate(gate) {
   return { ok: pass, reason: pass ? '' : gate.detail ?? JSON.stringify(failures).slice(0, 300) };
 }
 
+/**
+ * 视觉证据分级聚合(2026-08-14 用户拍板:candidate 级必须脚本层拦截,不许只打标签放行)。
+ * 级别保守序:candidate < unverified < confirmed-final,聚合取最保守(最低)一级。
+ *
+ * - 像素层(门 E)是唯一能把顶层升为 confirmed-final 的子检查,且只有 pr-block 拿到的
+ *   **可信侧** pixel-compare 结果才算数:verify 报告自身永远到不了 confirmed-final
+ *   (verify 从不比对像素,门 E 住在 pixel-compare.mjs)。
+ * - spec 未声明任何 baseline → 'candidate'(零像素基准,视觉层无法比对);
+ * - 声明了 baseline 但没有可信 pixel 结果(尚未比对 / 只有 demo 自报)→ 'unverified';
+ * - 可信 pixel 结果 skipped / verified:false → 'candidate'(未实际比对);
+ * - 可信 pixel 结果 ok:true → 'confirmed-final';ok:false(ERROR/MISSING/未裁决 WARN)
+ *   或 evidenceLevel 不是 confirmed → 'candidate'(有比对但未达标,同样不许写完成)。
+ */
+export function aggregateEvidenceLevel({ declaredBaselines = 0, trustedPixel = null }) {
+  if (declaredBaselines === 0) return 'candidate';
+  if (!trustedPixel) return 'unverified';
+  if (trustedPixel.skipped === true || trustedPixel.verified === false || trustedPixel.evidenceLevel === 'candidate')
+    return 'candidate';
+  return trustedPixel.ok === true ? 'confirmed-final' : 'candidate';
+}
+
 export function validateReportIntegrity(demoDir, spec, report) {
   const problems = [];
   if (!report || typeof report !== 'object') return ['report 必须是 object'];
@@ -111,6 +132,10 @@ export function validatePixelReport(demoDir, spec, report) {
   // report-pixel 存在但 skipped(声明了 baseline 却没图匹配上)= 阻断,不是「未验证」放行
   if (report.skipped === true && declaredBaselines > 0)
     problems.push(`spec 声明了 ${declaredBaselines} 个 baseline 但 pixel report 为 skipped——门 E 实际未比对,不得附贴`);
+  // 无基准的 skipped 报告必须携带机械证据分级(verified:false + evidenceLevel:'candidate'),
+  // 旧格式(只有 ok/skipped/reason)不再算合规 —— 防「跳过比对」的报告被当成视觉证据(2026-08-14)。
+  if (report.skipped === true && (report.verified !== false || report.evidenceLevel !== 'candidate'))
+    problems.push('skipped(未比对)的 pixel report 必须带 verified:false + evidenceLevel:"candidate"(旧格式)——重跑 node scripts/pixel-compare.mjs 生成新格式');
   // 防伪(review finding #2):results 必须与 spec.baselines 一一对应——旧代码只查 hash/ok,
   // 手写 {ok:true,declared:N,compared:0,results:[]}+当前 hash 即可零比对出附贴块。
   // 这里重建期望复合 key 集(platform/key 或 legacy key)做数量/唯一性/集合全等校验,

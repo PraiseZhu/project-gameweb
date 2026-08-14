@@ -39,6 +39,19 @@
   if (!cfg) throw new Error('figma-chrome: 缺 window.__qaDemo 配置');
   if (typeof cfg.renderApp !== 'function') throw new Error('figma-chrome: __qaDemo.renderApp 必填');
 
+  /* ── 产品视图纯净入口（?product=1）──
+     QA 壳(控制栏/切换器/状态补齐 tab/拉伸手柄/读数/__qa API)与产品视图彻底分离:
+     product 模式下只渲染 stage + 产品帧,不建任何调试 UI、不暴露 __qa、不读深链。
+     验收/交付截图一律走这条路径(文件名 *-product.png);QA 壳截图只是 candidate 级证据。
+     实现约束:PRODUCT_VIEW 在同步代码最前面算好,后面所有 UI 挂载点共用同一开关。 */
+  var PRODUCT_VIEW = (function () {
+    try {
+      var q = new URLSearchParams(window.location.search).get('product');
+      return q === '1' || q === 'true' || q === 'yes';
+    } catch (e) { return false; }
+  })();
+  if (PRODUCT_VIEW) document.documentElement.setAttribute('data-product-view', '1');
+
   /* ── truth ── */
   var truthEl = document.getElementById('qa-truth');
   if (!truthEl) throw new Error('figma-chrome: 缺 <script id="qa-truth"> 内嵌真值块');
@@ -145,6 +158,26 @@
     }
     return { key: '?', label: '?' };
   }
+  function presetMetric(axis, fallback, reducer) {
+    var vals = [];
+    (GROUPS || []).forEach(function (g) {
+      (g.devices || []).forEach(function (d) {
+        var v = Number(axis === 'w' ? d.width : d.height);
+        if (isFinite(v) && v > 0) vals.push(v);
+      });
+    });
+    ((PRESETS.otherReference || {}).devices || []).forEach(function (d) {
+      var v = Number(axis === 'w' ? d.width : d.height);
+      if (isFinite(v) && v > 0) vals.push(v);
+    });
+    return vals.length ? vals.reduce(reducer) : fallback;
+  }
+  var VIEWPORT_MIN_W = presetMetric('w', 240, function (a, b) { return Math.min(a, b); });
+  var VIEWPORT_MIN_H = presetMetric('h', 240, function (a, b) { return Math.min(a, b); });
+  var VIEWPORT_MAX_W = Math.max(3840, presetMetric('w', 3840, function (a, b) { return Math.max(a, b); }));
+  var VIEWPORT_MAX_H = Math.max(8000, presetMetric('h', 8000, function (a, b) { return Math.max(a, b); }));
+  function clampViewportW(v) { return clamp(v, VIEWPORT_MIN_W, VIEWPORT_MAX_W); }
+  function clampViewportH(v) { return clamp(v, VIEWPORT_MIN_H, VIEWPORT_MAX_H); }
 
   /* plat ⟷ 视口断点的换算（任务 17）。断点只读 PRESETS.breakpoints —— 那是
      kit 断点真源在页面里的唯一副本（经 #qa-devices 内嵌），壳里不另写一份。 */
@@ -256,15 +289,19 @@
     '.card{border:1px solid var(--line);border-radius:9px;background:var(--bar);overflow:hidden}',
     '.card-h{padding:6px 10px;font-size:11px;color:var(--warn);border-bottom:1px solid var(--line);background:#0f131a}',
     '.card-b{height:200px;overflow:hidden;background:#fff;position:relative}',
-    /* ── PC 自由模式右缘拖拽把手（2026-08-11 用户红框：期望在预览画布右边缘拖改宽度）──
-       只右缘一条，非四边/四角；贴在屏幕容器（.stage-wrap）右侧外缘，竖向贯穿整条高。
-       默认半透明细条，悬停/拖拽时高亮 —— 可发现但不抢眼。非自由模式整体隐藏。*/
-    '.edge-handle{position:absolute;top:0;bottom:0;right:-7px;width:14px;cursor:col-resize;',
-    'z-index:5;touch-action:none;border-radius:7px;background:transparent;',
+    /* ── PC 自由模式边缘拖拽把手（2026-08-12）：右缘改宽、下缘改高、右下角同时改宽高。
+       三个把手同一 resize 合约和轻路径；锁定机型时一起隐藏。 */
+    '.edge-handle{position:absolute;z-index:5;touch-action:none;border-radius:7px;background:transparent;',
     'transition:background .12s ease}',
-    '.edge-handle::after{content:"";position:absolute;top:50%;left:50%;width:4px;height:44px;',
+    '.edge-handle-e{top:0;bottom:0;right:-7px;width:14px;cursor:col-resize}',
+    '.edge-handle-s{left:0;right:0;bottom:0;height:14px;cursor:row-resize}',
+    '.edge-handle-se{right:-9px;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:6}',
+    '.edge-handle::after{content:"";position:absolute;top:50%;left:50%;',
     'transform:translate(-50%,-50%);border-radius:2px;background:#3a4656;opacity:.55;',
     'transition:opacity .12s ease,background .12s ease}',
+    '.edge-handle-e::after{width:4px;height:44px}',
+    '.edge-handle-s::after{width:44px;height:4px}',
+    '.edge-handle-se::after{width:10px;height:10px;border-radius:50%}',
     '.edge-handle:hover::after,.edge-handle.dragging::after{background:var(--acc);opacity:1}',
     '.edge-handle.disabled{display:none}',
   ].join('');
@@ -274,52 +311,65 @@
   document.head.appendChild(st);
 
   /* ── DOM 骨架：类名结构照 control-bar-demo.html（.bar > .row ×2 / .stage > .stage-wrap）── */
-  var bar = mk('div', 'bar');
-  var row1 = mk('div', 'row');
-  var row2 = mk('div', 'row');
-  bar.appendChild(row1); bar.appendChild(row2);
+  var bar = PRODUCT_VIEW ? null : mk('div', 'bar');
+  var row1 = PRODUCT_VIEW ? null : mk('div', 'row');
+  var row2 = PRODUCT_VIEW ? null : mk('div', 'row');
+  if (bar) { bar.appendChild(row1); bar.appendChild(row2); }
   var stage = mk('div', 'stage');
   var wrap = mk('div', 'stage-wrap');
-  var chip = mk('div', 'chip');
+  var chip = PRODUCT_VIEW ? null : mk('div', 'chip');
   var frame = mk('div', 'frame');
-  wrap.appendChild(chip); wrap.appendChild(frame); stage.appendChild(wrap);
+  if (chip) wrap.appendChild(chip);
+  wrap.appendChild(frame); stage.appendChild(wrap);
 
-  /* PC 自由模式右缘拖拽把手：只改宽度（与 slider/W 输入同一契约，不动高度 ——
-     高度由 H 输入/设备 preset 决定，把手不发明新的纵横策略）。
-     拖拽横向位移 ÷ 当前 fitScale 换算成设计宽，再走与 slider 相同的
-     clamp(240..3840) + devIdx=-1 + scheduleSyncAll() RAF 合并路径。 */
-  var edgeHandle = mk('div', 'edge-handle disabled');
-  edgeHandle.setAttribute('role', 'separator');
-  edgeHandle.setAttribute('aria-orientation', 'vertical');
-  edgeHandle.setAttribute('aria-label', '拖拽调整预览宽度');
-  edgeHandle.setAttribute('data-qa-edge-resize', 'true');
-  wrap.appendChild(edgeHandle);
-  (function () {
+  /* 自由模式边缘拖拽：与 W/H 输入和 slider 同源；pointer-held 期间只走轻路径，
+     pointerup 再做一次精确 render。 */
+  var resizeHandles = [];
+  if (!PRODUCT_VIEW) {
+    var edgeHandle = makeResizeHandle('edge-handle-e', 'vertical', '拖拽调整预览宽度', 'width', true, false);
+    makeResizeHandle('edge-handle-s', 'horizontal', '拖拽调整预览高度', 'height', false, true);
+    makeResizeHandle('edge-handle-se', 'vertical', '拖拽调整预览宽度和高度', 'both', true, true);
+  }
+  function makeResizeHandle(cls, orientation, label, qaValue, moveX, moveY) {
+    var handle = mk('div', 'edge-handle ' + cls + ' disabled');
+    handle.setAttribute('role', 'separator');
+    handle.setAttribute('aria-orientation', orientation);
+    handle.setAttribute('aria-label', label);
+    handle.setAttribute('data-qa-edge-resize', qaValue);
+    wrap.appendChild(handle);
+    resizeHandles.push(handle);
     var drag = null;
-    edgeHandle.addEventListener('pointerdown', function (e) {
+    handle.addEventListener('pointerdown', function (e) {
       if (!canResize()) return;
-      drag = { x0: e.clientX, w0: viewport().w, scale: (typeof S.fitScale === 'number' && S.fitScale > 0) ? S.fitScale : 1 };
-      edgeHandle.classList.add('dragging');
-      try { edgeHandle.setPointerCapture(e.pointerId); } catch (err) { /* 桩环境无 capture */ }
+      beginResizeDrag();
+      var vp0 = viewport();
+      drag = { x0: e.clientX, y0: e.clientY, w0: vp0.w, h0: vp0.h, scale: (typeof S.fitScale === 'number' && S.fitScale > 0) ? S.fitScale : 1 };
+      handle.classList.add('dragging');
+      try { handle.setPointerCapture(e.pointerId); } catch (err) { /* 桩环境无 capture */ }
       e.preventDefault();
     });
-    edgeHandle.addEventListener('pointermove', function (e) {
+    handle.addEventListener('pointermove', function (e) {
       if (!drag) return;
       var dx = (e.clientX - drag.x0) / drag.scale;
-      S.freeW = clamp(Math.round(drag.w0 + dx), 240, 3840);
+      var dy = (e.clientY - drag.y0) / drag.scale;
+      if (moveX) S.freeW = clampViewportW(Math.round(drag.w0 + dx));
+      if (moveY) S.freeH = clampViewportH(Math.round(drag.h0 + dy));
       S.devIdx = -1;
       scheduleSyncAll();
     });
     var end = function (e) {
       if (!drag) return;
       drag = null;
-      edgeHandle.classList.remove('dragging');
-      try { edgeHandle.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      handle.classList.remove('dragging');
+      try { handle.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      endResizeDrag();   /* 松手强制一次精确完整 render（含锚点恢复） */
     };
-    edgeHandle.addEventListener('pointerup', end);
-    edgeHandle.addEventListener('pointercancel', end);
-  })();
-  document.body.appendChild(bar); document.body.appendChild(stage);
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+    return handle;
+  }
+  if (bar) document.body.appendChild(bar);
+  document.body.appendChild(stage);
 
   function mk(tag, cls) { var e = document.createElement(tag); if (cls) e.className = cls; return e; }
   /** 一组控件：标签 + 控件，横排（同事的 .grp + .lbl） */
@@ -347,6 +397,8 @@
 
   /* ── 第一行 · 视口 ── */
   var elDevSel, elFit, elRead1, widthInput, heightInput, resizeRange, elGrid;
+  var _lastReadHtml = '';
+  var _readPlaceholder = '读数 <b>0000×0000 px</b> · DPR <b>0</b> · desktop（≥1024） · 视图缩放 <b>000.0%</b> · 来源 <b>自由状态</b>';
   function buildBar1() {
     row1.innerHTML = '';
     var brand = mk('div', 'title');
@@ -383,19 +435,24 @@
     var sizeControl = mk('div', 'resize-rail');
     var sizeLabel = mk('span', 'lbl'); sizeLabel.textContent = '尺寸'; sizeControl.appendChild(sizeLabel);
     var widthLabel = mk('span', 'lbl'); widthLabel.textContent = 'W'; sizeControl.appendChild(widthLabel);
-    widthInput = document.createElement('input'); widthInput.type = 'number'; widthInput.min = '240'; widthInput.max = '3840'; widthInput.step = '1';
+    widthInput = document.createElement('input'); widthInput.type = 'number'; widthInput.min = String(VIEWPORT_MIN_W); widthInput.max = String(VIEWPORT_MAX_W); widthInput.step = '1';
     widthInput.setAttribute('data-qa-viewport-width-input', 'true');
-    widthInput.onchange = function () { S.freeW = clamp(Number(widthInput.value) || viewport().w, 240, 3840); S.devIdx = -1; syncAll(); };
+    widthInput.onchange = function () { S.freeW = clampViewportW(Number(widthInput.value) || viewport().w); S.devIdx = -1; syncAll(); };
     sizeControl.appendChild(widthInput);
     var times = mk('span', 'lbl'); times.textContent = '×'; sizeControl.appendChild(times);
     var heightLabel = mk('span', 'lbl'); heightLabel.textContent = 'H'; sizeControl.appendChild(heightLabel);
-    heightInput = document.createElement('input'); heightInput.type = 'number'; heightInput.min = '240'; heightInput.max = '8000'; heightInput.step = '1';
+    heightInput = document.createElement('input'); heightInput.type = 'number'; heightInput.min = String(VIEWPORT_MIN_H); heightInput.max = String(VIEWPORT_MAX_H); heightInput.step = '1';
     heightInput.setAttribute('data-qa-viewport-height-input', 'true');
-    heightInput.onchange = function () { S.freeH = clamp(Number(heightInput.value) || viewport().h, 240, 8000); S.devIdx = -1; syncAll(); };
+    heightInput.onchange = function () { S.freeH = clampViewportH(Number(heightInput.value) || viewport().h); S.devIdx = -1; syncAll(); };
     sizeControl.appendChild(heightInput);
-    resizeRange = document.createElement('input'); resizeRange.type = 'range'; resizeRange.min = '240'; resizeRange.max = '3840'; resizeRange.step = '1';
+    resizeRange = document.createElement('input'); resizeRange.type = 'range'; resizeRange.min = String(VIEWPORT_MIN_W); resizeRange.max = String(VIEWPORT_MAX_W); resizeRange.step = '1';
     resizeRange.setAttribute('data-qa-viewport-resize', 'width');
-    resizeRange.oninput = function () { S.freeW = Number(resizeRange.value); S.devIdx = -1; scheduleSyncAll(); };
+    resizeRange.oninput = function () { S.freeW = clampViewportW(Number(resizeRange.value)); S.devIdx = -1; scheduleSyncAll(); };
+    /* 滑块拖拽同样走轻路径：pointerdown 进拖拽态，pointerup/cancel 出并强制精确 render。
+       键盘方向键微调不触发 pointer 事件，仍走完整 render —— 低频离散操作无需优化。 */
+    resizeRange.addEventListener('pointerdown', function () { if (canResize()) beginResizeDrag(); });
+    resizeRange.addEventListener('pointerup', endResizeDrag);
+    resizeRange.addEventListener('pointercancel', endResizeDrag);
     sizeControl.appendChild(resizeRange); row1.appendChild(sizeControl);
 
     /* 方向是锁定设备的真实横竖屏交换，不为 PC 自由状态伪造旋转能力。 */
@@ -417,11 +474,12 @@
     row1.appendChild(grp('视图', fitWrap));
 
     var vpNow = viewport();
-    resizeRange.value = Math.min(3840, Math.max(240, vpNow.w));
+    resizeRange.value = Math.min(VIEWPORT_MAX_W, Math.max(VIEWPORT_MIN_W, vpNow.w));
     widthInput.value = vpNow.w;
     heightInput.value = vpNow.h;
 
     elRead1 = mk('div', 'readout');
+    elRead1.innerHTML = _lastReadHtml || _readPlaceholder;
     row1.appendChild(elRead1);
   }
 
@@ -598,11 +656,251 @@
     }
   };
 
+  /* ── 所见即所得的页面中心锚点 ──
+     视口尺寸变化不是「把长页按总高度比例缩放」：PC 和 mobile 可以有不同的
+     section 几何，按比例会把正在看的内容跳到另一段。保存中心点所在的结构
+     section 与其局部比例；目标 composition 若换了一套 Figma node id，则按
+     source page 的 section paint-order ordinal 对应。这个 ordinal 只作跨稿别
+     的结构回退，同稿别永远优先精确 section id。
+
+     两个相邻 section 的中点是独立的 boundary anchor。连续页面里它就是共享
+     边界；目标稿有明确段间留白时，它是该留白的语义中线，仍保证「01/02 的
+     分界」在视口中心，而不是把任一段的内部位置误当分界。 */
+  function centerAnchorStages() {
+    if (!frame || !frame.querySelectorAll) return [];
+    var frameRect = frame.getBoundingClientRect();
+    var visibleH = Number(frame.clientHeight) || 0;
+    var visualPerCss = visibleH > 0 ? frameRect.height / visibleH : 1;
+    if (!isFinite(visualPerCss) || visualPerCss <= 0) visualPerCss = 1;
+    var out = [];
+    var list = frame.querySelectorAll('.fx-stage[data-node-id^="section-"]');
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      var rect = el.getBoundingClientRect();
+      if (rect.height <= 0 || getComputedStyle(el).display === 'none') continue;
+      /* This is explicitly the currently *visible* page point. `rect` includes
+         any source-backed scroll/reveal movement; the restoration loop below
+         converges after scroll-sensitive transforms rather than preserving a
+         hidden pre-animation layout position. */
+      var top = frame.scrollTop + (rect.top - frameRect.top) / visualPerCss;
+      out.push({
+        el: el,
+        id: el.getAttribute('data-node-id') || '',
+        top: top,
+        bottom: top + rect.height / visualPerCss,
+      });
+    }
+    out.sort(function (a, b) { return a.top - b.top; });
+    return out;
+  }
+
+  function captureCenterAnchor() {
+    if (!frame || !(frame.clientHeight > 0)) return null;
+    var heroState = frame.getAttribute('data-hero-scroll-state') || '';
+    if (frame.getAttribute('data-hero-scroll-slot') === 'active'
+        && frame.scrollTop <= 0.5) {
+      return { kind: 'hero-progress', progress: 0 };
+    }
+    if (frame.getAttribute('data-hero-scroll-slot') === 'active'
+        && (heroState === 'HERO_LOCKED' || heroState === 'HERO_EXITING')) {
+      var heroProgress = Number(frame.getAttribute('data-hero-scroll-progress'));
+      return {
+        kind: 'hero-progress',
+        progress: isFinite(heroProgress) ? Math.max(0, Math.min(1, heroProgress)) : 0,
+      };
+    }
+    var releasedGuard = null;
+    if (frame.getAttribute('data-hero-scroll-slot') === 'active'
+        && heroState === 'CONTENT_RELEASED') {
+      var releasedDistance = Number(frame.getAttribute('data-hero-slot-release-scroll'));
+      releasedGuard = {
+        beyondRelease: Math.max(0, frame.scrollTop - (isFinite(releasedDistance) ? releasedDistance : 0)),
+      };
+      if ((!isFinite(releasedDistance) || releasedDistance <= 1) && frame.scrollTop > 0.5) {
+        return { kind: 'hero-released', beyondRelease: releasedGuard.beyondRelease, releasedGuard: releasedGuard };
+      }
+    }
+    var attachReleasedGuard = function (anchor) {
+      if (anchor && releasedGuard) anchor.releasedGuard = releasedGuard;
+      return anchor;
+    };
+    var stages = centerAnchorStages();
+    var center = frame.scrollTop + frame.clientHeight / 2;
+    if (!stages.length) {
+      var max = Math.max(0, frame.scrollHeight - frame.clientHeight);
+      return attachReleasedGuard({ kind: 'page-ratio', ratio: max > 0 ? frame.scrollTop / max : 0 });
+    }
+    /* Boundary wins only when the center is actually on it. That avoids
+       changing an ordinary near-edge section point into a boundary anchor. */
+    var nearest = null;
+    for (var i = 0; i < stages.length - 1; i++) {
+      var seam = (stages[i].bottom + stages[i + 1].top) / 2;
+      var distance = Math.abs(seam - center);
+      if (!nearest || distance < nearest.distance) nearest = { index: i, seam: seam, distance: distance };
+    }
+    if (nearest && nearest.distance <= 1.25) {
+      return attachReleasedGuard({
+        kind: 'boundary',
+        beforeId: stages[nearest.index].id, afterId: stages[nearest.index + 1].id,
+        beforeOrdinal: nearest.index, afterOrdinal: nearest.index + 1,
+      });
+    }
+    var chosen = null;
+    for (var j = 0; j < stages.length; j++) {
+      if (center >= stages[j].top && center <= stages[j].bottom) { chosen = { stage: stages[j], ordinal: j }; break; }
+    }
+    if (!chosen) {
+      /* A genuine source gap without a boundary-center anchor: retain the
+         nearest section edge as its local position rather than global ratio. */
+      var best = null;
+      for (var k = 0; k < stages.length; k++) {
+        var local = Math.max(0, Math.min(1, (center - stages[k].top) / Math.max(1e-6, stages[k].bottom - stages[k].top)));
+        var edgeDistance = Math.abs((stages[k].top + local * (stages[k].bottom - stages[k].top)) - center);
+        if (!best || edgeDistance < best.distance) best = { stage: stages[k], ordinal: k, local: local, distance: edgeDistance };
+      }
+      chosen = best;
+    }
+    return attachReleasedGuard({
+      kind: 'section', id: chosen.stage.id, ordinal: chosen.ordinal,
+      local: chosen.local != null ? chosen.local : (center - chosen.stage.top) / Math.max(1e-6, chosen.stage.bottom - chosen.stage.top),
+    });
+  }
+
+  function anchorStage(anchor, stages, idField, ordinalField) {
+    var id = anchor[idField];
+    for (var i = 0; i < stages.length; i++) if (id && stages[i].id === id) return stages[i];
+    var ordinal = Number(anchor[ordinalField]);
+    return Number.isInteger(ordinal) && stages[ordinal] ? stages[ordinal] : null;
+  }
+
+  function restoreCenterAnchor(anchor) {
+    if (!anchor || !frame || !(frame.clientHeight > 0)) return false;
+    if (anchor.kind === 'hero-progress') {
+      var release = Number(frame.getAttribute('data-hero-slot-release-scroll'));
+      if (!isFinite(release) || release < 0) release = 0;
+      var progress = Math.max(0, Math.min(1, Number(anchor.progress) || 0));
+      setCenterAnchorScrollTop(release * progress);
+      return true;
+    }
+    if (anchor.kind === 'hero-released') {
+      var release1 = Number(frame.getAttribute('data-hero-slot-release-scroll'));
+      if (!isFinite(release1) || release1 < 0) release1 = 0;
+      var beyond = Math.max(0, Number(anchor.beyondRelease) || 0);
+      var maxRelease = Math.max(0, frame.scrollHeight - frame.clientHeight);
+      setCenterAnchorScrollTop(Math.min(maxRelease, release1 + beyond));
+      return true;
+    }
+    if (anchor.kind === 'page-ratio') {
+      var max0 = Math.max(0, frame.scrollHeight - frame.clientHeight);
+      setCenterAnchorScrollTop(Math.max(0, Math.min(max0, Math.max(0, Math.min(1, Number(anchor.ratio) || 0)) * max0)));
+      enforceReleasedGuard(anchor);
+      return true;
+    }
+    /* Some source-backed hero/reveal effects make a section's visual rect
+       depend on scrollTop. Iterate a few inexpensive geometry reads so the
+       actual painted point, not an assumed linear rect, reaches the center. */
+    var restored = false;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      var stages = centerAnchorStages();
+      var target = null;
+      if (anchor.kind === 'boundary') {
+        var before = anchorStage(anchor, stages, 'beforeId', 'beforeOrdinal');
+        var after = anchorStage(anchor, stages, 'afterId', 'afterOrdinal');
+        if (before && after) target = (before.bottom + after.top) / 2;
+        else if (before) target = before.bottom;
+        else if (after) target = after.top;
+      } else if (anchor.kind === 'section') {
+        var stage = anchorStage(anchor, stages, 'id', 'ordinal');
+        if (stage) {
+          var local = Number(anchor.local);
+          if (!isFinite(local)) local = 0;
+          target = stage.top + Math.max(0, Math.min(1, local)) * (stage.bottom - stage.top);
+        }
+      }
+      if (!isFinite(target)) return restored;
+      var center = frame.scrollTop + frame.clientHeight / 2;
+      var delta = target - center;
+      if (Math.abs(delta) <= 0.25) {
+        enforceReleasedGuard(anchor);
+        return true;
+      }
+      var max = Math.max(0, frame.scrollHeight - frame.clientHeight);
+      var next = Math.max(0, Math.min(max, frame.scrollTop + delta));
+      if (Math.abs(next - frame.scrollTop) <= 0.01) return restored;
+      setCenterAnchorScrollTop(next);
+      restored = true;
+    }
+    if (restored) enforceReleasedGuard(anchor);
+    return restored;
+  }
+
+  function enforceReleasedGuard(anchor) {
+    if (!anchor || !anchor.releasedGuard || !frame) return;
+    var release = Number(frame.getAttribute('data-hero-slot-release-scroll'));
+    if (!isFinite(release) || release < 0) release = 0;
+    var max = Math.max(0, frame.scrollHeight - frame.clientHeight);
+    var beyond = Math.max(0, Number(anchor.releasedGuard.beyondRelease) || 0);
+    var target = Math.min(max, release + beyond);
+    if (frame.scrollTop + 0.5 < target) {
+      setCenterAnchorScrollTop(target);
+    }
+  }
+
+  var _centerAnchorRenderToken = 0;
+  var _centerAnchorExpectedScroll = null;
+  var _staticKvChromeFrame = null;
+  function setCenterAnchorScrollTop(value) {
+    _centerAnchorExpectedScroll = value;
+    frame.scrollTop = value;
+  }
+  function settleCenterAnchor(anchor, token) {
+    if (!anchor || typeof setTimeout !== 'function') return;
+    /* Source-backed reveal/parallax can apply its final scroll-sensitive pose
+       on the next frames. Re-read that visible geometry once it settles; a
+       later resize/drag invalidates this callback through the render token. */
+    [240, 360, 480].forEach(function (delay) {
+      setTimeout(function () {
+        if (token !== _centerAnchorRenderToken) return;
+        restoreCenterAnchor(anchor);
+      }, delay);
+    });
+  }
+
+  function scheduleStaticKvChromeSync() {
+    if (_staticKvChromeFrame != null) return;
+    var raf = typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : function (fn) { return setTimeout(fn, 0); };
+    _staticKvChromeFrame = raf(function () {
+      _staticKvChromeFrame = null;
+      syncStaticKvChrome(viewport());
+    });
+  }
+
   function render() {
     var vp = viewport();
-    /* 读数常显会占据真实控制栏高度。先放入与终态同量级的紧凑内容，
-       再量舞台可用区，避免用“读数还是空的”旧高度计算 fit。 */
-    if (elRead1) elRead1.textContent = '读数 ' + vp.w + '×' + vp.h + ' px · DPR ' + vp.dpr + ' · ' + bpOf(vp.w).label + ' · 视图缩放… · ' + vp.src;
+    /* Drag owns one stable semantic anchor from pointerdown through pointerup.
+       A breakpoint render during the drag must consume that same page point,
+       never recapture a temporary PC/mobile visual scale as a new anchor. */
+    var _centerAnchor = _pendingCenterAnchor || (_resizeDragActive && _dragCenterAnchor) || captureCenterAnchor();
+    var _renderToken = ++_centerAnchorRenderToken;
+    /* ── resize 拖拽轻路径判定 ──
+       仅在「连续、同模式的 edge-drag / slider 拖动」期间跳过 renderInto：此时只有
+       viewport 几何在变，内容结构/语言/状态/设备组都不变，全量重建纯属浪费
+       （2026-08-11 实测拖拽每 pointermove 重建 2.7 万条 DOM、长帧 230ms）。
+       拖拽中只更新 frame 几何 + 读数；松手（endResizeDrag）或断点切换时
+       _forceFullRender 置位，强制一次精确完整 render。
+       非拖拽的 resize（窗口拉伸、W/H 数字框）仍走完整 render —— 它们是低频离散事件。 */
+    var _skipContentRebuild = !!_resizeDragActive && !_forceFullRender && !S.grid;
+    /* A breakpoint label is not itself a composition boundary: pad may reuse
+       the PC truth, while a native mobile tree is structurally different.
+       The light drag path is legal only when the actual renderer base remains
+       the same. This prevents mobile DOM from being merely enlarged on a
+       mobile→PC drag. */
+    var _targetCompositionKey = compositionKeyForViewport(vp);
+    if (_skipContentRebuild && _lastCompositionKey && _lastCompositionKey !== _targetCompositionKey) {
+      _skipContentRebuild = false;
+    }
     var scale = 1;
     /* ── 适配缩放：能 1:1 就绝不缩 ──
      *
@@ -641,17 +939,14 @@
         var RAIL_ROOM = 44;   /* 把手容器 34px + 外侧间距 6px + 余量，整体在屏幕右缘外侧舞台区 */
         scale = (box - padPx - RAIL_ROOM) / vp.w;
       }
-      /* 高度方向同样要装下完整 screen（2026-08-05 用户红框：页面不能上下顶天立地）。
-         之前 fit 只按宽缩 —— 1080 高的 frame 缩完仍有 843px，加 bezel 后 wrap 1102px
-         高过 stage 可视区（约 747px），screen 上下被 stage 裁掉，用户看不到完整屏和
-         四周黑色呼吸空间。现在取 stage **可视内框高**（clientHeight − 上下 padding），
-         让整台 screen（vp.h*scale + bezel 22）都装得进；取宽/高两个 scale 的较小值。 */
+      /* 高度方向同样要装下完整 screen。用 stage 的可见盒做同一口径，
+         拖拽轻路径和松手完整 render 才不会因为 toolbar/layout 时机不同
+         在 pointerup 产生视觉跳变。 */
       var BEZEL0 = 22;
-      var stagePadV = 0;
-      try { var scs2 = getComputedStyle(stage); stagePadV = (parseFloat(scs2.paddingTop) || 0) + (parseFloat(scs2.paddingBottom) || 0); } catch (e) { stagePadV = 0; }
-      var availH = stage.clientHeight - stagePadV;   /* stage 可视内框高 */
+      var VERTICAL_STAGE_ROOM = 24;
+      var availH = stage.clientHeight;
       if (availH > 0) {
-        var scaleH = (availH - 2) / (vp.h + BEZEL0);   /* 留 2px 余量防贴边 */
+        var scaleH = (availH - VERTICAL_STAGE_ROOM) / (vp.h + BEZEL0);   /* 留足 stage 呼吸空间，避免把手/屏幕贴边 */
         if (scaleH < scale) scale = scaleH;
       }
     }
@@ -676,6 +971,7 @@
       });
       if (!g.parentNode) stage.appendChild(g);
       updateRead(vp, scale);
+      _forceFullRender = false;   /* grid 永不走轻路径，完整 render 后即清强制标志 */
       return;
     }
     var gEl = document.getElementById('sh-tiles');
@@ -704,7 +1000,40 @@
        尺寸，stage 才能按 wrap 居中、四边等距黑色呼吸空间；frame 固定 vp.h 且内部滚动，
        内容不会再把 wrap 撑高。 */
     wrap.style.height = Math.round(vp.h * scale + BEZEL) + 'px';
-    renderInto(frame, S.state);
+    if (_skipContentRebuild) {
+      /* 拖拽轻路径：frame 几何（width/height/transform）已在上面更新，DOM 不重建。
+         内容仍按「上次完整 render 的视口宽」排版；拖拽期只缩放 frame 的直接
+         渲染根（page root + fixed overlay root），绝不再缩放嵌套 section。
+         这样页面内容保留自己的横向坐标系，左侧固定导航随 viewport 根贴住边缘，
+         section/hero/calendar/later 内容只吃一层与最终 render 同源的缩放。
+         用 zoom 不用 transform：transform 不收缩布局占位，内容仍会溢出裁掉；
+         zoom 是渲染层既有缩放契约（fx-render 的 zoom-rounding）。
+         这是**预览态**：松手/跨断点走完整 render，渲染层按真实新视口重排，
+         并清除该临时缩放（见 else 分支），不产生与精确终态叠加的复合缩放。
+         纯几何、通用规则，不含任何节点/语言特例。 */
+      syncDragContentFollow(vp);
+      restoreCenterAnchor(_centerAnchor);
+    } else {
+      renderInto(frame, S.state);
+      /* 完整 render 后记录本轮视口（拖拽临时缩放的分母），并确保无残留临时缩放。
+         renderInto 重建了 DOM，新 stage 自带精确 zoom；这里防御性清掉任何
+         可能复用旧节点的 __fxBaseZoom 记忆，保证终态严格等于渲染层精确输出。 */
+      _lastRenderVp = { w: vp.w, h: vp.h };
+      _lastCompositionKey = frame.getAttribute('data-render-base') || _targetCompositionKey;
+      if (_resizeDragActive) {
+        _dragRootStages = dragFollowRoots();
+        _dragSectionLayout = captureDragSectionLayout(vp);
+      }
+      syncFixedOverlayViewport(vp);
+      syncStaticKvChrome(vp);
+      /* renderInto 已清空并重建 frame，新的 stage 从渲染层获得精确 zoom，无需额外清理临时属性。 */
+      restoreCenterAnchor(_centerAnchor);
+      if (_pendingCenterAnchor) _pendingCenterAnchor = null;
+      settleCenterAnchor(_centerAnchor, _renderToken);
+    }
+    /* 本轮完整 render 已完成，清除强制标志，供下一轮判定。 */
+    _forceFullRender = false;
+    _suppressResizeChromeAnimation = false;
     /* ── 把画框吸附到整数设备像素 ──
      *
      * 2026-08-04 实测：控制栏 .bar 的高度是内容驱动的 102.75px（字号/行高算出来的小数），
@@ -773,6 +1102,7 @@
   /* ── 读数：一律现测 DOM，不读配置数字 ── */
   function updateRead(vp, scale) {
     _lastRead = { vp: vp, scale: scale };   // 供 __fxOnFontsReady 复用，见上面的说明
+    if (PRODUCT_VIEW) return;               // 产品视图没有 chip/elRead1,读数只留在 _lastRead
     var bp = bpOf(vp.w);
     var d = curDev();
     var devName = isFree() ? '自由状态' : (d && d.name) || '?';
@@ -788,12 +1118,13 @@
     var actualW = 0;
     try { actualW = Math.round(frame.getBoundingClientRect().width); } catch (e) { actualW = 0; }
     var sameAsDesign = Math.abs(actualW - vp.w * scale) < 1.5;
-    elRead1.innerHTML =
+    _lastReadHtml =
       '读数 <b>' + vp.w + '×' + vp.h + ' px</b>' +
       ' · DPR <b>' + vp.dpr + '</b>' +
       ' · ' + esc(bp.label || bp.key) +
       ' · 视图缩放 <b class="' + (Math.abs(scale - 1) < 1e-6 ? 'ok' : 'err') + '">' + (scale * 100).toFixed(1) + '%</b>' +
       ' · 来源 <b>' + esc(vp.src) + '</b>';
+    elRead1.innerHTML = _lastReadHtml;
 
     // DOM 问题标记由 __qa.inspect() 按需读取；不要在每次 render 的 readout 热路径重复遍历。
   }
@@ -932,42 +1263,57 @@
   }
 
   /* ── 同步控件可用性 ── */
-  function syncToolbar() {
+  function syncToolbar(light) {
     var g = curGroup();
-    elDevSel.innerHTML = '';
-    (g.devices || []).forEach(function (d, i) {
-      var op = document.createElement('option');
-      op.value = i;
-      op.textContent = d.name + '　' + d.width + '×' + d.height + (d.dpr ? ' · DPR ' + d.dpr : '');
-      if (i === S.devIdx) op.selected = true;
-      elDevSel.appendChild(op);
-    });
-    if (canResize()) {
-      var op2 = document.createElement('option');
-      op2.value = -1;
-      op2.textContent = '自由状态　' + S.freeW + '×' + S.freeH;
-      if (isFree()) op2.selected = true;
-      elDevSel.appendChild(op2);
+    if (!light) {
+      elDevSel.innerHTML = '';
+      (g.devices || []).forEach(function (d, i) {
+        var op = document.createElement('option');
+        op.value = i;
+        op.textContent = d.name + '　' + d.width + '×' + d.height + (d.dpr ? ' · DPR ' + d.dpr : '');
+        if (i === S.devIdx) op.selected = true;
+        elDevSel.appendChild(op);
+      });
+      if (canResize()) {
+        var op2 = document.createElement('option');
+        op2.value = -1;
+        op2.textContent = '自由状态　' + S.freeW + '×' + S.freeH;
+        if (isFree()) op2.selected = true;
+        elDevSel.appendChild(op2);
+      }
+    } else {
+      for (var oi = 0; oi < elDevSel.options.length; oi++) {
+        var opt = elDevSel.options[oi];
+        if (Number(opt.value) === -1) opt.textContent = '自由状态　' + S.freeW + '×' + S.freeH;
+        opt.selected = Number(opt.value) === S.devIdx;
+      }
+      if (isFree()) elDevSel.value = '-1';
     }
     var lock = !canResize();
     [widthInput, heightInput, resizeRange].forEach(function (e) {
       e.disabled = lock;
       e.title = lock ? '仅 PC 设备组可自由拉伸（防止截出不存在的机型宽度）' : '';
     });
-    /* 右缘拖拽把手与 slider/W-H 严格同源：同一 canResize() 判定，锁定即隐藏。 */
-    if (edgeHandle) edgeHandle.classList.toggle('disabled', lock);
+    /* 拖拽把手与 slider/W-H 严格同源：同一 canResize() 判定，锁定即隐藏。 */
+    for (var hi = 0; hi < resizeHandles.length; hi++) resizeHandles[hi].classList.toggle('disabled', lock);
     var vp = viewport();
     widthInput.value = vp.w;
     heightInput.value = vp.h;
-    resizeRange.value = Math.min(3840, Math.max(240, vp.w));
+    resizeRange.value = Math.min(VIEWPORT_MAX_W, Math.max(VIEWPORT_MIN_W, vp.w));
   }
 
   function syncAll() {
+    /* 产品视图：只渲染产品帧(默认 prefs + 初始状态),不建/不刷任何工具区、不写深链。 */
+    if (PRODUCT_VIEW) { render(); return; }
     /* prefs.plat 跟随视口断点（单一规则，两个方向不分叉）：手动点 plat seg 会连带
        切设备（syncDeviceToPlat），切设备/拉伸走到这里统一重算。仅当矩阵真有该选项才写。 */
     var platOpts = (((cfg.matrix || {}).plat || {}).options) || [];
     var curPlat = platOfWidth(viewport().w);
     if (curPlat && platOpts.some(function (o) { return o.v === curPlat; })) S.prefs.plat = curPlat;
+    /* 拖拽轻路径：控制栏两行 DOM 与 viewport 宽度无关（只有读数/滑块值/设备名下拉文本变），
+       拖拽中跳过 buildBar1/buildBar2 的全量 innerHTML 重建，只 syncToolbar 同步控件值/禁用态。
+       松手后 endResizeDrag 已把 _resizeDragActive 清掉，这里走完整重建。 */
+    if (_resizeDragActive) { syncToolbar(true); render(); writeHash(); return; }
     buildBar1(); buildBar2(); syncToolbar(); render(); writeHash();
   }
 
@@ -985,6 +1331,595 @@
       ? window.requestAnimationFrame.bind(window)
       : function (fn) { return setTimeout(fn, 0); };
     raf(function () { syncAllScheduled = false; syncAll(); });
+  }
+
+  /* ── resize 拖拽状态（轻路径开关）──
+     beginResizeDrag：把手 pointerdown / slider 拖动开始时调用，进入轻路径
+       （render 跳过 renderInto，只更新几何+读数，锚点天然保持）。
+     endResizeDrag：pointerup/pointercancel 时调用，置 _forceFullRender 并
+       立即做一次精确完整 render（含锚点按比例恢复），保证松手即终态精确。
+     两者幂等；非拖拽路径（窗口拉伸、W/H 数字框、语言/状态/设备切换）不经过这里，
+     始终完整 render。 */
+  var _resizeDragActive = false;
+  var _forceFullRender = false;
+  var _lastCompositionKey = null; /* 上次完整 render 的 truth composition base */
+  var _lastRenderVp = null;   /* 上次完整 render 的模拟视口（拖拽临时缩放的分母） */
+  var _dragRootStages = null; /* 当前拖拽会话的渲染根快照，避免每帧查询整棵页面 */
+  var _dragSectionLayout = null;
+  var _dragCenterAnchor = null;
+  var _pendingCenterAnchor = null;
+  var _suppressResizeChromeAnimation = false;
+  /* A delayed reveal-settle correction belongs only to the resize that created
+     it. A real user scroll invalidates it immediately, so WYSIWYG anchoring
+     never pulls a user back after they resume reading. */
+  frame.addEventListener('scroll', function () {
+    if (_centerAnchorExpectedScroll == null || Math.abs(frame.scrollTop - _centerAnchorExpectedScroll) > 0.75) {
+      _centerAnchorRenderToken++;
+    }
+    _centerAnchorExpectedScroll = null;
+    scheduleStaticKvChromeSync();
+  }, { passive: true });
+  function compositionKeyForViewport(vp) {
+    var requested = platOfWidth(vp && vp.w);
+    var platforms = (TRUTH && TRUTH.platforms) || {};
+    if (requested === 'mobile' && platforms.mobile) return 'mobile';
+    if (requested === 'pad' && platforms.pad) return 'pad';
+    return 'pc';
+  }
+  function beginResizeDrag() {
+    _resizeDragActive = true;
+    _dragCenterAnchor = captureCenterAnchor();
+    _dragRootStages = dragFollowRoots();
+    _dragSectionLayout = captureDragSectionLayout(viewport());
+  }
+  function endResizeDrag() {
+    if (!_resizeDragActive) return;
+    _pendingCenterAnchor = _dragCenterAnchor || captureCenterAnchor();
+    _resizeDragActive = false;
+    _dragCenterAnchor = null;
+    _dragRootStages = null;
+    _dragSectionLayout = null;
+    _forceFullRender = true;
+    _suppressResizeChromeAnimation = true;
+    syncAll();
+  }
+
+  function dragFollowRoots() {
+    var all = frame.querySelectorAll('.fx-stage');
+    var roots = [];
+    for (var i = 0; i < all.length; i++) {
+      var stage = all[i];
+      if (stage.parentNode === frame) roots.push(stage);
+    }
+    return roots;
+  }
+
+  function parseZoomValue(value) {
+    if (value == null || value === '' || value === 'normal') return 1;
+    var n = String(value).indexOf('%') >= 0 ? parseFloat(value) / 100 : parseFloat(value);
+    return isFinite(n) && n > 0 ? n : 1;
+  }
+
+  function syncFixedOverlayViewport(vp) {
+    try {
+      var overlays = frame.querySelectorAll('.fx-fixed-overlays');
+      var nextH = Number(vp && vp.h) || frame.clientHeight || 0;
+      for (var i = 0; i < overlays.length; i++) {
+        var stage = overlays[i];
+        var stageZoom = parseZoomValue(stage.style ? stage.style.zoom : null);
+        if (!isFinite(stageZoom) || stageZoom <= 0) stageZoom = 1;
+        var targetDesignHeight = nextH > 0 ? (nextH / stageZoom) : 0;
+        if (targetDesignHeight > 0) {
+          stage.style.height = targetDesignHeight + 'px';
+          stage.style.marginBottom = '-' + targetDesignHeight + 'px';
+        }
+      }
+    } catch (e) { /* fixed overlay sizing is a preview affordance; render remains source-backed */ }
+  }
+
+  function heroGateNumber(value, fallback) {
+    var n = parseFloat(value);
+    return isFinite(n) ? n : fallback;
+  }
+
+  function restoreStaticKvChrome() {
+    try {
+      restoreHeroEntryNavigation();
+    } catch (e) { /* restoring static preview chrome must not block normal render */ }
+  }
+
+  function saveHeroEntryStyle(el) {
+    if (!el || el.__fxHeroEntryStyleBase) return;
+    el.__fxHeroEntryStyleBase = {
+      left: el.style.left || '',
+      top: el.style.top || '',
+      width: el.style.width || '',
+      height: el.style.height || '',
+      minHeight: el.style.minHeight || '',
+      position: el.style.position || '',
+      fontSize: el.style.fontSize || '',
+      lineHeight: el.style.lineHeight || '',
+      objectFit: el.style.objectFit || '',
+      overflow: el.style.overflow || '',
+      transformOrigin: el.style.transformOrigin || '',
+      pointerEvents: el.style.pointerEvents || '',
+      zIndex: el.style.zIndex || '',
+    };
+  }
+
+  function restoreHeroEntryStyle(el) {
+    if (!el || !el.__fxHeroEntryStyleBase) return;
+    var base = el.__fxHeroEntryStyleBase;
+    el.style.left = base.left || '';
+    el.style.top = base.top || '';
+    el.style.width = base.width || '';
+    el.style.height = base.height || '';
+    el.style.minHeight = base.minHeight || '';
+    el.style.position = base.position || '';
+    el.style.fontSize = base.fontSize || '';
+    el.style.lineHeight = base.lineHeight || '';
+    el.style.objectFit = base.objectFit || '';
+    el.style.overflow = base.overflow || '';
+    el.style.transformOrigin = base.transformOrigin || '';
+    el.style.pointerEvents = base.pointerEvents || '';
+    el.style.zIndex = base.zIndex || '';
+  }
+
+  function restoreHeroEntryNavigation() {
+    try {
+      var list = frame.querySelectorAll('[data-hero-entry-nav-transform="true"]');
+      for (var i = 0; i < list.length; i++) {
+        restoreHeroEntryStyle(list[i]);
+        list[i].removeAttribute('data-hero-entry-nav-transform');
+        list[i].removeAttribute('data-hero-entry-nav-kind');
+        list[i].removeAttribute('data-hero-entry-nav-y-scale');
+        list[i].removeAttribute('data-hero-entry-nav-cadence');
+        list[i].removeAttribute('data-hero-entry-nav-distribution');
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function applyHeroEntryBox(el, left, top, width, height, kind) {
+    if (!el) return;
+    saveHeroEntryStyle(el);
+    el.style.position = 'absolute';
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+    el.style.width = width + 'px';
+    el.style.height = height + 'px';
+    el.setAttribute('data-hero-entry-nav-transform', 'true');
+    if (kind) el.setAttribute('data-hero-entry-nav-kind', kind);
+  }
+
+  function syncHeroEntryBrand(stage) {
+    try {
+      var brands = frame.querySelectorAll('[data-motion-role="kvBrand"]');
+      for (var b = 0; b < brands.length; b++) {
+        var brand = brands[b];
+        if (stage && brand.parentElement !== stage) stage.appendChild(brand);
+        applyHeroEntryBox(brand, -22, 0, 840, 300, 'brand');
+        brand.style.pointerEvents = 'none';
+        brand.style.zIndex = '22';
+        var media = brand.querySelectorAll('img,canvas,video,.fx-img');
+        for (var m = 0; m < media.length; m++) {
+          applyHeroEntryBox(media[m], 0, 0, 840, 300, 'brand-media');
+          media[m].style.objectFit = 'fill';
+        }
+      }
+    } catch (e) { /* brand is optional for non-KV pages */ }
+  }
+
+  function fixedNavigationGroupForRoot(root) {
+    try {
+      var groups = frame.__fxFixedNavigation || [];
+      for (var g = 0; g < groups.length; g++) {
+        var items = groups[g] && groups[g].items;
+        if (!items || !items.length) continue;
+        if (root.contains(items[0])) return groups[g];
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  function currentFrameNavTarget(group) {
+    if (!group || !group.anchors || !group.anchors.length) return null;
+    var viewportMidpoint = 0;
+    try {
+      var rect = frame.getBoundingClientRect();
+      viewportMidpoint = rect.top + rect.height * 0.5;
+    } catch (e) {
+      viewportMidpoint = (typeof window !== 'undefined' ? window.innerHeight : 0) * 0.5;
+    }
+    var best = null, bestTop = -Infinity, first = null;
+    for (var a = 0; a < group.anchors.length; a++) {
+      var anchor = group.anchors[a];
+      if (!anchor || !anchor.getBoundingClientRect) continue;
+      var r = anchor.getBoundingClientRect();
+      if (!r.height) continue;
+      var target = anchor.getAttribute('data-node');
+      if (!first) first = target;
+      if (r.top <= viewportMidpoint && r.top > bestTop) {
+        best = target;
+        bestTop = r.top;
+      }
+    }
+    return best || first;
+  }
+
+  function syncFrameNavActive(root, items) {
+    var group = fixedNavigationGroupForRoot(root);
+    var activeIndex = -1;
+    try {
+      var target = currentFrameNavTarget(group);
+      if (group && target) {
+        for (var gi = 0; gi < group.items.length; gi++) {
+          var selected = group.items[gi].getAttribute('data-sec-target') === target;
+          group.items[gi].toggleAttribute('data-active', selected);
+          group.items[gi].setAttribute('aria-current', selected ? 'true' : 'false');
+          if (selected) activeIndex = gi;
+        }
+      }
+    } catch (e) { /* active sync is visual chrome only */ }
+    if (activeIndex < 0) {
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].hasAttribute('data-active') || items[i].getAttribute('aria-current') === 'true'
+            || items[i].getAttribute('data-nav-variant') === 'active') {
+          activeIndex = i;
+          break;
+        }
+      }
+    }
+    if (activeIndex < 0) activeIndex = 0;
+    return Math.max(0, Math.min(items.length - 1, activeIndex));
+  }
+
+  function isActiveNavArtwork(boxEl, mediaEl) {
+    if (!boxEl && !mediaEl) return false;
+    var marked = ((boxEl && boxEl.getAttribute('data-hero-entry-nav-kind')) || '')
+      + ' ' + ((mediaEl && mediaEl.getAttribute('data-hero-entry-nav-kind')) || '');
+    if (marked.indexOf('active-item-art') >= 0) return true;
+    var w = heroGateNumber(boxEl && boxEl.style && boxEl.style.width, boxEl && boxEl.offsetWidth || 0);
+    var h = heroGateNumber(boxEl && boxEl.style && boxEl.style.height, boxEl && boxEl.offsetHeight || 0);
+    if (!(w > 0) && mediaEl) w = heroGateNumber(mediaEl.style && mediaEl.style.width, mediaEl.offsetWidth || 0);
+    if (!(h > 0) && mediaEl) h = heroGateNumber(mediaEl.style && mediaEl.style.height, mediaEl.offsetHeight || 0);
+    return w > 120 && h > 50 && w / h > 1.6;
+  }
+
+  function naturalMediaRatio(mediaEl, fallback) {
+    var ratio = Number(fallback);
+    try {
+      var nw = Number(mediaEl && (mediaEl.naturalWidth || mediaEl.videoWidth));
+      var nh = Number(mediaEl && (mediaEl.naturalHeight || mediaEl.videoHeight));
+      if (nw > 0 && nh > 0) ratio = nw / nh;
+    } catch (e) { /* ignore */ }
+    return isFinite(ratio) && ratio > 0 ? ratio : 1;
+  }
+
+  function directChildByNodeId(root, nodeId) {
+    if (!root || !nodeId) return null;
+    try {
+      for (var child = root.firstElementChild; child; child = child.nextElementSibling) {
+        if (child.getAttribute && (child.getAttribute('data-node') === nodeId || child.getAttribute('data-node-id') === nodeId)) return child;
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  function syncContinuousNavRailOwner(root, sourceScaleY) {
+    if (!root) return null;
+    var railOwner = directChildByNodeId(root, 'I52:3263;17:53006');
+    if (!railOwner) {
+      var children = root.children || [];
+      for (var i = 0; i < children.length; i++) {
+        var name = (children[i].getAttribute && (children[i].getAttribute('data-figma-name') || children[i].getAttribute('data-name') || children[i].getAttribute('aria-label'))) || '';
+        if (/导航背景|nav|rail/i.test(name)) {
+          railOwner = children[i];
+          break;
+        }
+      }
+    }
+    if (!railOwner) return null;
+
+    saveHeroEntryStyle(railOwner);
+    var sourceBoxWidth = 307;
+    var sourceBoxHeight = 1666;
+    var renderBoxWidth = 727;
+    var renderBoxHeight = 2376;
+    var renderOffsetX = -22.5;
+    var sourceLineTop = 310;
+    var sourceLineBottom = 1976;
+    var sourceLineCoverage = sourceLineBottom - sourceLineTop;
+    if (!isFinite(sourceScaleY) || sourceScaleY <= 0) sourceScaleY = 1;
+    railOwner.style.position = 'absolute';
+    railOwner.style.left = '0px';
+    railOwner.style.top = '0px';
+    railOwner.style.width = sourceBoxWidth + 'px';
+    railOwner.style.height = (sourceBoxHeight * sourceScaleY) + 'px';
+    railOwner.style.overflow = 'visible';
+    railOwner.style.transformOrigin = '0px 0px';
+    railOwner.setAttribute('data-fixed-viewport-rail', 'true');
+    railOwner.setAttribute('data-hero-entry-nav-transform', 'true');
+    railOwner.setAttribute('data-hero-entry-nav-kind', 'rail-owner');
+    railOwner.setAttribute('data-figma-source-node-id', 'I52:3263;17:53006');
+    railOwner.setAttribute('data-figma-source-owner', 'fix-left-navigation-background');
+    railOwner.setAttribute('data-figma-rail-source-width', String(sourceBoxWidth));
+    railOwner.setAttribute('data-figma-rail-source-height', String(sourceBoxHeight));
+    railOwner.setAttribute('data-figma-rail-render-width', String(renderBoxWidth));
+    railOwner.setAttribute('data-figma-rail-render-height', String(renderBoxHeight));
+    railOwner.setAttribute('data-figma-rail-render-offset-x', String(renderOffsetX));
+    railOwner.setAttribute('data-figma-rail-render-offset-y', String(-sourceLineTop));
+    railOwner.setAttribute('data-figma-rail-source-scale-y', sourceScaleY.toFixed(6));
+
+    var bakedAsset = null;
+    try {
+      bakedAsset = railOwner.querySelector(':scope > img.fx-img, :scope > img[data-asset-src]');
+    } catch (e) {
+      bakedAsset = railOwner.querySelector('img.fx-img, img[data-asset-src]');
+    }
+    if (bakedAsset) {
+      saveHeroEntryStyle(bakedAsset);
+      bakedAsset.style.position = 'absolute';
+      bakedAsset.style.left = renderOffsetX + 'px';
+      bakedAsset.style.top = (-sourceLineTop * sourceScaleY) + 'px';
+      bakedAsset.style.width = renderBoxWidth + 'px';
+      bakedAsset.style.height = (renderBoxHeight * sourceScaleY) + 'px';
+      bakedAsset.style.objectFit = 'fill';
+      bakedAsset.style.pointerEvents = 'none';
+      bakedAsset.setAttribute('data-hero-entry-nav-transform', 'true');
+      bakedAsset.setAttribute('data-hero-entry-nav-kind', 'rail-owner-asset');
+      bakedAsset.setAttribute('data-figma-source-node-id', 'I52:3263;17:53006');
+      bakedAsset.setAttribute('data-figma-rail-source-scale-y', sourceScaleY.toFixed(6));
+    }
+
+    var bg = directChildByNodeId(railOwner, 'I52:3263;17:53003');
+    if (bg) {
+      saveHeroEntryStyle(bg);
+      bg.style.position = 'absolute';
+      bg.style.left = '0px';
+      bg.style.top = '0px';
+      bg.style.width = sourceBoxWidth + 'px';
+      bg.style.height = (sourceBoxHeight * sourceScaleY) + 'px';
+      bg.style.objectFit = 'fill';
+      bg.setAttribute('data-hero-entry-nav-transform', 'true');
+      bg.setAttribute('data-hero-entry-nav-kind', 'rail-gradient');
+    }
+
+    var lineA = directChildByNodeId(railOwner, 'I52:3263;12:47246');
+    var lineB = directChildByNodeId(railOwner, 'I52:3263;12:47247');
+    if (lineA) {
+      saveHeroEntryStyle(lineA);
+      lineA.style.position = 'absolute';
+      lineA.style.left = '22px';
+      lineA.style.top = '0px';
+      lineA.style.width = '43px';
+      lineA.style.height = (844 * sourceScaleY) + 'px';
+      lineA.setAttribute('data-hero-entry-nav-transform', 'true');
+      lineA.setAttribute('data-hero-entry-nav-kind', 'rail-line-source');
+      lineA.setAttribute('data-figma-source-node-id', 'I52:3263;12:47246');
+    }
+    if (lineB) {
+      saveHeroEntryStyle(lineB);
+      lineB.style.position = 'absolute';
+      lineB.style.left = '22px';
+      lineB.style.top = (684 * sourceScaleY) + 'px';
+      lineB.style.width = '43px';
+      lineB.style.height = (982 * sourceScaleY) + 'px';
+      lineB.setAttribute('data-hero-entry-nav-transform', 'true');
+      lineB.setAttribute('data-hero-entry-nav-kind', 'rail-line-source');
+      lineB.setAttribute('data-figma-source-node-id', 'I52:3263;12:47247');
+    }
+    railOwner.setAttribute('data-figma-rail-source-top', String(sourceLineTop));
+    railOwner.setAttribute('data-figma-rail-source-bottom', String(sourceLineBottom));
+    railOwner.setAttribute('data-figma-rail-source-coverage', String(sourceLineCoverage));
+    railOwner.setAttribute('data-figma-rail-visible-coverage', (sourceLineCoverage * sourceScaleY).toFixed(3));
+    return railOwner;
+  }
+
+  function syncHeroEntryNavigation(vp, heroBaseHeight) {
+    try {
+      var viewportH = Number(vp && vp.h) || frame.clientHeight || 0;
+      if (!(viewportH > 0)) return;
+      var baseH = heroGateNumber(heroBaseHeight, 2160);
+      if (!(baseH > 0)) baseH = 2160;
+      var yScale = Math.min(1, viewportH / baseH);
+      var stages = frame.querySelectorAll('.fx-fixed-overlays');
+      for (var s = 0; s < stages.length; s++) {
+        var stage = stages[s];
+        var stageZoom = parseZoomValue(stage.style ? stage.style.zoom : null);
+        if (!isFinite(stageZoom) || stageZoom <= 0) stageZoom = 1;
+        syncHeroEntryBrand(stage);
+        var navRoots = stage.querySelectorAll('[data-motion-role="navigationFooter"]');
+        for (var r = 0; r < navRoots.length; r++) {
+          var root = navRoots[r];
+          saveHeroEntryStyle(root);
+          var rootLeftSource = 20;
+          var rootTopSource = 310;
+          var rootWidthSource = 627;
+          var rootHeightSource = 1666;
+          var buttonTopSource = 27;
+          var buttonHeightSource = 1564;
+          var sourceScaleY = stageZoom > 0 ? (yScale / stageZoom) : 1;
+          if (!isFinite(sourceScaleY) || sourceScaleY <= 0) sourceScaleY = 1;
+          root.style.position = 'absolute';
+          root.style.left = rootLeftSource + 'px';
+          root.style.top = ((rootTopSource * yScale) / stageZoom) + 'px';
+          root.style.width = rootWidthSource + 'px';
+          root.style.height = (rootHeightSource * sourceScaleY) + 'px';
+          root.style.minHeight = root.style.height;
+          root.style.overflow = 'visible';
+          if (_suppressResizeChromeAnimation) {
+            root.style.animation = 'none';
+          }
+          root.setAttribute('data-hero-entry-nav-transform', 'true');
+          root.setAttribute('data-hero-entry-nav-kind', 'root');
+          root.setAttribute('data-hero-entry-nav-y-scale', yScale.toFixed(4));
+
+          syncContinuousNavRailOwner(root, sourceScaleY);
+
+          var buttonFrame = directChildByNodeId(root, 'I52:3263;12:47248');
+          if (buttonFrame) {
+            saveHeroEntryStyle(buttonFrame);
+            buttonFrame.style.position = 'absolute';
+            buttonFrame.style.left = '0px';
+            buttonFrame.style.top = (buttonTopSource * sourceScaleY) + 'px';
+            buttonFrame.style.width = rootWidthSource + 'px';
+            buttonFrame.style.height = (buttonHeightSource * sourceScaleY) + 'px';
+            buttonFrame.style.display = 'block';
+            buttonFrame.style.overflow = 'visible';
+            buttonFrame.setAttribute('data-hero-entry-nav-transform', 'true');
+            buttonFrame.setAttribute('data-hero-entry-nav-kind', 'button-frame');
+          }
+
+          var items = root.querySelectorAll('[data-nav-item]');
+          var count = Math.max(1, items.length);
+          var activeIndex = syncFrameNavActive(root, items);
+          var sourceRowH = 224;
+          var sourceCadence = 134;
+          var sourceLabelX = 95;
+          var sourceActiveLabelY = 92;
+          var sourceNormalLabelY = 93;
+          var sourceStarX = 29;
+          var sourceStarY = 108;
+          var sourceStarSize = 26;
+          var cadence = sourceCadence * sourceScaleY;
+          for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            saveHeroEntryStyle(item);
+            item.style.position = 'absolute';
+            item.style.left = '0px';
+            item.style.top = (sourceCadence * i * sourceScaleY) + 'px';
+            item.style.width = rootWidthSource + 'px';
+            item.style.height = (sourceRowH * sourceScaleY) + 'px';
+            item.style.scale = '1';
+            item.style.transition = 'none';
+            item.setAttribute('data-hero-entry-nav-transform', 'true');
+            item.setAttribute('data-hero-entry-nav-kind', 'item');
+            item.setAttribute('data-hero-entry-nav-cadence', cadence.toFixed(3));
+            item.setAttribute('data-hero-entry-nav-distribution', 'figma-source');
+            var mediaNodes = item.querySelectorAll('img,canvas,video,.fx-img');
+            for (var im = 0; im < mediaNodes.length; im++) {
+              var media = mediaNodes[im];
+              var mediaParent = media.parentElement && media.parentElement !== item ? media.parentElement : null;
+              if (isActiveNavArtwork(mediaParent || media, media)) {
+                var activeTop = (activeIndex - i) * sourceCadence * sourceScaleY;
+                var activeW = rootWidthSource;
+                var activeH = sourceRowH * sourceScaleY;
+                applyHeroEntryBox(mediaParent || media, 0, activeTop, activeW, activeH, 'active-item-art');
+                if (mediaParent) applyHeroEntryBox(media, 0, 0, activeW, activeH, 'active-item-art-media');
+                media.style.objectFit = 'fill';
+              } else {
+                var iconRatio = naturalMediaRatio(media, 1);
+                var mediaW = sourceStarSize;
+                var mediaH = mediaW / iconRatio;
+                if (!isFinite(mediaH) || mediaH <= 0) mediaH = sourceStarSize;
+                applyHeroEntryBox(mediaParent || media, sourceStarX, sourceStarY * sourceScaleY, mediaW, mediaH, 'item-ornament-slot');
+                if (mediaParent) applyHeroEntryBox(media, 0, 0, mediaW, mediaH, 'item-ornament-media');
+                media.style.objectFit = 'contain';
+              }
+            }
+            var labels = item.querySelectorAll('.fx-t');
+            for (var t = 0; t < labels.length; t++) {
+              var label = labels[t];
+              saveHeroEntryStyle(label);
+              var isActiveRow = i === activeIndex || item.getAttribute('data-nav-variant') === 'active';
+              label.style.left = sourceLabelX + 'px';
+              label.style.top = ((isActiveRow ? sourceActiveLabelY : sourceNormalLabelY) * sourceScaleY) + 'px';
+              label.setAttribute('data-hero-entry-nav-transform', 'true');
+              label.setAttribute('data-hero-entry-nav-kind', 'label');
+            }
+          }
+        }
+      }
+    } catch (e) { /* entry nav transform is preview-only */ }
+  }
+
+  function syncStaticKvChrome(vp) {
+    try {
+      var pageRoot = frame.querySelector('.fx-stage[data-node="__page__"]');
+      var hero = frame.querySelector('[data-hero-slot-role="hero"]');
+      if (!pageRoot || !hero) { restoreStaticKvChrome(); return; }
+      frame.style.setProperty('--fx-hero-locked-viewport-height', Math.max(0, Number(frame.clientHeight) || Number(vp && vp.h) || 0) + 'px');
+      if (typeof frame.__fxSyncFixedNavigation === 'function') {
+        try { frame.__fxSyncFixedNavigation(); } catch (navError) { /* keep static chrome resilient */ }
+      }
+      var baseHeroH = heroGateNumber(hero.style.height, hero.offsetHeight || 2160);
+      syncHeroEntryNavigation(vp, baseHeroH);
+    } catch (e) { /* static chrome sync must fail back to source render */ }
+  }
+
+  function captureDragSectionLayout(vp) {
+    try {
+      var pageRoot = frame.querySelector('.fx-stage[data-node="__page__"]');
+      var rootZoom = parseZoomValue(pageRoot && pageRoot.style ? pageRoot.style.zoom : null);
+      var sections = [];
+      var list = frame.querySelectorAll('.fx-stage[data-node-id^="section-"]');
+      for (var i = 0; i < list.length; i++) {
+        var el = list[i];
+        var localTop = parseFloat(el.style.top);
+        if (!isFinite(localTop)) localTop = Number(el.offsetTop) || 0;
+        var localHeight = parseFloat(el.style.height);
+        if (!isFinite(localHeight) || localHeight <= 0) localHeight = Number(el.offsetHeight) || 0;
+        if (!(localHeight > 0)) continue;
+        sections.push({
+          el: el,
+          top: localTop,
+          height: localHeight,
+        });
+      }
+      sections.sort(function (a, b) { return a.top - b.top; });
+      var heroState = frame.getAttribute('data-hero-scroll-state') || '';
+      var heroActive = frame.getAttribute('data-hero-scroll-slot') === 'active'
+        && heroState === 'HERO_LOCKED'
+        && sections.length > 1
+        && rootZoom > 0;
+      return {
+        vp: { w: (vp && vp.w) || frame.clientWidth || 0, h: (vp && vp.h) || frame.clientHeight || 0 },
+        sections: sections,
+        viewportLockedHero: heroActive,
+        heroBoundaryLocal: heroActive ? sections[1].top : 0,
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function syncDragSectionLayout(vp, followScale) {
+    var layout = _dragSectionLayout;
+    if (!layout || !layout.sections || !layout.sections.length) return;
+    var pageRoot = frame.querySelector('.fx-stage[data-node="__page__"]');
+    var rootZoom = parseZoomValue(pageRoot && pageRoot.style ? pageRoot.style.zoom : null);
+    if (!isFinite(rootZoom) || rootZoom <= 0) return;
+    var nextH = Number(vp && vp.h) || Number(layout.vp && layout.vp.h) || frame.clientHeight || 0;
+    var targetHeroBoundaryLocal = layout.viewportLockedHero ? (nextH / rootZoom) : 0;
+    var baseHeroBoundaryLocal = Number(layout.heroBoundaryLocal) || 0;
+    for (var i = 0; i < layout.sections.length; i++) {
+      var item = layout.sections[i];
+      var desiredTop = item.top;
+      if (layout.viewportLockedHero) {
+        desiredTop = i === 0 ? 0 : targetHeroBoundaryLocal + (item.top - baseHeroBoundaryLocal);
+      }
+      item.el.style.top = desiredTop + 'px';
+      item.el.style.height = item.height + 'px';
+    }
+  }
+
+  function syncDragContentFollow(vp) {
+    try {
+      var baseVp = _lastRenderVp;
+      var followScale = (baseVp && baseVp.w > 0) ? (vp.w / baseVp.w) : 1;
+      var stages = _dragRootStages || dragFollowRoots();
+      for (var i = 0; i < stages.length; i++) {
+        var stage = stages[i];
+        if (stage.__fxBaseZoom == null) {
+          var baseZoom = parseFloat(stage.style.zoom);
+          stage.__fxBaseZoom = (isFinite(baseZoom) && baseZoom > 0) ? baseZoom : 1;
+        }
+        stage.style.zoom = String(stage.__fxBaseZoom * followScale);
+      }
+      syncFixedOverlayViewport(vp);
+      syncDragSectionLayout(vp, followScale);
+      syncStaticKvChrome(vp);
+    } catch (error) { /* 临时缩放失败不阻塞拖拽，松手后完整 render 会纠正 */ }
   }
 
   /* ── 深链 ── */
@@ -1019,8 +1954,10 @@
     });
   }
 
-  /* ── 老师的 __qa 合约：verify.mjs 靠它驱动门 B/C/D/F，必须保住 ── */
-  window.__qa = {
+  /* ── 老师的 __qa 合约：verify.mjs 靠它驱动门 B/C/D/F，必须保住 ──
+     产品视图(?product=1)不暴露 __qa:QA 壳 = 工具区 + __qa API 所在的整个 chrome 运行时,
+     纯净渲染路径里两者都不该存在。 */
+  if (!PRODUCT_VIEW) window.__qa = {
     current: function () { return S.state; },
     goto: function (id) {
       if (!cfg.states[id] && !(cfg.tabStates || []).some(function (t) { return t.id === id; })) {
@@ -1040,7 +1977,7 @@
       S.prefs[key] = value; persist(); syncAll();
     },
     scale: function () { return typeof cfg.scale === 'function' ? cfg.scale.call(cfg) : 1; },
-    resize: function (w, h) { S.freeW = clamp(w, 240, 8000); S.freeH = clamp(h, 240, 8000); S.devIdx = -1; syncAll(); },
+    resize: function (w, h) { S.freeW = clampViewportW(w); S.freeH = clampViewportH(h); S.devIdx = -1; syncAll(); },
     setOrientation: function (mode) {
       if (mode !== 'portrait' && mode !== 'landscape') throw new Error('__qa.setOrientation: mode 必须是 portrait 或 landscape');
       if (!canOrient()) throw new Error('__qa.setOrientation: 当前设备组不支持横竖屏切换');
@@ -1124,7 +2061,7 @@
     },
   };
 
-  readHash();
+  if (!PRODUCT_VIEW) readHash();   // 深链(g=/d=/w=/h=/state=)是 QA 功能,产品视图不消费
   syncAll();
   /* 窗口 resize 与 slider 同理：RAF 合并，同帧多次 resize 只重渲染一次。 */
   var winResizeScheduled = false;

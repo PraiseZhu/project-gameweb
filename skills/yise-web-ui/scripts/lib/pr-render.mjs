@@ -31,8 +31,8 @@ const GATE_ROWS = {
       + '（注册脚本 hash 入链；脚本本身是 demo 代码，其业务判断是否正确需人工审查） |'
     : null),
   E: (v, px) => {
-    if (!px) return '| 像素基准（vs 真沙盒截图） | ⚠️ 未运行 pixel-compare |';
-    if (px.skipped) return '| 像素基准（vs 真沙盒截图） | ⚠️ 未采基准，像素级未比对 |';
+    if (!px) return '| 像素基准（vs 真沙盒截图） | ⚠️ 未运行 pixel-compare（candidate 级：视觉层无像素证据，禁止写「视觉还原完成」） |';
+    if (px.skipped) return '| 像素基准（vs 真沙盒截图） | ⚠️ 未采基准，像素级未比对（candidate 级：禁止写「视觉还原完成」；要 claim 完成必须先采基准重跑门 E） |';
     const worst = Math.max(...px.results.map((r) => r.diffRatio ?? 1));
     const warns = px.results.filter((r) => r.status === 'WARN');
     /* r7 条目 8:WARN 的裁决人与理由必须在 PR 里可见 —— 裁决是**人工声明、不是机械测量**,

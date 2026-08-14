@@ -28,11 +28,23 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { INLINE_MARKERS, locateInlineBlock, buildInlineBlock } from './lib/inline-markers.mjs';
 import { join, resolve } from 'node:path';
 
 /** 每段：模板文件、区间标记、模板首行注释头的替换目标 */
-const PARTS = { render: INLINE_MARKERS.render, chrome: INLINE_MARKERS.chrome };
+const PARTS = {
+  render: {
+    template: 'figma-render.js',
+    begin: '/* FIGMA_RENDER_BEGIN',
+    end: '/* FIGMA_RENDER_END */',
+    headRe: /^\/\* figma-render\.js —/,
+  },
+  chrome: {
+    template: 'figma-chrome.js',
+    begin: '/* FIGMA_CHROME_BEGIN',
+    end: '/* FIGMA_CHROME_END */',
+    headRe: /^\/\* figma-chrome\.js —/,
+  },
+};
 
 function fail(msg) {
   console.error(JSON.stringify({ ok: false, error: msg }, null, 2));
@@ -66,12 +78,22 @@ for (const name of names) {
   const P = PARTS[name];
   const tplPath = join(skillDir, 'templates', P.template);
   if (!existsSync(tplPath)) fail(`缺模板 ${tplPath}`);
-  const tpl = readFileSync(tplPath, 'utf8').replace(/\r\n/g, '\n');
+  const tpl = readFileSync(tplPath, 'utf8').replace(/\r\n/g, '\n').replaceAll('</script', '<\\/script');
 
-  const loc = locateInlineBlock(html, name);
-  if (!loc) fail(`index.html 里找不到 ${P.begin} / ${P.end} 标记（${name} 段）`);
-  const { b, replaceEnd } = loc;
-  const inlined = buildInlineBlock(name, tpl);
+  let b = html.indexOf(P.begin);
+  let e = html.indexOf(P.end);
+  let replaceEnd = e + P.end.length;
+  if (b < 0 || e < 0) {
+    b = html.indexOf(`/* ${P.template.replace(/\\.js$/, '.js')}`);
+    e = b >= 0 ? html.indexOf('\n</script>', b) : -1;
+    replaceEnd = e;
+  }
+  if (b < 0 || e < 0) fail(`index.html 里找不到 ${P.begin} / ${P.end} 标记（${name} 段）`);
+  if (e < b) fail(`${name} 段的标记顺序颠倒了`);
+
+  // Keep explicit sentinels even if an older generated index lost them.
+  const body = P.begin + ' */\n' + tpl;
+  const inlined = body.replace(/\s*$/, '\n\n') + P.end;
   const current = html.slice(b, replaceEnd);
   const same = current.trim() === inlined.trim();
 

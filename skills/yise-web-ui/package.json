@@ -3,14 +3,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test",
-    "onboard": "node scripts/onboard.mjs",
-    "onboard:check": "node scripts/onboard.mjs --check",
+    "test": "node scripts/test-public.mjs",
+    "test:public": "node scripts/test-public.mjs",
+    "test:demo": "node scripts/test-demo.mjs",
+    "figma:onboard": "node scripts/onboard.mjs",
+    "figma:preview:first": "node scripts/preview-first.mjs",
     "release:audit": "node scripts/public-release-audit.mjs",
     "prototype:truth": "node scripts/figma-prototype-truth.mjs",
     "prototype:audit": "node scripts/figma-prototype-truth.mjs --require-observed",
-    "fonts:check": "node scripts/fonts-install.mjs --check",
-    "fonts:install": "node scripts/fonts-install.mjs --install"
+    "asset:audit": "node scripts/asset-delivery-audit.mjs"
   },
   "dependencies": {
     "css-to-react-native": "^3.2.0",

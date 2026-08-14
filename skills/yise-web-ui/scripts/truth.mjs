@@ -7,7 +7,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { failJson, failProblems, isPlainObject, safeJsonForScript, stableJson } from './lib/fs-utils.mjs';
 import { validateTruth } from './lib/schema.mjs';
@@ -56,7 +56,7 @@ if (allIdx !== -1) {
     let parsed = null;
     try { parsed = JSON.parse(res.stdout); } catch {}
     results.push({
-      demo: basename(dir),
+      demo: dir.split('/').pop(),
       ok: res.status === 0,
       drift: parsed?.drift ?? null,
       driftedPaths: parsed?.driftedPaths ?? undefined,
@@ -97,6 +97,18 @@ try {
 
 const problems = validateTruth(extracted, { demoDir, requireProvenance: true });
 if (problems.length) failProblems(problems);
+
+// 空 truth = 提取器还是 TODO 空模板(或根本没接任何真源)。它会让页面只剩 QA 壳、
+// 看不到任何真实内容——正是「只生成 QA/TODO 空壳」的上手坑。fail-closed 并指向 P1,
+// 不允许静默产出一个空壳预览(2026-08-14 新 Agent 接入反馈)。
+if (extracted && typeof extracted === 'object' && !Array.isArray(extracted) && Object.keys(extracted).length === 0) {
+  failJson(
+    'extract.mjs 输出了空 truth {} —— 提取器还是 TODO 空模板或没有产出任何叶子。' +
+      '先按 P1 编写 extract.mjs(Figma 稿流程:spec.json 填 figma.fileKey/fetchNodes,' +
+      'figma-fetch 拉快照,extract.mjs 读 fixtures + lib/figma-geo.mjs extractGeometry 出 truth),' +
+      '再重跑 truth.mjs。空壳预览不被允许生成。'
+  );
+}
 
 const fresh = stableJson(extracted);
 const truthPath = join(demoDir, 'truth.json');

@@ -100,10 +100,10 @@ export function classifyAutoResize({ autoResize, browser = {} } = {}) {
 
 
 /* 组级排版：同一组件组的同级标题/正文应统一字号/排版等级，而不是逐节点独立
-   step-fit（官网实证：etheria.xd.com 五语言 02 奖励卡标题组、正文组、角色名组、
-   06 列表组全部组内同字号，最长项折行也不单独缩小）。组标识 = 最内层容器祖先
-   （ancestorNames 末项）+ 语义角色 + 源字号：同级组共享同一个最内层组件容器，
-   文案/节点 id 不参与，组件嵌套深度不一也不影响。 */
+   step-fit（真实产品线五语言实测基线：02 奖励卡标题组、正文组、角色名组、
+   06 列表组全部组内同字号，最长项折行也不单独缩小；私有证据，见 artifacts/）。
+   组标识 = 最内层容器祖先（ancestorNames 末项）+ 语义角色 + 源字号：同级组
+   共享同一个最内层组件容器，文案/节点 id 不参与，组件嵌套深度不一也不影响。 */
 export function buildFitGroupKey({ ancestorNames = [], parentName = '', role = '', fontSize = null } = {}) {
   /* 同级同位文本（各卡的标题位、各卡的正文位）共享同一个直接父容器名
      （如 02 奖励卡标题槽、03 特别活动标题槽都复用同一个 Figma 组件 Frame 名）。
@@ -202,33 +202,42 @@ export function unifyGroupFitScales(members = []) {
 
 /* ── 双真源 typography（2026-08-10 用户最终决策）──────────────────────────
    zh-CN：严格遵守 Figma 静态视觉指标（字号/行高/几何），是唯一静态视觉真源。
-   非 zh-CN 翻译语言：以 Figma owner/位置/组件结构为底，但组级视觉等级遵守从官网
-   实测归纳的通用 locale typography 逻辑。理由：未来只提供简中 Figma，需复用官网翻译策略。
+   非 zh-CN 翻译语言：以 Figma owner/位置/组件结构为底，但组级视觉等级遵守从
+   真实产品线实测归纳的通用 locale typography 逻辑。理由：未来只提供简中
+   Figma，需复用已上线的翻译排版策略。
 
-   证据来源：etheria.xd.com 五语言真实 Chrome 实测（1920×1080，2026-08-10），跨 02 奖励卡、
-   03 特别活动卡、角色名、06 列表等多个组件组，按语义角色归纳，不对文案/节点 ID 硬编码。
+   证据来源：真实产品线五语言 Chrome 实测基线（1920×1080，2026-08-10；私有证据，
+   见 artifacts/），跨 02 奖励卡、03 特别活动卡、角色名、06 列表等多个组件组，
+   按语义角色归纳，不对文案/节点 ID 硬编码。
 
-   关键实证：本地是 2× 高清稿（标题源 60px、正文源 30px），经 stage zoom≈0.398 缩放后的
-   视觉字号已与官网对齐（标题 60×0.398≈24≈官网25、正文 30×0.398≈12=官网12）。因此本策略
-   不是盲目缩放源字号，而是**声明各角色/语言的官网目标视觉等效字号，并校验渲染是否达成**。 */
+   关键实证：本地是 2× 高清稿（标题源 60px、正文源 30px），经 stage zoom≈0.398
+   缩放后的视觉字号已与线上对齐（标题 60×0.398≈24≈线上25、正文 30×0.398≈12=
+   线上12）。因此本策略不是盲目缩放源字号，而是**声明各角色/语言的线上目标
+   视觉等效字号，并校验渲染是否达成**。 */
 
-/* 官网实测的 locale 字号缩放比（相对 zh-CN Figma 源字号）。证据 artifacts/official-locale-typography-20260810.json。
-   模型：本地是 2× 高清稿，官网运行时布局约为一半，故官网视觉字号 × 2 = 本地设计坐标字号；
-   而同一角色的 zh-CN 官网视觉值 × 2 = Figma zh-CN 源字号。两者相除得"相对 zh-CN 源字号的语言比"，
-   可作用于任意源字号档（60 标题、40 副标、30 正文通用），不对绝对像素/文案硬编码。
-   实测结论：标题各语言同级（ratio 1.0，en 因拉丁略 0.93）；正文 ja/en/ko = zh 的 0.8（12/15），
-   zh-TW 与 zh-CN 同级（1.0）。未收录角色/语言回退 1（不动、不猜）。 */
+/* locale 字号缩放比（相对 zh-CN Figma 源字号）——**默认基线数据**。证据
+   artifacts/official-locale-typography-20260810.json（私有）。
+   模型：本地是 2× 高清稿，线上运行时布局约为一半，故线上视觉字号 × 2 = 本地
+   设计坐标字号；而同一角色的 zh-CN 线上视觉值 × 2 = Figma zh-CN 源字号。两者
+   相除得"相对 zh-CN 源字号的语言比"，可作用于任意源字号档（60 标题、40 副标、
+   30 正文通用），不对绝对像素/文案硬编码。
+   实测结论：标题各语言同级（ratio 1.0，en 因拉丁略 0.93）；正文 ja/en/ko = zh
+   的 0.8（12/15），zh-TW 与 zh-CN 同级（1.0）。未收录角色/语言回退 1（不动、不猜）。
+   适用范围：本表来自单一产品线的实测归纳，作为通用默认生效；其它产品线可经
+   localeFontScale({ overrides }) 注入自有实测表（同构 { tier: { lang: ratio } }），
+   未提供的组合回退本表、再回退 1。 */
 /* 双真源 locale 缩放：zh-CN 恒 1（保 Figma 静态指标）。非 zh-CN 结构/owner/位置仍按 Figma，
-   视觉字号/字重/行高按官网实测的通用语言规则。同一 fontWeight 的标题在官网按【源字号档】
+   视觉字号/字重/行高按实测基线的通用语言规则。同一 fontWeight 的标题按【源字号档】
    走不同缩放——卡片标题(源60档) ja/zh-TW 0.833、en/ko 1.0；角色技能标题(源25档)全语言 1.0。
    故必须按 tier × language 二维查表，不能只用 fontWeight 分 title/body。
-   证据 artifacts/official-tier-ratio-20260810.json（同组件跨语言视觉比，stage-invariant）。
-   值 = 官网该语言视觉字号 / 官网 zh-CN 视觉字号（本地 2× 高清稿，同比例作用于任意 Figma 源档）。
+   证据 artifacts/official-tier-ratio-20260810.json（同组件跨语言视觉比，stage-invariant；私有）。
+   值 = 线上该语言视觉字号 / 线上 zh-CN 视觉字号（本地 2× 高清稿，同比例作用于任意 Figma 源档）。
    未收录 tier/语言回退 1（不动、不猜）。en 标题字重被 font routing 压 400 是字体缺口，不在此表。 */
+/* 默认基线数据表（来源与适用范围见上;其它产品线可经 localeFontScale({ overrides }) 覆写）。 */
 export const LOCALE_FONT_SCALE = Object.freeze({
   /* 正文（源30档 fw<600）：ja/en/ko = zh 的 0.8（12/15）；zh-TW 同级。 */
   body:         Object.freeze({ 'zh-CN': 1, en: 0.8,   ja: 0.8,   ko: 0.8, 'zh-TW': 1 }),
-  /* 卡片标题（源60档 fw>=600）：ja/zh-TW 0.833、en/ko 1.0。官网另把 ja/zh-TW 行高收紧到≈字号。 */
+  /* 卡片标题（源60档 fw>=600）：ja/zh-TW 0.833、en/ko 1.0。线上另把 ja/zh-TW 行高收紧到≈字号。 */
   'card-title': Object.freeze({ 'zh-CN': 1, en: 1,     ja: 0.833, ko: 1,   'zh-TW': 0.833 }),
   /* 标题/技能标题（源<=40档 fw>=600，含大标题/角色技能标题）：全语言同级 1.0。 */
   heading:      Object.freeze({ 'zh-CN': 1, en: 1,     ja: 1,     ko: 1,   'zh-TW': 1 }),
@@ -273,10 +282,14 @@ export function officialTypeKind({ role = 'unknown', fontWeight = 400 } = {}) {
 
 /* non-zh-CN 翻译语言的官方目标缩放比。zh-CN 恒 1（保 Figma 静态指标）；
    未收录回退 1（不动、不猜）。 */
-export function localeFontScale({ role = 'unknown', language = 'zh-CN', fontWeight = 400, sourceFontSize = null } = {}) {
+export function localeFontScale({ role = 'unknown', language = 'zh-CN', fontWeight = 400, sourceFontSize = null, overrides = null } = {}) {
   const lang = normalizeLanguage(language);
   if (lang === 'zh-CN') return 1;
   const tier = classifySourceSizeTier({ fontWeight, sourceFontSize });
+  /* 可配置数据源(2026-08-14 脱敏改造):使用方可注入自有产品线实测表
+     (同构 { tier: { lang: ratio } }),未提供的组合回退 LOCALE_FONT_SCALE 默认基线。 */
+  const custom = overrides?.[tier]?.[lang];
+  if (Number.isFinite(custom)) return custom;
   const row = LOCALE_FONT_SCALE[tier];
   const v = row ? row[lang] : null;
   return Number.isFinite(v) ? v : 1;

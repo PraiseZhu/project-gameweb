@@ -4,7 +4,7 @@
 
 ## Publish
 
-The publishable generic surface is listed mechanically in `public-release.json`: `SKILL.md`, `README.md`, `LICENSE`, package metadata and lockfile, reusable `scripts/`, reusable `templates/`, reviewed generic `docs/`, and the bundled runtime fonts in `fonts/`.
+The publishable generic surface is listed mechanically in `public-release.json`: `SKILL.md`, `README.md`, `LICENSE`, package metadata and lockfile, reusable `scripts/`, reusable `templates/`, and reviewed generic `docs/`.
 
 The release audit is deterministic and fail-closed:
 
@@ -30,17 +30,9 @@ structure is reported rather than converted into a page-specific interaction.
 
 ## Keep private
 
-Do not publish demo fixtures, Figma/Lark captures, generated `truth.json` or `index.html`, exported assets, browser screenshots, audit evidence, local evolution cases, `.env`, tokens, cookies, private URLs, absolute machine paths, `node_modules/`, or temporary output. Existing local artifacts are intentionally preserved; this manifest does not delete them.
+Do not publish demo fixtures, Figma/Lark captures, generated `truth.json` or `index.html`, exported assets, browser screenshots, audit evidence, local evolution cases, fonts, `.env`, tokens, cookies, private URLs, absolute machine paths, `node_modules/`, or temporary output. Existing local artifacts are intentionally preserved; this manifest does not delete them.
 
 `FIGMA-ADAPT.md` and `qa-hifi-demo` references are historical upstream context, not a second public Skill identity. They remain outside the publishable set unless separately reviewed and rewritten.
-
-## Runtime fonts (bundled)
-
-Fonts are runtime dependencies, not page assets. Two layers give a clone deterministic offline fidelity:
-(1) the currently verified font binaries are bundled in `fonts/` and recorded in `fonts/registry.json` (family → file, postScriptName, weight, source, license, sha256, bytes);
-(2) `npm run fonts:check` / `npm run fonts:install` validate every bundled file against the registry (existence, byte size, sha256, family/weight mapping) and print a source-driven reinstall guide for any missing or hash-mismatched file.
-
-Fonts whose redistribution license is not confirmed are reported by `fonts:check` under `licenseReview` and are NOT claimed safe to redistribute. Currently two CJK free-commercial families (`Alimama ShuHeiTi`, `FontquanXinYiGuanHeiTi`) carry a `licenseReview` marker pending manual confirmation from the rights holder. Do not silently treat them as cleared.
 
 ## Copy status
 

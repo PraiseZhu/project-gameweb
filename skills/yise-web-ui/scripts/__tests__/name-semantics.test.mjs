@@ -1,6 +1,6 @@
-﻿/* name-semantics + owner-model 的单元测试。【通用 Skill 层，纯函数，无 IO】
+/* name-semantics + owner-model 的单元测试。【通用 Skill 层，纯函数，无 IO】
  * 跑法：node scripts/__tests__/name-semantics.test.mjs */
-import { parseLayerName, deriveRole, assetPolicyHint, bgScopeHint, auditNames, KNOWN_ROLES } from '../lib/figma-name-semantics.mjs';
+import { parseLayerName, deriveRole, assetPolicyHint, bgScopeHint, auditNames, KNOWN_ROLES, LEGACY_COMPATIBILITY_ROLES } from '../lib/figma-name-semantics.mjs';
 import { STRUCT_CONTRACT, checkStructContract, isPassthroughContainer, classifyBgScope, auditStructure } from '../lib/figma-owner-model.mjs';
 
 let pass = 0, fail = 0;
@@ -9,22 +9,36 @@ const F = (name, cond, extra) => { if (cond) { pass++; console.log('  ✅ ' + na
 console.log('— parseLayerName —');
 F('sec/1-首屏', (() => { const p = parseLayerName('sec/1-首屏'); return p.role === 'sec' && p.label === '1-首屏'; })());
 F('img/标题logo', parseLayerName('img/标题logo').role === 'img');
+F('IMG/ 大小写等价', parseLayerName('IMG/标题logo').role === 'img');
+F('Sec/ 大小写等价', parseLayerName('Sec/1').role === 'sec');
+F('img / spaced slash 等价', (() => { const p = parseLayerName('img / label'); return p.role === 'img' && p.label === 'label'; })());
 F('switch/角色', parseLayerName('switch/角色').role === 'switch');
+F('txt/ 是 legacy warning 而非标准', (() => { const p = parseLayerName('txt/title'); return p.role === null && p.legacyRole === 'txt' && p.warnings.some((w) => w.code === 'legacy-prefix'); })());
+F('swpage/ 是 legacy warning 而非标准', (() => { const p = parseLayerName('swpage/one'); return p.role === null && p.legacyRole === 'swpage' && p.warnings.some((w) => w.code === 'legacy-prefix'); })());
+F('全角斜杠是命名错误', (() => { const p = parseLayerName('img／bad'); return p.role === null && p.errors.some((e) => e.code === 'invalid-separator'); })());
+F('反斜杠是命名错误', (() => { const p = parseLayerName('img\\bad'); return p.role === null && p.errors.some((e) => e.code === 'invalid-separator'); })());
 F('@参数解析 key=value', (() => { const p = parseLayerName('btn/下载@state=hover@primary'); return p.params.state === 'hover' && p.flags.includes('primary'); })());
 F('无前缀不算 role', parseLayerName('随便一个名字').role === null);
 F('未知前缀不算 role', parseLayerName('zzz/什么').role === null);
-F('全部 15 个角色词都在词表', ['sec','fix','ref','img','bg','kv','txt','btn','hot','modal','dyn','mix','scroll','switch','tab','ind'].every(r => KNOWN_ROLES.includes(r)));
+F('v2.8:copy/ 不在前缀总表,不解析成角色', parseLayerName('copy/标题').role === null);
+F('标准角色词表不含 txt/swpage', ['sec','fix','ref','img','bg','kv','btn','hot','modal','dyn','mix','scroll','switch','tab','ind'].every(r => KNOWN_ROLES.includes(r)) && !KNOWN_ROLES.includes('txt') && !KNOWN_ROLES.includes('swpage'));
+F('legacy 角色词表含 txt/swpage', ['txt','swpage'].every(r => LEGACY_COMPATIBILITY_ROLES.includes(r)));
 
 console.log('— deriveRole 优先级 —');
-F('TEXT 永远 txt（即便叫 img/）', deriveRole({ name: 'img/标题', type: 'TEXT' }).role === 'txt');
+F('无前缀 TEXT → editable copy', (() => { const d = deriveRole({ name: '标题', type: 'TEXT' }); return d.role === 'copy' && d.via === 'type:text'; })());
+F('v2.8:TEXT named copy/ 仍是 copy(总表外词,按无前缀 TEXT 派生)', (() => { const d = deriveRole({ name: 'copy/标题', type: 'TEXT' }); return d.role === 'copy' && d.via === 'type:text'; })());
+F('v2.8:非 TEXT named copy/ → 无角色(总表外词)', deriveRole({ name: 'copy/页脚', type: 'FRAME' }).role === null);
+F('TEXT named img/ → visual asset，名字覆盖 type', (() => { const d = deriveRole({ name: 'img/标题', type: 'TEXT' }); return d.role === 'img' && d.via === 'name-overrides-text'; })());
 F('FRAME img/ → img', deriveRole({ name: 'img/logo', type: 'FRAME' }).role === 'img');
 F('INSTANCE switch/ → switch', deriveRole({ name: 'switch/角色', type: 'INSTANCE' }).role === 'switch');
-F('无名 image 填充 → img', deriveRole({ name: 'Rectangle', type: 'RECTANGLE', fills: [{ type: 'IMAGE' }] }).role === 'img');
+F('无名 image 填充不推断成 img', deriveRole({ name: 'Rectangle', type: 'RECTANGLE', fills: [{ type: 'IMAGE' }] }).role === null);
+F('无名 component 不推断成 switch', deriveRole({ name: 'Component 1', type: 'INSTANCE' }).role === null);
 F('无名无填充 → role null（诚实）', deriveRole({ name: 'Rectangle', type: 'RECTANGLE', fills: [] }).role === null);
 
 console.log('— assetPolicyHint —');
 F('bg/ → wantAsset', assetPolicyHint({ name: 'bg/pc', type: 'INSTANCE' }).wantAsset === true);
-F('txt 不切图', assetPolicyHint({ name: 'txt/标题', type: 'TEXT' }).wantAsset === false);
+F('TEXT img/ → wantAsset', assetPolicyHint({ name: 'img/标题', type: 'TEXT' }).wantAsset === true);
+F('txt legacy 不切图', assetPolicyHint({ name: 'txt/标题', type: 'TEXT' }).wantAsset === false);
 F('普通 frame 不切图', assetPolicyHint({ name: '内容', type: 'FRAME', fills: [] }).wantAsset === false);
 
 console.log('— bgScopeHint 不按名字/几何提升 —');
@@ -56,7 +70,7 @@ F('分区深层组内 → group-decoration', classifyBgScope({ name: 'bg/x' }, [
 F('evidence 带出分区 id', (() => { const r = classifyBgScope({ name: 'bg/x' }, [{ id: '1:180' }, { id: '1:467' }, { id: 'g', name: 'bg' }], { sectionIds: secs }); return r.section === '1:467'; })());
 
 console.log('— audit 报告 —');
-F('auditNames 统计 byRole', (() => { const s = auditNames([{ name: 'img/a', type: 'FRAME' }, { name: 'txt/b', type: 'TEXT' }]); return s.byRole.img === 1 && s.byRole.txt === 1; })());
+F('auditNames 统计 byRole 与 legacy warning', (() => { const s = auditNames([{ name: 'img/a', type: 'FRAME' }, { name: 'txt/b', type: 'TEXT' }]); return s.byRole.img === 1 && s.byRole.copy === 1 && s.compatibilityWarnings.length === 1; })(), JSON.stringify(auditNames([{ name: 'img/a', type: 'FRAME' }, { name: 'txt/b', type: 'TEXT' }])));
 F('auditStructure 揪出缺 parentId 的节点', (() => { const s = auditStructure([{ id: '1', type: 'FRAME', name: 'a', box: {}, clipsContent: false }]); return s.unresolved.length === 1 && s.missing.parentId === 1; })());
 
 console.log('');

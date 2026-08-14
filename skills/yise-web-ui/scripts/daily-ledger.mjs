@@ -13,6 +13,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { POLICY_VERSION, evaluateAdmission } from './lib/ledger-policy.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const ISSUE_LIMIT = 500;
@@ -205,8 +207,17 @@ export function buildDailyReport({ demoDir, date, files, commandRuns = [] }) {
   addLiveDiffIssues(raw, liveDiff.value, files.liveDiff);
   addCommandIssues(raw, commandRuns);
   const issues = dedupeIssues(raw);
-  const byStage = Object.fromEntries(['input/scope', 'model/provenance', 'asset', 'renderer', 'adapt/viewport', 'verify/tooling', 'product/design']
-    .map((stage) => [stage, issues.filter((item) => item.stage === stage).length]));
+  const stages = ['input/scope', 'model/provenance', 'asset', 'renderer', 'adapt/viewport', 'verify/tooling', 'product/design'];
+  const byStage = Object.fromEntries(stages.map((stage) => [stage, 0]));
+  let blocking = 0;
+  let warnings = 0;
+  let requiresReview = 0;
+  for (const item of issues) {
+    byStage[item.stage] = (byStage[item.stage] || 0) + 1;
+    if (item.severity === 'blocking') blocking += 1;
+    if (item.severity === 'warning') warnings += 1;
+    if (item.stage === 'product/design') requiresReview += 1;
+  }
   const rootCauses = Object.values(issues.reduce((acc, item) => {
     const found = acc[item.rootCauseFamily] || { family: item.rootCauseFamily, stage: item.stage, count: 0, issueIds: [], nextStep: item.nextStep };
     found.count += item.occurrences;
@@ -224,10 +235,10 @@ export function buildDailyReport({ demoDir, date, files, commandRuns = [] }) {
     },
     summary: {
       total: issues.length,
-      blocking: issues.filter((item) => item.severity === 'blocking').length,
-      warnings: issues.filter((item) => item.severity === 'warning').length,
+      blocking,
+      warnings,
       byStage,
-      requiresReview: issues.filter((item) => item.stage === 'product/design').length,
+      requiresReview,
     },
     issues,
     rootCauses,
@@ -281,6 +292,101 @@ export function renderMarkdown(report) {
   return `${lines.join('\n')}\n`;
 }
 
+/** 读取 policy manifest + 规则文档，校验版本与 hash（v3.1 规则漂移 fail-closed）。 */
+export function checkPolicyManifest(rootDir) {
+  const manifestFile = join(rootDir, 'evolution', 'policy-manifest.json');
+  const m = safeReadJson(manifestFile);
+  if (!m.present || !m.value) return { ok: false, drift: true, reason: 'policy-manifest.json 缺失或损坏' };
+  const manifest = m.value;
+  const docFile = join(rootDir, manifest.rulesDoc || 'docs/ledger-legislation.md');
+  let docText;
+  try { docText = readFileSync(docFile, 'utf8'); } catch { return { ok: false, drift: true, reason: '规则文档缺失：' + (manifest.rulesDoc || 'docs/ledger-legislation.md') }; }
+  const hash = createHash('sha256').update(docText, 'utf8').digest('hex');
+  if (manifest.policyVersion !== POLICY_VERSION) return { ok: false, drift: true, reason: '规则版本不一致：manifest=' + manifest.policyVersion + ' 实现=' + POLICY_VERSION };
+  if (hash !== manifest.rulesDocSha256) return { ok: false, drift: true, reason: '规则文档 hash 漂移：manifest=' + String(manifest.rulesDocSha256).slice(0, 16) + ' 实算=' + hash.slice(0, 16) };
+  return { ok: true, drift: false, version: manifest.policyVersion, hash };
+}
+
+/** 读取 ledger.json 的执行状态映射（familyKey/fingerprint → execState/status/tier）。 */
+export function loadLedgerStates(rootDir) {
+  const l = safeReadJson(join(rootDir, 'evolution', 'ledger.json'));
+  const map = {};
+  if (l.present && l.value && Array.isArray(l.value.entries)) {
+    for (const e of l.value.entries) map[e.fingerprint] = { status: e.status, execState: e.execState || null, tier: e.tier, noteLegacy: !!e.noteLegacy };
+  }
+  return map;
+}
+
+/** 把一条根因候选映射为晨报候选（带四门评估与三通道分类）。 */
+export function toMorningCandidate(root, ledgerStates) {
+  const ls = ledgerStates[root.family] || {};
+  const candidate = {
+    family: root.family,
+    stage: root.stage,
+    count: root.count,
+    // 复发证据：本日出现的次数（count）。跨实例需 ≥2 且不同实例 —— 单日内仅当 count>=2 且有多来源才算；
+    // 保守起见，同日同实例重复不算跨实例，标 pending 由 owner 复核。
+    evidence: (root.evidence || []).length ? root.evidence : Array.from({ length: root.count || 1 }, (_, i) => ({ date: root.date || null, session: root.session || null, instance: i })),
+    attribution: root.attribution || 'pending',
+    channel: root.channel,  // 若上游已标，尊重；否则由 classifyChannel 判
+    changeTarget: root.changeTarget || root.nextStep || '',
+    criterion: root.criterion || '',
+    reverify: root.reverify || '',
+    single: false,
+  };
+  const admission = evaluateAdmission(candidate);
+  return { ...candidate, admission, execState: ls.execState || null, ledgerStatus: ls.status || null, noteLegacy: ls.noteLegacy || false };
+}
+
+/** 晨报六节渲染（v3.1）。sections：证据/变更、次日收尾、观察/待补、owner决策、每周复发/升格、Skill/main 新鲜度。 */
+export function renderMorningReport(report, { rootDir, policy, ledgerStates = {}, skillVersion = null, localPending = [] } = {}) {
+  const candidates = (report.rootCauses || []).map((root) => toMorningCandidate({ ...root, date: report.date }, ledgerStates));
+  const groups = { closure: [], observation: [], ownerDecision: [], designRepeat: [] };
+  for (const candidate of candidates) {
+    if (candidate.admission.admitted && candidate.admission.channel === 'tighten') groups.closure.push(candidate);
+    if (!candidate.admission.admitted) groups.observation.push(candidate);
+    if (candidate.admission.channel === 'expansion') groups.ownerDecision.push(candidate);
+    if (candidate.admission.channel === 'design' && (candidate.count || 0) >= 2) groups.designRepeat.push(candidate);
+  }
+  const { closure, observation, ownerDecision, designRepeat } = groups;
+  const L = [];
+  L.push('# 次日晨读台账 — ' + report.date, '');
+  L.push('- 治理立法：**' + (policy && policy.version ? policy.version : POLICY_VERSION) + '**（' + (policy && policy.ok ? '规则校验通过' : '规则漂移/未校验') + '）');
+  L.push('- Demo：\'' + report.demo + '\' · 生成于 ' + report.generatedAt);
+  L.push('- 说明：本报告只生成建议，不在夜间修改 Figma / 页面 / 阈值 / 长期 ledger / Git / GitHub。');
+  L.push('');
+  L.push('## 1. 证据 / 变更');
+  L.push('- 当日问题：**' + report.summary.total + '**（阻断 ' + report.summary.blocking + '，警告 ' + report.summary.warnings + '）');
+  for (const c of (report.evidenceSources && report.evidenceSources.commands) || []) L.push('  - 验收 \'' + c.id + '\' exit=' + c.exitCode);
+  if (report.delta) L.push('- 与 ' + (report.delta.comparedTo || '首次') + ' 相比：新根因 ' + (report.delta.newFamilies.join('、') || '无') + '；持续 ' + (report.delta.repeatedFamilies.join('、') || '无') + '；未再出现 ' + (report.delta.resolvedFamilies.join('、') || '无'));
+  L.push('');
+  L.push('## 2. 高价值次日收尾候选（过四门 · 收紧类）');
+  if (!closure.length) L.push('- 无（没有同时过复发/归因/确定性/类型门的收紧项）');
+  for (const c of closure) L.push('- \'' + c.family + '\'（' + c.stage + '，×' + c.count + '）→ ' + (c.changeTarget || '见 nextStep'));
+  L.push('');
+  L.push('## 3. 观察 / 待补证据（未过门）');
+  if (!observation.length) L.push('- 无');
+  for (const c of observation) L.push('- \'' + c.family + '\'（' + c.stage + '）未过：' + c.admission.failedGates.join('、') + '；下次判定：补跨实例证据/确认归因后重评');
+  L.push('');
+  L.push('## 4. owner 决策（扩权项 · 永不自动落地）');
+  if (!ownerDecision.length) L.push('- 无');
+  for (const c of ownerDecision) L.push('- \'' + c.family + '\'（' + c.stage + '）拿不准/涉放宽 → 待 owner 逐条拍板');
+  L.push('');
+  L.push('## 5. 每周复发 / 升格候选');
+  const repeated = (report.delta && report.delta.repeatedFamilies) || [];
+  if (!repeated.length && !designRepeat.length) L.push('- 无');
+  for (const f of repeated) L.push('- 复发根因：\'' + f + '\'（建议进每周复盘）');
+  for (const c of designRepeat) L.push('- 设计类 ×' + c.count + '：\'' + c.family + '\'（≥2 次 → gap-catalog 质询；≥4 次 → 升格候选）');
+  L.push('');
+  L.push('## 6. 当前 Skill / main 新鲜度');
+  L.push('- main 当前版本：' + (skillVersion || '未提供（本地报告不读 Git）'));
+  if (!localPending.length) L.push('- 本地已验证未发布候选：无记录');
+  for (const p of localPending) L.push('- 本地已验证未发布：' + p);
+  L.push('- 待 owner 拍板升级项：' + (ownerDecision.length + repeated.length) + ' 条（见 §4/§5）');
+  L.push('');
+  return L.join('\n') + '\n';
+}
+
 export function rootCauseSnapshot(report) {
   return Object.fromEntries((report.rootCauses || []).map((root) => [root.family, { stage: root.stage, count: root.count }]));
 }
@@ -327,6 +433,16 @@ if (process.argv[1] === import.meta.filename) {
     const demoDir = resolve(demoArg);
     const outDir = resolve(arg('out') || join(ROOT, 'evolution', 'daily'));
     const date = arg('date') || chinaDate();
+    /* v3.1 pre-run guard：--morning 模式下先校验 policy manifest 与规则文档 hash，
+       不匹配则 fail-closed —— 不跑验收、不写任何报告，只报「规则漂移」。 */
+    let policy = null;
+    if (has('morning')) {
+      policy = checkPolicyManifest(ROOT);
+      if (!policy.ok) {
+        console.log(JSON.stringify({ ok: false, drift: true, reason: policy.reason, note: '规则漂移：午夜任务 fail-closed，不带旧规则运行' }, null, 2));
+        process.exit(3);
+      }
+    }
     const commands = has('run') ? runChecks(demoDir) : [];
     const report = buildDailyReport({
       demoDir, date, commandRuns: commands,
@@ -343,7 +459,17 @@ if (process.argv[1] === import.meta.filename) {
     const markdownFile = join(outDir, `${date}.md`);
     writeFileSync(jsonFile, JSON.stringify(report, null, 2) + '\n');
     writeFileSync(markdownFile, renderMarkdown(report));
-    console.log(JSON.stringify({ ok: true, date, report: jsonFile, summary: markdownFile, issues: report.summary, delta, commands: commands.map(({ id, exitCode }) => ({ id, exitCode })) }, null, 2));
+    /* v3.1 晨报模式（--morning）：先校验 policy manifest（规则漂移 fail-closed），
+       再渲染六节晨读报告；只生成本地报告/建议，不碰 Figma/页面/阈值/ledger/Git/GitHub。 */
+    let morningFile = null;
+    if (has('morning')) {
+      /* policy 已在 CLI 开头校验通过（否则早已 fail-closed 退出），这里只渲染晨报。 */
+      const ledgerStates = loadLedgerStates(ROOT);
+      const morning = renderMorningReport(report, { rootDir: ROOT, policy, ledgerStates });
+      morningFile = join(outDir, `${date}-morning.md`);
+      writeFileSync(morningFile, morning);
+    }
+    console.log(JSON.stringify({ ok: true, date, report: jsonFile, summary: markdownFile, morning: morningFile, policy: policy ? { ok: policy.ok, version: policy.version } : null, issues: report.summary, delta, commands: commands.map(({ id, exitCode }) => ({ id, exitCode })) }, null, 2));
     process.exitCode = 0;
   }
 }

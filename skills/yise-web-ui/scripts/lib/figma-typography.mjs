@@ -66,12 +66,13 @@ export function fitAuthorization({ autoResize = 'FIXED', truncation = null, clip
   if (explicitFit) return { authorized: true, reason: 'explicit-fit-grant' };
   if (truncating) return { authorized: true, reason: 'truncation' };
   if (clipsContent === true || isMask === true) return { authorized: true, reason: 'clip-or-mask' };
-  /* 垂直 HUG 的文本/容器随内容增长 —— 官网实证（etheria.xd.com 五语言 02 奖励卡
-     全部同字号、行数随文案 2/3/4 增长、容器高度跟随，从不对字多的卡缩字号），
-     也正是 Figma autoResize:HEIGHT + layoutSizingVertical:HUG 的本义。对这类文本
-     step-fit 缩字号会让同组卡片字号不一（字多的卡明显更小），违背设计与官网。
-     所以 HUG 垂直不授权缩字号，保持源字号、垂直自然增长。explicitFit / 截断 /
-     clip / mask 仍优先授权（上面已 return）。 */
+  /* 垂直 HUG 的文本/容器随内容增长 —— 真实产品线五语言实测基线（私有证据，见
+     artifacts/；02 奖励卡全部同字号、行数随文案 2/3/4 增长、容器高度跟随，
+     从不对字多的卡缩字号），也正是 Figma autoResize:HEIGHT +
+     layoutSizingVertical:HUG 的本义。对这类文本 step-fit 缩字号会让同组卡片
+     字号不一（字多的卡明显更小），违背设计与实测基线。所以 HUG 垂直不授权
+     缩字号，保持源字号、垂直自然增长。explicitFit / 截断 / clip / mask 仍
+     优先授权（上面已 return）。 */
   if (String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
   if (boundedOwner) return { authorized: true, reason: 'framed-bounded-owner' };
   return { authorized: false, reason: 'preserve-source-metrics' };
