@@ -81,14 +81,8 @@ unknown 节点只画样子、不赋交互；unknown 的 `modal-trigger` 不自�
 规范稿清单保持 ready。做页接入由 issue #5 交给 `zhanxinyi-lab`；本侧不改
 `skills/yise-web-ui/**`，不写回 Figma。未命名稿自动命名留到后续。
 
-## 每日台账（v3.1）
-
-治理立法：`docs/ledger-legislation.md`。每天 10:00（Asia/Shanghai）由 Cindy 调度跑
-`npm run ledger`，只出晨报建议。
-
-- 扩权永不自动落地；规则 hash 不对就报「规则漂移」并停下
-- 写盘唯一入口：`npm run evolution -- add|set-status|list`
-- 晨报落在 `evolution/daily/<日期>-morning.md`（本地私有）
+规范命名稿自验通过后导出 `status: "ready"`。机器表里仍保留 `draft` /
+`certified`，本轮命名稿路径不用这两档。
 
 ## 不要做
 

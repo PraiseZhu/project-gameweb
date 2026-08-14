@@ -1,5 +1,6 @@
 /**
- * inventory/v2 — 做页交付包机器表。人读约定在会话口径里；本文件只锁取值。
+ * inventory/v2 — 做页交付包机器表。人读约定见 SKILL.md / tool/README.md；本文件只锁取值。
+ * 规范命名稿导出 status=ready；draft / certified 仍是合法取值，本轮路径不用。
  * 零 Node 依赖。
  */
 import { PREFIXES, PARAM_NAMES } from "./spec.mjs";

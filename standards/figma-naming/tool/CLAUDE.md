@@ -206,7 +206,7 @@ const root=find(d,"pc");
 console.log(renderTerminal(lint(root),{frameName:root.name},{color:false,maxPerCode:2}));})()'
 ```
 
-当前 raw lint（规范 v2.7 · 假定 A-v1.5；不应用豁免）：
+当前 raw lint（规范现行 v2.8 · 假定 A-v1.6；基线数字仍按 v2.7 / A-v1.5 快照，不应用豁免）：
 
 | 体检根 | 层数 | 报警 | 必须改 / 必须回答 / 核实 | 动作 | 选根警告 |
 |---|---|---|---|---|---|
