@@ -68,8 +68,8 @@ audit 只读取 publishable 清单里的文件。`.cache/` 那 66MB 真稿快照
 
 `scripts/public-release-audit.mjs` 自己不开豁免口子：它只写模式、不写任何真实的 key / token 样例，因此与别的 publishable 文件一样被完整扫描。
 
-## 当前状态：文档正文里还有真 fileKey
+## 当前状态：发布边界 audit 已绿
 
-本次 audit 如实报红：真稿 key 在 `CLAUDE.md`、`docs/PLAN.md`、若干测试与诊断脚本里共出现 60 处。这不是检测的问题，正是检测有效的证据。脱敏是独立的一步，不能靠放宽检测让它变绿。
+`npm run release:audit` 当前通过。真稿 fileKey 已从 publishable 文档里清掉；测试用例改成明显占位形态。`SKILL.md` 与做页接入说明仍列在 private，因为含未发布稿名和内部交接口径。
 
-`test/figma.test.mjs` 里还有一个 URL 解析用例使用的 22 位 key，形态与真 key 无法区分，audit 同样报出——形态检测做不到区分「测试用的假 key」与「真 key」，这是设计上的取舍：宁可让测试用例改成明显的占位形态，也不给检测开白名单口子。
+形态检测仍然不给具体 key 开白名单：宁可让测试用占位串，也不把「测试假 key」和「真 key」做成例外。

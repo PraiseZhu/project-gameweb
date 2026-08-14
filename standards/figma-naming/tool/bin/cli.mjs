@@ -59,9 +59,10 @@ try {
 
 const result = lint(doc);
 
-/* 体检根自检：`sec/` 必须是体检根的直接子层，所以传错节点会让分区类判定整体偏移。
-   判据是「整棵子树里有没有 sec/」而不是「直接子层有没有」——稿件多包一层容器时
-   directSec 也是 0，但那属于稿件问题（由 N-SEC-NOT-TOPLEVEL 报出），不是选错了根。 */
+/* 体检根自检：传错节点会让分区类判定整体偏移。
+   判据是「整棵子树里有没有 sec/」而不是「直接子层有没有」——v2.3 起 sec/ 在子树内搜集，
+   纯布局容器透明；directSec=0 且 secTotal>0 是正常结构，不是选错了根，也不再报
+   已退役的 N-SEC-NOT-TOPLEVEL。 */
 if (result.root.looksLikeWrongRoot) {
   const msg = [
     `体检根可能选错了（${result.root.name}｜${result.root.type}）：`,

@@ -38,9 +38,6 @@
     "tool/.env",
     "tool/test/.tmp/",
     "SKILL.md",
-    "EVOLUTION.md",
-    "evolution/",
-    "docs/ledger-legislation.md",
     "docs/yise-web-ui-inventory-v2-issue.md"
   ],
   "privateReasons": {
@@ -55,10 +52,7 @@
     "tool/node_modules/": "已安装依赖永远不是发布内容。",
     "tool/.env": "Figma Personal Access Token 等凭证。",
     "tool/test/.tmp/": "测试运行临时目录。",
-    "SKILL.md": "agent 写回流程尚未随本次夜间提交，不作为发布源码。",
-    "EVOLUTION.md": "本地台账人读视图，不作为发布源码。",
-    "evolution/": "本地台账、晨报与策略清单，不作为发布源码。",
-    "docs/ledger-legislation.md": "台账立法含本项目稿名，不作为发布源码。",
+    "SKILL.md": "内部交接 skill：含未发布稿节点与做页同事账号，不作为发布源码。",
     "docs/yise-web-ui-inventory-v2-issue.md": "做页接入说明含未发布项目稿名与内部交接口径，不作为发布源码。"
   },
   "projectWordsNote": "未发布项目的稿名/代号没有可识别形态（不像 fileKey 的 22 位串、也不像 figd_ 前缀），形态类检测天然抓不到，只能按词表逐词比对：列在 projectWords 里的词一旦出现在任何 publishable 文件里，即视为泄漏未发布项目。词表为空或字段缺失一律报错——空词表意味着这项检查没生效，不是通过；词表里的空串/纯空白会匹配所有文件，同样报错。",

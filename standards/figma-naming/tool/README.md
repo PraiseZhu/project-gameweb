@@ -1,8 +1,8 @@
 # figma-naming-lint
 
-给一个 Figma 稿链接，当场出**图层命名体检报告**——逐层核对命名，指出哪里错了、错在哪、怎么改。
+给一个 Figma 稿链接，可做两件事：当场出**图层命名体检报告**，或把已规范命名稿编成做页前的 `inventory/v2` ready 清单。做页交接看下面「做页前交接：inventory/v2」。
 
-规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.7），20 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。
+规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.8），20 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。
 
 ## 判什么、不判什么
 
@@ -23,7 +23,7 @@ cp .env.example .env          # 填入 Figma PAT（只需 File content: read）
 npm run lint -- "<稿链接>"     # 链接需带 node-id
 ```
 
-**链接选哪个节点很关键。** `sec/` 必须是体检根的直接子层，所以传错节点会让分区类判定整体偏移。同一份稿实测：选整个页面（CANVAS）526 条、选页面 frame 141 条。在 Figma 里选中**页面 frame**（而不是它外面的画布或里面的某个组）→ 右键 Copy link to selection。
+**链接选哪个节点很关键。** 体检要选中**页面 frame**（不要选外面的画布，也不要选里面的某个组）→ 右键 Copy link to selection。`sec/` 从 v2.3 起在体检根**子树内**搜集，中间无识别前缀的纯布局容器透明，不再要求它是直接子层。传错节点仍会让分区类判定整体偏移：同一份稿实测，选整个页面（CANVAS）526 条、选页面 frame 141 条。
 
 产物：
 
@@ -33,7 +33,7 @@ report/naming-report.md     # 人看：按处置分档（必须改 / 必须回�
 report/naming-report.json   # 机器看：findings 数组（含 disposition / basis / instance）+ 体检根自检 + stats
 ```
 
-终端同时打摘要：
+终端同时打摘要（下面是 v2.1 历史样例，当时还有已退役的 `N-SEC-NOT-TOPLEVEL`；现行规则与数字以规范 v2.8 和真稿基线为准）：
 
 ```
 figma-naming-lint · pc 3840×17241 · 规范 v2.1 (2026-08-04) · 假定 A-v1.1 (2026-08-04)
@@ -177,5 +177,5 @@ npm run build:plugin -- --labels path/to/user-labels.json
 | inventory 人工核对页 | 可选复核，不改变 `ready` |
 | 命令行体检 | 已可用（既有命名工具） |
 | Figma 插件 / 本机桥 | 既有命名实现，非本轮交接入口 |
-| 重跑基线对比（修好几条 / 有没有改出新问题） | 未开始 |
-| 豁免账本（把「这条不算问题」沉淀成可复现的特征规则） | 未开始 |
+| 重跑基线对比（修好几条 / 有没有改出新问题） | 已可用（阶段 B，见 `docs/PLAN.md`） |
+| 豁免账本（把「这条不算问题」沉淀成可复现的特征规则） | C1/C2 已可用；C3 用量累计未做 |
