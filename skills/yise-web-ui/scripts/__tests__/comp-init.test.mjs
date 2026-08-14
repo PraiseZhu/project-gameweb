@@ -54,6 +54,16 @@ test('组件模式生成八件套,含 build.mjs / bootstrap / shims 骨架', () 
   }
 });
 
+test('Figma shell exposes renderer supports through __qaDemo and __qa', () => {
+  const classicDir = join(tmpDir('figma-supports'), 'demo');
+  const res = run(INIT, ['--dir', classicDir, '--name', 'figma-demo']);
+  assert.equal(res.status, 0, res.stdout + res.stderr);
+  const html = readFileSync(join(classicDir, 'index.html'), 'utf8');
+  assert.match(html, /get supports\(\)\s*\{/);
+  assert.match(html, /__figmaRender\.supports/);
+  assert.match(html, /supports:\s*function \(\)/);
+});
+
 test('spec.component 骨架字段齐全,entry 原样写入,平台收窄为 desktop', () => {
   const { dir } = initComponent('spec');
   const spec = JSON.parse(readFileSync(join(dir, 'spec.json'), 'utf8'));
@@ -160,6 +170,8 @@ test('extract.mjs 组件模式带 themeVars TODO 段;经典模式不带', () => 
   run(INIT, ['--dir', classicDir, '--name', 'classic-demo']);
   const classic = readFileSync(join(classicDir, 'extract.mjs'), 'utf8');
   assert.ok(!classic.includes('themeVars'));
+  assert.doesNotMatch(classic, /import\s*\{[^}]*findRepoRoot/, 'Figma/classic extraction shell must not import git repo discovery');
+  assert.doesNotMatch(classic, /findRepoRoot\s*\(/, 'Figma/classic extraction shell must not call git repo discovery');
 });
 
 test('shims 骨架:README 硬规 + _template.ts 空骨架', () => {

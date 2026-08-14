@@ -23,6 +23,12 @@ into Main, Translation, or Interaction.
 4. **Resize Skill** owns what happens when the simulated viewport or real
    window size changes.
 
+Mobile / tablet are **test samples in the same Main static pipeline**, not a
+separate rulebook. A phone-card failure caused by source width, HUG owner, text
+growth, or crop consumption belongs to Main truth/renderer geometry first; Resize
+may expose it, but must not hide it with breakpoint-specific shrinking or fit
+logic.
+
 ## What Resize owns
 
 | Rule | Meaning |

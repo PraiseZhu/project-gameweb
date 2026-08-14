@@ -1989,7 +1989,7 @@
         const scene = role === 'nav' ? 'nav' : role === 'activity-calendar' ? 'activity' : 'content';
         return { role, scene, ancestors, contextKey: [scene, ...ancestors].join('/') || scene };
       };
-      const ownerSizingPolicy = ({ role, align, autoResize, ownerNode, ownerBox, directOwner, sourceBox }) => {
+      const compactHugLabelEvidence = ({ role, align, autoResize, ownerNode, ownerBox, directOwner, sourceBox }) => {
         const layout = ownerNode?.layout || {};
         const horizontal = String(__u(layout.layoutSizingHorizontal) || '').toUpperCase();
         const vertical = String(__u(layout.layoutSizingVertical) || '').toUpperCase();
@@ -2008,11 +2008,14 @@
            超框、破坏 Figma 折行与垂直落点。用**纯几何**判据区分，不看文案、不看
            节点 ID：紧凑标签要求源文本框在垂直方向接近填满 owner（间隙 <= 源高度的 60%，
            另加 0.5px Figma 浮点坐标容差）。说明长文 owner 远高于自身，直接排除。 */
+        const sourceW = Number(sourceBox?.w);
         const sourceH = Number(sourceBox?.h);
-        const __srcH = Number.isFinite(sourceH) ? sourceH : null;
-        const __ownerH = hasOwner ? ownerH : null;
-        const __verticalSlack = (__srcH != null && __ownerH != null) ? (__ownerH - __srcH) : Infinity;
-        const __compactLabel = __srcH != null && __verticalSlack <= __srcH * 0.6 + 0.5;
+        const hasSource = Number.isFinite(sourceW) && sourceW > 0
+          && Number.isFinite(sourceH) && sourceH > 0;
+        const verticalSlack = hasSource && hasOwner ? ownerH - sourceH : Infinity;
+        const compactLabel = hasSource && hasOwner
+          && verticalSlack <= sourceH * 0.6 + 0.5
+          && sourceW >= ownerW * 0.55;
         const eligible = role === 'character-skill-label'
           && __u(ownerNode?.type) === 'FRAME'
           && directOwner === true
@@ -2021,20 +2024,19 @@
           && (hugWidth || hugHeight)
           && __u(ownerNode?.clipsContent) !== true
           && !truncation
-          && __compactLabel
+          && compactLabel
           && String(autoResize || 'FIXED').toUpperCase() !== 'TRUNCATE';
-        const reason = eligible ? 'truth-hug-owner-content-sized'
-          : role === 'character-skill-label' && !__compactLabel ? 'long-form-not-compact-label'
+        return { eligible, hugWidth, hugHeight, compactLabel, ownerWidth: hasOwner ? ownerW : null, ownerHeight: hasOwner ? ownerH : null, layout };
+      };
+      const ownerSizingPolicy = (input) => {
+        const evidence = compactHugLabelEvidence(input);
+        const role = input.role;
+        const reason = evidence.eligible ? 'truth-hug-owner-content-sized'
+          : role === 'character-skill-label' && !evidence.compactLabel ? 'long-form-not-compact-label'
             : 'fixed-or-unproven-owner';
         return {
-          eligible,
-          hugWidth,
-          hugHeight,
-          compactLabel: __compactLabel,
-          ownerWidth: hasOwner ? ownerW : null,
-          ownerHeight: hasOwner ? ownerH : null,
+          ...evidence,
           reason,
-          layout,
         };
       };
       const textContainerConstraint = (n, tx, box, semantic, parent, directOwnerBox = null, directOwnerEvidence = false, directOwnerNode = null, directSiblings = []) => {
@@ -2060,11 +2062,26 @@
         const truthDirectOwner = directOwnerEvidence === true
           && directOwnerBox && directOwnerBox.sectionWide !== true;
         const directOwnerLayout = directOwnerNode?.layout || {};
-        const directOwnerHugLabel = truthDirectOwner
-          && semantic?.role === 'character-skill-label'
+        const directOwnerHugFrame = truthDirectOwner
           && __u(directOwnerNode?.type) === 'FRAME'
           && (String(__u(directOwnerLayout.layoutSizingHorizontal) || '').toUpperCase() === 'HUG'
             || String(__u(directOwnerLayout.layoutSizingVertical) || '').toUpperCase() === 'HUG');
+        const compactDirectOwnerHugLabel = directOwnerHugFrame && compactHugLabelEvidence({
+          role: semantic?.role,
+          align: tx.align,
+          autoResize: tx.autoResize,
+          ownerNode: directOwnerNode,
+          ownerBox: directOwnerBox,
+          directOwner: true,
+          sourceBox: box,
+        }).eligible;
+        const authoredLineCount = Array.isArray(tx.lineTypes) ? tx.lineTypes.length
+          : String(tx.characters || '').split('\n').length;
+        const sourceMultilineText = authoredLineCount > 1 || String(tx.characters || '').includes('\n')
+          || (Number(tx.lineHeight) > 0 && Number(box.h) > Number(tx.lineHeight) * 1.35);
+        const arForOwner = String(tx.autoResize || 'FIXED').toUpperCase();
+        const sourceWidthHugText = directOwnerHugFrame && !compactDirectOwnerHugLabel
+          && (arForOwner === 'HEIGHT' || (arForOwner === 'WIDTH_AND_HEIGHT' && sourceMultilineText));
         /* A fixed-size text item needs its own source width only when a real
            sibling follows it on the Auto Layout main axis. Without that proof,
            a one-item owner still uses the normal parent-bound text policy. */
@@ -2110,8 +2127,10 @@
            text own source box width -- never to the section width. */
         const ownerWidth = fixedAutoLayoutTextItem && Number.isFinite(Number(box.w)) && Number(box.w) > 0
           ? Number(box.w)
-          : directOwnerHugLabel
+          : compactDirectOwnerHugLabel
           ? Number(parentBox.w)
+          : sourceWidthHugText && Number.isFinite(Number(box.w)) && Number(box.w) > 0
+          ? Number(box.w)
           : hasBoundedOwner && Number.isFinite(Number(box.x))
           ? Math.max(0, ownerRight - Number(box.x))
           : (Number.isFinite(Number(box.w)) && Number(box.w) > 0 ? Number(box.w) : null);
@@ -2128,6 +2147,8 @@
           ownerEvidence: hasBoundedOwner
             ? (fixedAutoLayoutTextItem
               ? 'source-fixed-auto-layout-item'
+              : sourceWidthHugText
+              ? 'source-width-hug-text'
               : truthDirectOwner
               ? 'truth-direct-owner-box'
               : directOwnerBox && directOwnerBox.sectionWide
@@ -2138,6 +2159,7 @@
                 : 'truth-direct-owner-box')
             : (ownerWidth != null ? 'source-box-fallback' : null),
           sourceBoxHeight: Number.isFinite(Number(box.h)) ? Number(box.h) : null,
+          sourceWidthHugText,
           evidence: explicitOpen && !explicitFrame ? 'truth-open-flow' : explicitFrame ? (hasBoundedOwner ? 'truth-role-and-owner-box' : 'truth-framed-or-clipped') : openFlow ? 'autoResize-and-ancestor-evidence' : 'default-fixed',
         };
       };
@@ -2882,6 +2904,8 @@
                 当空格处理折行位置会变）。 */
           const ar = tx.autoResize || 'FIXED';
           const hugs = ar === 'WIDTH_AND_HEIGHT' || ar === 'WIDTH';
+          const sourceWidthHugText = constraint.sourceWidthHugText === true;
+          const inlineHugs = hugs && !sourceWidthHugText;
           /* A source-authored one-line display text is a non-wrapping title,
              not generic fixed-width body copy.  The evidence is the Figma
              lineTypes leaf (exactly one authored line) plus the display-font
@@ -2894,9 +2918,9 @@
             && !String(tx.characters || '').includes('\n');
           const displayTitle = this._fontRoleFor({ sourceFamily: tx.fontFamily, role: semantic.role, semanticClass: semantic.className }) === 'title';
           const sourceNoWrapTitle = sourceSingleLine && displayTitle;
-          el.style.whiteSpace = (hugs || sourceNoWrapTitle) ? 'pre' : 'pre-wrap';
+          el.style.whiteSpace = (inlineHugs || sourceNoWrapTitle) ? 'pre' : 'pre-wrap';
           if (sourceNoWrapTitle) el.setAttribute('data-text-layout-policy', 'source-single-line-display-title');
-          if (!constraint.openFlow && !hugs && constraint.ownerWidth != null) {
+          if (!constraint.openFlow && !inlineHugs && constraint.ownerWidth != null) {
             // Framed text wraps within its nearest rendered Figma owner. The
             // source box remains the anchor; owner width is the available
             // local content bound for adopted languages.
@@ -2914,13 +2938,22 @@
              locales overflow even though the source explicitly hugs content.
              Preserve the source box as a minimum anchor while allowing the
              rendered leaf to expand; WIDTH_AND_HEIGHT also hugs vertically. */
-          if (hugs && box.w != null) {
+          if (inlineHugs && box.w != null) {
             el.style.width = 'max-content';
             el.style.minWidth = box.w + 'px';
             if (ar === 'WIDTH_AND_HEIGHT' && box.h != null) {
               el.style.height = 'auto';
               el.style.minHeight = box.h + 'px';
             }
+          }
+          if (sourceWidthHugText && box.w != null) {
+            el.style.width = box.w + 'px';
+            el.style.minWidth = box.w + 'px';
+            el.style.height = 'auto';
+            el.style.minHeight = (box.h ?? 0) + 'px';
+            el.style.overflow = 'visible';
+            el.setAttribute('data-text-owner-width-policy', 'source-width-hug-text');
+            el.setAttribute('data-text-vertical-growth', 'expected');
           }
           /* 仅紧凑标签（贴满 owner 的短徽章）才把文本框对齐到 owner 高/宽。
              说明长文（owner 远高于自身、多行）保持源框，避免把文本高度拉到
@@ -2962,7 +2995,7 @@
               el.style.justifyContent = 'center';
               el.setAttribute('data-text-owner-height-policy', 'truth-direct-owner-height');
             }
-            if (ownerW > Number(box.w ?? 0) + 0.5 && ar === 'WIDTH_AND_HEIGHT') {
+            if (!sourceWidthHugText && ownerW > Number(box.w ?? 0) + 0.5 && ar === 'WIDTH_AND_HEIGHT') {
               el.style.width = 'max-content';
               el.style.minWidth = ownerW + 'px';
               el.setAttribute('data-text-owner-width-policy', 'truth-direct-owner-width');
@@ -3009,7 +3042,7 @@
             /* style.textTruncation=ENDING?2026-08-04 ?????????????????
                ?????whiteSpace:pre?? text-overflow:ellipsis ?????
                ???pre-wrap?Chrome ??????????????????????? */
-            if (tx.truncation === 'ENDING' && hugs) el.style.textOverflow = 'ellipsis';
+            if (tx.truncation === 'ENDING' && inlineHugs) el.style.textOverflow = 'ellipsis';
           }
           /* 定宽折行配 text-wrap:balance（第 14 项）：本地化表没有稿里的手动换行
              （表行没 \n），折行位置由框宽决定 —— balance 让两行长度均衡，
@@ -3019,7 +3052,7 @@
           /* 文字块的高度与垂直对齐。稿里 9/9 都有实测高度且 vAlign=TOP。
              定宽折行的那些**只给 min-height 不给 height**：换语言或换字体多折一行时，
              宁可让它顶出来被冒烟测出来，也不要 height 写死后悄悄裁掉一行。 */
-          if (box.h != null) el.style[hugs ? 'height' : 'minHeight'] = box.h + 'px';
+          if (box.h != null) el.style[inlineHugs ? 'height' : 'minHeight'] = box.h + 'px';
           const V = { TOP: 'flex-start', CENTER: 'center', BOTTOM: 'flex-end' };
           el.style.display = 'flex';
           el.style.flexDirection = 'column';
@@ -3033,7 +3066,7 @@
           /* auto-layout 的 flex item 由容器 gap/justify 排列，不能再按源坐标手动
              居中/右锚（left+translateX）——否则译文变宽后 flex 重排被这个手写
              left 抵消，标签/标题装饰又错位。只对非 auto-layout 的 hugging 文本保留。 */
-          if (hugs && !grad && box.w != null && tx.align && !inAutoLayout) {
+          if (inlineHugs && !grad && box.w != null && tx.align && !inAutoLayout) {
             const align = String(tx.align).toUpperCase();
             if (align === 'CENTER') {
               el.style.left = (((box.x ?? 0) - originX) + (box.w ?? 0) / 2) + 'px';
@@ -3087,7 +3120,7 @@
           const _vAlign = tx.vAlign || 'TOP';
           const _halfLeading = (typeof tx.lineHeight === 'number' && typeof tx.fontSize === 'number')
             ? (tx.lineHeight - tx.fontSize) / 2 : 0;
-          if (_vAlign === 'TOP' && _halfLeading > 0.01 && !hugs) {
+          if (_vAlign === 'TOP' && _halfLeading > 0.01 && !inlineHugs) {
             tf.push('translateY(' + (_halfLeading) + 'px)');
             el.setAttribute('data-half-leading', String(_halfLeading));
           }
@@ -3200,7 +3233,7 @@
                  像素比对报出一整段差异（该块 MAE 32，位移搜索也对不上 —— 因为不是位移）。
                  原来的写法是 `if (!hugs) textWrap='balance'`，一刀切在所有定宽文字上：
                  为了救 1 条丢换行的，把另外 N 条本来对的折乱了。 */
-              if (!hugs) el.style.textWrap = 'balance';
+              if (!inlineHugs) el.style.textWrap = 'balance';
             }
           } else if (fallback != null && fallback !== '') {
             if (_hasRich) this._renderRichText(el, String(fallback), _richOverrides, _richTable, tx);
@@ -3278,7 +3311,9 @@
             explicitFit: tx.fit === true || n.fit === true,
             openFlow: constraint.openFlow === true,
             boundedOwner: constraint.openFlow !== true && constraint.ownerWidth != null,
-            layoutSizingVertical: __u(n.layout && n.layout.layoutSizingVertical),
+            layoutSizingVertical: sourceWidthHugText
+              ? 'HUG'
+              : __u(n.layout && n.layout.layoutSizingVertical),
           });
           const fitAuthorized = fitAuth.authorized;
           el.setAttribute('data-fit-policy', fitAuth.reason);
@@ -3303,8 +3338,8 @@
              decides a shared step scale. zh-CN remains Figma-exact. */
           const _localizedSourceTitle = sourceNoWrapTitle && !semanticBreak
             && String(ctx.prefs && ctx.prefs.lang || '') !== 'zh-CN'
-            && val != null && !hugs && !constraint.openFlow && Number(box.w) > 0;
-          if (!hugs && !constraint.openFlow && (fitAuthorized || _localizedSourceTitle || semanticBreak)) {
+            && val != null && !inlineHugs && !constraint.openFlow && Number(box.w) > 0;
+          if (!inlineHugs && !constraint.openFlow && (fitAuthorized || _localizedSourceTitle || semanticBreak)) {
             el.setAttribute('data-fit-group', _fitGroupKey);
             if (_localizedSourceTitle) {
               el.setAttribute('data-fit-inline-policy', 'source-title-group-glyph-safe-width');
@@ -3317,7 +3352,7 @@
               semanticBreak: !!semanticBreak,
             });
           }
-          else if (!hugs && !constraint.openFlow) {
+          else if (!inlineHugs && !constraint.openFlow) {
             /* HEIGHT wrapped text keeps source metrics; growth is evidence, not error. */
             el.setAttribute('data-fit-growth', 'natural');
             /* 垂直 HUG 文本所在的 HUG owner 容器也要随内容增高（官网实证：02 奖励卡
@@ -3356,7 +3391,7 @@
              fill most of the owner in both axes; headings do not. */
           const _fillsOwner = _ownerW != null && _ownerH != null && _srcW > 0 && _srcH > 0
             && _srcH >= _ownerH * 0.6 && _srcW >= _ownerW * 0.55;
-          const boundedHugLabel = hugs && !constraint.openFlow && _centered && _fillsOwner;
+          const boundedHugLabel = inlineHugs && !constraint.openFlow && _centered && _fillsOwner;
           if (boundedHugLabel) {
             el.setAttribute('data-fit-policy', 'bounded-hug-label');
             fitCandidates.push({ el, tx, box, widthFit: _ownerW, heightFit: _ownerH });

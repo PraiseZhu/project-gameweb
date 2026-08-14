@@ -8,6 +8,13 @@ The old Motion label is kept only on existing file names. The normal workflow
 is complete without a Figma prototype snapshot; prototype evidence is an audit
 that may be requested when a claim needs it.
 
+Workflow declarations are explicit and separate. `figma-showcase` is a Figma-only
+candidate path: `preview-first` must inspect `index.html?product=1`, produce a
+candidate evidence level, screenshot, URL/command, source-platform evidence, and
+`not-claimed` capabilities, then the product view is opened immediately for
+human review. `product-qa` is the later product-repo / sandbox / PR evidence
+workflow and must not be silently assumed by a Figma-only showcase.
+
 ```mermaid
 flowchart LR
   S[Main Skill\nFigma extraction + static structure + demo review] --> T[Translation Skill\ncopy + typography]

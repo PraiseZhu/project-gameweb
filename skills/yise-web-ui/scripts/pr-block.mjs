@@ -372,11 +372,15 @@ if (problems.length === 0) {
        否则「PR 上贴的结论」与「仓库里存的证据」两张皮。 */
     const projection = (r) => ({
       ok: r.ok === true,
+      workflow: r.workflow ?? null,
+      outcomeStatus: r.outcome?.status ?? null,
+      productPrComplete: r.outcome?.productPrComplete === true,
       partial: r.partial === true,
       evidenceLevel: r.evidenceLevel ?? null,
       entryRenderProof: r.gateB?.entryRenderProof ?? null,
       // 门集合从 TRUSTED_GATES 派生(条目 7a):runner 为 verify 的那些门,一个不许漏
       gates: Object.fromEntries(lettersFor('verify').map((l) => [gateKey(l), r[gateKey(l)]?.pass === true])),
+      gateStatus: Object.fromEntries(lettersFor('verify').map((l) => [gateKey(l), r[gateKey(l)]?.status ?? null])),
       gateB: `${r.gateB?.passed}/${r.gateB?.total}`,
       gateD: `${r.gateD?.passed}/${r.gateD?.total}`,
       cases: (r.coverage?.cases ?? []).map((c) => c?.id).sort(),
@@ -420,4 +424,3 @@ console.log(renderPrBlock({
   preview,
 }));
 if (!preview) console.error('⚠️ 未传 --preview:.html 证据链接缺失,建议补 GitHub/GitLab 仓内 .html 链接');
-

@@ -5,6 +5,7 @@ import { hashFile, isPlainObject } from './fs-utils.mjs';
 // fixture locator / capturedFrom 判据——工厂函数与校验器双侧同代码,天然不会漂。
 import { validateCapturedFrom, validateFixtureValueBinding } from './extract-helpers.mjs';
 import { explicitContentFileProblem } from './repo-glob.mjs';
+import { WORKFLOW_IDS, declaredSourcePlatforms } from './workflows.mjs';
 
 // 门 E 分端基准(gate-e-v2):baselines[].platform 允许值。
 // 分端是「采集/存储」维度的命名空间,不是比对维度的白名单——不同 platform 的基准永不互比。
@@ -222,6 +223,37 @@ export function validateSpec(spec) {
     if (b.via !== undefined) {
       if (!Array.isArray(b.via)) problems.push(`bindings[${i}].via 必须是 step 数组`);
       else b.via.forEach((s, j) => problems.push(...validateStep(s, `bindings[${i}].via[${j}]`, ids)));
+    }
+  }
+  if (spec.workflow !== undefined) {
+    const w = spec.workflow;
+    if (!isPlainObject(w)) problems.push('workflow 必须是 object');
+    else {
+      if (!WORKFLOW_IDS.includes(w.id)) problems.push(`workflow.id 必须是 ${WORKFLOW_IDS.join('/')} 之一`);
+      if (typeof w.completion !== 'string' || !w.completion) problems.push('workflow.completion 必须是非空 string');
+      if (typeof w.productViewPath !== 'string' || !w.productViewPath) problems.push('workflow.productViewPath 必须是非空 string');
+      if (!isPlainObject(w.requires)) problems.push('workflow.requires 必须是 object');
+      else for (const key of ['productRepo', 'trueSandbox', 'pullRequest']) {
+        if (typeof w.requires[key] !== 'boolean') problems.push(`workflow.requires.${key} 必须是 boolean`);
+      }
+      if (w.sourcePlatforms !== undefined) {
+        if (!Array.isArray(w.sourcePlatforms) || w.sourcePlatforms.some((v) => typeof v !== 'string' || !v))
+          problems.push('workflow.sourcePlatforms 必须是非空 string 数组');
+      }
+      if (w.claimedCapabilities !== undefined) {
+        if (!isPlainObject(w.claimedCapabilities)) problems.push('workflow.claimedCapabilities 必须是 object');
+        else for (const [key, value] of Object.entries(w.claimedCapabilities)) {
+          if (typeof value !== 'string' || !value) problems.push(`workflow.claimedCapabilities.${key} 必须是非空 string`);
+        }
+      }
+      if (w.id === 'figma-showcase') {
+        if (w.requires?.productRepo !== false) problems.push('workflow figma-showcase 不得要求 productRepo');
+        if (w.requires?.trueSandbox !== false) problems.push('workflow figma-showcase 不得要求 trueSandbox');
+        if (w.requires?.pullRequest !== false) problems.push('workflow figma-showcase 不得要求 pullRequest');
+        if (Array.isArray(spec.matrix?.platforms) && spec.matrix.platforms.includes('mobile') && !declaredSourcePlatforms(spec).includes('mobile')) {
+          problems.push('workflow figma-showcase 不得默认声明 mobile 平台;只有 workflow/figma sourcePlatforms 明确含 mobile 才能在 matrix 声明 mobile');
+        }
+      }
     }
   }
   if (spec.baselineThreshold !== undefined) {

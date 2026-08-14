@@ -1977,6 +1977,7 @@
       S.prefs[key] = value; persist(); syncAll();
     },
     scale: function () { return typeof cfg.scale === 'function' ? cfg.scale.call(cfg) : 1; },
+    supports: function () { return cfg.supports || {}; },
     resize: function (w, h) { S.freeW = clampViewportW(w); S.freeH = clampViewportH(h); S.devIdx = -1; syncAll(); },
     setOrientation: function (mode) {
       if (mode !== 'portrait' && mode !== 'landscape') throw new Error('__qa.setOrientation: mode 必须是 portrait 或 landscape');

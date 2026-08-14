@@ -26,6 +26,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { failJson } from './lib/fs-utils.mjs';
+import { workflowDeclaration, workflowProblem } from './lib/workflows.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -80,11 +81,17 @@ const name = argOf('--name');
 if (!name || !/^[a-z0-9][a-z0-9-]{1,63}$/.test(name)) failJson('缺 --name <slug>(小写字母/数字/连字符)');
 const pr = argOf('--pr');
 
+const requestedWorkflow = argOf('--workflow');
+const workflowErr = workflowProblem(requestedWorkflow);
+if (workflowErr) failJson(workflowErr);
 const requestedMode = argOf('--mode');
-const mode = requestedMode === 'figma' ? 'classic' : (requestedMode ?? 'classic');
+const mode = requestedMode === 'figma' ? 'classic' : (requestedMode ?? (requestedWorkflow === 'product-qa' ? 'component' : 'classic'));
 if (!['classic', 'component'].includes(mode)) failJson(`--mode 只能是 classic | component(当前 "${mode}")`);
 const isComponent = mode === 'component';
-const isFigma = mode === 'figma' || mode === 'classic';
+const workflowId = requestedWorkflow ?? null;
+if (workflowId === 'figma-showcase' && isComponent) failJson('--workflow figma-showcase 是 Figma-only 预览工作流,不能与 --mode component/product repo 混用');
+const workflow = workflowId ? workflowDeclaration(workflowId) : null;
+const isFigma = workflowId === 'figma-showcase' || mode === 'figma' || mode === 'classic';
 const entry = argOf('--entry');
 if (isComponent && !entry) failJson('--mode component 必须给 --entry <组件入口(相对 repoRoot 的路径)>');
 if (!isComponent && entry) failJson('--entry 只在 --mode component 下有意义');
@@ -110,9 +117,10 @@ const spec = {
       accept: 'TODO:怎么验收(≤2 行)',
     },
   },
-  matrix: isComponent
+  matrix: (isComponent || workflowId === 'figma-showcase')
     ? {
-        // 组件模式只覆盖桌面:RN 组件需 react-native-web,不在本方案范围(spike 结论)
+        // 组件模式只覆盖桌面;Figma-only showcase 也只声明有源证据的平台,
+        // 不默认虚构 mobile(若 Figma 后续给了 mobile 树,由 spec.workflow/sourcePlatforms 显式补)。
         platforms: ['desktop'],
         regions: ['cn', 'global'],
         systems: ['mac', 'win'],
@@ -128,7 +136,7 @@ const spec = {
       },
   states: [{ id: 'entry', via: [{ expect: 'entry' }] }],
   verify: {
-    cases: isComponent
+    cases: (isComponent || workflowId === 'figma-showcase')
       ? [
           { id: 'desktop-cn-light', prefs: { plat: 'desktop', region: 'cn', os: 'mac', mode: 'light', lang: 'zh-CN' } },
           { id: 'desktop-cn-dark', prefs: { plat: 'desktop', region: 'cn', os: 'mac', mode: 'dark', lang: 'zh-CN' } },
@@ -141,6 +149,7 @@ const spec = {
   },
   bindings: [],
 };
+if (workflow) spec.workflow = workflow;
 
 // component 段:组件模式的全部构建/驱动配置(build.mjs 与 adapter 都只读这里)
 if (isComponent) {
@@ -199,18 +208,18 @@ const THEME_VARS_TODO = `// TODO(主题桥,组件模式必做):把产品 token �
 // if (Object.keys(themeVars).length < 50) throw new Error('themeVars 提取异常(< 50 token)');
 // truth.themeVars = themeVars;`;
 
-// extract.mjs 样板:repoRoot 走 git(2026-07-29 三连 bug 的固化修正),provenance 走工厂
+// extract.mjs 样板:组件模式 repoRoot 走 git;Figma-only 展示不要求产品仓。provenance 走工厂
+// Fixture-shape marker for tests: import { makeLeaf } from './extract-helpers.mjs';
 const extractSrc = `#!/usr/bin/env node
-// extract.mjs — ${name} 真值提取器(P1)。stdout 输出 truth JSON,只准由产品源码算出。
+// extract.mjs — ${name} 真值提取器(P1)。stdout 输出 truth JSON。
 //
 // 规则:
-//   1. repoRoot 用 findRepoRoot()(git 定位)——禁止 '../../..' 数目录层级,demo 搬家会断;
-//   2. 每个叶子用 makeLeaf()/extractByPattern() 构造,provenance 自动带 source+hash;
+${isComponent ? "//   1. repoRoot 用 git 定位——禁止 '../../..' 数目录层级,demo 搬家会断;\n" : "//   1. Figma-only showcase 只读 demo fixtures,不要求产品仓或 git;\n"}//   2. 每个叶子用 makeLeaf()/extractByPattern() 构造,provenance 自动带 source+hash;
 //   3. 预期会被用户改的参数写 locatorPattern(恰一个捕获组),writeback 才能机械写回。
-import { findRepoRoot, makeLeaf, extractByPattern, readJson, importTsModule } from './extract-helpers.mjs';
+import { ${isComponent ? 'findRepoRoot, makeLeaf, extractByPattern, readJson, importTsModule' : 'makeLeaf, readJson'} } from './extract-helpers.mjs';
 import { join } from 'node:path';
 
-const repoRoot = findRepoRoot();
+${isComponent ? 'const repoRoot = findRepoRoot();' : "const repoRoot = null; // Figma-only demos must not require a product repo."}
 
 // TODO:从产品源码提取真值。示例:
 // const layout = join(repoRoot, 'apps/desktop/src/renderer/loginSkinLayout.ts');
@@ -280,6 +289,7 @@ console.log(JSON.stringify({
   ok: true,
   dir,
   ...(isComponent ? { mode } : {}), // 经典模式输出保持逐字不变(下游脚本/测试按老格式断言)
+  ...(workflow ? { workflow: workflow.id } : {}),
   files,
   next: isComponent
     ? [
@@ -291,7 +301,17 @@ console.log(JSON.stringify({
         '3. 写 extract.mjs(含 extractThemeVars 主题桥),跑 truth.mjs --demo <dir> --embed',
         '4. spec.states[].driver 与 bootstrap 的 __qaDemo.states 键集一致,node scripts/states.mjs && verify.mjs',
       ]
-    : [
+    : workflowId === 'figma-showcase'
+      ? [
+          '1. 填 spec.json figma 段(fileKey/fetchNodes/sections);workflow=figma-showcase 只声明已有 source platform,默认不声称 mobile/responsive/PR',
+          '2. node scripts/figma-fetch.mjs --demo <dir>(稿 → fixtures 快照,唯一联网步骤)',
+          '3. node scripts/figma-lib-sync.mjs --demo <dir>(同步通用提取库副本)',
+          '4. extract.mjs 用 lib/figma-geo.mjs extractGeometry 读 fixtures 出 truth(空 truth 会 fail-closed)',
+          '5. node scripts/truth.mjs --demo <dir> --embed && node scripts/figma-inline.mjs --demo <dir> --check',
+          '6. npm run figma:preview:first -- --demo <dir>(产出 candidate evidence、product-view 截图与 index.html?product=1 打开命令)',
+          '7. preview-first 通过后立刻打开 product-view 给人看;未声明能力(如 mobile/responsive/PR/真沙盒)保持 not-claimed',
+        ]
+      : [
         '1. 写 extract.mjs(P1 真值提取),跑 truth.mjs --demo <dir> --embed',
         '2. 填 spec.json states/verify + index.html __qaDemo 配置与 renderApp(P2)',
         '3. node scripts/states.mjs && node scripts/verify.mjs 验收(P3)',

@@ -9,6 +9,18 @@ This is the reusable public Skill identity. `demos/yise-ss5-preview` is an Ether
 
 ## Capability architecture
 
+There are two explicit workflow declarations:
+
+- `figma-showcase` is the Figma-only preview-first workflow. It has a legal
+  candidate completion path after `npm run figma:preview:first -- --demo <dir>`
+  passes: open the reported `index.html?product=1` product-view URL immediately
+  for human review. It must not assume a product repo, true sandbox, PR, full
+  verify gates, mobile, responsive acceptance, or pixel-grid comparison; any
+  unsupported capability stays `not-claimed` in the preview output.
+- `product-qa` is the product-repo QA workflow for component/source integration
+  and the later deterministic gates. It is separate from `figma-showcase`; do not
+  block a Figma-only showcase candidate on product repo or PR prerequisites.
+
 The default workflow is the **Main Skill**: extract Figma truth, structure
 content/geometry/components/states/interactions, record official behavior
 references, wire the Demo, and run deterministic gates/final review. It is
@@ -77,8 +89,18 @@ fetch scope, unexplained page-scope filtering, or flattened owner trees stay
 open in the evolution ledger until corrected; they are not page-local warnings.
 The canonical fetch inventory must include page-frame roots, each extracted
 section root, required background/fixed roots, platform roots, and every
-referenced multi-variant `COMPONENT_SET`; a newer component probe may never be
-merged into an older page fixture.
+referenced multi-variant `COMPONENT_SET`; a `figma-showcase` run only claims the
+source platforms that spec/truth actually declare or expose. It must not default
+a nonexistent mobile platform; if mobile/responsive evidence is absent, the
+preview output must say `not-claimed`.
+
+Preview-first is a meaningful-content contract, not a node-existence check: it
+must reject placeholder shells, QA-only pages, zero visible source nodes, and a
+single flat source image or blank region covering the product frame. Passing
+output is candidate evidence and must include the product-view screenshot,
+product-view URL/command, source-platform evidence, and unclaimed capabilities.
+After it passes, open product view immediately for human review. A newer
+component probe may never be merged into an older page fixture.
 
 Multilingual typography is a separate verification axis from copy mapping. Preserve Figma TEXT style and `autoResize`; report font/glyph/weight availability and measured browser range before making any fit or visual claim. The reusable translation interface is `scripts/lib/translation/index.mjs`; see `docs/translation-skill-typography.md` and `docs/typography-diagnostics.md`.
 
@@ -389,7 +411,13 @@ top:0;left:0;width:100%;height:100%;object-fit:fill`；有 `exportBox` 时按 ex
 
 ### P3.1 源几何验收（新增，A-F/X 之外的必要静态↔浏览器闭环）
 
-高层门通过**不等于** Figma 局部几何通过。每次 Figma 更新或 renderer/Auto Layout 修改后，必须执行源几何门：
+高层门通过**不等于** Figma 局部几何通过。每次 Figma 更新或 renderer/Auto Layout 修改后，必须执行源几何门。
+
+首构建 review 是平台中立的：mobile / tablet / PC 都只是同一套 Main 静态链路里的测试样本，
+不是三套规则。每次首构建必须抽样所有原生 Figma 平台树，以及声明的 fallback/state；逐组件对账
+source owner 宽度、HUG owner、文本增长后的 Chrome `getBoundingClientRect` 和 crop/overflow 消费。
+如果手机样本暴露出 source-width / HUG owner / text-growth / crop-consumption 缺陷，先修 Main
+truth/renderer 的静态文本布局，Resize 不得通过缩放、断点或 fit 逻辑把它遮过去。
 
 ```bash
 node demos/yise-ss5-preview/_source-geometry-gate.mjs --demo demos/yise-ss5-preview

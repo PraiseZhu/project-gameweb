@@ -25,6 +25,38 @@ test('daily ledger classifies render bounds and baked descendants as asset routi
   assert.equal(classified.rootCauseFamily, 'asset-export-or-baked-layer-routing');
 });
 
+test('daily ledger classifies source-width/HUG/text-growth/crop defects as reusable first-build family', () => {
+  const classified = classifyIssue({
+    source: 'component-preflight',
+    key: 'mobile-card',
+    message: 'source width mismatch: HUG owner did not grow with text growth, crop consumption clipped the phone-card',
+  });
+  assert.equal(classified.stage, 'renderer');
+  assert.equal(classified.rootCauseFamily, 'source-width-hug-owner-text-growth-crop-consumption');
+  assert.match(classified.nextStep, /跨平台组件 preflight/);
+  assert.match(classified.nextStep, /source owner 宽度/);
+  assert.match(classified.nextStep, /Chrome rect/);
+});
+
+test('daily markdown explains why first-build review missed source-width/HUG crop defects', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'daily-ledger-source-width-'));
+  try {
+    const report = buildDailyReport({
+      demoDir: dir,
+      date: '2026-08-14',
+      files: { verify: join(dir, 'none.json'), pixel: join(dir, 'none-pixel.json'), liveDiff: join(dir, 'none-live.json') },
+      commandRuns: [{ id: 'component-preflight', command: 'node preflight', exitCode: 1, stdout: 'FAIL source width / HUG owner / text growth / crop consumption mismatch', stderr: '' }],
+    });
+    assert.ok(report.rootCauses.some((root) => root.family === 'source-width-hug-owner-text-growth-crop-consumption'));
+    const md = renderMarkdown(report);
+    assert.match(md, /首构建只抽了可见首屏\/单平台截图/);
+    assert.match(md, /每个原生 Figma 平台树/);
+    assert.match(md, /source owner 宽度/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('daily ledger deduplicates repeated normalized failures but keeps occurrence count', () => {
   const entries = dedupeIssues([
     { source: 'command', key: 'a', message: 'asset 1:953 has CSS blur(0.4px)', stage: 'asset', rootCauseFamily: 'asset-export-or-baked-layer-routing', nextStep: 'fix', severity: 'blocking', evidence: {} },

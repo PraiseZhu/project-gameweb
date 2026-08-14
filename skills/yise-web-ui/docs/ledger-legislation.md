@@ -62,11 +62,21 @@
 5. **每周复发 / 升格**：重复出现、应进每周复盘的根因；
 6. **当前 Skill / main 新鲜度**：main 当前版本、本地已验证未发布候选、待拍板升级项。
 
-## 5. gap-catalog 毕业协议
+## 5. reusable first-build 根因族
+
+本轮新增一个可复用根因族，不再把它写成某个手机卡片或某个页面的局部 bug：
+
+- `source-width-hug-owner-text-growth-crop-consumption`
+  - **症状**：source width 与 Chrome rect 不一致；HUG owner 没随文字增长；文本增长后裁切 / crop 消费错误；图片、卡片或文案框被错误地当成设备适配问题。
+  - **阶段**：`renderer` / Main 静态几何消费。它不是 Resize 的独立规则集，也不是 mobile 专属规则。
+  - **为什么首构建会漏**：只看单平台首屏、只抽样可见截图、或只在 QA 壳里检查节点存在，未对每个原生 Figma 平台树、声明 fallback 和状态做 component-level `source owner geometry ↔ Chrome getBoundingClientRect` 对账。
+  - **处方**：首构建 review 前必须做跨平台组件 preflight：PC/mobile/pad 等所有原生 Figma 平台树 + 已声明 fallback/state 都要抽样；逐组件记录 source owner 宽度、HUG owner、文本增长后的 Chrome rect、crop/overflow 消费。发现缺口先修 Main truth/renderer，Resize 不得用缩放或断点逻辑掩盖静态文本布局缺陷。
+
+## 6. gap-catalog 毕业协议
 
 - 设计类同 `familyKey` ≥2 次 → 生成 gap-catalog 质询问题；≥4 次 → 周报升格候选。
 - 毕业两步合同：先写 catalog 回读确认，再结案 ledger；否则保留 `graduation-pending`，按 `grad-<fingerprint>` 幂等恢复。
 
-## 6. 版本 / hash 政策清单
+## 7. 版本 / hash 政策清单
 
 `evolution/policy-manifest.json` 记录：规则版本（v3.1）、规则文档 SHA-256、必需能力、owner 批准状态。午夜任务每次先校验 manifest 与规则文档 hash；不匹配则 fail-closed，只报告「规则漂移」，不带旧规则运行。

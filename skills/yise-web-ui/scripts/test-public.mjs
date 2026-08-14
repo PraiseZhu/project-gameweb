@@ -17,7 +17,6 @@ const EXPECTED_PUBLIC_SKIPS = 156;
 // 这些文件不依赖当前页，但实现已和断言脱节：一进夜间就会红。
 // 留给做 skill 的同事修，修完从这里删掉就会自动进夜间。
 const BROKEN_PUBLIC = {
-  'asset-delivery-audit.test.mjs': 'npm run asset:audit 入口与现实现对不上',
   'comp-fix-r7.test.mjs': 'tailwind 内部 API / 钉版契约与现实现脱节',
   'inline-contract.test.mjs': 'init 已改成 figma preview 壳，旧标记断言失效',
   'onboard.test.mjs': 'onboard 现在无 token 就退出，旧契约未改',

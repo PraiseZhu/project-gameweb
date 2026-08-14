@@ -76,6 +76,19 @@ const real = (p) => { try { return realpathSync(p); } catch { return resolve(p);
 const inside = (root, abs) => abs === root || abs.startsWith(root + sep);
 const SELF_DIR = import.meta.dirname;
 
+export function playwrightDependencyHint(name = 'playwright') {
+  if (!String(name).startsWith('playwright')) return '';
+  return [
+    '',
+    'Playwright/Chromium dependency guidance:',
+    '- Figma-only and non-Git demos are supported; the demo directory itself is not used as a module root.',
+    '- Install Playwright in a trusted product checkout/module root, then run: npm i -D playwright && npx playwright install chromium',
+    '- Or set QA_HIFI_MODULE_ROOT (or PLAYWRIGHT_MODULE_ROOT) to that trusted root.',
+    "- Windows PowerShell example: $env:QA_HIFI_MODULE_ROOT='C:\\path\\to\\project-gameweb'",
+    '- If Chrome is already installed, CHROME_PATH may point directly to chrome.exe.',
+  ].join('\n');
+}
+
 /**
  * startDir 作为「不可信 demo 子树」的判定范围。
  * 若 skill 自身就在 startDir 里面,那它是 skill/工作区根(内部调用与自测的用法),
@@ -165,7 +178,7 @@ export function resolveModule(name, startDir = null) {
   } catch (err) {
     attempts.push(err.message);
   }
-  const e = new Error(`无法解析模块 ${name}\n${attempts.join('\n')}`);
+  const e = new Error(`无法解析模块 ${name}\n${attempts.join('\n')}${playwrightDependencyHint(name)}`);
   e.attempts = attempts;
   throw e;
 }
@@ -206,7 +219,8 @@ export async function loadChromium(startDir = null) {
   if (!executablePath) executablePath = getChromeCandidates().find((p) => existsSync(p)) ?? null;
   if (!executablePath) {
     throw new Error(
-      '找不到可用 Chromium/Chrome。请安装 Playwright 浏览器(npx playwright install chromium),或设置 CHROME_PATH 指向本机 Chrome。',
+      '找不到可用 Chromium/Chrome。请安装 Playwright 浏览器(npx playwright install chromium),或设置 CHROME_PATH 指向本机 Chrome。'
+      + playwrightDependencyHint('playwright'),
     );
   }
   return { chromium, executablePath, modulePath: modPath };

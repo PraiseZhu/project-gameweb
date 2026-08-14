@@ -14,11 +14,11 @@ export const HELPER_IMPORT_RE = /import\s*\{[^}]*\}\s*from\s*'\.\/extract-helper
 
 /**
  * 与 init.mjs 模板同形的 extractor 源码:import 兄弟 helper 模块,再输出给定 truth。
- * `void findRepoRoot` 是为了让 import 真正被使用(否则 lint/bundler 可能摇掉它,
- * 那就又变成「形态像、实际没有相对依赖」的假忠实)。
+ * `void makeLeaf` 是为了让 helper import 真正被使用(否则 lint/bundler 可能摇掉它,
+ * 那就又变成「形态像、实际没有相对依赖」的假忠实)；Figma-only fixtures must not call findRepoRoot.
  */
 export function templateExtractor(emit) {
-  return "import { findRepoRoot, makeLeaf } from './extract-helpers.mjs';\n"
-    + 'void findRepoRoot; void makeLeaf;\n'
+  return "import { makeLeaf } from './extract-helpers.mjs';\n"
+    + 'void makeLeaf;\n'
     + `process.stdout.write(${JSON.stringify(JSON.stringify(emit))});\n`;
 }

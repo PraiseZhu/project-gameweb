@@ -30,6 +30,7 @@ function fail(problems) {
 }
 
 const args = process.argv.slice(2);
+const checkOnly = args.includes('--check');
 const demoIdx = args.indexOf('--demo');
 if (demoIdx === -1 || !args[demoIdx + 1]) fail(['缺 --demo <dir>']);
 const demoDir = resolve(args[demoIdx + 1]);
@@ -101,6 +102,29 @@ const payload = {
   ...(problems.length ? { problems } : {}),
 };
 // 失败也落盘(ok:false):pr-block 读到 ok!==true 会阻断,比"文件不存在"更能说明发生了什么
-writeFileSync(join(demoDir, ASSETS_REPORT_NAME), stableJson(payload));
+const reportPath = join(demoDir, ASSETS_REPORT_NAME);
+
+function comparableReport(report) {
+  const clone = JSON.parse(JSON.stringify(report));
+  delete clone.generatedAt;
+  return clone;
+}
+
+if (checkOnly) {
+  if (!existsSync(reportPath)) fail([`${ASSETS_REPORT_NAME} missing; run assets-manifest without --check first`]);
+  let existing;
+  try {
+    existing = JSON.parse(readFileSync(reportPath, 'utf8'));
+  } catch (err) {
+    fail([`${ASSETS_REPORT_NAME} is not valid JSON: ${err.message}`]);
+  }
+  if (stableJson(comparableReport(existing)) !== stableJson(comparableReport(payload))) {
+    fail([`${ASSETS_REPORT_NAME} is out of date with current assets/ or gate arguments; rerun assets-manifest`]);
+  }
+  console.log(stableJson({ ...payload, generatedAt: existing.generatedAt ?? payload.generatedAt, check: { ok: true, report: ASSETS_REPORT_NAME } }));
+  process.exit(problems.length ? 2 : 0);
+}
+
+writeFileSync(reportPath, stableJson(payload));
 console.log(stableJson(payload));
 process.exit(problems.length ? 2 : 0);
