@@ -32,7 +32,11 @@ jobs:
         run: node --test .github/scripts/nightly-health.test.mjs
 
       - name: List packages under check
+        # 守卫自身红了也要继续列真实包，避免整晚只留下守卫报错。
+        if: ${{ always() }}
         run: node .github/scripts/nightly-health.mjs --list
 
       - name: Run nightly health
+        # 列包失败也要尝试跑完整检查，保留各包自测与附加审计结果。
+        if: ${{ always() }}
         run: node .github/scripts/nightly-health.mjs

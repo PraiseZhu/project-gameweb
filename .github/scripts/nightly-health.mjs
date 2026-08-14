@@ -36,11 +36,7 @@ function listImmediateEntries(abs) {
 }
 
 function readPackage(packageDir) {
-  try {
-    return JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
-  } catch (err) {
-    die(`读不了 ${join(packageDir, 'package.json')}: ${err.message}`);
-  }
+  return JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
 }
 
 function findNestedPackages(abs, acc = []) {
@@ -349,7 +345,7 @@ function placementProblems() {
   return problems;
 }
 
-function collectTargets() {
+function discoverTargets() {
   const problems = placementProblems();
   const targets = [];
 
@@ -367,9 +363,9 @@ function collectTargets() {
       const rel = relative(ROOT, dir);
       const rootPkg = existsSync(join(dir, 'package.json')) ? dir : null;
       const toolPkg = existsSync(join(dir, 'tool', 'package.json')) ? join(dir, 'tool') : null;
+      const illegalSkillTool = kind === 'skill' && toolPkg;
       if (kind === 'skill' && toolPkg) {
         problems.push(`${rel}/tool/package.json 只允许规范工具使用；skill 必须把 package.json 放在 ${rel}/`);
-        continue;
       }
       const packageDirs = [];
       if (rootPkg) packageDirs.push(rootPkg);
@@ -379,6 +375,9 @@ function collectTargets() {
         continue;
       }
       const allowed = new Set(packageDirs);
+      // skill 下的 tool/package.json 已作为布局问题记录；不要再重复报嵌套包，
+      // 也不要因此丢掉同目录里合法根包的真实自测。
+      if (illegalSkillTool) allowed.add(toolPkg);
       const nested = findNestedPackages(dir).filter((abs) => !allowed.has(abs));
       if (nested.length) {
         problems.push(`${rel} 里还有未单独进仓的嵌套包: ${nested.map((abs) => relative(ROOT, abs)).join(', ')}`);
@@ -389,7 +388,13 @@ function collectTargets() {
         problems.push(`${rel} 里还有深层 SKILL.md，一个包只允许包根一份: ${extraSkills.map((abs) => relative(ROOT, abs)).join(', ')}`);
       }
       for (const packageDir of packageDirs) {
-        const pkg = readPackage(packageDir);
+        let pkg;
+        try {
+          pkg = readPackage(packageDir);
+        } catch (err) {
+          problems.push(`读不了 ${relative(ROOT, join(packageDir, 'package.json'))}: ${err.message}`);
+          continue;
+        }
         const scripts = pkg.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {};
         targets.push({
           kind,
@@ -401,6 +406,11 @@ function collectTargets() {
     }
   }
 
+  return { targets, problems };
+}
+
+function collectTargets() {
+  const { targets, problems } = discoverTargets();
   if (problems.length) {
     die(`进仓内容无法夜间检查:\n- ${problems.join('\n- ')}`);
   }
@@ -449,8 +459,11 @@ function provePublicTests(target) {
 }
 
 function main() {
-  const targets = collectTargets();
-  if (targets.length === 0) die('skills/ 与 standards/ 下没有可检查的包');
+  const { targets, problems: discoveryProblems } = discoverTargets();
+  if (targets.length === 0) {
+    const details = discoveryProblems.length ? `:\n- ${discoveryProblems.join('\n- ')}` : '';
+    die(`skills/ 与 standards/ 下没有可检查的包${details}`);
+  }
 
   console.log(`将检查 ${targets.length} 个包:`);
   const proofFailures = [];
@@ -461,11 +474,15 @@ function main() {
     const test = proof ? '缺可核验的 npm test' : 'npm test + file proof';
     console.log(`- [${target.kind}] ${target.name}  →  ${test}${extras.length ? ` + ${extras.join(' + ')}` : ''}`);
   }
-  if (proofFailures.length) die(`进仓内容无法夜间检查:\n- ${proofFailures.join('\n- ')}`);
+  if (LIST_ONLY) {
+    const listFailures = [...discoveryProblems, ...proofFailures];
+    if (listFailures.length) die(`进仓内容无法夜间检查:\n- ${listFailures.join('\n- ')}`);
+    process.exit(0);
+  }
 
-  if (LIST_ONLY) process.exit(0);
-
-  const failures = [];
+  // 完整夜间不能因为发现布局或某个包的文件证明先红，就把已发现包的真实自测都跳过。
+  // 前置问题仍计入最终失败；下面继续收集 npm test、trusted TAP 和附加审计结果。
+  const failures = [...discoveryProblems, ...proofFailures];
   for (const target of targets) {
     const install = existsSync(join(target.packageDir, 'package-lock.json'))
       ? run(`${target.name} npm ci`, target.packageDir, 'npm', ['ci'])
