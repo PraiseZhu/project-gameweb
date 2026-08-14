@@ -1,10 +1,10 @@
-# Reusable Motion Contracts (frozen fallback)
+# Reusable Motion Contracts (Interaction Skill, waiting for a later pass)
 
-The motion contract, role, hero, and official-adapter code is retained but
-frozen as a Main Skill fallback. It is not an independent default workflow and
-the ordinary flow does not dispatch a Motion Worker. Main Skill owns Figma
-extraction, component/state/interaction wiring, official behavior references,
-Demo接线, and final review first.
+User-facing name is **Interaction Skill**. These files keep the Motion names so
+existing imports do not break. The contract, role, hero, and official-adapter
+code is retained; timed effects are not the default workflow. See
+`docs/interaction-skill.md`. Main Skill still owns Figma extraction and the
+static page; Resize owns stretch.
 
 `scripts/lib/motion-contract.mjs` defines generic component-motion patterns
 without page IDs, selectors, masks, or `display:none`:

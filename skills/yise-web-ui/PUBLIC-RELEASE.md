@@ -14,14 +14,15 @@ npm run release:audit
 
 It checks identity metadata, the explicit private boundary, and credential/machine-path patterns in publishable files. Passing the audit is a release-boundary check, not GitHub publication and not visual completion.
 
-The Skill is organized as a Main Skill (complete Figma extraction, structure,
-behavior wiring, Demo接线, and final review), an independent Translation Skill,
-frozen Motion code used only as a documented fallback, and an optional Figma
-Prototype Truth Audit. Motion files remain publishable and are not deleted, but
-the default release flow does not invoke a Motion Worker. `explicit-empty`,
-`field-absent`, and `unavailable` prototype snapshots are reported as
-unverified evidence and do not block a normal release; `--require-observed` is
-fail-closed only when an explicit prototype audit is requested.
+The Skill is organized as a Main Skill (complete Figma extraction, static
+structure, Demo接线, and final review), plus independent Translation, Resize,
+and Interaction axes, and an optional Figma Prototype Truth Audit. Interaction
+is the rename of the former Motion Skill; existing motion files remain
+publishable and are not deleted. Resize is `scripts/lib/resize/index.mjs` plus
+`docs/resize-skill.md`. `explicit-empty`, `field-absent`, and `unavailable`
+prototype snapshots are reported as unverified evidence and do not block a
+normal release; `--require-observed` is fail-closed only when an explicit
+prototype audit is requested.
 
 Main Skill includes truth-backed fixed-directory navigation: click-to-section,
 scrollspy selection, click-lock release, and active/normal Figma variant use.

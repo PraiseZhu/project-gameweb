@@ -1,19 +1,22 @@
 # yise-web-ui Skill architecture
 
-This repository exposes two primary capabilities and one optional evidence
-module. The Main Skill owns the complete extraction-to-demo workflow, including
-component/state/interaction structure, official behavior references, demo
-wiring, and final review. Motion primitives and adapters remain in the tree but
-are frozen as an internal fallback. The normal workflow is complete without a
-Figma prototype snapshot; prototype evidence is an audit that may be requested
-when a claim needs it.
+This repository exposes a Main Skill plus three named axes and one optional
+evidence module. The Main Skill owns the complete extraction-to-demo workflow,
+including component/state structure, official behavior references, demo wiring,
+and final review. Translation, Resize, and Interaction are independent axes.
+The old Motion label is kept only on existing file names. The normal workflow
+is complete without a Figma prototype snapshot; prototype evidence is an audit
+that may be requested when a claim needs it.
 
 ```mermaid
 flowchart LR
-  S[Main Skill\nFigma extraction + structure + behavior wiring + demo review] --> T[Translation Skill\ncopy + typography]
-  S -. frozen fallback, only after Main gap .-> M[Motion primitives/adapter\nretained, not standalone flow]
+  S[Main Skill\nFigma extraction + static structure + demo review] --> T[Translation Skill\ncopy + typography]
+  S --> R[Resize Skill\nstretch + composition + hero geometry]
+  S --> I[Interaction Skill\nclick / switch / scrollspy\nformerly Motion]
   S -. optional audit .-> P[Figma Prototype Truth Audit\nread-only, fail-closed]
   T --> O[Auditable demo + reports]
+  R --> O
+  I --> O
   P --> A[Prototype audit result\nobserved / explicit-empty / field-absent / unavailable]
 ```
 
@@ -21,14 +24,15 @@ flowchart LR
 
 | Module | Owns | Does not own | Normal output |
 | --- | --- | --- | --- |
-| Main Skill | provenance-tracked content structure, geometry/modeling, demo scaffolding, deterministic A–F/X verification | locale decisions, motion implementation, Figma writes | `spec.json`, `truth.json`, demo shell, verification reports |
-| Translation Skill | locale mapping, copy context, font/glyph/weight diagnostics and translation-specific browser checks | geometry truth, motion timing, prototype claims | translation evidence and independent pass/unverified findings |
-| Motion fallback (frozen) | retained motion contracts, semantic roles, adapters, and evidence references for reactivation when Main+Chrome comparison exposes a missing effect | standalone workflow ownership, default worker invocation, translation values, Figma/token edits | dormant primitives and, only when reactivated, scoped motion evidence |
+| Main Skill | provenance-tracked content structure, geometry/modeling, demo scaffolding, deterministic A–F/X verification | locale decisions, stretch policy, timed effects, Figma writes | `spec.json`, `truth.json`, demo shell, verification reports |
+| Translation Skill | locale mapping, copy context, font/glyph/weight diagnostics and translation-specific browser checks | geometry truth, stretch, prototype claims | translation evidence and independent pass/unverified findings |
+| Resize Skill | viewport-to-platform map, composition base, light-drag vs full rebuild, preview 1:1 fit, background/UI/sea plane policies, hero lock/exit/release geometry while the window size changes | locale, click wiring, Figma fetch, page node IDs | `scripts/lib/resize/index.mjs` decisions and stretch evidence |
+| Interaction Skill (formerly Motion) | click, switch/tab, directory scrollspy, retained motion contracts; implementation waiting for a later pass | stretch policy, typography, Figma/token edits | interaction evidence; frozen file names until the later pass |
 | Figma Prototype Truth Audit (optional) | read-only classification of explicit prototype fields and a requested `requireObserved` gate | inferring motion from Properties metadata, screenshots, names, variants, or missing data | audit status: `observed`, `explicit-empty`, `field-absent`, or `unavailable`; `unverified` when no observed evidence exists |
 
-Main Skill owns the complete Figma extraction, component/state/interaction
-structure, official behavior references, Demo接线, and final review. The table's
-legacy geometry wording does not delegate interaction wiring to Motion.
+Main Skill owns Figma extraction and the static page. Directory click/scrollspy
+source wiring currently still lives in Main until the Interaction pass moves
+it. Stretch policy is no longer an unnamed pile inside chrome/renderer.
 
 ### Extraction and interaction contract
 
@@ -130,10 +134,11 @@ visual evidence grade, the run may only report `candidate` and must not say
 ## Invocation and gate policy
 
 1. Run the Main Skill for every demo. It performs Figma extraction, structure,
-   interaction/behavior wiring, official-site observation, Demo接线, and final
-   review. The ordinary flow does not call a Motion Worker.
+   official-site observation, Demo接线, and final review. Stretch work uses the
+   Resize Skill; click/switch/scrollspy work uses the Interaction Skill.
 2. Run Translation as an independent axis when the demo contains locale or
-   typography work.
+   typography work. Run Resize when viewport, composition, or hero-while-resize
+   behavior is in scope.
 3. Run the Prototype Truth Audit only when a task explicitly asks whether a
    Figma prototype interaction/transition is evidenced. Use
    `npm run prototype:truth -- --fixture <snapshot.json>` for a non-blocking
@@ -141,12 +146,13 @@ visual evidence grade, the run may only report `candidate` and must not say
 4. `explicit-empty`, `field-absent`, and `unavailable` are valid audit outputs,
    but they never block the ordinary Main/Translation flow. They keep
    the prototype claim `unverified` and must not be upgraded by inference.
-5. Reactivate the frozen Motion fallback only after Main completion and a
-   Chrome comparison documents a missing effect. Reactivation requires the
-   missing behavior, source/official evidence, affected viewports, and a
-   browser gate covering desktop, tablet fallback/truth, mobile fallback, and
-   reduced-motion. A passing fallback gate proves scoped wiring/evidence only;
-   it does not promote unverified timing or equivalence claims.
+5. The Interaction Skill (formerly Motion) stays waiting for a later
+   modification pass. Do not unfreeze timed effects until Main static
+   extraction is complete and a Chrome comparison documents a missing
+   behavior. Reactivation requires the missing behavior, source/official
+   evidence, affected viewports, and a browser gate covering desktop, tablet
+   fallback/truth, mobile fallback, and reduced-motion. A passing gate proves
+   scoped wiring/evidence only; it does not promote unverified timing.
 6. A requested prototype audit is fail-closed: `--require-observed` exits
    non-zero unless explicit interaction/reaction/transition evidence is
    present. This failure is scoped to the audit request, not the default demo

@@ -12,25 +12,31 @@ This is the reusable public Skill identity. `demos/yise-ss5-preview` is an Ether
 The default workflow is the **Main Skill**: extract Figma truth, structure
 content/geometry/components/states/interactions, record official behavior
 references, wire the Demo, and run deterministic gates/final review. It is
-complemented by one independent reusable capability and one optional audit:
+complemented by independent reusable capabilities and one optional audit:
 
 - **Translation Skill** — locale/copy context plus font, glyph, weight, and
   browser typography evidence (`scripts/lib/translation/index.mjs`).
-- **Motion Skill** — semantic motion contracts and browser/authoritative
-  behavior evidence (`scripts/lib/motion-contract.mjs`,
-  `scripts/lib/hero-scroll-slot.mjs`). This code is frozen as an internal
-  fallback; the ordinary flow does not call a Motion Worker. Reactivate only
-  after Main completion when Chrome comparison documents a missing effect.
+- **Resize Skill** — viewport stretch, composition base, preview 1:1 fit,
+  background/UI/sea plane policies, and hero lock/exit/release geometry while
+  the window size changes (`scripts/lib/resize/index.mjs`; see
+  `docs/resize-skill.md`).
+- **Interaction Skill** — formerly Motion Skill. Click, switch/tab, directory
+  scrollspy, and retained motion contracts
+  (`scripts/lib/figma-interaction-contract.mjs`,
+  `scripts/lib/motion-contract.mjs`). File names stay for compatibility; new
+  text must say Interaction, not Motion. Implementation is waiting for a later
+  modification pass (`docs/interaction-skill.md`).
 
 **Figma Prototype Truth Audit** is optional evidence, not a prerequisite. It is
 read-only and fail-closed when explicitly requested. `observed` can support a
 prototype interaction claim; `explicit-empty`, `field-absent`, and `unavailable`
-remain `unverified` and do not block the ordinary Main/Translation flow.
+remain `unverified` and do not block the ordinary Main/Translation/Resize/Interaction flow.
 See [docs/skill-architecture.md](docs/skill-architecture.md) for the module
 boundary, invocation, and output-status contract.
 
-The Motion label above is retained for compatibility with existing references;
-its current role is frozen fallback, not an independent main-flow capability.
+The old Motion label is retained only on existing file names. Interaction is
+the user-facing name; Resize is the stretch axis. Neither replaces Main's
+static Figma extraction.
 
 Main extraction preserves source owner/order provenance (`parentId`,
 `ownerPath`, `orderKey`) and keeps semantically structural component owners even
@@ -76,9 +82,20 @@ merged into an older page fixture.
 
 Multilingual typography is a separate verification axis from copy mapping. Preserve Figma TEXT style and `autoResize`; report font/glyph/weight availability and measured browser range before making any fit or visual claim. The reusable translation interface is `scripts/lib/translation/index.mjs`; see `docs/translation-skill-typography.md` and `docs/typography-diagnostics.md`.
 
-Hero scroll motion is a separate reusable capability. Use `scripts/lib/hero-scroll-slot.mjs` and the renderer's state attributes to verify `HERO_LOCKED -> HERO_EXITING -> CONTENT_RELEASED`, including resize and return-to-top. A DOM count or static screenshot does not prove the slot; the Chrome gate must measure later-section visibility and all state transitions. Figma is the static geometry truth, while any official-site observation is behavior reference only.
+Hero lock/exit/release geometry while the window size changes belongs to the
+Resize Skill (`scripts/lib/resize/index.mjs`, wrapping
+`scripts/lib/hero-scroll-slot.mjs`). A DOM count or static screenshot does not
+prove the slot; Chrome must measure later-section visibility and all state
+transitions. Figma is the static geometry truth; official-site observation is
+behavior reference only.
 
-Motion behavior follows a three-way evidence boundary: Figma truth proves static end state, real Chrome or authoritative bundle measurements prove observed behavior, and a local adapter proves only semantic wiring. Generic keyframes must preserve captured Figma transforms by composing through `translate`/`scale`; scroll observers must use the actual app scroll container; gates must cover desktop, tablet fallback/truth, mobile fallback, and reduced-motion before claiming reusable motion fidelity.
+Interaction behavior (formerly called motion) follows a three-way evidence
+boundary: Figma truth proves static end state, real Chrome or authoritative
+bundle measurements prove observed behavior, and a local adapter proves only
+semantic wiring. Generic keyframes must preserve captured Figma transforms by
+composing through `translate`/`scale`; scroll observers must use the actual
+app scroll container; gates must cover desktop, tablet fallback/truth, mobile
+fallback, and reduced-motion before claiming reusable interaction fidelity.
 
 Official behavior/source observations are recorded in `docs/translation-official-reference.md`; they may classify reusable sections and text forms, but never supply locale truth or override Figma/Lark provenance.
 
@@ -358,6 +375,13 @@ providers: fx.data.map((p, i) => makeFixtureLeaf(p.displayName, 'fixtures/provid
 按「demo 合约」（见下节）编写/更新 `index.html`。界面渲染数据**只准**取自内嵌 truth；
 交互链路、状态机、工具区按 `templates/demo-chrome.md` 的规范实现。
 状态归属先在 `spec.json.states` 里声明好，再写实现——**声明是数据，实现跟着声明走**。
+
+**切图必须跟框**：`templates/figma-render.js` 创建的所有 `<img class="fx-img">` 必须填满
+Figma owner 盒，禁止按图片原始像素尺寸自己撑大。无 `exportBox` 时 img 走 `position:absolute;
+top:0;left:0;width:100%;height:100%;object-fit:fill`；有 `exportBox` 时按 export/mask 边界
+绝对定位。owner 必须有 `overflow:hidden` + `position:relative` 作为裁剪与定位锚。
+此契约由 `scripts/__tests__/figma-render-asset-lock.test.mjs` 源码级断言，详见
+`docs/resize-skill.md`「Image-owner-box contract」节。
 
 **内嵌真值块别手抄**：`index.html` 里放一个空的 `<script id="qa-truth" type="application/json"></script>`
 占位，然后 `node scripts/truth.mjs --demo <dir> --embed` 一步把 truth.json 写回该块（`</script>` 已转义
@@ -1068,6 +1092,17 @@ proposal 点名维护者看 EVOLUTION.md；全是 isNew=false 时整组省略。
    matrix 切换器（端/区域/系统/主题/语言）、「状态补齐」tab 入口。言简意赅，界面本体按 truth 渲染，
    工具区文字做减法。详见 `templates/demo-chrome.md`。
 5. **偏好持久化**：matrix 五类选择存 localStorage（key `qa-hifi:<name>:prefs`），流程状态不持久化。
+
+### QA 壳 vs 产品视图
+
+默认打开 `index.html` 是 QA 壳（控制栏、切换器、状态补齐 tab、拉伸手柄、__qa API），
+供验收/调试用。**纯产品视图**用 `index.html?product=1`：只渲染 stage + 产品帧，
+不建任何调试 UI、不暴露 `window.__qa`。验收/交付截图一律走产品视图路径，
+文件名按 `*-product.png`（产品视图）vs `*-qa-shell.png`（QA 壳）区分。
+QA 壳截图只能支撑 candidate 级证据，不能报"视觉还原完成"。
+
+验收自动化（verify.mjs、门 B/C/D/F）依赖 QA 壳的 `__qa` API 和 `data-qa-*` 合约，
+因此**默认入口必须是 QA 壳**，产品视图只是用于人眼验收和交付截图的第二条路径。
 
 ## spec.json 字段规范
 

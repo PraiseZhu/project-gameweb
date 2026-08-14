@@ -118,6 +118,20 @@ test('hscroll gutter expands host box and survives the generic box.h height over
   assert.match(renderer, /\(box\.h \?\? 0\) \+ \(Number\(el\.getAttribute\('data-hscroll-gutter-h'\)\)/);
 });
 
+test('fx-img follows the owner box instead of intrinsic pixels', () => {
+  /* 无 exportBox：100% + object-fit:fill。有 exportBox：按 export 边界定位。
+     两个分支都先 absolute，owner 裁剪并作为定位锚。禁止空 else 走原图像素。 */
+  assert.match(renderer, /img\.style\.position = 'absolute'/);
+  const block = renderer.match(/if \(exportBox\) \{[\s\S]*?img\.style\.left[\s\S]*?img\.style\.height[\s\S]*?\} else \{[\s\S]*?img\.style\.top = '0'[\s\S]*?img\.style\.objectFit = 'fill'[\s\S]*?\}/);
+  assert.ok(block, 'exportBox if/else block must set dimensions on both branches');
+  assert.match(block[0], /exportBox\.w \?\? box\.w \?\? 0/);
+  assert.match(block[0], /exportBox\.h \?\? box\.h \?\? 0/);
+  assert.match(block[0], /img\.style\.width = '100%'/);
+  assert.match(block[0], /img\.style\.objectFit = 'fill'/);
+  assert.match(renderer, /el\.style\.overflow = 'hidden'/);
+  assert.match(renderer, /el\.style\.position = 'relative'/);
+});
+
 test('auto-layout axis alignment fields flow from fixture into truth and feed the renderer flex model', () => {
   /* 2026-08-08 切片6：counterAxisAlignItems/primaryAxisAlignItems 是 Figma 真值（非派生），
      renderer 的 flex 模型已读它们定 justifyContent/alignItems，但此前不进 truth → 恒回退 flex-start。 */

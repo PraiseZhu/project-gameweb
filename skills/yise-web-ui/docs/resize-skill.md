@@ -1,0 +1,84 @@
+# Resize Skill
+
+This is the reusable resize / stretch contract. The Etheria demo is only a
+fixture consumer; no rule here may depend on Etheria node IDs, page selectors,
+or page-specific CSS.
+
+The public interface is `scripts/lib/resize/index.mjs`. It distills rules that
+already live in `templates/figma-chrome.js`, `templates/figma-render.js`,
+`scripts/lib/figma-layout-planes.mjs`, and `scripts/lib/hero-scroll-slot.mjs`.
+This Skill does not replace those files in this pass; it is the named owner of
+the stretch axis so later work can move implementation without mixing it back
+into Main, Translation, or Interaction.
+
+## Separate verification axes
+
+1. **Main Skill** owns Figma fetch, truth, static geometry, and the default
+   demo shell. A green static PC/mobile render is layer 1, not resize.
+2. **Translation Skill** owns locale, copy, font, and text range. Stretch must
+   not change requested font size to hide a layout problem.
+3. **Interaction Skill** (formerly Motion) owns click, switch, tab, scrollspy,
+   and later motion timing. Stretch must preserve the current interaction
+   state; it does not invent click behavior.
+4. **Resize Skill** owns what happens when the simulated viewport or real
+   window size changes.
+
+## What Resize owns
+
+| Rule | Meaning |
+|---|---|
+| Platform from width | `0–750` mobile, `751–1023` pad, `≥1024` pc. Kit breakpoints stay the source; this is the default map. |
+| Composition base | Native mobile/pad trees win when present. Pad without a pad tree is `pad-uses-pc-tree`. Never invent a third layout. |
+| Light drag | Continuous edge-drag / slider may skip content rebuild only on the same composition base. Language, device, window resize, and W/H box stay on the full path. |
+| Preview 1:1 | Default `scale=1`. Decorative padding yields before shrink. A truly smaller window may scale, and that scale must be reported. |
+| Three visual planes | Background = cover-crop, centered. UI = source-scale (PC seasonal width-scale). Sea / K1 = source aspect, center crop. Do not stretch all three with one transform. |
+| Hero while resizing | `HERO_LOCKED → HERO_EXITING → CONTENT_RELEASED` is geometry plus `scrollTop`. Released content must return to Figma positions, not stay collectively shifted. |
+
+## What Resize does not own
+
+- Locale / copy / typography
+- Click / switch / tab / directory wiring
+- Figma fetch, truth extraction, or asset export
+- One-off official-site CSS or page node IDs
+
+## Evidence
+
+A resize claim needs:
+
+- the viewport (`w×h`) and whether the user was dragging or settled
+- the composition key actually used (`pc` / `mobile` / `pad` / fallback)
+- whether the light path or full rebuild ran
+- the reported view-fit scale
+- Chrome measurements or official/local comparison for the plane that changed
+
+A green Main gate, a static screenshot, or a QA-shell drag without product-view
+evidence does not close a stretch claim.
+
+## Current implementation homes
+
+These remain the runtime until a later pass extracts them:
+
+- `templates/figma-chrome.js` — `platOfWidth`, `compositionKeyForViewport`,
+  `beginResizeDrag` / `endResizeDrag`, view-fit scale
+- `templates/figma-render.js` — hero layout offset, paint roots, locked overlay
+- `scripts/lib/figma-layout-planes.mjs` — verified background / UI split
+- `scripts/lib/hero-scroll-slot.mjs` — lock / exit / release distances
+
+SS5-only browser tests under `scripts/__tests__/_resize-*.mjs` stay private
+demo evidence. They are not this Skill's public contract.
+
+## Image-owner-box contract
+
+Every baked `<img class="fx-img">` must fill its Figma owner box; it must never
+size itself from the image's intrinsic pixel dimensions:
+
+- **No `exportBox`**: `position:absolute; top:0; left:0; width:100%; height:100%;
+  object-fit:fill`. The image stretches to the owner box exactly; a page scale
+  of 0.5 does not produce a 2× overflow.
+- **With `exportBox`**: `position:absolute` with `left/top/width/height` from
+  the export/mask boundary. No intrinsic fallback.
+- The **owner** must have `overflow:hidden` and `position:relative` so it clips
+  its baked image and serves as the containing block for the absolute `<img>`.
+
+This contract is enforced by `scripts/__tests__/figma-render-asset-lock.test.mjs`
+and implemented in `templates/figma-render.js` (the `fx-img` creation block).

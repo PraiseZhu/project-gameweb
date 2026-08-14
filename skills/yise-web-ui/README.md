@@ -21,12 +21,13 @@ Steps 4-8 can also run as one command: `node scripts/figma-build.mjs --demo <dem
 Full asset export, full-page Chrome gates, pixel comparison, multilingual acceptance, and project/private demo checks remain explicit later phases.
 Reusable Figma-to-Web UI verification Skill. The Etheria/伊瑟 page under `demos/yise-ss5-preview` is a verification example only; this repository is not an AppStore app.
 
-Architecture: the Main Skill owns Figma extraction, content/component/state/
-interaction structure, official behavior references, Demo接线, and final review;
-Translation is independent; Motion code is retained but frozen as an optional
-fallback after a documented Chrome gap; Figma Prototype Truth is an optional
-read-only audit. Missing or empty prototype data keeps a prototype claim
-unverified but does not block the ordinary workflow.
+Architecture: the Main Skill owns Figma extraction, static structure, official
+behavior references, Demo接线, and final review. Translation, Resize, and
+Interaction are independent axes. Interaction is the rename of the former
+Motion Skill; file names stay, implementation waits for a later pass. Figma
+Prototype Truth is an optional read-only audit. Missing or empty prototype
+data keeps a prototype claim unverified but does not block the ordinary
+workflow. See `docs/resize-skill.md` and `docs/interaction-skill.md`.
 
 When Figma supplies a complete fixed directory and section inventory, Main Skill
 also wires the directory's click-to-section and scroll-following selected state;

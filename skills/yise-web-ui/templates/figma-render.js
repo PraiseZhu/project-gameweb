@@ -3464,12 +3464,22 @@
               img.className = 'fx-img';
               if (el.getAttribute('data-shadow-via') === 'asset-baked') img.setAttribute('data-shadow-source', 'asset');
               if (el.getAttribute('data-blur-via') === 'asset-baked') img.setAttribute('data-blur-source', 'asset');
+              /* ═══ fx-img 必须填满 owner 盒，禁止用原始像素尺寸 ═══
+                 exportBox：已有精确的 mask/export 边界，按它绝对定位到 owner 内。
+                 无 exportBox：img 必须 100% 填满 owner（width/height/object-fit:fill），
+                 禁止走 intrinsic 尺寸 —— 页面缩 0.5 时原图会 2 倍溢出 owner 框。 */
+              img.style.position = 'absolute';
               if (exportBox) {
-                img.style.position = 'absolute';
                 img.style.left = ((exportBox.x ?? box.x ?? 0) - (box.x ?? 0)) + 'px';
                 img.style.top = ((exportBox.y ?? box.y ?? 0) - (box.y ?? 0)) + 'px';
                 img.style.width = (exportBox.w ?? box.w ?? 0) + 'px';
                 img.style.height = (exportBox.h ?? box.h ?? 0) + 'px';
+              } else {
+                img.style.top = '0';
+                img.style.left = '0';
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.objectFit = 'fill';
               }
               img.setAttribute('data-asset-src', url);
               img.setAttribute('data-asset-state', 'deferred');
@@ -3477,6 +3487,11 @@
               img.setAttribute('loading', 'eager');
               img.setAttribute('decoding', 'async');
               el.appendChild(img);
+              /* Asset owner must clip its baked image and serve as the containing
+                 block for its absolute-positioned fx-img. Without this, a scaled
+                 page exposes the image's intrinsic edge beyond the owner box. */
+              if (!el.style.overflow || el.style.overflow === 'visible') el.style.overflow = 'hidden';
+              if (!el.style.position) el.style.position = 'relative';
             } else {
               // 宁可显示"这里缺一张图"，也不要用纯色糊过去假装做好了
               el.classList.add('fx-img-ph');
