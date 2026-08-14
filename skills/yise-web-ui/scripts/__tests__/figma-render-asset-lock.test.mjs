@@ -142,3 +142,28 @@ test('auto-layout axis alignment fields flow from fixture into truth and feed th
   assert.match(renderer, /pel\.style\.alignItems = ai\[counter\]/);
   assert.match(renderer, /pel\.style\.justifyContent = jc\[prim\]/);
 });
+
+test('multiline HUG explanatory text keeps source width instead of max-content', () => {
+  assert.match(renderer, /const sourceMultilineText = authoredLineCount > 1[\s\S]*Number\(box\.h\) > Number\(tx\.lineHeight\) \* 1\.35/);
+  assert.match(renderer, /const sourceWidthHugText = directOwnerHugFrame && !compactDirectOwnerHugLabel[\s\S]*\(arForOwner === 'HEIGHT' \|\| \(arForOwner === 'WIDTH_AND_HEIGHT' && sourceMultilineText\)\)/);
+  assert.match(renderer, /const inlineHugs = hugs && !sourceWidthHugText/);
+  assert.match(renderer, /el\.style\.whiteSpace = \(inlineHugs \|\| sourceNoWrapTitle\) \? 'pre' : 'pre-wrap'/);
+  assert.match(renderer, /if \(sourceWidthHugText && box\.w != null\) \{[\s\S]*el\.style\.width = box\.w \+ 'px'[\s\S]*el\.setAttribute\('data-text-owner-width-policy', 'source-width-hug-text'\)/);
+  assert.match(renderer, /if \(!sourceWidthHugText && ownerW > Number\(box\.w \?\? 0\) \+ 0\.5 && ar === 'WIDTH_AND_HEIGHT'\)/);
+});
+
+test('source-width HUG text grows vertically and is not step-fit suppressed', () => {
+  assert.match(renderer, /if \(sourceWidthHugText && box\.w != null\) \{[\s\S]*el\.style\.height = 'auto'[\s\S]*el\.style\.overflow = 'visible'[\s\S]*data-text-vertical-growth', 'expected'/);
+  assert.match(renderer, /layoutSizingVertical: sourceWidthHugText\s*\?\s*'HUG'\s*:\s*__u\(n\.layout && n\.layout\.layoutSizingVertical\)/);
+  assert.match(renderer, /if \(box\.h != null\) el\.style\[inlineHugs \? 'height' : 'minHeight'\] = box\.h \+ 'px'/);
+  assert.match(renderer, /else if \(!inlineHugs && !constraint\.openFlow\) \{[\s\S]*data-fit-growth', 'natural'/);
+  assert.doesNotMatch(renderer, /if \(box\.h != null\) el\.style\[hugs \? 'height' : 'minHeight'\]/);
+});
+
+test('compact HUG label behavior remains geometry-authorized only', () => {
+  assert.match(renderer, /const compactHugLabelEvidence = \(\{ role, align, autoResize, ownerNode, ownerBox, directOwner, sourceBox \}\) =>/);
+  assert.match(renderer, /verticalSlack <= sourceH \* 0\.6 \+ 0\.5/);
+  assert.match(renderer, /sourceW >= ownerW \* 0\.55/);
+  assert.match(renderer, /const boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner/);
+  assert.match(renderer, /if \(boundedHugLabel\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*fitCandidates\.push\(\{ el, tx, box, widthFit: _ownerW/);
+});

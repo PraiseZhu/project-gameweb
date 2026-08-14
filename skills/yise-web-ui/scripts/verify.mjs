@@ -64,8 +64,10 @@ import {
   stableJson,
   TOOL_VERSION,
 } from './lib/fs-utils.mjs';
-import { validateSpec, validateTruth, validateCustomGateFiles, truthAt, buildVerifyCases, prefsSubsetEqual, normalizeHash, countFixtureLeaves } from './lib/schema.mjs';
+import { validateSpec, validateTruth, validateCustomGateFiles, truthAt, buildVerifyCases, prefsSubsetEqual, countFixtureLeaves } from './lib/schema.mjs';
+import { designPxScaleFactor, resolveAssetShaTruth } from './lib/binding-resolver.mjs';
 import { aggregateEvidenceLevel } from './lib/report.mjs';
+import { workflowDeclaration } from './lib/workflows.mjs';
 /* 门字母的唯一真相源(r7 条目 7a):不许在本文件再手写一份门列表 —— 门 E 那个 CRITICAL
    的根因就是 verify 与 pr-block 各写了一份、两份都漏了 E。 */
 import { lettersFor } from './lib/gates.mjs';
@@ -169,10 +171,60 @@ if (stateFilter && statesRun.length === 0)
   failJson(`--state 没有命中任何状态;可用:${spec.states.map((s) => s.id).join(', ')}`);
 
 function makeGate(name, total = 0) {
-  return { name, pass: false, total, passed: 0, failures: [], cases: [] };
+  return { name, status: 'blocked', pass: false, total, passed: 0, failures: [], cases: [] };
 }
 function skippedGate(name) {
-  return { name, pass: false, skipped: true, detail: '本次为增量运行(--gate 过滤),该门未执行' };
+  return { name, status: 'skipped', pass: false, skipped: true, detail: '本次为增量运行(--gate 过滤),该门未执行' };
+}
+function setGateStatus(gate, status, detail = null) {
+  gate.status = status;
+  gate.pass = status === 'passed';
+  if (detail) gate.detail = gate.detail ? `${gate.detail}\n${detail}` : detail;
+  return gate;
+}
+function gateStatus(gate) {
+  if (!gate || typeof gate !== 'object') return 'blocked';
+  if (gate.status) return gate.status;
+  if (gate.skipped) return 'skipped';
+  return gate.pass === true ? 'passed' : 'blocked';
+}
+function isMinimalStateCoverage(states) {
+  return !Array.isArray(states) || states.length <= 1;
+}
+function makeOutcome(workflow, entries, { partial = false } = {}) {
+  const buckets = { passed: [], limited: [], notClaimed: [], blocked: [], skipped: [] };
+  for (const [key, gate] of entries) {
+    const status = gateStatus(gate);
+    if (status === 'passed') buckets.passed.push(key);
+    else if (status === 'limited') buckets.limited.push(key);
+    else if (status === 'not-claimed') buckets.notClaimed.push(key);
+    else if (status === 'skipped') buckets.skipped.push(key);
+    else buckets.blocked.push(key);
+  }
+  const active = partial
+    ? {
+      passed: buckets.passed,
+      limited: buckets.limited,
+      notClaimed: buckets.notClaimed,
+      blocked: buckets.blocked,
+    }
+    : buckets;
+  const status = active.blocked.length ? 'blocked'
+    : active.skipped?.length ? 'skipped'
+    : buckets.limited.length ? 'limited'
+    : buckets.notClaimed.length ? 'not-claimed'
+    : 'passed';
+  const workflowAcceptable = workflow === 'figma-showcase'
+    ? active.blocked.length === 0 && (partial || buckets.skipped.length === 0)
+    : status === 'passed';
+  return {
+    workflow,
+    scope: partial ? 'targeted' : 'full',
+    status,
+    ...buckets,
+    workflowAcceptable,
+    productPrComplete: !partial && workflow === 'product-qa' && status === 'passed',
+  };
 }
 
 /* r8 条目 A:页面可达输入**全部进快照**,所以这里不再有「豁免清单」需要维护。
@@ -501,7 +553,18 @@ try {
       gateB.cases.push(caseResult);
     }
     gateB.entryRenderProof = entryRenderProof;
-    gateB.pass = gateB.failures.length === 0;
+    gateB.coverageCounts = {
+      cases: cases.length,
+      states: statesRun.length,
+      expectedTransitions: gateB.total,
+      passedTransitions: gateB.passed,
+      failures: gateB.failures.length,
+      viaReachableStates: statesRun.filter((s) => Array.isArray(s.via)).length,
+      tabOnlyStates: statesRun.filter((s) => s.via === null).length,
+    };
+    if (gateB.failures.length) setGateStatus(gateB, 'blocked');
+    else if (isMinimalStateCoverage(statesRun)) setGateStatus(gateB, 'limited', 'minimal state coverage: only entry/current state was exercised');
+    else setGateStatus(gateB, 'passed');
   }
 
   // ---------- 门 C:交互鲁棒 ----------
@@ -647,7 +710,22 @@ try {
       check.pass = check.failures.length === 0;
       gateC.checks.push(check);
     }
-    gateC.pass = gateC.checks.length > 0 && gateC.checks.every((c) => c.pass);
+    const inputChecks = gateC.checks.filter((c) => String(c.id ?? '').startsWith('input-stable:')).length;
+    const persistenceChecks = gateC.checks.filter((c) => c.id === 'persistence').length;
+    const noClipChecks = gateC.checks.filter((c) => c.id === 'no-clip').length;
+    gateC.coverageCounts = {
+      checks: gateC.checks.length,
+      passedChecks: gateC.checks.filter((c) => c.pass).length,
+      noClipSelectors: noClipChecks,
+      inputChecks,
+      persistenceChecks,
+      cases: cases.length,
+      states: statesRun.length,
+    };
+    if (gateC.checks.length === 0 || gateC.checks.some((c) => !c.pass)) setGateStatus(gateC, 'blocked');
+    else if (noClipChecks > 0 && inputChecks === 0 && persistenceChecks === 0)
+      setGateStatus(gateC, 'limited', 'minimal interaction coverage: no-clip only; no input or persistence checks declared');
+    else setGateStatus(gateC, 'passed');
   }
 
   // ---------- 门 D:渲染绑定 ----------
@@ -657,12 +735,12 @@ try {
   else {
     gateD = makeGate('渲染绑定', bindings.length * cases.length);
     if (bindings.length === 0) {
-      gateD.pass = true;
-      // 组件模式下 bindings 为空不等于「渲染层未验证」:渲染由产品代码路径本身承载,
-      // 其源码 + bundle 已进 inputHashes 防伪链。仅改声明文案,判定逻辑不变。
+      // bindings 为空只能说明没有声明 chrome 绑定验证;不得再把缺能力当作通过。
+      gateD.coverageCounts = { bindings: 0, cases: cases.length, assertions: 0 };
       gateD.detail = spec.component?.mode === 'component'
         ? '组件模式:渲染由产品代码路径承载(源码 hash 入链),chrome 层可选配 bindings'
         : 'spec.bindings 未配置——渲染层未验证,还原承诺只到数据层';
+      setGateStatus(gateD, 'not-claimed');
     } else {
       for (const testCase of cases) {
         const p = await pageFor(testCase);
@@ -699,7 +777,7 @@ try {
               if (result.expected !== result.actual)
                 throw new Error(`expected ${result.expected}, actual ${result.actual}`);
             } else if (kind === 'length') {
-              const scale = b.scaled ? await p.evaluate(() => window.__qa.scale()) : 1;
+              const scale = designPxScaleFactor({ scaled: b.scaled, scale: b.scaled ? await p.evaluate(() => window.__qa.scale()) : 1 });
               if (!Number.isFinite(Number(scale)) || Number(scale) <= 0) throw new Error(`__qa.scale 非 finite positive:${scale}`);
               const result = await p.evaluate((raw) => {
                 if (typeof raw === 'number') return Number.isFinite(raw) ? { ok: true, px: raw } : { ok: false, error: 'length truth 非 finite number' };
@@ -745,7 +823,7 @@ try {
               const response = await fetch(resolved);
               if (!response.ok) throw new Error(`asset 读取失败:${response.status} ${resolved.pathname}`);
               const actualSha = sha256Buffer(Buffer.from(await response.arrayBuffer()));
-              const expectedSha = normalizeHash(raw);
+              const expectedSha = resolveAssetShaTruth(truthObj, b.truth);
               if (actualSha !== expectedSha) throw new Error(`expected sha256 ${expectedSha}, actual ${actualSha}`);
             } else if (String(raw) !== actual) {
               throw new Error(`expected "${raw}", actual "${actual}"`);
@@ -757,7 +835,14 @@ try {
         }
         gateD.cases.push({ id: testCase.id, prefs: testCase.prefs });
       }
-      gateD.pass = gateD.failures.length === 0;
+      gateD.coverageCounts = {
+        bindings: bindings.length,
+        cases: cases.length,
+        assertions: gateD.total,
+        passedAssertions: gateD.passed,
+        failures: gateD.failures.length,
+      };
+      setGateStatus(gateD, gateD.failures.length === 0 ? 'passed' : 'blocked');
     }
   }
 
@@ -768,8 +853,9 @@ try {
   else {
     gateF = makeGate('适配还原', 0);
     if (!ad) {
-      gateF.pass = true;
       gateF.detail = 'spec.adaptive 未配置——窗口拉伸行为未验证';
+      gateF.coverageCounts = { adaptiveSamples: 0, probes: 0, minClamp: 0, assertions: 0 };
+      setGateStatus(gateF, 'not-claimed');
     } else {
       const samples = truthAt(truthObj, 'adaptive.samples') ?? [];
       const tol = ad.tolerancePx ?? 1;
@@ -819,7 +905,15 @@ try {
       } catch (err) {
         gateF.failures.push({ check: 'api', error: String(err.message || err).slice(0, 300) });
       }
-      gateF.pass = gateF.failures.length === 0;
+      gateF.coverageCounts = {
+        adaptiveSamples: samples.length,
+        probes: probes.length,
+        minClamp: ad.min ? 1 : 0,
+        assertions: samples.length + (ad.min ? 1 : 0),
+        passedAssertions: gateF.passed,
+        failures: gateF.failures.length,
+      };
+      setGateStatus(gateF, gateF.failures.length === 0 ? 'passed' : 'blocked');
     }
   }
 
@@ -932,10 +1026,11 @@ try {
   let gateX;
   if (!runGate('X')) gateX = skippedGate('自定义门');
   else {
-    gateX = { name: '自定义门', pass: false, total: customGates.length, passed: 0, failures: [], gates: [] };
+    gateX = { name: '自定义门', status: 'blocked', pass: false, total: customGates.length, passed: 0, failures: [], gates: [] };
     if (customGates.length === 0) {
-      gateX.pass = true;
       gateX.detail = '未声明 customGates';
+      gateX.coverageCounts = { customGates: 0, passedGates: 0, failures: 0 };
+      setGateStatus(gateX, 'not-claimed');
     } else {
       for (const g of customGates) {
         const entry = { id: g.id, script: g.script, pass: false, detail: '' };
@@ -958,7 +1053,8 @@ try {
         }
         gateX.gates.push(entry);
       }
-      gateX.pass = gateX.failures.length === 0;
+      gateX.coverageCounts = { customGates: customGates.length, passedGates: gateX.passed, failures: gateX.failures.length };
+      setGateStatus(gateX, gateX.failures.length === 0 ? 'passed' : 'blocked');
     }
   }
 
@@ -1024,8 +1120,12 @@ try {
     }
   }
 
-  const gatesRun = [gateA, gateB, gateC, gateD, gateF, gateX].filter((g) => !g.skipped);
-  const allPass = gatesRun.every((g) => g.pass);
+  if (!gateA.skipped) setGateStatus(gateA, gateA.pass === true ? 'passed' : 'blocked');
+  const workflow = spec.workflow?.id || spec.meta?.workflow || spec.meta?.qaWorkflow || 'product-qa';
+  const workflowDecl = workflowDeclaration(workflow) ?? workflowDeclaration('product-qa');
+  const gateEntries = [['gateA', gateA], ['gateB', gateB], ['gateC', gateC], ['gateD', gateD], ['gateF', gateF], ['gateX', gateX]];
+  const outcome = makeOutcome(workflow, gateEntries, { partial });
+  const reportOk = outcome.workflowAcceptable;
   /* 视觉证据分级(2026-08-14,与 pr-block 共用 aggregateEvidenceLevel 一份实现):
      像素层是唯一子检查,而 verify 从不比对像素(门 E 住在 pixel-compare.mjs)——
      因此本报告最多给出 'candidate'(spec 未声明 baseline)/ 'unverified'(已声明,
@@ -1040,7 +1140,10 @@ try {
     tabOnly: spec.states.filter((s) => s.via === null).length,
   };
   const report = {
-    ok: allPass,
+    ok: reportOk,
+    workflow,
+    workflowDeclaration: workflowDecl,
+    outcome,
     partial,
     ...(partial ? { filters: { gates: gateFilter ?? null, cases: caseFilter ?? null, states: stateFilter ?? null }, partialNote: '增量运行仅供调试;定稿必须全量重跑 verify(pr-block 拒收 partial 报告)' } : {}),
     toolVersion: TOOL_VERSION,
@@ -1066,7 +1169,7 @@ try {
   };
   writeFileSync(reportOut, JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report, null, 2));
-  process.exitCode = allPass ? 0 : 2;
+  process.exitCode = reportOk ? 0 : 2;
 } catch (err) {
   console.log(JSON.stringify({ ok: false, error: String(err.message || err), toolVersion: TOOL_VERSION }, null, 2));
   process.exitCode = 2;

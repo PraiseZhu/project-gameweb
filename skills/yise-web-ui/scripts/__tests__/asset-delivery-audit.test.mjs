@@ -2,14 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   classifyAsset,
   extractLocalAssetReferences,
   imageInfo,
+  isCliEntry,
   mimeFromBuffer,
+  parseArgs,
   renderMarkdownReport,
 } from '../lib/asset-delivery-audit.mjs';
 
@@ -87,10 +89,15 @@ test('markdown report includes summary and does not claim guessed official match
 
 test('published asset:audit command accepts the canonical docs flag end to end', () => {
   const outDir = mkdtempSync(join(tmpdir(), 'asset-audit-'));
+  const demoDir = mkdtempSync(join(tmpdir(), 'asset-audit-demo-'));
+  const docsFile = join(outDir, 'asset-report.md');
   try {
+    mkdirSync(join(demoDir, 'assets'), { recursive: true });
+    writeFileSync(join(demoDir, 'assets/tiny.png'), tinyPng);
+    writeFileSync(join(demoDir, 'index.html'), '<!doctype html><html><body><script id="qa-assets" type="application/json">{"n1":"assets/tiny.png"}</script><img src="assets/tiny.png"></body></html>');
     const npmCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-    assert.ok(existsSync(npmCli), `missing npm cli entrypoint: ${npmCli}`);
-    const result = spawnSync(process.execPath, [npmCli, 'run', 'asset:audit', '--', '--no-crawl'], {
+    assert.ok(existsSync(npmCli), 'missing npm cli entrypoint: ' + npmCli);
+    const result = spawnSync(process.execPath, [npmCli, 'run', 'asset:audit', '--', '--demo', demoDir, '--out-dir', outDir, '--docs', docsFile, '--no-official-crawl'], {
       cwd: ROOT,
       encoding: 'utf8',
       timeout: 120000,
@@ -98,8 +105,33 @@ test('published asset:audit command accepts the canonical docs flag end to end',
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.match(result.stdout, /"ok":\s*true/);
     assert.match(result.stdout, /"docsFile":/);
+    assert.match(result.stdout, /"crawlOfficial":\s*false/);
     assert.match(result.stdout, /asset-delivery-audit/);
+    assert.ok(existsSync(join(outDir, 'asset-inventory.json')));
+    assert.ok(existsSync(docsFile));
   } finally {
     rmSync(outDir, { recursive: true, force: true });
+    rmSync(demoDir, { recursive: true, force: true });
+  }
+});
+
+test('asset audit CLI parsing keeps canonical no-official-crawl and legacy no-crawl alias', () => {
+  assert.equal(parseArgs(['node', 'asset-delivery-audit.mjs', '--demo', 'demo', '--no-official-crawl']).crawlOfficial, false);
+  assert.equal(parseArgs(['node', 'asset-delivery-audit.mjs', '--demo', 'demo', '--no-crawl']).crawlOfficial, false);
+  assert.equal(parseArgs(['node', 'asset-delivery-audit.mjs', '--demo', 'demo', '--official-crawl']).crawlOfficial, true);
+});
+
+test('asset audit library does not auto-execute when imported by the wrapper path', () => {
+  assert.equal(isCliEntry(['node', 'scripts/asset-delivery-audit.mjs'], new URL('../lib/asset-delivery-audit.mjs', import.meta.url).href), false);
+});
+
+test('public release surface keeps package scripts out of private exclusions', () => {
+  const manifest = JSON.parse(readFileSync(join(ROOT, 'public-release.json'), 'utf8'));
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  const privateEntries = new Set(manifest.private || []);
+  for (const [name, script] of Object.entries(pkg.scripts || {})) {
+    const match = String(script).match(/\bnode\s+([^\s]+\.mjs)\b/);
+    if (!match) continue;
+    assert.equal(privateEntries.has(match[1]), false, name + ' points at a private release exclusion: ' + match[1]);
   }
 });

@@ -13,6 +13,17 @@ const OVERSIZED_RATIO_THRESHOLD = 2.25;
 
 const toPosix = (value) => String(value || '').replaceAll('\\', '/');
 const round = (n, d = 4) => Number.isFinite(Number(n)) ? +Number(n).toFixed(d) : null;
+const DEFAULT_NETWORK_TIMEOUT_MS = 10000;
+
+async function fetchWithTimeout(url, { timeoutMs = DEFAULT_NETWORK_TIMEOUT_MS, headers = {} } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { headers, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export function sha256Buffer(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
@@ -422,8 +433,8 @@ export async function measureRenderedAssets({ demoDir, viewport = { w: 1920, h: 
   return report;
 }
 
-export async function fetchOfficialAsset(url) {
-  const response = await fetch(url, { headers: { 'user-agent': 'asset-delivery-audit/1.0' } });
+export async function fetchOfficialAsset(url, { timeoutMs = DEFAULT_NETWORK_TIMEOUT_MS } = {}) {
+  const response = await fetchWithTimeout(url, { timeoutMs, headers: { 'user-agent': 'asset-delivery-audit/1.0' } });
   const headers = Object.fromEntries([...response.headers.entries()]);
   const buffer = Buffer.from(await response.arrayBuffer());
   const info = imageInfo(buffer, url);
@@ -442,7 +453,7 @@ export async function fetchOfficialAsset(url) {
   };
 }
 
-export async function crawlOfficialSiteImages({ siteUrl = 'https://yise.xd.cn/', maxImages = 240, maxTextResources = 80 } = {}) {
+export async function crawlOfficialSiteImages({ siteUrl = 'https://yise.xd.cn/', maxImages = 240, maxTextResources = 80, timeoutMs = DEFAULT_NETWORK_TIMEOUT_MS } = {}) {
   const visitedText = new Set();
   const imageUrls = new Set();
   const textUrls = new Set([siteUrl]);
@@ -466,7 +477,7 @@ export async function crawlOfficialSiteImages({ siteUrl = 'https://yise.xd.cn/',
     if (!url) break;
     visitedText.add(url);
     try {
-      const response = await fetch(url, { headers: { 'user-agent': 'asset-delivery-audit/1.0' } });
+      const response = await fetchWithTimeout(url, { timeoutMs, headers: { 'user-agent': 'asset-delivery-audit/1.0' } });
       const type = response.headers.get('content-type') || '';
       if (!response.ok || (!/text|javascript|json|css|html/i.test(type) && visitedText.size > 1)) continue;
       const text = await response.text();
@@ -660,7 +671,10 @@ export async function runAssetDeliveryAudit({
   outDir,
   docsFile,
   officialSite = 'https://yise.xd.cn/',
-  crawlOfficial = true,
+  crawlOfficial = false,
+  maxOfficialImages = 240,
+  maxOfficialTextResources = 80,
+  networkTimeoutMs = DEFAULT_NETWORK_TIMEOUT_MS,
   viewport = { w: 1920, h: 1080 },
 } = {}) {
   const absDemo = resolve(demoDir);
@@ -670,12 +684,17 @@ export async function runAssetDeliveryAudit({
   let officialCrawl = null;
   const officialUrls = new Set(officialRegistry.entries.map((entry) => entry.url).filter(Boolean));
   if (crawlOfficial && officialSite) {
-    officialCrawl = await crawlOfficialSiteImages({ siteUrl: officialSite });
+    officialCrawl = await crawlOfficialSiteImages({
+      siteUrl: officialSite,
+      maxImages: maxOfficialImages,
+      maxTextResources: maxOfficialTextResources,
+      timeoutMs: networkTimeoutMs,
+    });
     for (const url of officialCrawl.imageUrls || []) officialUrls.add(url);
   }
   const officialFetched = [];
   for (const url of [...officialUrls]) {
-    try { officialFetched.push(await fetchOfficialAsset(url)); }
+    try { officialFetched.push(await fetchOfficialAsset(url, { timeoutMs: networkTimeoutMs })); }
     catch (error) { officialFetched.push({ ok: false, url, error: String(error?.message || error) }); }
   }
   const inventory = buildLocalInventory({ demoDir: absDemo, rendered: renderedMeasurement.assets, officialRegistry });
@@ -695,22 +714,30 @@ export async function runAssetDeliveryAudit({
 
 export { OVERSIZED_RATIO_THRESHOLD, ROOT };
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const out = {
     demoDir: null,
     outDir: null,
     docsFile: null,
     officialSite: 'https://yise.xd.cn/',
-    crawlOfficial: true,
+    crawlOfficial: false,
+    maxOfficialImages: 240,
+    maxOfficialTextResources: 80,
+    networkTimeoutMs: DEFAULT_NETWORK_TIMEOUT_MS,
     viewport: { w: 1920, h: 1080 },
   };
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--demo') out.demoDir = argv[++i];
-    else if (arg === '--out-dir') out.outDir = argv[++i];
+    else if (arg === '--out-dir' || arg === '--out') out.outDir = argv[++i];
     else if (arg === '--docs' || arg === '--docs-file') out.docsFile = argv[++i];
     else if (arg === '--official-site') out.officialSite = argv[++i];
+    else if (arg === '--official-crawl') out.crawlOfficial = true;
+    else if (arg === '--no-official-crawl') out.crawlOfficial = false;
     else if (arg === '--no-crawl') out.crawlOfficial = false;
+    else if (arg === '--max-official-images') out.maxOfficialImages = Number(argv[++i]);
+    else if (arg === '--max-official-text-resources') out.maxOfficialTextResources = Number(argv[++i]);
+    else if (arg === '--network-timeout-ms') out.networkTimeoutMs = Number(argv[++i]);
     else if (arg === '--viewport') {
       const raw = String(argv[++i] || '');
       const m = raw.match(/^(\d+)x(\d+)$/i);
@@ -720,11 +747,22 @@ function parseArgs(argv) {
       throw new Error(`unknown arg ${arg}`);
     }
   }
-  if (!out.demoDir) throw new Error('usage: node scripts/lib/asset-delivery-audit.mjs --demo <dir> [--out-dir <dir>] [--docs <file>] [--official-site <url>] [--no-crawl] [--viewport <WxH>]');
+  for (const [key, value] of [
+    ['--max-official-images', out.maxOfficialImages],
+    ['--max-official-text-resources', out.maxOfficialTextResources],
+    ['--network-timeout-ms', out.networkTimeoutMs],
+  ]) {
+    if (!Number.isFinite(value) || value < 0) throw new Error(`invalid ${key} ${value}`);
+  }
+  if (!out.demoDir) throw new Error('usage: node scripts/lib/asset-delivery-audit.mjs --demo <dir> [--out-dir <dir>] [--docs <file>] [--official-site <url>] [--official-crawl|--no-official-crawl] [--viewport <WxH>]');
   return out;
 }
 
-if (process.argv[1] && process.argv[1].endsWith('asset-delivery-audit.mjs')) {
+export function isCliEntry(argv = process.argv, metaUrl = import.meta.url) {
+  return !!argv[1] && resolve(argv[1]) === fileURLToPath(metaUrl);
+}
+
+if (isCliEntry()) {
   const args = parseArgs(process.argv);
   const result = await runAssetDeliveryAudit(args);
   console.log(JSON.stringify({
@@ -733,6 +771,7 @@ if (process.argv[1] && process.argv[1].endsWith('asset-delivery-audit.mjs')) {
     docsFile: result.docsFile,
     summary: result.audit.summary,
     browserMeasurement: result.audit.browserMeasurement,
+    crawlOfficial: args.crawlOfficial,
     officialFetched: result.audit.officialFetched.length,
   }, null, 2));
 }

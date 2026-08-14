@@ -10,14 +10,20 @@ import {
   sameInputHashes,
   TOOL_VERSION,
 } from './fs-utils.mjs';
+import { workflowDeclaration } from './workflows.mjs';
 
 export function summarizeGate(gate) {
   if (!gate || typeof gate !== 'object') return { ok: false, reason: 'missing gate' };
   const failures = gate.failures ?? [];
-  const pass = gate.pass === true && (!Array.isArray(failures) || failures.length === 0);
+  const status = gate.status ?? (gate.skipped ? 'skipped' : (gate.pass === true ? 'passed' : 'blocked'));
+  const legal = new Set(['passed', 'limited', 'not-claimed', 'blocked', 'skipped']);
+  if (!legal.has(status)) return { ok: false, status, reason: `illegal gate status: ${status}` };
+  if (status !== 'passed' && gate.pass === true)
+    return { ok: false, status, reason: `gate status ${status} must not set pass:true` };
+  const pass = status === 'passed' && gate.pass === true && (!Array.isArray(failures) || failures.length === 0);
   if (typeof gate.total === 'number' && typeof gate.passed === 'number' && gate.total !== gate.passed + failures.length)
-    return { ok: false, reason: 'pass/total/failures mismatch' };
-  return { ok: pass, reason: pass ? '' : gate.detail ?? JSON.stringify(failures).slice(0, 300) };
+    return { ok: false, status, reason: 'pass/total/failures mismatch' };
+  return { ok: pass, status, reason: pass ? '' : gate.detail ?? JSON.stringify(failures).slice(0, 300) };
 }
 
 /**
@@ -83,7 +89,23 @@ export function validateReportIntegrity(demoDir, spec, report) {
   }
   for (const key of ['gateA', 'gateB', 'gateC', 'gateD', 'gateF', 'gateX']) {
     const s = summarizeGate(report[key]);
-    if (!s.ok) problems.push(`${key} 未通过或统计不一致:${s.reason}`);
+    if (!s.ok) problems.push(`${key} 未通过或覆盖有限(status=${s.status ?? 'unknown'}):${s.reason}`);
+  }
+  const workflow = report.workflow ?? spec?.workflow?.id ?? 'product-qa';
+  if (!workflowDeclaration(workflow)) problems.push(`report.workflow 非法或未声明:${workflow}`);
+  if (!report.outcome || typeof report.outcome !== 'object') {
+    problems.push('report 缺 outcome:必须显式区分 passed/limited/not-claimed/blocked/skipped');
+  } else {
+    if (report.outcome.workflow !== workflow) problems.push(`report.outcome.workflow 与 report.workflow 不一致:${report.outcome.workflow} vs ${workflow}`);
+    for (const key of ['passed', 'limited', 'notClaimed', 'blocked', 'skipped']) {
+      if (!Array.isArray(report.outcome[key])) problems.push(`report.outcome.${key} 必须是数组`);
+    }
+    if (workflow === 'product-qa') {
+      if (report.outcome.productPrComplete !== true) problems.push('report.outcome.productPrComplete 不是 true');
+      if (report.outcome.status !== 'passed') problems.push(`product-qa outcome.status 必须是 passed,当前:${report.outcome.status}`);
+    } else {
+      problems.push(`${workflow} 不是 product-qa:只能作为 showcase/观察报告,不得作为产品 PR 完成证明`);
+    }
   }
   if (!Array.isArray(report.coverage?.cases) || report.coverage.cases.length === 0) problems.push('report 缺实际执行 coverage.cases');
   if (report.ok !== true) problems.push('report.ok 不是 true');

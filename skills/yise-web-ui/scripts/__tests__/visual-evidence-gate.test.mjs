@@ -74,13 +74,27 @@ function writeDemo({ name, baselines = null } = {}) {
 /* 手写一份能过 validateReportIntegrity 的 report.json —— 本测试测的是视觉证据硬门,
    不是防伪层(防伪层已有 comp-fix-r5/r6/r7 覆盖)。 */
 function writeForgedReport(dir, spec) {
-  const gate = { pass: true, failures: [], passed: 1, total: 1 };
+  const gate = { status: 'passed', pass: true, failures: [], passed: 1, total: 1 };
   writeFileSync(join(dir, 'report.json'), JSON.stringify({
     ok: true,
+    workflow: 'product-qa',
     toolVersion: TOOL_VERSION,
     inputHashes: buildInputHashes(dir, spec),
     coverage: { cases: [{ id: 'desk-cn-light', prefs: { plat: 'desk', region: 'cn', os: 'ios', mode: 'light', lang: 'zh-CN' } }] },
     gateA: gate, gateB: gate, gateC: gate, gateD: gate, gateF: gate, gateX: gate,
+    outcome: {
+      workflow: 'product-qa',
+      scope: 'full',
+      status: 'passed',
+      passed: ['gateA', 'gateB', 'gateC', 'gateD', 'gateF', 'gateX'],
+      limited: [],
+      notClaimed: [],
+      blocked: [],
+      skipped: [],
+      workflowAcceptable: true,
+      productPrComplete: true,
+    },
+    evidenceLevel: 'candidate',
     generatedAt: new Date().toISOString(),
   }, null, 2) + '\n');
 }

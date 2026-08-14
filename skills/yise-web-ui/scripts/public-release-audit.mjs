@@ -2,6 +2,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isPlaceholderAbsolutePath } from './lib/public-release-audit-rules.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const MANIFEST_FILE = join(ROOT, 'public-release.json');
@@ -65,16 +66,31 @@ const publishFilesRaw = [...new Set(publishable.flatMap((entry) => entry.endsWit
 const excludedFromPublish = publishFilesRaw.filter((f) => privateFiles.has(f));
 const publishFiles = publishFilesRaw.filter((f) => !privateFiles.has(f));
 if (excludedFromPublish.length) notes.push(`已按 private 列表从发布面机械排除 ${excludedFromPublish.length} 个文件(位于可发布目录内的私有条目)。`);
+try {
+  const pkg = JSON.parse(read('package.json'));
+  for (const [name, script] of Object.entries(pkg.scripts || {})) {
+    const match = String(script).match(/\bnode\s+([^\s]+\.mjs)\b/);
+    if (!match) continue;
+    const target = match[1].replaceAll('\\', '/');
+    if (privateFiles.has(target)) fail(`package script ${name} 指向 private 排除文件 ${target}`);
+    if (target.startsWith('scripts/') && !publishFiles.includes(target)) fail(`package script ${name} 指向未发布文件 ${target}`);
+  }
+} catch (error) {
+  fail(`package scripts 发布面检查失败: ${error.message}`);
+}
 const sensitive = [
   { re: /^\s*FIGMA_(?:TOKEN|FILE_KEY)\s*=\s*(?!<|YOUR_|\$\{|\.{3})[^\s#<>{}"']+/im, label: 'Figma credential assignment' },
   { re: /(?:Bearer\s+|figma_pat_|xox[baprs]-)[A-Za-z0-9._-]{12,}/i, label: 'credential-like token' },
-  { re: /['"`]([A-Za-z]:[\\/][^'"`\r\n]+)/, label: 'absolute machine path' },
+  { re: /['"`]([A-Za-z]:[\\/][^'"`\r\n]+)/, label: 'absolute machine path', allow: isPlaceholderAbsolutePath },
   { re: /https?:\/\/[^\s]*(?:feishu\.cn|larksuite\.com)/i, label: 'private design/source URL' }
 ];
 for (const file of publishFiles) {
   if (file === 'scripts/public-release-audit.mjs') continue;
   const text = read(file);
-  for (const rule of sensitive) if (rule.re.test(text)) fail(`${file}: 检测到 ${rule.label}`);
+  for (const rule of sensitive) {
+    const match = rule.re.exec(text);
+    if (match && !rule.allow?.(match[1] ?? match[0])) fail(`${file}: 检测到 ${rule.label}`);
+  }
 }
 
 const identityFiles = ['SKILL.md', 'README.md', 'package.json', 'scripts/evolution-note.mjs', 'scripts/lib/fs-utils.mjs', 'scripts/lib/pr-render.mjs', 'templates/qa-chrome.js', 'templates/demo-chrome.md'];

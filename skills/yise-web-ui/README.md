@@ -2,21 +2,21 @@
 
 ## First visible Figma page
 
-Do not call a new season built until Chrome shows at least one real Figma-derived source node. The preview-first path is smaller than full-page acceptance: it proves URL/token readiness, creates a renderer-connected Figma shell, embeds source-only device presets, and checks a browser-visible first page. Missing translation is a warning for single-language preview and a hard failure only for multi-locale acceptance.
+Do not call a new season built until Chrome shows a meaningful Figma-derived product view. The `figma-showcase` preview-first path is smaller than full-page acceptance: it proves URL/token readiness, creates a renderer-connected Figma shell, embeds source-only device presets, and checks candidate-level browser coverage in `index.html?product=1`. It is legal to finish as a candidate showcase without product repo, true sandbox, PR, mobile, responsive, or pixel-grid claims; those capabilities must stay `not-claimed` unless source evidence declares them. Missing translation is a warning for single-language preview and a hard failure only for multi-locale acceptance.
 
 Commands (each step must succeed; `truth.mjs` refuses to emit an empty `{}` shell):
 
 1. `npm run figma:onboard -- --url <figma-design-or-frame-url> --token-env FIGMA_TOKEN --check` — validates URL/token before anything else.
-2. `node scripts/init.mjs --dir <demo-dir> --name <slug>` — scaffolds spec/extract/index.
+2. `node scripts/init.mjs --dir <demo-dir> --name <slug> --workflow figma-showcase` — scaffolds the explicit Figma-only candidate workflow; it does not default mobile or product-qa assumptions.
 3. Add a `figma` section to `spec.json`: `fileKey`, `fetchNodes` (the page frame + its siblings), and `sections`. `figma-fetch` fails with the exact missing field otherwise.
 4. `node scripts/figma-fetch.mjs --demo <demo-dir>` — the ONLY network step: pulls the design into `fixtures/` snapshots.
 5. `node scripts/figma-lib-sync.mjs --demo <demo-dir>` — copies the generic extraction libs into the demo.
 6. Write `extract.mjs` to read the fixtures and emit truth — the init scaffold ships a `{}` TODO on purpose; use `lib/figma-geo.mjs`'s `extractGeometry` for the geometry layer.
 7. `node scripts/truth.mjs --demo <demo-dir> --embed` — normalized `truth.json` + embedded into `index.html`.
 8. `node scripts/figma-inline.mjs --demo <demo-dir> --check` — syncs the renderer + chrome into the page.
-9. `npm run figma:preview:first -- --demo <demo-dir>` — opens the page in headless Chrome and fails unless at least one real Figma-derived node is visible (no placeholder/QA-only shell).
+9. `npm run figma:preview:first -- --demo <demo-dir>` — opens `index.html?product=1` in headless Chrome and fails unless meaningful Figma-derived content covers enough of the product frame (not a placeholder, QA-only shell, or one flat source image over a blank page). The JSON output includes `evidenceLevel:"candidate"`, screenshot path, product-view URL/command, source-platform evidence, and unclaimed capabilities.
 
-Steps 4-8 can also run as one command: `node scripts/figma-build.mjs --demo <demo-dir> --fetch` (build only, never acceptance; run step 9 after it). Open `index.html?product=1` for the clean product view without the QA chrome.
+Steps 4-8 can also run as one command: `node scripts/figma-build.mjs --demo <demo-dir> --fetch` (build only, never acceptance; run step 9 after it). As soon as step 9 passes, immediately open the reported `index.html?product=1` product-view URL for human review; do not wait for product repo/sandbox/PR setup unless you are switching to the separate `product-qa` workflow.
 
 Full asset export, full-page Chrome gates, pixel comparison, multilingual acceptance, and project/private demo checks remain explicit later phases.
 Reusable Figma-to-Web UI verification Skill. The Etheria/伊瑟 page under `demos/yise-ss5-preview` is a verification example only; this repository is not an AppStore app.
@@ -65,8 +65,8 @@ UI 功能 PR 的验证有两个老大难：
 ## 快速开始
 
 ```bash
-# 官方图片交付率审计（只读;--demo/--docs 换成你自己的 demo 与文档,skill 不再绑定任何私有 demo 路径）
-npm run asset:audit -- --demo <demo-dir> --docs <docs-file>
+# 图片交付率审计（只读;默认不爬官网,CI/日常使用保持有界）
+npm run asset:audit -- --demo <demo-dir> --docs <docs-file> --no-official-crawl
 
 # 1. 脚手架(生成 spec/extract/index 四件套骨架,内联标准 chrome 运行时)
 node scripts/init.mjs --dir <demo-dir> --name my-feature --pr 123

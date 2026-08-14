@@ -44,14 +44,60 @@ function minimalTruth() {
             id: '1:2',
             name: 'source visible rect',
             type: 'RECTANGLE',
-            box: { x: 100, y: 120, w: 320, h: 180 },
+            box: { x: 100, y: 120, w: 900, h: 260 },
             style: { fills: [{ type: 'SOLID', color: '#ff3366', opacity: 1 }] },
+            provenance: { source: 'test-fixture', locator: 'sections.1:1.nodes.0' }
+          },
+          {
+            id: '1:3',
+            name: 'source visible title',
+            type: 'TEXT',
+            box: { x: 120, y: 420, w: 880, h: 120 },
+            text: { characters: 'REAL FIGMA SHOWCASE', fontSize: 72, fills: [{ type: 'SOLID', color: '#ffffff', opacity: 1 }] },
+            style: { fills: [{ type: 'SOLID', color: '#ffffff', opacity: 1 }] },
+            provenance: { source: 'test-fixture', locator: 'sections.1:1.nodes.1' }
+          },
+          {
+            id: '1:4',
+            name: 'source visible cta',
+            type: 'RECTANGLE',
+            box: { x: 120, y: 580, w: 520, h: 140 },
+            style: { fills: [{ type: 'SOLID', color: '#3366ff', opacity: 1 }] },
+            provenance: { source: 'test-fixture', locator: 'sections.1:1.nodes.2' }
+          }
+        ]
+      }
+    }
+  };
+}
+
+function blankFlatTruth() {
+  return {
+    meta: { source: 'test-fixture' },
+    sections: {
+      '1:1': {
+        meta: { x: 0, y: 0, width: 3840, height: 2160 },
+        nodes: [
+          {
+            id: '1:blank',
+            name: 'one flat blank source image',
+            type: 'RECTANGLE',
+            box: { x: 0, y: 0, w: 3840, h: 2160 },
+            style: { fills: [{ type: 'SOLID', color: '#101010', opacity: 1 }] },
             provenance: { source: 'test-fixture', locator: 'sections.1:1.nodes.0' }
           }
         ]
       }
     }
   };
+}
+
+function embedTruth(dir, truth) {
+  writeFileSync(join(dir, 'truth.json'), JSON.stringify(truth, null, 2));
+  let html = readFileSync(join(dir, 'index.html'), 'utf8');
+  html = html.replace(/(<script id="qa-truth" type="application\/json">)([\s\S]*?)(<\/script>)/,
+    '$1' + JSON.stringify(truth).replaceAll('</script', '<\\/script') + '$3');
+  writeFileSync(join(dir, 'index.html'), html);
 }
 
 test('figma:onboard accepts URL/token with optional missing translation as warning', () => {
@@ -107,6 +153,23 @@ test('fresh figma init creates renderer-connected shell and embedded devices', (
   assert.doesNotMatch(html, /state=\$\{ctx\.state\}/);
 });
 
+test('figma-showcase workflow is explicit, Figma-only, and does not claim mobile by default', () => {
+  const dir = tempDemo('showcase-demo');
+  const res = run(INIT, ['--dir', dir, '--name', 'figma-showcase-demo', '--workflow', 'figma-showcase']);
+  assert.equal(res.status, 0, res.stderr || res.stdout);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.workflow, 'figma-showcase');
+  assert.ok(out.next.some((line) => /preview-first/.test(line) && /product-view/.test(line)));
+  const spec = JSON.parse(readFileSync(join(dir, 'spec.json'), 'utf8'));
+  assert.equal(spec.workflow.id, 'figma-showcase');
+  assert.equal(spec.workflow.requires.productRepo, false);
+  assert.equal(spec.workflow.requires.trueSandbox, false);
+  assert.equal(spec.workflow.requires.pullRequest, false);
+  assert.deepEqual(spec.matrix.platforms, ['desktop']);
+  assert.deepEqual(spec.verify.cases.map((c) => c.prefs.plat), ['desktop', 'desktop']);
+  assert.ok(spec.workflow.claimedCapabilities.mobileSourcePlatform === 'not-claimed');
+});
+
 test('figma:preview:first proves a visible Figma-derived source node when browser deps are installed', { timeout: 180000 }, (t) => {
   if (!HAS_BROWSER_DEPS) {
     t.skip('playwright/playwright-core is not installed in this public checkout; figma:preview:first remains the real browser command when dependencies are present');
@@ -115,16 +178,37 @@ test('figma:preview:first proves a visible Figma-derived source node when browse
   const dir = tempDemo();
   const init = run(INIT, ['--dir', dir, '--name', 'first-visible-preview']);
   assert.equal(init.status, 0, init.stderr || init.stdout);
-  writeFileSync(join(dir, 'truth.json'), JSON.stringify(minimalTruth(), null, 2));
-  let html = readFileSync(join(dir, 'index.html'), 'utf8');
-  html = html.replace(/(<script id="qa-truth" type="application\/json">)([\s\S]*?)(<\/script>)/,
-    '$1' + JSON.stringify(minimalTruth()).replaceAll('</script', '<\\/script') + '$3');
-  writeFileSync(join(dir, 'index.html'), html);
+  embedTruth(dir, minimalTruth());
   const res = run(PREVIEW, ['--demo', dir], { timeout: 180000 });
   assert.equal(res.status, 0, res.stderr || res.stdout);
   const out = JSON.parse(res.stdout);
   assert.equal(out.ok, true);
   assert.ok(out.result.visibleSourceNodes > 0);
+  assert.ok(out.result.meaningfulSourceNodes >= 2);
+  assert.ok(out.result.meaningfulCoverage >= 0.02);
   assert.equal(out.result.placeholder, false);
+  assert.equal(out.evidenceLevel, 'candidate');
+  assert.match(out.productView.url, /product=1/);
+  assert.equal(out.result.hasQa, false, 'preview-first must inspect product view, not QA shell');
+  assert.ok(out.unclaimedCapabilities.includes('mobileSourcePlatform'));
+  assert.ok(existsSync(out.screenshot));
+});
+
+test('figma:preview:first rejects one flat source region over a blank page', { timeout: 180000 }, (t) => {
+  if (!HAS_BROWSER_DEPS) {
+    t.skip('playwright/playwright-core is not installed in this public checkout; blank-page browser regression runs when dependencies are present');
+    return;
+  }
+  const dir = tempDemo('blank-page-demo');
+  const init = run(INIT, ['--dir', dir, '--name', 'blank-page-demo', '--workflow', 'figma-showcase']);
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+  embedTruth(dir, blankFlatTruth());
+  const res = run(PREVIEW, ['--demo', dir], { timeout: 180000 });
+  assert.equal(res.status, 2, res.stderr || res.stdout);
+  const out = JSON.parse(res.stdout);
+  assert.equal(out.ok, false);
+  assert.equal(out.evidenceLevel, 'none');
+  assert.ok(out.contractFailures.some((msg) => /meaningful source nodes|single flat source region/.test(msg)), out.contractFailures.join('\n'));
+  assert.match(out.productView.url, /product=1/);
   assert.ok(existsSync(out.screenshot));
 });

@@ -51,6 +51,21 @@ test('morning report routes only fully-gated tighten items to closure section', 
   assert.match(md, /## 3[\s\S]*no-attribution/);
 });
 
+test('morning report states first-build escape reason and cross-platform component preflight for source-width family', () => {
+  const report = mkReport({
+    rootCauses: [
+      { family: 'source-width-hug-owner-text-growth-crop-consumption', stage: 'renderer', count: 1, nextStep: '执行跨平台组件 preflight：每个原生 Figma 平台树 + fallback/state 对比 source vs Chrome geometry' },
+    ],
+  });
+  const md = renderMorningReport(report, { policy: { ok: true, version: 'v3.1' } });
+  assert.match(md, /source-width-hug-owner-text-growth-crop-consumption/);
+  assert.match(md, /为什么首构建没拦住/);
+  assert.match(md, /首构建只抽了可见首屏\/单平台截图/);
+  assert.match(md, /预检处方/);
+  assert.match(md, /跨平台组件 preflight/);
+  assert.match(md, /source vs Chrome geometry|Chrome 几何|Chrome rect/);
+});
+
 test('policy manifest drift fails closed when rules doc hash mismatches', () => {
   const dir = mkdtempSync(join(tmpdir(), 'policy-'));
   try {

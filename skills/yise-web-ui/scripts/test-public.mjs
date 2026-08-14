@@ -3,9 +3,12 @@ import { spawnSync } from 'node:child_process';
 
 const tests = [
   'scripts/__tests__/first-visible-workflow.test.mjs',
+  'scripts/__tests__/preview-first-contract.test.mjs',
   'scripts/__tests__/layout-planes.test.mjs',
   'scripts/__tests__/resize-skill-contract.test.mjs',
   'scripts/__tests__/comp-preview-device.test.mjs',
+  'scripts/__tests__/component-preflight.test.mjs',
+  'scripts/__tests__/asset-delivery-audit.test.mjs',
   'scripts/__tests__/figma-assets-naming-v28.test.mjs',
   'scripts/__tests__/figma-geo-owner.test.mjs',
   'scripts/__tests__/figma-render-asset-lock.test.mjs',
@@ -15,7 +18,10 @@ const tests = [
   'scripts/__tests__/resolve-playwright.test.mjs',
   'scripts/__tests__/visual-evidence-gate.test.mjs',
   'scripts/__tests__/replay-pref-resolution.test.mjs',
-  'scripts/__tests__/pixel-reportonly-exit.test.mjs'
+  'scripts/__tests__/pixel-reportonly-exit.test.mjs',
+  'scripts/__tests__/ledger-policy.test.mjs',
+  'scripts/__tests__/daily-ledger.test.mjs',
+  'scripts/__tests__/morning-report.test.mjs'
 ];
 
 const res = spawnSync(process.execPath, ['--test', ...tests], {

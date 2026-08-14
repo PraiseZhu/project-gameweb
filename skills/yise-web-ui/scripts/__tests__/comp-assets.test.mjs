@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -135,4 +135,29 @@ test('inputHashes:无 assets 目录时整段省略,旧 demo 结构与校验不�
   mkdirSync(join(dir, 'assets'));
   writeFileSync(join(dir, 'assets/hero.png'), Buffer.alloc(8, 1));
   assert.equal(sameInputHashes(hashes, buildInputHashes(dir, spec)), false);
+});
+
+test('assets-manifest --check recomputes and compares report without rewriting it', () => {
+  const { dir } = tmpDemo({ assets: { 'hero.png': 1024 } });
+  const write = run(['--demo', dir]);
+  assert.equal(write.status, 0, write.stderr);
+  const reportPath = join(dir, 'report-assets.json');
+  const before = readFileSync(reportPath, 'utf8');
+
+  const check = run(['--demo', dir, '--check']);
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.equal(readFileSync(reportPath, 'utf8'), before, '--check must not rewrite report-assets.json');
+  assert.equal(JSON.parse(check.stdout).check.ok, true);
+
+  writeFileSync(join(dir, 'assets/hero.png'), Buffer.alloc(1024, 8));
+  const stale = run(['--demo', dir, '--check']);
+  assert.equal(stale.status, 2);
+  assert.match(stale.stdout, /out of date/);
+});
+
+test('assets-manifest --check fails closed when report is missing', () => {
+  const { dir } = tmpDemo({ assets: { 'hero.png': 8 } });
+  const r = run(['--demo', dir, '--check']);
+  assert.equal(r.status, 2);
+  assert.match(r.stdout, /report-assets\.json missing/);
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getChromeCandidates } from '../lib/resolve-playwright.mjs';
+import { getChromeCandidates, playwrightDependencyHint } from '../lib/resolve-playwright.mjs';
 
 test('Chrome resolver prefers explicit CHROME_PATH and discovers common Windows installs', () => {
   const drive = 'C:';
@@ -24,4 +24,12 @@ test('Chrome resolver keeps explicit path first without page-specific identifier
   const candidates = getChromeCandidates({ CHROME_PATH: `${drive}\\Chrome\\chrome.exe` });
   assert.equal(candidates[0], `${drive}\\Chrome\\chrome.exe`);
   assert.equal(candidates.some((candidate) => candidate.includes('yise') || candidate.includes('Etheria')), false);
+});
+
+test('Playwright dependency hint names Windows and non-Git/Figma-only setup', () => {
+  const hint = playwrightDependencyHint('playwright');
+  assert.match(hint, /Figma-only and non-Git demos are supported/);
+  assert.match(hint, /QA_HIFI_MODULE_ROOT/);
+  assert.match(hint, /Windows PowerShell/);
+  assert.match(hint, /CHROME_PATH/);
 });

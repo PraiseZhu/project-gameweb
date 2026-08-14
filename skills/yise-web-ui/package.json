@@ -8,6 +8,7 @@
     "test:demo": "node scripts/test-demo.mjs",
     "figma:onboard": "node scripts/onboard.mjs",
     "figma:preview:first": "node scripts/preview-first.mjs",
+    "component:preflight": "node scripts/component-preflight.mjs",
     "release:audit": "node scripts/public-release-audit.mjs",
     "prototype:truth": "node scripts/figma-prototype-truth.mjs",
     "prototype:audit": "node scripts/figma-prototype-truth.mjs --require-observed",

@@ -71,6 +71,12 @@ export function classifyIssue({ source = '', key = '', message = '' }) {
       nextStep: '对照 Figma 文本样式与 Chrome 实际加载字体、字重和 Range 字宽；修字体路由或 @font-face，不接受只改 CSS 声明。',
     };
   }
+  if (/source.?width|sourcewidth|hug.?owner|hug owner|text.?growth|文字增长|文案增长|crop.?consumption|crop consumption|source.?crop|owner.?width|owner.?box|owner盒|hug.*裁切|裁切.*hug|phone.?card|手机卡|card.*crop|text.*crop/.test(text)) {
+    return {
+      stage: 'renderer', rootCauseFamily: 'source-width-hug-owner-text-growth-crop-consumption',
+      nextStep: '执行跨平台组件 preflight：每个原生 Figma 平台树（PC/mobile/pad）以及声明的 fallback/state 都抽样，逐组件对比 source owner 宽度、HUG owner、文本增长后的 Chrome rect 与 crop/overflow 消费；修 Main 静态 truth/renderer，不让 Resize 用缩放掩盖。',
+    };
+  }
   if (/render.?bound|asset|切图|blur|filter|box-shadow|子级|descendant|naturalwidth|png/.test(text)) {
     return {
       stage: 'asset', rootCauseFamily: 'asset-export-or-baked-layer-routing',
@@ -254,6 +260,7 @@ function reflectionFor(family) {
     'font-routing-or-loaded-face-mismatch': '此前只看 CSS 声明或抽样文本，未把实际已加载字体、字重和字宽绑定到每个关键组件。',
     'asset-export-or-baked-layer-routing': '资产门曾只验证“已加载”，没有同时验证 renderBox、烘焙效果和子层是否重复绘制。',
     'component-owner-geometry-or-layout-consumption': '以前的节点抽样不足以代表完整组件，父级 owner 坐标、带状关系和 Auto Layout 消费仍可能错误。',
+    'source-width-hug-owner-text-growth-crop-consumption': '首构建只抽了可见首屏/单平台截图，没有把每个原生 Figma 平台树、声明 fallback 和状态里的 source owner 宽度、HUG owner、文本增长后 Chrome 几何与裁切消费绑定成组件级 preflight；因此移动样本暴露的问题被误看成单独设备问题。',
     'visual-baseline-coverage-or-decision-gap': '像素基线覆盖不足或仍是 reportOnly，视觉结论没有进入阻断链。',
     'acceptance-coverage-or-observation-gap': '现有 gate 观察范围或来源不足，应该补真实 Chrome 的组件级证据，而非扩大容差。',
     'viewport-or-platform-truth-routing': '预览容器行为与真实设备稿/适配规则没有一起验证，容易把裁切或缩放误判为已适配。',
@@ -333,6 +340,8 @@ export function toMorningCandidate(root, ledgerStates) {
     criterion: root.criterion || '',
     reverify: root.reverify || '',
     single: false,
+    nextStep: root.nextStep || '',
+    whySkillMissedIt: root.whySkillMissedIt || reflectionFor(root.family),
   };
   const admission = evaluateAdmission(candidate);
   return { ...candidate, admission, execState: ls.execState || null, ledgerStatus: ls.status || null, noteLegacy: ls.noteLegacy || false };
@@ -366,7 +375,11 @@ export function renderMorningReport(report, { rootDir, policy, ledgerStates = {}
   L.push('');
   L.push('## 3. 观察 / 待补证据（未过门）');
   if (!observation.length) L.push('- 无');
-  for (const c of observation) L.push('- \'' + c.family + '\'（' + c.stage + '）未过：' + c.admission.failedGates.join('、') + '；下次判定：补跨实例证据/确认归因后重评');
+  for (const c of observation) {
+    L.push('- \'' + c.family + '\'（' + c.stage + '）未过：' + c.admission.failedGates.join('、') + '；下次判定：补跨实例证据/确认归因后重评');
+    L.push('  - 为什么首构建没拦住：' + c.whySkillMissedIt);
+    L.push('  - 预检处方：' + (c.nextStep || c.changeTarget || '补齐 source vs Chrome 几何证据后再归因'));
+  }
   L.push('');
   L.push('## 4. owner 决策（扩权项 · 永不自动落地）');
   if (!ownerDecision.length) L.push('- 无');
