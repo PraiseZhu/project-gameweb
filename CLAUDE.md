@@ -26,18 +26,19 @@ Project Gameweb/
 ├── skills/             # 按项目切：一个游戏宣发页一个 skill
 │   └── yise-web-ui/    # 伊瑟宣发页 UI skill
 └── standards/          # 横切复用：被多个 skill 共同引用的规范与工具链
-    └── figma-naming/   # 图层命名规范 + 体检工具 + Figma 插件
+    └── figma-naming/   # 图层命名规范 + 体检工具 + inventory/v2 抽取与人工核对
 ```
 
 **`skills/` — 按项目切。** 一个游戏宣发页对应一个 skill，每个 skill **自包含**：自己的 `SKILL.md`（含 frontmatter）、`package.json`、`scripts/` 与 `__tests__/`、`docs/`、以及自己的发布边界清单。skill 之间不互相 import，各自可以独立发布。
 
-**`standards/` — 横切复用。** 放不属于任何单个游戏、而是被多个 skill 共同引用的规范与工具链。首个成员是 `standards/figma-naming/`：命名规范正文（`spec/`）、体检工具（CLI）、以及 Figma 插件。
+**`standards/` — 横切复用。** 放不属于任何单个游戏、而是被多个 skill 共同引用的规范与工具链。首个成员是 `standards/figma-naming/`：命名规范正文（`spec/`）、体检工具（CLI）、以及做页前的 `inventory/v2` 抽取与人工核对链路。
 
 **落位规则**：新增一个游戏宣发页 skill → 放 `skills/<name>/`；新增一份跨项目共用的规范或工具链 → 放 `standards/<name>/`。判断不清时，看它是否只服务于单个游戏：是则进 `skills/`，否则进 `standards/`。
 
 ## 协作约定
 
-- **Figma 图层命名**：用户说「Figma 命名 / 设计稿命名 / 给这稿命名」→ 执行 `standards/figma-naming/SKILL.md`。先 `npm run ready`，等人在稿里打开插件并丢来带 node-id 的链接，再 `npm run name -- --file "<链接>"`。
+- **Figma 命名稿交接**：用户提供已规范命名、带 `node-id` 的 Figma 链接（链接始终指向整棵画布货架）后，执行 `standards/figma-naming/SKILL.md`：在 `standards/figma-naming/tool/` 跑 `npm run inventory -- --file "<链接>" --page <pc 或 mobile 页 id>`，抓取并整理为 `schema=inventory/v2,status=ready` 的 `_tmp/inventory-<page>.json` 与 `.txt`。`inventory:review` 可选，用于人工复核身份和关系，不改变整份清单的 ready 状态；做页先消费 ready 清单中的已确定项。unknown 只保留在对应节点/关系上，不赋交互，unknown 的 `modal-trigger` 不接线。本轮不写回 Figma、不用插件做交接、不改做页、不发 issue；未命名稿自动命名留到后续。
+- **做页消费边界**：先按已确定节点、页面分区、背景/固定层、已解析实例→变体、完整组件变体树和 modal 附件本体搭页；`unknown` 节点只画样子、不赋交互，`unknown` 的 `modal-trigger` 不自动接线。
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
 - **代码评审**：通过 `/review` 触发
 - **测试覆盖**：参见 VERSIONING.md

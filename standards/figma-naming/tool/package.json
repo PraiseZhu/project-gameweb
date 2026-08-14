@@ -9,13 +9,16 @@
   },
   "scripts": {
     "lint": "node bin/cli.mjs",
+    "inventory": "node bin/inventory.mjs",
     "test": "node --test test/*.test.mjs && node scripts/check-skill-sync.mjs",
     "test:private": "node scripts/run-private-tests.mjs",
     "rules": "node scripts/gen-rules-doc.mjs",
     "proposals": "node scripts/derive-proposals.mjs",
     "check:skills": "node scripts/check-skill-sync.mjs",
     "build:plugin": "node scripts/build-plugin.mjs",
-    "release:audit": "node ../scripts/public-release-audit.mjs"
+    "release:audit": "node ../scripts/public-release-audit.mjs",
+    "inventory:export": "node scripts/export-inventory-page.mjs",
+    "inventory:review": "node scripts/serve-inventory-review.mjs"
   },
   "engines": {
     "node": ">=20"

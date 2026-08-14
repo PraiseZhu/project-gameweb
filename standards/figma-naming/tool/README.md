@@ -89,6 +89,53 @@ figma-naming-lint · pc 3840×17241 · 规范 v2.1 (2026-08-04) · 假定 A-v1.1
 - 已有任何识别前缀的节点不报「该切没命名」——设计师已经声明过这层是什么
 - 整页预览导出节点内部的文字（按面积阈值判定为噪音，不构成切图）
 
+## 做页前交接：inventory/v2
+
+当前面向人的主入口是“已规范命名稿 → 抓取整理 → 自验 → `inventory/v2` ready”。本链路不
+开插件、不写回 Figma；人工核对页是可选复核，未命名稿如何自动命名留到后续。
+
+1. 人提供已规范命名、带 `node-id` 的 Figma 链接。链接的 `node-id` 始终指向整棵
+   画布货架，覆盖页面本体、同货架 modal 和组件定义；不要只给某个页面链接。
+2. 在 `standards/figma-naming/tool/` 运行：
+
+   ```bash
+   npm run inventory -- \
+     --file "<整棵画布货架的 Figma 链接>" \
+     --page <pc 或 mobile 页 id>
+   ```
+
+   例如：
+
+   ```bash
+   npm run inventory -- \
+     --file "https://www.figma.com/design/<fileKey>/...?node-id=392-18375" \
+     --page 392:24190
+   ```
+
+   拉稿根使用链接里的 `node-id`；`--page` 只在已拉取的树里选择页面，不改变拉稿范围。
+3. 命令自验通过后产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 的
+   `schema` 为 `inventory/v2`、`status` 为 `ready`。清单覆盖页面本体、同货架 modal、
+   页面实际引用的组件集/完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持
+   为对应关系上的 `unknown`，不改变整份清单的 ready 状态。
+4. 运行可视化核对页：
+
+   ```bash
+   npm run inventory:review
+   ```
+
+   人可选核对身份和弹窗入口，`unknown` 必须显式保留；保存 reviewed 清单不改变
+   `status: "ready"`。移动端核对使用 `?inv=inventory-392-25877.json`。
+
+做页先消费清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、完整
+组件变体树和 modal 附件本体。`unknown` 节点只画样子，不赋交互；`unknown` 的
+`modal-trigger` 不自动接线。
+
+做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
+完整组件变体树和 modal 附件本体。`unknown` 节点只画样子，不赋交互；`unknown` 的
+`modal-trigger` 不自动接线。
+
+本轮不改做页、不发 issue、不写回 Figma，也不修改插件写回逻辑。
+
 ## 开发
 
 ```bash
@@ -132,7 +179,9 @@ npm run build:plugin -- --labels path/to/user-labels.json
 
 | 阶段 | 状态 |
 |---|---|
-| 命令行体检 | 已可用 |
-| Figma 插件（选中 frame → 红框 + 说明卡 + 点击定位） | 未开始，是主要交付形态 |
+| `inventory/v2` 抽取命令 | 已可用，自验通过输出 `ready` |
+| inventory 人工核对页 | 可选复核，不改变 `ready` |
+| 命令行体检 | 已可用（既有命名工具） |
+| Figma 插件 / 本机桥 | 既有命名实现，非本轮交接入口 |
 | 重跑基线对比（修好几条 / 有没有改出新问题） | 未开始 |
 | 豁免账本（把「这条不算问题」沉淀成可复现的特征规则） | 未开始 |

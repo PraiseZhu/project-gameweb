@@ -8,6 +8,7 @@
 |---|---|
 | 设计师 —— 我该怎么给图层起名 | [`spec/naming-spec.md`](spec/naming-spec.md) |
 | 想体检自己的稿 | [`tool/README.md`](tool/README.md) 的「快速开始」 |
+| 要把已规范命名稿交给做页前链路 | [`tool/README.md`](tool/README.md) 的「做页前交接：inventory/v2」 |
 | 要改判定逻辑 | [`tool/CLAUDE.md`](tool/CLAUDE.md) |
 
 ## 为什么分成两半
@@ -18,9 +19,9 @@ figma-naming/
 │   ├── naming-spec.md            前缀总表、@参数、判定边界（当前 v2.8）
 │   ├── consumer-assumptions.md   规则「不改会怎样」所依赖的下游假定（A-v1.6）
 │   └── spec.mjs                  机器可读镜像（插件 / 体检 / skill 都读这里）
-└── tool/     工具层 —— 按规范查稿、自动命名
+└── tool/     工具层 —— 按规范查稿、抽取 inventory/v2、人工核对
     ├── src/ bin/    判定代码与命令行
-    ├── plugin/      Figma 插件（主要交付形态）
+    ├── plugin/      Figma 插件（既有命名实现，非本轮交接入口）
     ├── test/        测试
     └── scripts/     构建、闸门、台账
 ```
