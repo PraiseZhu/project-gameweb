@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const SCRIPT = fileURLToPath(new URL('./nightly-health.mjs', import.meta.url));
+const WORKFLOW = fileURLToPath(new URL('../workflows/nightly-health.yml', import.meta.url));
 
 function makeRoot() {
   const root = mkdtempSync(join(tmpdir(), 'nightly-health-'));
@@ -33,12 +34,25 @@ function writePublicTest(dir) {
   writeFileSync(join(dir, 'test', 'ok.test.mjs'), 'import test from "node:test"; test("ok", () => {});');
 }
 
-test('现有仓布局能列出 yise 与 figma-naming', () => {
-  const res = spawnSync(process.execPath, [SCRIPT, '--list'], { encoding: 'utf8' });
+test('发现逻辑不依赖当前包名或可选附加脚本', () => {
+  const root = makeRoot();
+  writePkg(join(root, 'skills', 'renamable-skill'), { test: 'node --test test/*.test.mjs' });
+  writePublicTest(join(root, 'skills', 'renamable-skill'));
+  writePkg(join(root, 'standards', 'renamable-standard', 'tool'), { test: 'node --test test/*.test.mjs' });
+  writePublicTest(join(root, 'standards', 'renamable-standard', 'tool'));
+  const res = runList(root);
+  rmSync(root, { recursive: true, force: true });
   assert.equal(res.status, 0, res.stderr);
-  assert.match(res.stdout, /skills\/yise-web-ui/);
-  assert.match(res.stdout, /standards\/figma-naming/);
-  assert.match(res.stdout, /fonts:check/);
+  assert.match(res.stdout, /skills\/renamable-skill/);
+  assert.match(res.stdout, /standards\/renamable-standard\/tool/);
+  assert.equal((res.stdout.match(/npm test \+ file proof/g) ?? []).length, 2);
+  assert.doesNotMatch(res.stdout, /release:audit|fonts:check/);
+});
+
+test('守卫或列包失败后工作流仍会尝试真实夜间检查', () => {
+  const workflow = readFileSync(WORKFLOW, 'utf8');
+  assert.match(workflow, /if:\s*\$\{\{\s*always\(\)\s*\}\}\s*\n\s*run:\s*node \.github\/scripts\/nightly-health\.mjs --list/);
+  assert.match(workflow, /if:\s*\$\{\{\s*always\(\)\s*\}\}\s*\n\s*run:\s*node \.github\/scripts\/nightly-health\.mjs\s*(?:\n|$)/);
 });
 
 test('仓库根 package.json 必须红', () => {
@@ -122,6 +136,22 @@ test('skill 同时有根 package 和 tool/package 必须红', () => {
   assert.match(res.stderr, /只允许规范工具使用/);
 });
 
+test('skill 多出非法 tool/package 时根包自测仍要跑', () => {
+  const root = makeRoot();
+  writePkg(join(root, 'skills', 'dual'), { test: 'node --test test/*.test.mjs' });
+  writePublicTest(join(root, 'skills', 'dual'));
+  writePkg(join(root, 'skills', 'dual', 'tool'), { test: 'node --test' });
+  const res = spawnSync(process.execPath, [SCRIPT], {
+    encoding: 'utf8',
+    env: { ...process.env, NIGHTLY_HEALTH_ROOT: root },
+  });
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(res.status, 0);
+  assert.match(`${res.stdout}\n${res.stderr}`, /只允许规范工具使用/);
+  assert.match(res.stdout, /skills\/dual npm test/);
+  assert.match(res.stdout, /skills\/dual trusted tap/);
+});
+
 test('规范工具根 package 与 tool/package 都要列出来', () => {
   const root = makeRoot();
   writePkg(join(root, 'standards', 'naming'), { test: 'node --test' });
@@ -174,6 +204,39 @@ test('docs 下深层 package.json 必须红', () => {
   rmSync(root, { recursive: true, force: true });
   assert.notEqual(res.status, 0);
   assert.match(res.stderr, /docs/);
+});
+
+test('错位内容必须红，但不能阻断已发现包的真实自测', () => {
+  const root = makeRoot();
+  writePkg(join(root, 'docs', 'misplaced'), { test: 'node --test' });
+  writePkg(join(root, 'skills', 'still-runs'), { test: 'node --test test/*.test.mjs' });
+  writePublicTest(join(root, 'skills', 'still-runs'));
+  const res = spawnSync(process.execPath, [SCRIPT], {
+    encoding: 'utf8',
+    env: { ...process.env, NIGHTLY_HEALTH_ROOT: root },
+  });
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(res.status, 0);
+  assert.match(`${res.stdout}\n${res.stderr}`, /docs.*夜间扫不到/);
+  assert.match(res.stdout, /skills\/still-runs npm test/);
+  assert.match(res.stdout, /skills\/still-runs trusted tap/);
+});
+
+test('坏 package.json 必须红，但不能阻断其他包的真实自测', () => {
+  const root = makeRoot();
+  mkdirSync(join(root, 'skills', 'broken-json'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'broken-json', 'package.json'), '{');
+  writePkg(join(root, 'standards', 'still-runs', 'tool'), { test: 'node --test test/*.test.mjs' });
+  writePublicTest(join(root, 'standards', 'still-runs', 'tool'));
+  const res = spawnSync(process.execPath, [SCRIPT], {
+    encoding: 'utf8',
+    env: { ...process.env, NIGHTLY_HEALTH_ROOT: root },
+  });
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(res.status, 0);
+  assert.match(`${res.stdout}\n${res.stderr}`, /读不了 skills\/broken-json\/package\.json/);
+  assert.match(res.stdout, /standards\/still-runs\/tool npm test/);
+  assert.match(res.stdout, /standards\/still-runs\/tool trusted tap/);
 });
 
 test('exit 0 && node --test 和 node --test || true 都不算自测', () => {
@@ -235,6 +298,22 @@ test('零测试文件的 npm test 全流程必须红', () => {
   rmSync(root, { recursive: true, force: true });
   assert.notEqual(res.status, 0);
   assert.match(`${res.stdout}\n${res.stderr}`, /没有可核验|0 个测试|看不到测试计数/);
+});
+
+test('一个包的文件证明失败不能阻断其他包的真实自测', () => {
+  const root = makeRoot();
+  writePkg(join(root, 'skills', 'bad-proof'), { test: 'node --test' });
+  writePkg(join(root, 'skills', 'still-runs'), { test: 'node --test test/*.test.mjs' });
+  writePublicTest(join(root, 'skills', 'still-runs'));
+  const res = spawnSync(process.execPath, [SCRIPT], {
+    encoding: 'utf8',
+    env: { ...process.env, NIGHTLY_HEALTH_ROOT: root },
+  });
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(res.status, 0);
+  assert.match(`${res.stdout}\n${res.stderr}`, /bad-proof: 包内没有可核验/);
+  assert.match(res.stdout, /skills\/still-runs npm test/);
+  assert.match(res.stdout, /skills\/still-runs trusted tap/);
 });
 
 test('docs 下深层 SKILL.md 必须红', () => {
