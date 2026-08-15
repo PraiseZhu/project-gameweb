@@ -72,8 +72,7 @@
     "scripts/__tests__/figma-richtext.test.mjs",
     "scripts/__tests__/font-routing.test.mjs",
     "scripts/__tests__/hero-scroll-slot.test.mjs",
-    "scripts/__tests__/comp-paint-order.test.mjs",
-    "scripts/__tests__/semantic-break-dom.test.mjs"
+    "scripts/__tests__/comp-paint-order.test.mjs"
   ],
   "privateReasons": {
     "demos/": "Etheria/伊瑟 fixtures, captures, generated truth, assets, and page-specific evidence.",
@@ -132,8 +131,7 @@
     "scripts/__tests__/figma-richtext.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。",
     "scripts/__tests__/font-routing.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。",
     "scripts/__tests__/hero-scroll-slot.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。",
-    "scripts/__tests__/comp-paint-order.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。",
-    "scripts/__tests__/semantic-break-dom.test.mjs": "依赖当前页 index.html 与本机 Chrome，归入 test:demo；不进公开夜间。"
+    "scripts/__tests__/comp-paint-order.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。"
   },
   "requiredAudit": [
     "package.name=yise-web-ui",

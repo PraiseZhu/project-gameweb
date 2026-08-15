@@ -95,13 +95,27 @@ test('published asset:audit command accepts the canonical docs flag end to end',
     mkdirSync(join(demoDir, 'assets'), { recursive: true });
     writeFileSync(join(demoDir, 'assets/tiny.png'), tinyPng);
     writeFileSync(join(demoDir, 'index.html'), '<!doctype html><html><body><script id="qa-assets" type="application/json">{"n1":"assets/tiny.png"}</script><img src="assets/tiny.png"></body></html>');
-    const npmCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-    assert.ok(existsSync(npmCli), 'missing npm cli entrypoint: ' + npmCli);
-    const result = spawnSync(process.execPath, [npmCli, 'run', 'asset:audit', '--', '--demo', demoDir, '--out-dir', outDir, '--docs', docsFile, '--no-official-crawl'], {
+    const auditArgs = ['run', 'asset:audit', '--', '--demo', demoDir, '--out-dir', outDir, '--docs', docsFile, '--no-official-crawl'];
+    const inheritedNpmCli = process.env.npm_execpath;
+    const npmCli = inheritedNpmCli && existsSync(inheritedNpmCli)
+      ? inheritedNpmCli
+      : process.platform === 'win32'
+        ? (() => {
+          const found = spawnSync('where.exe', ['npm.cmd'], { encoding: 'utf8' });
+          const npmCmd = String(found.stdout || '').split(/\r?\n/).find(Boolean);
+          const candidate = npmCmd && join(dirname(npmCmd), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+          return candidate && existsSync(candidate) ? candidate : null;
+        })()
+        : null;
+    const npmCommand = npmCli
+      ? { command: process.execPath, args: [npmCli, ...auditArgs] }
+      : { command: 'npm', args: auditArgs };
+    const result = spawnSync(npmCommand.command, npmCommand.args, {
       cwd: ROOT,
       encoding: 'utf8',
       timeout: 120000,
     });
+    assert.equal(result.error, undefined, result.error?.message);
     assert.equal(result.status, 0, result.stderr || result.stdout);
     assert.match(result.stdout, /"ok":\s*true/);
     assert.match(result.stdout, /"docsFile":/);

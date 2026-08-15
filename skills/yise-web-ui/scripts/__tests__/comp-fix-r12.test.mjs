@@ -331,7 +331,7 @@ test('r12 连带(不 skip): 全表——所有以路径/名字为 key 的映射�
     ['scripts/dom-ops.mjs', 'const styleDiff = Object.create(null)'],
   ];
   for (const [rel, needle] of SPOTS) {
-    const src = readFileSync(join(ROOT, rel), 'utf8');
+    const src = readFileSync(join(ROOT, rel), 'utf8').replaceAll('\r\n', '\n');
     assert.ok(src.includes(needle), `${rel} 缺 \`${needle}\` —— 路径/名字为 key 的映射不许退回普通对象`);
   }
   // 全仓不许再出现 `X in <路径映射>` 这种 membership 写法(observe 是唯一曾有的一处)

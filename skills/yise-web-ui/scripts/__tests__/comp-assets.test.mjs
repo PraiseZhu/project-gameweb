@@ -90,6 +90,16 @@ test('inputHashes:有 assets 时进链,改图后旧 report 被拒', () => {
   const report = {
     toolVersion: TOOL_VERSION,
     ok: true,
+    outcome: {
+      workflow: 'product-qa',
+      status: 'passed',
+      productPrComplete: true,
+      passed: ['gateA', 'gateB', 'gateC', 'gateD', 'gateF', 'gateX'],
+      limited: [],
+      notClaimed: [],
+      blocked: [],
+      skipped: [],
+    },
     inputHashes: hashes,
     coverage: { cases: [{ id: 'c1', prefs: {} }] },
     gateA: { pass: true, total: 1, passed: 1, failures: [] },
@@ -120,6 +130,16 @@ test('inputHashes:无 assets 目录时整段省略,旧 demo 结构与校验不�
   const report = {
     toolVersion: TOOL_VERSION,
     ok: true,
+    outcome: {
+      workflow: 'product-qa',
+      status: 'passed',
+      productPrComplete: true,
+      passed: ['gateA', 'gateB', 'gateC', 'gateD', 'gateF', 'gateX'],
+      limited: [],
+      notClaimed: [],
+      blocked: [],
+      skipped: [],
+    },
     inputHashes: hashes,
     coverage: { cases: [{ id: 'c1', prefs: {} }] },
     gateA: { pass: true, total: 1, passed: 1, failures: [] },

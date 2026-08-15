@@ -44,6 +44,9 @@ try {
   hasTs = false;
 }
 const tsOnly = hasTs ? {} : { skip: 'typescript 不可用:本机 skill node_modules 未装 typescript(npm i --no-save typescript)' };
+const readOnlyRename = hasTs && process.platform === 'win32'
+  ? { skip: 'Windows 的只读目标文件不能用 rename 原子替换；该 POSIX 语义由非 Windows 环境验证' }
+  : tsOnly;
 
 // ---- keyPath 通道的 fixture:产品 TS 源文件 + 用 locatorKeyPath 提取的 extract.mjs ----
 function writeKeyPathDemo({ source, runTruth = true } = {}) {
@@ -60,7 +63,7 @@ function writeKeyPathDemo({ source, runTruth = true } = {}) {
     join(dir, 'extract.mjs'),
     `import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-const src = new URL('tokens.ts', import.meta.url).pathname;
+const src = new URL('tokens.ts', import.meta.url);
 const content = readFileSync(src, 'utf8');
 const hash = createHash('sha256').update(readFileSync(src)).digest('hex');
 const size = /size:\\s*(\\d+)/.exec(content)[1];
@@ -322,7 +325,7 @@ test('writeback 事务: truth.json 原子写失败 → 源码恢复、truth.json
   assert.equal(readFileSync(join(dir, 'truth.json'), 'utf8'), before.truth);
 });
 
-test('writeback 事务: 审核人复现场景(index.html chmod 444)在 rename 语义下整体成功', tsOnly, () => {
+test('writeback 事务: 审核人复现场景(index.html chmod 444)在 rename 语义下整体成功', readOnlyRename, () => {
   const dir = writeKeyPathDemo();
   const indexPath = join(dir, 'index.html');
   chmodSync(indexPath, 0o444);

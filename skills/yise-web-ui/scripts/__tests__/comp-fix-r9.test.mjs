@@ -37,6 +37,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkDemoNoSymlinks, hashFile, safeJsonForScript } from '../lib/fs-utils.mjs';
+import { probeSymlinkCapability } from '../lib/runtime-capabilities.mjs';
 import { findDemoSymlinks } from '../lib/repo-glob.mjs';
 import {
   entryKind, listFilesRel, makeObservationSnapshot, snapshotManifestDiff,
@@ -123,11 +124,16 @@ function writePocDemo(name = 'poc-symlink') {
   return { dir, outside };
 }
 
+const symlinkCapability = probeSymlinkCapability();
+const symlinkOnly = symlinkCapability.available
+  ? {}
+  : { skip: `无法创建 symlink（${symlinkCapability.code}）：Windows 未启用开发者模式或当前权限不足` };
+
 // ============================================================================
 // ① 主修 — 输入树 symlink 一律 fail-closed,且发生在建快照之前
 // ============================================================================
 
-test('r9 P0 审核人 PoC(不 skip): 外链 symlink 在**前置检查处**就 fail-closed,不靠「量到 99px 判红」间接兜住', () => {
+test('r9 P0 审核人 PoC: 外链 symlink 在**前置检查处**就 fail-closed,不靠「量到 99px 判红」间接兜住', symlinkOnly, () => {
   const { dir } = writePocDemo();
   const v = run(VERIFY, ['--demo', dir], { env: env() });
   assert.notEqual(v.status, 0, `PoC 仍被放行(r9 P0 未修):${v.stdout}${v.stderr}`);
@@ -144,7 +150,7 @@ test('r9 P0 审核人 PoC(不 skip): 外链 symlink 在**前置检查处**就 fa
     'symlink 必须在前置门就被拒(建快照/启浏览器之前);report.json 存在说明检查排到了下游');
 });
 
-test('r9 P0(不 skip): demo **内部**指向 demo 内的 symlink 同样拒', () => {
+test('r9 P0: demo **内部**指向 demo 内的 symlink 同样拒', symlinkOnly, () => {
   const dir = writeDemo({ name: 'inner-link', extraFiles: { 'real.js': 'globalThis.__real=1;\n' } });
   symlinkSync(join(dir, 'real.js'), join(dir, 'alias.js'));     // 目标就在 demo 内
   const problems = checkDemoNoSymlinks(dir);
@@ -156,7 +162,7 @@ test('r9 P0(不 skip): demo **内部**指向 demo 内的 symlink 同样拒', () 
   assert.match(v.stdout + v.stderr, /检测到 symlink/);
 });
 
-test('r9 P0(不 skip): 嵌套目录里的 symlink 也命中,.git 跳过,node_modules 不重复点名', () => {
+test('r9 P0: 嵌套目录里的 symlink 也命中,.git 跳过,node_modules 不重复点名', symlinkOnly, () => {
   const dir = writeDemo({ name: 'nested-link', extraFiles: { 'assets/real.css': '.x{}\n' } });
   mkdirSync(join(dir, 'assets/deep'), { recursive: true });
   symlinkSync(join(dir, 'assets/real.css'), join(dir, 'assets/deep/alias.css'));
@@ -172,7 +178,7 @@ test('r9 P0(不 skip): 嵌套目录里的 symlink 也命中,.git 跳过,node_mod
     'node_modules 这条由 checkDemoNoNodeModules 无条件拒,symlink 门不重复报');
 });
 
-test('r9 P0(不 skip): 悬空 symlink 也拒(readlink 拿得到目标,exists 为 false 不构成豁免)', () => {
+test('r9 P0: 悬空 symlink 也拒(readlink 拿得到目标,exists 为 false 不构成豁免)', symlinkOnly, () => {
   const dir = writeDemo({ name: 'dangling' });
   symlinkSync(join(dir, 'nope-does-not-exist.js'), join(dir, 'dangling.js'));
   const problems = checkDemoNoSymlinks(dir);
@@ -180,7 +186,7 @@ test('r9 P0(不 skip): 悬空 symlink 也拒(readlink 拿得到目标,exists 为
   assert.match(problems[0], /dangling\.js -> /);
 });
 
-test('r9 P0(不 skip): pr-block / pixel-compare 与 verify 同一道门,且都排在读取 demo 输入之前', () => {
+test('r9 P0: pr-block / pixel-compare 与 verify 同一道门,且都排在读取 demo 输入之前', symlinkOnly, () => {
   const { dir } = writePocDemo('poc-prblock');
   // pr-block:连 report.json 都还没读就该拒(正常缺 report.json 会报另一句)
   const pb = run(PRBLOCK, ['--demo', dir], { env: env() });
@@ -213,7 +219,7 @@ test('r9 P0 源码契约(不 skip): 前置门位置 + 快照自身不变式', ()
   assert.ok(fn.indexOf('findDemoSymlinks') < fn.indexOf('cpSync'), '拦截必须发生在 cpSync 之前');
 });
 
-test('r9 P0(不 skip): makeObservationSnapshot 对含 symlink 的树直接抛,不产出快照', () => {
+test('r9 P0: makeObservationSnapshot 对含 symlink 的树直接抛,不产出快照', symlinkOnly, () => {
   const { dir } = writePocDemo('snap-guard');
   assert.throws(() => makeObservationSnapshot(dir), /symlink/, '含 symlink 的树不许产出观察快照');
 });
@@ -296,7 +302,7 @@ test('r9 条目②(不 skip): 双 server 一致性通用回归——正常 demo 
   }
 });
 
-test('r9 条目②(不 skip): 通用回归对 PoC 形状真的会翻车——证明它不是空转', async () => {
+test('r9 条目②: 通用回归对 PoC 形状真的会翻车——证明它不是空转', symlinkOnly, async () => {
   /* 用**绕过前置门**的方式直接建一份 dereference 快照(模拟「将来某条路径逃过了检查」),
      验证双 server 回归本身能独立抓住这类分叉:linked.js 在快照侧 200、原地侧 403。
      这一条正是「不止 symlink」的价值所在 —— 它检的是行为分叉本身,不是某个具体机制。 */
@@ -318,7 +324,7 @@ test('r9 条目②(不 skip): 通用回归对 PoC 形状真的会翻车——证
 // ③ 纵深 — manifest 记录并比较 lstat 类型 + readlink target
 // ============================================================================
 
-test('r9 条目③(不 skip): entryKind 用 lstat 区分 file / symlink,并给出 linkTarget', () => {
+test('r9 条目③: entryKind 用 lstat 区分 file / symlink,并给出 linkTarget', symlinkOnly, () => {
   const dir = writeDemo({ name: 'kind', extraFiles: { 'real.js': 'x\n' } });
   symlinkSync(join(dir, 'real.js'), join(dir, 'alias.js'));
   const f = entryKind(dir, 'real.js');
@@ -332,7 +338,7 @@ test('r9 条目③(不 skip): entryKind 用 lstat 区分 file / symlink,并给�
   assert.equal(entryKind(dir, 'nope.js').type, 'missing');
 });
 
-test('r9 条目③(不 skip): manifest 抓住「快照普通文件 vs 磁盘 symlink」——r8 的按 hash 比对判它全等', () => {
+test('r9 条目③: manifest 抓住「快照普通文件 vs 磁盘 symlink」——r8 的按 hash 比对判它全等', symlinkOnly, () => {
   // 磁盘侧:linked.js 是指向仓外的 symlink
   const { dir, outside } = writePocDemo('mani-retype');
   // 快照侧:模拟 dereference 后的形态 —— 同名路径是普通文件,字节等于链接目标
@@ -352,7 +358,7 @@ test('r9 条目③(不 skip): manifest 抓住「快照普通文件 vs 磁盘 sym
   assert.ok(d.all.some((x) => /linked\.js\(条目类型不一致/.test(x)), '合并列表里要人可读地点名');
 });
 
-test('r9 条目③(不 skip): listFilesRel 用 lstat——指向目录的 symlink 不被当目录走进去', () => {
+test('r9 条目③: listFilesRel 用 lstat——指向目录的 symlink 不被当目录走进去', symlinkOnly, () => {
   const dir = writeDemo({ name: 'walk-lstat', extraFiles: { 'assets/deep/a.js': 'a\n' } });
   symlinkSync(join(dir, 'assets'), join(dir, 'alias-dir'));
   const files = listFilesRel(dir);

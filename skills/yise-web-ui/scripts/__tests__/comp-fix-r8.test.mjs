@@ -25,7 +25,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hashFile, safeJsonForScript } from '../lib/fs-utils.mjs';
 import { listFilesRel, snapshotManifestDiff, SNAPSHOT_SKIP_TOP } from '../lib/observe.mjs';
@@ -46,6 +46,11 @@ function run(script, args, opts = {}) {
 }
 const readJson = (f) => JSON.parse(readFileSync(f, 'utf8'));
 const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+function isWithin(root, candidate) {
+  const relation = relative(resolve(root), resolve(candidate));
+  return relation === '' || (!isAbsolute(relation) && relation !== '..' && !relation.startsWith(`..${sep}`));
+}
 
 /* 最小非组件 demo(不需要 esbuild/tailwind):快照机制与组件模式无关,用最小 fixture 才能让
    核心回归在**任何环境**都真跑、不 skip。契约与其它 fixture 一致:__qa 五要素 +
@@ -395,12 +400,13 @@ test('补强(不 skip): 独立 TMPDIR 下跑完 verify,快照临时目录必须�
   const isolated = mkdtempSync(join(tmpdir(), 'qa-r8-tmproot-'));
   const dir = writeDemo({ name: 'tmp-clean' });
   // 只跑门 A:不需要浏览器,但快照仍会建立(绑定检查点在快照上做)→ 任何环境都能验清理行为
-  const v = run(VERIFY, ['--demo', dir, '--gate', 'A'], { env: { ...env(), TMPDIR: isolated } });
+  const v = run(VERIFY, ['--demo', dir, '--gate', 'A'], { env: { ...env(), TMPDIR: isolated, TMP: isolated, TEMP: isolated } });
   assert.equal(v.status, 0, `${v.stdout}${v.stderr}`);
   const leftovers = readdirSync(isolated).filter((n) => n.startsWith('qa-hifi-snapshot-'));
   assert.deepEqual(leftovers, [], `verify 退出后仍留下快照临时目录:${leftovers.join(', ')}`);
   // output root 是**故意保留**的(失败取证要能被人看到),但它必须在 demo 之外
   const rep = readJson(join(dir, 'report.json'));
-  assert.ok(rep.artifactRoot.startsWith(resolve(isolated)), `artifactRoot 应落在 TMPDIR 下:${rep.artifactRoot}`);
-  assert.ok(!rep.artifactRoot.startsWith(resolve(dir)), 'artifactRoot 不得落在 demo 内');
+  assert.ok(isWithin(isolated, rep.artifactRoot), `artifactRoot 应落在 TMPDIR 下:${rep.artifactRoot}`);
+  assert.ok(!isWithin(dir, rep.artifactRoot), 'artifactRoot 不得落在 demo 内');
+  assert.equal(isWithin(isolated, `${resolve(isolated)}-sibling`), false, '同前缀兄弟目录不得被当作 TMPDIR 子目录');
 });
