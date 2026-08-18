@@ -10,7 +10,7 @@ export const INVENTORY_STATUSES = ["draft", "ready", "certified"];
 export const NODE_STATUSES = ["determined", "unknown", "skipped"];
 export const RELATION_STATUSES = ["determined", "unknown"];
 export const SKIP_REASONS = ["ref", "invisible", "slice-child", "art-fragment"];
-export const VIA = ["prefix", "gold-structure"];
+export const VIA = ["prefix", "structure", "skill-function"];
 export const COPY_ROLE = "copy";
 export const INVENTORY_ROLES = [...Object.keys(PREFIXES), COPY_ROLE];
 

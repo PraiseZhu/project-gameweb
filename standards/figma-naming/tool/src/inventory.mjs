@@ -8,8 +8,10 @@ import { PREFIXES, SPEC_VERSION, isSlicePrefix } from "../../spec/spec.mjs";
 import {
   INVENTORY_SCHEMA,
   INVENTORY_ROLES,
+  INVENTORY_STATUSES,
   SKIP_REASONS,
   RELATION_STATUSES,
+  VIA,
   behaviorOf,
 } from "../../spec/inventory.mjs";
 import { parseName } from "./parse.mjs";
@@ -194,6 +196,48 @@ function componentOwner(node, parents) {
   if (!node || node.type !== "COMPONENT") return node;
   const parent = parents.get(node.id);
   return parent?.type === "COMPONENT_SET" ? parent : node;
+}
+
+function isModalName(node) {
+  if (!node || node.type !== "FRAME") return false;
+  if (parseName(node.name).prefix === "modal") return true;
+  return String(node.name || "").includes("弹窗");
+}
+
+/** 货架上的弹窗：已标 modal/，或未规范稿里名字带「弹窗」的 FRAME。页根本身不算。 */
+function isShelfModalFrame(node, pageId) {
+  if (!node || node.id === pageId) return false;
+  return isModalName(node);
+}
+
+function boxCenterX(node) {
+  const box = node?.absoluteBoundingBox;
+  if (!box) return null;
+  return Number(box.x || 0) + Number(box.width || 0) / 2;
+}
+
+/** 同一货架多页时，弹窗只跟离它最近的那一页。PC 不收手机弹窗。 */
+function modalsForPage(shelf, page) {
+  const kids = shelf?.children || [];
+  const pages = kids.filter((node) => node.type === "FRAME" && !isModalName(node));
+  const modals = kids.filter((node) => isShelfModalFrame(node, page.id));
+  if (pages.length <= 1) return modals;
+  return modals.filter((modal) => {
+    const modalX = boxCenterX(modal);
+    if (modalX == null) return true;
+    let nearest = page;
+    let nearestDist = Infinity;
+    for (const candidate of pages) {
+      const pageX = boxCenterX(candidate);
+      if (pageX == null) continue;
+      const dist = Math.abs(modalX - pageX);
+      if (dist < nearestDist) {
+        nearest = candidate;
+        nearestDist = dist;
+      }
+    }
+    return nearest.id === page.id;
+  });
 }
 
 function relationTargetId(relation) {
@@ -397,7 +441,7 @@ export function buildInventory(document, {
   const pageNodes = serializeTree(page, "page", counts);
   const pageCounts = { ...counts };
 
-  const modalRoots = (shelf?.children || []).filter((node) => node.type === "FRAME" && parseName(node.name).prefix === "modal");
+  const modalRoots = modalsForPage(shelf, page);
   const modals = modalRoots.map((modal) => ({ ...rootRecord(modal), nodes: serializeTree(modal, `modal:${modal.id}`, counts) }));
 
   // 先从页面和 modal 收集引用，再递归收组件内部引用，直到定义闭合。
@@ -450,7 +494,9 @@ export function buildInventory(document, {
     instanceRelations.push({
       kind: "instance-uses-variant",
       status: owner && variant ? "determined" : "unknown",
-      evidence: "figma:componentId",
+      evidence: owner && variant
+        ? "figma:componentId"
+        : "figma:componentId-definition-outside-shelf",
       from: { id: node.id, scope: node.scope },
       to: owner && variant ? {
         id: variant.id,
@@ -552,8 +598,10 @@ export function renderHumanSummary(inv) {
 
 export function validateInventory(inv, document) {
   const problems = [];
+  const warnings = [];
   if (!inv || inv.schema !== INVENTORY_SCHEMA) problems.push(`schema 必须是 ${INVENTORY_SCHEMA}`);
   if (!inv?.ok) return { ok: false, problems: ["清单未编成", ...problems] };
+  if (!INVENTORY_STATUSES.includes(inv.status)) problems.push(`status 非法: ${inv.status}`);
   if (!inv.page?.id) problems.push("缺少 page.id");
   const { byId, parents } = indexDocument(document);
   if (!inv.scope?.shelfId && parents.get(inv.page.id)) problems.push("缺少 scope.shelfId");
@@ -576,6 +624,7 @@ export function validateInventory(inv, document) {
       if (!INVENTORY_ROLES.includes(node.role)) problems.push(`${node.id} 角色不在总表: ${node.role}`);
       if (node.role === "copy" && source.type !== "TEXT") problems.push(`${node.id} copy 只能是 TEXT`);
       if (node.behavior !== behaviorOf(node.role, node.params || {})) problems.push(`${node.id} behavior 与 role/params 推不出`);
+      if (!VIA.includes(node.via)) problems.push(`${node.id} via 非法: ${node.via}`);
     }
     if (node.status === "unknown" && (node.role != null || node.behavior !== "none")) problems.push(`${node.id} unknown 不得带 role 或 behavior`);
     if (node.status === "skipped" && !SKIP_REASONS.includes(node.why)) problems.push(`${node.id} skipped.why 非法: ${node.why}`);
@@ -610,11 +659,21 @@ export function validateInventory(inv, document) {
   for (const node of allNodesOf(inv)) {
     if (!node.componentId) continue;
     const relation = (inv.relations || []).find((item) => item.kind === "instance-uses-variant" && item.from?.id === node.id);
-    if (!relation || relation.status !== "determined") problems.push(`实例 ${node.id} componentId ${node.componentId} 未解析`);
+    if (relation?.status === "determined") continue;
+    if (!relation) {
+      problems.push(`实例 ${node.id} componentId ${node.componentId} 未解析`);
+      continue;
+    }
+    const missingDefinition = relation.status === "unknown" && relation.evidence === "figma:componentId-definition-outside-shelf";
+    if (inv.status === "draft" && missingDefinition) {
+      warnings.push(`实例 ${node.id} componentId ${node.componentId} 定义不在本货架；draft 保留 unknown 关系`);
+    } else {
+      problems.push(`实例 ${node.id} componentId ${node.componentId} 未解析`);
+    }
   }
   for (const modal of inv.attachments?.modals || []) {
     if (!modal.nodes?.some((node) => node.id === modal.id)) problems.push(`弹窗 ${modal.id} 缺完整节点树`);
     if (!(inv.relations || []).some((relation) => relation.kind === "modal-trigger" && relation.to?.id === modal.id)) problems.push(`弹窗 ${modal.id} 缺触发关系记录`);
   }
-  return { ok: problems.length === 0, problems };
+  return { ok: problems.length === 0, problems, warnings };
 }

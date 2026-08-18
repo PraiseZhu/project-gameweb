@@ -17,7 +17,7 @@
  * 失败即退出码非 0（fail loud）。已存在的 PNG 跳过（断点续跑）。
  */
 import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnv, token } from "../src/figma.mjs";
 
@@ -47,8 +47,8 @@ if (!existsSync(inventoryPath)) {
 }
 
 const inv = JSON.parse(readFileSync(inventoryPath, "utf8"));
-if (inv.schema !== "inventory/v2" || inv.status !== "ready" || !inv.page?.box || !Array.isArray(inv.sections)) {
-  console.error(`不是 ready inventory/v2 清单：${inventoryPath}`);
+if (inv.schema !== "inventory/v2" || !["draft", "ready", "certified"].includes(inv.status) || !inv.page?.box || !Array.isArray(inv.sections)) {
+  console.error(`不是 inventory/v2 清单（draft/ready 均可）：${inventoryPath}`);
   process.exit(1);
 }
 
@@ -100,12 +100,31 @@ const sub = [
     `fix-${String(index + 1).padStart(2, "0")}.png`, item.id, `fix/${item.label || index + 1}`,
   ]),
 ];
+const MAX_EDGE = 4096;
 for (const [file, id, kind] of sub) {
   const b = inv.nodes.find((n) => n.id === id)?.box;
   if (!b) { console.error(`清单里没有节点 ${id}（高清层 ${kind}）`); process.exit(1); }
+  const edge = Math.max(b.w, b.h);
   layers.push({
     file, id, kind,
-    x: b.x - pageBox.x, y: b.y - pageBox.y, w: b.w, h: b.h, scale,
+    x: b.x - pageBox.x, y: b.y - pageBox.y, w: b.w, h: b.h,
+    scale: edge > MAX_EDGE ? MAX_EDGE / edge : scale,
+  });
+}
+
+const attachments = [
+  ...(inv.attachments?.modals || []).map((item, index) => ({ item, kind: "modal", file: `modal-${String(index + 1).padStart(2, "0")}.png` })),
+  ...(inv.attachments?.componentSets || []).map((item, index) => ({ item, kind: "set", file: `set-${String(index + 1).padStart(2, "0")}.png` })),
+  ...(inv.attachments?.components || []).map((item, index) => ({ item, kind: "cmp", file: `cmp-${String(index + 1).padStart(2, "0")}.png` })),
+];
+for (const { item, kind, file } of attachments) {
+  const b = item.box;
+  if (!b) { console.error(`附件 ${item.id} 没有 box`); process.exit(1); }
+  const edge = Math.max(b.w, b.h);
+  layers.push({
+    file, id: item.id, kind: `${kind}/${item.name || item.id}`,
+    x: b.x - pageBox.x, y: b.y - pageBox.y, w: b.w, h: b.h,
+    scale: edge > MAX_EDGE ? MAX_EDGE / edge : 1,
   });
 }
 
@@ -128,11 +147,11 @@ async function fetchWithRetry(url, opts, tries = 4) {
   throw lastErr;
 }
 
-async function getImages(idList) {
+async function getImages(idList, requestScale = scale) {
   const idsParam = idList.map((id) => encodeURIComponent(id)).join(",");
   // 渲染请求多时 Figma 限流很常见：429 退避重试（最多 4 次），403/其他直接抛
   for (let i = 1; ; i++) {
-    const res = await fetchWithRetry(`${API}/v1/images/${fileKey}?ids=${idsParam}&format=png&scale=${scale}`, {
+    const res = await fetchWithRetry(`${API}/v1/images/${fileKey}?ids=${idsParam}&format=png&scale=${requestScale}`, {
       headers: { "X-Figma-Token": token() },
     });
     if (res.status === 403) throw new Error("Figma 403：token 过期或对该文件无权限");
@@ -170,7 +189,7 @@ let cursor = 0;
 async function worker() {
   while (cursor < todo.length) {
     const l = todo[cursor++];
-    const data = await getImages([l.id]);
+    const data = await getImages([l.id], l.scale);
     if (data.err) throw new Error(`Figma images 接口报错：${data.err}`);
     const u = data.images?.[l.id];
     if (typeof u !== "string") throw new Error(`导出失败：${l.id} — ${JSON.stringify(u)}`);
@@ -197,10 +216,13 @@ for (const l of layers) {
     size = readPngSize(buf);
     const expect = { w: Math.round(l.w * l.scale), h: Math.round(l.h * l.scale) };
     if (!size) throw new Error(`下载的不是 PNG：${l.file}`);
-    // 不 clip 的节点（INSTANCE / 组）导出按内容边界，会带出溢出（如导航右侧 480px 空白）。
-    // 只防「缺内容」：实际尺寸 < 期望的 80% 判失败；溢出由页面端 object-fit top-left 裁掉。
-    if (size.w < expect.w * 0.8 || size.h < expect.h * 0.8) {
+    // 不 clip 的节点（INSTANCE / 组）导出按内容边界：可能带出溢出，也可能比节点 box 小。
+    // 只防「内容几乎全缺」：< 期望的 50% 判失败；其余用 object-fit top-left 对齐即可。
+    if (size.w < expect.w * 0.5 || size.h < expect.h * 0.5) {
       throw new Error(`尺寸偏小（疑似缺内容）：${l.file} 期望 ${expect.w}x${expect.h}，实际 ${size.w}x${size.h}`);
+    }
+    if (size.w < expect.w * 0.8 || size.h < expect.h * 0.8) {
+      console.warn(`  注意：${l.file} 内容边界小于节点 box（${size.w}x${size.h} vs ${expect.w}x${expect.h}），按 top-left 对齐`);
     }
     writeFileSync(out, buf);
     console.log(`  ${l.file} ${size.w}x${size.h}  <-- ${l.kind}`);
@@ -216,5 +238,13 @@ for (const l of layers) {
     imgW: size.w, imgH: size.h,
   });
 }
-writeFileSync(resolve(outDir, "../tiles.json"), `${JSON.stringify({ page: { w: pageBox.w, h: pageBox.h }, layers: manifest }, null, 2)}\n`);
-console.log(`完成：${manifest.length} 层 → ${outDir}（tiles.json 已更新）`);
+const tilesName = opt("--tiles") || `tiles-${pageTag}.json`;
+const xs = manifest.flatMap((l) => [l.x, l.x + l.w]);
+const ys = manifest.flatMap((l) => [l.y, l.y + l.h]);
+const origin = { x: Math.min(0, ...xs), y: Math.min(0, ...ys) };
+const world = {
+  w: Math.max(pageBox.w, ...xs) - origin.x,
+  h: Math.max(pageBox.h, ...ys) - origin.y,
+};
+writeFileSync(resolve(outDir, `../${tilesName}`), `${JSON.stringify({ page: { w: pageBox.w, h: pageBox.h }, origin, world, baseDir: basename(outDir), layers: manifest }, null, 2)}\n`);
+console.log(`完成：${manifest.length} 层 → ${outDir}（${tilesName} 已更新）`);
