@@ -1,0 +1,11 @@
+{
+  "policyVersion": "v3.1",
+  "rulesDoc": "docs/ledger-legislation.md",
+  "rulesDocSha256": "6caa8ecb26a409146f428e16dd7fb93092320a9153032e294f03c18fea43ccdc",
+  "requiredCapabilities": [
+    "local-report-only"
+  ],
+  "ownerApproved": false,
+  "ownerSignoff": null,
+  "note": "未获批准：调度可出晨报，扩权落地必须等签收。"
+}

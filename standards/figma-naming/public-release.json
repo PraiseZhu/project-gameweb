@@ -38,7 +38,10 @@
     "tool/.env",
     "tool/test/.tmp/",
     "SKILL.md",
-    "docs/yise-web-ui-inventory-v2-issue.md"
+    "docs/yise-web-ui-inventory-v2-issue.md",
+    "EVOLUTION.md",
+    "docs/ledger-legislation.md",
+    "evolution/"
   ],
   "privateReasons": {
     "tool/.cache/": "真稿 Figma REST 快照，含未发布页面完整图层结构与图层名。",
@@ -53,7 +56,10 @@
     "tool/.env": "Figma Personal Access Token 等凭证。",
     "tool/test/.tmp/": "测试运行临时目录。",
     "SKILL.md": "内部交接 skill：含未发布稿节点与做页同事账号，不作为发布源码。",
-    "docs/yise-web-ui-inventory-v2-issue.md": "做页接入说明含未发布项目稿名与内部交接口径，不作为发布源码。"
+    "docs/yise-web-ui-inventory-v2-issue.md": "做页接入说明含未发布项目稿名与内部交接口径，不作为发布源码。",
+    "EVOLUTION.md": "由内部台账生成的根因摘要，含未发布稿名与内部误写回记录，不作为发布源码。",
+    "docs/ledger-legislation.md": "内部治理立法，服务本地晨报调度，不作为对外发布内容。",
+    "evolution/": "本地台账、政策清单与每日晨报产物，含内部根因和未发布稿证据，不作为发布源码。"
   },
   "projectWordsNote": "未发布项目的稿名/代号没有可识别形态（不像 fileKey 的 22 位串、也不像 figd_ 前缀），形态类检测天然抓不到，只能按词表逐词比对：列在 projectWords 里的词一旦出现在任何 publishable 文件里，即视为泄漏未发布项目。词表为空或字段缺失一律报错——空词表意味着这项检查没生效，不是通过；词表里的空串/纯空白会匹配所有文件，同样报错。",
   "projectWords": [

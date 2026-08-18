@@ -18,7 +18,8 @@
     "build:plugin": "node scripts/build-plugin.mjs",
     "release:audit": "node ../scripts/public-release-audit.mjs",
     "inventory:export": "node scripts/export-inventory-page.mjs",
-    "inventory:review": "node scripts/serve-inventory-review.mjs"
+    "inventory:review": "node scripts/serve-inventory-review.mjs",
+    "ledger": "node bin/daily-ledger.mjs --morning"
   },
   "engines": {
     "node": ">=20"
