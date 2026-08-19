@@ -18,12 +18,13 @@
 
 ## 做页前交接：inventory/v2
 
-当前面向人的主入口是“已规范命名稿 → 抓取整棵货架 → 整理/自验 → `inventory/v2` ready”。本链路不
-开插件、不写回 Figma；人工核对页是可选复核，未命名稿如何自动命名留到后续。
+当前面向人的主入口是“货架链接 → 抓取整棵货架 → 整理/自验 → `inventory/v2`”。已规范命名稿出 `ready`；未规范稿按 `SKILL.md` 用规范和台账按功能认模块，当前只产出 `draft`。核对页暂不支持保存或升档，升 `ready` 是后续能力。不对金样图层 id 或模块顺序抄名。本链路不开插件、不写回 Figma。
 
-1. 人提供已规范命名、带 `node-id` 的 Figma 链接。链接的 `node-id` 始终指向整棵
+1. 人提供带 `node-id` 的 Figma 货架链接。链接的 `node-id` 始终指向整棵
    画布货架，覆盖页面本体、同货架 modal 和组件定义；不要只给某个页面链接。
-2. 在 `standards/figma-naming/tool/` 运行：
+2. 在 `standards/figma-naming/tool/` 按稿种选命令：
+
+   已规范命名稿（默认 ready）：
 
    ```bash
    npm run inventory -- \
@@ -31,7 +32,17 @@
      --page <pc 或 mobile 页 id>
    ```
 
-   例如：
+   未规范稿必须显式出 draft：
+
+   ```bash
+   npm run inventory -- \
+     --file "<整棵画布货架的 Figma 链接>" \
+     --page <pc 或 mobile 页 id> \
+     --status draft \
+     --name inventory-unnamed-<page>
+   ```
+
+   例如规范稿：
 
    ```bash
    npm run inventory -- \
@@ -41,9 +52,9 @@
 
    链接里的 `node-id` 是拉稿根；`--page` 只在已拉取的树中选择页面，不改变拉稿范围。
 3. 命令自验通过后产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 的
-   `schema` 为 `inventory/v2`、`status` 为 `ready`。清单覆盖页面本体、同货架 modal、
-   页面实际引用的组件集/完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持
-   为对应关系上的 `unknown`，不改变整份清单的 ready 状态。
+   `schema` 为 `inventory/v2`。规范稿 `status` 为 `ready`；未规范稿必须是 `draft`，
+   当前不能在核对页升档。清单覆盖页面本体、同货架 modal、页面实际引用的组件集/
+   完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持为对应关系上的 `unknown`。
 4. 运行可视化核对页：
 
    ```bash

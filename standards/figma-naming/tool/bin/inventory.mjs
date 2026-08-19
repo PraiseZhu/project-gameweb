@@ -14,6 +14,7 @@ import { loadEnv, parseFigmaUrl, fetchNode } from "../src/figma.mjs";
 import {
   buildInventory, snapshotHashOf, renderHumanSummary, validateInventory, findNode,
 } from "../src/inventory.mjs";
+import { INVENTORY_STATUSES } from "../../spec/inventory.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 loadEnv(ROOT);
@@ -23,10 +24,27 @@ const opt = (name, fallback = "") => {
   const i = argv.indexOf(name);
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
 };
+const requiredOpt = (name) => {
+  const i = argv.indexOf(name);
+  if (i < 0) return { present: false, value: null };
+  const value = argv[i + 1];
+  if (!value || String(value).startsWith("--")) {
+    console.error(`${name} 必须跟取值`);
+    process.exit(1);
+  }
+  return { present: true, value };
+};
 const fileArg = opt("--file") || argv.find((a) => !String(a).startsWith("--") && /figma\.com/.test(a));
 const cacheArg = opt("--cache");
 const pageArg = opt("--page");
 const outArg = opt("--out");
+const outNameArg = opt("--name");
+const statusFlag = requiredOpt("--status");
+const statusArg = statusFlag.present ? statusFlag.value : "ready";
+if (!INVENTORY_STATUSES.includes(statusArg)) {
+  console.error(`--status 只能是 ${INVENTORY_STATUSES.join(" / ")}，收到：${statusArg}`);
+  process.exit(1);
+}
 
 let fileKey = null;
 let requestedNodeId = null;
@@ -79,7 +97,7 @@ const inv = buildInventory(document, {
   requestedNodeId,
   lastModified,
   snapshotHash: snapshotHashOf(rawForHash),
-  status: "ready",
+  status: statusArg,
 });
 
 if (!inv.ok) {
@@ -93,8 +111,13 @@ if (!check.ok) {
   for (const p of check.problems) console.error(`  · ${p}`);
   process.exit(1);
 }
+for (const warning of check.warnings || []) console.warn(`自验警告：${warning}`);
 
-const defaultName = `inventory-${String(inv.page.id).replace(/:/g, "-")}`;
+if (outNameArg && !/^[A-Za-z0-9._-]+$/.test(outNameArg)) {
+  console.error("--name 只能包含字母、数字、点、下划线和连字符。");
+  process.exit(1);
+}
+const defaultName = outNameArg || `inventory-${String(inv.page.id).replace(/:/g, "-")}`;
 const outDir = resolve(outArg || resolve(ROOT, "../../../_tmp"));
 mkdirSync(outDir, { recursive: true });
 const jsonPath = resolve(outDir, `${defaultName}.json`);
@@ -104,4 +127,4 @@ writeFileSync(txtPath, renderHumanSummary(inv));
 console.log(renderHumanSummary(inv));
 console.log(`JSON  ${jsonPath}`);
 console.log(`摘要  ${txtPath}`);
-console.log("status=ready — 规范命名稿已编成可交接清单；做页先消费已确定项。");
+console.log(`status=${inv.status} — ${inv.status === "draft" ? "未规范稿待人工核对，未升 ready。" : "规范命名稿已编成可交接清单；做页先消费已确定项。"}`);
