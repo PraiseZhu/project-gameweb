@@ -622,6 +622,18 @@
       "occurrences": 1,
       "firstSeen": "2026-08-19T08:56:55.831Z",
       "lastSeen": "2026-08-19T08:56:55.831Z"
+    },
+    {
+      "fingerprint": "pc-mobile-same-class-must-sync",
+      "tier": "by-design",
+      "title": "PC/mobile 同类问题必须两边一起写回",
+      "detail": "错误：只写回 mobile 反馈，PC 装饰/划动同类层没跟。正确口径：一端人核过的形态（装饰 img、划动 scroll、奖励图 img）立刻扫另一端同名/同结构层；不能等另一端再点一遍才改。",
+      "proposal": null,
+      "status": "adopted",
+      "note": "[decided:2026-08-19] 491 PC 装饰滞后于 mobile，人核才发现。",
+      "occurrences": 1,
+      "firstSeen": "2026-08-19T09:52:30.118Z",
+      "lastSeen": "2026-08-19T09:52:30.118Z"
     }
   ]
 }

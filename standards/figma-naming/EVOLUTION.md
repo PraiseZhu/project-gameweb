@@ -56,6 +56,9 @@
 
 ## 无法自动化（by-design，只计数观察）
 
+- `pc-mobile-same-class-must-sync` **PC/mobile 同类问题必须两边一起写回** — 出现 1 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:错误：只写回 mobile 反馈，PC 装饰/划动同类层没跟。正确口径：一端人核过的形态（装饰 img、划动 scroll、奖励图 img）立刻扫另一端同名/同结构层；不能等另一端再点一遍才改。
+  - 备注:[decided:2026-08-19] 491 PC 装饰滞后于 mobile，人核才发现。
 - `determined-not-overwritten-by-later-unknown` **已 determined 不得被后一条 unknown 复写** — 出现 2 次,首见 2026-08-19,最近 2026-08-19,status: adopted
   - 现象:错误：装饰已标 img/ 后，写回按 JSONL 最后一条把同一 id 改回 unknown。正确口径：同一 id 先 determined 后 unknown 时保留 determined，报冲突。标题改 unknown 只作用标题，不覆盖装饰。
   - 备注:[decided:2026-08-19] 写回跳过「determined 之后的 unknown」。
