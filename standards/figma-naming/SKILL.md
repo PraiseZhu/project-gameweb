@@ -15,8 +15,8 @@ disable-model-invocation: false
 
 | 稿 | 机器出口 | 人核 | 做页可吃 |
 |---|---|---|---|
-| 已规范命名 | `status: "ready"` | 可选 | 是 |
-| 未规范 / 任意命名 | `status: "draft"` | 当前可预览；核对页还不能保存或升档 | 否 |
+| 已规范命名 | `status: "ready"` | 可选 | 是，吃 ready 包 |
+| 未规范 / 任意命名 | `status: "draft"` | 主人测命名时才核；核对页不能保存升档 | 原始 draft 否。completeness 绿后 `handoff:pack --allow-green-draft` 可吃（`kind=green-draft`，`ready=false`）。主人确认后 `handoff:promote` 才是 ready |
 
 金样（`1:180` / `20:2205` / `392:24190` / `392:25877` / `52:3263`）只当**形态样本**：看「kv / scroll / switch 长什么样」。不是答案本。新稿图层 id 不同、模块顺序不同、内容不同，**禁止**按 id 或 `sec/N` 序号去抄名字。
 
@@ -113,7 +113,7 @@ npm run inventory -- \
 6. **对立解释排不掉才 `unknown`**：既像按钮又像标签、热区证据不足。不许为了少干活一律 `unknown`。
 7. **出口只核前缀**：`determined` 非 copy 的 `name` 必须以 `role/` 开头。后缀不作为对错，也不拿设计师原名当参考。同类模块前缀与规范稿一致即可。
 
-机器出口保持 `draft`。当前核对页不能保存 draft，也不能点「核对完成」升档；升 `ready` 是后续能力。
+机器出口保持 `draft`。核对页不能保存 draft、不能在页上点升档。主人确认后用 `handoff:promote` 升 ready；同事做页用 `handoff:pack --allow-green-draft`。
 
 核对页改某层母版，该层所有实例一起变（改「装饰」= 所有装饰实例）。不把父级「标题」卷进来。已经 `determined` 的层，后一条 unknown 不得复写；写回时跳过并报冲突。
 
@@ -158,15 +158,18 @@ cd standards/figma-naming/tool
 npm run inventory:review
 ```
 
-未规范 draft 可用 `?inv=inventory-unnamed-<page>.json` 打开预览。同一货架下必须能切 PC / mobile。**当前保存接口只接受 `ready`，draft 不能在核对页里保存或点「核对完成」升档**；升 ready 仍是后续要接的能力，不是已经通的流程。
+未规范 draft 可用 `?inv=inventory-unnamed-<page>.json` 打开预览。同一货架下必须能切 PC / mobile。核对页不能保存 draft、不能在页上点升档。升 ready 走 `handoff:promote`（主人确认后）。同事做页走 `handoff:pack --allow-green-draft`，不要等核对页。
 
 已规范 ready 的复核是可选检查，保存后仍保持 `ready`。unknown 必须显式保留，不能用位置、文案或常识补成确定关系。
 
 ### 6. 做页消费边界
 
-做页只吃 `schema: "inventory/v2"、status: "ready"`，先按已确定节点、页面分区、背景/固定层、已解析的实例→变体、完整组件变体树和 modal 附件本体搭页。unknown 节点只画样子、不赋交互；unknown 的 `modal-trigger` 不自动接线。
+两条路不要混：
 
-做页接入由 issue #5 交给 `zhanxinyi-lab`；本侧不改 `skills/yise-web-ui/**`。本步验收先不管做页怎么接，只保证 draft 清单自己完整。
+- **同事自助（不等人工核对）**：PC+mobile completeness 都绿后 `npm run handoff:pack -- --allow-green-draft`。包 `kind=green-draft`，**不是 ready**，禁止手改 status。做页吃包里的 determined / 分区 / 背景固定层 / 变体树 / modal；unknown 只画不接线。说明见 `handoff/CONSUMER.md`。
+- **主人测命名**：核对页确认后才 `handoff:promote` 升 ready、写 skill/台账、`catalog:build`。
+
+做页接入由 issue #5 交给 `zhanxinyi-lab`；本侧不改 `skills/yise-web-ui/**`。
 
 ## 未规范稿次日开跑（491 这轮踩坑，换稿照此执行）
 
