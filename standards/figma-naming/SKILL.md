@@ -135,6 +135,7 @@ npm run inventory -- \
 - 视频播放：播放图标是 `btn/播放按钮` + `click`；PC 的整块可播放展示区才是 `hot/具体视频播放区域`；移动端皮肤视频的「点击视频播放弹出区域」是 `img/` 切图，不把按钮或切图误判为热区
 - 已 `determined` 的层，后一条 unknown 不得复写。写回反馈同一 id 先 img 后 unknown 时保留 determined，报冲突
 - `fix/左侧导航` 下每一项是可点切换，前缀 `btn/`（`behavior=click`），不是 `img/`，也不是 unknown。跨货架**定义**仍 unknown，不伪造本地组件集；**页上实例**按可点判 `btn/`
+- 一端人核过的形态必须立刻同步到另一端（PC ↔ mobile）：装饰 `img/`、划动 `scroll/`、奖励图 `img/`。不能只改当前这份
 
 ### 4. 人确认判断完成后才沉淀
 
