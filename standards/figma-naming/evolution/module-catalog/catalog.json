@@ -1,0 +1,757 @@
+{
+  "schema": "module-catalog/v1",
+  "purpose": "已规范模块样本。新稿按 aliases/类型检索，禁止用 source 图层 id 抄名。",
+  "sourceShelf": "392:18375",
+  "entries": [
+    {
+      "id": "标题",
+      "role": null,
+      "name": "标题",
+      "body": "标题",
+      "aliases": [
+        "标题"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/标题.jpg"
+    },
+    {
+      "id": "奖励模块",
+      "role": null,
+      "name": "奖励模块",
+      "body": "奖励模块",
+      "aliases": [
+        "奖励模块"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=新赛季启程庆典",
+        "Property 1=SS6赛季奖励",
+        "Property 1=SS6赛季礼包码",
+        "Property 1=赛季启程双倍",
+        "Property 1=限时异格重构"
+      ],
+      "variantCount": 6,
+      "statePair": false,
+      "shot": "shots/奖励模块.jpg"
+    },
+    {
+      "id": "奖励展示",
+      "role": null,
+      "name": "奖励展示",
+      "body": "奖励展示",
+      "aliases": [
+        "奖励展示"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=周年福利",
+        "Property 1=巡金魔典",
+        "Property 1=幻金夺宝夜",
+        "Property 1=皮肤视频"
+      ],
+      "variantCount": 4,
+      "statePair": false,
+      "shot": "shots/奖励展示.jpg"
+    },
+    {
+      "id": "mobile",
+      "role": "bg",
+      "name": "bg/mobile",
+      "body": "mobile",
+      "aliases": [
+        "mobile",
+        "bg/mobile"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/mobile.jpg"
+    },
+    {
+      "id": "导航状态",
+      "role": "btn",
+      "name": "btn/导航状态",
+      "body": "导航状态",
+      "aliases": [
+        "导航状态",
+        "btn/导航状态"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc"
+      ],
+      "variants": [
+        "Property 1=highlight",
+        "Property 1=normal"
+      ],
+      "variantCount": 2,
+      "statePair": true,
+      "shot": "shots/导航状态.jpg"
+    },
+    {
+      "id": "多语言切换按钮",
+      "role": "btn",
+      "name": "btn/多语言切换按钮",
+      "body": "多语言切换按钮",
+      "aliases": [
+        "多语言切换按钮",
+        "btn/多语言切换按钮"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=highlight",
+        "Property 1=normal"
+      ],
+      "variantCount": 2,
+      "statePair": true,
+      "shot": "shots/多语言切换按钮.jpg"
+    },
+    {
+      "id": "角色头像",
+      "role": "btn",
+      "name": "btn/角色头像",
+      "body": "角色头像",
+      "aliases": [
+        "角色头像",
+        "btn/角色头像",
+        "头像"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=highlight",
+        "Property 1=normal",
+        "Property 1=disable"
+      ],
+      "variantCount": 3,
+      "statePair": true,
+      "shot": "shots/角色头像.jpg"
+    },
+    {
+      "id": "切换按钮",
+      "role": "btn",
+      "name": "btn/切换按钮",
+      "body": "切换按钮",
+      "aliases": [
+        "切换按钮",
+        "btn/切换按钮"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=highlight",
+        "Property 1=normal"
+      ],
+      "variantCount": 2,
+      "statePair": true,
+      "shot": "shots/切换按钮.jpg"
+    },
+    {
+      "id": "移动端导航",
+      "role": "btn",
+      "name": "btn/移动端导航",
+      "body": "移动端导航",
+      "aliases": [
+        "移动端导航",
+        "btn/移动端导航"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=highlight",
+        "Property 1=normal"
+      ],
+      "variantCount": 2,
+      "statePair": true,
+      "shot": "shots/移动端导航.jpg"
+    },
+    {
+      "id": "边框背景1",
+      "role": "img",
+      "name": "img/边框背景1",
+      "body": "边框背景1",
+      "aliases": [
+        "边框背景1",
+        "img/边框背景1"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=1"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/边框背景1.jpg"
+    },
+    {
+      "id": "边框背景2",
+      "role": "img",
+      "name": "img/边框背景2",
+      "body": "边框背景2",
+      "aliases": [
+        "边框背景2",
+        "img/边框背景2"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/边框背景2.jpg"
+    },
+    {
+      "id": "边框背景3",
+      "role": "img",
+      "name": "img/边框背景3",
+      "body": "边框背景3",
+      "aliases": [
+        "边框背景3",
+        "img/边框背景3"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/边框背景3.jpg"
+    },
+    {
+      "id": "边框背景4",
+      "role": "img",
+      "name": "img/边框背景4",
+      "body": "边框背景4",
+      "aliases": [
+        "边框背景4",
+        "img/边框背景4"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/边框背景4.jpg"
+    },
+    {
+      "id": "边框背景5",
+      "role": "img",
+      "name": "img/边框背景5",
+      "body": "边框背景5",
+      "aliases": [
+        "边框背景5",
+        "img/边框背景5"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/边框背景5.jpg"
+    },
+    {
+      "id": "边框背景6",
+      "role": "img",
+      "name": "img/边框背景6",
+      "body": "边框背景6",
+      "aliases": [
+        "边框背景6",
+        "img/边框背景6"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/边框背景6.jpg"
+    },
+    {
+      "id": "边框背景7",
+      "role": "img",
+      "name": "img/边框背景7",
+      "body": "边框背景7",
+      "aliases": [
+        "边框背景7",
+        "img/边框背景7"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/边框背景7.jpg"
+    },
+    {
+      "id": "图标装饰",
+      "role": "img",
+      "name": "img/图标装饰",
+      "body": "图标装饰",
+      "aliases": [
+        "图标装饰",
+        "img/图标装饰"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/图标装饰.jpg"
+    },
+    {
+      "id": "logo",
+      "role": "img",
+      "name": "img/logo",
+      "body": "logo",
+      "aliases": [
+        "logo",
+        "img/logo"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=cn"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/logo.jpg"
+    },
+    {
+      "id": "进度条",
+      "role": "ind",
+      "name": "ind/进度条",
+      "body": "进度条",
+      "aliases": [
+        "进度条",
+        "ind/进度条",
+        "轮播点"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=highlight",
+        "Property 1=normal"
+      ],
+      "variantCount": 2,
+      "statePair": true,
+      "shot": "shots/进度条.jpg"
+    },
+    {
+      "id": "顶部导航-1624尺寸",
+      "role": "modal",
+      "name": "modal/顶部导航-1624尺寸",
+      "body": "顶部导航-1624尺寸",
+      "aliases": [
+        "顶部导航-1624尺寸",
+        "modal/顶部导航-1624尺寸",
+        "导航弹窗",
+        "顶部导航"
+      ],
+      "types": [
+        "FRAME"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [],
+      "variantCount": 0,
+      "statePair": false,
+      "shot": "shots/顶部导航-1624尺寸.jpg"
+    },
+    {
+      "id": "多语言按钮弹窗",
+      "role": "modal",
+      "name": "modal/多语言按钮弹窗",
+      "body": "多语言按钮弹窗",
+      "aliases": [
+        "多语言按钮弹窗",
+        "modal/多语言按钮弹窗",
+        "多语言弹窗"
+      ],
+      "types": [
+        "FRAME"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [],
+      "variantCount": 0,
+      "statePair": false,
+      "shot": "shots/多语言按钮弹窗.jpg"
+    },
+    {
+      "id": "视频弹窗",
+      "role": "modal",
+      "name": "modal/视频弹窗",
+      "body": "视频弹窗",
+      "aliases": [
+        "视频弹窗",
+        "modal/视频弹窗"
+      ],
+      "types": [
+        "FRAME"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [],
+      "variantCount": 0,
+      "statePair": false,
+      "shot": "shots/视频弹窗.jpg"
+    },
+    {
+      "id": "角色立绘",
+      "role": "switch",
+      "name": "switch/角色立绘",
+      "body": "角色立绘",
+      "aliases": [
+        "角色立绘",
+        "switch/角色立绘",
+        "角色"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/角色立绘.jpg"
+    },
+    {
+      "id": "角色立绘模块",
+      "role": "switch",
+      "name": "switch/角色立绘模块",
+      "body": "角色立绘模块",
+      "aliases": [
+        "角色立绘模块",
+        "switch/角色立绘模块"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc"
+      ],
+      "variants": [
+        "Property 1=Default"
+      ],
+      "variantCount": 1,
+      "statePair": false,
+      "shot": "shots/角色立绘模块.jpg"
+    },
+    {
+      "id": "庆典活动内容",
+      "role": "switch",
+      "name": "switch/庆典活动内容",
+      "body": "庆典活动内容",
+      "aliases": [
+        "庆典活动内容",
+        "switch/庆典活动内容"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc"
+      ],
+      "variants": [
+        "Property 1=周年庆典",
+        "Property 1=皮肤视频"
+      ],
+      "variantCount": 2,
+      "statePair": false,
+      "shot": "shots/庆典活动内容.jpg"
+    },
+    {
+      "id": "庆典模块活动内容",
+      "role": "switch",
+      "name": "switch/庆典模块活动内容",
+      "body": "庆典模块活动内容",
+      "aliases": [
+        "庆典模块活动内容",
+        "switch/庆典模块活动内容"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=周年福利",
+        "Property 1=巡金魔典",
+        "Property 1=幻金夺宝夜",
+        "Property 1=炽夜霓虹"
+      ],
+      "variantCount": 4,
+      "statePair": false,
+      "shot": "shots/庆典模块活动内容.jpg"
+    },
+    {
+      "id": "赛季奖励活动内容",
+      "role": "switch",
+      "name": "switch/赛季奖励活动内容",
+      "body": "赛季奖励活动内容",
+      "aliases": [
+        "赛季奖励活动内容",
+        "switch/赛季奖励活动内容"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=新赛季启程庆典",
+        "Property 1=SS6赛季奖励",
+        "Property 1=SS6赛季礼包码",
+        "Property 1=赛季启程双倍",
+        "Property 1=限时异格重构"
+      ],
+      "variantCount": 6,
+      "statePair": false,
+      "shot": "shots/赛季奖励活动内容.jpg"
+    },
+    {
+      "id": "新内容模块活动内容",
+      "role": "switch",
+      "name": "switch/新内容模块活动内容",
+      "body": "新内容模块活动内容",
+      "aliases": [
+        "新内容模块活动内容",
+        "switch/新内容模块活动内容"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc",
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=特别限时活动",
+        "Property 1=再启之邀",
+        "Property 1=竞策争锋",
+        "Property 1=天狼迎月",
+        "Property 1=重逢的祝福"
+      ],
+      "variantCount": 3,
+      "statePair": false,
+      "shot": "shots/新内容模块活动内容.jpg"
+    },
+    {
+      "id": "新赛季活动内容",
+      "role": "switch",
+      "name": "switch/新赛季活动内容",
+      "body": "新赛季活动内容",
+      "aliases": [
+        "新赛季活动内容",
+        "switch/新赛季活动内容"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc"
+      ],
+      "variants": [
+        "Property 1=新赛季奖励",
+        "Property 1=新赛季特别活动"
+      ],
+      "variantCount": 2,
+      "statePair": false,
+      "shot": "shots/新赛季活动内容.jpg"
+    },
+    {
+      "id": "ews活动内容",
+      "role": "switch",
+      "name": "switch/ews活动内容",
+      "body": "ews活动内容",
+      "aliases": [
+        "ews活动内容",
+        "switch/ews活动内容"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "pc"
+      ],
+      "variants": [
+        "Property 1=ews",
+        "Property 1=协会全球赛",
+        "Property 1=巅峰竞技场"
+      ],
+      "variantCount": 3,
+      "statePair": false,
+      "shot": "shots/ews活动内容.jpg"
+    },
+    {
+      "id": "ews模块活动内容",
+      "role": "switch",
+      "name": "switch/ews模块活动内容",
+      "body": "ews模块活动内容",
+      "aliases": [
+        "ews模块活动内容",
+        "switch/ews模块活动内容"
+      ],
+      "types": [
+        "COMPONENT_SET",
+        "INSTANCE"
+      ],
+      "surfaces": [
+        "mobile"
+      ],
+      "variants": [
+        "Property 1=EWS 2026",
+        "Property 1=伊瑟协会全球赛",
+        "Property 1=竞策争锋",
+        "Property 1=超能角斗场"
+      ],
+      "variantCount": 4,
+      "statePair": false,
+      "shot": "shots/ews模块活动内容.jpg"
+    }
+  ]
+}

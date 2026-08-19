@@ -56,34 +56,70 @@
 
 ## 无法自动化（by-design，只计数观察）
 
-- `unnamed-draft-next-day-runbook` **未规范稿次日开跑清单** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:换稿按 SKILL「未规范稿次日开跑」执行：判断包含 set 图、截图+数据+变体树、写回与沉淀同一闸门、completeness 脚本必须绿。
+- `determined-not-overwritten-by-later-unknown` **已 determined 不得被后一条 unknown 复写** — 出现 2 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:错误：装饰已标 img/ 后，写回按 JSONL 最后一条把同一 id 改回 unknown。正确口径：同一 id 先 determined 后 unknown 时保留 determined，报冲突。标题改 unknown 只作用标题，不覆盖装饰。
+  - 备注:[decided:2026-08-19] 写回跳过「determined 之后的 unknown」。
+- `scroll-clip-not-inner-reward` **scroll 只写在划动裁切层，奖励图是 img** — 出现 3 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:同层里名字带划动/可划动的 FRAME 才是 scroll/。同尺寸奖励列表是轨道图，必须 img/。旧闸门按奖励两字强制 scroll，会放过裁切层、误伤轨道图。
+  - 备注:[decided:2026-08-19] 来自 491 mobile 核对：9047 scroll，9048/9064 img。
+- `title-deco-is-img` **标题组件集不命名，子层装饰是 img** — 出现 2 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:错误：标题有字就把整棵标题树（含装饰）改回 unknown。原因：标题组件集本身不是切图，装饰才是。正确口径：标题集/默认变体不命名；装饰 img/；改装饰母版只带动装饰实例。
+  - 备注:[decided:2026-08-19] 491 mobile 核对：装饰 img，标题 unknown。
+- `left-nav-items-are-btn` **页上左侧导航项是 btn，不是 img 也不是 unknown** — 出现 1 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:错误：把 fix/左侧导航下的项判成 unknown（跨货架）或 img/。原因：它们在页上可点切换。正确口径：页上实例 btn/导航状态 + click；组件定义仍可 unknown，不伪造本地组件集。
+  - 备注:[decided:2026-08-19] PC 518:6945-6955 人核为 btn。
+- `reward-row-is-scroll` **奖励变体横滑条必须判 scroll** — 出现 2 次,首见 2026-08-18,最近 2026-08-19,status: adopted
+  - 现象:裁切层（划动/可划动）才是 scroll/。同层奖励列表是轨道图 img/。旧口径把「奖励」两字当成 scroll 会标错层。
+  - 提案:本次 PC+mobile 命中 10 条奖励横滑行。
+  - 备注:[decided:2026-08-18] 奖励变体横滑条必须判 scroll
+- `catalog-skips-loose-image-parts` **模块目录只管组件集，不管散落切图** — 出现 2 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:catalog:match 按类型+变体结构检索，只给 switch/btn/img 组件集前缀。RECTANGLE/GROUP 边框、icon、头像框零件不会被目录命中。这类靠人工核对 + 卡片素材闸门，不要指望目录代判。
+  - 备注:[decided:2026-08-19] 解释为何 33 条切图反馈目录 0 hit。
+- `card-art-is-img` **卡片视觉资产必须判 img** — 出现 2 次,首见 2026-08-18,最近 2026-08-19,status: adopted
+  - 现象:素材图、边框背景/背景边框、立绘等整块视觉资产标 img/。父级已是 img/btn 时内部一级边框零件不抬升；父级没有切图前缀时整块要补 img/。
+  - 提案:本次 PC+mobile 和完整变体子树补齐卡片资产。
+  - 备注:[decided:2026-08-18] 卡片视觉资产必须判 img
+- `prefix-only-module-grade` **模块只核前缀，后缀和设计师原名不作参考** — 出现 2 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:组件集/弹窗/裁切条只要求 role/ 前缀正确。后缀对错不计。检索用类型和变体结构，不用设计师原名。
+  - 备注:[decided:2026-08-19] 只核前缀，设计师原名不一定正确。
+- `mix-calendar-when-clustered` **日历外层元素混杂时用 mix，不要 unknown** — 出现 2 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:PC 已是 mix/calendar。mobile 日历外层有多层背景装饰时同样 mix/，不要因为「日历外层不命名」整块 unknown。
+  - 备注:[decided:2026-08-19] 491:7643 核对改为 mix。
+- `title-set-unnamed` **标题组件集不命名** — 出现 2 次,首见 2026-08-18,最近 2026-08-19,status: adopted
+  - 现象:标题集/默认变体不命名；子层装饰按功能另判为 img/。
+  - 提案:本次 PC+mobile 4 项。
+  - 备注:[decided:2026-08-18] 标题组件集不命名
+- `review-master-instances-same-layer` **改母版带动该层全部实例，不爬父级** — 出现 1 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:改装饰母版 = 所有装饰实例一起变。旧核对页从子层爬到标题组件集，一次提交误改标题实例。正确：实例跟随该层母版，不把父级标题卷进同一提交。
+  - 备注:[decided:2026-08-19] 核对页 linkedFamily 只跟同层实例。
+- `module-catalog-shots-for-new-drafts` **新稿用模块目录数据+切片套同类名** — 出现 1 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:规范稿组件集/弹窗做成 evolution/module-catalog（JSON+压缩jpg）。新稿按设计师原名和类型检索，命中则沿用 catalog.name 并用目录切片对照。未命中不得抄旧图层 id。人确认过的新模块再 build 进目录。
+  - 备注:[decided:2026-08-19] 新稿旧模块换位/加模块：同类名保持不变。
+- `transferable-gold-morphology-gate` **新稿用无id形态闸门保证已知口径** — 出现 1 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:换新未规范稿不能拿旧夹具对图层id。completeness 合并 gold-morphology：按设计师原名+类型+形状对齐规范稿同类层。已知形态漏判即红；对不上目录的新层保持 unknown，人确认后再沉淀进规则。
+  - 备注:[decided:2026-08-19] 新稿正确性靠可执行形态闸门，不靠同一份稿反复对齐。
+- `unnamed-draft-next-day-runbook` **未规范稿次日开跑清单** — 出现 2 次,首见 2026-08-18,最近 2026-08-19,status: adopted
+  - 现象:换稿按 SKILL「未规范稿次日开跑」：发链接后自动跑到判断写回；机器 G2；判断写回后等人确认再沉淀；completeness 必须绿。
   - 备注:[decided:2026-08-18] 明天用新未规范稿验收，先不管做页衔接
-- `judge-must-settle-skill-and-ledger` **判断写回与沉淀同一闸门** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
+- `unnamed-oneshot-link-to-draft` **发链接后自动跑到判断写回** — 出现 1 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:用户丢货架链接后自动拉树、导图、机器G2、判断写回。G2 不等人点头。G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。
+  - 备注:[decided:2026-08-19] 一窗出 draft 清单，脏会话自动换执行体。
+- `judge-confirm-then-settle` **判断写回后等人确认再沉淀** — 出现 1 次,首见 2026-08-19,最近 2026-08-19,status: adopted
+  - 现象:判断写回 draft 后必须停，等人确认判断已完成。人确认前禁止写 skill / 台账；确认后必须沉淀，没写不许宣称本单收工。
+  - 备注:[decided:2026-08-19] 发链接一窗出清单；沉淀单独等人确认。
+- `judge-must-settle-skill-and-ledger` **判断写回与沉淀同一闸门** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: rejected
   - 现象:步骤3交清单时必须同时写SKILL和evolution-note。没沉淀不许宣称完成。
-  - 备注:[decided:2026-08-18] 判断完必须进skill和台账，同一闸门
+  - 备注:[decided:2026-08-19] 判断写回与沉淀拆开：等人确认判断已完成后才写 skill/台账。旧「同一闸门」作废。
 - `judge-must-use-page-and-variant-shots` **判断必须同时用整页切片、变体小图和结构数据** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
   - 现象:不能只看当前页展开态，也不能只看树。switch/组件其它变体必须看 set-*.jpg 再对照变体子树。
   - 备注:[decided:2026-08-18] 截图+数据同时判，变体也要出图
 - `inventory-name-must-match-gold-morphology` **未规范稿出口必须带规范稿同类层前缀** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
   - 现象:错成仅写 role/label、name 仍为设计师原名，且把播放按钮误作 hot；正确口径是 determined 非 copy 同时写 role/功能名，并按形态区分 btn/播放按钮、hot/具体视频播放区域、img/点击视频播放弹出区域。
   - 备注:[decided:2026-08-18] 未规范稿清单出口的 name/role/label/behavior 必须与规范稿同类层一致；只写 role 不算完成。
-- `card-art-is-img` **卡片视觉资产必须判 img** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:漏因：组件集已判定被误当作子树已完成，素材图、边框背景、立绘、视频框等仍 unknown。正确口径：卡片整块视觉资产标 img/；其内部边框零件不抬升。
-  - 提案:本次 PC+mobile 和完整变体子树补齐卡片资产。
-  - 备注:[decided:2026-08-18] 卡片视觉资产必须判 img
-- `reward-row-is-scroll` **奖励变体横滑条必须判 scroll** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:漏因：上次只将 switch 组件集和变体根标为 determined，没有继续扫描奖励展示子树；短高裁切容器内的一排奖励格仍为 unknown。正确口径：奖励变体中“奖励”横条满足裁切容器+一排格子时，标 scroll/奖励列表，页面实例与每个变体子树都要覆盖。
-  - 提案:本次 PC+mobile 命中 10 条奖励横滑行。
-  - 备注:[decided:2026-08-18] 奖励变体横滑条必须判 scroll
 - `mobile-named-modal` **移动端命名弹窗必须挂附件** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
   - 现象:错误：多语言、顶部导航、视频弹窗留 unknown。原因：它们是移动页独立 modal 附件，不应摊进 PC 或页面正文。正确口径：modal/多语言按钮弹窗、modal/顶部导航、modal/视频弹窗。
   - 提案:本次 mobile 3 处。
   - 备注:[decided:2026-08-18] 移动端命名弹窗必须挂附件
-- `title-set-unnamed` **标题组件集不命名** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：标题组件集和默认变体判 img。原因：抽象标题组件不直接作为切图资产；具体使用处另按功能判。正确口径：标题组件集及默认变体无前缀，但应视为已核过。
-  - 提案:本次 PC+mobile 4 项。
-  - 备注:[decided:2026-08-18] 标题组件集不命名
 - `switch-control-is-btn` **移动活动切换按钮是 btn** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
   - 现象:错误：活动分类切换按钮和变体判成 tab，实例未判。原因：按钮是内容外控制；活动内容本体才是 switch。正确口径：btn/切换按钮；所有实例/变体同判。
   - 提案:本次组件集+2 变体+2 实例，共 5 项。
