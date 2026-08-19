@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 /**
- * daily-ledger.mjs — Figma 命名的每日台账晨报。
+ * daily-ledger.mjs — Figma 命名的每日台账晨报（v3.1）。
  *
- * 只读本地证据，产出建议。不改 Figma、规范、判据、ledger、Git。
+ * 主输入是 evolution/ledger.json。晨报回答：
+ *   昨天台账新增/更新了什么、哪些过四门可收紧、哪些继续观察、
+ *   哪些必须 owner 拍板、哪些该进每周复盘、规范是否已签收。
+ *
+ * 证据文件与可选 npm test 只作补充，不得盖过台账。
+ * 只出建议，不改 Figma、规范、判据、ledger、Git。
  *
  *   node bin/daily-ledger.mjs [--morning] [--run] [--date YYYY-MM-DD] [--out <dir>]
  */
@@ -11,7 +16,12 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { POLICY_VERSION, evaluateAdmission, assessTerminalCompliance } from "../src/ledger-policy.mjs";
+import {
+  POLICY_VERSION,
+  evaluateAdmission,
+  assessTerminalCompliance,
+  canAutoLand,
+} from "../src/ledger-policy.mjs";
 
 const TOOL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILL_ROOT = resolve(TOOL_ROOT, "..");
@@ -28,6 +38,21 @@ export function chinaDate(now = new Date()) {
   }).format(now);
 }
 
+export function chinaDateFromIso(iso) {
+  if (!iso) return null;
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return null;
+  return chinaDate(dt);
+}
+
+export function previousChinaDate(date) {
+  const [year, month, day] = String(date).split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const prior = new Date(Date.UTC(year, month - 1, day) - 24 * 60 * 60 * 1000);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${prior.getUTCFullYear()}-${pad(prior.getUTCMonth() + 1)}-${pad(prior.getUTCDate())}`;
+}
+
 export function safeReadJson(file) {
   if (!existsSync(file)) return { present: false, value: null, error: null };
   try { return { present: true, value: JSON.parse(readFileSync(file, "utf8")), error: null }; }
@@ -38,125 +63,23 @@ function compact(value, max = 420) {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
-export function classifyIssue({ source = "", key = "", message = "" } = {}) {
-  const text = `${source} ${key} ${message}`.toLowerCase();
-  if (/already.?named|-2-2|indind|叠前缀|去重/.test(text)) {
-    return {
-      stage: "apply/dedupe",
-      rootCauseFamily: "already-named-mutated",
-      nextStep: "alreadyNamed / ind/ 原样保留，禁止再进全局去重或 sanitizeBody 叠前缀。复验：同名合法层 newName === oldName。",
-      changeTarget: "tool/src/naming/walk.mjs alreadyNamed / indicatorComponent",
-      criterion: "合法前缀名不得被加 -2 或再叠同一前缀",
-      reverify: "同名合法层 newName === oldName；ind/ind轮播点 不被改成 ind/indind轮播点",
-      attribution: "confirmed",
-      channel: "tighten",
-      certain: true,
-    };
-  }
-  if (/trunk|sec\/|画布|mobile|页面内容/.test(text)) {
-    return {
-      stage: "section/root",
-      rootCauseFamily: "section-root-wrong-trunk",
-      nextStep: "画布当根时主干选未命名满宽分区，编号只认同一父层。复验：PC 1–N 不被另一端 sec/ 挤号。",
-      changeTarget: "tool/src/naming/structure.mjs mainTrunkParent / secPattern",
-      criterion: "画布当根时主干选未命名满宽分区，编号只认同一父层",
-      reverify: "PC 1–N 不被另一端 sec/ 挤号",
-      attribution: "confirmed",
-      channel: "tighten",
-      certain: true,
-    };
-  }
-  if (/需确认|needsrecheck|confidentprefix|功能词/.test(text)) {
-    return {
-      stage: "verdict",
-      rootCauseFamily: "function-word-held-back",
-      nextStep: "functionWordPattern.confidentPrefix 必须进 confirmed。复验：划动箭头 / 弹窗不再落需确认。",
-      changeTarget: "tool/src/naming/walk.mjs sureButton / nameIsSelfEvident",
-      criterion: "functionWordPattern.confidentPrefix 必须进 confirmed",
-      reverify: "划动箭头 / 弹窗不再落需确认",
-      attribution: "confirmed",
-      channel: "tighten",
-      certain: true,
-    };
-  }
-  if (/反馈|should-be|判错|functionwordpattern/.test(text)) {
-    return {
-      stage: "feedback",
-      rootCauseFamily: "feedback-not-promoted",
-      nextStep: "人标过的模式写进词表并补测试，不要只改当前稿。",
-      changeTarget: "tool/src/naming/structure.mjs functionWordPattern",
-      criterion: "人标过的模式写进词表并补测试",
-      reverify: "同类名字下次自动判，不再只改当前稿",
-      attribution: "pending",
-      channel: "tighten",
-      certain: true,
-    };
-  }
-  if (/timeout|插件已连上但没有|bridge/.test(text)) {
-    return {
-      stage: "bridge",
-      rootCauseFamily: "bridge-timeout",
-      nextStep: "大批量写回把桥等待加长；超时必须 fail loud，不能假装写过。",
-      changeTarget: "tool/src/bridge-server.mjs 等待超时",
-      criterion: "超时必须 fail loud，不能假装写过",
-      reverify: "桥超时退出非 0，且 apply-plan 不记成功",
-      attribution: "pending",
-      channel: "tighten",
-      certain: true,
-    };
-  }
-  if (/分区怎么|要不要前缀|业务含义/.test(text)) {
-    return {
-      stage: "product/design",
-      rootCauseFamily: "needs-owner-prefix",
-      nextStep: "分区切分与是否命名属设计类，只计数，等 owner。",
-      changeTarget: "docs/ledger-legislation.md 设计类观察",
-      criterion: "分区切分与是否命名属设计观察",
-      reverify: "只计数，不自动改稿",
-      attribution: "pending",
-      channel: "design",
-      isDesignObservation: true,
-      certain: true,
-    };
-  }
-  if (/test|assert|fail/.test(text)) {
-    return {
-      stage: "verify/tooling",
-      rootCauseFamily: "naming-test-regression",
-      nextStep: "先看失败断言对应哪条命名纪律，补最小回归测试，不放宽口径。",
-      changeTarget: "tool/test 对应失败断言",
-      criterion: "失败断言对应哪条命名纪律，补最小回归测试",
-      reverify: "相关套件通过，不放宽口径",
-      attribution: "pending",
-      channel: "tighten",
-      certain: true,
-    };
-  }
-  return {
-    stage: "product/design",
-    rootCauseFamily: "needs-owner-prefix",
-    nextStep: "证据不足以定唯一根因；先补跨实例证据，不按表面症状改规范。",
-    changeTarget: "",
-    criterion: "",
-    reverify: "",
-    attribution: "pending",
-    channel: "expansion",
-    certain: false,
-  };
+export function parseDecidedDate(note) {
+  const match = String(note || "").match(/^\[decided:(\d{4}-\d{2}-\d{2})\]/);
+  return match ? match[1] : null;
 }
 
-export function dedupeIssues(raw) {
-  const map = new Map();
-  for (const item of raw) {
-    const key = `${item.rootCauseFamily}|${compact(item.message, 80)}`;
-    const found = map.get(key);
-    if (found) {
-      found.occurrences += 1;
-      continue;
-    }
-    map.set(key, { ...item, occurrences: 1 });
-  }
-  return [...map.values()];
+export function mapTierToChannel(tier) {
+  if (tier === "auto") return "tighten";
+  if (tier === "proposal") return "expansion";
+  if (tier === "by-design") return "design";
+  return "expansion";
+}
+
+export function inferExecState(entry = {}) {
+  if (entry.execState) return entry.execState;
+  if (entry.status === "landed" || entry.status === "adopted") return "landed-effective";
+  if (entry.status === "open") return "proposal-created";
+  return null;
 }
 
 const NAMED_PREFIX_RE = /^(img|btn|ind|switch|modal|hot|dyn|mix|scroll|sec|bg|kv|tab|fix|ref)\//;
@@ -174,170 +97,286 @@ export function stackedPrefixMutation(from, to) {
   return target === `${prefix}${token}${body}` || target === `${prefix}${prefix}${body}`;
 }
 
-function issueFrom({ source, key, message, evidence = {}, severity = "warning" }) {
-  const classified = classifyIssue({ source, key, message });
+export function loadLedger(rootDir) {
+  const file = join(rootDir, "evolution", "ledger.json");
+  const parsed = safeReadJson(file);
+  if (!parsed.present) {
+    const error = new Error("ledger.json 缺失，拒绝生成晨报");
+    error.code = "LEDGER_MISSING";
+    throw error;
+  }
+  if (parsed.error || !parsed.value || !Array.isArray(parsed.value.entries)) {
+    const reason = parsed.error || "ledger.json 结构异常";
+    const error = new Error(`ledger.json 损坏，拒绝生成晨报：${reason}`);
+    error.code = "LEDGER_CORRUPT";
+    throw error;
+  }
+  return parsed.value;
+}
+
+export function loadLedgerStates(rootDir) {
+  const ledger = loadLedger(rootDir);
+  const map = {};
+  for (const entry of ledger.entries) {
+    const compliance = assessTerminalCompliance(entry);
+    map[entry.fingerprint] = {
+      status: entry.status,
+      execState: inferExecState(entry),
+      tier: entry.tier,
+      noteLegacy: compliance.legacy || !!entry.noteLegacy,
+      terminalCompliant: compliance.compliant,
+    };
+  }
+  return map;
+}
+
+export function candidateFromEntry(entry = {}) {
+  const firstSeen = chinaDateFromIso(entry.firstSeen);
+  const lastSeen = chinaDateFromIso(entry.lastSeen);
+  const evidence = [];
+  if (firstSeen) evidence.push({ date: firstSeen, instance: `${entry.fingerprint}:first`, session: "ledger" });
+  if (lastSeen && lastSeen !== firstSeen) {
+    evidence.push({ date: lastSeen, instance: `${entry.fingerprint}:last`, session: "ledger" });
+  }
+  const channel = mapTierToChannel(entry.tier);
+  const proposal = String(entry.proposal || "").trim();
+  const detail = String(entry.detail || "").trim();
+  const note = String(entry.note || "");
+  const reverifyMatch = note.match(/复验[:：]\s*(.+)/);
+  const compliance = assessTerminalCompliance(entry);
+  const decided = parseDecidedDate(note);
+  const terminalConfirmed = ["landed", "adopted", "rejected"].includes(entry.status) && compliance.compliant;
   return {
-    id: `${source}:${key}:${compact(message, 120)}`,
-    source,
-    key,
-    severity,
-    message: compact(message),
+    family: entry.fingerprint,
+    title: entry.title || entry.fingerprint,
+    stage: entry.tier || "unknown",
+    count: Number(entry.occurrences) || 1,
     evidence,
-    ...classified,
+    attribution: terminalConfirmed ? "confirmed" : "pending",
+    channel,
+    changeTarget: proposal || detail,
+    criterion: proposal || detail,
+    reverify: reverifyMatch ? compact(reverifyMatch[1], 180) : "",
+    single: channel === "tighten" && entry.status === "open" && (Number(entry.occurrences) || 1) === 1,
+    certain: channel === "tighten",
+    isDesignObservation: channel === "design",
+    relaxesAcceptance: channel === "expansion",
+    status: entry.status,
+    execState: inferExecState(entry),
+    note,
+    noteLegacy: !!entry.noteLegacy || compliance.legacy,
+    firstSeen,
+    lastSeen,
+    decidedDate: decided,
+    detail,
+    proposal,
+    graduationPending: /graduation-pending/.test(note),
   };
+}
+
+export function toMorningCandidate(entryOrRoot = {}, _ledgerStates = {}) {
+  const candidate = entryOrRoot.family && entryOrRoot.channel
+    ? { ...entryOrRoot }
+    : candidateFromEntry(entryOrRoot);
+  const admission = evaluateAdmission(candidate);
+  return { ...candidate, admission };
 }
 
 function isCurrentApplyPlan(name) {
   return /^apply-plan-\d+-\d+\.json$/.test(name);
 }
 
-function collectApplyPlanIssues(reportDir) {
-  const out = [];
-  if (!existsSync(reportDir)) return out;
-  /* 只读 name.mjs 覆盖写出的当前名单，不扫历史撤回/旧分区。 */
+function collectSupplementaryEvidence(reportDir) {
+  const issues = [];
+  if (!existsSync(reportDir)) return issues;
   for (const name of readdirSync(reportDir)) {
-    if (!isCurrentApplyPlan(name)) continue;
     const file = join(reportDir, name);
-    const parsed = safeReadJson(file);
-    if (parsed.error) {
-      out.push(issueFrom({ source: "apply-plan", key: name, message: `名单无法解析：${parsed.error}`, evidence: { file }, severity: "blocking" }));
-      continue;
+    if (isCurrentApplyPlan(name)) {
+      const parsed = safeReadJson(file);
+      if (parsed.error) {
+        issues.push({
+          source: "apply-plan", key: name, severity: "blocking",
+          family: "already-named-mutated",
+          message: `名单无法解析：${parsed.error}`,
+          evidence: { file },
+        });
+        continue;
+      }
+      const entries = parsed.value && Array.isArray(parsed.value.entries) ? parsed.value.entries : [];
+      let mutated = 0;
+      for (const entry of entries) {
+        if (stackedPrefixMutation(entry.from, entry.to)) mutated += 1;
+      }
+      if (mutated) {
+        issues.push({
+          source: "apply-plan", key: name, severity: "blocking",
+          family: "already-named-mutated",
+          message: `${name} 把 ${mutated} 条已有合法名改成带 -2 / 叠前缀`,
+          evidence: { file, mutated },
+        });
+      }
     }
-    const plan = parsed.value;
-    if (!plan || !Array.isArray(plan.entries)) continue;
-    let mutated = 0;
-    for (const entry of plan.entries) {
-      const from = String(entry.from ?? "");
-      const to = String(entry.to ?? "");
-      if (stackedPrefixMutation(from, to)) mutated += 1;
-    }
-    if (mutated) {
-      out.push(issueFrom({
-        source: "apply-plan", key: name,
-        message: `${name} 把 ${mutated} 条已有合法名改成带 -2 / 叠前缀`,
-        evidence: { file, mutated },
-        severity: "blocking",
-      }));
+    if (/^apply-plan-feedback(?!-retry).*\.json$/.test(name)) {
+      const parsed = safeReadJson(file);
+      if (parsed.error) {
+        issues.push({
+          source: "feedback", key: name, severity: "blocking",
+          family: "feedback-must-become-rules",
+          message: `反馈 dump 无法解析：${parsed.error}`,
+          evidence: { file },
+        });
+        continue;
+      }
+      const dump = parsed.value;
+      const entries = dump && typeof dump === "object" && !Array.isArray(dump)
+        ? (dump.entries || dump.items)
+        : null;
+      if (!Array.isArray(entries)) {
+        issues.push({
+          source: "feedback", key: name, severity: "blocking",
+          family: "feedback-must-become-rules",
+          message: "反馈 dump 结构异常：缺少 entries/items 数组",
+          evidence: { file },
+        });
+        continue;
+      }
+      if (entries.length) {
+        issues.push({
+          source: "feedback", key: name, severity: "warning",
+          family: "feedback-must-become-rules",
+          message: `工作区仍有插件反馈 ${entries.length} 条（补充证据，不单独当今日新台账）`,
+          evidence: { file, count: entries.length },
+        });
+      }
     }
   }
-  return out;
-}
-
-function collectFeedbackIssues(reportDir) {
-  const out = [];
-  if (!existsSync(reportDir)) return out;
-  for (const name of readdirSync(reportDir)) {
-    if (!/^apply-plan-feedback(?!-retry).*\.json$/.test(name)) continue;
-    const file = join(reportDir, name);
-    const parsed = safeReadJson(file);
-    if (parsed.error) {
-      out.push(issueFrom({
-        source: "feedback",
-        key: name,
-        message: `反馈 dump 无法解析：${parsed.error}`,
-        evidence: { file },
-        severity: "blocking",
-      }));
-      continue;
-    }
-    const dump = parsed.value;
-    const entries = dump && typeof dump === "object" && !Array.isArray(dump)
-      ? (dump.entries || dump.items)
-      : null;
-    if (!Array.isArray(entries)) {
-      out.push(issueFrom({
-        source: "feedback",
-        key: name,
-        message: "反馈 dump 结构异常：缺少 entries/items 数组",
-        evidence: { file },
-        severity: "blocking",
-      }));
-      continue;
-    }
-    if (Array.isArray(entries) && entries.length) {
-      out.push(issueFrom({
-        source: "feedback", key: name,
-        message: `插件反馈 ${entries.length} 条尚未确认是否写进词表`,
-        evidence: { file, count: entries.length },
-      }));
-    }
-  }
-  return out;
+  return issues;
 }
 
 function collectTestIssues(run) {
-  if (!run) return [];
-  if (run.exitCode === 0) return [];
-  return [issueFrom({
+  if (!run || run.exitCode === 0) return [];
+  return [{
     source: "npm-test",
     key: "naming-suite",
+    severity: "blocking",
+    family: "naming-test-regression",
     message: `npm test 退出 ${run.exitCode}：${compact(run.stderr || run.stdout, 240)}`,
     evidence: { exitCode: run.exitCode },
-    severity: "blocking",
-  })];
+  }];
 }
 
-export function buildDailyReport({ date, commandRuns = [], reportDir }) {
-  const raw = [
-    ...collectApplyPlanIssues(reportDir),
-    ...collectFeedbackIssues(reportDir),
+export function groupCandidates(candidates = []) {
+  const groups = {
+    closure: [],
+    observation: [],
+    ownerDecision: [],
+    designRepeat: [],
+    promotion: [],
+    reflux: [],
+    graduationPending: [],
+  };
+  for (const candidate of candidates) {
+    const admission = candidate.admission || evaluateAdmission(candidate);
+    if (candidate.channel === "expansion" && candidate.status !== "rejected") {
+      groups.ownerDecision.push(candidate);
+    }
+    if (candidate.channel === "tighten" && candidate.status === "open") {
+      if (canAutoLand(candidate)) groups.closure.push(candidate);
+      else groups.observation.push(candidate);
+    }
+    if (candidate.status === "tracked") {
+      if ((candidate.count || 0) >= 4) groups.promotion.push(candidate);
+      else groups.observation.push(candidate);
+    }
+    if (candidate.channel === "design" && (candidate.count || 0) >= 2 && candidate.status === "tracked") {
+      groups.designRepeat.push(candidate);
+    }
+    if (
+      (candidate.status === "landed" || candidate.status === "adopted")
+      && candidate.decidedDate
+      && candidate.lastSeen
+      && candidate.lastSeen > candidate.decidedDate
+    ) {
+      groups.reflux.push(candidate);
+    }
+    if (candidate.graduationPending) groups.graduationPending.push(candidate);
+    if (!admission.admitted && candidate.status === "open" && candidate.channel !== "expansion") {
+      if (!groups.observation.includes(candidate) && !groups.closure.includes(candidate)) {
+        groups.observation.push(candidate);
+      }
+    }
+  }
+  return groups;
+}
+
+export function buildDailyReport({ date, ledger, commandRuns = [], reportDir }) {
+  if (!ledger || !Array.isArray(ledger.entries)) {
+    const error = new Error("ledger.json 结构异常，拒绝生成晨报");
+    error.code = "LEDGER_CORRUPT";
+    throw error;
+  }
+  const yesterday = previousChinaDate(date);
+  const candidates = ledger.entries.map((entry) => toMorningCandidate(entry));
+  const yesterdayNew = [];
+  const yesterdayUpdated = [];
+  const yesterdayDecided = [];
+  for (const candidate of candidates) {
+    const bornYesterday = candidate.firstSeen === yesterday;
+    const touchedYesterday = candidate.lastSeen === yesterday;
+    if (bornYesterday) yesterdayNew.push(candidate);
+    else if (touchedYesterday) yesterdayUpdated.push(candidate);
+    if (touchedYesterday && ["landed", "adopted", "rejected"].includes(candidate.status)) {
+      yesterdayDecided.push(candidate);
+    }
+  }
+  const groups = groupCandidates(candidates);
+  const issues = [
+    ...collectSupplementaryEvidence(reportDir),
     ...commandRuns.flatMap(collectTestIssues),
   ];
-  const issues = dedupeIssues(raw);
-  const stages = ["apply/dedupe", "section/root", "verdict", "feedback", "bridge", "verify/tooling", "product/design"];
-  const byStage = Object.fromEntries(stages.map((stage) => [stage, 0]));
   let blocking = 0;
   let warnings = 0;
   for (const item of issues) {
-    byStage[item.stage] = (byStage[item.stage] || 0) + 1;
     if (item.severity === "blocking") blocking += 1;
     else warnings += 1;
   }
-  const rootCauses = Object.values(issues.reduce((acc, item) => {
-    const found = acc[item.rootCauseFamily] || {
-      family: item.rootCauseFamily,
-      stage: item.stage,
-      count: 0,
-      issueIds: [],
-      nextStep: item.nextStep,
-      changeTarget: item.changeTarget || item.nextStep || "",
-      criterion: item.criterion || "",
-      reverify: item.reverify || "",
-      attribution: item.attribution || "pending",
-      channel: item.channel,
-      certain: item.certain === true,
-      isDesignObservation: item.isDesignObservation === true,
-      evidence: [],
-    };
-    found.count += item.occurrences;
-    found.issueIds.push(item.id);
-    const ev = item.evidence || {};
-    const instance = ev.file || ev.instance || item.key || item.id;
-    const seenOn = ev.date || date;
-    if (instance) found.evidence.push({ date: seenOn, instance, session: ev.session || item.source });
-    acc[item.rootCauseFamily] = found;
-    return acc;
-  }, {})).sort((a, b) => b.count - a.count || a.family.localeCompare(b.family));
   return {
-    schema: "figma-naming-daily-ledger/v1",
+    schema: "figma-naming-daily-ledger/v2",
     date,
     generatedAt: new Date().toISOString(),
     skill: "figma-naming",
+    window: { yesterday },
     evidenceSources: {
+      ledgerEntries: ledger.entries.length,
       reportDir: existsSync(reportDir) ? reportDir : null,
       commands: commandRuns.map(({ id, command, exitCode }) => ({ id, command, exitCode })),
     },
-    summary: { total: issues.length, blocking, warnings, byStage },
+    summary: {
+      ledgerTotal: ledger.entries.length,
+      yesterdayNew: yesterdayNew.length,
+      yesterdayUpdated: yesterdayUpdated.length,
+      yesterdayDecided: yesterdayDecided.length,
+      openProposals: groups.ownerDecision.filter((item) => item.status === "open").length,
+      trackedLegacy: candidates.filter((item) => item.noteLegacy).length,
+      blocking,
+      warnings,
+    },
+    changes: {
+      new: yesterdayNew,
+      updated: yesterdayUpdated,
+      decided: yesterdayDecided,
+    },
+    candidates,
+    groups,
     issues,
-    rootCauses,
   };
 }
 
 export function checkPolicyManifest(rootDir) {
   const manifestFile = join(rootDir, "evolution", "policy-manifest.json");
-  const m = safeReadJson(manifestFile);
-  if (!m.present || !m.value) return { ok: false, drift: true, reason: "policy-manifest.json 缺失或损坏" };
-  const manifest = m.value;
+  const parsed = safeReadJson(manifestFile);
+  if (!parsed.present || !parsed.value) return { ok: false, drift: true, reason: "policy-manifest.json 缺失或损坏" };
+  const manifest = parsed.value;
   const docFile = join(rootDir, manifest.rulesDoc || "docs/ledger-legislation.md");
   let docText;
   try { docText = readFileSync(docFile, "utf8"); }
@@ -352,122 +391,114 @@ export function checkPolicyManifest(rootDir) {
   return { ok: true, drift: false, version: manifest.policyVersion, hash, ownerApproved: manifest.ownerApproved === true };
 }
 
-export function loadLedgerStates(rootDir) {
-  const file = join(rootDir, "evolution", "ledger.json");
-  const l = safeReadJson(file);
-  if (!l.present) return {};
-  if (l.error || !l.value || !Array.isArray(l.value.entries)) {
-    const reason = l.error || "ledger.json 结构异常";
-    const error = new Error(`ledger.json 损坏，拒绝生成晨报：${reason}`);
-    error.code = "LEDGER_CORRUPT";
-    throw error;
-  }
-  const map = {};
-  for (const e of l.value.entries) {
-    const compliance = assessTerminalCompliance(e);
-    map[e.fingerprint] = {
-      status: e.status,
-      execState: e.execState || null,
-      tier: e.tier,
-      noteLegacy: compliance.legacy || !!e.noteLegacy,
-      terminalCompliant: compliance.compliant,
-    };
-  }
-  return map;
+function lineForCandidate(candidate) {
+  const title = candidate.title && candidate.title !== candidate.family ? ` ${candidate.title}` : "";
+  return `\`${candidate.family}\`${title}（${candidate.stage || "?"}，${candidate.status || "?"}，×${candidate.count || 1}）`;
 }
 
-export function toMorningCandidate(root = {}, ledgerStates = {}) {
-  const ls = ledgerStates[root.family] || {};
-  const candidate = {
-    family: root.family,
-    stage: root.stage,
-    count: root.count,
-    evidence: Array.isArray(root.evidence) ? root.evidence : [],
-    attribution: root.attribution || "pending",
-    channel: root.channel,
-    changeTarget: root.changeTarget || root.nextStep || "",
-    criterion: root.criterion || "",
-    reverify: root.reverify || "",
-    single: root.single === true,
-    certain: root.certain === true,
-    isDesignObservation: root.isDesignObservation === true,
-    relaxesAcceptance: root.relaxesAcceptance === true,
-  };
-  const admission = evaluateAdmission(candidate);
-  return { ...candidate, admission, execState: ls.execState || null, ledgerStatus: ls.status || null, noteLegacy: ls.noteLegacy || false };
-}
-
-export function renderMorningReport(report, { policy, ledgerStates = {}, skillVersion = null } = {}) {
-  const candidates = (report.rootCauses || []).map((root) => toMorningCandidate({ ...root, date: report.date }, ledgerStates));
-  const groups = { closure: [], observation: [], ownerDecision: [], designRepeat: [] };
-  for (const candidate of candidates) {
-    if (candidate.admission.admitted && candidate.admission.channel === "tighten") groups.closure.push(candidate);
-    if (!candidate.admission.admitted) groups.observation.push(candidate);
-    if (candidate.admission.channel === "expansion") groups.ownerDecision.push(candidate);
-    if (candidate.admission.channel === "design" && (candidate.count || 0) >= 2) groups.designRepeat.push(candidate);
-  }
-  const L = [];
-  L.push(`# 命名台账晨读 — ${report.date}`, "");
-  L.push(`- 治理立法：**${policy?.version || POLICY_VERSION}**（${policy?.ok ? "规则校验通过" : "规则漂移/未校验"}）`);
-  L.push(`- 生成于 ${report.generatedAt}（日期按 Asia/Shanghai CST/UTC+8）`);
-  L.push("- 说明：本报告只生成建议，不改 Figma / 规范 / 判据 / 长期 ledger / Git。");
-  const legacy = Object.entries(ledgerStates)
-    .filter(([, state]) => state?.noteLegacy)
-    .map(([family]) => family);
+export function renderMorningReport(report, { policy, skillVersion = null } = {}) {
+  const groups = report.groups || groupCandidates(report.candidates || []);
+  const changes = report.changes || { new: [], updated: [], decided: [] };
+  const summary = report.summary || {};
+  const lines = [];
+  lines.push(`# 命名台账晨读 — ${report.date}`, "");
+  lines.push(`- 治理立法：**${policy?.version || POLICY_VERSION}**（${policy?.ok ? "规则校验通过" : "规则漂移/未校验"}）`);
+  lines.push(`- 生成于 ${report.generatedAt}（日期按 Asia/Shanghai CST/UTC+8）`);
+  lines.push(`- 主输入：\`evolution/ledger.json\`（${summary.ledgerTotal ?? (report.candidates || []).length} 条）`);
+  lines.push(`- 昨日窗口：${report.window?.yesterday || previousChinaDate(report.date)}`);
+  lines.push("- 说明：本报告只生成建议，不改 Figma / 规范 / 判据 / 长期 ledger / Git。扩权类永不自动落地。");
+  const legacy = (report.candidates || []).filter((item) => item.noteLegacy).map((item) => item.family);
   if (legacy.length) {
-    L.push(`- legacy / 不可计算：${legacy.map((family) => `\`${family}\``).join("、")}（旧终态缺 [decided:]，不当合规证据）`);
+    lines.push(`- legacy / 不可计算：${legacy.map((family) => `\`${family}\``).join("、")}（旧终态缺 [decided:]，§4 回炉不可计算）`);
   }
-  L.push("");
-  L.push("## 1. 证据 / 变更");
-  L.push(`- 当日问题：**${report.summary.total}**（阻断 ${report.summary.blocking}，警告 ${report.summary.warnings}）`);
-  for (const c of report.evidenceSources?.commands || []) L.push(`  - 验收 \`${c.id}\` exit=${c.exitCode}`);
+  lines.push("");
+  lines.push("## 1. 证据 / 变更");
+  lines.push(`- 昨日新增 **${changes.new.length}**；昨日更新 **${changes.updated.length}**；昨日结案 **${changes.decided.length}**`);
+  if (!changes.new.length && !changes.updated.length && !changes.decided.length) {
+    lines.push("- 昨日窗口内台账无新增、无更新、无结案");
+  }
+  for (const item of changes.new) lines.push(`- 新增：${lineForCandidate(item)}`);
+  for (const item of changes.updated) lines.push(`- 更新：${lineForCandidate(item)}`);
+  for (const item of changes.decided) lines.push(`- 结案：${lineForCandidate(item)} → ${compact(item.note, 120)}`);
+  if (report.issues?.length) {
+    lines.push(`- 补充证据：${report.issues.length} 条（阻断 ${summary.blocking || 0}，警告 ${summary.warnings || 0}，不单独当新台账）`);
+    for (const issue of report.issues) {
+      lines.push(`  - [${issue.severity}] ${issue.message}`);
+    }
+  }
+  for (const command of report.evidenceSources?.commands || []) {
+    lines.push(`  - 验收 \`${command.id}\` exit=${command.exitCode}`);
+  }
   if (report.delta) {
-    L.push(`- 与 ${report.delta.comparedTo || "首次"} 相比：新根因 ${report.delta.newFamilies.join("、") || "无"}；持续 ${report.delta.repeatedFamilies.join("、") || "无"}；未再出现 ${report.delta.resolvedFamilies.join("、") || "无"}`);
+    lines.push(`- 与 ${report.delta.comparedTo || "首次"} 相比：新根因 ${report.delta.newFamilies.join("、") || "无"}；持续 ${report.delta.repeatedFamilies.join("、") || "无"}；未再出现 ${report.delta.resolvedFamilies.join("、") || "无"}`);
   }
-  L.push("");
-  L.push("## 2. 高价值次日收尾候选（过四门 · 收紧类）");
-  if (!groups.closure.length) L.push("- 无（没有同时过复发/归因/确定性/类型门的收紧项）");
-  for (const c of groups.closure) L.push(`- \`${c.family}\`（${c.stage}，×${c.count}）→ ${c.changeTarget || "见 nextStep"}`);
-  L.push("");
-  L.push("## 3. 观察 / 待补证据（未过门）");
-  if (!groups.observation.length) L.push("- 无");
-  for (const c of groups.observation) {
-    const legacyMark = c.noteLegacy ? "；legacy / 不可计算" : "";
-    L.push(`- \`${c.family}\`（${c.stage}）未过：${c.admission.failedGates.join("、")}${legacyMark}；下次判定：补跨实例证据/确认归因后重评`);
+  lines.push("");
+  lines.push("## 2. 高价值次日收尾候选（过四门 · 收紧类 · 尚未 landed-effective）");
+  if (!groups.closure.length) lines.push("- 无（没有同时过复发/归因/确定性/类型门、且仍 open 的收紧项）");
+  for (const item of groups.closure) {
+    lines.push(`- ${lineForCandidate(item)} → ${compact(item.changeTarget || item.proposal, 160)}`);
   }
-  L.push("");
-  L.push("## 4. owner 决策（扩权项 · 永不自动落地）");
-  if (!groups.ownerDecision.length) L.push("- 无");
-  for (const c of groups.ownerDecision) L.push(`- \`${c.family}\`（${c.stage}）拿不准/涉放宽 → 待 owner 逐条拍板`);
-  L.push("");
-  L.push("## 5. 每周复发 / 升格候选");
-  const repeated = report.delta?.repeatedFamilies || [];
-  if (!repeated.length && !groups.designRepeat.length) L.push("- 无");
-  for (const f of repeated) L.push(`- 复发根因：\`${f}\`（建议进每周复盘）`);
-  for (const c of groups.designRepeat) L.push(`- 设计类 ×${c.count}：\`${c.family}\`（≥2 次 → gap-catalog 质询；≥4 次 → 升格候选）`);
-  L.push("");
-  L.push("## 6. 当前 Skill / 规范新鲜度");
-  L.push(`- 规范 / skill 当前版本：${skillVersion || "未提供（本地报告不读 Git）"}`);
-  L.push(`- owner 签收：${policy?.ownerApproved ? "已批准" : "未获批准"}`);
-  L.push(`- 待 owner 拍板升级项：${groups.ownerDecision.length + repeated.length} 条（见 §4/§5）`);
-  L.push("");
-  return `${L.join("\n")}\n`;
+  lines.push("");
+  lines.push("## 3. 观察 / 待补证据（未过门）");
+  if (!groups.observation.length) lines.push("- 无");
+  for (const item of groups.observation) {
+    const failed = item.admission?.failedGates?.join("、") || "未过门";
+    const legacyMark = item.noteLegacy ? "；legacy / 不可计算" : "";
+    lines.push(`- ${lineForCandidate(item)} 未过：${failed}${legacyMark}；下次判定：补跨实例证据/确认归因后重评`);
+  }
+  lines.push("");
+  lines.push("## 4. owner 决策（扩权项 · 永不自动落地）");
+  if (!groups.ownerDecision.length) lines.push("- 无");
+  for (const item of groups.ownerDecision) {
+    lines.push(`- ${lineForCandidate(item)} → ${compact(item.proposal || item.detail || "待 owner 逐条拍板", 160)}`);
+  }
+  lines.push("");
+  lines.push("## 5. 每周复发 / 升格候选");
+  const weeklyEmpty = !groups.promotion.length && !groups.designRepeat.length && !groups.reflux.length && !groups.graduationPending.length && !(report.delta?.repeatedFamilies || []).length;
+  if (weeklyEmpty) lines.push("- 无");
+  for (const family of report.delta?.repeatedFamilies || []) {
+    lines.push(`- 复发根因：\`${family}\`（建议进每周复盘）`);
+  }
+  for (const item of groups.promotion) {
+    lines.push(`- 升格候选：${lineForCandidate(item)}（tracked ×${item.count} ≥4，问 owner 是否重新定性）`);
+  }
+  for (const item of groups.designRepeat) {
+    lines.push(`- 设计类 ×${item.count}：${lineForCandidate(item)}（≥2 次 → gap-catalog 质询；≥4 次 → 升格候选）`);
+  }
+  for (const item of groups.reflux) {
+    lines.push(`- 回炉：${lineForCandidate(item)} landed-effective 后又在 ${item.lastSeen} 出现，超过 decided ${item.decidedDate}`);
+  }
+  for (const item of groups.graduationPending) {
+    lines.push(`- 毕业半悬：${lineForCandidate(item)}`);
+  }
+  lines.push("");
+  lines.push("## 6. 当前 Skill / 规范新鲜度");
+  lines.push(`- 规范 / skill 当前版本：${skillVersion || "未提供（本地报告不读 Git）"}`);
+  lines.push(`- owner 签收：${policy?.ownerApproved ? "已批准" : "未获批准"}`);
+  lines.push(`- 待 owner 拍板升级项：${groups.ownerDecision.length} 条（见 §4）`);
+  lines.push("");
+  return `${lines.join("\n")}\n`;
 }
 
-export function rootCauseSnapshot(report) {
-  return Object.fromEntries((report.rootCauses || []).map((root) => [root.family, { stage: root.stage, count: root.count }]));
+export function ledgerSnapshot(report) {
+  const candidates = report.candidates || [];
+  return Object.fromEntries(candidates.map((item) => [item.family, {
+    status: item.status,
+    count: item.count,
+    lastSeen: item.lastSeen,
+  }]));
 }
 
 export function compareWithPrevious(report, outDir, date) {
   if (!existsSync(outDir)) {
-    return { comparedTo: null, newFamilies: report.rootCauses.map((root) => root.family), repeatedFamilies: [], resolvedFamilies: [] };
+    return { comparedTo: null, newFamilies: (report.candidates || []).map((item) => item.family), repeatedFamilies: [], resolvedFamilies: [] };
   }
   const prior = readdirSync(outDir)
     .filter((name) => /^\d{4}-\d{2}-\d{2}\.json$/.test(name) && name.slice(0, 10) < date)
     .sort()
     .at(-1);
   if (!prior) {
-    return { comparedTo: null, newFamilies: report.rootCauses.map((root) => root.family), repeatedFamilies: [], resolvedFamilies: [] };
+    return { comparedTo: null, newFamilies: (report.candidates || []).map((item) => item.family), repeatedFamilies: [], resolvedFamilies: [] };
   }
   const previous = safeReadJson(join(outDir, prior));
   if (
@@ -475,18 +506,25 @@ export function compareWithPrevious(report, outDir, date) {
     || !previous.value
     || typeof previous.value !== "object"
     || Array.isArray(previous.value)
-    || !Array.isArray(previous.value.rootCauses)
   ) {
     const error = new Error(`历史晨报损坏，拒绝计算 delta：${prior}`);
     error.code = "PRIOR_REPORT_CORRUPT";
     throw error;
   }
-  const before = rootCauseSnapshot(previous.value);
-  const after = rootCauseSnapshot(report);
+  const priorValue = previous.value;
+  const before = Array.isArray(priorValue.candidates)
+    ? ledgerSnapshot(priorValue)
+    : Object.fromEntries((priorValue.rootCauses || []).map((root) => [root.family, { count: root.count }]));
+  if (!Array.isArray(priorValue.candidates) && !Array.isArray(priorValue.rootCauses)) {
+    const error = new Error(`历史晨报损坏，拒绝计算 delta：${prior}`);
+    error.code = "PRIOR_REPORT_CORRUPT";
+    throw error;
+  }
+  const after = ledgerSnapshot(report);
   return {
     comparedTo: prior.slice(0, 10),
     newFamilies: Object.keys(after).filter((family) => !before[family]),
-    repeatedFamilies: Object.keys(after).filter((family) => before[family] && after[family].count >= before[family].count),
+    repeatedFamilies: Object.keys(after).filter((family) => before[family] && (after[family].count || 0) >= (before[family].count || 0) && (after[family].count || 0) >= 2),
     resolvedFamilies: Object.keys(before).filter((family) => !after[family]),
   };
 }
@@ -520,8 +558,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   const commands = has("run") ? [runNamingTests()] : [];
   try {
+    const ledger = loadLedger(SKILL_ROOT);
     const report = buildDailyReport({
       date,
+      ledger,
       commandRuns: commands,
       reportDir: join(TOOL_ROOT, "report"),
     });
@@ -530,10 +570,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const jsonFile = join(outDir, `${date}.json`);
     writeFileSync(jsonFile, `${JSON.stringify(report, null, 2)}\n`);
     let morningFile = null;
-    let ledgerStates = {};
     if (has("morning")) {
-      ledgerStates = loadLedgerStates(SKILL_ROOT);
-      const morning = renderMorningReport(report, { policy, ledgerStates });
+      const morning = renderMorningReport(report, { policy });
       morningFile = join(outDir, `${date}-morning.md`);
       writeFileSync(morningFile, morning);
     }
@@ -543,7 +581,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       report: jsonFile,
       morning: morningFile,
       policy: policy ? { ok: policy.ok, version: policy.version, ownerApproved: policy.ownerApproved } : null,
-      issues: report.summary,
+      summary: report.summary,
       delta: report.delta,
       commands: commands.map(({ id, exitCode }) => ({ id, exitCode })),
     }, null, 2));

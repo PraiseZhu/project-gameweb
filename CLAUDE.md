@@ -37,7 +37,7 @@ Project Gameweb/
 
 ## 协作约定
 
-- **Figma 命名稿交接**：用户提供带 `node-id` 的 Figma 货架链接后，执行 `standards/figma-naming/SKILL.md`（先守「硬门」G0–G4，再走步骤）。已规范命名稿出 `ready` 清单；未规范稿按规范正文和 `evolution/ledger.json` 认每个模块的功能，当前只产出 `draft`；核对页暂不支持保存/升档。金样只当形态样本，不对图层 id、不对模块顺序抄名。`inventory:review` 目前可预览；保存/升档只接受 ready，draft 升档尚未接通。做页只吃 ready 里的已确定项。unknown 不赋交互，unknown 的 `modal-trigger` 不接线。不写回 Figma、不用插件做交接；做页接入见 issue #5（指派 `zhanxinyi-lab`）。
+- **Figma 命名稿交接**：用户提供带 `node-id` 的 Figma 货架链接后，执行 `standards/figma-naming/SKILL.md`（先守「硬门」G0–G4）。未规范稿发链接后自动跑到判断写回 draft；G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。判断写回后等人确认判断已完成，再沉淀 skill/台账。已规范命名稿出 `ready` 清单；未规范稿当前只产出 `draft`；核对页暂不支持保存/升档。金样只当形态样本，不对图层 id、不对模块顺序抄名。`inventory:review` 目前可预览；保存/升档只接受 ready，draft 升档尚未接通。做页只吃 ready 里的已确定项。unknown 不赋交互，unknown 的 `modal-trigger` 不接线。不写回 Figma、不用插件做交接；做页接入见 issue #5（指派 `zhanxinyi-lab`）。
 - **做页消费边界**：先按已确定节点、页面分区、背景/固定层、已解析实例→变体、完整组件变体树和 modal 附件本体搭页；`unknown` 节点只画样子、不赋交互，`unknown` 的 `modal-trigger` 不自动接线。
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
 - **代码评审**：通过 `/review` 触发
@@ -53,11 +53,11 @@ Project Gameweb/
 
 权威文本：`standards/figma-naming/SKILL.md`「硬门」。这里是项目级命令，不是建议。
 
-- **G0 步骤是闸门**：没交回不许下一步；切片能 `stat` 出非空白体积 = 立刻汇报。禁止「先完美再汇报」。判断写回 draft 的同一闸门必须沉淀 skill/台账，没写不许宣称完成。用户问进度：只查 worker 状态 + `stat`，Lead 自己禁止 Read 图。
+- **G0 步骤是闸门**：发链接后自动跑到判断写回 draft。切片能 `stat` 出非空白体积就继续判断，不必等人点头。判断写回后停，等人确认判断已完成；人确认前禁止写 skill / 台账，确认后必须沉淀，没写不许宣称本单收工。用户问进度：只查执行体状态 + `stat`，Lead 自己禁止 Read 图。
 - **G1 禁读**：禁止 Read `inventory-*.json` 全文、`page.png`、`sec-*.png`、`pack.json`。
-- **G2 切片闸门**：重导后立刻 `send_to_lead`（路径 / 字节 / 像素 / 目视）。Lead 点头前不写回 draft。点头之后的判断闸门必须同时改 ledger / skill。
-- **G3 上下文预算**：超长会话或已读过图 → 禁止再 Read 任何图片。抽查必须新开干净会话，每轮最多 2 张 `page-*.jpg`。
-- **G4 派工**：`initial_task` 必须点名硬门四条。Worker 只做当前闸门，做完就交回。
+- **G2 切片闸门**：重导后立刻 `stat`（路径 / 字节 / 像素）。非空且 set 数对齐就自动判断；空白先修。G2 不用 `send_to_lead` 等人点头。
+- **G3 上下文预算**：超长会话或已读过图 → 禁止再 Read 任何图片。Lead 自动派干净执行体，不许让用户自己新开聊天。每轮最多 2 张 `page-*.jpg`。
+- **G4 派工**：默认 Lead 本窗跑到判断写回。G3 命中才派干净执行体，`initial_task` 必须点名硬门四条。判断写回后 `send_to_lead` 等人确认，确认前禁止沉淀。
 
 ## 敏感数据保护
 
@@ -90,4 +90,5 @@ Project Gameweb/
 ## 项目特定记录
 
 - 2026-08-18：Lead 会话 `64a3f830` 在 cache 598k 上再 Read 3 张切片，请求涨到 647k 炸会话。硬门 G0–G4 已写入 `standards/figma-naming/SKILL.md`。
-- 2026-08-18：未规范稿 `399:47576`（491 PC/mobile）跑清单的踩坑与次日开跑顺序写在 `standards/figma-naming/SKILL.md`「未规范稿次日开跑」。判断与沉淀同一闸门。明天换一份未规范稿按该节验收，先不管做页衔接。
+- 2026-08-18：未规范稿 `399:47576`（491 PC/mobile）跑清单的踩坑与次日开跑顺序写在 `standards/figma-naming/SKILL.md`「未规范稿次日开跑」。先不管做页衔接。
+- 2026-08-19：未规范稿改为发链接后自动跑到判断写回；判断写回与沉淀拆开，等人确认判断已完成再写 skill/台账。G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。

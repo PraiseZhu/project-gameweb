@@ -2,20 +2,22 @@
 /**
  * 未规范 draft 的漏项闸门。
  *
- * 规则只检查已经由人工/看图确认的稳定形态：
+ * 规则检查已经由人工/看图确认的稳定形态，不对图层 id：
  * - 卡片语义资产（素材图、边框背景、立绘）不能保持 unknown；
- * - switch 变体树里，短高的「奖励」横条必须作为 scroll/奖励列表；
- * - determined 的消费身份必须同时写入 name，和规范稿同类层使用同一前缀。
+ * - 划动/可划动那一层必须是 scroll/；同层「奖励列表」是 img/，不是 scroll/；
+ * - determined 的消费身份必须同时写入 name 前缀；
+ * - 另见 src/gold-morphology.mjs：组件集前缀、划动裁切层、弹窗、跨货架导航。
  *
  * 用法：node scripts/check-draft-asset-completeness.mjs <inventory.json> [...]
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { auditDraftGoldMorphology } from "../src/gold-morphology.mjs";
 
-const CARD_ART_RE = /^(素材图|素材|边框背景\d*|立绘)$/;
+const CARD_ART_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘)$/;
 
-export function auditDraftAssetCompleteness(doc) {
+function auditCardAndReward(doc) {
   const nodes = [];
   const walk = (value) => {
     if (Array.isArray(value)) return value.forEach(walk);
@@ -34,16 +36,15 @@ export function auditDraftAssetCompleteness(doc) {
     if (node.status === "determined" && node.role && node.role !== "copy" && !String(node.name ?? "").startsWith(`${node.role}/`)) {
       problems.push(`${node.id} 已确定为 ${node.role}，但 name 未写入 ${node.role}/ 前缀`);
     }
-    const inVariantTree = typeof node.scope === "string" && node.scope.startsWith("component-set:");
-    const h = Number(node.box?.h);
-    const w = Number(node.box?.w);
-    if (inVariantTree && node.type === "FRAME" && (rawName === "奖励" || rawName === "奖励列表") && w >= 300 && h > 0 && h <= 150) {
-      if (node.role !== "scroll" || node.label !== "奖励列表" || node.behavior !== "scroll-x") {
-        problems.push(`${node.id}「奖励」是变体内横滑奖励条，却不是 scroll/奖励列表`);
-      }
-    }
+
   }
   return { ok: problems.length === 0, problems };
+}
+
+export function auditDraftAssetCompleteness(doc) {
+  const cards = auditCardAndReward(doc);
+  const morph = auditDraftGoldMorphology(doc);
+  return { ok: cards.ok && morph.ok, problems: [...cards.problems, ...morph.problems] };
 }
 
 async function main() {

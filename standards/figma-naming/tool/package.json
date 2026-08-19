@@ -19,6 +19,8 @@
     "release:audit": "node ../scripts/public-release-audit.mjs",
     "inventory:export": "node scripts/export-inventory-page.mjs",
     "inventory:review": "node scripts/serve-inventory-review.mjs",
+    "catalog:build": "node scripts/build-module-catalog.mjs",
+    "catalog:match": "node scripts/match-module-catalog.mjs",
     "ledger": "node bin/daily-ledger.mjs --morning"
   },
   "engines": {
