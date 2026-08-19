@@ -110,7 +110,40 @@ test("v2：页面附件包含货架 modal、组件全变体和实例关联", () 
   assert.equal(check.ok, true, check.problems.join("\n"));
 });
 
-test("v2：实例缺组件定义时自验阻断", () => {
+test("v2：未规范货架上名字带「弹窗」的 FRAME 也进附件", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const page = node("page", "FRAME", "首屏", [
+    node("sec", "FRAME", "sec/1-首屏"),
+  ]);
+  const unnamedModal = node("popup", "FRAME", "导航弹窗");
+  const shelf = node("shelf", "CANVAS", "货架", [page, unnamedModal]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  assert.equal(inv.attachments.modals.length, 1);
+  assert.equal(inv.attachments.modals[0].id, "popup");
+});
+
+test("v2：同一货架多页时，弹窗只跟最近的那一页", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const pc = node("pc", "FRAME", "首屏", [node("sec-pc", "FRAME", "sec/1-首屏")], { box: { x: 0, y: 0, width: 3840, height: 2000 } });
+  const mobile = node("mobile", "FRAME", "mobile", [node("sec-m", "FRAME", "sec/1-首屏")], { box: { x: 30000, y: 0, width: 750, height: 2000 } });
+  const pcModal = node("pc-modal", "FRAME", "视频弹窗", [], { box: { x: 4000, y: 0, width: 3840, height: 2160 } });
+  const mobileModal = node("m-modal", "FRAME", "导航弹窗", [], { box: { x: 30800, y: 0, width: 750, height: 1600 } });
+  const shelf = node("shelf", "CANVAS", "货架", [pc, mobile, pcModal, mobileModal]);
+  const pcInv = buildInventory(shelf, { requestedNodeId: "pc" });
+  const mobileInv = buildInventory(shelf, { requestedNodeId: "mobile" });
+  assert.deepEqual(pcInv.attachments.modals.map((item) => item.id), ["pc-modal"]);
+  assert.deepEqual(mobileInv.attachments.modals.map((item) => item.id), ["m-modal"]);
+});
+
+test("v2：跨货架 componentId 在 draft 留 unknown 关系，在 ready 仍阻断", () => {
   const page = {
     id: "page", name: "pc", type: "FRAME",
     absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 },
@@ -119,8 +152,16 @@ test("v2：实例缺组件定义时自验阻断", () => {
       absoluteBoundingBox: { x: 0, y: 0, width: 10, height: 10 }, children: [],
     }],
   };
-  const inv = buildInventory(page, { requestedNodeId: "page" });
-  const check = validateInventory(inv, page);
-  assert.equal(check.ok, false);
-  assert.match(check.problems.join("\n"), /未解析/);
+  const draft = buildInventory(page, { requestedNodeId: "page", status: "draft" });
+  const relation = draft.relations.find((item) => item.kind === "instance-uses-variant");
+  assert.equal(relation.status, "unknown");
+  assert.equal(relation.evidence, "figma:componentId-definition-outside-shelf");
+  const draftCheck = validateInventory(draft, page);
+  assert.equal(draftCheck.ok, true, draftCheck.problems.join("\n"));
+  assert.match(draftCheck.warnings.join("\n"), /定义不在本货架/);
+
+  const ready = buildInventory(page, { requestedNodeId: "page", status: "ready" });
+  const readyCheck = validateInventory(ready, page);
+  assert.equal(readyCheck.ok, false);
+  assert.match(readyCheck.problems.join("\n"), /未解析/);
 });
