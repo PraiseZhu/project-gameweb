@@ -37,8 +37,8 @@ Project Gameweb/
 
 ## 协作约定
 
-- **Figma 命名稿交接**：用户提供带 `node-id` 的 Figma 货架链接后，执行 `standards/figma-naming/SKILL.md`（先守「硬门」G0–G4）。未规范稿发链接后自动跑到判断写回 draft；G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。判断写回后等人确认判断已完成，再沉淀 skill/台账。已规范命名稿出 `ready` 清单；未规范稿当前只产出 `draft`；核对页暂不支持保存/升档。金样只当形态样本，不对图层 id、不对模块顺序抄名。`inventory:review` 目前可预览；保存/升档只接受 ready，draft 升档尚未接通。做页只吃 ready 里的已确定项。unknown 不赋交互，unknown 的 `modal-trigger` 不接线。不写回 Figma、不用插件做交接；做页接入见 issue #5（指派 `zhanxinyi-lab`）。
-- **做页消费边界**：先按已确定节点、页面分区、背景/固定层、已解析实例→变体、完整组件变体树和 modal 附件本体搭页；`unknown` 节点只画样子、不赋交互，`unknown` 的 `modal-trigger` 不自动接线。
+- **Figma 命名稿交接**：用户提供带 `node-id` 的 Figma 货架链接后，执行 `standards/figma-naming/SKILL.md`（先守「硬门」G0–G4）。未规范稿发链接后自动跑到判断写回 draft；G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。原始 draft 不可直接做页。同事自助：completeness 绿后 `handoff:pack --allow-green-draft`，包 `ready=false`。主人测命名才核对并 `handoff:promote` 升 ready、沉淀 skill/台账。金样只当形态样本，不对图层 id、不对模块顺序抄名。核对页可预览 draft，不能在页上保存升档。unknown 不赋交互。不写回 Figma；做页接入见 issue #5（`zhanxinyi-lab`）和 `standards/figma-naming/handoff/CONSUMER.md`。
+- **做页消费边界**：同事自助走 `handoff:pack --allow-green-draft`（机器绿即可，不等人工核对）；主人测命名才核对并 `handoff:promote`。做页吃交接包里的已确定项；`unknown` 只画不赋交互。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
 - **代码评审**：通过 `/review` 触发
 - **测试覆盖**：参见 VERSIONING.md

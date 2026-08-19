@@ -21,6 +21,9 @@
     "inventory:review": "node scripts/serve-inventory-review.mjs",
     "catalog:build": "node scripts/build-module-catalog.mjs",
     "catalog:match": "node scripts/match-module-catalog.mjs",
+    "handoff:validate": "node scripts/handoff-validate.mjs",
+    "handoff:pack": "node scripts/handoff-pack.mjs",
+    "handoff:promote": "node scripts/handoff-promote.mjs",
     "ledger": "node bin/daily-ledger.mjs --morning"
   },
   "engines": {
