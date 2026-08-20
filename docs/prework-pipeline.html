@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>前置工作链路 · 节点验收</title>
+  <style>
+    :root {
+      --bg: #0c0f12;
+      --paper: #14181d;
+      --ink: #e8edf2;
+      --muted: #93a0ad;
+      --line: #2a333d;
+      --machine: #3ee0c4;
+      --human: #f0b429;
+      --fail: #ff6b7a;
+      --out: #7ee787;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.45 "Iowan Old Style", "Palatino Linotype", "Songti SC", serif;
+    }
+    body {
+      padding: 32px 28px 80px;
+      background-image:
+        radial-gradient(ellipse at top, #1a242c 0%, transparent 55%),
+        repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(255,255,255,.025) 28px);
+    }
+    h1 {
+      font-size: 34px;
+      letter-spacing: .04em;
+      margin: 0 0 8px;
+      font-weight: 700;
+    }
+    .lede {
+      color: var(--muted);
+      max-width: 72ch;
+      margin: 0 0 28px;
+    }
+    .legend {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      margin-bottom: 36px;
+      font-family: ui-sans-serif, "PingFang SC", sans-serif;
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot {
+      width: 10px; height: 10px; border-radius: 99px;
+    }
+    .rail {
+      position: relative;
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+    .rail::before {
+      content: "";
+      position: absolute;
+      left: 27px;
+      top: 12px;
+      bottom: 12px;
+      width: 2px;
+      background: linear-gradient(var(--machine), var(--human), var(--out));
+      opacity: .55;
+    }
+    .node {
+      position: relative;
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      gap: 18px;
+      margin: 0 0 18px;
+    }
+    .stamp {
+      width: 54px; height: 54px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-family: ui-sans-serif, "PingFang SC", sans-serif;
+      font-weight: 800;
+      background: var(--paper);
+      border: 2px solid var(--machine);
+      color: var(--machine);
+      z-index: 1;
+    }
+    .human .stamp { border-color: var(--human); color: var(--human); }
+    .branch .stamp { border-color: var(--out); color: var(--out); }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px 18px 14px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.28);
+    }
+    .kicker {
+      font-family: ui-sans-serif, "PingFang SC", sans-serif;
+      font-size: 11px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--machine);
+      margin-bottom: 4px;
+    }
+    .human .kicker { color: var(--human); }
+    .branch .kicker { color: var(--out); }
+    h2 { margin: 0 0 10px; font-size: 22px; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1.1fr 1.4fr 1fr .9fr .8fr;
+      gap: 10px;
+      font-family: ui-sans-serif, "PingFang SC", sans-serif;
+      font-size: 13px;
+    }
+    .cell b {
+      display: block;
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: .08em;
+      margin-bottom: 4px;
+    }
+    .accept { color: var(--machine); }
+    .who { color: var(--human); }
+    .fail { color: #ffb4bc; }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-left: 74px;
+    }
+    table {
+      width: 100%;
+      max-width: 1180px;
+      margin: 48px auto 0;
+      border-collapse: collapse;
+      font-family: ui-sans-serif, "PingFang SC", sans-serif;
+      font-size: 13px;
+      background: var(--paper);
+    }
+    caption {
+      text-align: left;
+      font: 700 22px/1.3 "Iowan Old Style", "Songti SC", serif;
+      padding: 0 0 12px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      background: #10151a;
+      position: sticky;
+      top: 0;
+    }
+    tr:hover td { background: #1a2128; }
+    .note {
+      max-width: 1180px;
+      margin: 24px auto 0;
+      color: var(--muted);
+      font-family: ui-sans-serif, "PingFang SC", sans-serif;
+      font-size: 13px;
+    }
+    .fixbox {
+      max-width: 1180px;
+      margin: 0 auto 28px;
+      padding: 16px 18px;
+      border: 1px solid #f0b429;
+      border-radius: 14px;
+      background: #1a1610;
+      font-family: ui-sans-serif, "PingFang SC", sans-serif;
+      font-size: 14px;
+    }
+    .fixbox b { color: var(--human); }
+    .fixbox ol { margin: 8px 0 0; padding-left: 1.2em; }
+    .fixbox li { margin: 6px 0; }
+    code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--machine); }
+    @media (max-width: 980px) {
+      .grid, .split { grid-template-columns: 1fr; }
+      .rail::before { left: 21px; }
+    }
+  </style>
+</head>
+<body>
+  <h1>前置工作链路</h1>
+  <p class="lede">未规范 Figma 货架 → 做页可吃的清单。青线是机器闸门，黄线是人确认，绿线是出口。第 7 关双绿才能打包；升 ready 必须主人点头。执行权威：<code>standards/figma-naming/SKILL.md</code>「链路验收口径」。</p>
+  <div class="fixbox">
+    <b>讨论订正（必须按这个执行）</b>
+    <ol>
+      <li><b>左侧 Page 链接可开工。</b>给 Figma 左侧 Page（CANVAS）即可拉整张画布，再用 <code>--page</code> 选端。不要只点画布里某一个 PC/手机 frame。</li>
+      <li><b>第一步 draft 是清单数据</b>，对 Figma 快照不对截图；未规范必须同时 <code>--status draft</code> 和 <code>--name inventory-unnamed-392-24190</code>（冒号改短横线；CLI 会换 <code>:</code>）。缺一个 CLI 失败。</li>
+      <li><b>导图不是每层一张。</b>必导整页 + 全套组件集。弹窗图会导出，但判断包/G2 只收 page/set jpg。</li>
+      <li><b>目录不是自动命名器。</b>尝试扫组件集/弹窗，只给弱前缀建议；弹窗 0 命中正常。散图和划动看本页图。</li>
+      <li><b>词表是漏项保险。</b>CARD_ART_RE / IMAGE_BODY_RE / CLIP_RE 覆盖不同；裸词「划动」不亮灯。没撞词表仍要看图。</li>
+    </ol>
+  </div>
+  <div class="legend">
+    <span class="chip"><i class="dot" style="background:var(--machine)"></i>机器过闸</span>
+    <span class="chip"><i class="dot" style="background:var(--human)"></i>人确认</span>
+    <span class="chip"><i class="dot" style="background:var(--out)"></i>可交付出口</span>
+    <span class="chip"><i class="dot" style="background:var(--fail)"></i>红了就停，不准往下流</span>
+  </div>
+
+  <div class="rail">
+    <article class="node">
+      <div class="stamp">0</div>
+      <div class="card">
+        <div class="kicker">机器拒 · 人交链接</div>
+        <h2>输入门槛</h2>
+        <div class="grid">
+          <div class="cell"><b>输入</b>Figma 左侧 Page 链接（CANVAS）</div>
+          <div class="cell"><b>执行</b>拉整张画布，再 --page 选 PC/手机</div>
+          <div class="cell"><b class="accept">验收</b>左侧 Page 链接可开工；CLI 不因是 Page 而拒绝</div>
+          <div class="cell"><b class="fail">失败</b>没 node-id。只点某一页 frame 时 CLI 不自动拒，但弹窗/组件可能丢失</div>
+          <div class="cell"><b>产出</b>可开工的货架范围</div>
+          <div class="cell"><b class="who">确认</b>机器拒，人补链接</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="node">
+      <div class="stamp">1</div>
+      <div class="card">
+        <div class="kicker">机器 · validateInventory</div>
+        <h2>编清单 inventory</h2>
+        <div class="grid">
+          <div class="cell"><b>输入</b>合格货架链接 + --page</div>
+          <div class="cell"><b>执行</b>拉树，编 inventory/v2；必须 --status draft --name inventory-unnamed-*</div>
+          <div class="cell"><b class="accept">验收</b>对快照编树；draft 与 inventory-unnamed-* 必须成对，缺一个 CLI 失败</div>
+          <div class="cell"><b class="fail">失败</b>自验红 → exit 1，不写 ready</div>
+          <div class="cell"><b>产出</b>PC+手机两份 draft JSON</div>
+          <div class="cell"><b class="who">确认</b>机器</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="node">
+      <div class="stamp">2</div>
+      <div class="card">
+        <div class="kicker">机器 · export</div>
+        <h2>导图</h2>
+        <div class="grid">
+          <div class="cell"><b>输入</b>draft 清单</div>
+          <div class="cell"><b>执行</b>导整页 + 组件集 + 弹窗，不是每层一张</div>
+          <div class="cell"><b class="accept">验收</b>page.png 非空；set 数=组件集数。弹窗图会导出，但不进 G2</div>
+          <div class="cell"><b class="fail">失败</b>空图、导废、对不上号 → 先修图</div>
+          <div class="cell"><b>产出</b>page.png、set-01.png…</div>
+          <div class="cell"><b class="who">确认</b>机器（禁 Read 原图）</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="node">
+      <div class="stamp">3</div>
+      <div class="card">
+        <div class="kicker">机器 · prep-judge-pack</div>
+        <h2>做判断包</h2>
+        <div class="grid">
+          <div class="cell"><b>输入</b>draft + 整页 PNG + set PNG</div>
+          <div class="cell"><b>执行</b>压成小 jpg，做瘦树</div>
+          <div class="cell"><b class="accept">验收</b>候选层+全套变体树+set 图齐。瘦树会丢 prototype/params；G2 不收 modal jpg</div>
+          <div class="cell"><b class="fail">失败</b>缺 set、不是 draft → 禁止判断</div>
+          <div class="cell"><b>产出</b>page-*.jpg、set-*.jpg、瘦树</div>
+          <div class="cell"><b class="who">确认</b>机器</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="node">
+      <div class="stamp">4</div>
+      <div class="card">
+        <div class="kicker">机器 · G2 · 不等人</div>
+        <h2>切片闸门</h2>
+        <div class="grid">
+          <div class="cell"><b>输入</b>判断包小图</div>
+          <div class="cell"><b>执行</b>立刻 stat / sips 列路径、字节、宽高</div>
+          <div class="cell"><b class="accept">验收</b>每张非空、有像素；set 数=组件集数</div>
+          <div class="cell"><b class="fail">失败</b>空白 jpeg 先修；读不了图整条停，不许只看结构</div>
+          <div class="cell"><b>产出</b>G2 stat 清单</div>
+          <div class="cell"><b class="who">确认</b>机器，自动进入判断</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="node human">
+      <div class="stamp">5</div>
+      <div class="card">
+        <div class="kicker">执行体看图 · 硬灯在第 7 关</div>
+        <h2>判断写回</h2>
+        <div class="grid">
+          <div class="cell"><b>输入</b>小图 + 瘦树 + 模块目录提示</div>
+          <div class="cell"><b>执行</b>目录给弱前缀建议；弹窗 0 命中正常；散图和划动看本页图</div>
+          <div class="cell"><b class="accept">验收</b>目录不写盘；多命中不得直接采信；能定的有 role/；仍是 draft</div>
+          <div class="cell"><b class="fail">失败</b>把目录当自动命名、按视觉抄金样、漏变体、手改 ready</div>
+          <div class="cell"><b>产出</b>写回后的 draft</div>
+          <div class="cell"><b class="who">确认</b>执行体判，机器下一关收口</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="node">
+      <div class="stamp">6</div>
+      <div class="card">
+        <div class="kicker">机器 · 不问人</div>
+        <h2>跟随收口</h2>
+        <div class="grid">
+          <div class="cell"><b>输入</b>PC + 手机两份 draft</div>
+          <div class="cell"><b>执行</b>实例跟母版，两端同类同步</div>
+          <div class="cell"><b class="accept">验收</b>母版有前缀则实例跟上；纯切图补 img/；有字分组不切成图</div>
+          <div class="cell"><b class="fail">失败</b>漏跟随会在第 7 关红，不要拿去问人</div>
+          <div class="cell"><b>产出</b>收口后的两份 draft</div>
+          <div class="cell"><b class="who">确认</b>机器自动写盘</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="node">
+      <div class="stamp">7</div>
+      <div class="card">
+        <div class="kicker">最硬的灯 · completeness</div>
+        <h2>漏项绿灯</h2>
+        <div class="grid">
+          <div class="cell"><b>输入</b>收口后的 PC + 手机 draft</div>
+          <div class="cell"><b>执行</b>check-draft-asset-completeness</div>
+          <div class="cell"><b class="accept">验收</b>双绿。CARD_ART / IMAGE_BODY / CLIP 三条词表不同；没撞词 ≠ 没有这层</div>
+          <div class="cell"><b class="fail">失败</b>ok:false → 回第 5/6 关修，不许打包</div>
+          <div class="cell"><b>产出</b>机器绿灯</div>
+          <div class="cell"><b class="who">确认</b>机器。绿了必须停</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="node human">
+      <div class="stamp">停</div>
+      <div class="card">
+        <div class="kicker">人闸门 · 不是脚本</div>
+        <h2>等人说「判断已完成」</h2>
+        <div class="grid">
+          <div class="cell"><b>输入</b>第 7 关双绿的 draft</div>
+          <div class="cell"><b>执行</b>向主人汇报判断已完成，等确认</div>
+          <div class="cell"><b class="accept">验收</b>主人明确确认。确认前禁止写 skill/台账</div>
+          <div class="cell"><b class="fail">失败</b>没点头就沉淀/升 ready = 本单失败</div>
+          <div class="cell"><b>产出</b>可以分叉的许可</div>
+          <div class="cell"><b class="who">确认</b>主人</div>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <div class="split">
+    <article class="node branch" style="margin-left:0">
+      <div class="stamp">8a</div>
+      <div class="card">
+        <div class="kicker">同事自助 · 不等人核</div>
+        <h2>做页包 green-draft</h2>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div class="cell"><b>输入</b>双绿 draft</div>
+          <div class="cell"><b>执行</b>handoff:pack --allow-green-draft</div>
+          <div class="cell"><b class="accept">验收</b>两端同档 draft、同一文件、completeness 绿。包必须 ready=false</div>
+          <div class="cell"><b class="fail">失败</b>没开关、一边红、手改 status</div>
+          <div class="cell"><b>产出</b>green-draft 包。确定的接线，unknown 只画不点</div>
+          <div class="cell"><b class="who">确认</b>机器 pack</div>
+        </div>
+      </div>
+    </article>
+    <article class="node branch" style="margin-left:0">
+      <div class="stamp">8b/c</div>
+      <div class="card">
+        <div class="kicker">主人测命名</div>
+        <h2>沉淀 + 升 ready</h2>
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div class="cell"><b>输入</b>主人确认语 + 双绿 draft</div>
+          <div class="cell"><b>执行</b>写 skill/台账，再 handoff:promote</div>
+          <div class="cell"><b class="accept">验收</b>交得出 fingerprint；--confirm 至少四字；再绿一次才改 ready</div>
+          <div class="cell"><b class="fail">失败</b>核对页升档、没确认就写台账、指不出 fingerprint</div>
+          <div class="cell"><b>产出</b>ready 包 + 台账</div>
+          <div class="cell"><b class="who">确认</b>主人点头 + 机器复验</div>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <table>
+    <caption>全环节对照表</caption>
+    <thead>
+      <tr>
+        <th>环节</th>
+        <th>输入</th>
+        <th>执行动作</th>
+        <th>验收标准</th>
+        <th>失败处理</th>
+        <th>产出物</th>
+        <th>谁确认</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>0 输入门槛</td>
+        <td>Figma 左侧 Page 链接</td>
+        <td>拉整张画布，--page 选端</td>
+        <td>左侧 Page 可开工；CLI 不因是 Page 而拒绝</td>
+        <td>没 node-id 才停；单页 frame 不自动拒但可能丢附件</td>
+        <td>可拉的范围</td>
+        <td>机器拒，人补链接</td>
+      </tr>
+      <tr>
+        <td>1 编清单</td>
+        <td>合格链接 + page</td>
+        <td>inventory --status draft --name inventory-unnamed-*</td>
+        <td>对快照编树；draft 与 inventory-unnamed-* 必须成对</td>
+        <td>exit 1；缺 name 不能落到 inventory-页id.json</td>
+        <td>两份 draft JSON</td>
+        <td>机器</td>
+      </tr>
+      <tr>
+        <td>2 导图</td>
+        <td>draft</td>
+        <td>inventory:export</td>
+        <td>整页+全套 set；弹窗图会导出但不进 G2</td>
+        <td>先修图，不准判断</td>
+        <td>page.png / set-*.png</td>
+        <td>机器</td>
+      </tr>
+      <tr>
+        <td>3 判断包</td>
+        <td>draft + 导图</td>
+        <td>prep-judge-pack</td>
+        <td>候选层+set 图齐；瘦树会丢 prototype；G2 不收 modal</td>
+        <td>缺 set = 包没做完</td>
+        <td>page-*.jpg / set-*.jpg</td>
+        <td>机器</td>
+      </tr>
+      <tr>
+        <td>4 G2 切片</td>
+        <td>小图</td>
+        <td>stat / sips</td>
+        <td>有字节、有像素、数量齐</td>
+        <td>空白先修；读不了图整条停</td>
+        <td>G2 清单</td>
+        <td>机器，不等人</td>
+      </tr>
+      <tr>
+        <td>5 判断写回</td>
+        <td>小图 + 瘦树</td>
+        <td>目录给弱前缀建议；弹窗 0 命中正常；散图划动看本页图</td>
+        <td>目录不写盘；多命中不得直接采信；仍是 draft</td>
+        <td>回看漏的变体/层，不改 ready</td>
+        <td>写回 draft</td>
+        <td>执行体；硬灯在 7</td>
+      </tr>
+      <tr>
+        <td>6 跟随收口</td>
+        <td>两份 draft</td>
+        <td>apply-gold-morphology</td>
+        <td>实例跟母版，两端同类齐</td>
+        <td>漏了交给第 7 关红，不问人</td>
+        <td>收口 draft</td>
+        <td>机器</td>
+      </tr>
+      <tr>
+        <td>7 漏项绿灯</td>
+        <td>收口 draft</td>
+        <td>check-draft-asset-completeness</td>
+        <td>双绿；三条词表覆盖不同；没撞词 ≠ 没有这层</td>
+        <td>红则回 5/6，不许打包</td>
+        <td>机器绿灯</td>
+        <td>机器。然后必须停</td>
+      </tr>
+      <tr>
+        <td>人确认</td>
+        <td>双绿 draft</td>
+        <td>等人说判断已完成</td>
+        <td>主人明确确认</td>
+        <td>确认前禁止沉淀/升档</td>
+        <td>分叉许可</td>
+        <td>主人</td>
+      </tr>
+      <tr>
+        <td>8a 同事包</td>
+        <td>双绿 draft</td>
+        <td>handoff:pack --allow-green-draft</td>
+        <td>同档、同文件、绿灯；ready=false</td>
+        <td>拒包；禁止手改 status</td>
+        <td>green-draft 交接包</td>
+        <td>机器</td>
+      </tr>
+      <tr>
+        <td>8b 沉淀</td>
+        <td>主人确认</td>
+        <td>写 SKILL + evolution-note</td>
+        <td>交得出 fingerprint</td>
+        <td>指不出 = 没收工</td>
+        <td>skill / 台账</td>
+        <td>主人允许后，Lead 写</td>
+      </tr>
+      <tr>
+        <td>8c 升 ready</td>
+        <td>确认语 + 双绿 draft</td>
+        <td>handoff:promote --confirm</td>
+        <td>确认语≥4字，再绿一次</td>
+        <td>核对页不能升档</td>
+        <td>ready 包</td>
+        <td>主人 + 机器复验</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">已规范命名稿不走 2–7：inventory 默认 ready，第 1 关自验绿即可。规范稿干跑不能代替未规范新稿。做页最低标准：第 7 关双绿 + green-draft。称 ready 还要主人确认。口径权威：SKILL.md「链路验收口径（未规范稿 0–7）」。</p>
+</body>
+</html>

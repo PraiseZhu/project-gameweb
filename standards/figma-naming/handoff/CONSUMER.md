@@ -6,8 +6,8 @@
 
 ```bash
 cd standards/figma-naming/tool
-npm run inventory -- --file "<货架 Figma 链接>" --page <PC页id> --status draft
-npm run inventory -- --file "<同一链接>" --page <mobile页id> --status draft
+npm run inventory -- --file "<Figma 左侧 Page 链接>" --page <PC页id> --status draft --name inventory-unnamed-<pc>
+npm run inventory -- --file "<同一链接>" --page <mobile页id> --status draft --name inventory-unnamed-<mobile>
 node scripts/check-draft-asset-completeness.mjs \
   ../../../_tmp/inventory-unnamed-<pc>.json \
   ../../../_tmp/inventory-unnamed-<mobile>.json

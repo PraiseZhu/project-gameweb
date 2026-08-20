@@ -26,18 +26,19 @@ Project Gameweb/
 ├── skills/             # 按项目切：一个游戏宣发页一个 skill
 │   └── yise-web-ui/    # 伊瑟宣发页 UI skill
 └── standards/          # 横切复用：被多个 skill 共同引用的规范与工具链
-    └── figma-naming/   # 图层命名规范 + 体检工具 + inventory/v2 抽取与人工核对
+    ├── figma-naming/       # 图层命名规范 + 体检工具 + inventory/v2 抽取与人工核对
+    └── prechain-nightly/   # 未规范稿前置链路夜间评测（独立于仓内健康检查）
 ```
 
 **`skills/` — 按项目切。** 一个游戏宣发页对应一个 skill，每个 skill **自包含**：自己的 `SKILL.md`（含 frontmatter）、`package.json`、`scripts/` 与 `__tests__/`、`docs/`、以及自己的发布边界清单。skill 之间不互相 import，各自可以独立发布。
 
-**`standards/` — 横切复用。** 放不属于任何单个游戏、而是被多个 skill 共同引用的规范与工具链。首个成员是 `standards/figma-naming/`：命名规范正文（`spec/`）、体检工具（CLI）、以及做页前的 `inventory/v2` 抽取与人工核对链路。
+**`standards/` — 横切复用。** 放不属于任何单个游戏、而是被多个 skill 共同引用的规范与工具链。`standards/figma-naming/`：命名规范正文（`spec/`）、体检工具（CLI）、以及做页前的 `inventory/v2` 抽取与人工核对链路。`standards/prechain-nightly/`：未规范稿从 0 跑前置链路的夜间评测与次日台账，不并入仓内健康检查，也不写命名台账。
 
 **落位规则**：新增一个游戏宣发页 skill → 放 `skills/<name>/`；新增一份跨项目共用的规范或工具链 → 放 `standards/<name>/`。判断不清时，看它是否只服务于单个游戏：是则进 `skills/`，否则进 `standards/`。
 
 ## 协作约定
 
-- **Figma 命名稿交接**：用户提供带 `node-id` 的 Figma 货架链接后，执行 `standards/figma-naming/SKILL.md`（先守「硬门」G0–G4）。未规范稿发链接后自动跑到判断写回 draft；G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。原始 draft 不可直接做页。同事自助：completeness 绿后 `handoff:pack --allow-green-draft`，包 `ready=false`。主人测命名才核对并 `handoff:promote` 升 ready、沉淀 skill/台账。金样只当形态样本，不对图层 id、不对模块顺序抄名。核对页可预览 draft，不能在页上保存升档。unknown 不赋交互。不写回 Figma；做页接入见 issue #5（`zhanxinyi-lab`）和 `standards/figma-naming/handoff/CONSUMER.md`。
+- **Figma 命名稿交接**：用户提供带 `node-id` 的 Figma 货架链接后，执行 `standards/figma-naming/SKILL.md`（先守「硬门」G0–G4）。未规范稿发链接后自动跑到判断写回 draft；G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。原始 draft 不可直接做页。同事自助：completeness 绿后 `handoff:pack --allow-green-draft`，包 `ready=false`。主人测命名才核对并 `handoff:promote` 升 ready、沉淀 skill/台账。金样只当形态样本，不对图层 id、不对模块顺序抄名。核对页 UI 冻结在 `standards/figma-naming/tool/inventory-review/index.html`，禁止写 `_tmp`、禁止每次重写。核对页可预览 draft，不能在页上保存升档。unknown 不赋交互。不写回 Figma；做页接入见 issue #5（`zhanxinyi-lab`）和 `standards/figma-naming/handoff/CONSUMER.md`。
 - **做页消费边界**：同事自助走 `handoff:pack --allow-green-draft`（机器绿即可，不等人工核对）；主人测命名才核对并 `handoff:promote`。做页吃交接包里的已确定项；`unknown` 只画不赋交互。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
 - **代码评审**：通过 `/review` 触发
@@ -58,6 +59,8 @@ Project Gameweb/
 - **G2 切片闸门**：重导后立刻 `stat`（路径 / 字节 / 像素）。非空且 set 数对齐就自动判断；空白先修。G2 不用 `send_to_lead` 等人点头。
 - **G3 上下文预算**：超长会话或已读过图 → 禁止再 Read 任何图片。Lead 自动派干净执行体，不许让用户自己新开聊天。每轮最多 2 张 `page-*.jpg`。
 - **G4 派工**：默认 Lead 本窗跑到判断写回。G3 命中才派干净执行体，`initial_task` 必须点名硬门四条。判断写回后 `send_to_lead` 等人确认，确认前禁止沉淀。
+- **核对页 UI 冻结**：权威文件 `standards/figma-naming/tool/inventory-review/index.html`，必须进 git。禁止写 `_tmp/inventory-review/index.html`，禁止每次任务重写一版。
+- **链路验收口径**：未规范稿 0–7 的订正验收见 `standards/figma-naming/SKILL.md`「链路验收口径」。左侧 Page 链接可开工；导图不是每层一张；目录不是自动命名器；词表是漏项保险。可视对照 `docs/prework-pipeline.html`。
 
 ## 敏感数据保护
 

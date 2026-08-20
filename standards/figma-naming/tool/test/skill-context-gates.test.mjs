@@ -26,6 +26,13 @@ const REQUIRED_IN_SKILL = [
   "确认判断已完成",
   "发链接后自动跑到判断写回",
   "未规范稿次日开跑",
+  "核对页 UI 冻结",
+  "禁止写 `_tmp/inventory-review/index.html`",
+  "链路验收口径（未规范稿 0–7）",
+  "左侧 Page 链接可开工",
+  "导图不是每层一张",
+  "目录不是自动命名器",
+  "词表是漏项保险",
 ];
 
 const REQUIRED_IN_PROJECT_CLAUDE = [
@@ -35,6 +42,8 @@ const REQUIRED_IN_PROJECT_CLAUDE = [
   "G2 切片闸门",
   "G3 上下文预算",
   "G4 派工",
+  "核对页 UI 冻结",
+  "链路验收口径",
 ];
 
 test("SKILL.md 必须保留判断包硬门全文，删掉即红", () => {

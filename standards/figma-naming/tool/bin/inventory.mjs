@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { loadEnv, parseFigmaUrl, fetchNode } from "../src/figma.mjs";
 import {
   buildInventory, snapshotHashOf, renderHumanSummary, validateInventory, findNode,
+  unnamedRequiresDraft, sanitizeInventoryName,
 } from "../src/inventory.mjs";
 import { INVENTORY_STATUSES } from "../../spec/inventory.mjs";
 
@@ -38,13 +39,19 @@ const fileArg = opt("--file") || argv.find((a) => !String(a).startsWith("--") &&
 const cacheArg = opt("--cache");
 const pageArg = opt("--page");
 const outArg = opt("--out");
-const outNameArg = opt("--name");
+const rawOutNameArg = opt("--name");
 const statusFlag = requiredOpt("--status");
 const statusArg = statusFlag.present ? statusFlag.value : "ready";
 if (!INVENTORY_STATUSES.includes(statusArg)) {
   console.error(`--status 只能是 ${INVENTORY_STATUSES.join(" / ")}，收到：${statusArg}`);
   process.exit(1);
 }
+const unnamedProblem = unnamedRequiresDraft({ status: statusArg, name: rawOutNameArg });
+if (unnamedProblem) {
+  console.error(unnamedProblem);
+  process.exit(1);
+}
+const outNameArg = sanitizeInventoryName(rawOutNameArg);
 
 let fileKey = null;
 let requestedNodeId = null;
