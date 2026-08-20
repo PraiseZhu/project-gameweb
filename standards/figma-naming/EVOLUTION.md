@@ -32,8 +32,8 @@
 - `btn-set-nested-instances-follow` **btn/ 组件集在另一组件集内的实例也要跟前缀** — 出现 3 次,首见 2026-08-20,最近 2026-08-20,status: adopted
   - 现象:错误：闸门只扫 from.scope=page。多语言组件集内部 491:8339-8343 仍 unknown。正确：instance-uses-variant 只要目标是已确定 btn/img/ind/switch 集，页上和组件集内实例都跟前缀。跨货架定义除外。
   - 备注:[decided:2026-08-20] gold-morphology 跟全树实例，不再限 page scope。
-- `leaf-image-no-img-ancestor` **切图祖先没有 img/ 时自身必须 img/** — 出现 2 次,首见 2026-08-20,最近 2026-08-20,status: adopted
-  - 现象:错误：头像框/icon/装饰等在 btn/ 父级下仍 unknown。正确：自身是视觉资产且祖先链没有 img/，必须 img/；父级是 btn/ 也不例外。只有一级边框零件在 img/btn 父级下不抬。
+- `leaf-image-no-img-ancestor` **切图祖先没有 img/ 时自身必须 img/** — 出现 3 次,首见 2026-08-20,最近 2026-08-20,status: adopted
+  - 现象:错误：头像框/icon/装饰等在 btn/ 父级下仍 unknown。正确：自身是视觉资产且祖先链没有 img/，必须 img/；整块装饰/边框素材用 img/ 打包，不要拆成按钮。父级是 btn/ 也不例外。只有一级边框零件在 img/btn 父级下不抬。
   - 备注:[decided:2026-08-20] gold-morphology 钉死：无 img 祖先的切图自动补 img/。
 - `master-layer-copies-follow` **I…;母版Id 子件必须跟随母版前缀** — 出现 2 次,首见 2026-08-20,最近 2026-08-20,status: adopted
   - 现象:错误：母版 491:9235 已是 img/卡牌，页上实例里的 I491:8079;491:9235 仍 unknown。正确：id 以 ;母版Id 结尾的子件跟母版任意已确定前缀。
@@ -87,7 +87,7 @@
   - 现象:标题集/默认变体不命名；子层装饰按功能另判为 img/。
   - 提案:本次 PC+mobile 4 项。
   - 备注:[decided:2026-08-18] 标题组件集不命名
-- `card-art-is-img` **卡片视觉资产必须判 img** — 出现 3 次,首见 2026-08-18,最近 2026-08-20,status: adopted
+- `card-art-is-img` **卡片视觉资产必须判 img** — 出现 4 次,首见 2026-08-18,最近 2026-08-20,status: adopted
   - 现象:素材图、边框背景/背景边框、立绘、卡牌、Icon_SSR、弹窗纯底 BG 等整块视觉资产标 img/。父级已是 img/btn 时内部一级边框零件不抬升；父级没有切图前缀时整块要补 img/。
   - 提案:本次 PC+mobile 和完整变体子树补齐卡片资产。
   - 备注:[decided:2026-08-18] 卡片视觉资产必须判 img
@@ -97,8 +97,8 @@
 - `judge-confirm-then-settle` **判断写回后等人确认再沉淀** — 出现 2 次,首见 2026-08-19,最近 2026-08-20,status: adopted
   - 现象:判断写回 draft 后必须停，等人确认判断已完成。人确认前禁止写 skill / 台账；确认后必须沉淀，没写不许宣称本单收工。
   - 备注:[decided:2026-08-19] 发链接一窗出清单；沉淀单独等人确认。
-- `title-deco-is-img` **标题组件集不命名，子层装饰是 img** — 出现 3 次,首见 2026-08-19,最近 2026-08-20,status: adopted
-  - 现象:错误：标题有字就把整棵标题树（含装饰）改回 unknown。原因：标题组件集本身不是切图，装饰才是。正确口径：标题集/默认变体不命名；装饰 img/；改装饰母版只带动装饰实例。
+- `title-deco-is-img` **标题组件集不命名，子层装饰是 img** — 出现 4 次,首见 2026-08-19,最近 2026-08-20,status: adopted
+  - 现象:错误：标题有字就把整棵标题树（含装饰）改回 unknown。原因：标题组件集本身不是切图，装饰才是。正确口径：标题集/默认变体不命名；装饰 img/ 打包；改装饰母版只带动装饰实例。
   - 备注:[decided:2026-08-19] 491 mobile 核对：装饰 img，标题 unknown。
 - `determined-not-overwritten-by-later-unknown` **已 determined 不得被后一条 unknown 复写** — 出现 3 次,首见 2026-08-19,最近 2026-08-20,status: adopted
   - 现象:错误：装饰已标 img/ 后，写回按 JSONL 最后一条把同一 id 改回 unknown。正确口径：同一 id 先 determined 后 unknown 时保留 determined，报冲突。标题改 unknown 只作用标题，不覆盖装饰。
@@ -137,7 +137,7 @@
 - `judge-must-use-page-and-variant-shots` **判断必须同时用整页切片、变体小图和结构数据** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
   - 现象:不能只看当前页展开态，也不能只看树。switch/组件其它变体必须看 set-*.jpg 再对照变体子树。
   - 备注:[decided:2026-08-18] 截图+数据同时判，变体也要出图
-- `inventory-name-must-match-gold-morphology` **未规范稿出口必须带规范稿同类层前缀** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
+- `inventory-name-must-match-gold-morphology` **未规范稿出口必须带规范稿同类层前缀** — 出现 2 次,首见 2026-08-18,最近 2026-08-18,status: adopted
   - 现象:错成仅写 role/label、name 仍为设计师原名，且把播放按钮误作 hot；正确口径是 determined 非 copy 同时写 role/功能名，并按形态区分 btn/播放按钮、hot/具体视频播放区域、img/点击视频播放弹出区域。
   - 备注:[decided:2026-08-18] 未规范稿清单出口的 name/role/label/behavior 必须与规范稿同类层一致；只写 role 不算完成。
 - `mobile-named-modal` **移动端命名弹窗必须挂附件** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
