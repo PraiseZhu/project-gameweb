@@ -4,20 +4,25 @@
  *
  *   npm run inventory:review [-- --dir <root> --port <port> --no-open]
  *
- * 默认服务 <repo>/_tmp（页面在 /inventory-review/，清单在根下）。额外提供两个写接口
+ * UI 只读仓内 `tool/inventory-review/index.html`，禁止从 _tmp 现写或回退 HTML。
+ * 默认服务 <repo>/_tmp 里的清单 JSON 与切片图。额外提供两个写接口
  * （仅本机 localhost，零依赖，node 内建 http）：
  *   POST /api/feedback  { file, record }  → 追加 JSONL 到 <file 同名>-feedback.json
- *   POST /api/save      { file, inventory } → 写 <file>.reviewed.json（旧档先挪 .bak），
- *                                            服务端重算 counts 后落盘
+ *   POST /api/save      { file, inventory } → 写 <file>.reviewed.json + .reviewed.txt
+ *                                            （旧档先挪 .bak），服务端重建索引后再落盘
  * 打开浏览器（macOS open / Linux xdg-open），--no-open 可关。
  */
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, renameSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, renameSync, statSync, readdirSync } from "node:fs";
 import { resolve, dirname, normalize, extname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isSourceInventoryFile, persistReviewedInventory } from "../src/review-save.mjs";
 
-const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(SCRIPT_DIR, "../../../..");
+const COMMITTED_DIR = resolve(SCRIPT_DIR, "../inventory-review");
+const COMMITTED_PAGE = resolve(COMMITTED_DIR, "index.html");
 
 function opt(name, fallback = null) {
   const argv = process.argv.slice(2);
@@ -50,18 +55,6 @@ function send(res, code, body, type = "text/plain; charset=utf-8") {
   res.end(body);
 }
 
-function countInventoryNodes(inv) {
-  const nodes = [
-    ...(inv.nodes || []),
-    ...(inv.attachments?.modals || []).flatMap((item) => item.nodes || []),
-    ...(inv.attachments?.componentSets || []).flatMap((item) => item.nodes || []),
-    ...(inv.attachments?.components || []).flatMap((item) => item.nodes || []),
-  ];
-  const counts = { determined: 0, unknown: 0, skipped: 0 };
-  for (const node of nodes) if (counts[node.status] != null) counts[node.status]++;
-  return counts;
-}
-
 /** 只允许 <root> 内的相对路径；禁止 .. 与绝对路径逃逸 */
 function safePath(urlPath) {
   const rel = decodeURIComponent(urlPath.split("?")[0]).replace(/^\/+/, "");
@@ -70,7 +63,16 @@ function safePath(urlPath) {
   return full;
 }
 
-const invNameRe = /^inventory-[A-Za-z0-9._-]+\.json$/;
+function defaultInvFile() {
+  if (!existsSync(root)) return "";
+  const files = readdirSync(root).filter((name) => isSourceInventoryFile(name)).sort();
+  return files.find((name) => name.startsWith("inventory-unnamed-")) || files[0] || "";
+}
+
+function defaultReviewPath() {
+  const file = defaultInvFile();
+  return file ? `/inventory-review/?inv=${encodeURIComponent(file)}` : "/inventory-review/";
+}
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
@@ -81,7 +83,7 @@ const server = createServer(async (req, res) => {
     let parsed;
     try { parsed = JSON.parse(body); } catch { return send(res, 400, "bad json"); }
     const file = parsed?.file, record = parsed?.record;
-    if (!invNameRe.test(file || "") || !record || typeof record !== "object") return send(res, 400, "bad payload");
+    if (!isSourceInventoryFile(file || "") || !record || typeof record !== "object") return send(res, 400, "bad payload");
     const fbPath = resolve(root, file.replace(/\.json$/, "-feedback.json"));
     if (!fbPath.startsWith(root + "/")) return send(res, 400, "bad file");
     const line = `${JSON.stringify(record)}\n`;
@@ -97,7 +99,7 @@ const server = createServer(async (req, res) => {
     let parsed;
     try { parsed = JSON.parse(body); } catch { return send(res, 400, "bad json"); }
     const file = parsed?.file, inv = parsed?.inventory;
-    if (!invNameRe.test(file || "")) {
+    if (!isSourceInventoryFile(file || "")) {
       return send(res, 400, JSON.stringify({ ok: false, error: "bad file" }), "application/json; charset=utf-8");
     }
     if (inv?.schema !== "inventory/v2" || !Array.isArray(inv.nodes)) {
@@ -109,28 +111,50 @@ const server = createServer(async (req, res) => {
         error: "draft 不能在核对页保存清单。刚才的判定已写入 *-feedback.json，不会丢。升 ready 请用「核对完成」或 handoff:promote。",
       }), "application/json; charset=utf-8");
     }
-    const reviewedPath = resolve(root, file.replace(/\.json$/, ".reviewed.json"));
-    if (!reviewedPath.startsWith(root + "/")) return send(res, 400, "bad file");
-    if (existsSync(reviewedPath)) renameSync(reviewedPath, reviewedPath + ".bak");
-    const counts = countInventoryNodes(inv);
-    inv.counts = counts;
-    inv.reviewedAt = new Date().toISOString();
-    writeFileSync(reviewedPath, `${JSON.stringify(inv, null, 2)}\n`);
-    return send(res, 200, JSON.stringify({ ok: true, path: basename(reviewedPath), counts }), "application/json; charset=utf-8");
+    try {
+      const result = persistReviewedInventory(root, file, inv);
+      return send(res, 200, JSON.stringify(result), "application/json; charset=utf-8");
+    } catch (error) {
+      const code = error?.code === "bad-file" || error?.code === "bad-inventory" ? 400 : 500;
+      return send(res, code, JSON.stringify({ ok: false, error: String(error.message || error) }), "application/json; charset=utf-8");
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/inventories") {
+    const files = existsSync(root) ? readdirSync(root).filter((name) => isSourceInventoryFile(name)).sort() : [];
+    const items = files.map((file) => {
+      const raw = readFileSync(resolve(root, file), "utf8").slice(0, 4000);
+      const status = /"status"\s*:\s*"(draft|ready|certified)"/.exec(raw)?.[1] ?? null;
+      const pageId = /"requestedNodeId"\s*:\s*"([^"]+)"/.exec(raw)?.[1] ?? null;
+      const pageName = /"page"\s*:\s*\{[\s\S]*?"name"\s*:\s*"([^"]+)"/.exec(raw)?.[1] ?? null;
+      const fileKey = /"fileKey"\s*:\s*"([^"]+)"/.exec(raw)?.[1] ?? null;
+      const w = Number(/"page"\s*:\s*\{[\s\S]*?"w"\s*:\s*(\d+)/.exec(raw)?.[1] || 0);
+      const end = w >= 1200 ? "pc" : w > 0 ? "mobile" : "unknown";
+      return { file, status, pageId, pageName, fileKey, end };
+    });
+    return send(res, 200, JSON.stringify({ ok: true, items }), "application/json; charset=utf-8");
   }
 
   if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed");
 
   if (url.pathname === "/") {
-    res.writeHead(302, { Location: "/inventory-review/" });
+    res.writeHead(302, { Location: defaultReviewPath() });
     return res.end();
   }
   if (url.pathname === "/inventory-review" || url.pathname === "/inventory-review/") {
     url.pathname = "/inventory-review/index.html";
   }
 
+  if (url.pathname === "/inventory-review/index.html") {
+    if (!existsSync(COMMITTED_PAGE)) {
+      return send(res, 500, "核对页 UI 未进仓：standards/figma-naming/tool/inventory-review/index.html。禁止从 _tmp 凑 HTML。");
+    }
+    return send(res, 200, readFileSync(COMMITTED_PAGE), MIME[".html"]);
+  }
+
   const full = safePath(url.pathname);
   if (!full) return send(res, 403, "forbidden");
+  if (full.endsWith(".html")) return send(res, 404, "html is only served from the committed review page");
   if (!existsSync(full) || !statSync(full).isFile()) return send(res, 404, "not found: " + url.pathname);
   const body = readFileSync(full);
   send(res, 200, body, MIME[extname(full).toLowerCase()] || "application/octet-stream");
@@ -142,9 +166,10 @@ server.on("error", (e) => {
 });
 
 server.listen(portStart, "127.0.0.1", () => {
-  const url = `http://127.0.0.1:${portStart}/inventory-review/`;
+  const url = `http://127.0.0.1:${portStart}${defaultReviewPath()}`;
   console.log(`清单核对页: ${url}`);
-  console.log(`根目录: ${root}`);
+  console.log(`UI: ${COMMITTED_PAGE}`);
+  console.log(`数据根: ${root}`);
   if (!noOpen) {
     const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
     spawn(cmd, [url], { stdio: "ignore", detached: true }).unref();

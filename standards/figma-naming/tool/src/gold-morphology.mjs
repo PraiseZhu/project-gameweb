@@ -2,6 +2,8 @@
  * 未规范新稿闸门：只核前缀。后缀和设计师原名不作对错标准。
  * 已知结构漏了前缀 → 红。不对图层 id，不对规范稿后缀抄名。
  */
+import { rebuildInventoryIndexes } from "./inventory.mjs";
+
 const ROLE_PREFIX = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
 
 function rawName(node) {
@@ -24,7 +26,7 @@ function isStatePair(labels) {
 
 const CLIP_RE = /可划动|划动区域/;
 const INNER_REWARD_RE = /^(奖励列表|奖励)$/;
-const IMAGE_BODY_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘|角色头像|待解锁头像|视频框.*|兑换码背景|头像框.*|icon|图标装饰|装饰|阵营信息|待解锁|卡牌|Icon_SSR.*|BG|小按钮|logo)$/;
+const IMAGE_BODY_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘|角色头像|待解锁头像|视频框\s*\d+|兑换码背景|头像框.*|icon|图标装饰|装饰|阵营信息|待解锁|卡牌|Icon_SSR.*|BG|小按钮|logo)$/;
 const BORDER_PART_RE = /^一级边框/;
 const TEXT_CONTAINER_TYPES = new Set(["FRAME", "GROUP", "INSTANCE", "COMPONENT"]);
 
@@ -182,6 +184,47 @@ function applyPrefix(node, role) {
   else if (!node.behavior || node.behavior === "none") node.behavior = "none";
 }
 
+/** 划动层同父的奖励：纯图才 img/；有字的奖励条外层不标 img/，图走子层。按 parentId 分组，禁止把整页当兄弟。 */
+export function applyClipAndRewardPrefixes(doc) {
+  const kids = childrenByParent(doc);
+  const byParent = new Map();
+  visitNodes(doc, (node, _trail, kind) => {
+    if (kind !== "node") return;
+    const pid = node.parentId ?? "__root__";
+    if (!byParent.has(pid)) byParent.set(pid, []);
+    byParent.get(pid).push(node);
+  });
+  let clipFixed = 0;
+  let innerFixed = 0;
+  let stripped = 0;
+  for (const siblings of byParent.values()) {
+    const frames = siblings.filter((node) => node && (node.type === "FRAME" || node.type === "GROUP"));
+    const clips = frames.filter((node) => CLIP_RE.test(rawName(node)));
+    const inners = frames.filter((node) => INNER_REWARD_RE.test(rawName(node)));
+    for (const clip of clips) {
+      if (!hasPrefix(clip, "scroll")) {
+        applyPrefix(clip, "scroll");
+        clipFixed += 1;
+      }
+    }
+    if (!clips.length) continue;
+    for (const inner of inners) {
+      if (isTextRewardContainer(inner, kids)) {
+        if (hasPrefix(inner, "img")) {
+          applyPrefix(inner, null);
+          stripped += 1;
+        }
+        continue;
+      }
+      if (!hasPrefix(inner, "img")) {
+        applyPrefix(inner, "img");
+        innerFixed += 1;
+      }
+    }
+  }
+  return { clipFixed, innerFixed, stripped };
+}
+
 
 function hasImgAncestor(node, byId) {
   const seen = new Set();
@@ -208,10 +251,21 @@ function childrenByParent(doc) {
 
 function isTextGroupImgExempt(node) {
   const body = rawName(node);
-  if (/^logo$/i.test(body)) return true;
-  if (node.role === "bg" || node.role === "kv") return true;
   const name = String(node.name || "");
+  if (/^logo$/i.test(body) || name.startsWith("img/logo")) return true;
+  if (node.role === "bg" || node.role === "kv") return true;
   return name.startsWith("bg/") || name.startsWith("kv/");
+}
+
+function isVideoFrameWrapper(node) {
+  return TEXT_CONTAINER_TYPES.has(node.type) && rawName(node) === "视频框";
+}
+
+function isTextRewardContainer(node, kids) {
+  if (!INNER_REWARD_RE.test(rawName(node))) return false;
+  if (!TEXT_CONTAINER_TYPES.has(node.type)) return false;
+  if (isTextGroupImgExempt(node)) return false;
+  return hasTextDescendant(node.id, kids);
 }
 
 function hasTextDescendant(id, kids) {
@@ -236,12 +290,24 @@ function leafImageNodes(doc) {
     if (["TEXT", "COMPONENT_SET", "COMPONENT", "INSTANCE"].includes(node.type)) continue;
     const body = rawName(node);
     if (BORDER_PART_RE.test(body)) continue;
+    if (isVideoFrameWrapper(node)) continue;
     if (!IMAGE_BODY_RE.test(body)) continue;
     if (TEXT_CONTAINER_TYPES.has(node.type) && hasTextDescendant(node.id, kids) && !isTextGroupImgExempt(node)) continue;
     if (hasImgAncestor(node, byId)) continue;
     if (hasPrefix(node, "img")) continue;
     hits.push({ node, why: "自身是切图且祖先没有 img/ 前缀" });
   }
+  return hits;
+}
+
+function videoFrameWrappersToUnname(doc) {
+  const hits = [];
+  visitNodes(doc, (node, _trail, kind) => {
+    if (kind !== "node") return;
+    if (!isVideoFrameWrapper(node) || node.status === "skipped") return;
+    if (!(node.status === "determined" && node.role && node.role !== "copy")) return;
+    hits.push({ node, role: null, why: "视频框外层分组跳过命名，往下挖热区/外框图/按钮/说明" });
+  });
   return hits;
 }
 
@@ -306,9 +372,11 @@ function classKey(node) {
 
 export function determinedClassRoles(doc) {
   const byId = indexNodes(doc);
+  const kids = childrenByParent(doc);
   const roles = new Map();
   for (const node of byId.values()) {
     if (node.status !== "determined" || !node.role || node.role === "copy") continue;
+    if (node.role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node))) continue;
     const key = classKey(node);
     if (!key) continue;
     if (!roles.has(key)) roles.set(key, new Set());
@@ -324,12 +392,14 @@ export function determinedClassRoles(doc) {
 export function syncClassHits(sourceDoc, targetDoc) {
   const src = determinedClassRoles(sourceDoc);
   const byId = indexNodes(targetDoc);
+  const kids = childrenByParent(targetDoc);
   const hits = [];
   for (const node of byId.values()) {
     if (node.status !== "unknown") continue;
     const key = classKey(node);
     const role = key ? src.get(key) : null;
     if (!role) continue;
+    if (role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node))) continue;
     hits.push({ node, role, why: `与另一端同类 ${role}/ 同步` });
   }
   return hits;
@@ -360,7 +430,9 @@ export function auditDraftGoldMorphology(doc) {
     }
   }
 
+  const kids = childrenByParent(doc);
   const flagInnerReward = (inner) => {
+    if (isTextRewardContainer(inner, kids)) return;
     if (inner.status === "determined" && inner.role === "scroll") {
       problems.push(`${inner.id}「${inner.name}」是裁切层里的奖励图，前缀必须是 img/，scroll/ 只写在划动层`);
     }
@@ -443,6 +515,9 @@ export function auditDraftGoldMorphology(doc) {
   for (const { node, why } of leafImageNodes(doc)) {
     expectPrefix(node, "img", problems, why);
   }
+  for (const { node, why } of videoFrameWrappersToUnname(doc)) {
+    problems.push(`${node.id}「${node.name}」${why}`);
+  }
   for (const { node, why } of groupsWithTextNotImg(doc)) {
     problems.push(`${node.id}「${node.name}」${why}`);
   }
@@ -483,10 +558,12 @@ export function applyDraftGoldMorphology(doc) {
     const copies = indexAllCopies(doc);
     for (const hit of setRoleInstances(doc)) applyHit(copies, hit, applied);
     for (const { node, why } of leafImageNodes(doc)) applyHit(copies, { node, role: "img", why }, applied);
+    for (const hit of videoFrameWrappersToUnname(doc)) applyHit(copies, hit, applied);
     for (const hit of groupsWithTextNotImg(doc)) applyHit(copies, hit, applied);
     for (const hit of followLayerCopies(doc)) applyHit(copies, hit, applied);
     if (applied.length === before) break;
   }
+  rebuildInventoryIndexes(doc);
   return { applied };
 }
 
@@ -501,13 +578,8 @@ export function applyCrossEndClassSync(sourceDoc, targetDoc) {
 }
 
 export function recountStatuses(doc) {
-  const counts = {};
-  visitNodes(doc, (node, _trail, kind) => {
-    if (kind !== "node" || !node.status) return;
-    counts[node.status] = (counts[node.status] ?? 0) + 1;
-  });
-  if (doc.counts && typeof doc.counts === "object") doc.counts = { ...doc.counts, ...counts };
-  return counts;
+  rebuildInventoryIndexes(doc);
+  return { ...(doc.counts || {}) };
 }
 
 /** PC/mobile 写回收口：跟随母版 + 两端同类同步。 */
@@ -516,6 +588,7 @@ export function finalizeDraftWriteback(docs) {
   const applied = list.map(() => []);
   for (let i = 0; i < list.length; i += 1) {
     applied[i].push(...applyDraftGoldMorphology(list[i]).applied);
+    applyClipAndRewardPrefixes(list[i]);
   }
   if (list.length >= 2) {
     for (let i = 0; i < list.length; i += 1) {
@@ -524,6 +597,7 @@ export function finalizeDraftWriteback(docs) {
         applied[j].push(...applyCrossEndClassSync(list[i], list[j]).applied);
       }
     }
+    for (const doc of list) applyClipAndRewardPrefixes(doc);
   }
   const counts = list.map((doc) => recountStatuses(doc));
   return { applied, counts };

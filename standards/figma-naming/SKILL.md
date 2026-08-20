@@ -111,7 +111,7 @@ disable-model-invocation: false
 
 ### 6 跟随收口（机器不问人）
 
-母版有前缀则实例、子件、`I…;母版Id` 跟上；母版未命名则子件不得擅自加前缀。纯视觉层、祖先没有 `img/` → 补 `img/`（词表见 `IMAGE_BODY_RE`，比「素材图」更宽）。有字分组不得整组 `img/`（`bg/` `kv/` `logo` 例外）。PC / 手机同类（类型 + 剥前缀名）对齐的是**前缀**，不是整串后缀。
+母版有前缀则实例、子件、`I…;母版Id` 跟上；母版未命名则子件不得擅自加前缀。纯视觉层、祖先没有 `img/` → 补 `img/`（词表见 `IMAGE_BODY_RE`，比「素材图」更宽）。有字分组不得整组 `img/`（`bg/` `kv/` `logo` 例外）。**有字的「奖励」条外层不标 `img/`，图走子层**；跨端不得把有字奖励条同步成 `img/`。划动层与奖励条必须按同一父层判断，禁止把整页 `nodes` 当兄弟（否则任意划动会给全页「奖励」盖上 `img/`）。PC / 手机同类（类型 + 剥前缀名）对齐的是**前缀**，不是整串后缀。
 
 ### 7 词表是漏项保险，双端对齐只是一块
 
@@ -119,7 +119,7 @@ completeness 双绿才算判断机器过。三条词表不要混：
 - `CARD_ART_RE`：`素材图|素材|边框背景|背景边框|立绘` —— unknown 仍用这些精确词才红
 - `IMAGE_BODY_RE`：跟随补 `img/`，还覆盖角色头像、视频框、头像框、icon、装饰、卡牌等
 - `CLIP_RE`：只有 `可划动|划动区域`；裸词「划动」不命中机器划动红灯
-没撞上词表 ≠ 没有这层，责任在第 5 步看图。另外必查：已确定非 copy 必须写入 `role/`、组件集分类、弹窗、小播放是 `btn/` 不是 `hot/`、跟随、有字分组、两端同类前缀。只核前缀和结构。写回后必须重建 `sections` / `overlays` / `backgrounds` / `modules` / `counts` / `pageCounts`，并重写 `.txt`。completeness 按节点重建对照索引，不只扫空数组：有 determined `sec/` 但 `sections` 为空、`backgrounds`/`modules` 残缺、`pageCounts` 过期 → 红，不算过。规范稿对照只核前缀类/结构/索引，不把 live inventory JSON 当单测基线。
+没撞上词表 ≠ 没有这层，责任在第 5 步看图。另外必查：已确定非 copy 必须写入 `role/`、组件集分类、弹窗、小播放是 `btn/` 不是 `hot/`、跟随、有字分组、两端同类前缀。只核前缀和结构。写回后必须重建 `sections` / `overlays` / `backgrounds` / `modules` / `counts` / `pageCounts`，并重写 `.txt`。completeness 按节点重建对照索引，不只扫空数组：有 determined `sec/` 但 `sections` 为空、`backgrounds`/`modules` 残缺、`pageCounts` 过期 → 红，不算过。按页宽冻住结构存在性：PC 的 `sections`/`overlays`/`backgrounds`/`modules`、mobile 的 `sections`/`backgrounds`/`modules` 为空也红（即使本稿还没有 determined 对应节点）。不对照条数、不对图层 id。规范稿对照只核前缀类/结构/索引，不把 live inventory JSON 当单测基线。
 
 ## 步骤
 
@@ -176,7 +176,7 @@ npm run inventory -- \
 1. **规范问功能**：前端要不要知道这层是什么？要切图 → `img/` `bg/` `kv/`；要点/滑/切 → `btn/` `hot/` `scroll/` `switch/` `tab/` `ind/`；要按屏拆或钉住 → `sec/` `fix/`；都不要 → 保持原名，不硬加前缀。
 2. **模块目录问同类**：先跑 `node scripts/match-module-catalog.mjs --inventory <draft>`，按类型/变体结构检索（**不用设计师原名**）。目录只覆盖组件集和弹窗 FRAME，`types` 不得写 `INSTANCE`。页上实例不走目录：任意组件集写成前缀后由写回收口跟随（实例 + `I…;母版Id` 子件）。散落 RECTANGLE/GROUP 切图、划动裁切层不走目录。命中只要求前缀 `suggestedPrefix`（如 `switch/`），后缀随便。可用目录切片对照当前 `set-*.jpg`。未命中不得拿旧稿图层 id 硬套。
 3. **台账问形态**：这条像不像已经沉淀过的形态（词、结构、截图口径）。词是线索，结构 + 整页切片定身份。叫「划动 / 可划动」的那层 → `scroll/`；同层奖励图 → `img/`。叫「按钮背景 / 底 / 素材 / icon」→ 不是按钮。
-4. **组件集问全变体**：页上实例只展开当前子件。`switch/` / 组件必须打开 `attachments.componentSets` 里**每一个**变体：先看该变体小图，再扫变体子树里的 `scroll/`、`img/`、`hot/`。只给组件集起名、或只看当前页展开态，都不算判完。当前页是三张奖励卡，另一个变体是视频框 + 热区 + 播放按钮，两套都要进清单；奖励展示里要判出划动裁切层 `scroll/` 和轨道图 `img/`。
+4. **组件集问全变体**：页上实例只展开当前子件，但**变体等同在页上**（一切换就出现）。`switch/` / 组件必须打开 `attachments.componentSets` 里**每一个**变体：先看该变体小图，再扫变体子树里的 `scroll/`、`img/`、`hot/`。只给组件集起名、或只看当前页展开态，都不算判完。当前页是三张奖励卡，另一个变体是视频框 + 热区 + 播放按钮，两套都要进清单；奖励展示里要判出划动裁切层 `scroll/` 和轨道图 `img/`。验收前缀类必须把页上用到的组件集**全部变体**算进去，不能因为当前展开不是皮肤视频就报缺 `hot/`。
 5. **分区按本页内容编号**：`sec/` 按本页从上到下自己排。金样 `sec/3` 是庆典、这份稿 `sec/3` 是别的，互不借用。
 6. **对立解释排不掉才 `unknown`**：既像按钮又像标签、热区证据不足。不许为了少干活一律 `unknown`。
 7. **出口只核前缀**：`determined` 非 copy 的 `name` 必须以 `role/` 开头。后缀不作为对错，也不拿设计师原名当参考。同类模块前缀与规范稿一致即可。
@@ -189,7 +189,7 @@ npm run inventory -- \
 
 - **钉死 1 · 所有组件集的子件跟随母版**：不限 `btn/`。组件集有前缀，页上实例、集内实例、`I…;母版Id` 子件必须跟同一前缀。组件集未命名，子件不得擅自加前缀。写回走 `apply-review-feedback`（可 `--peer`）或 `apply-gold-morphology` 两份一起跑，写盘即跟随，不要写完一端再等人点另一端。
 - **钉死 2 · 无 img 祖先的切图必须 img/**：自身是视觉资产（头像框/icon/装饰/素材图/立绘/视频框/卡牌/Icon_SSR/弹窗纯底 BG 等），祖先链没有 `img/`，自身必须 `img/`。整块装饰/边框素材用 `img/` 打包导出，不要拆成按钮。父级是 `btn/` 也不例外。只有内部 `一级边框` 零件在父级已是 `img/`/`btn/` 时不抬。
-- **钉死 3 · 下面有文字的分组不是 img/**：分组/容器底下有文案，不能直接 `img/`。切图只打纯视觉层。`奖励` 这种带字的分组保持不命名或跟母版；标题组件集未命名时，子件也不能擅自 `img/`。**例外：`bg/`、`kv/`、`logo`（`img/logo`）这三处不适用本条，有字也保留。**
+- **钉死 3 · 下面有文字的分组不是 img/**：分组/容器底下有文案，不能直接 `img/`。切图只打纯视觉层。`奖励` 这种带字的分组保持不命名或跟母版；标题组件集未命名时，子件也不能擅自 `img/`。**例外：`bg/`、`kv/`、`logo`（`img/logo`）这三处不适用本条，有字也保留。** 名叫 `视频框` 的外层 FRAME/GROUP 跳过命名（和规范稿弹窗一样），往下挖：热区 `hot/`、外框图 `img/视频框 2`、播放 `btn/`、说明文字 `copy/`。不要把整框标 `img/` 再和有字的皮肤视频框互打。
 - `kv` 外层分组不命名；里面才是 `kv/背景`、`kv/中景`、`kv/前景阴影`
 - 下滑引导箭头是 `img/` 切片；没有原型或明确点击证据，不因为「箭头」就判 `btn/`
 - 日历外层有多层背景/装饰时用 `mix/`（PC `mix/calendar`，mobile 同样）；今日标记 `dyn/`。不要把整块日历 unknown 掉
@@ -250,7 +250,7 @@ npm run inventory:review
 2. 未规范导图必导整页 `page.png` + 全套 `set-*.png`。弹窗图会导出，但判断包/G2 只收 page/set jpg。不要给每个 unknown 层出图。`prep-judge-pack` 必须带整页 `page-*.jpg` **和** 组件集 `set-*.jpg`（从 `inventory-review/img-*/set-*.png` 压）。缺 set 图 = 包没做完。
 3. G2：`stat` 列出页切片 + 组件集切片。空白 jpeg 先修再判；非空且 set 数对齐就继续判断，不等点头。
 4. 判断：先 `npm run catalog:match -- --inventory <draft>`。目录只给弱前缀建议、不写盘；弹窗 0 命中正常，多命中不得直接采信。再截图 + jq。每轮最多 2 张小图。写回 draft。任意组件集写成前缀后，页上实例、集内实例、`I…;母版Id` 子件都必须机器跟随。PC/mobile 两份一起收口：`node scripts/apply-gold-morphology.mjs <pc.json> <mobile.json>`。写回反馈用 `apply-review-feedback.mjs --from <上一份稿> [--peer <另一端.json>]`，写回后自动跟随，不必再手跑一遍 morph。旧图层 id 按父层+类型+剥前缀名+顺序映射；导航项已是 btn/ 时旧反馈 img 不复写。这类漏项不要拿去问人。
-5. 跑 `node scripts/check-draft-asset-completeness.mjs` 两份 draft，必须绿。只核前缀和结构（素材图、划动裁切层 `scroll/`、多变体内容集 `switch/`、状态组件 `btn/`/`ind/`、弹窗 `modal/`、跨货架定义 unknown、页上左侧导航实例 `btn/`、组件集实例与 `I…;母版Id` 跟随、有字分组不得 `img/`——`bg/` `kv/` `logo` 例外）。后缀和设计师原名不对错。然后停，等人**确认判断已完成**。
+5. 跑 `node scripts/check-draft-asset-completeness.mjs` 两份 draft，必须绿。只核前缀和结构（素材图、划动裁切层 `scroll/`、多变体内容集 `switch/`、状态组件 `btn/`/`ind/`、弹窗 `modal/`、跨货架定义 unknown、页上左侧导航实例 `btn/`、组件集实例与 `I…;母版Id` 跟随、有字分组不得 `img/`——`bg/` `kv/` `logo` 例外）。写回后必须重建 `sections` / `overlays` / `backgrounds` / `modules` / `counts` / `pageCounts`；索引空或过期 → 红。相对规范稿缺前缀类 → 红（按页宽用冻住的 PC/mobile 前缀类，不读 live 规范稿 JSON）。PC 缺分区/悬浮/底图/模块索引、mobile 缺分区/底图/模块索引 → 红，不靠「有 determined 节点才查空数组」。后缀和设计师原名不对错。然后停，等人**确认判断已完成**。
 6. 人确认后才做步骤 4：改 SKILL「已沉淀形态」+ `evolution-note.mjs`（先 list 再加 occurrence）。交回必须点名本次 fingerprint。
 
 这轮已经钉死、换稿直接套的口径见上文「已沉淀形态」。另外三条容易再踩：

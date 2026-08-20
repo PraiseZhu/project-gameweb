@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<!--
+  CANONICAL: standards/figma-naming/tool/inventory-review/index.html
+  核对页 UI 进 git。禁止写到 _tmp。禁止每次任务重写一版。改展示只改这一份。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>清单人工核对</title>
+<style>
+  :root {
+    --figma: #2c2c2c; --canvas: #1e1e1e; --line: #1e1e1e; --hair: #444;
+    --ink: #f5f5f5; --muted: #b3b3b3; --hover: #3c3c3c;
+    --sel: #0d99ff; --inst: #7b61ff;
+    --det: #0d9f6e; --unk: #f5a524; --skp: #6b7280;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--figma); color: var(--ink);
+    font: 12px/1.35 Inter, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { background: none; border: 0; cursor: pointer; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #555; border-radius: 8px; }
+
+  #bar {
+    height: 40px; display: flex; align-items: center; gap: 10px;
+    padding: 0 10px; background: #2c2c2c; border-bottom: 1px solid #000; flex: none;
+  }
+  #bar .brand { font-weight: 600; font-size: 12px; letter-spacing: .01em; }
+  #bar .meta { color: var(--muted); font-size: 11px; font-family: ui-monospace, Menlo, monospace; }
+  #bar .sp { flex: 1; }
+
+  #app { display: flex; height: calc(100% - 40px); }
+
+  #left, #right {
+    width: 241px; flex: none; background: #2c2c2c; display: flex; flex-direction: column; min-height: 0;
+  }
+  #left { border-right: 1px solid #000; }
+  #right { border-left: 1px solid #000; }
+
+  #pages { padding: 6px 0; border-bottom: 1px solid #000; }
+  #pages .pg {
+    display: flex; align-items: center; gap: 8px; width: 100%; height: 32px;
+    padding: 0 12px; color: var(--ink); text-align: left;
+  }
+  #pages .pg:hover { background: var(--hover); }
+  #pages .pg.on { background: #383838; }
+  #pages .pg svg { flex: none; opacity: .85; }
+
+  #tabs { display: flex; gap: 16px; padding: 8px 12px 6px; }
+  #tabs button { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+  #tabs button.on { color: #fff; }
+
+  #searchWrap { padding: 4px 8px 8px; display: flex; gap: 6px; align-items: center; }
+  #search {
+    flex: 1; height: 28px; border: 1px solid #4a4a4a; background: #1e1e1e;
+    border-radius: 6px; padding: 0 8px;
+  }
+  #treeFilter {
+    height: 28px; border: 1px solid #4a4a4a; background: #383838; border-radius: 6px; padding: 0 6px; color: var(--muted);
+  }
+
+  #listWrap { flex: 1; overflow: auto; }
+  #tree { list-style: none; padding: 0 0 24px; }
+  #tree .row {
+    display: flex; align-items: center; height: 32px; padding-right: 8px;
+    cursor: default; user-select: none; white-space: nowrap;
+  }
+  #tree .row:hover { background: var(--hover); }
+  #tree .row.sel { background: var(--sel); color: #fff; }
+  #tree .row.hov:not(.sel) { background: #3a4a58; }
+  #tree .twist {
+    width: 16px; height: 16px; flex: none; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 8px; transform: rotate(-90deg);
+  }
+  #tree .twist.open { transform: rotate(0); }
+  #tree .twist.empty { visibility: hidden; }
+  #tree .ic { width: 16px; height: 16px; flex: none; margin-right: 6px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+  #tree .row.sel .ic, #tree .row.sel .twist, #tree .row.sel .nm, #tree .row.sel .pip { color: #fff; }
+  #tree .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #tree .row.inst .nm { color: #c4b5fd; }
+  #tree .row.sel.inst .nm { color: #fff; }
+  #tree .row.skp { opacity: .38; }
+  #tree .pip { width: 6px; height: 6px; border-radius: 50%; flex: none; margin-left: 6px; }
+  #tree .pip.det { background: var(--det); }
+  #tree .pip.unk { background: transparent; border: 1.5px dashed var(--unk); border-radius: 1px; width: 7px; height: 7px; }
+  #tree .pip.skp { border: 1px dotted var(--skp); background: transparent; }
+
+  #assets { padding: 8px; display: grid; grid-template-columns: 1fr; gap: 10px; }
+  #assets[hidden] { display: none; }
+  #assets figure { margin: 0; cursor: pointer; }
+  #assets figure:hover { outline: 1px solid var(--sel); }
+  #assets img { width: 100%; height: 88px; object-fit: contain; background: #1e1e1e; border: 1px solid #3a3a3a; border-radius: 4px; display: block; }
+  #assets figcaption { color: var(--muted); font-size: 11px; padding-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  #stage { flex: 1; position: relative; background: var(--canvas); overflow: hidden; min-width: 0; }
+  #viewport { position: absolute; inset: 0; overflow: hidden; cursor: default; touch-action: none; }
+  #viewport.space { cursor: grab; }
+  #viewport.drag { cursor: grabbing; }
+  #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+  #world .layer { position: absolute; }
+  #world .layer img { width: 100%; height: 100%; display: block; object-fit: fill; object-position: top left; pointer-events: none; }
+  #world .layer.page img { object-fit: cover; }
+  #world .page-label {
+    position: absolute; left: 0; top: 0; transform: translateY(-100%);
+    color: #9a9a9a; font-size: 11px; padding: 2px 0 4px; pointer-events: none; white-space: nowrap;
+  }
+  #world .box { position: absolute; pointer-events: none; border: 0; background: transparent; }
+  #world .box.sel {
+    border: 2px solid var(--sel);
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 6px rgba(13,153,255,.4), 0 0 22px rgba(13,153,255,.75);
+    background: rgba(13,153,255,.14);
+    z-index: 5;
+  }
+  #world .box .tag {
+    position: absolute; left: -2px; top: 0; transform: translateY(calc(-100% - 4px));
+    background: var(--sel); color: #fff; font-size: 12px; font-weight: 600;
+    padding: 3px 8px; white-space: nowrap; display: none; line-height: 1.3;
+    border-radius: 2px; box-shadow: 0 2px 8px rgba(0,0,0,.45);
+  }
+  #world .box.sel .tag { display: block; }
+
+  #zoomDock {
+    position: absolute; right: 12px; bottom: 12px; z-index: 8;
+    display: flex; align-items: center; background: #2c2c2c; border: 1px solid #444; border-radius: 6px; overflow: hidden;
+  }
+  #zoomDock button, #zoomDock span { padding: 5px 8px; color: var(--ink); }
+  #zoomDock span { min-width: 48px; text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  #right { padding: 12px; overflow: auto; }
+  #right.empty .filled { display: none; }
+  #right:not(.empty) .empty-hint { display: none; }
+  #right .empty-hint { color: var(--muted); padding: 16px 4px; }
+  #right h4 { font-size: 13px; font-weight: 600; margin-bottom: 4px; word-break: break-all; }
+  #right .id { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 10px; margin-bottom: 10px; }
+  #right .kv { display: grid; grid-template-columns: 64px 1fr; gap: 6px 8px; margin: 10px 0; color: var(--muted); }
+  #right .kv b { color: var(--ink); font-weight: 500; }
+  #right .seg { display: flex; border: 1px solid #4a4a4a; border-radius: 6px; overflow: hidden; margin: 8px 0; }
+  #right .seg button { flex: 1; padding: 6px 0; background: #383838; }
+  #right .seg button.on { background: #0d99ff; color: #fff; }
+  #right label { display: block; color: var(--muted); font-size: 11px; margin: 10px 0 4px; }
+  #right select, #right textarea {
+    width: 100%; border: 1px solid #4a4a4a; background: #1e1e1e; border-radius: 6px; padding: 6px;
+  }
+  #right textarea { min-height: 64px; resize: vertical; }
+  #write { margin-top: 10px; width: 100%; height: 30px; background: #0d99ff; color: #fff; border-radius: 6px; }
+  #write:hover { background: #0b86e0; }
+  #log { margin-top: 8px; color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <span class="brand">清单人工核对</span>
+  <span class="meta" id="fileName"></span>
+  <span class="sp"></span>
+  <span class="meta" id="counts"></span>
+</div>
+<div id="app">
+  <aside id="left">
+    <div id="pages"></div>
+    <div id="tabs">
+      <button class="on" data-tab="layers">图层</button>
+      <button data-tab="assets">资源</button>
+    </div>
+    <div id="searchWrap">
+      <input id="search" placeholder="搜索图层" />
+      <select id="treeFilter">
+        <option value="review">核对</option>
+        <option value="all">全部</option>
+        <option value="unknown">未知</option>
+      </select>
+    </div>
+    <div id="listWrap">
+      <ul id="tree"></ul>
+      <div id="assets" hidden></div>
+    </div>
+  </aside>
+  <div id="stage">
+    <div id="viewport"><div id="world"></div></div>
+    <div id="zoomDock">
+      <button id="zoomOut">−</button>
+      <span id="zoomPct">100%</span>
+      <button id="zoomIn">+</button>
+      <button id="zoomFitBtn" title="Shift+1">适应</button>
+    </div>
+  </div>
+  <aside id="right" class="empty">
+    <div class="empty-hint">在图层列表或画布点选一层。空格拖动画布，滚轮平移，⌘滚轮缩放。draft 不能在页上保存升档。</div>
+    <div class="filled">
+      <h4 id="selName"></h4>
+      <div class="id" id="selId"></div>
+      <div class="kv" id="selMeta"></div>
+      <div class="seg" id="stSeg">
+        <button data-st="determined">已确定</button>
+        <button data-st="unknown">未知</button>
+        <button data-st="skipped">跳过</button>
+      </div>
+      <label>角色</label>
+      <select id="toRole"></select>
+      <label>理由</label>
+      <textarea id="note" placeholder="可选"></textarea>
+      <button id="write">写下本条</button>
+      <div id="log"></div>
+    </div>
+  </aside>
+</div>
+<script>
+const ROLES = ["bg","btn","copy","dyn","fix","hot","img","ind","kv","mix","modal","ref","scroll","sec","switch","tab"];
+const $ = (id) => document.getElementById(id);
+const viewport = $("viewport");
+const world = $("world");
+
+const state = {
+  inventory: null, invFile: "", pageBox: { x: 0, y: 0, w: 1, h: 1 },
+  tiles: null, zoom: 0.2, panX: 40, panY: 48,
+  selectedId: null, hoverId: null, relatedIds: new Set(),
+  q: "", treeFilter: "review", tab: "layers",
+  toStatus: "unknown", expanded: new Set(), originX: 0, originY: 0,
+  byId: new Map(), kids: new Map(), roots: [],
+};
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+}
+/** 组件集 item.nodes + 每个变体 variants[*].nodes，变体独立存储时也能进树。 */
+function attachmentTreeNodes(item) {
+  const nodes = [];
+  const seen = new Set();
+  const take = (n) => {
+    if (!n || n.id == null || seen.has(n.id)) return;
+    seen.add(n.id);
+    nodes.push(n);
+  };
+  for (const n of item.nodes || []) take(n);
+  for (const variant of item.variants || []) {
+    take({
+      id: variant.id,
+      name: variant.name || variant.id,
+      type: variant.type || "COMPONENT",
+      status: variant.status || "unknown",
+      role: variant.role,
+      box: variant.box,
+      parentId: variant.parentId || item.id,
+    });
+    for (const n of variant.nodes || []) take(n);
+  }
+  return nodes;
+}
+function pageTag(id) { return String(id || "").replace(/:/g, "-"); }
+function pageNodes() { return state.inventory?.nodes || []; }
+function nodeOf(id) { return state.byId.get(id); }
+function isSynth(id) { return String(id || "").startsWith("__"); }
+function drawableNodes() {
+  const out = [];
+  for (const n of state.byId.values()) {
+    if (!n?.box || isSynth(n.id)) continue;
+    out.push(n);
+  }
+  return out;
+}
+function worldBoxOf(n) {
+  const b = n.box;
+  return {
+    x: b.x - state.pageBox.x - state.originX,
+    y: b.y - state.pageBox.y - state.originY,
+    w: b.w,
+    h: b.h,
+  };
+}
+
+const ICONS = {
+  PAGE: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h5.2L12 5.3V13.5H4V2.5Z" stroke="currentColor" stroke-width="1.2"/><path d="M9.2 2.5V5.3H12" stroke="currentColor" stroke-width="1.2"/></svg>`,
+  FRAME: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 5h10M3 11h10M5 3v10M11 3v10" stroke="currentColor" stroke-width="1.3"/></svg>`,
+  SECTION: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.3"/></svg>`,
+  GROUP: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.5"/></svg>`,
+  INSTANCE: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2.2 13.8 8 8 13.8 2.2 8 8 2.2Z"/></svg>`,
+  COMPONENT: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2.2 13.8 8 8 13.8 2.2 8 8 2.2Z"/></svg>`,
+  COMPONENT_SET: `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M5.2 2.4 8 5.2 5.2 8 2.4 5.2 5.2 2.4Zm5.6 0L13.6 5.2 10.8 8 8 5.2 10.8 2.4ZM5.2 8 8 10.8 5.2 13.6 2.4 10.8 5.2 8Zm5.6 0 2.8 2.8-2.8 2.8L8 10.8 10.8 8Z"/></svg>`,
+  TEXT: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 4.2h9M8 4.2v8.2M6 12.4h4" stroke="currentColor" stroke-width="1.3"/></svg>`,
+  ELLIPSE: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><ellipse cx="8" cy="8" rx="5.2" ry="5.2" stroke="currentColor" stroke-width="1.3"/></svg>`,
+  LINE: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 12.5 13 3.5" stroke="currentColor" stroke-width="1.3"/></svg>`,
+  VECTOR: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 11.5 7 4.5l6 2-3 5.5H3Z" stroke="currentColor" stroke-width="1.2"/></svg>`,
+  RECTANGLE: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="3.5" width="10" height="9" stroke="currentColor" stroke-width="1.3"/></svg>`,
+};
+function typeIcon(type) { return ICONS[type] || ICONS.RECTANGLE; }
+
+function buildIndex() {
+  const nodes = pageNodes();
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const kids = new Map();
+  const pageId = state.inventory.page?.id;
+  for (const n of nodes) {
+    let pid = n.parentId || null;
+    if (pid && !byId.has(pid)) pid = (pid === pageId) ? "__page__" : null;
+    if (!pid) pid = "__page__";
+    if (!kids.has(pid)) kids.set(pid, []);
+    kids.get(pid).push(n);
+  }
+  const cmp = (a, b) => String(a.orderKey || "").localeCompare(String(b.orderKey || ""), undefined, { numeric: true });
+  for (const list of kids.values()) list.sort(cmp).reverse();
+  const page = {
+    id: "__page__",
+    name: state.inventory.page?.name || "Page",
+    type: "PAGE",
+    status: "determined",
+    box: state.pageBox,
+  };
+  byId.set(page.id, page);
+  state.byId = byId;
+  state.kids = kids;
+  state.roots = [page];
+  state.expanded = new Set(["__page__"]);
+  const expandFrames = (id, depth) => {
+    if (depth > 2) return;
+    for (const child of kids.get(id) || []) {
+      const open = child.type === "PAGE" || child.type === "FRAME" || child.type === "SECTION" || child.role === "sec" || child.id === pageId;
+      if (open) {
+        state.expanded.add(child.id);
+        expandFrames(child.id, depth + 1);
+      }
+    }
+  };
+  expandFrames("__page__", 0);
+  const att = state.inventory.attachments || {};
+  const addBucket = (gid, gname, gtype, items) => {
+    if (!items?.length) return;
+    const group = { id: gid, name: gname, type: gtype, status: "determined" };
+    byId.set(gid, group);
+    if (!kids.has(gid)) kids.set(gid, []);
+    state.roots.push(group);
+    state.expanded.add(gid);
+    for (const item of items) {
+      const nodes = attachmentTreeNodes(item);
+      for (const n of nodes) if (!byId.has(n.id)) byId.set(n.id, n);
+      let itemNode = byId.get(item.id);
+      if (!itemNode) {
+        itemNode = { id: item.id, name: item.name || item.id, type: gtype, status: "unknown", box: item.box };
+        byId.set(item.id, itemNode);
+      } else if (item.box && !itemNode.box) itemNode.box = item.box;
+      kids.get(gid).push(itemNode);
+      if (!kids.has(item.id)) kids.set(item.id, []);
+      for (const n of nodes) {
+        if (n.id === item.id) continue;
+        const pid = n.parentId && byId.has(n.parentId) ? n.parentId : item.id;
+        if (!kids.has(pid)) kids.set(pid, []);
+        kids.get(pid).push(n);
+      }
+      (kids.get(item.id) || []).sort(cmp).reverse();
+    }
+  };
+  addBucket("__sets__", "组件集", "COMPONENT_SET", att.componentSets);
+  addBucket("__modals__", "弹窗", "FRAME", att.modals);
+  addBucket("__cmps__", "组件", "COMPONENT", att.components);
+}
+
+function hasKids(id) { return (state.kids.get(id) || []).length > 0; }
+
+function matchesQuery(n) {
+  const q = state.q.toLowerCase();
+  if (!q) return true;
+  return `${n.name || ""} ${n.id} ${n.role || ""} ${n.type || ""}`.toLowerCase().includes(q);
+}
+function matchBranch(n) {
+  if (matchesQuery(n)) return true;
+  return (state.kids.get(n.id) || []).some(matchBranch);
+}
+function passFilter(n) {
+  if (n.id === "__page__") return true;
+  if (state.treeFilter === "unknown") return n.status === "unknown" || (state.kids.get(n.id) || []).some(passFilter);
+  if (state.treeFilter === "review") {
+    if (n.status === "skipped") return (state.kids.get(n.id) || []).some(passFilter);
+    return true;
+  }
+  return true;
+}
+
+function visibleRows() {
+  const out = [];
+  const walk = (nodes, depth) => {
+    for (const n of nodes) {
+      if (!passFilter(n) || (state.q && !matchBranch(n))) continue;
+      const kids = (state.kids.get(n.id) || []).filter((c) => passFilter(c) && (!state.q || matchBranch(c)));
+      out.push({ n, depth, kids: kids.length });
+      if (state.expanded.has(n.id) || (state.q && kids.length)) walk(state.kids.get(n.id) || [], depth + 1);
+    }
+  };
+  walk(state.roots, 0);
+  return out;
+}
+
+function renderTree() {
+  if (state.tab !== "layers") return;
+  const rows = visibleRows();
+  $("tree").innerHTML = rows.map(({ n, depth, kids }) => {
+    const st = n.status === "determined" ? "det" : n.status === "skipped" ? "skp" : n.id === "__page__" ? "det" : "unk";
+    const inst = n.type === "INSTANCE" || n.type === "COMPONENT" || n.type === "COMPONENT_SET";
+    const sel = n.id === state.selectedId ? " sel" : "";
+    const hov = n.id === state.hoverId && n.id !== state.selectedId ? " hov" : "";
+    const open = state.expanded.has(n.id) ? " open" : "";
+    return `<li>
+      <div class="row ${st}${sel}${hov}${inst ? " inst" : ""}${n.status === "skipped" ? " skp" : ""}" data-id="${esc(n.id)}" style="padding-left:${8 + depth * 16}px">
+        <span class="twist${kids ? open : " empty"}">${kids ? "▼" : ""}</span>
+        <span class="ic">${typeIcon(n.type)}</span>
+        <span class="nm">${esc(n.name || n.id)}</span>
+        ${n.id === "__page__" ? "" : `<i class="pip ${st}"></i>`}
+      </div>
+    </li>`;
+  }).join("");
+}
+
+function renderAssets() {
+  const layers = (state.tiles?.layers || []).filter((l) => {
+    const k = String(l.kind || "");
+    return k.startsWith("set/") || k.startsWith("modal/");
+  });
+  const imgDir = state.tiles?.baseDir || "img";
+  $("assets").innerHTML = layers.map((l) =>
+    `<figure data-kind="${esc(l.kind)}"><img src="${esc(imgDir)}/${esc(l.file)}" alt=""><figcaption>${esc(l.kind)}</figcaption></figure>`
+  ).join("") || `<div class="empty-hint" style="padding:16px;color:var(--muted)">没有组件集 / 弹窗切片</div>`;
+}
+
+function paintWorld() {
+  world.innerHTML = "";
+  const tiles = state.tiles;
+  state.originX = tiles?.origin?.x ?? 0;
+  state.originY = tiles?.origin?.y ?? 0;
+  const pageW = tiles?.page?.w ?? state.pageBox.w;
+  const pageH = tiles?.page?.h ?? state.pageBox.h;
+  const hasPage = (tiles?.layers || []).some((l) => String(l.kind || "") === "page");
+  const layers = (tiles?.layers || []).filter((l) => {
+    const kind = String(l.kind || "");
+    if (hasPage && kind.startsWith("bg")) return false;
+    return true;
+  }).sort((a, b) => (String(a.kind) === "page" ? -1 : String(b.kind) === "page" ? 1 : 0));
+  const worldW = tiles?.world?.w ?? Math.max(pageW, ...layers.map((l) => (l.x || 0) - state.originX + (l.w || 0)), 1);
+  const worldH = tiles?.world?.h ?? Math.max(pageH, ...layers.map((l) => (l.y || 0) - state.originY + (l.h || 0)), 1);
+  world.style.width = worldW + "px";
+  world.style.height = worldH + "px";
+  const imgDir = tiles?.baseDir || "img";
+  for (const l of layers) {
+    const kind = String(l.kind || "");
+    const left = (l.x || 0) - state.originX;
+    const top = (l.y || 0) - state.originY;
+    const named = kind === "page" || kind.startsWith("set/") || kind.startsWith("modal/") || kind.startsWith("cmp/");
+    if (named) {
+      const lab = document.createElement("div");
+      lab.className = "page-label";
+      lab.textContent = kind === "page"
+        ? `${state.inventory.page?.name || "Page"}  ${Math.round(pageW)} × ${Math.round(pageH)}`
+        : kind;
+      lab.style.left = left + "px";
+      lab.style.top = top + "px";
+      world.appendChild(lab);
+    }
+    const el = document.createElement("div");
+    el.className = "layer" + (kind === "page" ? " page" : "");
+    el.style.cssText = `left:${left}px;top:${top}px;width:${l.w}px;height:${l.h}px;`;
+    const img = document.createElement("img");
+    img.src = `${imgDir}/${kind === "page" ? "page.png" : l.file}`;
+    img.alt = kind;
+    img.loading = kind === "page" ? "eager" : "lazy";
+    el.appendChild(img);
+    world.appendChild(el);
+  }
+  renderBoxes();
+  zoomFit();
+}
+
+function renderBoxes() {
+  world.querySelectorAll(".box").forEach((el) => el.remove());
+  const n = nodeOf(state.selectedId);
+  if (!n?.box || isSynth(n.id)) return;
+  const b = worldBoxOf(n);
+  const el = document.createElement("div");
+  el.className = "box sel";
+  el.style.left = b.x + "px";
+  el.style.top = b.y + "px";
+  el.style.width = Math.max(1, b.w) + "px";
+  el.style.height = Math.max(1, b.h) + "px";
+  const tag = document.createElement("span");
+  tag.className = "tag";
+  tag.textContent = n.name || n.id;
+  el.appendChild(tag);
+  world.appendChild(el);
+}
+
+function applyView() {
+  world.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+  $("zoomPct").textContent = `${Math.round(state.zoom * 100)}%`;
+}
+function zoomFit() {
+  const w = Math.max(viewport.clientWidth - 80, 320);
+  state.zoom = Math.min(1, w / Math.max(state.pageBox.w, 1));
+  if (!Number.isFinite(state.zoom) || state.zoom <= 0) state.zoom = 0.2;
+  state.panX = 40 + state.originX * state.zoom;
+  state.panY = 48 + state.originY * state.zoom;
+  applyView();
+}
+function zoomAt(cx, cy, factor) {
+  const ns = Math.min(4, Math.max(0.03, state.zoom * factor));
+  state.panX = cx - (cx - state.panX) * (ns / state.zoom);
+  state.panY = cy - (cy - state.panY) * (ns / state.zoom);
+  state.zoom = ns;
+  applyView();
+}
+function zoomToNode(n) {
+  if (!n?.box) return;
+  const r = viewport.getBoundingClientRect();
+  const pad = 80;
+  const b = worldBoxOf(n);
+  const sx = (r.width - pad) / Math.max(b.w, 1);
+  const sy = (r.height - pad) / Math.max(b.h, 1);
+  state.zoom = Math.min(1.5, Math.max(0.04, Math.min(sx, sy)));
+  state.panX = (r.width - b.w * state.zoom) / 2 - b.x * state.zoom;
+  state.panY = (r.height - b.h * state.zoom) / 2 - b.y * state.zoom;
+  applyView();
+}
+function revealOnCanvas(n) {
+  if (!n?.box) return;
+  const r = viewport.getBoundingClientRect();
+  const b = worldBoxOf(n);
+  const x = b.x * state.zoom + state.panX;
+  const y = b.y * state.zoom + state.panY;
+  const w = b.w * state.zoom, h = b.h * state.zoom;
+  let dx = 0, dy = 0;
+  if (x < 24) dx = 24 - x;
+  if (y < 32) dy = 32 - y;
+  if (x + w > r.width - 24) dx = r.width - 24 - (x + w);
+  if (y + h > r.height - 24) dy = r.height - 24 - (y + h);
+  if (dx || dy) { state.panX += dx; state.panY += dy; applyView(); }
+}
+
+function expandTo(id) {
+  let n = nodeOf(id);
+  while (n) {
+    state.expanded.add(n.id);
+    n = n.parentId ? nodeOf(n.parentId) : (n.id === "__page__" ? null : nodeOf("__page__"));
+    if (n && n.id === "__page__") { state.expanded.add("__page__"); break; }
+  }
+}
+
+function relatedOf(n) {
+  const ids = new Set();
+  if (!n?.componentId) return ids;
+  for (const x of pageNodes()) if (x.componentId === n.componentId && x.id !== n.id) ids.add(x.id);
+  return ids;
+}
+
+function select(n, from = "tree") {
+  if (!n) {
+    state.selectedId = null; state.relatedIds = new Set();
+    $("right").classList.add("empty");
+    renderTree(); renderBoxes();
+    return;
+  }
+  state.selectedId = n.id;
+  state.relatedIds = relatedOf(n);
+  state.toStatus = n.status === "determined" ? "determined" : n.status === "skipped" ? "skipped" : "unknown";
+  expandTo(n.id);
+  $("right").classList.remove("empty");
+  $("selName").textContent = n.name || "";
+  $("selId").textContent = n.id;
+  const box = n.box;
+  $("selMeta").innerHTML = [
+    ["类型", n.type || ""],
+    ["状态", n.status || ""],
+    ["角色", n.role || "—"],
+    ["行为", n.behavior || "—"],
+    ["尺寸", box ? `${Math.round(box.w)} × ${Math.round(box.h)}` : "—"],
+  ].map(([k, v]) => `<span>${esc(k)}</span><b>${esc(v)}</b>`).join("");
+  $("toRole").value = n.role && ROLES.includes(n.role) ? n.role : "img";
+  $("stSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.st === state.toStatus));
+  renderTree();
+  renderBoxes();
+  const row = $("tree").querySelector(`[data-id="${CSS.escape(n.id)}"]`);
+  row?.scrollIntoView({ block: "nearest" });
+  if (from === "tree") revealOnCanvas(n);
+}
+
+function hitTest(clientX, clientY) {
+  const r = viewport.getBoundingClientRect();
+  const x = (clientX - r.left - state.panX) / state.zoom;
+  const y = (clientY - r.top - state.panY) / state.zoom;
+  let best = null, bestDepth = -1, bestArea = Infinity;
+  for (const n of drawableNodes()) {
+    if (n.status === "skipped" && state.treeFilter !== "all") continue;
+    const b = worldBoxOf(n);
+    if (x < b.x || y < b.y || x > b.x + b.w || y > b.y + b.h) continue;
+    const depth = (n.ancestorIds || []).length;
+    const area = Math.max(1, b.w * b.h);
+    if (depth > bestDepth || (depth === bestDepth && area < bestArea)) {
+      best = n; bestDepth = depth; bestArea = area;
+    }
+  }
+  return best;
+}
+
+async function loadList() {
+  const data = await (await fetch("/api/inventories")).json();
+  const items = data.items || [];
+  const params = new URLSearchParams(location.search);
+  state.invFile = params.get("inv") || items.find((x) => x.end === "pc" && x.file.includes("unnamed"))?.file || items[0]?.file || "";
+  const shelf = items.find((x) => x.file === state.invFile)?.fileKey;
+  const same = items.filter((x) => x.fileKey === shelf);
+  $("pages").innerHTML = same.map((x) => {
+    const label = x.end === "pc" ? "PC" : "mobile";
+    return `<button class="pg${x.file === state.invFile ? " on" : ""}" data-file="${x.file}">${ICONS.PAGE}<span>${label}</span></button>`;
+  }).join("");
+  $("pages").onclick = (e) => {
+    const btn = e.target.closest(".pg"); if (!btn) return;
+    if (btn.dataset.file === state.invFile) return;
+    const u = new URL(location.href);
+    u.searchParams.set("inv", btn.dataset.file);
+    location.href = u.href;
+  };
+}
+
+async function loadInv() {
+  if (!state.invFile) return;
+  $("fileName").textContent = state.invFile;
+  state.inventory = await (await fetch("/" + state.invFile)).json();
+  state.pageBox = state.inventory.page?.box || { x: 0, y: 0, w: 1000, h: 1000 };
+  const c = state.inventory.counts || {};
+  $("counts").textContent = `det ${c.determined ?? 0} · unk ${c.unknown ?? 0} · skip ${c.skipped ?? 0} · ${state.inventory.status || ""}`;
+  const tag = pageTag(state.inventory.requestedNodeId || state.inventory.page?.id);
+  try { state.tiles = await (await fetch(`/inventory-review/tiles-${tag}.json`)).json(); }
+  catch { state.tiles = null; }
+  $("toRole").innerHTML = ROLES.map((r) => `<option>${r}</option>`).join("");
+  buildIndex();
+  renderTree();
+  renderAssets();
+  paintWorld();
+}
+
+$("tree").onclick = (e) => {
+  const twist = e.target.closest(".twist");
+  const row = e.target.closest(".row");
+  if (!row) return;
+  const n = nodeOf(row.dataset.id);
+  if (twist && !twist.classList.contains("empty")) {
+    e.stopPropagation();
+    if (state.expanded.has(n.id)) state.expanded.delete(n.id);
+    else state.expanded.add(n.id);
+    renderTree();
+    return;
+  }
+  if (n) select(n, "tree");
+};
+$("tree").onmouseover = (e) => {
+  const row = e.target.closest(".row");
+  $("tree").querySelectorAll(".row.hov").forEach((el) => el.classList.remove("hov"));
+  row?.classList.add("hov");
+};
+$("tree").onmouseleave = () => {
+  $("tree").querySelectorAll(".row.hov").forEach((el) => el.classList.remove("hov"));
+};
+
+$("assets").onclick = (e) => {
+  const fig = e.target.closest("figure"); if (!fig) return;
+  const kind = fig.dataset.kind || "";
+  const layer = (state.tiles?.layers || []).find((l) => String(l.kind) === kind);
+  if (layer) {
+    zoomToNode({
+      box: {
+        x: (layer.x || 0) + state.pageBox.x,
+        y: (layer.y || 0) + state.pageBox.y,
+        w: layer.w,
+        h: layer.h,
+      },
+    });
+  }
+  const name = kind.split("/").slice(1).join("/");
+  const hit = [...state.byId.values()].find((n) => n.name === name) || nodeOf(layer?.id);
+  if (hit) select(hit, "tree");
+  else {
+    $("right").classList.remove("empty");
+    $("selName").textContent = kind || "资源";
+    $("selId").textContent = "";
+    $("selMeta").innerHTML = `<span>来源</span><b>组件集 / 弹窗切片</b>`;
+  }
+};
+
+document.querySelectorAll("#tabs button").forEach((btn) => {
+  btn.onclick = () => {
+    state.tab = btn.dataset.tab;
+    document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("on", b === btn));
+    $("tree").hidden = state.tab !== "layers";
+    $("assets").hidden = state.tab !== "assets";
+    $("searchWrap").style.visibility = state.tab === "layers" ? "visible" : "hidden";
+  };
+});
+
+$("search").oninput = () => {
+  state.q = $("search").value.trim();
+  if (state.q) for (const n of pageNodes()) if (matchBranch(n)) expandTo(n.id);
+  renderTree();
+};
+$("treeFilter").onchange = () => { state.treeFilter = $("treeFilter").value; renderTree(); };
+$("stSeg").onclick = (e) => {
+  const st = e.target.dataset.st; if (!st) return;
+  state.toStatus = st;
+  $("stSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.st === st));
+};
+$("write").onclick = async () => {
+  const n = nodeOf(state.selectedId);
+  if (!n || n.id === "__page__") return;
+  const record = { nodeId: n.id, toStatus: state.toStatus, toRole: $("toRole").value, note: $("note").value, at: new Date().toISOString() };
+  const res = await fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ file: state.invFile, record }) });
+  $("log").textContent = res.ok ? "已写入 feedback（draft 未升档）" : await res.text();
+};
+
+let dragging = null, wasDrag = false, spaceDown = false;
+window.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, textarea, select")) return;
+  if (e.code === "Space") {
+    if (!e.repeat) { e.preventDefault(); spaceDown = true; viewport.classList.add("space"); }
+    return;
+  }
+  if (e.shiftKey && e.key === "1") { e.preventDefault(); zoomFit(); return; }
+  if (e.shiftKey && e.key === "2") { e.preventDefault(); zoomToNode(nodeOf(state.selectedId)); return; }
+  const rows = visibleRows();
+  const idx = rows.findIndex((r) => r.n.id === state.selectedId);
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    const next = rows[Math.min(rows.length - 1, idx + 1)];
+    if (next) select(next.n, "tree");
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    const prev = rows[Math.max(0, idx - 1)];
+    if (prev) select(prev.n, "tree");
+  } else if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    const n = nodeOf(state.selectedId);
+    if (n && state.expanded.has(n.id) && hasKids(n.id)) { state.expanded.delete(n.id); renderTree(); }
+    else if (n?.parentId) select(nodeOf(n.parentId) || nodeOf("__page__"), "tree");
+  } else if (e.key === "ArrowRight") {
+    e.preventDefault();
+    const n = nodeOf(state.selectedId);
+    if (n && hasKids(n.id)) { state.expanded.add(n.id); renderTree(); }
+  } else if (e.key === "Escape") select(null);
+});
+window.addEventListener("keyup", (e) => {
+  if (e.code === "Space") { spaceDown = false; viewport.classList.remove("space"); }
+});
+window.addEventListener("blur", () => { spaceDown = false; viewport.classList.remove("space"); });
+
+viewport.addEventListener("pointerdown", (e) => {
+  const canPan = spaceDown || e.button === 1 || e.altKey;
+  if (!canPan) return;
+  e.preventDefault();
+  dragging = { x: e.clientX, y: e.clientY, px: state.panX, py: state.panY };
+  wasDrag = false;
+  viewport.classList.add("drag");
+  viewport.setPointerCapture(e.pointerId);
+});
+viewport.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - dragging.x, dy = e.clientY - dragging.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) wasDrag = true;
+  state.panX = dragging.px + dx;
+  state.panY = dragging.py + dy;
+  applyView();
+});
+viewport.addEventListener("pointerup", () => { dragging = null; viewport.classList.remove("drag"); });
+viewport.addEventListener("click", (e) => {
+  if (wasDrag) { wasDrag = false; return; }
+  const n = hitTest(e.clientX, e.clientY);
+  select(n || null, "canvas");
+});
+viewport.addEventListener("dblclick", (e) => {
+  const n = hitTest(e.clientX, e.clientY);
+  if (n) zoomToNode(n);
+});
+viewport.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {
+    const r = viewport.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.002));
+  } else {
+    state.panX -= e.deltaX;
+    state.panY -= e.deltaY;
+    applyView();
+  }
+}, { passive: false });
+
+$("zoomIn").onclick = () => zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 1.25);
+$("zoomOut").onclick = () => zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, 0.8);
+$("zoomFitBtn").onclick = zoomFit;
+
+loadList().then(loadInv).catch((err) => { $("fileName").textContent = String(err); });
+</script>
+</body>
+</html>

@@ -17,8 +17,18 @@
 
 ## 已建议收紧（工具缺口，不放宽口径）
 
-- `group-with-text-not-img` **下面有文字的分组不能直接 img/** — 出现 2 次,首见 2026-08-20,最近 2026-08-20,status: adopted
-  - 现象:错误：带文案的奖励/标题分组被标 img/。正确：分组底下有文字不是切图；切图只打纯视觉层。未命名组件集的子件不得擅自加 img/。例外：bg/、kv/、logo 三处有字也保留。
+- `full-prechain-must-see-images` **完整前置必须看图** — 出现 1 次,首见 2026-08-20,最近 2026-08-20,status: adopted
+  - 现象:错误：把从0验收收成不看图只测门，清单会瘦、漏热区/切换。正确：编稿→切片G2→看图判断写回→completeness；图和结构都要看。
+  - 备注:[decided:2026-08-20] 491 人确认：完整前置必须看图。
+- `writeback-must-rebuild-index` **写回必须重建清单索引** — 出现 2 次,首见 2026-08-20,最近 2026-08-20,status: adopted
+  - 现象:错误：节点已 sec/ 但 sections 空，completeness 只扫前缀仍绿，做页/核对页吃空分区。正确：apply-review-feedback / apply-gold-morphology 写回后 rebuildInventoryIndexes，并重写 txt。completeness 按节点对照索引，残缺/过期都红。
+  - 提案:已落地 rebuild + completeness 对照。
+  - 备注:[decided:2026-08-20] 491 未规范稿人确认：写回必重建 sections/overlays/backgrounds/modules/counts/pageCounts+txt。
+- `variant-counts-as-on-page` **页上组件集的全部变体算在页上** — 出现 2 次,首见 2026-08-20,最近 2026-08-20,status: adopted
+  - 现象:错误：验收只扫当前展开的 page.nodes，皮肤视频变体里的 hot/ 不算，PC 缺 hot 误红。正确：变体一切换就在页上；completeness 前缀类必须把页上用到的 componentSets 全部变体树算进去。
+  - 备注:[decided:2026-08-20] 491 人确认：变体等同页上，热区在皮肤视频变体里也算过关。
+- `group-with-text-not-img` **下面有文字的分组不能直接 img/** — 出现 5 次,首见 2026-08-20,最近 2026-08-20,status: adopted
+  - 现象:错误：有字奖励条被标 img/ 且跨端互打。正确：外层有字不标 img/，图走子层；跨端不得把有字奖励同步成 img/。例外仍是 bg/ kv/ logo。名叫视频框的外层 FRAME 跳过命名，往下挖 hot/、img/视频框 2、btn/播放、说明 copy/；不要整框 img/ 再和有字皮肤框互打。
   - 备注:[decided:2026-08-20] 491 mobile 人核：分组含文字不 img；bg/、kv/、logo 三处例外。
 - `pc-mobile-same-class-must-sync` **PC/mobile 同类问题必须两边一起写回** — 出现 3 次,首见 2026-08-19,最近 2026-08-20,status: adopted
   - 现象:错误：PC 把头像框/icon 写成 img/ 后 mobile 实例拷贝 I…;母版Id 和同名层仍 unknown。正确：子件 id 以 ;母版Id 结尾必须跟母版前缀；一端确定的 type+剥前缀名立刻同步另一端。
@@ -83,6 +93,9 @@
 
 ## 无法自动化（by-design，只计数观察）
 
+- `scroll-clip-not-inner-reward` **scroll 只写在划动裁切层，奖励图是 img** — 出现 4 次,首见 2026-08-19,最近 2026-08-20,status: adopted
+  - 现象:同层里名字带划动/可划动的 FRAME 才是 scroll/。同尺寸奖励列表是轨道图，必须 img/。旧闸门按奖励两字强制 scroll，会放过裁切层、误伤轨道图。
+  - 备注:[decided:2026-08-19] 来自 491 mobile 核对：9047 scroll，9048/9064 img。
 - `title-set-unnamed` **标题组件集不命名** — 出现 3 次,首见 2026-08-18,最近 2026-08-20,status: adopted
   - 现象:标题集/默认变体不命名；子层装饰按功能另判为 img/。
   - 提案:本次 PC+mobile 4 项。
@@ -106,9 +119,6 @@
 - `review-master-instances-same-layer` **改母版带动该层全部实例，不爬父级** — 出现 2 次,首见 2026-08-19,最近 2026-08-20,status: adopted
   - 现象:改装饰母版 = 所有装饰实例一起变。旧核对页从子层爬到标题组件集，一次提交误改标题实例。正确：实例跟随该层母版，不把父级标题卷进同一提交。
   - 备注:[decided:2026-08-19] 核对页 linkedFamily 只跟同层实例。
-- `scroll-clip-not-inner-reward` **scroll 只写在划动裁切层，奖励图是 img** — 出现 3 次,首见 2026-08-19,最近 2026-08-19,status: adopted
-  - 现象:同层里名字带划动/可划动的 FRAME 才是 scroll/。同尺寸奖励列表是轨道图，必须 img/。旧闸门按奖励两字强制 scroll，会放过裁切层、误伤轨道图。
-  - 备注:[decided:2026-08-19] 来自 491 mobile 核对：9047 scroll，9048/9064 img。
 - `reward-row-is-scroll` **奖励变体横滑条必须判 scroll** — 出现 2 次,首见 2026-08-18,最近 2026-08-19,status: adopted
   - 现象:裁切层（划动/可划动）才是 scroll/。同层奖励列表是轨道图 img/。旧口径把「奖励」两字当成 scroll 会标错层。
   - 提案:本次 PC+mobile 命中 10 条奖励横滑行。

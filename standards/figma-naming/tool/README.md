@@ -61,7 +61,7 @@
    npm run inventory:review
    ```
 
-   人可选核对身份和弹窗入口，`unknown` 必须显式保留；保存 reviewed 清单不改变
+   UI 固定在仓内 `inventory-review/index.html`，不要写 `_tmp`。人可选核对身份和弹窗入口，`unknown` 必须显式保留；保存 reviewed 清单不改变
    `status: "ready"`。移动端核对使用 `?inv=inventory-392-25877.json`。
 
 做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、

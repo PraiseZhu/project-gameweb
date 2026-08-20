@@ -11,6 +11,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { finalizeDraftWriteback } from "../src/gold-morphology.mjs";
+import { renderHumanSummary } from "../src/inventory.mjs";
+import { writeFilesAtomically } from "../src/atomic-writeback.mjs";
 
 async function main() {
   const files = process.argv.slice(2);
@@ -23,8 +25,10 @@ async function main() {
     return { abs, doc: JSON.parse(fs.readFileSync(abs, "utf8")) };
   });
   const { applied, counts } = finalizeDraftWriteback(loaded.map((item) => item.doc));
+  const writes = [];
   const results = loaded.map((item, index) => {
-    fs.writeFileSync(item.abs, `${JSON.stringify(item.doc, null, 2)}\n`);
+    writes.push([item.abs, `${JSON.stringify(item.doc, null, 2)}\n`]);
+    writes.push([item.abs.replace(/\.json$/, ".txt"), renderHumanSummary(item.doc)]);
     return {
       file: item.abs,
       applied: applied[index].length,
@@ -32,6 +36,7 @@ async function main() {
       counts: counts[index],
     };
   });
+  writeFilesAtomically(writes);
   console.log(JSON.stringify({ ok: true, results }, null, 2));
 }
 

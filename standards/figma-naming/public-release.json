@@ -22,6 +22,7 @@
     "tool/scripts/",
     "tool/docs/",
     "tool/examples/",
+    "tool/inventory-review/",
     "tool/baseline/exemptions.json",
     "tool/baseline/skill-conflicts.json",
     "tool/test-private/"
