@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, cpSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { INVENTORY_SCHEMA, INVENTORY_STATUSES, INVENTORY_ROLES } from "../../spec/inventory.mjs";
-import { auditDraftAssetCompleteness } from "../scripts/check-draft-asset-completeness.mjs";
+import { auditLikeCli } from "../scripts/check-draft-asset-completeness.mjs";
 
 export const HANDOFF_SCHEMA = "handoff/v1";
 export const KINDS = ["ready", "green-draft"];
@@ -137,8 +137,8 @@ export function validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft = false 
   if (pcDoc?.requestedNodeId && pcDoc.requestedNodeId === mobileDoc?.requestedNodeId) {
     problems.push("PC/mobile 不能是同一 page id");
   }
-  const pcGate = pcDoc ? auditDraftAssetCompleteness(pcDoc, mobileDoc ? [mobileDoc] : []) : { ok: false, problems: ["缺 PC"] };
-  const mobileGate = mobileDoc ? auditDraftAssetCompleteness(mobileDoc, pcDoc ? [pcDoc] : []) : { ok: false, problems: ["缺 mobile"] };
+  const pcGate = pcDoc ? auditLikeCli(pcDoc, mobileDoc ? [mobileDoc] : []) : { ok: false, problems: ["缺 PC"] };
+  const mobileGate = mobileDoc ? auditLikeCli(mobileDoc, pcDoc ? [pcDoc] : []) : { ok: false, problems: ["缺 mobile"] };
   if (!pcGate.ok) problems.push(...pcGate.problems.map((item) => `pc completeness: ${item}`));
   if (!mobileGate.ok) problems.push(...mobileGate.problems.map((item) => `mobile completeness: ${item}`));
 
