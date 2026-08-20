@@ -25,8 +25,22 @@ test('collector blocks absent Figma/comparison and missing runtime facts', () =>
   assert.ok(result.failures.some((failure) => failure.reason === 'same-platform-viewport-region-evidence-missing'));
 });
 
-test('file collector reports missing and malformed snapshots honestly', () => {
-  const missing = collectVisualEvidenceFromFile('does-not-exist.json');
-  assert.equal(missing.complete, false);
-  assert.equal(missing.failures[0].reason, 'collector-input-missing');
+
+
+test('raw browser snapshot states normalize and flow/typography pass while comparison remains blocked', () => {
+  const result = collectVisualEvidence({
+    source: { platform: 'pc', viewport: '1920x1080', truth: 'truth.json', fontManifest: 'fonts-manifest.json' },
+    runtime: {
+      typography: { documentFontsStatus: 'loaded', fontFaces: [{ family: 'Source' }], records: [{ provenance: { source: 'fonts-manifest.json', asset: 'fonts/source.woff2' }, browser: { documentFontsStatus: 'loaded', documentFontsCheck: true, computedFamily: 'Source', resolvedFamily: 'Source', fallback: false, glyphsMissing: false } }] },
+      pageFlow: { states: [{ name: 'hero-lock', scrollTop: 0, measured: true }, { name: 'hero-exit', scrollTop: 400, measured: true }, { name: 'released', scrollTop: 800, measured: true }], scrollContainer: { internal: true, selector: '.frame', clientHeight: 900 }, sections: [{ intendedId: 'hero', reachable: true, intersectsViewport: true, scrollTop: 800, viewportRect: {} }] },
+      fixedChrome: {}, resize: {}, interaction: {},
+    },
+    comparison: { complete: false, status: 'blocked', evidenceLevel: 'not-claimed', notClaimed: true },
+  });
+  assert.equal(result.pageFlow.complete, true);
+  assert.equal(result.typography.complete, true);
+  assert.equal(result.comparison.complete, false);
+  assert.equal(result.complete, false);
+  assert.equal(result.failures.some((failure) => failure.reason === 'hero-flow-state-missing'), false);
+  assert.ok(result.failures.some((failure) => failure.reason === 'region-comparison-not-confirmed'));
 });

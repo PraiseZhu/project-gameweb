@@ -54,6 +54,18 @@ test('page flow requires internal scroll container and visible section intersect
   assert.ok(result.failures.some((entry) => entry.reason === 'section-not-reachable-visible'));
 });
 
+
+
+test('page flow accepts measured object states without aggregate complete input', () => {
+  const result = evaluatePageFlowEvidence({
+    states: [{ name: 'hero-lock', scrollTop: 0, measured: true }, { name: 'hero-exit', scrollTop: 400, measured: true }, { name: 'released', scrollTop: 800, measured: true }],
+    scrollContainer: { internal: true, selector: '.frame', clientHeight: 900 },
+    sections: [{ intendedId: '01', reachable: true, intersectsViewport: true, scrollTop: 800, viewportRect: { x: 0, y: 0, width: 100, height: 100 } }],
+  });
+  assert.equal(result.complete, true);
+  assert.equal(result.failures.some((entry) => entry.reason === 'hero-flow-state-missing'), false);
+});
+
 test('fixed chrome requires independently measured parts, not sticky', () => {
   const result = evaluateFixedChromeEvidence({ sticky: true, viewportAnchored: true, scrollBehaviorMeasured: true });
   assert.ok(result.failures.some((entry) => entry.reason === 'fixed-chrome-rail-evidence-missing'));

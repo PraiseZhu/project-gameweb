@@ -33,13 +33,15 @@ function collectTypography(snapshot = {}, source = {}) {
 }
 
 function collectPageFlow(snapshot = {}, source = {}) {
+  const states = array(snapshot.states).map((state) => typeof state === 'string' ? state : state?.name).filter(Boolean);
   const result = {
     schema: 'yise-page-flow-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null,
-    sourceRef: source.truth || null, states: array(snapshot.states),
+    sourceRef: source.truth || null, states,
+    stateMeasurements: array(snapshot.states).filter((state) => state && typeof state === 'object'),
     scrollContainer: snapshot.scrollContainer || null,
     sections: array(snapshot.sections).map((section) => ({ ...section, reachable: section.reachable === true, intersectsViewport: section.intersectsViewport === true })),
   };
-  const evaluation = evaluatePageFlowEvidence({ ...result, complete: true });
+  const evaluation = evaluatePageFlowEvidence(result);
   return { ...result, complete: evaluation.complete, failures: evaluation.failures, blocked: !evaluation.complete };
 }
 

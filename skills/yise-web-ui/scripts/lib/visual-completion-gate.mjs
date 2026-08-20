@@ -71,7 +71,7 @@ export function evaluateVisualCompletionEvidence({ visualAssets = null, vectors 
 export function evaluateTypographyEvidence(typography = null) {
   const failures = [];
   const records = Array.isArray(typography?.records) ? typography.records : [];
-  if (typography?.complete !== true || records.length === 0) failures.push({ reason: 'typography-evidence-incomplete' });
+  if (records.length === 0) failures.push({ reason: 'typography-evidence-incomplete' });
   if (!Array.isArray(typography?.fontFaces) || typography.fontFaces.length === 0) failures.push({ reason: 'font-face-provenance-missing' });
   for (const [index, record] of records.entries()) {
     const provenance = record?.provenance || record?.font?.provenance;
@@ -87,11 +87,11 @@ export function evaluateTypographyEvidence(typography = null) {
 export function evaluatePageFlowEvidence(flow = null) {
   const failures = [];
   const sections = Array.isArray(flow?.sections) ? flow.sections : [];
-  if (flow?.complete !== true || sections.length === 0) failures.push({ reason: 'page-flow-evidence-incomplete' });
+  if (sections.length === 0) failures.push({ reason: 'page-flow-evidence-incomplete' });
   if (flow?.scrollContainer?.internal !== true || !flow.scrollContainer.selector || !Number.isFinite(Number(flow.scrollContainer.clientHeight))) {
     failures.push({ reason: 'internal-scroll-container-unverified' });
   }
-  const states = new Set(Array.isArray(flow?.states) ? flow.states.map(String) : []);
+  const states = new Set(Array.isArray(flow?.states) ? flow.states.map((state) => typeof state === 'string' ? state : state?.name).filter(Boolean) : []);
   for (const state of ['hero-lock', 'hero-exit', 'released']) if (!states.has(state)) failures.push({ reason: 'hero-flow-state-missing', state });
   for (const [index, section] of sections.entries()) {
     if (!section?.intendedId || section.reachable !== true || section.intersectsViewport !== true) failures.push({ reason: 'section-not-reachable-visible', index });

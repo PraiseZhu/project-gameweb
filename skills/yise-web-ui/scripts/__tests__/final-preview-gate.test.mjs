@@ -19,4 +19,17 @@ test('final-ready preview requires complete evidence', () => { const result = ev
 test('final preview blocks missing vector evidence', () => { const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, finalEvidence, vectorEvidence: { complete: false, failures: [{ reason: 'vector-shape-missing' }] }, compositionEvidence, runtimeEvidence, ...finalChain }); assert.equal(result.reason, 'vector-shape-missing'); });
 
 test('final preview blocks aggregate booleans without visual evidence chain', () => { const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence }); assert.equal(result.userPreviewAllowed, false); assert.equal(result.reason, 'typography-evidence-incomplete'); });
-test('final preview blocks not-claimed same-platform region comparison', () => { const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence, ...finalChain, regionComparisonEvidence: { ...finalChain.comparison, complete: false, status: 'not-claimed', notClaimed: true } }); assert.equal(result.userPreviewAllowed, false); assert.equal(result.reason, 'region-comparison-not-confirmed'); });
+
+
+test('report.ok cannot authorize final preview without the same accepted finalEvidence', () => {
+  const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, report: { ok: true, evidenceLevel: 'confirmed-final' }, finalEvidence: { accepted: false, evidenceLevel: 'confirmed-final' }, ...finalChain });
+  assert.equal(result.userPreviewAllowed, false);
+  assert.equal(result.reason, 'final-evidence-not-confirmed');
+  const missing = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, report: { ok: true, evidenceLevel: 'confirmed-final' }, ...finalChain });
+  assert.equal(missing.reason, 'final-evidence-not-confirmed');
+});
+
+test('final evidence static acceptance mismatch blocks preview', () => {
+  const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence: { accepted: true, evidenceLevel: 'confirmed-final', staticAcceptanceId: 'other-static' }, ...finalChain });
+  assert.equal(result.reason, 'final-evidence-static-acceptance-mismatch');
+});

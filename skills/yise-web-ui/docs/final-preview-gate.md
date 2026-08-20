@@ -2,21 +2,12 @@
 
 `preview-first` proves that a candidate product view can render meaningful
 Figma-derived content in internal headless Chrome. It is not a delivery gate.
-Its screenshot, product-view URL, and launch command are internal evidence only:
-
-```json
-{
-  "userPreviewAllowed": false,
-  "previewDisposition": "internal-candidate-only",
-  "evidenceLevel": "candidate"
-}
-```
-
-Do not open or present a candidate URL to the user.
+Its screenshot, product-view URL, and launch command are internal evidence only.
 
 ## Final-ready input
 
-Use the final gate after the static workflow and final evidence have completed:
+The final gate requires static acceptance, complete visual assets, the complete
+visual evidence chain, and one matching reviewed `finalEvidence` artifact:
 
 ```json
 {
@@ -24,20 +15,28 @@ Use the final gate after the static workflow and final evidence have completed:
     "complete": true,
     "accepted": true,
     "partial": false,
-    "staticAcceptanceId": "opaque-final-static-revision",
-    "staticTruthRef": "opaque-static-artifact-reference"
+    "staticAcceptanceId": "opaque-final-static-revision"
   },
-  "visualAssetAudit": {
-    "visualAssetsComplete": true,
-    "complete": true
-  },
-  "report": {
-    "ok": true,
-    "partial": false,
-    "evidenceLevel": "confirmed-final"
+  "finalEvidence": {
+    "accepted": true,
+    "evidenceLevel": "confirmed-final",
+    "staticAcceptanceId": "opaque-final-static-revision"
   }
 }
 ```
+
+`report.ok` and `report.evidenceLevel` are not substitutes for `finalEvidence`.
+The gate never falls back to an unrelated report to authorize user preview. If
+`finalEvidence` is absent or not accepted it blocks with
+`final-evidence-not-confirmed`; if both records provide different static
+acceptance IDs it blocks with `final-evidence-static-acceptance-mismatch`.
+
+Missing static acceptance, missing/incomplete visual assets, candidate or
+unverified evidence, partial output, or missing Figma/local raster comparison
+exits blocked with `userPreviewAllowed:false`. The gate only evaluates metadata
+and opaque references; it never reads, derives, or carries seasonal geometry,
+assets, source trees, or Figma node identifiers. Candidate URLs must remain
+internal-only and must not be presented to the user.
 
 Run:
 
@@ -45,11 +44,5 @@ Run:
 node scripts/final-preview.mjs --input <final-preview-input.json>
 ```
 
-The result permits a user preview only when all of these are true:
-
-1. static acceptance is both `complete` and `accepted`;
-2. the separate static visual-asset audit has `visualAssetsComplete: true` and `complete: true`;
-3. no static or report output is `partial`;
-4. final evidence is accepted and has `evidenceLevel: "confirmed-final"`.
-
-Missing static acceptance, missing/incomplete visual assets, candidate or unverified evidence, partial output, or missing final evidence exits blocked with `userPreviewAllowed:false`. The gate only evaluates metadata and opaque references; it never reads, derives, or carries seasonal geometry, assets, source trees, or Figma node identifiers.
+A separate report may be retained for diagnostics, but it is never sufficient to
+open a final user preview by itself.
