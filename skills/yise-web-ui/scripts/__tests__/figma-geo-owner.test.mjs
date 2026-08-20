@@ -50,6 +50,18 @@ test('keeps a visual composite group as the owner of its image and copy', () => 
   assert.equal(out.nodes.find((node) => node.id.value === 'title').parentId.value, 'card');
 });
 
+test('keeps a group that owns a zero-axis vector leaf', () => {
+  const vector = { ...empty('leaf', 'Vector 90', 'VECTOR'), absoluteBoundingBox: { x: 10, y: 10, width: 0, height: 80 } };
+  const root = empty('root', 'sec/test', 'FRAME', [
+    empty('group', '装饰', 'GROUP', [vector]),
+  ]);
+  const f = fixture(root);
+  const out = extractGeometry({ ...f, sectionId: 'root', emitStructural: true, emitOwnerPath: true });
+  const group = out.nodes.find((node) => node.id.value === 'group');
+  assert.ok(group, 'zero-axis vector GROUP must remain the source owner');
+  assert.equal(out.nodes.find((node) => node.id.value === 'leaf').parentId.value, 'group');
+});
+
 test('root sibling filter remains fail-closed and reports excluded subtree', () => {
   const root = empty('root', 'page', 'FRAME', [
     empty('allowed', 'fix/nav', 'FRAME', [empty('allowed-child', 'txt/nav', 'TEXT')]),

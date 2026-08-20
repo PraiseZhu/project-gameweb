@@ -68,6 +68,30 @@ test('page background and fixed overlay roots stay on the owner tree, not leaf r
   assert.match(renderer, /data-paint-root/);
 });
 
+test('multi-image fills resolve each imageRef instead of reusing the first file', () => {
+  assert.match(renderer, /_assetFileForImageRef\(imageRef\)/);
+  assert.match(renderer, /never reuse that first\s+file for a later fill/);
+  assert.match(renderer, /data-image-ref/);
+  assert.match(renderer, /data-image-fill-index/);
+  assert.match(renderer, /data-solid-base-fill/);
+  assert.match(assetPipeline, /imageRefs: imageRefs\.length \? imageRefs : undefined/);
+  assert.match(assetPipeline, /Array\.isArray\(m\.imageRefs\) && m\.imageRefs\.length \? \{ imageRefs: m\.imageRefs \}/);
+});
+
+test('authored multiline text keeps source metrics instead of height step-fit', () => {
+  assert.match(renderer, /authored-multiline-source-metrics/);
+  assert.match(renderer, /Prefer authored Figma line metadata over a geometry-derived estimate/);
+  assert.match(renderer, /authoredLineCount \|\| 0, geometryLineCount/);
+});
+
+test('hero cover scale stays on the hero slot, not the released page stage', () => {
+  assert.match(renderer, /heroVisualScale = slotScale/);
+  assert.match(renderer, /scale: pageStageScale/);
+  assert.match(renderer, /data-hero-visual-scale/);
+  assert.match(renderer, /heroVisualScale \/ pageStageScale/);
+  assert.doesNotMatch(renderer, /pageStageScale = slotScale/);
+});
+
 test('page paint roots follow recorded pagePaintOrder locators on canvas-rooted snapshots', () => {
   /* A canvas fetch stores locators under /nodes/<canvas>/document/children/...
      while the page frame id is a descendant. Matching the snapshot key as the

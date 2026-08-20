@@ -248,10 +248,14 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const exportBox = exportBounds === 'render' ? roundBox(rb) : null;
       // ⚠️ truth 里的键是 w/h，不是 width/height。之前写成 b.width，清单里
       //    designSize 一直是 "0x0" —— 一份本该当证据的清单，记了一路空数。
+      const imageRefs = [...new Set(fills
+        .filter((f) => f && f.type === 'IMAGE' && f.imageRef)
+        .map((f) => String(f.imageRef)))];
       out.push({
         sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
         reason: hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
         w, h, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
+        imageRefs: imageRefs.length ? imageRefs : undefined,
         renderCropPolicy: exportBounds === 'render' && isBakedImageOwner ? 'top-left-render-canvas' : null,
         effectTypes: [...new Set(allEffectTypes)],
         descendantEffectTypes: [...new Set(descendantEffects.map((e) => e.effectType).filter(Boolean))],
@@ -480,6 +484,7 @@ async function main() {
         pixelSize: pxW != null ? `${pxW}x${pxH}` : null,
         exportBounds: p.exportBounds,
         exportBox: p.exportBox || undefined,
+        imageRefs: Array.isArray(p.imageRefs) && p.imageRefs.length ? p.imageRefs : undefined,
         effectTypes: p.effectTypes,
         descendantEffectTypes: p.descendantEffectTypes && p.descendantEffectTypes.length ? p.descendantEffectTypes : undefined,
         renderCrop: renderCrop || undefined,
@@ -522,10 +527,18 @@ async function main() {
    * 仿 qa-truth 的写法（禁止手抄、由脚本写入），`</script>` 已转义防注入。 */
   const idxPath = join(demoDir, 'index.html');
   if (existsSync(idxPath)) {
-    const pathMap = Object.fromEntries(Object.entries(manifest).map(([id, m]) => [
-      id,
-      m.exportBox ? { file: m.file, exportBounds: m.exportBounds, exportBox: m.exportBox } : m.file,
-    ]));
+    const pathMap = Object.fromEntries(Object.entries(manifest).map(([id, m]) => {
+      const rec = (m.exportBox || (Array.isArray(m.imageRefs) && m.imageRefs.length) || m.kind)
+        ? {
+          file: m.file,
+          ...(m.exportBounds ? { exportBounds: m.exportBounds } : {}),
+          ...(m.exportBox ? { exportBox: m.exportBox } : {}),
+          ...(Array.isArray(m.imageRefs) && m.imageRefs.length ? { imageRefs: m.imageRefs } : {}),
+          ...(m.kind ? { kind: m.kind } : {}),
+        }
+        : m.file;
+      return [id, rec];
+    }));
     const payload = JSON.stringify(pathMap).replace(/<\/script>/gi, '<\\/script>');
     let html = readFileSync(idxPath, 'utf8');
     const re = /<script id="qa-assets" type="application\/json">[\s\S]*?<\/script>/;

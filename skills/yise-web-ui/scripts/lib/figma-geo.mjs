@@ -839,7 +839,20 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
         visit(node);
         return hasImageBackedPaint && hasText;
       };
-      if (isPureContainer(child) && !preserveOwnerRoot && !isStructuralOwner(child) && !isSwitchPageOwner(ownerNode, child) && !clipsDescendant(child) && !isCompositeVisualGroup(child)) {
+      /* A GROUP that owns a zero-axis VECTOR leaf is still the source owner of
+         that paint. Flattening it leaves a valid SVG with no DOM parent, so the
+         later visual-asset gate either false-blocks or drops the leaf. Keep the
+         GROUP; do not invent a FRAME parent or a baked composite here. */
+      const isZeroAxisVectorGroup = (node) => {
+        if (String(node?.type || '').toUpperCase() !== 'GROUP') return false;
+        return (node.children || []).some((leaf) => {
+          const type = String(leaf?.type || '').toUpperCase();
+          if (type !== 'VECTOR' && type !== 'BOOLEAN_OPERATION' && type !== 'LINE') return false;
+          const box = leaf.absoluteBoundingBox || {};
+          return Number(box.width) === 0 || Number(box.height) === 0;
+        });
+      };
+      if (isPureContainer(child) && !preserveOwnerRoot && !isStructuralOwner(child) && !isSwitchPageOwner(ownerNode, child) && !clipsDescendant(child) && !isCompositeVisualGroup(child) && !isZeroAxisVectorGroup(child)) {
         skipped.push({
           nodeId: child.id,
           name: child.name,
