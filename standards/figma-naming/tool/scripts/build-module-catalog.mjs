@@ -99,7 +99,6 @@ for (const readyPath of readies) {
     for (const extra of EXTRA_ALIASES[canonical] || []) aliases.add(extra);
     const types = new Set(byId.get(id)?.types || []);
     types.add(set.type || (modals.includes(set) ? "FRAME" : "COMPONENT_SET"));
-    if (!modals.includes(set)) types.add("INSTANCE");
     const variants = (set.variants || []).map((variant) => variant.name).filter(Boolean);
     const shot = shotFor(name, tilesFiles, setsDirs) || shotFor(canonical, tilesFiles, setsDirs);
     const statePair = variants.some((label) => /highlight|normal|disable|选中|未选/i.test(label));

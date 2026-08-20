@@ -137,8 +137,8 @@ export function validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft = false 
   if (pcDoc?.requestedNodeId && pcDoc.requestedNodeId === mobileDoc?.requestedNodeId) {
     problems.push("PC/mobile 不能是同一 page id");
   }
-  const pcGate = pcDoc ? auditDraftAssetCompleteness(pcDoc) : { ok: false, problems: ["缺 PC"] };
-  const mobileGate = mobileDoc ? auditDraftAssetCompleteness(mobileDoc) : { ok: false, problems: ["缺 mobile"] };
+  const pcGate = pcDoc ? auditDraftAssetCompleteness(pcDoc, mobileDoc ? [mobileDoc] : []) : { ok: false, problems: ["缺 PC"] };
+  const mobileGate = mobileDoc ? auditDraftAssetCompleteness(mobileDoc, pcDoc ? [pcDoc] : []) : { ok: false, problems: ["缺 mobile"] };
   if (!pcGate.ok) problems.push(...pcGate.problems.map((item) => `pc completeness: ${item}`));
   if (!mobileGate.ok) problems.push(...mobileGate.problems.map((item) => `mobile completeness: ${item}`));
 

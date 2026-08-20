@@ -97,9 +97,17 @@ const server = createServer(async (req, res) => {
     let parsed;
     try { parsed = JSON.parse(body); } catch { return send(res, 400, "bad json"); }
     const file = parsed?.file, inv = parsed?.inventory;
-    if (!invNameRe.test(file || "")) return send(res, 400, "bad file");
-    if (inv?.schema !== "inventory/v2" || inv.status !== "ready" || !Array.isArray(inv.nodes)) {
-      return send(res, 400, "inventory/v2 status must be ready");
+    if (!invNameRe.test(file || "")) {
+      return send(res, 400, JSON.stringify({ ok: false, error: "bad file" }), "application/json; charset=utf-8");
+    }
+    if (inv?.schema !== "inventory/v2" || !Array.isArray(inv.nodes)) {
+      return send(res, 400, JSON.stringify({ ok: false, error: "不是 inventory/v2" }), "application/json; charset=utf-8");
+    }
+    if (inv.status !== "ready") {
+      return send(res, 409, JSON.stringify({
+        ok: false,
+        error: "draft 不能在核对页保存清单。刚才的判定已写入 *-feedback.json，不会丢。升 ready 请用「核对完成」或 handoff:promote。",
+      }), "application/json; charset=utf-8");
     }
     const reviewedPath = resolve(root, file.replace(/\.json$/, ".reviewed.json"));
     if (!reviewedPath.startsWith(root + "/")) return send(res, 400, "bad file");
