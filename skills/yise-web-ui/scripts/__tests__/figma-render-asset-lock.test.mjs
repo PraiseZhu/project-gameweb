@@ -68,6 +68,15 @@ test('page background and fixed overlay roots stay on the owner tree, not leaf r
   assert.match(renderer, /data-paint-root/);
 });
 
+test('page paint roots follow recorded pagePaintOrder locators on canvas-rooted snapshots', () => {
+  /* A canvas fetch stores locators under /nodes/<canvas>/document/children/...
+     while the page frame id is a descendant. Matching the snapshot key as the
+     page frame would leave KV/background/content unbucketed. */
+  assert.match(renderer, /recordedRoots/);
+  assert.match(renderer, /Match the nearest recorded/);
+  assert.match(renderer, /pagePrefix/);
+});
+
 test('section stage clip is sourced from Figma clipsContent, not a global default', () => {
   assert.match(renderer, /const sectionClipsContent = __u\(meta\.clipsContent\) === true/);
   assert.match(renderer, /stage\.style\.overflow = sectionClipsContent \? 'hidden' : 'visible'/);

@@ -3666,6 +3666,26 @@
           : [];
         const rootKey = (raw) => {
           const loc = raw && raw.id && raw.id.provenance ? raw.id.provenance.locator : '';
+          /* Provenance locators may be rooted at the source canvas rather than
+             the extracted page-frame id (for example
+             /nodes/<canvas>/document/children/0/children/0/id while the
+             page frame itself is 491:6935).  Match the nearest recorded
+             pagePaintOrder root first; falling back to the old page-frame
+             projection preserves legacy fixtures. */
+          const recordedRoots = rawPagePaintOrder
+            ? rawPagePaintOrder.map((entry) => ({
+              id: __u(entry && entry.id),
+              loc: entry && entry.id && entry.id.provenance ? entry.id.provenance.locator : '',
+            })).filter((entry) => entry.id != null && entry.loc)
+            : [];
+          let best = null;
+          for (const entry of recordedRoots) {
+            const rootLoc = String(entry.loc || '').replace(/\/id$/, '');
+            if (loc === entry.loc || loc.startsWith(rootLoc + '/')) {
+              if (!best || rootLoc.length > String(best.loc || '').replace(/\/id$/, '').length) best = entry;
+            }
+          }
+          if (best) return String(best.id);
           const pagePrefix = `/nodes/${pageFrameId}/document/children/`;
           if (loc.startsWith(pagePrefix)) {
             const m = /^(\d+)/.exec(loc.slice(pagePrefix.length));
