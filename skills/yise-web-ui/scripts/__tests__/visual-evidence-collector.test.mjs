@@ -25,7 +25,11 @@ test('collector blocks absent Figma/comparison and missing runtime facts', () =>
   assert.ok(result.failures.some((failure) => failure.reason === 'same-platform-viewport-region-evidence-missing'));
 });
 
-
+test('file collector reports missing and malformed snapshots honestly', () => {
+  const missing = collectVisualEvidenceFromFile('does-not-exist.json');
+  assert.equal(missing.complete, false);
+  assert.equal(missing.failures[0].reason, 'collector-input-missing');
+});
 
 test('raw browser snapshot states normalize and flow/typography pass while comparison remains blocked', () => {
   const result = collectVisualEvidence({

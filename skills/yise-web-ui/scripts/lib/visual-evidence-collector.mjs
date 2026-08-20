@@ -7,6 +7,7 @@ import {
   evaluateResizeEvidence,
   evaluateInteractionEvidence,
   evaluateRegionComparisonEvidence,
+  pageFlowStateNames,
 } from './visual-completion-gate.mjs';
 
 const blocked = (reason, detail = {}) => ({ complete: false, blocked: true, failures: [{ reason, ...detail }] });
@@ -28,12 +29,12 @@ function collectTypography(snapshot = {}, source = {}) {
     },
   }));
   const result = { schema: 'yise-typography-visual-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null, sourceRef: source.fontManifest || null, fontFaces: faces, records };
-  const evaluation = evaluateTypographyEvidence({ ...result, complete: true });
+  const evaluation = evaluateTypographyEvidence(result);
   return { ...result, complete: evaluation.complete, failures: evaluation.failures, blocked: !evaluation.complete };
 }
 
 function collectPageFlow(snapshot = {}, source = {}) {
-  const states = array(snapshot.states).map((state) => typeof state === 'string' ? state : state?.name).filter(Boolean);
+  const states = pageFlowStateNames(snapshot.states);
   const result = {
     schema: 'yise-page-flow-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null,
     sourceRef: source.truth || null, states,

@@ -54,8 +54,6 @@ test('page flow requires internal scroll container and visible section intersect
   assert.ok(result.failures.some((entry) => entry.reason === 'section-not-reachable-visible'));
 });
 
-
-
 test('page flow accepts measured object states without aggregate complete input', () => {
   const result = evaluatePageFlowEvidence({
     states: [{ name: 'hero-lock', scrollTop: 0, measured: true }, { name: 'hero-exit', scrollTop: 400, measured: true }, { name: 'released', scrollTop: 800, measured: true }],

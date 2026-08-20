@@ -27,8 +27,9 @@ export function evaluateFinalPreviewGate({ staticAcceptance = null, visualAssetA
   if (completion.complete !== true) return blocked(completion.failures[0]?.reason || 'visual-completion-evidence-incomplete', { completion });
   const evidenceChain = evaluateFinalVisualEvidenceChain({ typography: typographyEvidence || typography, pageFlow: pageFlowEvidence || pageFlow, fixedChrome: fixedChromeEvidence || fixedChrome, resize: resizeEvidence || resize, interaction: interactionEvidence || interaction, comparison: regionComparisonEvidence || comparison });
   if (evidenceChain.complete !== true) return blocked(evidenceChain.failures[0]?.reason || 'final-visual-evidence-chain-incomplete', { evidenceChain });
-  const evidenceLevel = finalEvidence?.evidenceLevel ?? null;
-  if (!finalEvidence) return blocked('final-evidence-not-confirmed', { evidenceLevel: null });
+  if (!finalEvidence || finalEvidence.accepted !== true || finalEvidence.evidenceLevel !== FINAL_EVIDENCE_LEVEL) {
+    return blocked('final-evidence-not-confirmed', { evidenceLevel: finalEvidence?.evidenceLevel ?? null });
+  }
   if (staticAcceptance.staticAcceptanceId && finalEvidence.staticAcceptanceId
     && staticAcceptance.staticAcceptanceId !== finalEvidence.staticAcceptanceId) {
     return blocked('final-evidence-static-acceptance-mismatch', {
@@ -36,8 +37,6 @@ export function evaluateFinalPreviewGate({ staticAcceptance = null, visualAssetA
       finalEvidenceStaticAcceptanceId: finalEvidence.staticAcceptanceId,
     });
   }
-  const evidenceAccepted = finalEvidence.accepted === true;
-  if (evidenceLevel !== FINAL_EVIDENCE_LEVEL || evidenceAccepted !== true) return blocked('final-evidence-not-confirmed', { evidenceLevel });
   return { userPreviewAllowed: true, previewDisposition: 'final-ready', evidenceLevel: FINAL_EVIDENCE_LEVEL, staticAcceptanceId: staticAcceptance.staticAcceptanceId ?? null, staticTruthRef: staticAcceptance.staticTruthRef ?? null };
 }
 

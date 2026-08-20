@@ -84,6 +84,10 @@ export function evaluateTypographyEvidence(typography = null) {
   return { schema: 'yise-typography-visual-evidence/v1', complete: failures.length === 0, failures };
 }
 
+export function pageFlowStateNames(states) {
+  return asArray(states).map((state) => typeof state === 'string' ? state : state?.name).filter(Boolean);
+}
+
 export function evaluatePageFlowEvidence(flow = null) {
   const failures = [];
   const sections = Array.isArray(flow?.sections) ? flow.sections : [];
@@ -91,7 +95,7 @@ export function evaluatePageFlowEvidence(flow = null) {
   if (flow?.scrollContainer?.internal !== true || !flow.scrollContainer.selector || !Number.isFinite(Number(flow.scrollContainer.clientHeight))) {
     failures.push({ reason: 'internal-scroll-container-unverified' });
   }
-  const states = new Set(Array.isArray(flow?.states) ? flow.states.map((state) => typeof state === 'string' ? state : state?.name).filter(Boolean) : []);
+  const states = new Set(pageFlowStateNames(flow?.states));
   for (const state of ['hero-lock', 'hero-exit', 'released']) if (!states.has(state)) failures.push({ reason: 'hero-flow-state-missing', state });
   for (const [index, section] of sections.entries()) {
     if (!section?.intendedId || section.reachable !== true || section.intersectsViewport !== true) failures.push({ reason: 'section-not-reachable-visible', index });
