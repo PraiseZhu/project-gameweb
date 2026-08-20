@@ -17,6 +17,34 @@ import {
 import { parseName } from "./parse.mjs";
 import { namePatternOf } from "./lint.mjs";
 
+const UNNAMED_INVENTORY_NAME = /^inventory-unnamed-.+/;
+
+/** page id 里的冒号不能进文件名；`--name inventory-unnamed-392:24190` 收成 `392-24190`。 */
+export function sanitizeInventoryName(name) {
+  if (name == null) return name;
+  return String(name).replace(/:/g, "-");
+}
+
+/** 未规范必须同时 --status draft 和 --name inventory-unnamed-<页id>。 */
+export function unnamedRequiresDraft(input) {
+  const status = input && input.status;
+  const label = String((input && input.name) ?? "").trim();
+  const unnamedName = UNNAMED_INVENTORY_NAME.test(label);
+  if (unnamedName || /unnamed/i.test(label)) {
+    if (status !== "draft") {
+      return "未规范稿必须显式 --status draft；`--name` 含 unnamed 时不能用默认 ready";
+    }
+    if (!unnamedName) {
+      return "未规范稿 --name 必须是 inventory-unnamed-<页id>";
+    }
+    return null;
+  }
+  if (status === "draft") {
+    return "未规范稿必须同时 --status draft 和 --name inventory-unnamed-<页id>";
+  }
+  return null;
+}
+
 export function findNode(root, id) {
   if (!root) return null;
   if (root.id === id) return root;
@@ -178,6 +206,35 @@ function paramsOf(parsed) {
 function secNumber(body) {
   const m = /^(\d+)/.exec(String(body || ""));
   return m ? Number(m[1]) : null;
+}
+
+function countStatuses(nodes) {
+  const counts = { determined: 0, unknown: 0, skipped: 0 };
+  for (const node of nodes) {
+    if (counts[node?.status] != null) counts[node.status] += 1;
+  }
+  return counts;
+}
+
+/** 写回节点后必须重建索引。sections/overlays/backgrounds/modules/counts 不跟节点走就会让验收绿、做页吃空分区。 */
+export function rebuildInventoryIndexes(inv) {
+  if (!inv || typeof inv !== "object") return inv;
+  const pageNodes = Array.isArray(inv.nodes) ? inv.nodes : [];
+  const extra = [
+    ...(inv.attachments?.modals || []).flatMap((item) => item.nodes || []),
+    ...(inv.attachments?.componentSets || []).flatMap((item) => item.nodes || []),
+    ...(inv.attachments?.components || []).flatMap((item) => item.nodes || []),
+  ];
+  inv.pageCounts = countStatuses(pageNodes);
+  inv.counts = countStatuses([...pageNodes, ...extra]);
+  const determined = pageNodes.filter((node) => node.status === "determined");
+  inv.sections = determined.filter((node) => node.role === "sec").map((node) => ({
+    id: node.id, number: secNumber(node.label), label: node.label, box: node.box,
+  })).sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || (a.box?.y ?? 0) - (b.box?.y ?? 0));
+  inv.overlays = determined.filter((node) => node.role === "fix").map((node) => ({ id: node.id, role: "fix", label: node.label }));
+  inv.backgrounds = determined.filter((node) => node.role === "kv" || node.role === "bg").map((node) => ({ id: node.id, role: node.role, label: node.label }));
+  inv.modules = determined.filter((node) => ["switch", "tab", "ind", "scroll", "mix", "dyn", "modal"].includes(node.role)).map((node) => ({ id: node.id, role: node.role, label: node.label }));
+  return inv;
 }
 
 function indexDocument(root) {
@@ -514,15 +571,7 @@ export function buildInventory(document, {
   })));
   const relations = [...instanceRelations, ...variantRelations, ...makeModalRelations(pageNodes, modals)];
 
-  const determined = pageNodes.filter((node) => node.status === "determined");
-  const sections = determined.filter((node) => node.role === "sec").map((node) => ({
-    id: node.id, number: secNumber(node.label), label: node.label, box: node.box,
-  })).sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || (a.box?.y ?? 0) - (b.box?.y ?? 0));
-  const overlays = determined.filter((node) => node.role === "fix").map((node) => ({ id: node.id, role: "fix", label: node.label }));
-  const backgrounds = determined.filter((node) => node.role === "kv" || node.role === "bg").map((node) => ({ id: node.id, role: node.role, label: node.label }));
-  const modules = determined.filter((node) => ["switch", "tab", "ind", "scroll", "mix", "dyn", "modal"].includes(node.role)).map((node) => ({ id: node.id, role: node.role, label: node.label }));
-
-  return {
+  const inv = {
     ok: true,
     schema: INVENTORY_SCHEMA,
     specVersion: SPEC_VERSION,
@@ -534,14 +583,15 @@ export function buildInventory(document, {
     status,
     counts,
     pageCounts,
-    sections,
-    overlays,
-    backgrounds,
-    modules,
+    sections: [],
+    overlays: [],
+    backgrounds: [],
+    modules: [],
     nodes: pageNodes,
     attachments: { modals, componentSets, components },
     relations,
   };
+  return rebuildInventoryIndexes(inv);
 }
 
 export function snapshotHashOf(raw) {

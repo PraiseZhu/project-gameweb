@@ -63,11 +63,69 @@ disable-model-invocation: false
 - 派工时 `initial_task` 必须点名本「硬门」四条。执行体做完判断写回必须 `send_to_lead` 交回等人确认；确认前禁止做步骤 4。
 - `send_to_lead` 只用于：读不了图、G3 换执行体、判断写回待确认、出错停。禁止拿它挡机器 G2。
 
+### 核对页 UI 冻结
+
+权威文件：`standards/figma-naming/tool/inventory-review/index.html`，必须进 git。禁止写 `_tmp/inventory-review/index.html`。禁止每次任务重写一版。改展示只改这一份。`inventory:review` 只许读这份；没有就失败，不许从 tmp 凑 HTML。清单 JSON 和切片图仍在 `_tmp`。
+
+## 链路验收口径（未规范稿 0–7）
+
+可视对照：`docs/prework-pipeline.html`。下列是验收命令，不是建议。讨论订正已并入；理解偏了按这里，不按口头印象。
+
+### 0 左侧 Page 链接可开工
+
+- **要求提供 Figma 左侧 Page 链接**（CANVAS，例如「伊瑟一周年 2026.6」）。这是正常输入：机器拉整张画布，再用 `--page` 选 PC 或手机。
+- 画布里通常有货架：PC 整页 + 手机整页 + 弹窗 + 组件定义。拉左侧 Page 就是为了把这些一起带走。
+- 当前 CLI **不会**因链接是左侧 Page 而拒绝。只点画布里某一个 PC/手机 frame 时，CLI 也不自动拒绝，但弹窗和组件定义可能不在树上。输入仍应给左侧 Page。
+
+### 1 编清单对快照，不是对截图，也不是做页成品
+
+- 产物是 `inventory/v2` **draft JSON**（纯数据：id、类型、原名、box、组件集、弹窗、关系）。
+- 自验对 Figma 拉下来的树，不对截图。截图是下一步才有。
+- 未规范必须同时 `--status draft` 和 `--name inventory-unnamed-<page>`。`<page>` 把 Figma id 的冒号改成短横线，例如 `392:24190` → `inventory-unnamed-392-24190`。CLI 会把 `--name` 里的 `:` 换成 `-`。缺一个、或 name 不是该前缀、或 unnamed 却 ready → CLI 直接失败，避免落到 `inventory-<页id>.json` 和规范稿撞名。
+- 原始 draft 不能直接给做页 skill 吃。做页吃的是第 7 关双绿后的交接包。
+
+### 2 导图不是每层一张
+
+未规范稿必导：整页 `page.png`、每个组件集 `set-*.png`。
+有弹窗时导图脚本会出 `modal-*.png`；standalone component 可能有 `cmp-*.png`。**判断包和 G2 目前只收 `page-*.jpg` / `set-*.jpg`**，弹窗图不进切片闸门。弹窗判断用瘦树 + 整页切片里能看见的部分，变体仍看 set 图。
+不导：清单里每一个 unknown 层、每一个装饰矩形。
+`sec/` `bg/` `kv/` `fix/` 高清只导**已经标了这些前缀**的层；刚编完的 draft 没有这些前缀是正常的，不叫缺图。
+
+### 3 判断包是瘦身考卷，不是无损拷贝
+
+故意丢掉纯 skipped 空枝。瘦树只保 id / type / name / status / role / box / componentId / kids，会丢掉 prototype、params、behavior、text 等；原型触发不能只靠瘦树。
+不许漏的是：判断候选层、全部组件集变体树、对应 `set-*.jpg`。缺一张 set 图 = 包没做完。判断包不改身份、不写前缀。
+
+### 4 G2 只验考卷齐，不写前缀
+
+每张 `page-*.jpg` / `set-*.jpg` 有字节、有像素；set 数 = 组件集数。过了自动进判断，不等人。这一步还不命名。G2 不校验 modal / cmp 图。
+
+### 5 目录不是自动命名器，金样不是答案本
+
+- 目录**尝试**扫组件集和弹窗 FRAME，按类型 + 变体个数 + statePair 检索，不看 aliases / 原名。命中只给弱前缀建议，**不写盘**。
+- 弹窗条目当前评分经常低于阈值，**0 命中是正常的**，不得假定一定有提示。多命中只取目录顺序第一条，低置信度不得直接套前缀。
+- 页上实例不走目录：母版写成前缀后由第 6 步跟随。
+- **散落切图、划动裁切层不走目录。** 可复用答案只有前缀（`img/` / `scroll/`）；哪一层是切图、哪一层是裁切框，必须看**本页**小图。禁止按视觉相似把金样后缀或图层 id 抄过来。
+- 目录切片 / 金样只当形态样本：看 kv / scroll / switch 长什么样。禁止按 id 或 `sec/N` 抄名。
+- 词表是第 7 关保险，**不能代替看图**。
+
+### 6 跟随收口（机器不问人）
+
+母版有前缀则实例、子件、`I…;母版Id` 跟上；母版未命名则子件不得擅自加前缀。纯视觉层、祖先没有 `img/` → 补 `img/`（词表见 `IMAGE_BODY_RE`，比「素材图」更宽）。有字分组不得整组 `img/`（`bg/` `kv/` `logo` 例外）。PC / 手机同类（类型 + 剥前缀名）对齐的是**前缀**，不是整串后缀。
+
+### 7 词表是漏项保险，双端对齐只是一块
+
+completeness 双绿才算判断机器过。三条词表不要混：
+- `CARD_ART_RE`：`素材图|素材|边框背景|背景边框|立绘` —— unknown 仍用这些精确词才红
+- `IMAGE_BODY_RE`：跟随补 `img/`，还覆盖角色头像、视频框、头像框、icon、装饰、卡牌等
+- `CLIP_RE`：只有 `可划动|划动区域`；裸词「划动」不命中机器划动红灯
+没撞上词表 ≠ 没有这层，责任在第 5 步看图。另外必查：已确定非 copy 必须写入 `role/`、组件集分类、弹窗、小播放是 `btn/` 不是 `hot/`、跟随、有字分组、两端同类前缀。只核前缀和结构。写回后必须重建 `sections` / `overlays` / `backgrounds` / `modules` / `counts` / `pageCounts`，并重写 `.txt`。completeness 按节点重建对照索引，不只扫空数组：有 determined `sec/` 但 `sections` 为空、`backgrounds`/`modules` 残缺、`pageCounts` 过期 → 红，不算过。规范稿对照只核前缀类/结构/索引，不把 live inventory JSON 当单测基线。
+
 ## 步骤
 
 ### 1. 接收链接与范围
 
-人提供带 `node-id` 的 Figma 链接。`node-id` 必须指向整棵画布货架（页面本体、同货架 modal、组件定义），不能只指向某个页面；`--page` 只从已拉取的树里选 PC 或 mobile。
+人提供带 `node-id` 的 Figma **左侧 Page** 链接（CANVAS）。机器拉整张画布，`--page` 只从已拉取的树里选 PC 或 mobile。不要只给画布里某一个 PC/手机 frame（CLI 不自动拒绝，但弹窗/组件定义可能丢失）。
 
 没有 `node-id` 时停在输入门槛，不开插件、不猜根、不写回。
 
@@ -98,6 +156,16 @@ npm run inventory -- \
 规范稿干跑只用来验机器：剥前缀后按**同一份稿的同一批图层 id**对答案。过关不叫人核。这测的是「前缀拿掉后还能不能认回原层」，**不能**代替未规范新稿。
 
 ### 3. 未规范稿 → draft（按功能认模块）
+
+```bash
+npm run inventory -- \
+  --file "<Figma 左侧 Page 链接>" \
+  --page <pc 或 mobile 页 id> \
+  --status draft \
+  --name inventory-unnamed-392-24190
+```
+
+`<page>` 用短横线，不要把 `392:24190` 原样塞进 `--name`（CLI 会把冒号换成 `-`）。缺 `--status draft`、缺 `--name inventory-unnamed-*`、或 name 不是该前缀 → CLI 失败。
 
 机器先出结构树和判断包（瘦树 + 整页切片 `page-*.jpg` + 组件集/变体小图 `set-*.jpg`）。然后必须先过上面的 **G2 切片闸门**（机器 `stat`，非空即继续判断）。判断写回 draft 后停，等人确认判断已完成，再进步骤 4。
 
@@ -161,7 +229,7 @@ cd standards/figma-naming/tool
 npm run inventory:review
 ```
 
-未规范 draft 可用 `?inv=inventory-unnamed-<page>.json` 打开预览。同一货架下必须能切 PC / mobile。核对页不能保存 draft、不能在页上点升档。升 ready 走 `handoff:promote`（主人确认后）。同事做页走 `handoff:pack --allow-green-draft`，不要等核对页。
+核对页 UI 只读仓内 `tool/inventory-review/index.html`。不要打开或生成 `_tmp/inventory-review/index.html`。未规范 draft 可用 `?inv=inventory-unnamed-<page>.json` 打开预览。同一货架下必须能切 PC / mobile。核对页不能保存 draft、不能在页上点升档。升 ready 走 `handoff:promote`（主人确认后）。同事做页走 `handoff:pack --allow-green-draft`，不要等核对页。
 
 已规范 ready 的复核是可选检查，保存后仍保持 `ready`。unknown 必须显式保留，不能用位置、文案或常识补成确定关系。
 
@@ -178,10 +246,10 @@ npm run inventory:review
 
 用户丢货架链接后按这个顺序**一窗跑到判断写回**。G3 命中就自动派干净执行体，不许让用户自己新开聊天。判断写回后等人确认，再沉淀。
 
-1. 货架 `node-id` 拉整棵；`--page` 出 PC + mobile 两份 `inventory-unnamed-*.json`，`status=draft`。已有合格 draft 不要重跑 inventory。
-2. `prep-judge-pack` 必须带整页 `page-*.jpg` **和** 组件集 `set-*.jpg`（从 `inventory-review/img-*/set-*.png` 压）。缺 set 图 = 包没做完。
+1. 左侧 Page 链接拉整张画布；`--page` 出 PC + mobile 两份，必须 `--status draft --name inventory-unnamed-392-24190`（冒号改短横线）。已有合格 draft 不要重跑 inventory。
+2. 未规范导图必导整页 `page.png` + 全套 `set-*.png`。弹窗图会导出，但判断包/G2 只收 page/set jpg。不要给每个 unknown 层出图。`prep-judge-pack` 必须带整页 `page-*.jpg` **和** 组件集 `set-*.jpg`（从 `inventory-review/img-*/set-*.png` 压）。缺 set 图 = 包没做完。
 3. G2：`stat` 列出页切片 + 组件集切片。空白 jpeg 先修再判；非空且 set 数对齐就继续判断，不等点头。
-4. 判断：先 `npm run catalog:match -- --inventory <draft>`，命中只套前缀（`switch/` `btn/` `img/`…），后缀不限、不用设计师原名。再截图 + jq。每轮最多 2 张小图。写回 draft。任意组件集写成前缀后，页上实例、集内实例、`I…;母版Id` 子件都必须机器跟随。PC/mobile 两份一起收口：`node scripts/apply-gold-morphology.mjs <pc.json> <mobile.json>`。写回反馈用 `apply-review-feedback.mjs --from <上一份稿> [--peer <另一端.json>]`，写回后自动跟随，不必再手跑一遍 morph。旧图层 id 按父层+类型+剥前缀名+顺序映射；导航项已是 btn/ 时旧反馈 img 不复写。这类漏项不要拿去问人。
+4. 判断：先 `npm run catalog:match -- --inventory <draft>`。目录只给弱前缀建议、不写盘；弹窗 0 命中正常，多命中不得直接采信。再截图 + jq。每轮最多 2 张小图。写回 draft。任意组件集写成前缀后，页上实例、集内实例、`I…;母版Id` 子件都必须机器跟随。PC/mobile 两份一起收口：`node scripts/apply-gold-morphology.mjs <pc.json> <mobile.json>`。写回反馈用 `apply-review-feedback.mjs --from <上一份稿> [--peer <另一端.json>]`，写回后自动跟随，不必再手跑一遍 morph。旧图层 id 按父层+类型+剥前缀名+顺序映射；导航项已是 btn/ 时旧反馈 img 不复写。这类漏项不要拿去问人。
 5. 跑 `node scripts/check-draft-asset-completeness.mjs` 两份 draft，必须绿。只核前缀和结构（素材图、划动裁切层 `scroll/`、多变体内容集 `switch/`、状态组件 `btn/`/`ind/`、弹窗 `modal/`、跨货架定义 unknown、页上左侧导航实例 `btn/`、组件集实例与 `I…;母版Id` 跟随、有字分组不得 `img/`——`bg/` `kv/` `logo` 例外）。后缀和设计师原名不对错。然后停，等人**确认判断已完成**。
 6. 人确认后才做步骤 4：改 SKILL「已沉淀形态」+ `evolution-note.mjs`（先 list 再加 occurrence）。交回必须点名本次 fingerprint。
 
@@ -194,6 +262,11 @@ npm run inventory:review
 ## 不要做
 
 - 不要跳过硬门 G0–G4，不要「先完美再汇报」
+- 不要只丢画布里某一个 PC/手机 frame；左侧 Page 链接才是正常输入
+- 不要漏传 `--status draft` 或 `--name inventory-unnamed-<page>`；缺一个 CLI 就失败
+- 不要要求清单每一层都有导出图；不要把目录命中当成已经命名完成；弹窗目录 0 命中不得当漏扫
+- 不要按视觉相似把金样后缀或图层 id 抄到散图 / 划动层上
+- 不要用词表代替看图：没写「素材图 / 可划动」不等于没有这层；裸词「划动」打不亮 CLIP_RE
 - 不要 Read 整份 `inventory-*.json` / `page.png` / `sec-*.png` / `pack.json`
 - 不要在读不了图 / 判断写回待确认时不 `send_to_lead`
 - 不要在超长会话里 Read 图片；不要一轮 Read 超过 2 张切片；不要让用户自己新开聊天来躲 G3
