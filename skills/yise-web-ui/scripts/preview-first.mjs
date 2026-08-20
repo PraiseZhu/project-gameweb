@@ -4,6 +4,7 @@ import { resolve, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchChromium } from './lib/resolve-playwright.mjs';
 import { sourcePlatformEvidence, unclaimedCapabilitiesFor } from './lib/workflows.mjs';
+import { internalCandidatePreview } from './lib/final-preview-gate.mjs';
 
 const PREVIEW_THRESHOLDS = {
   minMeaningfulNodes: 2,
@@ -59,14 +60,16 @@ function explainMeaningfulContract(metrics, pageErrors = []) {
 function candidateCompletion({ ok, spec, truth, indexPath }) {
   const productUrl = productViewUrl(indexPath);
   const evidence = sourcePlatformEvidence(spec, truth);
+  const productView = {
+    url: productUrl,
+    command: openProductViewCommand(productUrl),
+  };
   return {
     legalCandidateCompletionPath: spec?.workflow?.id === 'figma-showcase' ? 'figma-showcase.preview-first.candidate' : 'preview-first.candidate',
     evidenceLevel: ok ? 'candidate' : 'none',
     sourcePlatformEvidence: evidence,
-    productView: {
-      url: productUrl,
-      command: openProductViewCommand(productUrl),
-    },
+    productView,
+    ...internalCandidatePreview(productView),
     unclaimedCapabilities: unclaimedCapabilitiesFor(spec, truth),
   };
 }
@@ -176,7 +179,7 @@ async function runPreviewFirst({ demoDir, outDir }) {
       contractFailures,
       result,
       ...completion,
-      nextHumanStep: ok ? `Immediately open product view: ${completion.productView.url}` : null,
+      nextHumanStep: ok ? 'Internal candidate evidence recorded. Do not open or present this product view to the user; run the final preview gate after static acceptance and final evidence.' : null,
     };
     writeFileSync(join(outDir, 'preview-first.json'), JSON.stringify(payload, null, 2));
     console.log(JSON.stringify(payload, null, 2));

@@ -34,6 +34,10 @@ identity transform and full opacity; returning to the top restores both.
 `max(0, slotDesignHeight - heroDesignHeight)` 的设计坐标偏移，因此它们在浏览器中从
 一个实际 viewport 高度之后开始。KV/page chrome 与 fixed overlay 仍按原 sibling 顺序绘制。
 
+Hero 的 cover 缩放只作用在 `[data-hero-slot-role="hero"]`。页面根和后续 released
+区块继续用平台 scale；不能把 `slotScale` 写回整个 page stage，否则后面的自然流
+会被当成首屏再裁一次。
+
 渲染 DOM 会写入 `data-hero-scroll-slot="active"`、`data-hero-section`、
 `data-hero-content-root`，以及 section 的 `data-hero-slot-role`。结构证据不足时写入
 `data-hero-scroll-slot="fallback-missing-page-structure"`，不猜测 hero。

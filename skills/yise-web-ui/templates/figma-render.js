@@ -483,9 +483,35 @@
   },
 
   _assetRec(id) {
-    const rec = this._assets()[id];
+    let key = id;
+    while (key && typeof key === 'object' && 'value' in key) key = key.value;
+    const rec = this._assets()[key];
     if (!rec) return null;
     return (typeof rec === 'string') ? { file: rec } : rec;
+  },
+
+  /* Resolve a source IMAGE fill to its own delivered file. A node-level
+     manifest record may legitimately contain several imageRefs but retain
+     only the first file for backwards compatibility; never reuse that first
+     file for a later fill. Prefer an exact filename/ref match, then a
+     single-ref record. Missing refs remain missing and are rendered as a
+     placeholder so the visual gate stays fail-closed. */
+  _assetFileForImageRef(imageRef) {
+    const ref = String(imageRef || '');
+    if (!ref) return null;
+    const assets = this._assets();
+    for (const value of Object.values(assets || {})) {
+      const rec = typeof value === 'string' ? { file: value } : value;
+      if (!rec || !rec.file) continue;
+      if (String(rec.file).includes(`image-ref-${ref}`)) return String(rec.file);
+    }
+    for (const value of Object.values(assets || {})) {
+      const rec = typeof value === 'string' ? { file: value } : value;
+      if (!rec || !rec.file || !Array.isArray(rec.imageRefs)) continue;
+      const refs = rec.imageRefs.map(String);
+      if (refs.length === 1 && refs[0] === ref) return String(rec.file);
+    }
+    return null;
   },
 
   /** 从 id 叶子的 locator 里解析 children 索引序列 —— 这就是树位置 + 绘制顺序。
@@ -685,6 +711,20 @@
        6 条文字全部一路缩到 75% 下限并标 data-fit-overflow，
        页面上表现为"字号完全不对 + 缩到 11px 后笔画糊成一团、看着大大小小"。
        所以：limit 直接用 bh，两边都在元素自身坐标系里。 */
+    /* Authored multi-line Figma text is already a source layout decision.
+       Compact source boxes can have a few pixels of browser ink overflow, but
+       that is not permission to shrink the designed line rhythm. */
+    const authoredLineCountEarly = Array.isArray(tx && tx.lineTypes)
+      ? tx.lineTypes.length
+      : (typeof tx?.characters === 'string' && tx.characters.includes('\n')
+        ? tx.characters.split('\n').length : 0);
+    const authoredMultiline = authoredLineCountEarly > 1
+      && typeof tx?.characters === 'string'
+      && tx.characters.includes('\n');
+    if (authoredMultiline && !tx?.fit && !tx?.truncation) {
+      el.setAttribute('data-fit-policy', 'authored-multiline-source-metrics');
+      return;
+    }
     const limit = bh;
     const measured = () => (typeof el.scrollHeight === 'number' && isFinite(el.scrollHeight) ? el.scrollHeight : 0);
     if (!measured()) return;
@@ -712,7 +752,16 @@
        成"取整差"而停在 78%，卡片文字因此溢出底边 —— 这是实测抓到的回归。 */
     /* 单行框的取整差实测可达 ~4px（en 长字 40px 框差 4px），是误缩主源，给足容忍；
        多行框收紧到 max(2, lh*0.09)/行，避免把"译文多折一行"的真溢出放过去。 */
-    const sourceLines = lh > 0 ? Math.max(1, Math.round(bh / lh)) : 1;
+    /* Prefer authored Figma line metadata over a geometry-derived estimate.
+       Multi-line text can have a compact source box (especially CJK card
+       labels), so rounding box.h / lineHeight down to one line falsely
+       authorizes the 75% shrink floor and changes the visual font size. */
+    const authoredLineCount = Array.isArray(tx && tx.lineTypes)
+      ? tx.lineTypes.length
+      : (typeof tx?.characters === 'string' && tx.characters.includes('\n')
+        ? tx.characters.split('\n').length : 0);
+    const geometryLineCount = lh > 0 ? Math.max(1, Math.round(bh / lh)) : 1;
+    const sourceLines = Math.max(1, authoredLineCount || 0, geometryLineCount);
     const singleLine = sourceLines <= 1;
     const perLine = singleLine ? Math.max(5, lh * 0.15) : Math.max(2, lh * 0.09);
     const lineRoundingSlack = perLine * sourceLines;
@@ -1282,8 +1331,14 @@
       : 0;
     const pagePaintOrder = Array.isArray(__activeTruth.pagePaintOrder) ? __activeTruth.pagePaintOrder : null;
     const rawPagePaintOrder = Array.isArray(__rawRoot.pagePaintOrder) ? __rawRoot.pagePaintOrder : null;
+    /* The continuous document plane always follows the declared platform
+       scale. A cover crop is a hero-only visual treatment: applying that
+       scale to the page root turns every released section into a widened,
+       horizontally cropped hero. */
     let pageStageScale = k;
     let pageStageCropLeft = 0;
+    let heroVisualScale = k;
+    let heroVisualCropLeft = 0;
 
     /* ═══ 首屏 scroll-slot ═══
        Figma 的静态首屏分区高度不一定等于被模拟设备的可视高度：同一 3840 稿在
@@ -1310,16 +1365,18 @@
         return sectionIds.some((id) => String(__u(id)) === String(sectionId));
       });
       if (!startsAtPageOrigin || !contentRoot) return null;
-      /* The official KV is a single source composition that is reframed by
-         cover-style horizontal crop at narrow/tall viewports. The page stage
-         and the hero slot must therefore use the same source-backed page
-         scale; fixed chrome keeps its own viewport-width scale. */
+      /* The KV is reframed by cover-style crop at narrow/tall viewports. This
+         is a hero visual plane, not the scale of the released document.
+         Keep the scroll-slot layout on platform scale so later sections start
+         after the full viewport height, while the hero alone uses slotScale. */
       const slotScale = Math.max(k, viewportH / Number(first.height));
       if (Number.isFinite(slotScale) && slotScale > 0) {
-        pageStageScale = slotScale;
-        pageStageCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
+        heroVisualScale = slotScale;
+        heroVisualCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
       }
-      /* 保留设计推导证据：designHeight = viewportH / pageStageScale（契约测试与审计读取该关系）。 */
+      /* The page-flow slot is measured at platform scale. Its layout offset
+         reserves the viewport area that the independently cover-scaled hero
+         visually occupies. */
       const following = ids.map((id) => ({ id, meta: sections[id] && sections[id].meta }))
         .filter((entry) => String(entry.id) !== String(sectionId) && Number(entry.meta && entry.meta.y) > Number(first.y))
         .sort((a, b) => Number(a.meta.y) - Number(b.meta.y));
@@ -1350,6 +1407,8 @@
       frame.setAttribute('data-hero-layout-offset-design', String(heroSlot.layoutOffsetDesign || 0));
       frame.setAttribute('data-hero-page-scale', String(pageStageScale));
       frame.setAttribute('data-hero-page-crop-left', String(pageStageCropLeft));
+      frame.setAttribute('data-hero-visual-scale', String(heroVisualScale));
+      frame.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
     } else {
       frame.removeAttribute('data-hero-section');
       frame.removeAttribute('data-hero-content-root');
@@ -1357,6 +1416,8 @@
       frame.removeAttribute('data-hero-layout-offset-design');
       frame.removeAttribute('data-hero-page-scale');
       frame.removeAttribute('data-hero-page-crop-left');
+      frame.removeAttribute('data-hero-visual-scale');
+      frame.removeAttribute('data-hero-visual-crop-left');
     }
     const sectionLayerById = new Map();
 
@@ -1415,6 +1476,8 @@
         stage.setAttribute('data-motion-role', 'kv');
         stage.setAttribute('data-motion-step', '0');
         stage.setAttribute('data-motion-evidence', 'truth-backed:first-section-page-origin');
+        stage.setAttribute('data-hero-visual-scale', String(heroVisualScale));
+        stage.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
       }
       stage.style.width = designWidth + 'px';
       /* 分区高度往上取整到【缩放后的整数 CSS px】。
@@ -1431,13 +1494,16 @@
       stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : _snapH) + 'px';
       if (pageScope && !pageStageMode) {
         stage.style.position = 'absolute';
-        stage.style.left = (secX - pageX) + 'px';
-        const afterHeroLayout = heroSlot && String(sid) !== String(heroSlot.sectionId) && Number(secY) > pageY + 0.5;
+        const isHeroStage = heroSlot && String(sid) === heroSlot.sectionId;
+        /* `left` belongs to the unscaled page plane. The hero cover crop is
+           derived from the hero's own scale and must not shift later sections. */
+        stage.style.left = ((secX - pageX) + (isHeroStage ? heroVisualCropLeft : 0)) + 'px';
+        const afterHeroLayout = heroSlot && !isHeroStage && Number(secY) > pageY + 0.5;
         const responsiveSecTop = (secY - pageY) + (afterHeroLayout ? heroLayoutOffsetDesign : 0);
         stage.style.top = responsiveSecTop + 'px';
         if (afterHeroLayout) stage.setAttribute('data-hero-layout-shift-design', String(heroLayoutOffsetDesign));
         if (heroSlot) {
-          stage.setAttribute('data-hero-slot-role', String(sid) === heroSlot.sectionId ? 'hero' : 'after-hero');
+          stage.setAttribute('data-hero-slot-role', isHeroStage ? 'hero' : 'after-hero');
           const reveal = (heroSlot.revealSections || []).find((entry) => String(entry.id) === String(sid));
           if (reveal) {
             stage.setAttribute('data-hero-slot-reveal', 'true');
@@ -1452,7 +1518,9 @@
          zoom 让浏览器在**最终尺寸**下重新排版与光栅化，字形清晰一致。
          连带好处：zoom 改布局占位，stage 在文档流里就占缩放后的高度，
          transform 时代补占位的 .fx-spacer 就此退役（见本函数末尾）。 */
-      stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? 1 : k));
+      const heroVisualRatio = pageScope && heroSlot && String(sid) === String(heroSlot.sectionId)
+        && pageStageScale > 0 ? heroVisualScale / pageStageScale : 1;
+      stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? heroVisualRatio : k));
       if (pageStageMode && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes) {
         frame.style.position = frame.style.position || 'relative';
         fixedStage = document.createElement('div');
@@ -3494,7 +3562,41 @@
               el.setAttribute('data-blend-overlay', String(__u(st.blendMode)) + ':png');
               if (!__blendLiftable) el.setAttribute('data-blend-overlay-texture-gap', '1');
             }
-            if (url) {
+            const imageFills = (st.fills || [])
+              .map((fill, index) => ({ fill, index }))
+              .filter((entry) => entry.fill && entry.fill.visible !== false && entry.fill.type === 'IMAGE');
+            const resolvedFillEntries = imageFills.map((entry) => ({
+              fill: entry.fill,
+              index: entry.index,
+              url: this._assetFileForImageRef(entry.fill && entry.fill.imageRef) || (imageFills.length === 1 ? url : null),
+            }));
+            const imageEntries = String(assetRec?.kind || '').toUpperCase() === 'SVG' && url
+              ? [{ fill: null, index: 0, url, composite: true }]
+              : (imageFills.length ? resolvedFillEntries : [{ fill: null, index: 0, url }]);
+            /* Figma paints multi-fill nodes bottom-to-top. An IMAGE fill does
+               not replace a preceding SOLID fill: many calendar/card cells use
+               a translucent texture over a colored base. Preserve the source
+               SOLID base on the host; SVG composite owners remain a single
+               source asset and must not receive an inferred CSS fill. */
+            if (String(assetRec?.kind || '').toUpperCase() !== 'SVG') {
+              const solidBase = (st.fills || []).find((fill) => fill && fill.visible !== false && fill.type === 'SOLID');
+              if (solidBase) {
+                const solidCss = this._solidFill([solidBase]);
+                if (solidCss) {
+                  el.style.background = solidCss;
+                  el.setAttribute('data-solid-base-fill', 'source-multifill');
+                }
+              }
+            }
+            let mountedImageCount = 0;
+            for (const entry of imageEntries) {
+              if (!entry.url) {
+                if (entry.fill && entry.fill.imageRef) {
+                  el.setAttribute('data-asset-fill-missing', String(entry.fill.imageRef));
+                  el.setAttribute('data-asset-fill-index', String(entry.index));
+                }
+                continue;
+              }
               const img = document.createElement('img');
               img.className = 'fx-img';
               if (el.getAttribute('data-shadow-via') === 'asset-baked') img.setAttribute('data-shadow-source', 'asset');
@@ -3516,17 +3618,24 @@
                 img.style.height = '100%';
                 img.style.objectFit = 'fill';
               }
-              img.setAttribute('data-asset-src', url);
+              img.setAttribute('data-asset-src', entry.url);
+              img.setAttribute('data-image-fill-index', String(entry.index));
+              if (entry.fill && entry.fill.imageRef) img.setAttribute('data-image-ref', String(entry.fill.imageRef));
+              if (entry.composite) img.setAttribute('data-asset-composite', 'source-svg');
               img.setAttribute('data-asset-state', 'deferred');
               img.setAttribute('alt', n.name ?? '');
               img.setAttribute('loading', 'eager');
               img.setAttribute('decoding', 'async');
               el.appendChild(img);
+              mountedImageCount += 1;
+            }
+            if (mountedImageCount) {
               /* Asset owner must clip its baked image and serve as the containing
                  block for its absolute-positioned fx-img. Without this, a scaled
                  page exposes the image's intrinsic edge beyond the owner box. */
               if (!el.style.overflow || el.style.overflow === 'visible') el.style.overflow = 'hidden';
               if (!el.style.position) el.style.position = 'relative';
+              if (mountedImageCount > 1) el.setAttribute('data-multifill-images', String(mountedImageCount));
             } else {
               // 宁可显示"这里缺一张图"，也不要用纯色糊过去假装做好了
               el.classList.add('fx-img-ph');
@@ -3666,6 +3775,26 @@
           : [];
         const rootKey = (raw) => {
           const loc = raw && raw.id && raw.id.provenance ? raw.id.provenance.locator : '';
+          /* Provenance locators may be rooted at the source canvas rather than
+             the extracted page-frame id (for example
+             /nodes/<canvas>/document/children/0/children/0/id while the
+             page frame itself is 491:6935).  Match the nearest recorded
+             pagePaintOrder root first; falling back to the old page-frame
+             projection preserves legacy fixtures. */
+          const recordedRoots = rawPagePaintOrder
+            ? rawPagePaintOrder.map((entry) => ({
+              id: __u(entry && entry.id),
+              loc: entry && entry.id && entry.id.provenance ? entry.id.provenance.locator : '',
+            })).filter((entry) => entry.id != null && entry.loc)
+            : [];
+          let best = null;
+          for (const entry of recordedRoots) {
+            const rootLoc = String(entry.loc || '').replace(/\/id$/, '');
+            if (loc === entry.loc || loc.startsWith(rootLoc + '/')) {
+              if (!best || rootLoc.length > String(best.loc || '').replace(/\/id$/, '').length) best = entry;
+            }
+          }
+          if (best) return String(best.id);
           const pagePrefix = `/nodes/${pageFrameId}/document/children/`;
           if (loc.startsWith(pagePrefix)) {
             const m = /^(\d+)/.exec(loc.slice(pagePrefix.length));

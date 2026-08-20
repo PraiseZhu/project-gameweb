@@ -12,6 +12,10 @@
 
 **铁律落地**：命名只出 `role`（倾向），绝不改变 parent/owner、children 顺序、clipsContent、mask、opacity/blend。`STRUCT_CONTRACT.sourceRule = 'structure-from-figma-tree-only'` 锁死。
 
+页面框不是快照根的别名。画布/shelf 拉取时页面框是画布子节点；`extractPageScope` 必须按树解析页面框指针，渲染器必须按 `pagePaintOrder` locator 把 KV/背景/内容挂回同一组兄弟，而不是假设 `/nodes/<pageFrameId>/document` 一定存在。
+
+零轴 VECTOR/BOOLEAN/LINE 叶子的直接 GROUP 必须留下：穿过会丢掉 DOM 父级，后面视觉资产门会误拦或漏渲。这不是切整张 GROUP PNG，也不是测试目录里的事后恢复脚本。
+
 ## 二、结构契约字段（STRUCT_CONTRACT）
 
 | 字段 | 必填? | 含义 | 当前 truth 落地状态（2026-08-05 实证，PC+mobile 1796 节点）|

@@ -12,7 +12,14 @@
     "release:audit": "node scripts/public-release-audit.mjs",
     "prototype:truth": "node scripts/figma-prototype-truth.mjs",
     "prototype:audit": "node scripts/figma-prototype-truth.mjs --require-observed",
-    "asset:audit": "node scripts/asset-delivery-audit.mjs"
+    "asset:audit": "node scripts/asset-delivery-audit.mjs",
+    "preview:final": "node scripts/final-preview.mjs",
+    "visual:evidence": "node scripts/lib/visual-evidence-collector.mjs",
+    "static:browser-evidence": "node scripts/static-browser-evidence.mjs",
+    "static:visual-assets": "node scripts/static-visual-assets.mjs",
+    "static:golden-regression": "node scripts/static-golden-regression.mjs",
+    "figma:state-candidate-audit": "node scripts/figma-state-candidate-audit.mjs",
+    "inventory:check": "node scripts/figma-inventory-check.mjs"
   },
   "dependencies": {
     "css-to-react-native": "^3.2.0",

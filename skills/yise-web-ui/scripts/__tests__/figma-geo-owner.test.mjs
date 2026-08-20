@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractGeometry, extractPageScope } from '../lib/figma-geo.mjs';
+import { extractGeometry, extractPageScope, resolveSnapshotPointer } from '../lib/figma-geo.mjs';
 import { buildComponentVariantIndex } from '../lib/figma-component-variant-graph.mjs';
 
 function fixture(root) {
@@ -48,6 +48,18 @@ test('keeps a visual composite group as the owner of its image and copy', () => 
   assert.ok(card, 'image-plus-copy group must remain an auditable composite owner');
   assert.equal(out.nodes.find((node) => node.id.value === 'frame').parentId.value, 'card');
   assert.equal(out.nodes.find((node) => node.id.value === 'title').parentId.value, 'card');
+});
+
+test('keeps a group that owns a zero-axis vector leaf', () => {
+  const vector = { ...empty('leaf', 'Vector 90', 'VECTOR'), absoluteBoundingBox: { x: 10, y: 10, width: 0, height: 80 } };
+  const root = empty('root', 'sec/test', 'FRAME', [
+    empty('group', '装饰', 'GROUP', [vector]),
+  ]);
+  const f = fixture(root);
+  const out = extractGeometry({ ...f, sectionId: 'root', emitStructural: true, emitOwnerPath: true });
+  const group = out.nodes.find((node) => node.id.value === 'group');
+  assert.ok(group, 'zero-axis vector GROUP must remain the source owner');
+  assert.equal(out.nodes.find((node) => node.id.value === 'leaf').parentId.value, 'group');
 });
 
 test('root sibling filter remains fail-closed and reports excluded subtree', () => {
@@ -133,4 +145,64 @@ test('extracts a complete alternate component tree only from its same-snapshot p
   assert.deepEqual(out.nodes.map((node) => node.id.value), ['variant-a', 'visual', 'label']);
   assert.equal(out.nodes[1].parentId.value, 'variant-a');
   assert.deepEqual(out.nodes[2].ownerPath.map((x) => x.value), ['variant-a', 'visual', 'label']);
+});
+
+test('resolveSnapshotPointer keeps a nested page frame on a canvas-rooted snapshot', () => {
+  const page = empty('page', '首屏', 'FRAME', [empty('kv', 'kv', 'FRAME')]);
+  const canvas = empty('canvas', 'shelf', 'CANVAS', [page, empty('mobile', 'mobile', 'FRAME')]);
+  const snap = { nodes: { canvas: { document: canvas } } };
+  assert.equal(resolveSnapshotPointer(snap, 'page'), '/nodes/canvas/document/children/0');
+  assert.equal(resolveSnapshotPointer(snap, 'canvas'), '/nodes/canvas/document');
+  assert.equal(resolveSnapshotPointer(snap, 'missing'), null);
+});
+
+test('extractPageScope reads page siblings from a canvas-rooted snapshot, not the snapshot key', () => {
+  const page = empty('page', '首屏', 'FRAME', [
+    empty('kv', 'kv', 'FRAME', [empty('kv-leaf', 'img/kv', 'RECTANGLE')]),
+    { ...empty('bg', 'bg/pc', 'INSTANCE'), fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true }] },
+    empty('content', '页面内容', 'FRAME', [empty('sec1', '1', 'FRAME', [empty('copy', 'txt/a', 'TEXT')])]),
+  ]);
+  const canvas = empty('canvas', 'shelf', 'CANVAS', [page]);
+  const snap = { nodes: { canvas: { document: canvas } } };
+  const at = (pointer) => pointer.slice(1).split('/').reduce((v, k) => v[k], snap);
+  const fig = (pointer) => ({ value: at(pointer), provenance: { source: 'fixture', locator: pointer } });
+  const out = extractPageScope({
+    snap, at, fig, pageFrameId: 'page', renderSectionIds: ['sec1'], backgroundIds: ['bg'],
+  });
+  assert.equal(out.meta.id.value, 'page');
+  assert.equal(out.meta.id.provenance.locator, '/nodes/canvas/document/children/0/id');
+  assert.deepEqual(out.pagePaintOrder.map((entry) => entry.id.value), ['kv', 'bg', 'content']);
+  assert.equal(out.pagePaintOrder[0].id.provenance.locator, '/nodes/canvas/document/children/0/children/0/id');
+  assert.deepEqual(out.pagePaintOrder[2].sectionIds.map((leaf) => leaf.value), ['sec1']);
+  assert.ok(out.pageChrome && out.pageChrome.nodes.some((node) => node.id.value === 'kv-leaf'));
+});
+
+test('extractGeometry resolves a nested section without an explicit rootPointer', () => {
+  const page = empty('page', '首屏', 'FRAME', [
+    empty('content', '页面内容', 'FRAME', [
+      empty('sec1', '1', 'FRAME', [empty('copy', 'txt/a', 'TEXT')]),
+    ]),
+  ]);
+  const canvas = empty('canvas', 'shelf', 'CANVAS', [page]);
+  const snap = { nodes: { canvas: { document: canvas } } };
+  const at = (pointer) => pointer.slice(1).split('/').reduce((v, k) => v[k], snap);
+  const fig = (pointer) => ({ value: at(pointer), provenance: { source: 'fixture', locator: pointer } });
+  const out = extractGeometry({ snap, at, fig, sectionId: 'sec1', emitStructural: true, emitOwnerPath: true });
+  assert.equal(out.meta.name.provenance.locator, '/nodes/canvas/document/children/0/children/0/children/0/name');
+  assert.deepEqual(out.nodes.map((node) => node.id.value), ['copy']);
+});
+
+test('extractPageScope still accepts a page-keyed snapshot document', () => {
+  const page = empty('page', '首屏', 'FRAME', [
+    empty('kv', 'kv', 'FRAME'),
+    empty('content', '页面内容', 'FRAME', [empty('sec1', '1', 'FRAME')]),
+  ]);
+  const f = fixture(page);
+  f.snap.nodes.page = f.snap.nodes.root;
+  delete f.snap.nodes.root;
+  const out = extractPageScope({
+    ...f, pageFrameId: 'page', renderSectionIds: ['sec1'],
+  });
+  assert.equal(out.meta.id.provenance.locator, '/nodes/page/document/id');
+  assert.deepEqual(out.pagePaintOrder.map((entry) => entry.id.value), ['kv', 'content']);
 });

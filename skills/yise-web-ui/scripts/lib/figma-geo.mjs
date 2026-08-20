@@ -244,6 +244,39 @@ function parsePrefix(name) {
 const hasVisible = (arr) => Array.isArray(arr) && arr.some((x) => x && x.visible !== false);
 
 /**
+ * Locate a node inside a Figma REST snapshot by id.
+ *
+ * Snapshot keys are often the requested node (`/nodes/<pageFrameId>/document`),
+ * but a canvas/shelf fetch stores the page frame as a descendant
+ * (`/nodes/<canvas>/document/children/...`). Structure still comes from the
+ * original tree; this only returns the existing JSON Pointer. It never infers
+ * a page from layer names.
+ */
+export function resolveSnapshotPointer(snap, nodeId) {
+  const id = String(nodeId || '');
+  const nodes = snap && snap.nodes && typeof snap.nodes === 'object' ? snap.nodes : null;
+  if (!id || !nodes) return null;
+  const direct = nodes[id] && nodes[id].document;
+  if (direct && direct.id === id) return `/nodes/${id}/document`;
+  const walk = (node, ptr) => {
+    if (!node || typeof node !== 'object') return null;
+    if (node.id === id) return ptr;
+    const children = Array.isArray(node.children) ? node.children : [];
+    for (let i = 0; i < children.length; i++) {
+      const found = walk(children[i], `${ptr}/children/${i}`);
+      if (found) return found;
+    }
+    return null;
+  };
+  for (const [key, entry] of Object.entries(nodes)) {
+    if (!entry || !entry.document) continue;
+    const found = walk(entry.document, `/nodes/${key}/document`);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
  * 提取 sec/3 子树的几何与样式。签名与返回约定见文件头注释。
  * 返回值里除 skipped/_unread 两个诊断数组外，所有终端值都是 fig() 叶子——
  * 与 extract.mjs 的 leavesOnly 同口径（null 也不出现，缺省字段整键省略）。
@@ -253,10 +286,12 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
      under its own /nodes/<id>/document record. `rootPointer` keeps that tree
      in the same snapshot and lets it take the exact same extraction path as a
      page section. It is deliberately a source pointer, never a reconstructed
-     node lookup. */
-  const rootPtr = rootPointer || `/nodes/${sectionId}/document`;
+     node lookup. Canvas-rooted snapshots are the same class of problem: the
+     section may be a descendant of /nodes/<canvas>/document, so fall back to
+     tree resolution instead of assuming the snapshot key is the section. */
+  const rootPtr = rootPointer || resolveSnapshotPointer(snap, sectionId) || `/nodes/${sectionId}/document`;
   const root = at(rootPtr);
-  if (!root || (!rootPointer && root.id !== sectionId)) {
+  if (!root || root.id !== sectionId) {
     throw new Error(`figma-geo: ${rootPtr} 没取到分区节点（取到 id=${root && root.id}）`);
   }
   if (!root.absoluteBoundingBox) {
@@ -804,7 +839,20 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
         visit(node);
         return hasImageBackedPaint && hasText;
       };
-      if (isPureContainer(child) && !preserveOwnerRoot && !isStructuralOwner(child) && !isSwitchPageOwner(ownerNode, child) && !clipsDescendant(child) && !isCompositeVisualGroup(child)) {
+      /* A GROUP that owns a zero-axis VECTOR leaf is still the source owner of
+         that paint. Flattening it leaves a valid SVG with no DOM parent, so the
+         later visual-asset gate either false-blocks or drops the leaf. Keep the
+         GROUP; do not invent a FRAME parent or a baked composite here. */
+      const isZeroAxisVectorGroup = (node) => {
+        if (String(node?.type || '').toUpperCase() !== 'GROUP') return false;
+        return (node.children || []).some((leaf) => {
+          const type = String(leaf?.type || '').toUpperCase();
+          if (type !== 'VECTOR' && type !== 'BOOLEAN_OPERATION' && type !== 'LINE') return false;
+          const box = leaf.absoluteBoundingBox || {};
+          return Number(box.width) === 0 || Number(box.height) === 0;
+        });
+      };
+      if (isPureContainer(child) && !preserveOwnerRoot && !isStructuralOwner(child) && !isSwitchPageOwner(ownerNode, child) && !clipsDescendant(child) && !isCompositeVisualGroup(child) && !isZeroAxisVectorGroup(child)) {
         skipped.push({
           nodeId: child.id,
           name: child.name,
@@ -864,8 +912,13 @@ function isFixedPageChromeRoot(node) {
   return /(^|\b)(fixed|left[-_\s]?nav|sidebar)(\b|$)|左侧|侧边|目录|导航/.test(String(node?.name ?? ''));
 }
 
-export function extractPageScope({ snap, at, fig, pageFrameId, sectionIds = [], renderSectionIds = [], backgroundIds = [], fixedIds = [], excludeIds = [] }) {
-  const rootPtr = `/nodes/${pageFrameId}/document`;
+export function extractPageScope({ snap, at, fig, pageFrameId, rootPointer = null, sectionIds = [], renderSectionIds = [], backgroundIds = [], fixedIds = [], excludeIds = [] }) {
+  /* A page frame is a node in the Figma tree, not necessarily the snapshot
+     document key. Canvas-rooted fixtures keep the page under
+     /nodes/<canvas>/document/children/...; page-keyed fixtures keep
+     /nodes/<pageFrameId>/document. Callers may pass rootPointer explicitly.
+     Otherwise resolve it from the snapshot tree — never from layer names. */
+  const rootPtr = rootPointer || resolveSnapshotPointer(snap, pageFrameId) || `/nodes/${pageFrameId}/document`;
   const root = at(rootPtr);
   if (!root || root.id !== pageFrameId) {
     throw new Error(`figma-geo: ${rootPtr} missing page frame node`);
@@ -882,7 +935,7 @@ export function extractPageScope({ snap, at, fig, pageFrameId, sectionIds = [], 
      inventoried by the section extractor, never discarded by this page-level
      paint filter. */
   const pick = (ids) => ids.size
-    ? extractGeometry({ snap, at, fig, sectionId: pageFrameId, includeRootChild: (child) => ids.has(child.id), preserveOwnerRootIds: [...ids], emitOwnerPath: true, emitStructural: true, reportRootFilters: false })
+    ? extractGeometry({ snap, at, fig, sectionId: pageFrameId, rootPointer: rootPtr, includeRootChild: (child) => ids.has(child.id), preserveOwnerRootIds: [...ids], emitOwnerPath: true, emitStructural: true, reportRootFilters: false })
     : null;
   const chromeRaw = pick(chrome);
   const fixedRaw = pick(fixed);
