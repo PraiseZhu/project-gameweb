@@ -24,6 +24,7 @@ const isObject = (value) => value !== null && typeof value === 'object' && !Arra
 const asArray = (value) => Array.isArray(value) ? value : [];
 const opaque = (value) => typeof value === 'string' && value.trim() ? value.trim() : '';
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+const finiteNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 
 function materialViolations(value, path = '', violations = []) {
   if (Array.isArray(value)) {
@@ -183,7 +184,7 @@ function normalizeCandidateRoot(root = {}) {
     currentSha256: opaque(entry?.currentSha256),
     compared: entry?.compared === true,
     engine: opaque(entry?.engine),
-    diffRatio: number(entry?.diffRatio),
+    diffRatio: entry?.diffRatio,
   }));
   return {
     platform,
@@ -240,6 +241,10 @@ function compareRoot(baseline, candidate) {
     if (!comparison.compared || !comparison.engine || !comparison.currentReference || !comparison.currentSha256
       || comparison.diffRatio == null) {
       failures.push(failure('golden-region-evidence-incomplete', { platform: baseline.platform, region: region.key }));
+      continue;
+    }
+    if (!finiteNumber(comparison.diffRatio) || comparison.diffRatio < 0 || comparison.diffRatio > 1) {
+      failures.push(failure('golden-diff-ratio-invalid', { platform: baseline.platform, region: region.key, diffRatio: comparison.diffRatio }));
       continue;
     }
     if (comparison.baselineReference !== region.reference || comparison.baselineSha256 !== region.sha256) {

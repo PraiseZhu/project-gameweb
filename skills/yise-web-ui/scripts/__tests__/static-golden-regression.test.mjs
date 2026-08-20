@@ -136,6 +136,25 @@ test('missing visual evidence and unacceptable pixel diff block regression accep
   assert.ok(report.failures.some((entry) => entry.reason === 'golden-visual-regression' && entry.platform === 'mobile'));
 });
 
+test('golden regression rejects invalid diff ratios while allowing a zero diff', () => {
+  const accepted = baseline();
+  const perfect = candidate(accepted);
+  perfect.roots[0].visual.comparisons[0].diffRatio = 0;
+  assert.equal(evaluateStaticGoldenRegression({ baseline: accepted, candidate: perfect }).ok, true);
+
+  const invalid = candidate(accepted);
+  invalid.roots[0].visual.comparisons[0].diffRatio = -1;
+  const invalidReport = evaluateStaticGoldenRegression({ baseline: accepted, candidate: invalid });
+  assert.equal(invalidReport.ok, false);
+  assert.ok(invalidReport.failures.some((entry) => entry.reason === 'golden-diff-ratio-invalid' && entry.platform === 'pc'));
+
+  const thresholdExceeded = candidate(accepted);
+  thresholdExceeded.roots[0].visual.comparisons[0].diffRatio = 1;
+  const regressionReport = evaluateStaticGoldenRegression({ baseline: accepted, candidate: thresholdExceeded });
+  assert.equal(regressionReport.ok, false);
+  assert.ok(regressionReport.failures.some((entry) => entry.reason === 'golden-visual-regression' && entry.platform === 'pc'));
+});
+
 test('font asset owner and geometry fingerprint regressions fail closed', () => {
   const accepted = baseline();
   const manifest = candidate(accepted);

@@ -26,10 +26,12 @@ visual evidence chain, and one matching reviewed `finalEvidence` artifact:
 ```
 
 `report.ok` and `report.evidenceLevel` are not substitutes for `finalEvidence`.
-The gate never falls back to an unrelated report to authorize user preview. If
-`finalEvidence` is absent or not accepted it blocks with
-`final-evidence-not-confirmed`; if both records provide different static
-acceptance IDs it blocks with `final-evidence-static-acceptance-mismatch`.
+The gate never falls back to an unrelated report to authorize user preview.
+`finalEvidence` is absent, not accepted, or does not have the required evidence
+level, the gate blocks with `final-evidence-not-confirmed`. When
+`staticAcceptance.staticAcceptanceId` is a non-empty string,
+`finalEvidence.staticAcceptanceId` is mandatory and must be exactly equal; a
+missing or different value blocks with `final-evidence-static-acceptance-mismatch`.
 
 Missing static acceptance, missing/incomplete visual assets, candidate or
 unverified evidence, partial output, or missing Figma/local raster comparison

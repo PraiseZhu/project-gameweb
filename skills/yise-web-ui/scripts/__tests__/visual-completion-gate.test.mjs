@@ -93,4 +93,17 @@ test('comparison requires source-backed same-platform crops, owner paint order, 
     regions: [{ intendedSectionId: 'hero', platform: 'pc', viewport: '1920x1080', figmaCrop: 'figma-hero.png', localCrop: 'local-hero.png', ownerEvidence: { sourceBacked: true, measured: true, ownerRef: 'owner', paintOrderRef: 'paint' }, pixel: { measured: true, diffRatio: 0.02, maxDiffRatio: 0.005 } }],
   });
   assert.ok(regression.failures.some((entry) => entry.reason === 'section-visual-regression'));
+  const invalidRatio = evaluateRegionComparisonEvidence({
+    complete: true, status: 'PASS', platform: 'pc', viewport: '1920x1080', figmaImage: 'figma.png', localImage: 'local.png', intendedSections: ['hero'],
+    regions: [{ intendedSectionId: 'hero', platform: 'pc', viewport: '1920x1080', figmaCrop: 'figma-hero.png', localCrop: 'local-hero.png', ownerEvidence: { sourceBacked: true, measured: true, ownerRef: 'owner', paintOrderRef: 'paint' }, pixel: { measured: true, diffRatio: -1, maxDiffRatio: 0.005 } }],
+  });
+  assert.equal(invalidRatio.complete, false);
+  assert.ok(invalidRatio.failures.some((entry) => entry.reason === 'section-pixel-region-evidence-missing'));
+
+  const invalidThreshold = evaluateRegionComparisonEvidence({
+    complete: true, status: 'PASS', platform: 'pc', viewport: '1920x1080', figmaImage: 'figma.png', localImage: 'local.png', intendedSections: ['hero'],
+    regions: [{ intendedSectionId: 'hero', platform: 'pc', viewport: '1920x1080', figmaCrop: 'figma-hero.png', localCrop: 'local-hero.png', ownerEvidence: { sourceBacked: true, measured: true, ownerRef: 'owner', paintOrderRef: 'paint' }, pixel: { measured: true, diffRatio: 0, maxDiffRatio: -1 } }],
+  });
+  assert.equal(invalidThreshold.complete, false);
+  assert.ok(invalidThreshold.failures.some((entry) => entry.reason === 'section-pixel-region-evidence-missing'));
 });

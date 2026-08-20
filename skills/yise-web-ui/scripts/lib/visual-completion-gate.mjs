@@ -1,6 +1,7 @@
 import { unwrapProvenance } from './provenance-values.mjs';
 
 const asArray = (value) => Array.isArray(value) ? value : [];
+const isUnitRatio = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 
 function asObject(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
 
@@ -157,11 +158,13 @@ export function evaluateRegionComparisonEvidence(comparison = null) {
       || !region.ownerEvidence?.paintOrderRef || region.ownerEvidence?.measured !== true) {
       failures.push({ reason: 'section-owner-paint-order-evidence-missing', intendedSectionId });
     }
-    if (region.pixel?.measured !== true || !Number.isFinite(Number(region.pixel?.diffRatio))
-      || !Number.isFinite(Number(region.pixel?.maxDiffRatio))) {
+    const diffRatio = region.pixel?.diffRatio;
+    const maxDiffRatio = region.pixel?.maxDiffRatio;
+    if (region.pixel?.measured !== true || !isUnitRatio(diffRatio)
+      || !isUnitRatio(maxDiffRatio)) {
       failures.push({ reason: 'section-pixel-region-evidence-missing', intendedSectionId });
-    } else if (Number(region.pixel.diffRatio) > Number(region.pixel.maxDiffRatio)) {
-      failures.push({ reason: 'section-visual-regression', intendedSectionId, diffRatio: region.pixel.diffRatio, maxDiffRatio: region.pixel.maxDiffRatio });
+    } else if (diffRatio > maxDiffRatio) {
+      failures.push({ reason: 'section-visual-regression', intendedSectionId, diffRatio, maxDiffRatio });
     }
   }
   return { schema: 'yise-region-comparison-evidence/v1', complete: failures.length === 0, failures };

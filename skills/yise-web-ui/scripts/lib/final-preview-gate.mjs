@@ -30,11 +30,14 @@ export function evaluateFinalPreviewGate({ staticAcceptance = null, visualAssetA
   if (!finalEvidence || finalEvidence.accepted !== true || finalEvidence.evidenceLevel !== FINAL_EVIDENCE_LEVEL) {
     return blocked('final-evidence-not-confirmed', { evidenceLevel: finalEvidence?.evidenceLevel ?? null });
   }
-  if (staticAcceptance.staticAcceptanceId && finalEvidence.staticAcceptanceId
-    && staticAcceptance.staticAcceptanceId !== finalEvidence.staticAcceptanceId) {
+  const staticAcceptanceId = typeof staticAcceptance.staticAcceptanceId === 'string'
+    && staticAcceptance.staticAcceptanceId.trim()
+    ? staticAcceptance.staticAcceptanceId
+    : null;
+  if (staticAcceptanceId && finalEvidence.staticAcceptanceId !== staticAcceptanceId) {
     return blocked('final-evidence-static-acceptance-mismatch', {
-      staticAcceptanceId: staticAcceptance.staticAcceptanceId,
-      finalEvidenceStaticAcceptanceId: finalEvidence.staticAcceptanceId,
+      staticAcceptanceId,
+      finalEvidenceStaticAcceptanceId: finalEvidence.staticAcceptanceId ?? null,
     });
   }
   return { userPreviewAllowed: true, previewDisposition: 'final-ready', evidenceLevel: FINAL_EVIDENCE_LEVEL, staticAcceptanceId: staticAcceptance.staticAcceptanceId ?? null, staticTruthRef: staticAcceptance.staticTruthRef ?? null };
