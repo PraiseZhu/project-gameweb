@@ -42,6 +42,7 @@ function parseArgs(argv) {
     const k = argv[i];
     if (k === '--demo') a.demo = argv[++i];
     else if (k === '--dry-run') a.dryRun = true;
+    else if (k === '--font-root') a.fontRoot = argv[++i];
     else fail(`未知参数：${k}`);
   }
   if (!a.demo) fail('必须给 --demo <dir>');
@@ -71,19 +72,50 @@ function entryCoversWeight(entry, requestedWeight) {
   return false;
 }
 
+function textRecords(source) {
+  const records = [];
+  const visit = (value) => {
+    if (!value || typeof value !== 'object') return;
+    const node = unwrap(value);
+    if (node?.text && typeof node.text === 'object') records.push(node);
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    for (const [key, child] of Object.entries(node)) {
+      if (key === 'text' || key === 'provenance') continue;
+      if (child && typeof child === 'object') visit(child);
+    }
+  };
+  visit(source);
+  return records;
+}
+
 /** 从 truth 里收集稿里真正用到的 (family, weight)。用到才装，不按登记册全量塞。 */
 function collectUsage(truth) {
   const use = new Map();   // family → { family, weights:Set, nodes:[] }
-  for (const sec of Object.values(truth.sections || {})) {
-    const list = Array.isArray(sec.nodes) ? sec.nodes : Object.values(sec.nodes || {});
-    for (const n of list) {
-      const t = n.text;
-      if (!t || !t.fontFamily) continue;
-      const fam = String(t.fontFamily);
+  const sources = [truth.sections || {}];
+
+  // Multi-platform truth is canonical. Root `sections` remains only for
+  // legacy single-platform demos; never require a staging adapter here.
+  for (const platform of Object.values(truth.platforms || {})) {
+    sources.push(platform?.sections || {});
+    // Hidden modal candidates and fixed/page chrome are still rendered visual
+    // states. Their text must have an auditable delivery chain even when no
+    // behavior transition is authorized.
+    sources.push(platform?.modals || platform?.attachments?.modals || {});
+    sources.push(platform?.fixedOverlays || {});
+    sources.push(platform?.pageChrome?.nodes || platform?.pageChrome || {});
+  }
+
+  for (const source of sources) {
+    for (const n of textRecords(source)) {
+      const t = unwrap(n.text);
+      const family = unwrap(t?.fontFamily);
+      if (!family) continue;
+      const fam = String(family);
       if (!use.has(fam)) use.set(fam, { family: fam, weights: new Set(), nodes: [] });
       const u = use.get(fam);
-      if (t.fontWeight != null) u.weights.add(Number(t.fontWeight));
-      u.nodes.push({ nodeId: n.id, name: n.name, chars: String(t.characters ?? '').slice(0, 18) });
+      const weight = unwrap(t?.fontWeight);
+      if (weight != null) u.weights.add(Number(weight));
+      u.nodes.push({ nodeId: unwrap(n.id), name: unwrap(n.name), chars: String(unwrap(t?.characters) ?? '').slice(0, 18) });
     }
   }
   return [...use.values()];
@@ -98,7 +130,8 @@ function main() {
   const truthPath = join(demoDir, 'truth.json');
   if (!existsSync(truthPath)) fail(`缺 ${truthPath}（先跑 scripts/truth.mjs）`);
 
-  const regPath = join(skillDir, 'fonts', 'registry.json');
+  const fontRoot = a.fontRoot ? resolve(a.fontRoot) : join(skillDir, 'fonts');
+  const regPath = join(fontRoot, 'registry.json');
   if (!existsSync(regPath)) fail(`缺字体登记册 ${regPath}`);
   const reg = JSON.parse(readFileSync(regPath, 'utf8')).families || {};
 
@@ -153,7 +186,7 @@ function main() {
         howToFix: entry.missing || '把字体文件放进 skill 的 fonts/ 并在 registry.json 回填 file/source' });
       continue;
     }
-    const src = join(skillDir, 'fonts', entry.file);
+    const src = join(fontRoot, entry.file);
     if (!existsSync(src)) {
       missing.push({ family: u.family, weights: [...u.weights], affectedNodes: u.nodes.length, why: `登记册指向 fonts/${entry.file}，但文件不在`, howToFix: '补上文件' });
       continue;
@@ -164,7 +197,7 @@ function main() {
   }
 
   const out = {
-    ok: true,
+    ok: missing.length === 0,
     designVersion: truth.design && truth.design.fileVersion,
     familiesUsed: usage.map((u) => ({ family: u.family, weights: [...u.weights], nodes: u.nodes.length })),
     resolvedCount: resolved.length,
@@ -175,7 +208,7 @@ function main() {
   if (a.dryRun) {
     out.dryRun = true;
     console.log(JSON.stringify(out, null, 2));
-    return;
+    process.exit(out.ok ? 0 : 2);
   }
 
   const fontsDir = join(demoDir, 'assets', 'fonts');
@@ -244,6 +277,7 @@ function main() {
   out.totalMB = +(bytes / 1024 / 1024).toFixed(2);
   out.faces = faces.length;
   console.log(JSON.stringify(out, null, 2));
+  process.exit(out.ok ? 0 : 2);
 }
 
 main();
