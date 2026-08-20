@@ -84,14 +84,7 @@ export function matchInventoryToCatalog(doc, catalog, options = {}) {
       });
     }
   };
-  const walk = (value) => {
-    if (Array.isArray(value)) return value.forEach(walk);
-    if (!value || typeof value !== "object") return;
-    if (typeof value.id === "string" && typeof value.type === "string") visit(value);
-    for (const key of ["nodes", "kids", "variants", "modals", "componentSets", "components", "attachments"]) {
-      if (value[key]) walk(value[key]);
-    }
-  };
-  walk(doc);
+  for (const set of doc.attachments?.componentSets || []) visit(set);
+  for (const modal of doc.attachments?.modals || []) visit(modal);
   return hits;
 }

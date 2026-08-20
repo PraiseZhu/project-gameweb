@@ -12,8 +12,7 @@
         "标题"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -35,8 +34,7 @@
         "奖励模块"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "mobile"
@@ -61,8 +59,7 @@
         "奖励展示"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "mobile"
@@ -87,8 +84,7 @@
         "bg/mobile"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "mobile"
@@ -110,8 +106,7 @@
         "btn/导航状态"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc"
@@ -134,8 +129,7 @@
         "btn/多语言切换按钮"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -160,8 +154,7 @@
         "头像"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -186,8 +179,7 @@
         "btn/切换按钮"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "mobile"
@@ -210,8 +202,7 @@
         "btn/移动端导航"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "mobile"
@@ -234,8 +225,7 @@
         "img/边框背景1"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -258,8 +248,7 @@
         "img/边框背景2"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc"
@@ -281,8 +270,7 @@
         "img/边框背景3"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -305,8 +293,7 @@
         "img/边框背景4"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -329,8 +316,7 @@
         "img/边框背景5"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc"
@@ -352,8 +338,7 @@
         "img/边框背景6"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc"
@@ -375,8 +360,7 @@
         "img/边框背景7"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc"
@@ -398,8 +382,7 @@
         "img/图标装饰"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -422,8 +405,7 @@
         "img/logo"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -447,8 +429,7 @@
         "轮播点"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -537,8 +518,7 @@
         "角色"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "mobile"
@@ -560,8 +540,7 @@
         "switch/角色立绘模块"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc"
@@ -583,8 +562,7 @@
         "switch/庆典活动内容"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc"
@@ -607,8 +585,7 @@
         "switch/庆典模块活动内容"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "mobile"
@@ -633,8 +610,7 @@
         "switch/赛季奖励活动内容"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "mobile"
@@ -660,8 +636,7 @@
         "switch/新内容模块活动内容"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc",
@@ -688,8 +663,7 @@
         "switch/新赛季活动内容"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc"
@@ -712,8 +686,7 @@
         "switch/ews活动内容"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "pc"
@@ -737,8 +710,7 @@
         "switch/ews模块活动内容"
       ],
       "types": [
-        "COMPONENT_SET",
-        "INSTANCE"
+        "COMPONENT_SET"
       ],
       "surfaces": [
         "mobile"

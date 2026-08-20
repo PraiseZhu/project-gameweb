@@ -40,3 +40,11 @@ test("draft asset completeness：已确定消费身份必须把前缀写入 name
   assert.equal(result.problems.length, 1);
   assert.match(result.problems[0], /name 未写入 btn\/ 前缀/);
 });
+
+test("draft asset completeness：PC 已 img 的同类 mobile 仍 unknown 则红", () => {
+  const pc = { nodes: [{ id: "pc1", type: "GROUP", name: "img/icon", status: "determined", role: "img" }] };
+  const mobile = { nodes: [{ id: "m1", type: "GROUP", name: "icon", status: "unknown" }] };
+  const result = auditDraftAssetCompleteness(mobile, [pc]);
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /与另一端同类 img\//);
+});

@@ -24,22 +24,26 @@ function isStatePair(labels) {
 
 const CLIP_RE = /可划动|划动区域/;
 const INNER_REWARD_RE = /^(奖励列表|奖励)$/;
+const IMAGE_BODY_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘|角色头像|待解锁头像|视频框.*|兑换码背景|头像框.*|icon|图标装饰|装饰|阵营信息|待解锁|卡牌|Icon_SSR.*|BG|小按钮|logo)$/;
+const BORDER_PART_RE = /^一级边框/;
+const TEXT_CONTAINER_TYPES = new Set(["FRAME", "GROUP", "INSTANCE", "COMPONENT"]);
+
 
 function visitNodes(doc, visit) {
+  const seen = new Set();
   const walk = (value, trail) => {
+    if (!value || typeof value !== "object") return;
+    if (seen.has(value)) return;
+    seen.add(value);
     if (Array.isArray(value)) {
       visit(value, trail, "siblings");
       value.forEach((item) => walk(item, trail));
       return;
     }
-    if (!value || typeof value !== "object") return;
     const isNode = typeof value.id === "string" && typeof value.type === "string";
     if (isNode) visit(value, trail, "node");
     const next = isNode ? [...trail, rawName(value)] : trail;
-    for (const key of ["nodes", "kids", "variants", "modals", "componentSets", "components"]) {
-      if (value[key]) walk(value[key], next);
-    }
-    if (value.attachments) walk(value.attachments, next);
+    for (const child of Object.values(value)) walk(child, next);
   };
   walk(doc, []);
 }
@@ -47,6 +51,302 @@ function visitNodes(doc, visit) {
 function expectPrefix(node, role, problems, why) {
   if (hasPrefix(node, role)) return;
   problems.push(`${node.id}「${node.name}」${why}，前缀必须是 ${role}/（后缀不限）`);
+}
+
+function indexNodes(doc) {
+  const byId = new Map();
+  visitNodes(doc, (node, _trail, kind) => {
+    if (kind === "node") byId.set(node.id, node);
+  });
+  return byId;
+}
+
+function indexAllCopies(doc) {
+  const byId = new Map();
+  visitNodes(doc, (node, _trail, kind) => {
+    if (kind !== "node") return;
+    if (!byId.has(node.id)) byId.set(node.id, []);
+    byId.get(node.id).push(node);
+  });
+  return byId;
+}
+
+function variantToSetMap(doc) {
+  const map = new Map();
+  for (const relation of doc.relations || []) {
+    if (relation.kind !== "component-set-has-variant") continue;
+    const setId = relation.from?.id ?? relation.from;
+    const variantId = relation.to?.id ?? relation.to;
+    if (typeof setId === "string" && typeof variantId === "string") map.set(variantId, setId);
+  }
+  return map;
+}
+
+function setIdOfRelation(relation, variantToSet) {
+  return relation.to?.componentSetId || variantToSet.get(relation.to?.id) || null;
+}
+
+function setRoleInstances(doc) {
+  const byId = indexNodes(doc);
+  const copies = indexAllCopies(doc);
+  const variantToSet = variantToSetMap(doc);
+  const roleBySet = new Map();
+  const unnamedSets = new Set();
+  for (const node of byId.values()) {
+    if (node.type === "COMPONENT_SET") {
+      const prefix = ROLE_PREFIX.exec(String(node.name || ""))?.[1] || (hasPrefix(node, node.role) ? node.role : null);
+      if (prefix && prefix !== "copy") roleBySet.set(node.id, prefix);
+      else unnamedSets.add(node.id);
+    }
+  }
+  const pageIds = new Set((doc.nodes || []).map((node) => node?.id).filter(Boolean));
+  const parentOf = new Map();
+  for (const node of doc.nodes || []) {
+    if (node?.id) parentOf.set(node.id, node.parentId ?? null);
+  }
+  const fixIds = new Set();
+  for (const node of doc.nodes || []) {
+    if (node && (node.role === "fix" || String(node.name || "").startsWith("fix/"))) fixIds.add(node.id);
+  }
+  const underFix = (id) => {
+    const seen = new Set();
+    let current = id;
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      if (fixIds.has(current)) return true;
+      current = parentOf.get(current);
+    }
+    return false;
+  };
+  const hits = new Map();
+  const add = (node, role, why) => {
+    if (!node || node.type !== "INSTANCE" || node.status === "skipped") return;
+    const group = copies.get(node.id) || [node];
+    const representative = role
+      ? group.find((item) => item.status !== "skipped" && !hasPrefix(item, role)) || node
+      : group.find((item) => item.status === "determined" && item.role && item.role !== "copy") || node;
+    if (!hits.has(node.id)) hits.set(node.id, { node: representative, role, why });
+  };
+  const instanceOf = (fromId) => (copies.get(fromId) || []).find((node) => node.type === "INSTANCE") || byId.get(fromId);
+  for (const relation of doc.relations || []) {
+    if (relation.kind !== "instance-uses-variant") continue;
+    const setId = setIdOfRelation(relation, variantToSet);
+    const role = roleBySet.get(setId);
+    if (!role) continue;
+    const fromId = relation.from?.id ?? relation.from;
+    const node = instanceOf(fromId);
+    if (!node || node.type !== "INSTANCE") continue;
+    const evidence = `${relation.evidence ?? ""} ${relation.reason ?? ""}`;
+    const offPageDef = evidence.includes("outside-shelf") && !pageIds.has(fromId) && relation.from?.scope !== "page";
+    if (offPageDef) continue;
+    add(node, role, `实例必须跟组件集 ${role}/，不能只给组件集前缀`);
+  }
+  for (const relation of doc.relations || []) {
+    if (relation.kind !== "instance-uses-variant") continue;
+    const setId = setIdOfRelation(relation, variantToSet);
+    if (!setId || !unnamedSets.has(setId)) continue;
+    const fromId = relation.from?.id ?? relation.from;
+    const node = instanceOf(fromId);
+    if (!node || node.type !== "INSTANCE" || node.status === "skipped") continue;
+    if (node.status === "determined" && node.role && node.role !== "copy") {
+      add(node, null, "母版组件集未命名，子件不能擅自加前缀");
+    }
+  }
+  for (const node of doc.nodes || []) {
+    if (node?.type === "INSTANCE" && rawName(node) === "导航状态" && underFix(node.parentId)) {
+      add(node, "btn", "fix/ 下导航项是可点实例");
+    }
+  }
+  return [...hits.values()];
+}
+
+function applyPrefix(node, role) {
+  if (!role) {
+    node.status = "unknown";
+    node.role = null;
+    node.label = null;
+    node.behavior = "none";
+    node.name = rawName(node) || node.name;
+    return;
+  }
+  const body = rawName(node) || role;
+  node.status = "determined";
+  node.role = role;
+  node.name = `${role}/${body}`;
+  node.label = body;
+  if (role === "btn" || role === "hot") node.behavior = "click";
+  else if (role === "img" || role === "kv" || role === "bg") node.behavior = "slice";
+  else if (role === "scroll") node.behavior = node.behavior && node.behavior.startsWith("scroll") ? node.behavior : "scroll-x";
+  else if (role === "switch") node.behavior = "switch";
+  else if (role === "ind") node.behavior = "indicator";
+  else if (!node.behavior || node.behavior === "none") node.behavior = "none";
+}
+
+
+function hasImgAncestor(node, byId) {
+  const seen = new Set();
+  let current = node.parentId;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const parent = byId.get(current);
+    if (!parent) break;
+    if (hasPrefix(parent, "img") || String(parent.name || "").startsWith("img/")) return true;
+    current = parent.parentId;
+  }
+  return false;
+}
+
+function childrenByParent(doc) {
+  const kids = new Map();
+  visitNodes(doc, (node, _trail, kind) => {
+    if (kind !== "node" || !node.parentId) return;
+    if (!kids.has(node.parentId)) kids.set(node.parentId, []);
+    kids.get(node.parentId).push(node);
+  });
+  return kids;
+}
+
+function isTextGroupImgExempt(node) {
+  const body = rawName(node);
+  if (/^logo$/i.test(body)) return true;
+  if (node.role === "bg" || node.role === "kv") return true;
+  const name = String(node.name || "");
+  return name.startsWith("bg/") || name.startsWith("kv/");
+}
+
+function hasTextDescendant(id, kids) {
+  const stack = [...(kids.get(id) || [])];
+  const seen = new Set();
+  while (stack.length) {
+    const child = stack.pop();
+    if (seen.has(child.id)) continue;
+    seen.add(child.id);
+    if (child.type === "TEXT") return true;
+    stack.push(...(kids.get(child.id) || []));
+  }
+  return false;
+}
+
+function leafImageNodes(doc) {
+  const byId = indexNodes(doc);
+  const kids = childrenByParent(doc);
+  const hits = [];
+  for (const node of byId.values()) {
+    if (node.status === "skipped") continue;
+    if (["TEXT", "COMPONENT_SET", "COMPONENT", "INSTANCE"].includes(node.type)) continue;
+    const body = rawName(node);
+    if (BORDER_PART_RE.test(body)) continue;
+    if (!IMAGE_BODY_RE.test(body)) continue;
+    if (TEXT_CONTAINER_TYPES.has(node.type) && hasTextDescendant(node.id, kids) && !isTextGroupImgExempt(node)) continue;
+    if (hasImgAncestor(node, byId)) continue;
+    if (hasPrefix(node, "img")) continue;
+    hits.push({ node, why: "自身是切图且祖先没有 img/ 前缀" });
+  }
+  return hits;
+}
+
+function groupsWithTextNotImg(doc) {
+  const kids = childrenByParent(doc);
+  const hits = [];
+  visitNodes(doc, (node, _trail, kind) => {
+    if (kind !== "node") return;
+    if (!TEXT_CONTAINER_TYPES.has(node.type) || node.status === "skipped") return;
+    if (!(node.status === "determined" && node.role === "img")) return;
+    if (isTextGroupImgExempt(node)) return;
+    if (!hasTextDescendant(node.id, kids)) return;
+    hits.push({ node, role: null, why: "下面有文字的分组不能直接 img/" });
+  });
+  return hits;
+}
+
+
+function masterIdOf(id) {
+  const text = String(id || "");
+  const at = text.lastIndexOf(";");
+  return at >= 0 ? text.slice(at + 1) : null;
+}
+
+function followLayerCopies(doc) {
+  const byId = indexNodes(doc);
+  const copies = indexAllCopies(doc);
+  const hits = [];
+  const seen = new Set();
+  for (const group of copies.values()) {
+    for (const node of group) {
+      if (node.status === "skipped") continue;
+      const masterId = masterIdOf(node.id);
+      if (!masterId) continue;
+      const master = byId.get(masterId);
+      if (!master || master.status === "skipped") continue;
+      const masterNamed = master.status === "determined" && master.role && master.role !== "copy";
+      if (masterNamed) {
+        if (hasPrefix(node, master.role)) continue;
+        const key = `${node.id}::${master.role}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        hits.push({ node, role: master.role, why: `子件必须跟随母版 ${master.role}/` });
+        continue;
+      }
+      if (node.status === "determined" && node.role && node.role !== "copy") {
+        const key = `${node.id}::unnamed`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        hits.push({ node, role: null, why: "母版未命名，子件不能擅自加前缀" });
+      }
+    }
+  }
+  return hits;
+}
+
+function classKey(node) {
+  const body = rawName(node);
+  if (!body) return null;
+  return `${node.type}::${body}`;
+}
+
+export function determinedClassRoles(doc) {
+  const byId = indexNodes(doc);
+  const roles = new Map();
+  for (const node of byId.values()) {
+    if (node.status !== "determined" || !node.role || node.role === "copy") continue;
+    const key = classKey(node);
+    if (!key) continue;
+    if (!roles.has(key)) roles.set(key, new Set());
+    roles.get(key).add(node.role);
+  }
+  const unique = new Map();
+  for (const [key, set] of roles) {
+    if (set.size === 1) unique.set(key, [...set][0]);
+  }
+  return unique;
+}
+
+export function syncClassHits(sourceDoc, targetDoc) {
+  const src = determinedClassRoles(sourceDoc);
+  const byId = indexNodes(targetDoc);
+  const hits = [];
+  for (const node of byId.values()) {
+    if (node.status !== "unknown") continue;
+    const key = classKey(node);
+    const role = key ? src.get(key) : null;
+    if (!role) continue;
+    hits.push({ node, role, why: `与另一端同类 ${role}/ 同步` });
+  }
+  return hits;
+}
+
+export function auditCrossEndClassSync(docs) {
+  const list = (Array.isArray(docs) ? docs : [docs]).filter(Boolean);
+  const problems = [];
+  for (let i = 0; i < list.length; i += 1) {
+    for (let j = 0; j < list.length; j += 1) {
+      if (i === j) continue;
+      for (const { node, role, why } of syncClassHits(list[i], list[j])) {
+        expectPrefix(node, role, problems, why);
+      }
+    }
+  }
+  return { ok: problems.length === 0, problems: [...new Set(problems)] };
 }
 
 export function auditDraftGoldMorphology(doc) {
@@ -109,7 +409,7 @@ export function auditDraftGoldMorphology(doc) {
     if (type === "COMPONENT_SET") {
       const setPrefix = ROLE_PREFIX.exec(String(node.name || ""))?.[1];
       const variantPrefixes = labels.map((label) => ROLE_PREFIX.exec(label)?.[1]).filter(Boolean);
-      if (setPrefix && ["switch", "btn", "ind", "img", "bg"].includes(setPrefix)) {
+      if (setPrefix && setPrefix !== "copy") {
         expectPrefix(node, setPrefix, problems, "组件集");
       } else if (variantPrefixes.length === labels.length && labels.length > 0 && new Set(variantPrefixes).size === 1) {
         expectPrefix(node, variantPrefixes[0], problems, "组件集变体已有统一前缀");
@@ -131,6 +431,100 @@ export function auditDraftGoldMorphology(doc) {
     }
   });
 
+  for (const { node, role, why } of setRoleInstances(doc)) {
+    if (!role) {
+      if (node.status === "determined" && node.role && node.role !== "copy") {
+        problems.push(`${node.id}「${node.name}」${why}`);
+      }
+      continue;
+    }
+    expectPrefix(node, role, problems, why);
+  }
+  for (const { node, why } of leafImageNodes(doc)) {
+    expectPrefix(node, "img", problems, why);
+  }
+  for (const { node, why } of groupsWithTextNotImg(doc)) {
+    problems.push(`${node.id}「${node.name}」${why}`);
+  }
+  for (const { node, role, why } of followLayerCopies(doc)) {
+    if (!role) {
+      if (node.status === "determined" && node.role && node.role !== "copy") {
+        problems.push(`${node.id}「${node.name}」${why}`);
+      }
+      continue;
+    }
+    expectPrefix(node, role, problems, why);
+  }
+
   const unique = [...new Set(problems)];
   return { ok: unique.length === 0, problems: unique };
+}
+
+function applyHit(copies, { node, role, why }, applied) {
+  const group = copies.get(node.id) || [node];
+  for (const item of group) {
+    if (!role) {
+      if (!(item.status === "determined" && item.role && item.role !== "copy")) continue;
+      applyPrefix(item, null);
+      applied.push({ id: item.id, name: item.name, role: null, why });
+      continue;
+    }
+    if (hasPrefix(item, role)) continue;
+    applyPrefix(item, role);
+    applied.push({ id: item.id, name: item.name, role, why });
+  }
+}
+
+/** 静默补：任意组件集实例 + I…;母版Id 子件跟随母版。不要拿这类漏项问人。 */
+export function applyDraftGoldMorphology(doc) {
+  const applied = [];
+  for (let pass = 0; pass < 5; pass += 1) {
+    const before = applied.length;
+    const copies = indexAllCopies(doc);
+    for (const hit of setRoleInstances(doc)) applyHit(copies, hit, applied);
+    for (const { node, why } of leafImageNodes(doc)) applyHit(copies, { node, role: "img", why }, applied);
+    for (const hit of groupsWithTextNotImg(doc)) applyHit(copies, hit, applied);
+    for (const hit of followLayerCopies(doc)) applyHit(copies, hit, applied);
+    if (applied.length === before) break;
+  }
+  return { applied };
+}
+
+export function applyCrossEndClassSync(sourceDoc, targetDoc) {
+  const applied = [];
+  const copies = indexAllCopies(targetDoc);
+  for (const hit of syncClassHits(sourceDoc, targetDoc)) {
+    applyHit(copies, hit, applied);
+  }
+  const again = applyDraftGoldMorphology(targetDoc);
+  return { applied: [...applied, ...again.applied] };
+}
+
+export function recountStatuses(doc) {
+  const counts = {};
+  visitNodes(doc, (node, _trail, kind) => {
+    if (kind !== "node" || !node.status) return;
+    counts[node.status] = (counts[node.status] ?? 0) + 1;
+  });
+  if (doc.counts && typeof doc.counts === "object") doc.counts = { ...doc.counts, ...counts };
+  return counts;
+}
+
+/** PC/mobile 写回收口：跟随母版 + 两端同类同步。 */
+export function finalizeDraftWriteback(docs) {
+  const list = (Array.isArray(docs) ? docs : [docs]).filter(Boolean);
+  const applied = list.map(() => []);
+  for (let i = 0; i < list.length; i += 1) {
+    applied[i].push(...applyDraftGoldMorphology(list[i]).applied);
+  }
+  if (list.length >= 2) {
+    for (let i = 0; i < list.length; i += 1) {
+      for (let j = 0; j < list.length; j += 1) {
+        if (i === j) continue;
+        applied[j].push(...applyCrossEndClassSync(list[i], list[j]).applied);
+      }
+    }
+  }
+  const counts = list.map((doc) => recountStatuses(doc));
+  return { applied, counts };
 }

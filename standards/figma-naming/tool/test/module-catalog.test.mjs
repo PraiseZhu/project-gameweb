@@ -72,6 +72,23 @@ test("module catalog：切图类型不会被建议成 btn", () => {
   assert.equal(matchNodeToCatalog(node, catalog).length, 0);
 });
 
+test("module catalog：页上 INSTANCE 不走目录，即使 entries 误写了 INSTANCE", () => {
+  const doc = {
+    nodes: [
+      { id: "nav1", type: "INSTANCE", name: "导航状态", variants: [{ name: "A" }, { name: "B" }] },
+    ],
+    attachments: {
+      componentSets: [
+        { id: "s1", type: "COMPONENT_SET", name: "foo", variants: [{ name: "A" }, { name: "B" }] },
+      ],
+    },
+  };
+  const rows = matchInventoryToCatalog(doc, catalog);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, "s1");
+  assert.equal(rows.some((row) => row.id === "nav1"), false);
+});
+
 test("catalog 默认目录在 figma-naming/evolution/module-catalog", () => {
   assert.match(defaultCatalogDir().replaceAll("\\", "/"), /figma-naming\/evolution\/module-catalog$/);
   assert.match(defaultCatalogPath().replaceAll("\\", "/"), /figma-naming\/evolution\/module-catalog\/catalog\.json$/);
