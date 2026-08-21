@@ -2183,6 +2183,26 @@
             : Number.isFinite(siblingY) && siblingY >= ownBottom - 0.5;
         });
         const fixedAutoLayoutTextItem = fixedOnMainAxis && hasFollowingSibling;
+        /* A fixed-width leaf that Figma explicitly centers inside its direct
+           owner owns its source text box. It is neither an Auto Layout track
+           nor a flexible owner-wide label: expanding it from its source left
+           edge to the owner's right edge changes the text's center. Require
+           all three source facts (fixed sizing, CENTER alignment/constraint,
+           and coincident source centers) before preserving the leaf width. */
+        const sourceHorizontalConstraint = String(__u(textLayout.constraints?.horizontal)
+          || __u(n.constraints?.horizontal) || '').toUpperCase();
+        const sourceFixedCenteredTextBox = truthDirectOwner
+          && !fixedOnMainAxis
+          && arForOwner !== 'WIDTH' && arForOwner !== 'WIDTH_AND_HEIGHT'
+          && String(tx.align || '').toUpperCase() === 'CENTER'
+          && sourceHorizontalConstraint === 'CENTER'
+          && Number.isFinite(Number(box.x)) && Number.isFinite(Number(box.w)) && Number(box.w) > 0
+          && Number.isFinite(Number(directOwnerBox.x)) && Number.isFinite(Number(directOwnerBox.w))
+          && Number(directOwnerBox.w) > 0
+          && Math.abs(
+            Number(box.x) + Number(box.w) / 2
+            - (Number(directOwnerBox.x) + Number(directOwnerBox.w) / 2)
+          ) <= 1;
         const parentBox = truthDirectOwner
           ? directOwnerBox
           : (parent && parent.box && !parentSectionWide ? parent.box : null) || directOwnerBox || null;
@@ -2202,6 +2222,8 @@
            passed-through pure container absent from truth), fall back to the
            text own source box width -- never to the section width. */
         const ownerWidth = fixedAutoLayoutTextItem && Number.isFinite(Number(box.w)) && Number(box.w) > 0
+          ? Number(box.w)
+          : sourceFixedCenteredTextBox
           ? Number(box.w)
           : compactDirectOwnerHugLabel
           ? Number(parentBox.w)
@@ -2223,6 +2245,8 @@
           ownerEvidence: hasBoundedOwner
             ? (fixedAutoLayoutTextItem
               ? 'source-fixed-auto-layout-item'
+              : sourceFixedCenteredTextBox
+              ? 'source-fixed-centered-text-box'
               : sourceWidthHugText
               ? 'source-width-hug-text'
               : truthDirectOwner
@@ -2235,6 +2259,7 @@
                 : 'truth-direct-owner-box')
             : (ownerWidth != null ? 'source-box-fallback' : null),
           sourceBoxHeight: Number.isFinite(Number(box.h)) ? Number(box.h) : null,
+          sourceFixedCenteredTextBox,
           sourceWidthHugText,
           evidence: explicitOpen && !explicitFrame ? 'truth-open-flow' : explicitFrame ? (hasBoundedOwner ? 'truth-role-and-owner-box' : 'truth-framed-or-clipped') : openFlow ? 'autoResize-and-ancestor-evidence' : 'default-fixed',
         };
@@ -2961,6 +2986,7 @@
           if (constraint.ownerWidth != null) el.setAttribute('data-text-owner-width', String(constraint.ownerWidth));
           if (constraint.ownerEvidence) el.setAttribute('data-text-owner-evidence', constraint.ownerEvidence);
           if (constraint.sourceBoxHeight != null) el.setAttribute('data-text-source-height', String(constraint.sourceBoxHeight));
+          if (constraint.sourceFixedCenteredTextBox) el.setAttribute('data-text-source-centered-box', 'true');
           el.setAttribute('data-text-owner-size-policy', ownerSizing.reason);
           if (constraint.openFlow) {
             // Open-flow text keeps source font metrics and only receives the

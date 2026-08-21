@@ -612,15 +612,22 @@
 
   }
 
-  /* ── 渲染 ── */
+  /* Product mode uses the actual browser viewport to select the native source
+     composition. QA mode still derives the simulated viewport from presets. */
+  function productViewportPlatform() {
+    if (!PRODUCT_VIEW) return null;
+    var width = window.innerWidth || document.documentElement.clientWidth || 0;
+    var requested = platOfWidth(width);
+    var platforms = (TRUTH && TRUTH.platforms) || {};
+    return requested === 'mobile' && platforms.mobile ? 'mobile' : 'pc';
+  }
+
   function renderInto(container, state) {
-    /* 把**被模拟的视口**一起传给渲染层（第 12 项，2026-08-04 实测根因）：
-       frame 的 1px 装饰边框让 clientWidth 比视口少 2px（1920→1918），
-       若渲染层拿 clientWidth 算缩放，k = 1918/3840 = 0.499479…，
-       30px 字号 → 屏幕上 14.984px —— 小数字号栅格化 → 每个字笔画落在不同子像素上，
-       就是欣仪反复指出的「字有粗有细有大有小」。视口宽才是几何，装饰边框不是。 */
+    var renderPrefs = cp(S.prefs);
+    var productPlatform = productViewportPlatform();
+    if (productPlatform) renderPrefs.plat = productPlatform;
     var vp = viewport();
-    cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: cp(S.prefs), state: state, frame: container,
+    cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION });
   }
 
