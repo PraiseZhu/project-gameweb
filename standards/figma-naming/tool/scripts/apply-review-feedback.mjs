@@ -2,7 +2,7 @@
 /**
  * 把核对页 JSONL 写回 draft。可带上一份稿做旧 id 映射。
  *
- * node scripts/apply-review-feedback.mjs <inventory.json> [feedback.jsonl] [--from <previous-inventory.json>]
+ * node scripts/apply-review-feedback.mjs <inventory.json> [feedback.jsonl] [--from previous.json]
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +16,6 @@ function opt(name) {
   const i = process.argv.indexOf(name);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : null;
 }
-
 function optAll(name) {
   const out = [];
   for (let i = 0; i < process.argv.length; i += 1) {
@@ -41,6 +40,39 @@ const rows = feedbackPath
 const previousDoc = fromPath ? JSON.parse(fs.readFileSync(fromPath, "utf8")) : null;
 const peers = peerPaths.map((file) => ({ path: path.resolve(file), doc: JSON.parse(fs.readFileSync(file, "utf8")) }));
 const result = applyReviewFeedback(inv, rows, { previousDoc, peerDocs: peers.map((item) => item.doc) });
+
+const allNodes = [];
+const collectNodes = (value) => {
+  if (Array.isArray(value)) return value.forEach(collectNodes);
+  if (!value || typeof value !== "object") return;
+  if (typeof value.id === "string" && typeof value.type === "string") allNodes.push(value);
+  Object.values(value).forEach(collectNodes);
+};
+collectNodes(inv);
+
+function hasTextDescendant(node, seen = new Set()) {
+  if (!node || seen.has(node.id)) return false;
+  seen.add(node.id);
+  return allNodes
+    .filter((candidate) => candidate.parentId === node.id)
+    .some((child) => child.type === "TEXT" || hasTextDescendant(child, seen));
+}
+
+function reclassifyTextContainers(value) {
+  if (Array.isArray(value)) {
+    value.forEach(reclassifyTextContainers);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  if (typeof value.id === "string" && typeof value.type === "string"
+      && ["FRAME", "GROUP", "INSTANCE", "COMPONENT"].includes(value.type)
+      && hasTextDescendant(value)
+      && value.role === "img" && String(value.name || "").startsWith("img/")) {
+    setDetermined(value, "mix");
+  }
+  Object.values(value).forEach(reclassifyTextContainers);
+}
+reclassifyTextContainers(inv);
 
 const clip = applyClipAndRewardPrefixes(inv);
 const peerClip = peers.map((item) => applyClipAndRewardPrefixes(item.doc));

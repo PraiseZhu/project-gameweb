@@ -60,12 +60,23 @@ test('owner-model scope/assetPolicy/role evidence is derived in the renderer, no
   assert.match(renderer, /data-owner-mask-children/);
 });
 
+test('paint siblings are absolute unless source-backed Auto Layout admits flow', () => {
+  assert.match(renderer, /el\.style\.position = 'absolute';\s*el\.style\.left = \(\(box\.x/);
+  assert.match(renderer, /Only a proven Auto Layout child may flow/);
+});
+
 test('page background and fixed overlay roots stay on the owner tree, not leaf re-stitching', () => {
   /* 9:31452/52:3263 作为 page-level placement owner 必须经 pagePaintOrder 挂载，
      不能从各 section 几何相交的叶子重新拼背景。 */
   assert.match(renderer, /pagePaintOrder && rawPagePaintOrder/);
   assert.match(renderer, /directBackgroundRoot/);
   assert.match(renderer, /data-paint-root/);
+});
+
+test('page background is never also painted through pageChrome', () => {
+  assert.match(renderer, /notBackgroundRoot/);
+  assert.match(renderer, /chromeNodes\.filter\(notBackgroundRoot\)/);
+  assert.match(renderer, /rawChromeNodes\.filter\(notBackgroundRoot\)/);
 });
 
 test('multi-image fills resolve each imageRef instead of reusing the first file', () => {

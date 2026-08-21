@@ -115,6 +115,19 @@ function keepNavBtn(node, toRole) {
   return rawName(node.name) === "导航状态" && hasPrefix(node, "btn") && toRole && toRole !== "btn";
 }
 
+function hasTextDescendant(node, byId, seen = new Set()) {
+  if (!node || seen.has(node.id)) return false;
+  seen.add(node.id);
+  const children = [];
+  for (const value of byId.values()) for (const item of value) if (item.parentId === node.id) children.push(item);
+  return children.some((child) => child.type === 'TEXT' || hasTextDescendant(child, byId, seen));
+}
+
+function isImageContainerOverride(node, role, byId) {
+  return role === 'img' && ['FRAME', 'GROUP', 'INSTANCE', 'COMPONENT'].includes(String(node.type || '').toUpperCase())
+    && hasTextDescendant(node, byId);
+}
+
 export function applyReviewFeedback(doc, rows, { previousDoc = null, peerDocs = [] } = {}) {
   const byId = indexById(doc);
   const idMap = previousDoc ? buildIdMap(previousDoc, doc) : new Map();
@@ -164,7 +177,20 @@ export function applyReviewFeedback(doc, rows, { previousDoc = null, peerDocs = 
     }
     for (const node of nodes) {
       if (row.toStatus === "unknown") setUnknown(node);
-      else if (row.toStatus === "determined" && row.toRole) setDetermined(node, row.toRole);
+      else if (row.toStatus === "determined" && row.toRole) {
+        if (isImageContainerOverride(node, row.toRole, byId)) {
+          conflicts.push({
+            from: row.nodeId,
+            to: targetId,
+            kept: node.name,
+            ignored: 'img/',
+            note: '图文混合容器不能整体改成 img/；结构优先，保留 mix/ 或 unknown',
+          });
+          if (node.status !== 'determined' || node.role !== 'mix' || !String(node.name || '').startsWith('mix/')) {
+            setDetermined(node, 'mix');
+          }
+        } else setDetermined(node, row.toRole);
+      }
     }
     applied.push({
       id: targetId,

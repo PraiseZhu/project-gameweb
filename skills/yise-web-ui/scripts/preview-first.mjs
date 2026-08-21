@@ -26,7 +26,38 @@ function fail(error, extra = {}) {
 
 function readJsonIfExists(file) {
   if (!existsSync(file)) return null;
-  return JSON.parse(readFileSync(file, 'utf8'));
+  return decodeJsonBytes(readFileSync(file), file);
+}
+
+export function decodeJsonBytes(input, file = '<buffer>') {
+  const bytes = Buffer.isBuffer(input) ? input : Buffer.from(input);
+  let start = 0;
+  let encoding = 'utf8';
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    start = 2;
+    encoding = 'utf16le';
+  } else if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    start = 2;
+    encoding = 'utf16be';
+  } else if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    start = 3;
+  }
+  let text;
+  if (encoding === 'utf16be') {
+    const swapped = Buffer.alloc(bytes.length - start);
+    for (let i = start; i + 1 < bytes.length; i += 2) {
+      swapped[i - start] = bytes[i + 1];
+      swapped[i - start + 1] = bytes[i];
+    }
+    text = swapped.toString('utf16le');
+  } else {
+    text = bytes.subarray(start).toString(encoding);
+  }
+  try {
+    return JSON.parse(text.replace(/^﻿/, ''));
+  } catch (error) {
+    throw new Error(`${file}: invalid JSON after ${encoding} BOM decoding: ${error.message}`);
+  }
 }
 
 function productViewUrl(indexPath) {
