@@ -628,7 +628,8 @@
     if (productPlatform) renderPrefs.plat = productPlatform;
     var vp = viewport();
     cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
-      viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION });
+      viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
+      interactionPayload: cfg.interactionPayload || null });
   }
 
   /* 字体就绪回调：渲染层重量完缩字号后调这里，让读数（缩字号条数/字宽对账/缺字形）

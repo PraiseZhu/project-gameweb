@@ -1,0 +1,12 @@
+{
+  "schema": "ss5-downstream-validation-fixture/v1",
+  "status": "fixture-only",
+  "platforms": {
+    "pc": {
+      "sourceFacts": ["switch/源器", "tab/源器", "switch/角色", "tab/角色", "ind/进度条", "btn/prev", "btn/next"]
+    },
+    "mobile": {
+      "sourceFacts": ["switch/源器", "tab/源器", "switch/角色", "tab/角色"]
+    }
+  }
+}

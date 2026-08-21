@@ -2297,6 +2297,18 @@
          truthChildrenByParentId.set(parentId, children);
        }
        const interactionAttrs = suppressInteractions ? new Map() : interactionBridge(rawList || list);
+       /* Offline demos cannot import ESM at runtime. The build/onboarding
+          boundary may provide the pure adapter payload produced from
+          deriveInteractionModel(); it augments only source-validated direct
+          child switch pages. The renderer continues to own geometry and the
+          existing runtime applySwitch path. */
+       const interactionPayload = ctx.interactionPayload || ctx.renderInteractionPayload
+         || motionAdapter?.interactionPayload || motionAdapter?.interaction?.rendererPayload || null;
+       const adapterAttrs = new Map((interactionPayload && Array.isArray(interactionPayload.attributes)
+         ? interactionPayload.attributes : []).map((entry) => [String(entry.id), entry.attrs || {}]));
+       for (const [id, attrs] of adapterAttrs) {
+         interactionAttrs.set(id, { ...(interactionAttrs.get(id) || {}), ...attrs });
+       }
        const componentVariantOwners = [];
        const seqOf = (i) => {
          const r = rawList[i];
@@ -4193,6 +4205,15 @@
             el.setAttribute('data-switch-index', String(idx));
           }
         };
+        /* Direct-child pages are present in the initial Figma tree, so settle
+           the source-selected state immediately through the same applySwitch()
+           pathway used by tabs, indicators, and prev/next commands. This is
+           deliberately limited to the adapter's explicit source mode: legacy
+           swpage and component-variant initialization retain their existing
+           renderer contracts. */
+        for (const owner of frame.querySelectorAll('[data-switch-owner][data-switch-page-source="switch-direct-child"]')) {
+          applySwitch(owner.getAttribute('data-switch'), Number(owner.getAttribute('data-switch-initial-index') || 0));
+        }
         const fixedNavigation = (() => {
           const anchors = ids.map((sid) => Array.from(frame.querySelectorAll('.fx-stage[data-node-id]') || [])
             .find((el) => el.getAttribute('data-node-id') === 'section-' + sid)).filter(Boolean);
