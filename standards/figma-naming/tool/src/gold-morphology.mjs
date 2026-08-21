@@ -26,7 +26,7 @@ function isStatePair(labels) {
 
 const CLIP_RE = /可划动|划动区域/;
 const INNER_REWARD_RE = /^(奖励列表|奖励)$/;
-const IMAGE_BODY_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘|角色头像|待解锁头像|视频框\s*\d+|兑换码背景|头像框.*|icon|图标装饰|装饰|阵营信息|待解锁|卡牌|Icon_SSR.*|BG|小按钮|logo)$/;
+const IMAGE_BODY_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘|角色头像|待解锁头像|视频框\s*\d+|兑换码背景|头像框.*|icon|图标装饰|装饰|阵营信息|待解锁|卡牌|Icon_SSR.*|BG|小按钮|logo|按钮背景|一级按钮.*|二级按钮.*|三级按钮.*|播放按钮\s+\d+)$/;
 const BORDER_PART_RE = /^一级边框/;
 const TEXT_CONTAINER_TYPES = new Set(["FRAME", "GROUP", "INSTANCE", "COMPONENT"]);
 
@@ -123,6 +123,7 @@ function setRoleInstances(doc) {
   const hits = new Map();
   const add = (node, role, why) => {
     if (!node || node.type !== "INSTANCE" || node.status === "skipped") return;
+    if (role === "img" && hasImgAncestor(node, byId)) return;
     const group = copies.get(node.id) || [node];
     const representative = role
       ? group.find((item) => item.status !== "skipped" && !hasPrefix(item, role)) || node
@@ -281,6 +282,38 @@ function hasTextDescendant(id, kids) {
   return false;
 }
 
+function isAvatarSwitchedCharacter(node) {
+  const box = node.box || {};
+  const maxEdge = Math.max(Number(box.w) || 0, Number(box.h) || 0);
+  const body = rawName(node);
+  return (body === "角色立绘模块" || body === "角色") && maxEdge > 400;
+}
+
+function characterContentToSwitch(doc) {
+  const hits = [];
+  visitNodes(doc, (node, _trail, kind) => {
+    if (kind !== "node") return;
+    if (node.status === "skipped") return;
+    if (node.type !== "COMPONENT_SET" && node.type !== "INSTANCE") return;
+    if (!isAvatarSwitchedCharacter(node)) return;
+    if (hasPrefix(node, "switch")) return;
+    hits.push({ node, role: "switch", why: "头像切换所展示的角色内容，不看变体个数" });
+  });
+  return hits;
+}
+
+function innerImagePartsToUnname(doc) {
+  const byId = indexNodes(doc);
+  const hits = [];
+  for (const node of byId.values()) {
+    if (node.status === "skipped") continue;
+    if (!hasPrefix(node, "img")) continue;
+    if (!hasImgAncestor(node, byId)) continue;
+    hits.push({ node, role: null, why: "父级已是 img/，内部零件不再标 img/" });
+  }
+  return hits;
+}
+
 function leafImageNodes(doc) {
   const byId = indexNodes(doc);
   const kids = childrenByParent(doc);
@@ -346,6 +379,7 @@ function followLayerCopies(doc) {
       if (!master || master.status === "skipped") continue;
       const masterNamed = master.status === "determined" && master.role && master.role !== "copy";
       if (masterNamed) {
+        if (master.role === "img" && hasImgAncestor(node, byId)) continue;
         if (hasPrefix(node, master.role)) continue;
         const key = `${node.id}::${master.role}`;
         if (seen.has(key)) continue;
@@ -376,7 +410,7 @@ export function determinedClassRoles(doc) {
   const roles = new Map();
   for (const node of byId.values()) {
     if (node.status !== "determined" || !node.role || node.role === "copy") continue;
-    if (node.role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node))) continue;
+    if (node.role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node) || hasImgAncestor(node, byId))) continue;
     const key = classKey(node);
     if (!key) continue;
     if (!roles.has(key)) roles.set(key, new Set());
@@ -399,7 +433,7 @@ export function syncClassHits(sourceDoc, targetDoc) {
     const key = classKey(node);
     const role = key ? src.get(key) : null;
     if (!role) continue;
-    if (role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node))) continue;
+    if (role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node) || hasImgAncestor(node, byId))) continue;
     hits.push({ node, role, why: `与另一端同类 ${role}/ 同步` });
   }
   return hits;
@@ -485,6 +519,8 @@ export function auditDraftGoldMorphology(doc) {
         expectPrefix(node, setPrefix, problems, "组件集");
       } else if (variantPrefixes.length === labels.length && labels.length > 0 && new Set(variantPrefixes).size === 1) {
         expectPrefix(node, variantPrefixes[0], problems, "组件集变体已有统一前缀");
+      } else if (isAvatarSwitchedCharacter(node)) {
+        expectPrefix(node, "switch", problems, "头像切换所展示的角色内容，不看变体个数");
       } else if (labels.length >= 2 && !isStatePair(labels) && labels.length <= 3) {
         expectPrefix(node, "switch", problems, "多变体内容组件集");
       } else if (isStatePair(labels) && Math.max(w || 0, h || 0) > 0 && Math.max(w, h) < 250) {
@@ -514,6 +550,9 @@ export function auditDraftGoldMorphology(doc) {
   }
   for (const { node, why } of leafImageNodes(doc)) {
     expectPrefix(node, "img", problems, why);
+  }
+  for (const { node, why } of innerImagePartsToUnname(doc)) {
+    problems.push(`${node.id}「${node.name}」${why}`);
   }
   for (const { node, why } of videoFrameWrappersToUnname(doc)) {
     problems.push(`${node.id}「${node.name}」${why}`);
@@ -557,8 +596,10 @@ export function applyDraftGoldMorphology(doc) {
     const before = applied.length;
     const copies = indexAllCopies(doc);
     for (const hit of setRoleInstances(doc)) applyHit(copies, hit, applied);
+    for (const hit of characterContentToSwitch(doc)) applyHit(copies, hit, applied);
     for (const { node, why } of leafImageNodes(doc)) applyHit(copies, { node, role: "img", why }, applied);
     for (const hit of videoFrameWrappersToUnname(doc)) applyHit(copies, hit, applied);
+    for (const hit of innerImagePartsToUnname(doc)) applyHit(copies, hit, applied);
     for (const hit of groupsWithTextNotImg(doc)) applyHit(copies, hit, applied);
     for (const hit of followLayerCopies(doc)) applyHit(copies, hit, applied);
     if (applied.length === before) break;

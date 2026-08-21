@@ -25,6 +25,33 @@ test("gold morphology：内容组件集只要 switch/ 前缀，后缀不限", ()
   assert.deepEqual(auditDraftGoldMorphology(ok), { ok: true, problems: [] });
 });
 
+test("gold morphology：头像切换的角色内容即使单变体也要 switch/", () => {
+  const miss = {
+    attachments: {
+      componentSets: [
+        { id: "c1", type: "COMPONENT_SET", name: "角色立绘模块", status: "unknown", box: { w: 3880, h: 1620 }, variants: [{ name: "Property 1=Default" }] },
+        { id: "c2", type: "COMPONENT_SET", name: "角色", status: "unknown", box: { w: 750, h: 1024 }, variants: [{ name: "Property 1=Default" }] },
+      ],
+    },
+  };
+  const missResult = auditDraftGoldMorphology(miss);
+  assert.equal(missResult.ok, false);
+  assert.equal(missResult.problems.length, 2);
+  assert.match(missResult.problems.join("\n"), /switch\//);
+  assert.match(missResult.problems.join("\n"), /角色立绘模块/);
+  assert.match(missResult.problems.join("\n"), /「角色」/);
+
+  const ok = {
+    attachments: {
+      componentSets: [
+        { id: "c1", type: "COMPONENT_SET", name: "switch/角色立绘模块", status: "determined", role: "switch", box: { w: 3880, h: 1620 }, variants: [{ name: "Property 1=Default" }] },
+        { id: "c2", type: "COMPONENT_SET", name: "switch/角色", status: "determined", role: "switch", box: { w: 750, h: 1024 }, variants: [{ name: "Property 1=Default" }] },
+      ],
+    },
+  };
+  assert.deepEqual(auditDraftGoldMorphology(ok), { ok: true, problems: [] });
+});
+
 test("gold morphology：划动层要 scroll/，同层奖励列表不能是 scroll/", () => {
   const miss = {
     nodes: [
@@ -379,4 +406,84 @@ test("有字 logo 保留 img/；普通有字容器不能 img/", () => {
   applyDraftGoldMorphology(reward);
   assert.equal(reward.nodes[0].name, "奖励");
   assert.notEqual(reward.nodes[0].role, "img");
+});
+
+test("gold morphology：按钮底和播放按钮 1 是 img/ 不是 btn/", () => {
+  const miss = {
+    nodes: [
+      { id: "dl", type: "FRAME", name: "btn/下载按钮", status: "determined", role: "btn" },
+      { id: "bg", type: "RECTANGLE", name: "一级按钮 1", status: "unknown", parentId: "dl" },
+      { id: "play", type: "GROUP", name: "btn/播放按钮", status: "determined", role: "btn" },
+      { id: "icon", type: "RECTANGLE", name: "btn/播放按钮 1", status: "determined", role: "btn", parentId: "play" },
+    ],
+  };
+  const missResult = auditDraftGoldMorphology(miss);
+  assert.equal(missResult.ok, false);
+  assert.match(missResult.problems.join("\n"), /一级按钮/);
+  applyDraftGoldMorphology(miss);
+  assert.equal(miss.nodes[1].name, "img/一级按钮 1");
+  assert.equal(miss.nodes[1].role, "img");
+  assert.equal(miss.nodes[3].name, "img/播放按钮 1");
+  assert.equal(miss.nodes[3].role, "img");
+  assert.equal(miss.nodes[2].role, "btn");
+  assert.deepEqual(auditDraftGoldMorphology(miss), { ok: true, problems: [] });
+});
+
+test("gold morphology：img/ 祖先下的卡牌零件不再标 img/", () => {
+  const miss = {
+    nodes: [
+      { id: "art", type: "FRAME", name: "img/立绘", status: "determined", role: "img" },
+      { id: "card", type: "RECTANGLE", name: "img/卡牌", status: "determined", role: "img", parentId: "art" },
+      { id: "ssr", type: "RECTANGLE", name: "img/Icon_SSR 2", status: "determined", role: "img", parentId: "art" },
+    ],
+  };
+  const missResult = auditDraftGoldMorphology(miss);
+  assert.equal(missResult.ok, false);
+  assert.match(missResult.problems.join("\n"), /内部零件/);
+  applyDraftGoldMorphology(miss);
+  assert.equal(miss.nodes[0].role, "img");
+  assert.equal(miss.nodes[1].role, null);
+  assert.equal(miss.nodes[1].name, "卡牌");
+  assert.equal(miss.nodes[2].role, null);
+  assert.deepEqual(auditDraftGoldMorphology(miss), { ok: true, problems: [] });
+});
+
+test("gold morphology：母版 img/卡牌 时，img/立绘下的子件不跟随", () => {
+  const doc = {
+    nodes: [
+      { id: "art", type: "FRAME", name: "img/立绘", status: "determined", role: "img" },
+      { id: "491:9235", type: "FRAME", name: "img/卡牌", status: "determined", role: "img" },
+      { id: "I491:8079;491:9235", type: "FRAME", name: "img/卡牌", status: "determined", role: "img", parentId: "art" },
+    ],
+  };
+  const miss = auditDraftGoldMorphology(doc);
+  assert.equal(miss.ok, false);
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.nodes[1].name, "img/卡牌");
+  assert.equal(doc.nodes[2].name, "卡牌");
+  assert.equal(doc.nodes[2].role, null);
+  assert.deepEqual(auditDraftGoldMorphology(doc), { ok: true, problems: [] });
+});
+
+test("gold morphology：跨端不同步 img/ 到立绘内零件", () => {
+  const pc = {
+    nodes: [
+      { id: "pcIcon", type: "GROUP", name: "img/icon", status: "determined", role: "img" },
+      { id: "art", type: "FRAME", name: "img/立绘", status: "determined", role: "img" },
+      { id: "card", type: "RECTANGLE", name: "卡牌", status: "unknown", parentId: "art" },
+    ],
+  };
+  const mobile = {
+    nodes: [
+      { id: "mArt", type: "FRAME", name: "img/立绘", status: "determined", role: "img" },
+      { id: "mIcon", type: "GROUP", name: "icon", status: "unknown", parentId: "mArt" },
+      { id: "mCard", type: "RECTANGLE", name: "卡牌", status: "unknown", parentId: "mArt" },
+    ],
+  };
+  applyCrossEndClassSync(pc, mobile);
+  assert.equal(mobile.nodes[1].name, "icon");
+  assert.notEqual(mobile.nodes[1].role, "img");
+  assert.equal(mobile.nodes[2].name, "卡牌");
+  const sync = auditCrossEndClassSync([pc, mobile]);
+  assert.equal(sync.ok, true, sync.problems.join("\n"));
 });

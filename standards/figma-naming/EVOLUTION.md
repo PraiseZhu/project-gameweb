@@ -17,6 +17,14 @@
 
 ## 已建议收紧（工具缺口，不放宽口径）
 
+- `button-chrome-is-img` **按钮底和播放按钮 1 是 img 不是 btn** — 出现 1 次,首见 2026-08-21,最近 2026-08-21,status: landed
+  - 现象:一级/二级/三级按钮矩形、按钮背景、播放按钮 1 被 unknown 或标成 btn/。可点的是外层分组。
+  - 提案:IMAGE_BODY 覆盖这些名字；leafImageNodes 写 img/；completeness 红。
+  - 备注:[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态
+- `character-content-is-switch` **头像切换的角色内容即使单变体也是 switch/** — 出现 1 次,首见 2026-08-21,最近 2026-08-21,status: landed
+  - 现象:未规范 399:47576：角色立绘模块/角色只有 Default，判断按变体个数放过；规范稿是 switch/。正确：被头像切换展示的角色内容模块是 switch/，不看变体个数。
+  - 提案:gold-morphology：大尺寸「角色立绘模块」「角色」强制 switch/；completeness 经 auditDraftGoldMorphology 红。
+  - 备注:[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态
 - `full-prechain-must-see-images` **完整前置必须看图** — 出现 1 次,首见 2026-08-20,最近 2026-08-20,status: adopted
   - 现象:错误：把从0验收收成不看图只测门，清单会瘦、漏热区/切换。正确：编稿→切片G2→看图判断写回→completeness；图和结构都要看。
   - 备注:[decided:2026-08-20] 491 人确认：完整前置必须看图。
@@ -93,6 +101,10 @@
 
 ## 无法自动化（by-design，只计数观察）
 
+- `no-prefix-under-img-btn` **img/ 或 btn/ 下面的零件不用再命名** — 出现 2 次,首见 2026-08-14,最近 2026-08-21,status: landed
+  - 现象:img/立绘下卡牌/Icon_SSR 不得再 img/；跟随母版和跨端同步遇到 img 祖先也不抬
+  - 提案:img/btn 认领后关子树；ind 组件内部零件不出条目。
+  - 备注:[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态
 - `scroll-clip-not-inner-reward` **scroll 只写在划动裁切层，奖励图是 img** — 出现 4 次,首见 2026-08-19,最近 2026-08-20,status: adopted
   - 现象:同层里名字带划动/可划动的 FRAME 才是 scroll/。同尺寸奖励列表是轨道图，必须 img/。旧闸门按奖励两字强制 scroll，会放过裁切层、误伤轨道图。
   - 备注:[decided:2026-08-19] 来自 491 mobile 核对：9047 scroll，9048/9064 img。
@@ -221,10 +233,6 @@
 - `buttons-need-no-text` **按钮不一定有字** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: tracked
   - 现象:用户 2026-08-11：谁说按钮一定要文字。真值 btn 没文字的占 pc 33%、cn_pc 21%。源器/头像切换/prev/next 都是纯图标。
   - 提案:去掉「按钮必须自带文字」门槛；名字带背景/底/素材仍不是按钮。
-  - 备注:legacy / 不可计算（等待 owner 补 [decided:YYYY-MM-DD]）
-- `no-prefix-under-img-btn` **img/ 或 btn/ 下面的零件不用再命名** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: tracked
-  - 现象:用户 2026-08-11：下载按钮上面分组了直接 img/，下面不用命名；已经是 btn 了下面没文案的整成图。37 条「这层不用命名」全是 ind/ 内部零件。
-  - 提案:img/btn 认领后关子树；ind 组件内部零件不出条目。
   - 备注:legacy / 不可计算（等待 owner 补 [decided:YYYY-MM-DD]）
 - `hide-layers-skip` **隐藏图层整棵不判** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: tracked
   - 现象:用户 2026-08-12：隐藏的图层不判。曾放过「隐藏+功能词」，当天被否。参照页隐藏子树里有 12 层带 btn/ 也不构成反例。
