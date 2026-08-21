@@ -116,7 +116,7 @@ disable-model-invocation: false
 ### 7 词表是漏项保险，双端对齐只是一块
 
 completeness 双绿才算判断机器过。三条词表不要混：
-- `CARD_ART_RE`：`素材图|素材|边框背景|背景边框|立绘` —— unknown 仍用这些精确词才红
+- `CARD_ART_RE`：`素材图|素材|边框背景|背景边框|立绘` —— unknown 仍用这些精确词才红；祖先已是 `img/` 的内部零件不红（不抬二层 `img/`，金样是 skipped）
 - `IMAGE_BODY_RE`：跟随补 `img/`，还覆盖角色头像、视频框、头像框、icon、装饰、卡牌等
 - `CLIP_RE`：只有 `可划动|划动区域`；裸词「划动」不命中机器划动红灯
 没撞上词表 ≠ 没有这层，责任在第 5 步看图。另外必查：已确定非 copy 必须写入 `role/`、组件集分类、弹窗、小播放是 `btn/` 不是 `hot/`、跟随、有字分组、两端同类前缀。只核前缀和结构。写回后必须重建 `sections` / `overlays` / `backgrounds` / `modules` / `counts` / `pageCounts`，并重写 `.txt`。completeness 按节点重建对照索引，不只扫空数组：有 determined `sec/` 但 `sections` 为空、`backgrounds`/`modules` 残缺、`pageCounts` 过期 → 红，不算过。按页宽冻住结构存在性：PC 的 `sections`/`overlays`/`backgrounds`/`modules`、mobile 的 `sections`/`backgrounds`/`modules` 为空也红（即使本稿还没有 determined 对应节点）。不对照条数、不对图层 id。规范稿对照只核前缀类/结构/索引，不把 live inventory JSON 当单测基线。

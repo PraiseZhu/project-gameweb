@@ -629,6 +629,19 @@ test("gold morphology：母版 img/卡牌 时，img/立绘下的子件不跟随"
   assert.deepEqual(auditDraftGoldMorphology(doc), { ok: true, problems: [] });
 });
 
+test("gold morphology：img/角色 下的立绘不抬二层 img/", () => {
+  const doc = {
+    nodes: [
+      { id: "pack", type: "GROUP", name: "img/角色", status: "determined", role: "img" },
+      { id: "art", type: "FRAME", name: "立绘", status: "unknown", parentId: "pack" },
+    ],
+  };
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.nodes[1].name, "立绘");
+  assert.notEqual(doc.nodes[1].role, "img");
+  assert.deepEqual(auditDraftGoldMorphology(doc), { ok: true, problems: [] });
+});
+
 test("gold morphology：跨端不同步 img/ 到立绘内零件", () => {
   const pc = {
     nodes: [

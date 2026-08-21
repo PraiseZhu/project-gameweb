@@ -3,7 +3,7 @@
  * 未规范 draft 的漏项闸门。
  *
  * 规则检查已经由人工/看图确认的稳定形态，不对图层 id：
- * - 卡片语义资产（素材图、边框背景、立绘）不能保持 unknown；
+ * - 卡片语义资产（素材图、边框背景、立绘）不能保持 unknown；祖先已是 img/ 的内部零件除外（不抬二层 img/）；
  * - 划动/可划动那一层必须是 scroll/；同层「奖励列表」是 img/，不是 scroll/；
  * - determined 的消费身份必须同时写入 name 前缀；
  * - 索引必须与页面节点一致：sections/overlays/backgrounds/modules/pageCounts/counts 相对节点过期或残缺都红，不只扫空数组；
@@ -16,7 +16,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { auditCrossEndClassSync, auditDraftGoldMorphology } from "../src/gold-morphology.mjs";
+import { auditCrossEndClassSync, auditDraftGoldMorphology, hasImgAncestor } from "../src/gold-morphology.mjs";
 import { rebuildInventoryIndexes } from "../src/inventory.mjs";
 
 const CARD_ART_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘)$/;
@@ -30,11 +30,13 @@ function auditCardAndReward(doc) {
     Object.values(value).forEach(walk);
   };
   walk(doc);
+  const byId = new Map();
+  for (const node of nodes) byId.set(node.id, node);
 
   const problems = [];
   for (const node of nodes) {
     const rawName = String(node.name ?? "").replace(/^img\//, "");
-    if (node.status === "unknown" && CARD_ART_RE.test(rawName)) {
+    if (node.status === "unknown" && CARD_ART_RE.test(rawName) && !hasImgAncestor(node, byId)) {
       problems.push(`${node.id}「${node.name}」是卡片视觉资产却仍为 unknown`);
     }
     if (node.status === "determined" && node.role && node.role !== "copy" && !String(node.name ?? "").startsWith(`${node.role}/`)) {

@@ -228,7 +228,7 @@ export function applyClipAndRewardPrefixes(doc) {
 }
 
 
-function hasImgAncestor(node, byId) {
+export function hasImgAncestor(node, byId) {
   const seen = new Set();
   let current = node.parentId;
   while (current && !seen.has(current)) {
