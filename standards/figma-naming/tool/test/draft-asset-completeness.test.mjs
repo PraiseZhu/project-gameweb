@@ -42,6 +42,24 @@ test("draft asset completeness：已确定消费身份必须把前缀写入 name
   assert.match(result.problems[0], /name 未写入 btn\/ 前缀/);
 });
 
+test("draft asset completeness：img 祖先下的内部立绘 unknown 不红", () => {
+  const doc = rebuildInventoryIndexes({ nodes: [
+    { id: "pack", type: "GROUP", name: "img/角色", status: "determined", role: "img", label: "角色", behavior: "slice" },
+    { id: "art", type: "FRAME", name: "立绘", status: "unknown", role: null, parentId: "pack" },
+  ] });
+  const result = auditDraftAssetCompleteness(doc);
+  assert.equal(result.problems.filter((p) => p.includes("卡片视觉资产")).length, 0, result.problems.join("\n"));
+});
+
+test("draft asset completeness：无 img 祖先的立绘 unknown 仍红", () => {
+  const doc = rebuildInventoryIndexes({ nodes: [
+    { id: "art", type: "FRAME", name: "立绘", status: "unknown", role: null },
+  ] });
+  const result = auditDraftAssetCompleteness(doc);
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /卡片视觉资产/);
+});
+
 test("draft asset completeness：PC 已 img 的同类 mobile 仍 unknown 则红", () => {
   const pc = rebuildInventoryIndexes({ nodes: [{ id: "pc1", type: "GROUP", name: "img/icon", status: "determined", role: "img" }] });
   const mobile = rebuildInventoryIndexes({ nodes: [{ id: "m1", type: "GROUP", name: "icon", status: "unknown" }] });

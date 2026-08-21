@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyClipAndRewardPrefixes, applyCrossEndClassSync, applyDraftGoldMorphology, auditCrossEndClassSync, auditDraftGoldMorphology, auditGoldClassRoles } from "../src/gold-morphology.mjs";
+import { applyClipAndRewardPrefixes, applyCrossEndClassSync, applyDraftGoldMorphology, auditCrossEndClassSync, auditDraftGoldMorphology, auditGoldClassRoles, controlledContentSwitch } from "../src/gold-morphology.mjs";
 import { auditDraftAssetCompleteness } from "../scripts/check-draft-asset-completeness.mjs";
 
 test("gold morphology：多变体内容组件集需要 switch/，且需作用域内一组控制点对齐（issue #22）", () => {
@@ -105,6 +105,285 @@ test("gold morphology：数量冲突保持 unknown 并报 N 页 / M 个控制点
   assert.notEqual(doc.attachments.componentSets[0].name, "switch/赛季奖励活动内容");
   assert.equal(doc.nodes[1].name, "赛季奖励活动内容");
   assert.equal(doc.nodes[1].role ?? null, null);
+});
+
+function setWithStub(id, name, variants) {
+  return {
+    id,
+    type: "COMPONENT_SET",
+    name,
+    status: "unknown",
+    variants,
+    nodes: [
+      { id, type: "COMPONENT_SET", name, status: "unknown" },
+      ...variants.map((variant) => ({
+        id: variant.id,
+        type: "COMPONENT",
+        name: variant.name,
+        status: "unknown",
+        parentId: id,
+      })),
+    ],
+  };
+}
+
+test("gold morphology：同 id 无 variants 副本不能覆盖组件集（issue #25）", () => {
+  const four = {
+    nodes: [
+      { id: "sec1", type: "FRAME", name: "sec/1-庆典", status: "determined", role: "sec", label: "1-庆典" },
+      { id: "slider", type: "FRAME", name: "Slider", status: "unknown", parentId: "sec1" },
+      { id: "inst", type: "INSTANCE", name: "庆典模块活动内容", status: "unknown", parentId: "slider" },
+      { id: "d1", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "slider" },
+      { id: "d2", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "slider" },
+      { id: "d3", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "slider" },
+      { id: "d4", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "slider" },
+    ],
+    attachments: {
+      componentSets: [
+        setWithStub("set4", "庆典模块活动内容", [
+          { id: "v1", name: "v1" }, { id: "v2", name: "v2" }, { id: "v3", name: "v3" }, { id: "v4", name: "v4" },
+        ]),
+      ],
+    },
+    relations: [
+      { kind: "instance-uses-variant", from: { id: "inst", scope: "page" }, to: { id: "v1", componentSetId: "set4" }, evidence: "figma:componentId" },
+    ],
+  };
+  const missResult = auditDraftGoldMorphology(four);
+  assert.equal(missResult.ok, false, missResult.problems.join("\n"));
+  assert.match(missResult.problems.join("\n"), /switch\//);
+  applyDraftGoldMorphology(four);
+  assert.equal(four.attachments.componentSets[0].name, "switch/庆典模块活动内容");
+  assert.equal(four.nodes[2].name, "switch/庆典模块活动内容");
+  assert.deepEqual(auditDraftGoldMorphology(four), { ok: true, problems: [] });
+});
+
+test("gold morphology：结构齐且唯一高亮的控制点升 ind/，4=4 再升 switch/（issue #25）", () => {
+  const four = {
+    nodes: [
+      { id: "sec1", type: "FRAME", name: "sec/1-活动", status: "determined", role: "sec" },
+      { id: "holder", type: "FRAME", name: "Holder", status: "unknown", parentId: "sec1" },
+      { id: "inst", type: "INSTANCE", name: "MarkSet", status: "unknown", parentId: "holder" },
+      { id: "d1", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "holder" },
+      { id: "d2", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "holder" },
+      { id: "d3", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "holder" },
+      { id: "d4", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "holder" },
+    ],
+    attachments: {
+      componentSets: [
+        setWithStub("set4", "MarkSet", [
+          { id: "c1", name: "v1" }, { id: "c2", name: "v2" }, { id: "c3", name: "v3" }, { id: "c4", name: "v4" },
+        ]),
+        setWithStub("dots", "Mark", [
+          { id: "dot-h", name: "Property 1=highlight" },
+          { id: "dot-n", name: "Property 1=normal" },
+        ]),
+      ],
+    },
+    relations: [
+      { kind: "instance-uses-variant", from: { id: "inst", scope: "page" }, to: { id: "c1", componentSetId: "set4" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "d1", scope: "page" }, to: { id: "dot-h", componentSetId: "dots" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "d2", scope: "page" }, to: { id: "dot-n", componentSetId: "dots" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "d3", scope: "page" }, to: { id: "dot-n", componentSetId: "dots" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "d4", scope: "page" }, to: { id: "dot-n", componentSetId: "dots" }, evidence: "figma:componentId" },
+    ],
+  };
+  const missResult = auditDraftGoldMorphology(four);
+  assert.equal(missResult.ok, false, missResult.problems.join("\n"));
+  assert.match(missResult.problems.join("\n"), /switch\//);
+  assert.match(missResult.problems.join("\n"), /ind\//);
+  applyDraftGoldMorphology(four);
+  assert.equal(four.attachments.componentSets[0].name, "switch/MarkSet");
+  assert.equal(four.attachments.componentSets[1].name, "ind/Mark");
+  assert.equal(four.nodes[2].name, "switch/MarkSet");
+  for (const node of four.nodes.slice(3)) {
+    assert.equal(node.name, "ind/Mark");
+    assert.equal(node.role, "ind");
+  }
+  assert.deepEqual(auditDraftGoldMorphology(four), { ok: true, problems: [] });
+});
+
+test("gold morphology：空记录覆盖后 6≠7 仍报数量冲突（issue #25）", () => {
+  const doc = {
+    nodes: [
+      { id: "sec1", type: "FRAME", name: "sec/1-赛季奖励", status: "determined", role: "sec" },
+      { id: "inst", type: "INSTANCE", name: "赛季奖励活动内容", status: "unknown", parentId: "sec1" },
+      { id: "d1", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "sec1" },
+      { id: "d2", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "sec1" },
+      { id: "d3", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "sec1" },
+      { id: "d4", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "sec1" },
+      { id: "d5", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "sec1" },
+      { id: "d6", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "sec1" },
+      { id: "d7", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "sec1" },
+    ],
+    attachments: {
+      componentSets: [
+        setWithStub("set6", "赛季奖励活动内容", [
+          { id: "v1", name: "v1" }, { id: "v2", name: "v2" }, { id: "v3", name: "v3" },
+          { id: "v4", name: "v4" }, { id: "v5", name: "v5" }, { id: "v6", name: "v6" },
+        ]),
+      ],
+    },
+    relations: [
+      { kind: "instance-uses-variant", from: { id: "inst", scope: "page" }, to: { id: "v1", componentSetId: "set6" }, evidence: "figma:componentId" },
+    ],
+  };
+  const missResult = auditDraftGoldMorphology(doc);
+  assert.equal(missResult.ok, false);
+  assert.match(missResult.problems.join("\n"), /6 页 \/ 7 个控制点/);
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.attachments.componentSets[0].status, "unknown");
+  assert.notEqual(doc.attachments.componentSets[0].name, "switch/赛季奖励活动内容");
+});
+
+test("gold morphology：未命名 6≠7 唯一高亮不升 switch/ 并报冲突（issue #25）", () => {
+  const doc = {
+    nodes: [
+      { id: "sec1", type: "FRAME", name: "sec/1-活动", status: "determined", role: "sec" },
+      { id: "inst", type: "INSTANCE", name: "SeasonSet", status: "unknown", parentId: "sec1" },
+      { id: "d1", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "sec1" },
+      { id: "d2", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "sec1" },
+      { id: "d3", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "sec1" },
+      { id: "d4", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "sec1" },
+      { id: "d5", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "sec1" },
+      { id: "d6", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "sec1" },
+      { id: "d7", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "sec1" },
+    ],
+    attachments: {
+      componentSets: [
+        setWithStub("set6", "SeasonSet", [
+          { id: "c1", name: "v1" }, { id: "c2", name: "v2" }, { id: "c3", name: "v3" },
+          { id: "c4", name: "v4" }, { id: "c5", name: "v5" }, { id: "c6", name: "v6" },
+        ]),
+        setWithStub("dots", "Mark", [
+          { id: "dot-h", name: "Property 1=highlight" },
+          { id: "dot-n", name: "Property 1=normal" },
+        ]),
+      ],
+    },
+    relations: [
+      { kind: "instance-uses-variant", from: { id: "inst", scope: "page" }, to: { id: "c1", componentSetId: "set6" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "d1", scope: "page" }, to: { id: "dot-h", componentSetId: "dots" }, evidence: "figma:componentId" },
+      ...["d2", "d3", "d4", "d5", "d6", "d7"].map((id) => ({
+        kind: "instance-uses-variant", from: { id, scope: "page" }, to: { id: "dot-n", componentSetId: "dots" }, evidence: "figma:componentId",
+      })),
+    ],
+  };
+  const missResult = auditDraftGoldMorphology(doc);
+  assert.equal(missResult.ok, false);
+  assert.match(missResult.problems.join("\n"), /6 页 \/ 7 个控制点/);
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.attachments.componentSets[0].status, "unknown");
+  assert.notEqual(doc.attachments.componentSets[0].name, "switch/SeasonSet");
+  assert.notEqual(doc.attachments.componentSets[1].name, "ind/Mark");
+  assert.equal(doc.nodes[1].role ?? null, null);
+  const after = auditDraftGoldMorphology(doc);
+  assert.match(after.problems.join("\n"), /6 页 \/ 7 个控制点/);
+});
+
+test("gold morphology：已命名 ind 与另一组高亮状态族并存则不升 switch/", () => {
+  const doc = {
+    nodes: [
+      { id: "sec1", type: "FRAME", name: "sec/1-活动", status: "determined", role: "sec" },
+      { id: "inst", type: "INSTANCE", name: "Content", status: "unknown", parentId: "sec1" },
+      { id: "ind1", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "sec1" },
+      { id: "ind2", type: "FRAME", name: "ind/圆点", status: "determined", role: "ind", parentId: "sec1" },
+      { id: "s1", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "sec1" },
+      { id: "s2", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "sec1" },
+    ],
+    attachments: {
+      componentSets: [
+        setWithStub("content", "Content", [{ id: "c1", name: "v1" }, { id: "c2", name: "v2" }]),
+        setWithStub("dots", "Mark", [
+          { id: "dot-h", name: "Property 1=highlight" },
+          { id: "dot-n", name: "Property 1=normal" },
+        ]),
+      ],
+    },
+    relations: [
+      { kind: "instance-uses-variant", from: { id: "inst", scope: "page" }, to: { id: "c1", componentSetId: "content" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "s1", scope: "page" }, to: { id: "dot-h", componentSetId: "dots" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "s2", scope: "page" }, to: { id: "dot-n", componentSetId: "dots" }, evidence: "figma:componentId" },
+    ],
+  };
+  const detected = controlledContentSwitch(doc);
+  assert.deepEqual([...detected.switchSets.keys()], []);
+  assert.deepEqual(detected.conflicts, []);
+  applyDraftGoldMorphology(doc);
+  assert.notEqual(doc.attachments.componentSets[0].name, "switch/Content");
+  assert.equal(doc.nodes[1].role ?? null, null);
+});
+
+test("gold morphology：active/inactive 精确匹配唯一高亮可升 switch/", () => {
+  const doc = {
+    nodes: [
+      { id: "sec1", type: "FRAME", name: "sec/1-活动", status: "determined", role: "sec" },
+      { id: "holder", type: "FRAME", name: "Holder", status: "unknown", parentId: "sec1" },
+      { id: "inst", type: "INSTANCE", name: "MarkSet", status: "unknown", parentId: "holder" },
+      { id: "d1", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "holder" },
+      { id: "d2", type: "INSTANCE", name: "Mark", status: "unknown", parentId: "holder" },
+    ],
+    attachments: {
+      componentSets: [
+        setWithStub("set2", "MarkSet", [{ id: "c1", name: "v1" }, { id: "c2", name: "v2" }]),
+        setWithStub("dots", "Mark", [
+          { id: "dot-on", name: "Property 1=active" },
+          { id: "dot-off", name: "Property 1=inactive" },
+        ]),
+      ],
+    },
+    relations: [
+      { kind: "instance-uses-variant", from: { id: "inst", scope: "page" }, to: { id: "c1", componentSetId: "set2" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "d1", scope: "page" }, to: { id: "dot-on", componentSetId: "dots" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "d2", scope: "page" }, to: { id: "dot-off", componentSetId: "dots" }, evidence: "figma:componentId" },
+    ],
+  };
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.attachments.componentSets[0].name, "switch/MarkSet");
+  assert.equal(doc.attachments.componentSets[1].name, "ind/Mark");
+  assert.equal(doc.nodes[3].name, "ind/Mark");
+  assert.equal(doc.nodes[4].name, "ind/Mark");
+});
+
+test("gold morphology：classRoles 不能让有字分组保持 img/", () => {
+  const doc = {
+    nodes: [
+      { id: "g", type: "FRAME", name: "img/装饰", status: "determined", role: "img" },
+      { id: "t", type: "TEXT", name: "hello", status: "determined", role: "copy", parentId: "g" },
+    ],
+  };
+  const result = auditDraftGoldMorphology(doc, {
+    classRoles: { entries: [{ type: "FRAME", body: "装饰", role: "img" }] },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /有文字的分组不能直接 img/);
+  applyDraftGoldMorphology(doc, {
+    classRoles: { entries: [{ type: "FRAME", body: "装饰", role: "img" }] },
+  });
+  assert.notEqual(doc.nodes[0].role, "img");
+});
+
+test("gold morphology：仅全宽不重叠 FRAME 不自动 sec/", () => {
+  const doc = {
+    page: { id: "page", box: { x: 0, y: 0, w: 1920, h: 8000 } },
+    nodes: [
+      { id: "page", type: "FRAME", name: "PC", status: "unknown", scope: "page", box: { x: 0, y: 0, w: 1920, h: 8000 } },
+      ...[0, 1, 2, 3, 4].map((index) => ({
+        id: `b${index}`,
+        type: "FRAME",
+        name: `Band${index}`,
+        status: "unknown",
+        scope: "page",
+        parentId: "page",
+        box: { x: 0, y: index * 900, w: 1920, h: 800 },
+      })),
+    ],
+  };
+  applyDraftGoldMorphology(doc);
+  for (const node of doc.nodes.slice(1)) {
+    assert.notEqual(node.role, "sec", node.name);
+    assert.equal(node.status, "unknown", node.name);
+  }
 });
 
 test("gold morphology：已是 switch/ 的 2 variant 无 ind 仍绿，不剥前缀", () => {
@@ -626,6 +905,19 @@ test("gold morphology：母版 img/卡牌 时，img/立绘下的子件不跟随"
   assert.equal(doc.nodes[1].name, "img/卡牌");
   assert.equal(doc.nodes[2].name, "卡牌");
   assert.equal(doc.nodes[2].role, null);
+  assert.deepEqual(auditDraftGoldMorphology(doc), { ok: true, problems: [] });
+});
+
+test("gold morphology：img/角色 下的立绘不抬二层 img/", () => {
+  const doc = {
+    nodes: [
+      { id: "pack", type: "GROUP", name: "img/角色", status: "determined", role: "img" },
+      { id: "art", type: "FRAME", name: "立绘", status: "unknown", parentId: "pack" },
+    ],
+  };
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.nodes[1].name, "立绘");
+  assert.notEqual(doc.nodes[1].role, "img");
   assert.deepEqual(auditDraftGoldMorphology(doc), { ok: true, problems: [] });
 });
 
