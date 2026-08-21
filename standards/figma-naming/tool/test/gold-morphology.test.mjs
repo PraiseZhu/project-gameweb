@@ -756,7 +756,7 @@ test("gold morphology：所有组件集实例都要跟前缀，不限 btn/", () 
   assert.match(missResult.problems.join("\n"), /实例必须跟组件集 bg\//);
 });
 
-test("gold morphology：母版组件集未命名则子件不得擅自加前缀", () => {
+test("gold morphology：实例已有身份前缀则回写未命名母版，不剥实例（issue #27）", () => {
   const miss = {
     attachments: {
       componentSets: [
@@ -772,10 +772,11 @@ test("gold morphology：母版组件集未命名则子件不得擅自加前缀",
   };
   const missResult = auditDraftGoldMorphology(miss);
   assert.equal(missResult.ok, false);
-  assert.match(missResult.problems.join("\n"), /母版组件集未命名/);
+  assert.match(missResult.problems.join("\n"), /母版跟随/);
   applyDraftGoldMorphology(miss);
-  assert.equal(miss.nodes[0].status, "unknown");
-  assert.equal(miss.nodes[0].name, "标题");
+  assert.equal(miss.nodes[0].name, "img/标题");
+  assert.equal(miss.attachments.componentSets[0].name, "img/标题");
+  assert.equal(auditDraftGoldMorphology(miss).ok, true, auditDraftGoldMorphology(miss).problems.join("\n"));
 });
 
 test("有字的奖励条外层不标 img/，图走子层；跨端不同步成 img/", () => {
@@ -972,4 +973,134 @@ test("gold morphology：本稿有金样同类仍 unknown 则红", () => {
   const audit = auditGoldClassRoles(doc, classRoles);
   assert.equal(audit.ok, false);
   assert.match(audit.problems.join("\n"), /kv\//);
+});
+
+function unnamedSectionDoc() {
+  const pageBox = { x: 0, y: 0, w: 750, h: 4000 };
+  const band = (id, name, y, kids = []) => [
+    {
+      id, type: "FRAME", name, status: "unknown", scope: "page", parentId: "wrap",
+      box: { x: 0, y, w: 750, h: 900 },
+    },
+    ...kids,
+  ];
+  return {
+    page: { id: "page", box: pageBox },
+    nodes: [
+      { id: "wrap", type: "FRAME", name: "页面内容", status: "unknown", scope: "page", box: { x: 0, y: 0, w: 750, h: 4000 } },
+      ...band("sA", "Alpha", 0),
+      ...band("sB", "Beta", 1000),
+      ...band("sC", "Gamma", 2000),
+    ],
+  };
+}
+
+test("gold morphology：内容包裹层内全宽 band 升 sec/，不靠数字名（issue #27）", () => {
+  const doc = unnamedSectionDoc();
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.nodes.find((node) => node.id === "sA").name, "sec/1");
+  assert.equal(doc.nodes.find((node) => node.id === "sB").name, "sec/2");
+  assert.equal(doc.nodes.find((node) => node.id === "sC").name, "sec/3");
+  assert.equal(doc.nodes.find((node) => node.id === "wrap").role ?? null, null);
+});
+
+test("gold morphology：未命名真稿按分区配对，嵌套内容集不挡 4=4，6≠7 报冲突（issue #27）", () => {
+  const dots = (prefix, parentId, count) => Array.from({ length: count }, (_, index) => ({
+    id: `${prefix}${index + 1}`,
+    type: "INSTANCE",
+    name: "Mark",
+    status: "unknown",
+    parentId,
+  }));
+  const dotRelations = (prefix, count) => Array.from({ length: count }, (_, index) => ({
+    kind: "instance-uses-variant",
+    from: { id: `${prefix}${index + 1}`, scope: "page" },
+    to: { id: index === 0 ? "dot-h" : "dot-n", componentSetId: "dots" },
+    evidence: "figma:componentId",
+  }));
+  const doc = {
+    page: { id: "page", box: { x: 0, y: 0, w: 750, h: 4000 } },
+    nodes: [
+      { id: "wrap", type: "FRAME", name: "页面内容", status: "unknown", scope: "page", box: { x: 0, y: 0, w: 750, h: 4000 } },
+      { id: "sA", type: "FRAME", name: "Alpha", status: "unknown", scope: "page", parentId: "wrap", box: { x: 0, y: 0, w: 750, h: 900 } },
+      { id: "sB", type: "FRAME", name: "Beta", status: "unknown", scope: "page", parentId: "wrap", box: { x: 0, y: 1000, w: 750, h: 900 } },
+      { id: "sC", type: "FRAME", name: "Gamma", status: "unknown", scope: "page", parentId: "wrap", box: { x: 0, y: 2000, w: 750, h: 900 } },
+      { id: "inst4", type: "INSTANCE", name: "庆典模块活动内容", status: "unknown", parentId: "sA" },
+      { id: "nested4", type: "INSTANCE", name: "奖励展示", status: "unknown", parentId: "inst4" },
+      ...dots("da", "sA", 4),
+      { id: "inst6", type: "INSTANCE", name: "赛季奖励活动内容", status: "unknown", parentId: "sB" },
+      { id: "nested6", type: "INSTANCE", name: "奖励模块", status: "unknown", parentId: "inst6" },
+      ...dots("db", "sB", 7),
+      { id: "instE", type: "INSTANCE", name: "ews模块活动内容", status: "unknown", parentId: "sC" },
+      ...dots("dc", "sC", 4),
+    ],
+    attachments: {
+      componentSets: [
+        setWithStub("set4", "庆典模块活动内容", [
+          { id: "v41", name: "v1" }, { id: "v42", name: "v2" }, { id: "v43", name: "v3" }, { id: "v44", name: "v4" },
+        ]),
+        setWithStub("reward4", "奖励展示", [
+          { id: "r41", name: "v1" }, { id: "r42", name: "v2" }, { id: "r43", name: "v3" }, { id: "r44", name: "v4" },
+        ]),
+        setWithStub("set6", "赛季奖励活动内容", [
+          { id: "v61", name: "v1" }, { id: "v62", name: "v2" }, { id: "v63", name: "v3" },
+          { id: "v64", name: "v4" }, { id: "v65", name: "v5" }, { id: "v66", name: "v6" },
+        ]),
+        setWithStub("reward6", "奖励模块", [
+          { id: "r61", name: "v1" }, { id: "r62", name: "v2" }, { id: "r63", name: "v3" },
+          { id: "r64", name: "v4" }, { id: "r65", name: "v5" }, { id: "r66", name: "v6" },
+        ]),
+        setWithStub("setE", "ews模块活动内容", [
+          { id: "ve1", name: "v1" }, { id: "ve2", name: "v2" }, { id: "ve3", name: "v3" }, { id: "ve4", name: "v4" },
+        ]),
+        setWithStub("dots", "Mark", [
+          { id: "dot-h", name: "Property 1=highlight" },
+          { id: "dot-n", name: "Property 1=normal" },
+        ]),
+      ],
+    },
+    relations: [
+      { kind: "instance-uses-variant", from: { id: "inst4", scope: "page" }, to: { id: "v41", componentSetId: "set4" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "nested4", scope: "page" }, to: { id: "r41", componentSetId: "reward4" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "inst6", scope: "page" }, to: { id: "v61", componentSetId: "set6" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "nested6", scope: "page" }, to: { id: "r61", componentSetId: "reward6" }, evidence: "figma:componentId" },
+      { kind: "instance-uses-variant", from: { id: "instE", scope: "page" }, to: { id: "ve1", componentSetId: "setE" }, evidence: "figma:componentId" },
+      ...dotRelations("da", 4),
+      ...dotRelations("db", 7),
+      ...dotRelations("dc", 4),
+    ],
+  };
+
+  applyDraftGoldMorphology(doc);
+  const byId = Object.fromEntries(doc.attachments.componentSets.map((set) => [set.id, set]));
+  assert.equal(byId.set4.name, "switch/庆典模块活动内容");
+  assert.equal(byId.setE.name, "switch/ews模块活动内容");
+  assert.equal(byId.dots.name, "ind/Mark");
+  assert.equal(byId.set6.status, "unknown");
+  assert.notEqual(byId.set6.name, "switch/赛季奖励活动内容");
+  assert.notEqual(byId.reward4.role, "switch");
+  const after = auditDraftGoldMorphology(doc);
+  assert.match(after.problems.join("\n"), /6 页 \/ 7 个控制点/);
+  const detected = controlledContentSwitch(doc);
+  assert.deepEqual(detected.conflicts, [{ setId: "set6", pageCount: 6, controlCount: 7 }]);
+});
+
+test("gold morphology：实例 img/ 边框背景回写母版，不再无依据剥回（issue #27）", () => {
+  const doc = {
+    nodes: [
+      { id: "inst", type: "INSTANCE", name: "边框背景1", status: "unknown" },
+    ],
+    attachments: {
+      componentSets: [
+        { id: "setBg", type: "COMPONENT_SET", name: "边框背景1", status: "unknown", variants: [{ id: "v1", name: "Property 1=1" }] },
+      ],
+    },
+    relations: [
+      { kind: "instance-uses-variant", from: { id: "inst", scope: "page" }, to: { id: "v1", componentSetId: "setBg" }, evidence: "figma:componentId" },
+    ],
+  };
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.nodes[0].name, "img/边框背景1");
+  assert.equal(doc.attachments.componentSets[0].name, "img/边框背景1");
+  assert.equal(auditDraftGoldMorphology(doc).ok, true, auditDraftGoldMorphology(doc).problems.join("\n"));
 });
