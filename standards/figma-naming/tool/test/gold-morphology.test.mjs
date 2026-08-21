@@ -973,3 +973,108 @@ test("gold morphology：本稿有金样同类仍 unknown 则红", () => {
   assert.equal(audit.ok, false);
   assert.match(audit.problems.join("\n"), /kv\//);
 });
+
+test("gold morphology：有字标题不因 classRoles 要求 img/，无字标题可以 img/", () => {
+  const withText = {
+    nodes: [
+      { id: "title", type: "FRAME", name: "标题", status: "unknown" },
+      { id: "copy", type: "TEXT", name: "体验优化", status: "determined", role: "copy", parentId: "title" },
+      { id: "deco", type: "RECTANGLE", name: "标题装饰", status: "unknown", parentId: "title" },
+    ],
+  };
+  const classRoles = { entries: [{ type: "FRAME", body: "标题", role: "img" }, { type: "RECTANGLE", body: "标题装饰", role: "img" }] };
+  applyDraftGoldMorphology(withText, { classRoles });
+  assert.notEqual(withText.nodes[0].role, "img");
+  assert.equal(withText.nodes[2].name, "img/标题装饰");
+  const miss = auditDraftGoldMorphology(withText, { classRoles });
+  assert.equal(miss.ok, true, miss.problems.join("\n"));
+
+  const noText = {
+    nodes: [{ id: "title", type: "FRAME", name: "标题", status: "unknown" }],
+  };
+  applyDraftGoldMorphology(noText, { classRoles });
+  assert.equal(noText.nodes[0].name, "img/标题");
+});
+
+test("gold morphology：有字标题框不因另一端同类 img/ 同步", () => {
+  const pc = {
+    nodes: [{ id: "pcTitle", type: "FRAME", name: "img/标题", status: "determined", role: "img" }],
+  };
+  const mobile = {
+    nodes: [
+      { id: "mTitle", type: "FRAME", name: "标题", status: "unknown" },
+      { id: "mCopy", type: "TEXT", name: "体验优化", status: "determined", role: "copy", parentId: "mTitle" },
+      { id: "mDeco", type: "RECTANGLE", name: "img/标题装饰", status: "determined", role: "img", parentId: "mTitle" },
+    ],
+  };
+  applyCrossEndClassSync(pc, mobile);
+  assert.notEqual(mobile.nodes[0].role, "img");
+  const sync = auditCrossEndClassSync([pc, mobile]);
+  assert.equal(sync.ok, true, sync.problems.join("\n"));
+});
+
+test("gold morphology：有字标题组件集不因变体 switch 前缀要求 switch/", () => {
+  const doc = {
+    attachments: {
+      componentSets: [{
+        id: "setT",
+        type: "COMPONENT_SET",
+        name: "标题",
+        status: "unknown",
+        variants: [{ name: "switch/Default" }, { name: "switch/Highlight" }],
+        nodes: [{ id: "txt", type: "TEXT", name: "标题文案", status: "determined", role: "copy" }],
+      }],
+    },
+    nodes: [],
+  };
+  const miss = auditDraftGoldMorphology(doc);
+  assert.equal(miss.problems.filter((p) => p.includes("标题") && p.includes("switch")).length, 0, miss.problems.join("\n"));
+  applyDraftGoldMorphology(doc);
+  assert.notEqual(doc.attachments.componentSets[0].role, "switch");
+});
+
+test("gold morphology：含禁用态的状态组件集是 btn/ 不是 tab/", () => {
+  const doc = {
+    attachments: {
+      componentSets: [{
+        id: "lang",
+        type: "COMPONENT_SET",
+        name: "多语言",
+        status: "unknown",
+        box: { w: 80, h: 40 },
+        variants: [{ name: "Property 1=normal" }, { name: "Property 1=disable" }],
+      }],
+    },
+    nodes: [],
+  };
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.attachments.componentSets[0].name, "btn/多语言");
+  assert.notEqual(doc.attachments.componentSets[0].role, "tab");
+});
+
+test("gold morphology：classRoles 不给 img 祖先下的立绘抬二层", () => {
+  const doc = {
+    nodes: [
+      { id: "pack", type: "GROUP", name: "img/角色", status: "determined", role: "img" },
+      { id: "art", type: "FRAME", name: "立绘", status: "unknown", parentId: "pack" },
+    ],
+  };
+  const classRoles = { entries: [{ type: "FRAME", body: "立绘", role: "img" }] };
+  applyDraftGoldMorphology(doc, { classRoles });
+  assert.equal(doc.nodes[1].name, "立绘");
+  assert.notEqual(doc.nodes[1].role, "img");
+  assert.deepEqual(auditDraftGoldMorphology(doc, { classRoles }), { ok: true, problems: [] });
+});
+
+test("gold morphology：划动层里面的奖励图即使已是 scroll/ 也改回 img/", () => {
+  const doc = {
+    nodes: [
+      { id: "clip", type: "FRAME", name: "scroll/可划动", status: "determined", role: "scroll" },
+      { id: "rew", type: "FRAME", name: "scroll/奖励", status: "determined", role: "scroll", parentId: "clip" },
+    ],
+  };
+  applyClipAndRewardPrefixes(doc);
+  assert.equal(doc.nodes[0].role, "scroll");
+  assert.equal(doc.nodes[1].name, "img/奖励");
+  assert.equal(doc.nodes[1].role, "img");
+});

@@ -18,6 +18,12 @@ function rawName(node) {
   return String(node?.name ?? "").replace(ROLE_PREFIX, "").trim();
 }
 
+/** Figma 默认名只作无名占位符，不消费 class-roles。 */
+export function isGenericLayerName(nameOrNode) {
+  const body = rawName(typeof nameOrNode === "string" ? { name: nameOrNode } : nameOrNode);
+  return /^(?:Frame|Group|Rectangle|Ellipse|Vector|Instance|Component|组|矩形|框架|实例|组件)(?:\s*\d+)?$/i.test(body);
+}
+
 function hasPrefix(node, role) {
   return node.status === "determined" && node.role === role && String(node.name ?? "").startsWith(`${role}/`);
 }
@@ -257,20 +263,53 @@ export function applyClipAndRewardPrefixes(doc) {
     }
     if (!clips.length) continue;
     for (const inner of inners) {
-      if (isTextRewardContainer(inner, kids)) {
-        if (hasPrefix(inner, "img")) {
-          applyPrefix(inner, null);
-          stripped += 1;
-        }
-        continue;
-      }
-      if (!hasPrefix(inner, "img")) {
-        applyPrefix(inner, "img");
-        innerFixed += 1;
-      }
+      const result = retargetInnerReward(inner, kids);
+      if (result === "stripped") stripped += 1;
+      if (result === "fixed") innerFixed += 1;
+    }
+  }
+  const byId = indexNodes(doc);
+  const copies = indexAllCopies(doc);
+  for (const group of copies.values()) {
+    for (const node of group) {
+      if (!INNER_REWARD_RE.test(rawName(node))) continue;
+      const underClip = hasClipAncestor(node, byId);
+      const misnamedScroll = hasPrefix(node, "scroll") || node.role === "scroll";
+      if (!underClip && !misnamedScroll) continue;
+      const result = retargetInnerReward(node, kids);
+      if (result === "stripped") stripped += 1;
+      if (result === "fixed") innerFixed += 1;
     }
   }
   return { clipFixed, innerFixed, stripped };
+}
+
+function hasClipAncestor(node, byId) {
+  const seen = new Set();
+  let current = node.parentId;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const parent = byId.get(current);
+    if (!parent) break;
+    if (CLIP_RE.test(rawName(parent))) return true;
+    current = parent.parentId;
+  }
+  return false;
+}
+
+function retargetInnerReward(inner, kids) {
+  if (isTextRewardContainer(inner, kids)) {
+    if (hasPrefix(inner, "img")) {
+      applyPrefix(inner, null);
+      return "stripped";
+    }
+    return null;
+  }
+  if (!hasPrefix(inner, "img")) {
+    applyPrefix(inner, "img");
+    return "fixed";
+  }
+  return null;
 }
 
 
@@ -329,6 +368,27 @@ function hasTextDescendant(id, kids) {
   return false;
 }
 
+function nodeHasText(node, kids) {
+  if (!node) return false;
+  if (hasTextDescendant(node.id, kids)) return true;
+  return nestedEvidence(node).text === true;
+}
+
+function isTextTitle(node, kids) {
+  return rawName(node) === "标题" && nodeHasText(node, kids);
+}
+
+/** 有字容器不能整组 img/；bg/kv/logo 例外。组件集也走这条。 */
+export function forbidsImgOnTextGroup(node, kids, byId) {
+  if (!node) return false;
+  if (isTextGroupImgExempt(node)) return false;
+  if (isVideoFrameWrapper(node)) return true;
+  if (TEXT_CONTAINER_TYPES.has(node.type) || node.type === "COMPONENT_SET") {
+    return nodeHasText(node, kids);
+  }
+  return false;
+}
+
 function isAvatarSwitchedCharacter(node) {
   const box = node.box || {};
   const maxEdge = Math.max(Number(box.w) || 0, Number(box.h) || 0);
@@ -372,7 +432,7 @@ function leafImageNodes(doc) {
     if (BORDER_PART_RE.test(body)) continue;
     if (isVideoFrameWrapper(node)) continue;
     if (!IMAGE_BODY_RE.test(body)) continue;
-    if (TEXT_CONTAINER_TYPES.has(node.type) && hasTextDescendant(node.id, kids) && !isTextGroupImgExempt(node)) continue;
+    if (forbidsImgOnTextGroup(node, kids, byId)) continue;
     if (hasImgAncestor(node, byId)) continue;
     if (hasPrefix(node, "img")) continue;
     hits.push({ node, why: "自身是切图且祖先没有 img/ 前缀" });
@@ -393,13 +453,13 @@ function videoFrameWrappersToUnname(doc) {
 
 function groupsWithTextNotImg(doc) {
   const kids = childrenByParent(doc);
+  const byId = indexNodes(doc);
   const hits = [];
   visitNodes(doc, (node, _trail, kind) => {
     if (kind !== "node") return;
-    if (!TEXT_CONTAINER_TYPES.has(node.type) || node.status === "skipped") return;
+    if (node.status === "skipped") return;
     if (!(node.status === "determined" && node.role === "img")) return;
-    if (isTextGroupImgExempt(node)) return;
-    if (!hasTextDescendant(node.id, kids)) return;
+    if (!forbidsImgOnTextGroup(node, kids, byId)) return;
     hits.push({ node, role: null, why: "下面有文字的分组不能直接 img/" });
   });
   return hits;
@@ -751,8 +811,12 @@ export function controlledContentSwitch(doc) {
   const familiesByScope = unlabeledControlFamiliesByScope(doc, byId, variantToSet, pageIds);
   const switchSets = new Map();
   const indicatorSets = new Map();
+  const controlSetIds = new Set();
   const conflicts = [];
   for (const [scopeId, items] of setByScope) {
+    for (const family of familiesByScope.get(scopeId) || []) {
+      if (family?.set?.id) controlSetIds.add(family.set.id);
+    }
     if (items.length !== 1) continue;
     const variants = items[0].labels.length;
     const ctrl = byScope.get(scopeId);
@@ -786,7 +850,33 @@ export function controlledContentSwitch(doc) {
       indicatorSets.set(families[0].set.id, families[0].set);
     }
   }
-  return { switchSets, indicatorSets, conflicts };
+  return { switchSets, indicatorSets, conflicts, controlSetIds };
+}
+
+function leftoverStatePairHits(doc) {
+  const detected = controlledContentSwitch(doc);
+  const skip = new Set([
+    ...detected.indicatorSets.keys(),
+    ...(detected.controlSetIds || []),
+  ]);
+  const hits = [];
+  for (const node of indexNodes(doc).values()) {
+    if (node.type !== "COMPONENT_SET" || node.status === "skipped") continue;
+    if (!isStatePairNode(node) || skip.has(node.id)) continue;
+    const role = setNameRole(node);
+    if (role) continue;
+    if (isTextTitle(node, childrenByParent(doc))) continue;
+    const tokens = variantLabels(node).map(variantOptionToken);
+    const hasDisable = tokens.some((token) => token === "disable" || token === "disabled" || token === "禁用");
+    const maxEdge = Math.max(Number(node.box?.w) || 0, Number(node.box?.h) || 0);
+    const want = hasDisable ? "btn" : ((maxEdge > 0 && maxEdge < 250) ? "ind" : "btn");
+    hits.push({
+      node,
+      role: want,
+      why: want === "ind" ? "小尺寸状态点组件集" : "选中/未选中状态组件集",
+    });
+  }
+  return hits;
 }
 
 function classKey(node) {
@@ -842,7 +932,8 @@ export function goldClassRoleHits(doc, classRoles, options = {}) {
       const evidence = nestedEvidence(node);
       if (!evidence.image || evidence.text) continue;
     }
-    if (role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node) || hasImgAncestor(node, byId))) continue;
+    if (role === "img" && (forbidsImgOnTextGroup(node, kids, byId) || hasImgAncestor(node, byId))) continue;
+    if (role === "switch" && isTextTitle(node, kids)) continue;
     hits.push({ node, role, why: `金样同类 ${node.type}+${rawName(node)} 唯一前缀 ${role}/` });
   }
   return hits;
@@ -862,7 +953,8 @@ export function determinedClassRoles(doc) {
   const roles = new Map();
   for (const node of byId.values()) {
     if (node.status !== "determined" || !node.role || node.role === "copy") continue;
-    if (node.role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node) || hasImgAncestor(node, byId))) continue;
+    if (node.role === "img" && (forbidsImgOnTextGroup(node, kids, byId) || hasImgAncestor(node, byId))) continue;
+    if (node.role === "switch" && isTextTitle(node, kids)) continue;
     const key = classKey(node);
     if (!key) continue;
     if (!roles.has(key)) roles.set(key, new Set());
@@ -891,7 +983,8 @@ export function syncClassHits(sourceDoc, targetDoc) {
     const key = classKey(node);
     const role = key ? src.get(key) : null;
     if (!role) continue;
-    if (role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node) || hasImgAncestor(node, byId))) continue;
+    if (role === "img" && (forbidsImgOnTextGroup(node, kids, byId) || hasImgAncestor(node, byId))) continue;
+    if (role === "switch" && isTextTitle(node, kids)) continue;
     hits.push({ node, role, why: `与另一端同类 ${role}/ 同步` });
   }
   return hits;
@@ -929,6 +1022,9 @@ export function auditDraftGoldMorphology(doc, options = {}) {
     expectPrefix(node, role, problems, why);
   }
   for (const { node, role, why } of geometryEvidenceHits(doc, options)) {
+    expectPrefix(node, role, problems, why);
+  }
+  for (const { node, role, why } of goldClassRoleHits(doc, options.classRoles, { signatureRoles })) {
     expectPrefix(node, role, problems, why);
   }
   const flagInnerReward = (inner) => {
@@ -984,7 +1080,10 @@ export function auditDraftGoldMorphology(doc, options = {}) {
       if (setPrefix && setPrefix !== "copy") {
         expectPrefix(node, setPrefix, problems, "组件集");
       } else if (variantPrefixes.length === labels.length && labels.length > 0 && new Set(variantPrefixes).size === 1) {
-        expectPrefix(node, variantPrefixes[0], problems, "组件集变体已有统一前缀");
+        const prefix = variantPrefixes[0];
+        if (!(isTextTitle(node, kids) && (prefix === "img" || prefix === "switch"))) {
+          expectPrefix(node, prefix, problems, "组件集变体已有统一前缀");
+        }
       } else if (isAvatarSwitchedCharacter(node)) {
         expectPrefix(node, "switch", problems, "头像切换所展示的角色内容，不看变体个数");
       } else if (labels.length >= 2 && !isStatePairNode(node)) {
@@ -998,6 +1097,8 @@ export function auditDraftGoldMorphology(doc, options = {}) {
         }
       } else if (contentSwitch.indicatorSets.has(node.id)) {
         expectPrefix(node, "ind", problems, "作用域内与内容集数量对齐且唯一高亮的控制点");
+      } else if (isTextTitle(node, kids)) {
+        // 有字标题不因状态对/变体前缀被抬成 img/ 或 switch/
       } else if (isStatePairNode(node) && Math.max(w || 0, h || 0) > 0 && Math.max(w, h) < 250) {
         expectPrefix(node, "ind", problems, "小尺寸状态点组件集");
       } else if (isStatePairNode(node)) {
@@ -1090,6 +1191,7 @@ export function applyDraftGoldMorphology(doc, options = {}) {
     for (const { node, why } of leafImageNodes(doc)) applyHit(copies, { node, role: "img", why }, applied);
     for (const hit of videoFrameWrappersToUnname(doc)) applyHit(copies, hit, applied);
     for (const hit of innerImagePartsToUnname(doc)) applyHit(copies, hit, applied);
+    for (const hit of leftoverStatePairHits(doc)) applyHit(copies, hit, applied);
     for (const hit of goldClassRoleHits(doc, classRoles, { signatureRoles })) applyHit(copies, hit, applied);
     for (const hit of groupsWithTextNotImg(doc)) applyHit(copies, hit, applied);
     for (const hit of followLayerCopies(doc)) applyHit(copies, hit, applied);
