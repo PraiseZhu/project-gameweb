@@ -60,7 +60,15 @@ export function collectVisibleImageFillRequirements(rawTruth) {
     }
 
     const nodeId = typeof current.id === 'string' ? current.id : '';
-    if (nodeId && hasVisibleImageFill(current)) {
+    /* A Figma IMAGE fill on a degenerate zero-area source node has no visible
+       pixels to deliver. Omitted geometry in a minimal truth fixture is not a
+       zero-area claim; only an explicit finite 0-wide/0-high source node is
+       exempt from the asset contract. */
+    const width = Number(current?.box?.w);
+    const height = Number(current?.box?.h);
+    const explicitlyDegenerate = Number.isFinite(width) && Number.isFinite(height)
+      && (width <= 0 || height <= 0);
+    if (nodeId && hasVisibleImageFill(current) && !explicitlyDegenerate) {
       const key = sourceKey(declaredPlatform, nodeId);
       if (!seen.has(key)) {
         seen.add(key);
@@ -185,6 +193,9 @@ export function evaluateStaticVisualAssetCoverage({
       failures.push({ reason: 'image-fill-provenance-unresolved', ...requirement, diagnostic });
       continue;
     }
+    /* A baked child is intentionally not a separate asset file, but its source
+       node still must render visibly: the owner proves composite pixels while
+       the child proves the renderer retained the source paint relationship. */
     if (!rendered || rendered.complete !== true || rendered.visible !== true) {
       failures.push({ reason: 'image-fill-not-rendered', ...requirement, diagnostic });
       continue;

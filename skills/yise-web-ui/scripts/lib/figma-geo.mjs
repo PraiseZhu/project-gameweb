@@ -161,6 +161,8 @@ export const FIELD_DISPOSITION = {
   },
   /* by-design 不提：每条都有实测依据。带 onlyIf 的由门机械守卫。 */
   byDesign: {
+    characterStyleOverrides: { reason: '当前快照中的字符级覆盖数组全部为空；非空覆盖由 textLeaves 按字符范围提取', onlyIf: 'empty' },
+    styleOverrideTable: { reason: '当前快照中的字符级覆盖表全部为空对象；非空覆盖由 textLeaves 按字符范围提取', onlyIf: 'empty' },
     scrollBehavior: { reason: '414/414 恒为 SCROLLS，滚动行为对静态还原无意义', onlyIf: 'constant' },
     interactions: { reason: '当前 fixture 的 interactions 全为空，只能标记 explicit-empty；抽取器会保留实际出现的 interactions/reactions/transition 字段，禁止把空数组或静态 Properties 元数据当成无 motion 证明', onlyIf: 'empty' },
     /* characterStyleOverrides / styleOverrideTable：2026-08-10 起【有非零 override 就提取】，

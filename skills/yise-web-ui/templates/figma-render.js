@@ -511,6 +511,14 @@
       const refs = rec.imageRefs.map(String);
       if (refs.length === 1 && refs[0] === ref) return String(rec.file);
     }
+    /* A node export can legitimately bake several IMAGE fills into one
+       composite PNG. When no single-ref alias exists, reuse that source
+       composite instead of turning the later fill into a placeholder. */
+    for (const value of Object.values(assets || {})) {
+      const rec = typeof value === 'string' ? { file: value } : value;
+      if (!rec || !rec.file || !Array.isArray(rec.imageRefs)) continue;
+      if (rec.imageRefs.map(String).includes(ref)) return String(rec.file);
+    }
     return null;
   },
 
@@ -2175,6 +2183,26 @@
             : Number.isFinite(siblingY) && siblingY >= ownBottom - 0.5;
         });
         const fixedAutoLayoutTextItem = fixedOnMainAxis && hasFollowingSibling;
+        /* A fixed-width leaf that Figma explicitly centers inside its direct
+           owner owns its source text box. It is neither an Auto Layout track
+           nor a flexible owner-wide label: expanding it from its source left
+           edge to the owner's right edge changes the text's center. Require
+           all three source facts (fixed sizing, CENTER alignment/constraint,
+           and coincident source centers) before preserving the leaf width. */
+        const sourceHorizontalConstraint = String(__u(textLayout.constraints?.horizontal)
+          || __u(n.constraints?.horizontal) || '').toUpperCase();
+        const sourceFixedCenteredTextBox = truthDirectOwner
+          && !fixedOnMainAxis
+          && arForOwner !== 'WIDTH' && arForOwner !== 'WIDTH_AND_HEIGHT'
+          && String(tx.align || '').toUpperCase() === 'CENTER'
+          && sourceHorizontalConstraint === 'CENTER'
+          && Number.isFinite(Number(box.x)) && Number.isFinite(Number(box.w)) && Number(box.w) > 0
+          && Number.isFinite(Number(directOwnerBox.x)) && Number.isFinite(Number(directOwnerBox.w))
+          && Number(directOwnerBox.w) > 0
+          && Math.abs(
+            Number(box.x) + Number(box.w) / 2
+            - (Number(directOwnerBox.x) + Number(directOwnerBox.w) / 2)
+          ) <= 1;
         const parentBox = truthDirectOwner
           ? directOwnerBox
           : (parent && parent.box && !parentSectionWide ? parent.box : null) || directOwnerBox || null;
@@ -2194,6 +2222,8 @@
            passed-through pure container absent from truth), fall back to the
            text own source box width -- never to the section width. */
         const ownerWidth = fixedAutoLayoutTextItem && Number.isFinite(Number(box.w)) && Number(box.w) > 0
+          ? Number(box.w)
+          : sourceFixedCenteredTextBox
           ? Number(box.w)
           : compactDirectOwnerHugLabel
           ? Number(parentBox.w)
@@ -2215,6 +2245,8 @@
           ownerEvidence: hasBoundedOwner
             ? (fixedAutoLayoutTextItem
               ? 'source-fixed-auto-layout-item'
+              : sourceFixedCenteredTextBox
+              ? 'source-fixed-centered-text-box'
               : sourceWidthHugText
               ? 'source-width-hug-text'
               : truthDirectOwner
@@ -2227,6 +2259,7 @@
                 : 'truth-direct-owner-box')
             : (ownerWidth != null ? 'source-box-fallback' : null),
           sourceBoxHeight: Number.isFinite(Number(box.h)) ? Number(box.h) : null,
+          sourceFixedCenteredTextBox,
           sourceWidthHugText,
           evidence: explicitOpen && !explicitFrame ? 'truth-open-flow' : explicitFrame ? (hasBoundedOwner ? 'truth-role-and-owner-box' : 'truth-framed-or-clipped') : openFlow ? 'autoResize-and-ancestor-evidence' : 'default-fixed',
         };
@@ -2264,6 +2297,18 @@
          truthChildrenByParentId.set(parentId, children);
        }
        const interactionAttrs = suppressInteractions ? new Map() : interactionBridge(rawList || list);
+       /* Offline demos cannot import ESM at runtime. The build/onboarding
+          boundary may provide the pure adapter payload produced from
+          deriveInteractionModel(); it augments only source-validated direct
+          child switch pages. The renderer continues to own geometry and the
+          existing runtime applySwitch path. */
+       const interactionPayload = ctx.interactionPayload || ctx.renderInteractionPayload
+         || motionAdapter?.interactionPayload || motionAdapter?.interaction?.rendererPayload || null;
+       const adapterAttrs = new Map((interactionPayload && Array.isArray(interactionPayload.attributes)
+         ? interactionPayload.attributes : []).map((entry) => [String(entry.id), entry.attrs || {}]));
+       for (const [id, attrs] of adapterAttrs) {
+         interactionAttrs.set(id, { ...(interactionAttrs.get(id) || {}), ...attrs });
+       }
        const componentVariantOwners = [];
        const seqOf = (i) => {
          const r = rawList[i];
@@ -2631,6 +2676,12 @@
           }
           el.setAttribute('data-auto-layout-item', '1');
         } else {
+          /* Figma paint siblings use absolute coordinates inside their source
+             owner. `left`/`top` alone do not establish that in CSS: when an
+             asset mount later makes a node `position:relative`, siblings start
+             consuming normal-flow space and a KV's background/portrait/shadow
+             stack vertically. Only a proven Auto Layout child may flow. */
+          el.style.position = 'absolute';
           el.style.left = ((box.x ?? 0) - originX) + 'px';
           el.style.top = ((box.y ?? 0) - originY) + 'px';
         }
@@ -2947,6 +2998,7 @@
           if (constraint.ownerWidth != null) el.setAttribute('data-text-owner-width', String(constraint.ownerWidth));
           if (constraint.ownerEvidence) el.setAttribute('data-text-owner-evidence', constraint.ownerEvidence);
           if (constraint.sourceBoxHeight != null) el.setAttribute('data-text-source-height', String(constraint.sourceBoxHeight));
+          if (constraint.sourceFixedCenteredTextBox) el.setAttribute('data-text-source-centered-box', 'true');
           el.setAttribute('data-text-owner-size-policy', ownerSizing.reason);
           if (constraint.openFlow) {
             // Open-flow text keeps source font metrics and only receives the
@@ -3815,8 +3867,15 @@
           }
           return out;
         };
-        const chromeByRoot = bucketByRoot(asArr(__activeTruth.pageChrome && __activeTruth.pageChrome.nodes), asArr(rawPageChrome.nodes));
+        const chromeNodes = asArr(__activeTruth.pageChrome && __activeTruth.pageChrome.nodes);
+        const rawChromeNodes = asArr(rawPageChrome.nodes);
+        /* The Figma page root has one bg sibling. A consumer may accidentally
+           repeat that root under pageChrome as well as pageBackground; reject
+           the duplicate from chrome bucketing so the same source tree cannot
+           paint twice at two page-paint positions. */
         const directBackgroundRoot = __u(directPageBackground && directPageBackground.nodes && directPageBackground.nodes[0] && directPageBackground.nodes[0].id);
+        const notBackgroundRoot = (node) => String(__u(node && node.id)) !== String(directBackgroundRoot || '');
+        const chromeByRoot = bucketByRoot(chromeNodes.filter(notBackgroundRoot), rawChromeNodes.filter(notBackgroundRoot));
         const bgByRoot = directBackgroundRoot
           ? new Map([[String(directBackgroundRoot), { nodes: pageBgNodes, raw: pageBgRaw }]])
           : bucketByRoot(pageBgNodes, pageBgRaw);
@@ -4146,6 +4205,15 @@
             el.setAttribute('data-switch-index', String(idx));
           }
         };
+        /* Direct-child pages are present in the initial Figma tree, so settle
+           the source-selected state immediately through the same applySwitch()
+           pathway used by tabs, indicators, and prev/next commands. This is
+           deliberately limited to the adapter's explicit source mode: legacy
+           swpage and component-variant initialization retain their existing
+           renderer contracts. */
+        for (const owner of frame.querySelectorAll('[data-switch-owner][data-switch-page-source="switch-direct-child"]')) {
+          applySwitch(owner.getAttribute('data-switch'), Number(owner.getAttribute('data-switch-initial-index') || 0));
+        }
         const fixedNavigation = (() => {
           const anchors = ids.map((sid) => Array.from(frame.querySelectorAll('.fx-stage[data-node-id]') || [])
             .find((el) => el.getAttribute('data-node-id') === 'section-' + sid)).filter(Boolean);
