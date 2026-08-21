@@ -78,14 +78,13 @@
       "fingerprint": "no-prefix-under-img-btn",
       "tier": "by-design",
       "title": "img/ 或 btn/ 下面的零件不用再命名",
-      "detail": "用户 2026-08-11：下载按钮上面分组了直接 img/，下面不用命名；已经是 btn 了下面没文案的整成图。37 条「这层不用命名」全是 ind/ 内部零件。",
+      "detail": "img/立绘下卡牌/Icon_SSR 不得再 img/；跟随母版和跨端同步遇到 img 祖先也不抬",
       "proposal": "img/btn 认领后关子树；ind 组件内部零件不出条目。",
-      "status": "tracked",
-      "note": null,
-      "noteLegacy": true,
-      "occurrences": 1,
+      "status": "landed",
+      "note": "[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态",
+      "occurrences": 2,
       "firstSeen": "2026-08-14T09:03:18.568Z",
-      "lastSeen": "2026-08-14T09:03:18.568Z"
+      "lastSeen": "2026-08-21T05:34:15.937Z"
     },
     {
       "fingerprint": "buttons-need-no-text",
@@ -754,6 +753,30 @@
       "occurrences": 1,
       "firstSeen": "2026-08-20T14:31:04.463Z",
       "lastSeen": "2026-08-20T14:31:04.463Z"
+    },
+    {
+      "fingerprint": "character-content-is-switch",
+      "tier": "auto",
+      "title": "头像切换的角色内容即使单变体也是 switch/",
+      "detail": "未规范 399:47576：角色立绘模块/角色只有 Default，判断按变体个数放过；规范稿是 switch/。正确：被头像切换展示的角色内容模块是 switch/，不看变体个数。",
+      "proposal": "gold-morphology：大尺寸「角色立绘模块」「角色」强制 switch/；completeness 经 auditDraftGoldMorphology 红。",
+      "status": "landed",
+      "note": "[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态",
+      "occurrences": 1,
+      "firstSeen": "2026-08-21T05:34:16.013Z",
+      "lastSeen": "2026-08-21T05:34:16.013Z"
+    },
+    {
+      "fingerprint": "button-chrome-is-img",
+      "tier": "auto",
+      "title": "按钮底和播放按钮 1 是 img 不是 btn",
+      "detail": "一级/二级/三级按钮矩形、按钮背景、播放按钮 1 被 unknown 或标成 btn/。可点的是外层分组。",
+      "proposal": "IMAGE_BODY 覆盖这些名字；leafImageNodes 写 img/；completeness 红。",
+      "status": "landed",
+      "note": "[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态",
+      "occurrences": 1,
+      "firstSeen": "2026-08-21T05:34:16.071Z",
+      "lastSeen": "2026-08-21T05:34:16.071Z"
     }
   ]
 }
