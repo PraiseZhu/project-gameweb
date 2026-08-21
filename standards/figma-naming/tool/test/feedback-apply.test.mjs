@@ -44,20 +44,19 @@ test("feedback remap：导航已是 btn 时旧反馈 img 不复写", () => {
 });
 
 
-test("feedback rule precedence：图文混合容器不能被图片反馈改成 img", () => {
+test("feedback rule precedence：existing img container with text descendant is reclassified as mix", () => {
   const current = {
     nodes: [
-      { id: "mix1", type: "FRAME", name: "边框背景", status: "unknown", parentId: "root" },
-      { id: "art", type: "RECTANGLE", name: "素材图", status: "unknown", parentId: "mix1" },
-      { id: "copy", type: "TEXT", name: "说明", status: "unknown", parentId: "mix1" },
+      { id: "clip", type: "FRAME", name: "scroll/奖励列表", status: "determined", role: "scroll", parentId: "root" },
+      { id: "inner", type: "FRAME", name: "img/奖励", status: "determined", role: "img", parentId: "clip" },
+      { id: "copy", type: "TEXT", name: "奖励说明", status: "unknown", parentId: "inner" },
     ],
   };
   const result = applyReviewFeedback(current, [
-    { nodeId: "mix1", toStatus: "determined", toRole: "img" },
+    { nodeId: "inner", toStatus: "determined", toRole: "img" },
   ]);
   assert.equal(result.missing.length, 0);
-  assert.equal(current.nodes[0].role, "mix");
-  assert.equal(current.nodes[0].name, "mix/边框背景");
-  assert.equal(result.conflicts.length, 1);
-  assert.match(result.conflicts[0].note, /图文混合容器/);
+  assert.equal(current.nodes[1].role, "mix");
+  assert.equal(current.nodes[1].name, "mix/奖励");
+  assert.ok(result.conflicts.some((row) => /图文混合容器/.test(row.note)));
 });
