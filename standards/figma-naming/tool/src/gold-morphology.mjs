@@ -1,6 +1,7 @@
 /**
- * 未规范新稿闸门：只核前缀。后缀和设计师原名不作对错标准。
- * 已知结构漏了前缀 → 红。不对图层 id，不对规范稿后缀抄名。
+ * 未规范新稿闸门：只核前缀。后缀不作对错标准。
+ * 金样唯一 type+剥前缀名可写回前缀；不对图层 id，不对 sec/N 抄名。
+ * 已知结构漏了前缀 → 红。
  */
 import { rebuildInventoryIndexes } from "./inventory.mjs";
 
@@ -404,10 +405,153 @@ function followLayerCopies(doc) {
   return hits;
 }
 
+/** 作用域根：最近的 sec/ 祖先（name/role 为 sec，无则页根）。ind/ 联动作用域同此定义（naming-spec.md A4）。 */
+function scopeRootOf(node, byId) {
+  const seen = new Set();
+  let current = node.parentId;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    const parent = byId.get(current);
+    if (!parent) break;
+    if (String(parent.name || "").startsWith("sec/") || parent.role === "sec") return parent;
+    current = parent.parentId;
+  }
+  return null;
+}
+
+/** 页上实例所属的作用域根 id（无 sec 祖先为 "__page"）。 */
+function instanceScopeOf(node, byId) {
+  const root = scopeRootOf(node, byId);
+  return root ? root.id : "__page";
+}
+
+/** 按组件集 id 找页上实例（relations instance-uses-variant），返回实例节点数组。 */
+function pageInstancesOfSet(doc, byId, setId, variantToSet, pageIds) {
+  const instances = [];
+  for (const relation of doc.relations || []) {
+    if (relation.kind !== "instance-uses-variant") continue;
+    if (setIdOfRelation(relation, variantToSet) !== setId) continue;
+    const fromId = relation.from?.id ?? relation.from;
+    if (typeof fromId !== "string" || (pageIds && !pageIds.has(fromId))) continue;
+    const inst = byId.get(fromId);
+    if (inst && inst.type === "INSTANCE") instances.push(inst);
+  }
+  return instances;
+}
+
+/**
+ * 内容组件集结构判定（issue #22）。同一作用域（最近 sec/ 祖先，无则页根）内：
+ * - 恰好一个待判内容集（variant>=2 且 !isStatePair；已 switch/ 的也占名额）
+ * - 恰好一组控制族（全 ind/ 或全 tab/，不能并存）
+ * - 控制点数（页上已 determined 的 ind/tab 节点数）= variant 数
+ * 满足 → switch/；否则 fail-closed。
+ * 返回 { switchSets: Map<setId, setNode>, conflicts: [{setId, pageCount, controlCount}] }
+ */
+export function controlledContentSwitch(doc) {
+  const byId = indexNodes(doc);
+  const sets = [];
+  for (const set of byId.values()) {
+    if (set.type !== "COMPONENT_SET") continue;
+    const labels = variantLabels(set);
+    if (labels.length < 2 || isStatePair(labels)) continue;
+    if (set.status === "skipped") continue;
+    sets.push({ set, labels });
+  }
+  const control = [];
+  for (const node of doc.nodes || []) {
+    if (hasPrefix(node, "ind") || hasPrefix(node, "tab")) control.push(node);
+  }
+  const byScope = new Map();
+  for (const node of control) {
+    const scopeId = instanceScopeOf(node, byId);
+    if (!byScope.has(scopeId)) byScope.set(scopeId, { ind: [], tab: [] });
+    byScope.get(scopeId)[hasPrefix(node, "tab") ? "tab" : "ind"].push(node);
+  }
+  const variantToSet = variantToSetMap(doc);
+  const pageIds = new Set((doc.nodes || []).map((node) => node?.id).filter(Boolean));
+  const setByScope = new Map();
+  for (const item of sets) {
+    const instances = pageInstancesOfSet(doc, byId, item.set.id, variantToSet, pageIds);
+    if (!instances.length) continue;
+    const scopes = new Set(instances.map((inst) => instanceScopeOf(inst, byId)));
+    if (scopes.size !== 1) continue;
+    const scopeId = [...scopes][0];
+    if (!setByScope.has(scopeId)) setByScope.set(scopeId, []);
+    setByScope.get(scopeId).push(item);
+  }
+  const switchSets = new Map();
+  const conflicts = [];
+  for (const [scopeId, items] of setByScope) {
+    if (items.length !== 1) continue;
+    const ctrl = byScope.get(scopeId);
+    if (!ctrl) continue;
+    const hasInd = ctrl.ind.length > 0;
+    const hasTab = ctrl.tab.length > 0;
+    if (hasInd && hasTab) continue;
+    const count = hasInd ? ctrl.ind.length : ctrl.tab.length;
+    const variants = items[0].labels.length;
+    if (count !== variants) {
+      conflicts.push({ setId: items[0].set.id, pageCount: variants, controlCount: count });
+      continue;
+    }
+    switchSets.set(items[0].set.id, items[0].set);
+  }
+  return { switchSets, conflicts };
+}
+
 function classKey(node) {
   const body = rawName(node);
   if (!body) return null;
   return `${node.type}::${body}`;
+}
+
+export function classRoleMapFromTable(table) {
+  const map = new Map();
+  const dropped = new Set();
+  for (const entry of table?.entries || []) {
+    if (!entry?.type || !entry?.body || !entry?.role || entry.role === "copy") continue;
+    const key = `${entry.type}::${entry.body}`;
+    if (dropped.has(key)) continue;
+    if (map.has(key) && map.get(key) !== entry.role) {
+      map.delete(key);
+      dropped.add(key);
+      continue;
+    }
+    map.set(key, entry.role);
+  }
+  return map;
+}
+
+function asClassRoleMap(classRoles) {
+  if (!classRoles) return new Map();
+  if (classRoles instanceof Map) return classRoles;
+  return classRoleMapFromTable(classRoles);
+}
+
+export function goldClassRoleHits(doc, classRoles) {
+  const map = asClassRoleMap(classRoles);
+  if (!map.size) return [];
+  const byId = indexNodes(doc);
+  const kids = childrenByParent(doc);
+  const hits = [];
+  for (const node of byId.values()) {
+    if (node.status === "skipped") continue;
+    if (node.status === "determined" && node.role && node.role !== "copy") continue;
+    const key = classKey(node);
+    const role = key ? map.get(key) : null;
+    if (!role) continue;
+    if (role === "img" && (isTextRewardContainer(node, kids) || isVideoFrameWrapper(node) || hasImgAncestor(node, byId))) continue;
+    hits.push({ node, role, why: `金样同类 ${node.type}+${rawName(node)} 唯一前缀 ${role}/` });
+  }
+  return hits;
+}
+
+export function auditGoldClassRoles(doc, classRoles) {
+  const problems = [];
+  for (const { node, role, why } of goldClassRoleHits(doc, classRoles)) {
+    expectPrefix(node, role, problems, why);
+  }
+  return { ok: problems.length === 0, problems: [...new Set(problems)] };
 }
 
 export function determinedClassRoles(doc) {
@@ -471,6 +615,7 @@ export function auditDraftGoldMorphology(doc) {
   }
 
   const kids = childrenByParent(doc);
+  const contentSwitch = controlledContentSwitch(doc);
   const flagInnerReward = (inner) => {
     if (isTextRewardContainer(inner, kids)) return;
     if (inner.status === "determined" && inner.role === "scroll") {
@@ -527,8 +672,15 @@ export function auditDraftGoldMorphology(doc) {
         expectPrefix(node, variantPrefixes[0], problems, "组件集变体已有统一前缀");
       } else if (isAvatarSwitchedCharacter(node)) {
         expectPrefix(node, "switch", problems, "头像切换所展示的角色内容，不看变体个数");
-      } else if (labels.length >= 2 && !isStatePair(labels) && labels.length <= 3) {
-        expectPrefix(node, "switch", problems, "多变体内容组件集");
+      } else if (labels.length >= 2 && !isStatePair(labels)) {
+        if (contentSwitch.switchSets.has(node.id)) {
+          expectPrefix(node, "switch", problems, "多变体内容组件集（作用域内一组控制点且数量对齐）");
+        } else {
+          const conflict = contentSwitch.conflicts.find((item) => item.setId === node.id);
+          if (conflict) {
+            problems.push(`${node.id}「${node.name}」${conflict.pageCount} 页 / ${conflict.controlCount} 个控制点数量冲突，保持 unknown`);
+          }
+        }
       } else if (isStatePair(labels) && Math.max(w || 0, h || 0) > 0 && Math.max(w, h) < 250) {
         expectPrefix(node, "ind", problems, "小尺寸状态点组件集");
       } else if (isStatePair(labels)) {
@@ -596,14 +748,20 @@ function applyHit(copies, { node, role, why }, applied) {
 }
 
 /** 静默补：任意组件集实例 + I…;母版Id 子件跟随母版。不要拿这类漏项问人。 */
-export function applyDraftGoldMorphology(doc) {
+export function applyDraftGoldMorphology(doc, options = {}) {
+  const classRoles = asClassRoleMap(options.classRoles);
   const applied = [];
   const byId = indexNodes(doc);
   for (let pass = 0; pass < 5; pass += 1) {
     const before = applied.length;
     const copies = indexAllCopies(doc);
+    for (const hit of goldClassRoleHits(doc, classRoles)) applyHit(copies, hit, applied);
     for (const hit of setRoleInstances(doc)) applyHit(copies, hit, applied);
     for (const hit of characterContentToSwitch(doc)) applyHit(copies, hit, applied);
+    const { switchSets } = controlledContentSwitch(doc);
+    for (const set of switchSets.values()) {
+      applyHit(copies, { node: set, role: "switch", why: "多变体内容组件集（作用域内一组控制点且数量对齐）" }, applied);
+    }
     for (const { node, why } of leafImageNodes(doc)) applyHit(copies, { node, role: "img", why }, applied);
     for (const hit of videoFrameWrappersToUnname(doc)) applyHit(copies, hit, applied);
     for (const hit of innerImagePartsToUnname(doc)) applyHit(copies, hit, applied);
@@ -615,13 +773,13 @@ export function applyDraftGoldMorphology(doc) {
   return { applied };
 }
 
-export function applyCrossEndClassSync(sourceDoc, targetDoc) {
+export function applyCrossEndClassSync(sourceDoc, targetDoc, options = {}) {
   const applied = [];
   const copies = indexAllCopies(targetDoc);
   for (const hit of syncClassHits(sourceDoc, targetDoc)) {
     applyHit(copies, hit, applied);
   }
-  const again = applyDraftGoldMorphology(targetDoc);
+  const again = applyDraftGoldMorphology(targetDoc, options);
   return { applied: [...applied, ...again.applied] };
 }
 
@@ -630,19 +788,20 @@ export function recountStatuses(doc) {
   return { ...(doc.counts || {}) };
 }
 
-/** PC/mobile 写回收口：跟随母版 + 两端同类同步。 */
-export function finalizeDraftWriteback(docs) {
+/** PC/mobile 写回收口：金样同类层 + 跟随母版 + 两端同类同步。 */
+export function finalizeDraftWriteback(docs, options = {}) {
   const list = (Array.isArray(docs) ? docs : [docs]).filter(Boolean);
+  const morphOpts = { classRoles: asClassRoleMap(options.classRoles) };
   const applied = list.map(() => []);
   for (let i = 0; i < list.length; i += 1) {
-    applied[i].push(...applyDraftGoldMorphology(list[i]).applied);
+    applied[i].push(...applyDraftGoldMorphology(list[i], morphOpts).applied);
     applyClipAndRewardPrefixes(list[i]);
   }
   if (list.length >= 2) {
     for (let i = 0; i < list.length; i += 1) {
       for (let j = 0; j < list.length; j += 1) {
         if (i === j) continue;
-        applied[j].push(...applyCrossEndClassSync(list[i], list[j]).applied);
+        applied[j].push(...applyCrossEndClassSync(list[i], list[j], morphOpts).applied);
       }
     }
     for (const doc of list) applyClipAndRewardPrefixes(doc);
