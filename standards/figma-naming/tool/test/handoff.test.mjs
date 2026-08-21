@@ -6,30 +6,34 @@ import { join } from "node:path";
 import {
   validateHandoffPair, writeHandoffPack, writePromotedPair, fingerprintInventories,
 } from "../src/handoff.mjs";
+import { rebuildInventoryIndexes } from "../src/inventory.mjs";
+import { GOLD_MOBILE_PREFIX_CLASSES } from "../scripts/check-draft-asset-completeness.mjs";
+import { behaviorOf } from "../../spec/inventory.mjs";
+import { fileURLToPath } from "node:url";
 
 function sample(id, extra = {}) {
-  return {
+  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
+    id: `${id}-${role}`,
+    type: role === "btn" ? "INSTANCE" : "FRAME",
+    name: `${role}/${role}`,
+    status: "determined",
+    role,
+    behavior: behaviorOf(role),
+    via: "prefix",
+    box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
+  }));
+  return rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
     status: "draft",
     fileKey: "FILEKEY",
     requestedNodeId: id,
-    page: { id, box: { x: 0, y: 0, w: 100, h: 200 } },
-    counts: { determined: 1, unknown: 0, skipped: 0 },
-    nodes: [{
-      id: `${id}-btn`,
-      type: "INSTANCE",
-      name: "btn/导航状态",
-      status: "determined",
-      role: "btn",
-      behavior: "click",
-      via: "vision",
-      box: { x: 0, y: 0, w: 80, h: 40 },
-    }],
+    page: { id, box: { x: 0, y: 0, w: 750, h: 1200 } },
+    nodes,
     attachments: { componentSets: [], modals: [] },
     relations: [],
     ...extra,
-  };
+  });
 }
 
 test("handoff：成对 draft 无开关不能打 ready 包", () => {
@@ -84,7 +88,7 @@ test("handoff：pack 写出 manifest 且 green-draft 不得称 ready", () => {
   assert.ok(existsSync(join(outDir, "manifest.json")));
   assert.ok(existsSync(join(outDir, "inventory-pc.json")));
   const consume = pack.manifest.consume.pc;
-  assert.equal(consume.determined[0].role, "btn");
+  assert.ok(consume.determined.some((node) => node.role === "btn"));
   assert.equal(consume.unknown.length, 0);
 });
 
@@ -125,4 +129,36 @@ test("handoff：fingerprint 稳定", () => {
   assert.equal(a, b);
   const c = fingerprintInventories(sample("1:1", { status: "ready" }), sample("2:2", { status: "ready" }));
   assert.notEqual(a, c);
+});
+
+test("handoff 必须走 auditLikeCli，禁止另写一套闸门", () => {
+  const src = readFileSync(fileURLToPath(new URL("../src/handoff.mjs", import.meta.url)), "utf8");
+  assert.match(src, /auditLikeCli/);
+  assert.doesNotMatch(src, /auditDraftAssetCompleteness\(/);
+});
+
+test("handoff：缺冻住前缀类不能打 green-draft", () => {
+  const thin = rebuildInventoryIndexes({
+    ok: true,
+    schema: "inventory/v2",
+    status: "draft",
+    fileKey: "FILEKEY",
+    requestedNodeId: "1:1",
+    page: { id: "1:1", box: { x: 0, y: 0, w: 1440, h: 2000 } },
+    nodes: [{
+      id: "1:1-btn",
+      type: "INSTANCE",
+      name: "btn/导航状态",
+      status: "determined",
+      role: "btn",
+      behavior: "click",
+      via: "prefix",
+      box: { x: 0, y: 0, w: 80, h: 40 },
+    }],
+    attachments: { componentSets: [], modals: [] },
+    relations: [],
+  });
+  const result = validateHandoffPair(thin, sample("2:2"), { allowGreenDraft: true });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /相对规范稿缺前缀类|规范稿有/);
 });
