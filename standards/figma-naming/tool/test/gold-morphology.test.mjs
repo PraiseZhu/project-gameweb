@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyCrossEndClassSync, applyDraftGoldMorphology, auditDraftGoldMorphology } from "../src/gold-morphology.mjs";
+import { applyClipAndRewardPrefixes, applyCrossEndClassSync, applyDraftGoldMorphology, auditCrossEndClassSync, auditDraftGoldMorphology } from "../src/gold-morphology.mjs";
 import { auditDraftAssetCompleteness } from "../scripts/check-draft-asset-completeness.mjs";
 
 test("gold morphology：内容组件集只要 switch/ 前缀，后缀不限", () => {
@@ -306,4 +306,77 @@ test("gold morphology：母版组件集未命名则子件不得擅自加前缀",
   applyDraftGoldMorphology(miss);
   assert.equal(miss.nodes[0].status, "unknown");
   assert.equal(miss.nodes[0].name, "标题");
+});
+
+test("有字的奖励条外层不标 img/，图走子层；跨端不同步成 img/", () => {
+  const pc = {
+    nodes: [
+      { id: "clip", type: "FRAME", name: "scroll/可划动", status: "determined", role: "scroll", parentId: "p" },
+      { id: "rew", type: "FRAME", name: "奖励", status: "unknown", parentId: "p" },
+      { id: "txt", type: "TEXT", name: "奖品名", status: "determined", role: "copy", parentId: "rew" },
+      { id: "art", type: "RECTANGLE", name: "img/素材图", status: "determined", role: "img", parentId: "rew" },
+    ],
+  };
+  const mobile = {
+    nodes: [
+      { id: "clip2", type: "FRAME", name: "scroll/可划动", status: "determined", role: "scroll", parentId: "p" },
+      { id: "rew2", type: "FRAME", name: "img/奖励", status: "determined", role: "img", parentId: "p" },
+      { id: "txt2", type: "TEXT", name: "奖品名", status: "determined", role: "copy", parentId: "rew2" },
+    ],
+  };
+  applyClipAndRewardPrefixes(mobile);
+  assert.equal(mobile.nodes[1].role, null);
+  assert.equal(String(mobile.nodes[1].name).startsWith("img/"), false);
+
+  const sync = auditCrossEndClassSync([pc, mobile]);
+  assert.equal(sync.ok, true, sync.problems.join("\n"));
+
+  const morph = auditDraftGoldMorphology(mobile);
+  assert.equal(morph.ok, true, morph.problems.join("\n"));
+});
+
+test("视频框外层跳过命名，往下挖；弹窗无字框也不盖 img/", () => {
+  const doc = {
+    nodes: [
+      { id: "wrap", type: "FRAME", name: "img/视频框", status: "determined", role: "img" },
+      { id: "hot", type: "GROUP", name: "hot/具体视频播放区域", status: "determined", role: "hot", parentId: "wrap" },
+      { id: "chrome", type: "RECTANGLE", name: "img/视频框 2", status: "determined", role: "img", parentId: "wrap" },
+      { id: "cap", type: "FRAME", name: "Frame x", status: "skipped", parentId: "wrap" },
+      { id: "txt", type: "TEXT", name: "说明", status: "determined", role: "copy", parentId: "cap" },
+    ],
+  };
+  const miss = auditDraftGoldMorphology(doc);
+  assert.equal(miss.ok, false);
+  assert.match(miss.problems.join("\n"), /视频框外层分组跳过命名/);
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.nodes[0].name, "视频框");
+  assert.equal(doc.nodes[0].role, null);
+  assert.equal(doc.nodes[1].role, "hot");
+  assert.equal(doc.nodes[2].role, "img");
+  assert.deepEqual(auditDraftGoldMorphology(doc), { ok: true, problems: [] });
+});
+
+test("有字 logo 保留 img/；普通有字容器不能 img/", () => {
+  const logo = {
+    nodes: [
+      { id: "logo", type: "FRAME", name: "img/logo", status: "determined", role: "img" },
+      { id: "txt", type: "TEXT", name: "品牌", status: "determined", role: "copy", parentId: "logo" },
+    ],
+  };
+  assert.deepEqual(auditDraftGoldMorphology(logo), { ok: true, problems: [] });
+  applyDraftGoldMorphology(logo);
+  assert.equal(logo.nodes[0].name, "img/logo");
+  assert.equal(logo.nodes[0].role, "img");
+
+  const reward = {
+    nodes: [
+      { id: "box", type: "FRAME", name: "img/奖励", status: "determined", role: "img" },
+      { id: "txt", type: "TEXT", name: "积分", status: "determined", role: "copy", parentId: "box" },
+    ],
+  };
+  const miss = auditDraftGoldMorphology(reward);
+  assert.equal(miss.ok, false);
+  applyDraftGoldMorphology(reward);
+  assert.equal(reward.nodes[0].name, "奖励");
+  assert.notEqual(reward.nodes[0].role, "img");
 });

@@ -547,9 +547,9 @@
       "proposal": null,
       "status": "adopted",
       "note": "[decided:2026-08-19] 来自 491 mobile 核对：9047 scroll，9048/9064 img。",
-      "occurrences": 3,
+      "occurrences": 4,
       "firstSeen": "2026-08-19T07:49:42.177Z",
-      "lastSeen": "2026-08-19T08:56:55.972Z"
+      "lastSeen": "2026-08-20T11:50:31.395Z"
     },
     {
       "fingerprint": "catalog-skips-loose-image-parts",
@@ -711,13 +711,49 @@
       "fingerprint": "group-with-text-not-img",
       "tier": "auto",
       "title": "下面有文字的分组不能直接 img/",
-      "detail": "错误：带文案的奖励/标题分组被标 img/。正确：分组底下有文字不是切图；切图只打纯视觉层。未命名组件集的子件不得擅自加 img/。例外：bg/、kv/、logo 三处有字也保留。",
+      "detail": "错误：有字奖励条被标 img/ 且跨端互打。正确：外层有字不标 img/，图走子层；跨端不得把有字奖励同步成 img/。例外仍是 bg/ kv/ logo。名叫视频框的外层 FRAME 跳过命名，往下挖 hot/、img/视频框 2、btn/播放、说明 copy/；不要整框 img/ 再和有字皮肤框互打。",
       "proposal": null,
       "status": "adopted",
       "note": "[decided:2026-08-20] 491 mobile 人核：分组含文字不 img；bg/、kv/、logo 三处例外。",
-      "occurrences": 2,
+      "occurrences": 5,
       "firstSeen": "2026-08-20T06:40:00.000Z",
-      "lastSeen": "2026-08-20T07:10:00.000Z"
+      "lastSeen": "2026-08-20T14:31:00.073Z"
+    },
+    {
+      "fingerprint": "writeback-must-rebuild-index",
+      "tier": "auto",
+      "title": "写回必须重建清单索引",
+      "detail": "错误：节点已 sec/ 但 sections 空，completeness 只扫前缀仍绿，做页/核对页吃空分区。正确：apply-review-feedback / apply-gold-morphology 写回后 rebuildInventoryIndexes，并重写 txt。completeness 按节点对照索引，残缺/过期都红。",
+      "proposal": "已落地 rebuild + completeness 对照。",
+      "status": "adopted",
+      "note": "[decided:2026-08-20] 491 未规范稿人确认：写回必重建 sections/overlays/backgrounds/modules/counts/pageCounts+txt。",
+      "occurrences": 2,
+      "firstSeen": "2026-08-20T11:50:36.373Z",
+      "lastSeen": "2026-08-20T14:31:00.166Z"
+    },
+    {
+      "fingerprint": "variant-counts-as-on-page",
+      "tier": "auto",
+      "title": "页上组件集的全部变体算在页上",
+      "detail": "错误：验收只扫当前展开的 page.nodes，皮肤视频变体里的 hot/ 不算，PC 缺 hot 误红。正确：变体一切换就在页上；completeness 前缀类必须把页上用到的 componentSets 全部变体树算进去。",
+      "proposal": null,
+      "status": "adopted",
+      "note": "[decided:2026-08-20] 491 人确认：变体等同页上，热区在皮肤视频变体里也算过关。",
+      "occurrences": 2,
+      "firstSeen": "2026-08-20T13:55:42.906Z",
+      "lastSeen": "2026-08-20T14:31:00.119Z"
+    },
+    {
+      "fingerprint": "full-prechain-must-see-images",
+      "tier": "auto",
+      "title": "完整前置必须看图",
+      "detail": "错误：把从0验收收成不看图只测门，清单会瘦、漏热区/切换。正确：编稿→切片G2→看图判断写回→completeness；图和结构都要看。",
+      "proposal": null,
+      "status": "adopted",
+      "note": "[decided:2026-08-20] 491 人确认：完整前置必须看图。",
+      "occurrences": 1,
+      "firstSeen": "2026-08-20T14:31:04.463Z",
+      "lastSeen": "2026-08-20T14:31:04.463Z"
     }
   ]
 }

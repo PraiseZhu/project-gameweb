@@ -24,7 +24,7 @@
 
    链接里的 `node-id` 是拉稿根，`--page` 只在已拉取的树中选页面，不能拿 `--page` 代替拉稿根。
 3. 命令产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 为 `schema: "inventory/v2"`。规范稿是 `ready`；未规范稿必须是 `draft`，当前不能在核对页升档。抓取、整理或自验失败即停止。
-4. 人可选运行 `npm run inventory:review`，复核页面身份、modal 入口、组件集/完整变体和实例关联。没有原型或 `@go` 证据的弹窗入口保持对应关系上的 `unknown`，不猜；复核保存不改变整份清单的 `ready` 状态。移动端用 `?inv=inventory-392-25877.json`。
+4. 人可选运行 `npm run inventory:review`，复核页面身份、modal 入口、组件集/完整变体和实例关联。核对页 UI 只读仓内 `inventory-review/index.html`，禁止写 `_tmp/inventory-review/index.html`，禁止每次重写。没有原型或 `@go` 证据的弹窗入口保持对应关系上的 `unknown`，不猜；复核保存不改变整份清单的 `ready` 状态。移动端用 `?inv=inventory-392-25877.json`。
 5. 做页先消费 `ready inventory/v2` 中的已确定项；unknown 节点只画样子、不赋交互，unknown 的 `modal-trigger` 不自动接线。
 
 做页消费边界：先按已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、完整
@@ -83,7 +83,7 @@
 | `src/figma.mjs` | Figma REST 最小封装 + lastModified 缓存 | — |
 | `src/inventory.mjs` | 已规范命名稿 → `inventory/v2`，收页面、同货架 modal、实际引用组件/完整变体与关系 | 无原型或 `@go` 证据的弹窗入口必须保持 `unknown` |
 | `bin/inventory.mjs` | 解析货架链接与 `--page`，输出 `_tmp/inventory-<page>.json/.txt` | 拉稿根只能用链接 `node-id`；`--page` 只选页面端 |
-| `scripts/serve-inventory-review.mjs` | 提供 inventory/v2 可视化人工核对页 | 保存时覆盖页面与 attachments 全部节点计数，保持 `ready` |
+| `scripts/serve-inventory-review.mjs` | 提供 inventory/v2 可视化人工核对页 | UI 只读仓内 `inventory-review/index.html`，禁止从 `_tmp` 凑 HTML。保存时覆盖页面与 attachments 全部节点计数，保持 `ready` |
 | `bin/cli.mjs` | 参数解析、体检根校验、退出码 | 有 P0 → 退出码 1；`--require-sec` 让选根失败直接退出 |
 | `scripts/gen-rules-doc.mjs` | 从 `rules.mjs` + `spec.mjs` 生成 `docs/RULES.md` | `docs/RULES.md` 不许手改 |
 | `plugin/marks.mjs` | 三种处置标记（已改 / 不用改 / 规则错了）的纯逻辑。存 `figma.root` 的 pluginData | **标记绝不改变 findings 与计数**（见下）；外观按标记分流，标记键固定为 `` `${code}::${nodeId}` `` |
