@@ -26,7 +26,8 @@ function isStatePair(labels) {
 
 const CLIP_RE = /可划动|划动区域/;
 const INNER_REWARD_RE = /^(奖励列表|奖励)$/;
-const IMAGE_BODY_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘|角色头像|待解锁头像|视频框\s*\d+|兑换码背景|头像框.*|icon|图标装饰|装饰|阵营信息|待解锁|卡牌|Icon_SSR.*|BG|小按钮|logo|按钮背景|一级按钮.*|二级按钮.*|三级按钮.*|播放按钮\s+\d+)$/;
+const CARD_ART_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘)$/;
+const IMAGE_BODY_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘|角色头像|待解锁头像|视频框.*|兑换码背景|头像框.*|icon|图标装饰|装饰|阵营信息|待解锁|卡牌|Icon_SSR.*|BG|小按钮|logo|按钮背景|一级按钮.*|二级按钮.*|三级按钮.*|播放按钮\s+\d+)$/;
 const BORDER_PART_RE = /^一级边框/;
 const TEXT_CONTAINER_TYPES = new Set(["FRAME", "GROUP", "INSTANCE", "COMPONENT"]);
 
@@ -320,7 +321,12 @@ function leafImageNodes(doc) {
   const hits = [];
   for (const node of byId.values()) {
     if (node.status === "skipped") continue;
-    if (["TEXT", "COMPONENT_SET", "COMPONENT", "INSTANCE"].includes(node.type)) continue;
+    /* A card visual can be an INSTANCE (not only a RECTANGLE): border-art and
+       portraits often arrive as an instance expanded from a component. Keep
+       component definitions themselves out, but classify an image-shaped
+       INSTANCE when it has no copy descendants. An INSTANCE containing copy is
+       a component shell and must remain unknown instead of being sliced. */
+    if (["TEXT", "COMPONENT_SET", "COMPONENT"].includes(node.type)) continue;
     const body = rawName(node);
     if (BORDER_PART_RE.test(body)) continue;
     if (isVideoFrameWrapper(node)) continue;
@@ -592,6 +598,7 @@ function applyHit(copies, { node, role, why }, applied) {
 /** 静默补：任意组件集实例 + I…;母版Id 子件跟随母版。不要拿这类漏项问人。 */
 export function applyDraftGoldMorphology(doc) {
   const applied = [];
+  const byId = indexNodes(doc);
   for (let pass = 0; pass < 5; pass += 1) {
     const before = applied.length;
     const copies = indexAllCopies(doc);

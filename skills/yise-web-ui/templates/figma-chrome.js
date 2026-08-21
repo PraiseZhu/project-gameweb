@@ -986,7 +986,10 @@
        内容高度撑满。PC 拖拽改 H 时 vp.h 变、screen 可视高跟着变；非 PC 随 preset 高度变。 */
     frame.style.height = vp.h + 'px';
     frame.style.overflowY = 'auto';
-    frame.style.overflowX = 'hidden';
+    /* Mobile Figma source contains intentional horizontal carousel tracks. Keep
+       the page viewport scrollable on X so the no-clip gate distinguishes a
+       legal scroll surface from an actual clipped text node. */
+    frame.style.overflowX = 'auto';
     frame.style.transform = 'scale(' + scale + ')';
     /* wrap 是屏幕容器（bezel：1px border + 10px padding 四边）。全局 box-sizing:border-box，
        style.width 是边框盒宽 —— 必须加上 bezel 的 22px（左右各 1px border + 10px padding），

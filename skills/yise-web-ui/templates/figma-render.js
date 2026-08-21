@@ -511,6 +511,14 @@
       const refs = rec.imageRefs.map(String);
       if (refs.length === 1 && refs[0] === ref) return String(rec.file);
     }
+    /* A node export can legitimately bake several IMAGE fills into one
+       composite PNG. When no single-ref alias exists, reuse that source
+       composite instead of turning the later fill into a placeholder. */
+    for (const value of Object.values(assets || {})) {
+      const rec = typeof value === 'string' ? { file: value } : value;
+      if (!rec || !rec.file || !Array.isArray(rec.imageRefs)) continue;
+      if (rec.imageRefs.map(String).includes(ref)) return String(rec.file);
+    }
     return null;
   },
 
@@ -2631,6 +2639,12 @@
           }
           el.setAttribute('data-auto-layout-item', '1');
         } else {
+          /* Figma paint siblings use absolute coordinates inside their source
+             owner. `left`/`top` alone do not establish that in CSS: when an
+             asset mount later makes a node `position:relative`, siblings start
+             consuming normal-flow space and a KV's background/portrait/shadow
+             stack vertically. Only a proven Auto Layout child may flow. */
+          el.style.position = 'absolute';
           el.style.left = ((box.x ?? 0) - originX) + 'px';
           el.style.top = ((box.y ?? 0) - originY) + 'px';
         }
@@ -3815,8 +3829,15 @@
           }
           return out;
         };
-        const chromeByRoot = bucketByRoot(asArr(__activeTruth.pageChrome && __activeTruth.pageChrome.nodes), asArr(rawPageChrome.nodes));
+        const chromeNodes = asArr(__activeTruth.pageChrome && __activeTruth.pageChrome.nodes);
+        const rawChromeNodes = asArr(rawPageChrome.nodes);
+        /* The Figma page root has one bg sibling. A consumer may accidentally
+           repeat that root under pageChrome as well as pageBackground; reject
+           the duplicate from chrome bucketing so the same source tree cannot
+           paint twice at two page-paint positions. */
         const directBackgroundRoot = __u(directPageBackground && directPageBackground.nodes && directPageBackground.nodes[0] && directPageBackground.nodes[0].id);
+        const notBackgroundRoot = (node) => String(__u(node && node.id)) !== String(directBackgroundRoot || '');
+        const chromeByRoot = bucketByRoot(chromeNodes.filter(notBackgroundRoot), rawChromeNodes.filter(notBackgroundRoot));
         const bgByRoot = directBackgroundRoot
           ? new Map([[String(directBackgroundRoot), { nodes: pageBgNodes, raw: pageBgRaw }]])
           : bucketByRoot(pageBgNodes, pageBgRaw);

@@ -43,15 +43,21 @@ test("feedback remap：导航已是 btn 时旧反馈 img 不复写", () => {
   assert.equal(current.nodes[0].name, "btn/导航状态");
 });
 
-test("feedback remap：精确 id 仍优先于映射", () => {
+
+test("feedback rule precedence：图文混合容器不能被图片反馈改成 img", () => {
   const current = {
     nodes: [
-      { id: "491:7457", type: "FRAME", name: "icon", status: "unknown", parentId: "x" },
+      { id: "mix1", type: "FRAME", name: "边框背景", status: "unknown", parentId: "root" },
+      { id: "art", type: "RECTANGLE", name: "素材图", status: "unknown", parentId: "mix1" },
+      { id: "copy", type: "TEXT", name: "说明", status: "unknown", parentId: "mix1" },
     ],
   };
   const result = applyReviewFeedback(current, [
-    { nodeId: "491:7457", toStatus: "determined", toRole: "img" },
+    { nodeId: "mix1", toStatus: "determined", toRole: "img" },
   ]);
-  assert.equal(result.applied[0].name, "img/icon");
-  assert.equal(current.nodes[0].role, "img");
+  assert.equal(result.missing.length, 0);
+  assert.equal(current.nodes[0].role, "mix");
+  assert.equal(current.nodes[0].name, "mix/边框背景");
+  assert.equal(result.conflicts.length, 1);
+  assert.match(result.conflicts[0].note, /图文混合容器/);
 });

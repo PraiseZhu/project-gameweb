@@ -133,6 +133,21 @@ test("写回：PC/mobile 收口把一端确定的同类同步到另一端并跟�
   assert.equal(mobile.nodes[1].name, "img/icon");
 });
 
+
+test("写回：图文混合容器不被反馈覆盖成 img/", () => {
+  const doc = {
+    nodes: [
+      { id: "container", type: "FRAME", name: "边框背景", status: "unknown", parentId: null },
+      { id: "art", type: "RECTANGLE", name: "素材图", status: "unknown", parentId: "container" },
+      { id: "copy", type: "TEXT", name: "说明", status: "unknown", parentId: "container" },
+    ],
+  };
+  const result = applyReviewFeedback(doc, [{ nodeId: "container", toStatus: "determined", toRole: "img" }]);
+  assert.equal(doc.nodes[0].role, "mix");
+  assert.equal(doc.nodes[0].name, "mix/边框背景");
+  assert.ok(result.conflicts.some((row) => /图文混合容器/.test(row.note)));
+});
+
 test("completeness：实例或 I… 子件没跟随则红", () => {
   const doc = setDoc({ role: "img", setName: "装饰", instanceName: "装饰" });
   const result = auditDraftAssetCompleteness(doc);
