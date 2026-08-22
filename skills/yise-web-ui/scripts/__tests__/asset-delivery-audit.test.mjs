@@ -10,6 +10,7 @@ import {
   extractLocalAssetReferences,
   imageInfo,
   isCliEntry,
+  measureRenderedAssets,
   mimeFromBuffer,
   parseArgs,
   renderMarkdownReport,
@@ -125,6 +126,23 @@ test('published asset:audit command accepts the canonical docs flag end to end',
     assert.ok(existsSync(docsFile));
   } finally {
     rmSync(outDir, { recursive: true, force: true });
+    rmSync(demoDir, { recursive: true, force: true });
+  }
+});
+
+test('measureRenderedAssets does not wait the full page timeout for optional __qa on static fixtures', async () => {
+  const demoDir = mkdtempSync(join(tmpdir(), 'asset-audit-static-'));
+  try {
+    mkdirSync(join(demoDir, 'assets'), { recursive: true });
+    writeFileSync(join(demoDir, 'assets/tiny.png'), tinyPng);
+    writeFileSync(join(demoDir, 'index.html'), '<!doctype html><html><body><img src="assets/tiny.png"></body></html>');
+    const started = Date.now();
+    const report = await measureRenderedAssets({ demoDir, timeoutMs: 180000 });
+    const elapsed = Date.now() - started;
+    assert.equal(report.error, null, report.error);
+    assert.ok(elapsed < 30000, `optional __qa wait took ${elapsed}ms`);
+    assert.ok(report.assets.some((asset) => asset.file === 'assets/tiny.png'));
+  } finally {
     rmSync(demoDir, { recursive: true, force: true });
   }
 });
