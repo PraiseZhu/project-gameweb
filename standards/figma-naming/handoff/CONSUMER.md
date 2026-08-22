@@ -20,7 +20,9 @@ npm run handoff:pack -- \
   --assets-mobile ../../../_tmp/inventory-review/img-<mobile>
 ```
 
-`--allow-green-draft`：两份 completeness 都绿即可打包。包里 `kind=green-draft`，**不是 ready**。禁止手改 JSON 的 `status`。
+`--allow-green-draft`：两份 completeness 都绿即可打包。包里 `kind=green-draft`，**不是 ready**。禁止手改 JSON 的 `status`。做页入口收交接目录：`kind=green-draft` 时按 draft 吃 determined；unknown 只画不接线。
+
+`--assets-pc` / `--assets-mobile` 必须是页上 + 页上/弹窗用到的组件集、独立组件、弹窗里的 `img/` `bg/` `kv` 切图。文件名要带完整 node id（`392-24235.png`，或实例长 id `I491-6940-392-25814.png`）。`page-392-24190.jpg` 这类核对底图不算切图。传了目录却盖不住 → 打包失败。没传目录仍可打包，manifest 里 `assets.ok=false`，做页会缺图。消费包时要核 `manifest.schema` / `kind` / `ready` / `fingerprint`，对不上就不要吃。
 
 主人测完、人工确认后才用：
 

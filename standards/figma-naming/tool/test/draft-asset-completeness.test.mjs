@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { auditDraftAssetCompleteness } from "../scripts/check-draft-asset-completeness.mjs";
+import { auditDraftAssetCompleteness, auditLikeCli, GOLD_MOBILE_PREFIX_CLASSES } from "../scripts/check-draft-asset-completeness.mjs";
 import { rebuildInventoryIndexes } from "../src/inventory.mjs";
+import { behaviorOf } from "../../spec/inventory.mjs";
 
 const node = (id, type, name, extra = {}) => ({
   id, type, name, status: "determined", role: "img", label: name,
@@ -58,6 +59,59 @@ test("draft asset completeness：无 img 祖先的立绘 unknown 仍红", () => 
   const result = auditDraftAssetCompleteness(doc);
   assert.equal(result.ok, false);
   assert.match(result.problems.join("\n"), /卡片视觉资产/);
+});
+
+test("draft asset completeness：ready 清单跳过形态发现，外壳无 status 仍绿（issue #31）", () => {
+  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
+    id: `n-${role}`,
+    type: role === "btn" ? "INSTANCE" : "FRAME",
+    name: `${role}/${role}`,
+    status: "determined",
+    role,
+    behavior: behaviorOf(role),
+    box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
+  }));
+  nodes.push({
+    id: "img-bg",
+    type: "FRAME",
+    name: "img/弹窗背景",
+    status: "determined",
+    role: "img",
+    behavior: "slice",
+    box: { x: 0, y: 0, w: 200, h: 80 },
+  });
+  nodes.push({
+    id: "txt-skip",
+    type: "TEXT",
+    name: "language",
+    status: "skipped",
+    parentId: "img-bg",
+    box: { x: 0, y: 0, w: 40, h: 12 },
+  });
+  const doc = rebuildInventoryIndexes({
+    schema: "inventory/v2",
+    status: "ready",
+    ok: true,
+    page: { id: "p", box: { x: 0, y: 0, w: 750, h: 1200 } },
+    nodes,
+    attachments: {
+      componentSets: [
+        {
+          id: "setBtn",
+          type: "COMPONENT_SET",
+          name: "btn/多语言切换按钮",
+          variants: [{ id: "v1", name: "Property 1=normal" }],
+          nodes: [
+            { id: "setBtn", type: "COMPONENT_SET", name: "btn/多语言切换按钮", status: "determined", role: "btn" },
+          ],
+        },
+      ],
+      modals: [],
+    },
+  });
+  const result = auditLikeCli(doc);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.doesNotMatch(result.problems.join("\n"), /弹窗附件|有文字的分组不能直接 img/);
 });
 
 test("draft asset completeness：PC 已 img 的同类 mobile 仍 unknown 则红", () => {
