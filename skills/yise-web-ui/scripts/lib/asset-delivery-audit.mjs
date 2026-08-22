@@ -14,6 +14,7 @@ const OVERSIZED_RATIO_THRESHOLD = 2.25;
 const toPosix = (value) => String(value || '').replaceAll('\\', '/');
 const round = (n, d = 4) => Number.isFinite(Number(n)) ? +Number(n).toFixed(d) : null;
 const DEFAULT_NETWORK_TIMEOUT_MS = 10000;
+const OPTIONAL_QA_READY_TIMEOUT_MS = 5000;
 
 async function fetchWithTimeout(url, { timeoutMs = DEFAULT_NETWORK_TIMEOUT_MS, headers = {} } = {}) {
   const controller = new AbortController();
@@ -346,7 +347,7 @@ export async function measureRenderedAssets({ demoDir, viewport = { w: 1920, h: 
     const page = await browser.newPage({ viewport: { width: viewport.w, height: viewport.h } });
     page.on('pageerror', (e) => report.pageErrors.push(String(e?.message || e).slice(0, 500)));
     await page.goto(base + '/index.html', { waitUntil: 'load', timeout: timeoutMs });
-    await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: timeoutMs }).catch(() => {});
+    await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: Math.min(timeoutMs, OPTIONAL_QA_READY_TIMEOUT_MS) }).catch(() => {});
     await page.evaluate(({ w, h }) => window.__qa?.resize?.(w, h), viewport).catch(() => {});
     await page.evaluate(() => typeof window.__fxAssetsReady === 'function' ? window.__fxAssetsReady() : Promise.resolve()).catch(() => {});
     await page.evaluate(() => document.fonts?.ready || Promise.resolve()).catch(() => {});

@@ -1,6 +1,7 @@
 {
   "demo": [
     "scripts/__tests__/figma-auto-layout.test.mjs",
+    "scripts/__tests__/figma-text-box-alignment.test.mjs",
     "scripts/__tests__/figma-prototype-truth.test.mjs",
     "scripts/__tests__/figma-richtext.test.mjs",
     "scripts/__tests__/font-routing.test.mjs",
