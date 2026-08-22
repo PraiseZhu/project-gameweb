@@ -852,25 +852,56 @@ test("有字 logo 保留 img/；普通有字容器不能 img/", () => {
   assert.notEqual(reward.nodes[0].role, "img");
 });
 
-test("gold morphology：按钮底和播放按钮 1 是 img/ 不是 btn/", () => {
+test("gold morphology：按钮底是 img/；btn/ 里的播放按钮 1 不是切图", () => {
   const miss = {
     nodes: [
       { id: "dl", type: "FRAME", name: "btn/下载按钮", status: "determined", role: "btn" },
       { id: "bg", type: "RECTANGLE", name: "一级按钮 1", status: "unknown", parentId: "dl" },
       { id: "play", type: "GROUP", name: "btn/播放按钮", status: "determined", role: "btn" },
-      { id: "icon", type: "RECTANGLE", name: "btn/播放按钮 1", status: "determined", role: "btn", parentId: "play" },
+      { id: "icon", type: "RECTANGLE", name: "播放按钮 1", status: "unknown", parentId: "play" },
     ],
   };
   const missResult = auditDraftGoldMorphology(miss);
   assert.equal(missResult.ok, false);
   assert.match(missResult.problems.join("\n"), /一级按钮/);
+  assert.doesNotMatch(missResult.problems.join("\n"), /播放按钮 1/);
   applyDraftGoldMorphology(miss);
   assert.equal(miss.nodes[1].name, "img/一级按钮 1");
   assert.equal(miss.nodes[1].role, "img");
-  assert.equal(miss.nodes[3].name, "img/播放按钮 1");
-  assert.equal(miss.nodes[3].role, "img");
+  assert.equal(miss.nodes[3].name, "播放按钮 1");
+  assert.notEqual(miss.nodes[3].role, "img");
   assert.equal(miss.nodes[2].role, "btn");
   assert.deepEqual(auditDraftGoldMorphology(miss), { ok: true, problems: [] });
+});
+
+test("gold morphology：btn/角色头像 不因名字像切图被改成 img/", () => {
+  const doc = {
+    nodes: [
+      { id: "tab", type: "FRAME", name: "tab/角色头像切换", status: "determined", role: "tab" },
+      { id: "avatar", type: "INSTANCE", name: "btn/角色头像", status: "determined", role: "btn", parentId: "tab" },
+    ],
+  };
+  const result = auditDraftGoldMorphology(doc);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.doesNotMatch(result.problems.join("\n"), /角色头像/);
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.nodes[1].name, "btn/角色头像");
+  assert.equal(doc.nodes[1].role, "btn");
+});
+
+test("gold morphology：img/ 里的边框背景是独立切图，不剥二层 img/", () => {
+  const doc = {
+    nodes: [
+      { id: "bg", type: "GROUP", name: "img/背景", status: "determined", role: "img" },
+      { id: "border", type: "INSTANCE", name: "img/边框背景6", status: "determined", role: "img", parentId: "bg" },
+    ],
+  };
+  const result = auditDraftGoldMorphology(doc);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.doesNotMatch(result.problems.join("\n"), /内部零件/);
+  applyDraftGoldMorphology(doc);
+  assert.equal(doc.nodes[1].name, "img/边框背景6");
+  assert.equal(doc.nodes[1].role, "img");
 });
 
 test("gold morphology：img/ 祖先下的卡牌零件不再标 img/", () => {
@@ -1188,6 +1219,153 @@ test("gold morphology：未命名真稿按分区配对，嵌套内容集不挡 4
   assert.match(after.problems.join("\n"), /6 页 \/ 7 个控制点/);
   const detected = controlledContentSwitch(doc);
   assert.deepEqual(detected.conflicts, [{ setId: "set6", pageCount: 6, controlCount: 7 }]);
+});
+
+test("gold morphology：无裁切上下文的 scroll/奖励列表 保持 scroll/（issue #31）", () => {
+  const doc = {
+    nodes: [
+      { id: "sec4", type: "FRAME", name: "sec/4", status: "determined", role: "sec" },
+      { id: "sw", type: "INSTANCE", name: "switch/赛季奖励活动内容", status: "determined", role: "switch", parentId: "sec4" },
+      { id: "rew", type: "FRAME", name: "奖励", status: "unknown", parentId: "sw" },
+      { id: "mod", type: "FRAME", name: "奖励模块", status: "unknown", parentId: "rew" },
+      { id: "show", type: "FRAME", name: "奖励展示", status: "unknown", parentId: "mod" },
+      { id: "list", type: "FRAME", name: "scroll/奖励列表", status: "determined", role: "scroll", parentId: "show" },
+      { id: "art", type: "FRAME", name: "img/奖励", status: "determined", role: "img", parentId: "list" },
+    ],
+  };
+  const result = auditDraftGoldMorphology(doc);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.doesNotMatch(result.problems.join("\n"), /奖励图/);
+  applyClipAndRewardPrefixes(doc);
+  assert.equal(doc.nodes[5].name, "scroll/奖励列表");
+  assert.equal(doc.nodes[5].role, "scroll");
+});
+
+test("gold morphology：页节点缺 status 不能只靠 name 前缀算绿（issue #31）", () => {
+  const doc = {
+    nodes: [
+      { id: "clip", type: "FRAME", name: "scroll/可划动区域" },
+    ],
+  };
+  const result = auditDraftGoldMorphology(doc);
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /划动裁切层/);
+});
+
+test("gold morphology：附件外壳无 status 但 name 已带前缀则绿；剥掉前缀仍红（issue #31）", () => {
+  const named = {
+    attachments: {
+      componentSets: [
+        {
+          id: "setBtn",
+          type: "COMPONENT_SET",
+          name: "btn/多语言切换按钮",
+          variants: [{ id: "v1", name: "Property 1=normal" }, { id: "v2", name: "Property 1=highlight" }],
+          nodes: [
+            { id: "setBtn", type: "COMPONENT_SET", name: "btn/多语言切换按钮", status: "determined", role: "btn" },
+          ],
+        },
+        {
+          id: "setLogo",
+          type: "COMPONENT_SET",
+          name: "img/logo",
+          variants: [{ id: "vLogo", name: "Property 1=cn" }],
+          nodes: [
+            { id: "setLogo", type: "COMPONENT_SET", name: "img/logo", status: "determined", role: "img" },
+          ],
+        },
+      ],
+      modals: [
+        { id: "m1", type: "FRAME", name: "modal/视频弹窗", nodes: [] },
+      ],
+    },
+  };
+  assert.deepEqual(auditDraftGoldMorphology(named), { ok: true, problems: [] });
+
+  const stripped = {
+    attachments: {
+      componentSets: [
+        {
+          id: "setBtn",
+          type: "COMPONENT_SET",
+          name: "多语言切换按钮",
+          variants: [{ id: "v1", name: "Property 1=normal" }, { id: "v2", name: "Property 1=highlight" }],
+          nodes: [
+            { id: "setBtn", type: "COMPONENT_SET", name: "多语言切换按钮", status: "unknown", role: null },
+          ],
+        },
+      ],
+    },
+  };
+  const miss = auditDraftGoldMorphology(stripped);
+  assert.equal(miss.ok, false);
+  assert.match(miss.problems.join("\n"), /setBtn「多语言切换按钮」/);
+  assert.match(miss.problems.join("\n"), /btn\//);
+});
+
+test("gold morphology：img/弹窗背景 不因名字含子串被改成 modal/（issue #31）", () => {
+  const doc = {
+    attachments: {
+      modals: [
+        {
+          id: "392:27497",
+          type: "FRAME",
+          name: "modal/多语言弹窗",
+          nodes: [
+            { id: "392:27497", type: "FRAME", name: "modal/多语言弹窗", status: "determined", role: "modal" },
+            { id: "392:27500", type: "FRAME", name: "img/弹窗背景", status: "determined", role: "img", parentId: "392:27497" },
+            { id: "lang", type: "TEXT", name: "language", status: "skipped", parentId: "392:27500" },
+          ],
+        },
+      ],
+    },
+    nodes: [
+      { id: "392:27500", type: "FRAME", name: "img/弹窗背景", status: "determined", role: "img", parentId: "392:27497" },
+      { id: "lang", type: "TEXT", name: "language", status: "skipped", parentId: "392:27500" },
+    ],
+  };
+  const result = auditDraftGoldMorphology(doc);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.doesNotMatch(result.problems.join("\n"), /392:27500/);
+});
+
+test("gold morphology：skipped 文字不打祖先 img/（issue #31）", () => {
+  const doc = {
+    nodes: [
+      { id: "399:36321", type: "FRAME", name: "img/兑换码背景", status: "determined", role: "img" },
+      { id: "txt", type: "TEXT", name: "ETHERIASS6", status: "skipped", parentId: "399:36321" },
+      { id: "399:44405", type: "FRAME", name: "img/日历可滑动内容", status: "determined", role: "img" },
+      { id: "deep", type: "FRAME", name: "格子", status: "unknown", parentId: "399:44405" },
+      { id: "day", type: "TEXT", name: "1", status: "skipped", parentId: "deep" },
+    ],
+  };
+  const result = auditDraftGoldMorphology(doc);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.doesNotMatch(result.problems.join("\n"), /有文字的分组不能直接 img/);
+});
+
+test("gold morphology：跨端 problems 只引用本端 id，小标题不同步成 img/（issue #31）", () => {
+  const pc = {
+    nodes: [
+      { id: "392:24235", type: "FRAME", name: "img/标题", status: "determined", role: "img", box: { w: 3840, h: 890 } },
+      { id: "392:24986", type: "FRAME", name: "标题", status: "unknown", box: { w: 1400, h: 73 } },
+    ],
+  };
+  const mobile = {
+    nodes: [
+      { id: "392:25900", type: "FRAME", name: "img/标题", status: "determined", role: "img", box: { w: 750, h: 408 } },
+      { id: "392:26635", type: "FRAME", name: "标题", status: "unknown", box: { w: 630, h: 36 } },
+    ],
+  };
+  const pcSync = auditCrossEndClassSync([pc, mobile]);
+  assert.equal(pcSync.ok, true, pcSync.problems.join("\n"));
+  assert.doesNotMatch(pcSync.problems.join("\n"), /392:26635|392:25900/);
+  const mobileSync = auditCrossEndClassSync([mobile, pc]);
+  assert.equal(mobileSync.ok, true, mobileSync.problems.join("\n"));
+  assert.doesNotMatch(mobileSync.problems.join("\n"), /392:24986|392:24235/);
+  applyCrossEndClassSync(pc, mobile);
+  assert.equal(mobile.nodes[1].status, "unknown");
+  assert.notEqual(mobile.nodes[1].role, "img");
 });
 
 test("gold morphology：实例 img/ 边框背景回写母版，不再无依据剥回（issue #27）", () => {

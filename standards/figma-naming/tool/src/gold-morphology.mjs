@@ -26,8 +26,25 @@ export function isGenericLayerName(nameOrNode) {
   return /^(?:Frame|Group|Rectangle|Ellipse|Vector|Instance|Component|组|矩形|框架|实例|组件)(?:\s*\d+)?$/i.test(body);
 }
 
+function nameHasRolePrefix(node, role) {
+  return String(node?.name ?? "").startsWith(`${role}/`);
+}
+
+/**
+ * Attachment shells (modals[] / componentSets[]) often omit status/role; the
+ * determined copy lives in nodes[] / variants[]. Treat a missing status as
+ * "named by prefix only" so already-prefixed shells are not false-red.
+ * A present status still requires determined + matching role (issue #31).
+ */
+function isAttachmentShell(node) {
+  return node?.type === "COMPONENT_SET" || node?.type === "COMPONENT"
+    || (node?.type === "FRAME" && Array.isArray(node.nodes) && !node.status && !node.parentId);
+}
+
 function hasPrefix(node, role) {
-  return node.status === "determined" && node.role === role && String(node.name ?? "").startsWith(`${role}/`);
+  if (!nameHasRolePrefix(node, role)) return false;
+  if (node.status == null) return isAttachmentShell(node);
+  return node.status === "determined" && node.role === role;
 }
 
 function variantLabels(node) {
@@ -48,8 +65,10 @@ function isStatePairNode(node) {
 const CLIP_RE = /可划动|划动区域/;
 const INNER_REWARD_RE = /^(奖励列表|奖励)$/;
 const CARD_ART_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘)$/;
-const IMAGE_BODY_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘|角色头像|待解锁头像|视频框.*|兑换码背景|头像框.*|icon|图标装饰|装饰|阵营信息|待解锁|卡牌|Icon_SSR.*|BG|小按钮|logo|按钮背景|一级按钮.*|二级按钮.*|三级按钮.*|播放按钮\s+\d+)$/;
+const IMAGE_BODY_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘|角色头像|待解锁头像|视频框.*|兑换码背景|头像框.*|icon|图标装饰|装饰|阵营信息|待解锁|卡牌|Icon_SSR.*|BG|小按钮|logo|按钮背景|一级按钮.*|二级按钮.*|三级按钮.*)$/;
 const BORDER_PART_RE = /^一级边框/;
+/** 嵌在 img/ 里仍是独立切图，不是立绘内部零件。 */
+const INNER_SLICE_KEEP_RE = /^(边框背景\d*|背景边框)$/;
 const TEXT_CONTAINER_TYPES = new Set(["FRAME", "GROUP", "INSTANCE", "COMPONENT"]);
 
 
@@ -291,8 +310,7 @@ export function applyClipAndRewardPrefixes(doc) {
     for (const node of group) {
       if (!INNER_REWARD_RE.test(rawName(node))) continue;
       const underClip = hasClipAncestor(node, byId);
-      const misnamedScroll = hasPrefix(node, "scroll") || node.role === "scroll";
-      if (!underClip && !misnamedScroll) continue;
+      if (!underClip) continue;
       const result = retargetInnerReward(node, kids);
       if (result === "stripped") stripped += 1;
       if (result === "fixed") innerFixed += 1;
@@ -372,6 +390,10 @@ function isTextRewardContainer(node, kids) {
   return hasTextDescendant(node.id, kids);
 }
 
+function isLiveTextNode(node) {
+  return node?.type === "TEXT" && node.status !== "skipped";
+}
+
 function hasTextDescendant(id, kids) {
   const stack = [...(kids.get(id) || [])];
   const seen = new Set();
@@ -379,7 +401,8 @@ function hasTextDescendant(id, kids) {
     const child = stack.pop();
     if (seen.has(child.id)) continue;
     seen.add(child.id);
-    if (child.type === "TEXT") return true;
+    if (child.status === "skipped") continue;
+    if (isLiveTextNode(child)) return true;
     stack.push(...(kids.get(child.id) || []));
   }
   return false;
@@ -432,6 +455,7 @@ function innerImagePartsToUnname(doc) {
   for (const node of byId.values()) {
     if (node.status === "skipped") continue;
     if (!hasPrefix(node, "img")) continue;
+    if (INNER_SLICE_KEEP_RE.test(rawName(node))) continue;
     if (!hasImgAncestor(node, byId)) continue;
     hits.push({ node, role: null, why: "父级已是 img/，内部零件不再标 img/" });
   }
@@ -450,6 +474,9 @@ function leafImageNodes(doc) {
        INSTANCE when it has no copy descendants. An INSTANCE containing copy is
        a component shell and must remain unknown instead of being sliced. */
     if (["TEXT", "COMPONENT_SET", "COMPONENT"].includes(node.type)) continue;
+    const namedRole = ROLE_PREFIX.exec(String(node.name || ""))?.[1];
+    if (namedRole && namedRole !== "img") continue;
+    if (node.status === "determined" && node.role && node.role !== "img" && node.role !== "copy") continue;
     const body = rawName(node);
     if (BORDER_PART_RE.test(body)) continue;
     if (isVideoFrameWrapper(node)) continue;
@@ -508,7 +535,7 @@ function nestedEvidence(node) {
       value.forEach(walk);
       return;
     }
-    if (value.type === "TEXT") out.text = true;
+    if (isLiveTextNode(value)) out.text = true;
     if (hasImagePaint(value)) out.image = true;
     const kids = [
       ...(Array.isArray(value.nodes) ? value.nodes : []),
@@ -673,13 +700,28 @@ function pageBackgroundHits(doc) {
   return hits;
 }
 
+const MODAL_PART_RE = /弹窗(背景|按钮|关闭|标题|内容|装饰|遮罩|蒙层)/;
+
+function isModalShellName(node) {
+  const name = String(node?.name || "");
+  const body = rawName(node);
+  if (!name.includes("弹窗") && !body.includes("弹窗")) return false;
+  if (MODAL_PART_RE.test(body) || MODAL_PART_RE.test(name)) return false;
+  return true;
+}
+
+function isModalCandidate(node) {
+  if (!node || node.status === "skipped") return false;
+  if (hasPrefix(node, "modal") || node.role === "modal") return true;
+  if (node.status === "determined" && node.role && node.role !== "modal") return false;
+  return node.type === "FRAME" && isModalShellName(node);
+}
+
 function modalFrameHits(doc) {
   const hits = [];
   visitNodes(doc, (node, _trail, kind) => {
     if (kind !== "node" || node.status === "skipped" || hasPrefix(node, "modal")) return;
-    if (node.type === "FRAME" && String(node.name || "").includes("弹窗")) {
-      hits.push({ node, role: "modal", why: "弹窗附件" });
-    }
+    if (isModalCandidate(node)) hits.push({ node, role: "modal", why: "弹窗附件" });
   });
   return hits;
 }
@@ -1002,10 +1044,20 @@ function videoHotHits(doc) {
   return hits;
 }
 
+const AMBIGUOUS_CLASS_BODIES = new Set(["标题", "背景", "内容", "装饰", "模块", "按钮"]);
+
 function classKey(node) {
   const body = rawName(node);
   if (!body) return null;
   return `${node.type}::${body}`;
+}
+
+function isAmbiguousClassSync(node, role) {
+  const body = rawName(node);
+  if (!body) return true;
+  if (AMBIGUOUS_CLASS_BODIES.has(body)) return true;
+  if (role === "img" && node.type === "FRAME") return true;
+  return false;
 }
 
 export function classRoleMapFromTable(table) {
@@ -1126,6 +1178,7 @@ export function syncClassHits(sourceDoc, targetDoc) {
     const key = classKey(node);
     const role = key ? src.get(key) : null;
     if (!role) continue;
+    if (isAmbiguousClassSync(node, role)) continue;
     if (role === "img" && (forbidsImgOnTextGroup(node, kids, byId) || hasImgAncestor(node, byId))) continue;
     if (role === "switch" && isTextTitle(node, kids)) continue;
     hits.push({ node, role, why: `与另一端同类 ${role}/ 同步` });
@@ -1133,15 +1186,28 @@ export function syncClassHits(sourceDoc, targetDoc) {
   return hits;
 }
 
+function nodeIdsOf(doc) {
+  const ids = new Set();
+  visitNodes(doc, (node, _trail, kind) => {
+    if (kind === "node" && typeof node.id === "string") ids.add(node.id);
+  });
+  return ids;
+}
+
+/**
+ * Peer docs only push hits onto the first document. Problems must cite ids that
+ * exist on that document — never the other end (issue #31).
+ */
 export function auditCrossEndClassSync(docs) {
   const list = (Array.isArray(docs) ? docs : [docs]).filter(Boolean);
+  if (list.length < 2) return { ok: true, problems: [] };
+  const target = list[0];
+  const targetIds = nodeIdsOf(target);
   const problems = [];
-  for (let i = 0; i < list.length; i += 1) {
-    for (let j = 0; j < list.length; j += 1) {
-      if (i === j) continue;
-      for (const { node, role, why } of syncClassHits(list[i], list[j])) {
-        expectPrefix(node, role, problems, why);
-      }
+  for (let i = 1; i < list.length; i += 1) {
+    for (const { node, role, why } of syncClassHits(list[i], target)) {
+      if (!targetIds.has(node.id)) continue;
+      expectPrefix(node, role, problems, why);
     }
   }
   return { ok: problems.length === 0, problems: [...new Set(problems)] };
@@ -1160,6 +1226,7 @@ export function auditDraftGoldMorphology(doc, options = {}) {
   }
 
   const kids = childrenByParent(doc);
+  const byId = indexNodes(doc);
   const contentSwitch = controlledContentSwitch(doc);
   for (const { node, role, why } of signatureHits(doc, signatureRoles)) {
     expectPrefix(node, role, problems, why);
@@ -1191,20 +1258,28 @@ export function auditDraftGoldMorphology(doc, options = {}) {
 
   visitNodes(doc, (node, trail, kind) => {
     if (kind === "siblings") {
-      const frames = node.filter((item) => item && item.type === "FRAME");
-      const clips = frames.filter((item) => CLIP_RE.test(rawName(item)));
-      const inners = frames.filter((item) => INNER_REWARD_RE.test(rawName(item)));
-      for (const clip of clips) {
-        expectPrefix(clip, "scroll", problems, "划动裁切层");
+      const byParent = new Map();
+      for (const item of node) {
+        if (!item || (item.type !== "FRAME" && item.type !== "GROUP")) continue;
+        const pid = item.parentId ?? "__root__";
+        if (!byParent.has(pid)) byParent.set(pid, []);
+        byParent.get(pid).push(item);
       }
-      if (clips.length) inners.forEach(flagInnerReward);
+      for (const frames of byParent.values()) {
+        const clips = frames.filter((item) => CLIP_RE.test(rawName(item)));
+        const inners = frames.filter((item) => INNER_REWARD_RE.test(rawName(item)));
+        for (const clip of clips) {
+          expectPrefix(clip, "scroll", problems, "划动裁切层");
+        }
+        if (clips.length) inners.forEach(flagInnerReward);
+      }
       return;
     }
     if (CLIP_RE.test(rawName(node))) {
       expectPrefix(node, "scroll", problems, "划动裁切层");
       childFrames(node).filter((item) => INNER_REWARD_RE.test(rawName(item))).forEach(flagInnerReward);
     }
-    if (INNER_REWARD_RE.test(rawName(node)) && trail.some((name) => CLIP_RE.test(name))) {
+    if (INNER_REWARD_RE.test(rawName(node)) && hasClipAncestor(node, byId)) {
       flagInnerReward(node);
     }
     const type = node.type;
@@ -1254,7 +1329,7 @@ export function auditDraftGoldMorphology(doc, options = {}) {
       }
     }
 
-    if (node.role === "modal" || (type === "FRAME" && String(node.name || "").includes("弹窗"))) {
+    if (isModalCandidate(node)) {
       expectPrefix(node, "modal", problems, "弹窗附件");
     }
 

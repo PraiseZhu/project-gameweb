@@ -202,9 +202,13 @@ function auditIndexConsistency(doc) {
 
 export function auditDraftAssetCompleteness(doc, peerDocs = [], options = {}) {
   const cards = auditCardAndReward(doc);
-  const morph = auditDraftGoldMorphology(doc);
+  const morph = options.skipMorphology
+    ? { ok: true, problems: [] }
+    : auditDraftGoldMorphology(doc);
   const index = auditIndexConsistency(doc);
-  const peers = peerDocs.length ? auditCrossEndClassSync([doc, ...peerDocs]) : { ok: true, problems: [] };
+  const peers = options.skipMorphology || !peerDocs.length
+    ? { ok: true, problems: [] }
+    : auditCrossEndClassSync([doc, ...peerDocs]);
   const prefixes = auditGoldPrefixClasses(doc, options.expectedPrefixClasses);
   const presence = auditRequiredIndexPresence(doc, options.requiredIndexes);
   return {
@@ -214,14 +218,16 @@ export function auditDraftAssetCompleteness(doc, peerDocs = [], options = {}) {
 }
 
 /** CLI 与夜间评测的同一入口：按页宽带上冻住前缀类和结构存在性。改闸门只改这里。 */
-export function auditLikeCli(doc, peerDocs = []) {
+export function auditLikeCli(doc, peerDocs = [], options = {}) {
   const width = Number(doc?.page?.box?.w);
   if (!Number.isFinite(width) || width <= 0) {
     return { ok: false, problems: ["page.box.w 必须是正数，无法判断 PC/mobile 闸门"] };
   }
+  const readyPair = options.readyPair === true || doc?.status === "ready";
   return auditDraftAssetCompleteness(doc, peerDocs, {
     expectedPrefixClasses: goldPrefixClassesFor(doc) || undefined,
     requiredIndexes: requiredIndexPresenceFor(doc) || undefined,
+    skipMorphology: readyPair,
   });
 }
 
