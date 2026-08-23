@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import { validateHandoffPack } from "../../../standards/figma-naming/tool/src/handoff.mjs";
 import {
   adaptInventoryToTruthShape,
+  collectSkippedNodeIds,
   inventoryAcceptanceReport,
   validateInventory,
 } from "./lib/figma-inventory-v2.mjs";
@@ -30,26 +31,55 @@ function countConsume(inv) {
   return { wirable, drawOnly };
 }
 
+function collectNodeTreeIds(nodes, ids) {
+  for (const node of nodes || []) {
+    if (!node || typeof node !== "object") continue;
+    if (typeof node.id === "string" && node.id) ids.push(node.id);
+    collectNodeTreeIds(node.nodes, ids);
+  }
+}
+
+function paintedIdsOf(adapted) {
+  const ids = [
+    ...adapted.pageChrome.nodes.map((node) => node.id),
+    ...adapted.fixedOverlays.nodes.map((node) => node.id),
+    ...adapted.sections.map((section) => section.id),
+    ...adapted.pagePaintOrder.flatMap((entry) => [entry.id, ...(entry.sectionIds || [])]),
+  ];
+  for (const modal of adapted.modals) {
+    ids.push(modal.id);
+    collectNodeTreeIds(modal.nodes, ids);
+  }
+  for (const set of adapted.componentVariantGraph.componentSets) {
+    ids.push(set.componentSetId);
+    collectNodeTreeIds(set.nodes, ids);
+    for (const variant of set.variants) {
+      ids.push(variant.componentId);
+      collectNodeTreeIds(variant.nodes, ids);
+    }
+  }
+  for (const component of adapted.componentVariantGraph.components) {
+    ids.push(component.componentId);
+    collectNodeTreeIds(component.nodes, ids);
+  }
+  return ids.filter(Boolean);
+}
+
 function consumeOne(label, inv, options) {
   const gate = validateInventory(inv, options);
   const report = inventoryAcceptanceReport(inv, options);
   const adapted = gate.ok ? adaptInventoryToTruthShape(inv, options) : null;
   const counts = countConsume(inv);
-  const skippedIds = new Set(
-    (inv.nodes || []).filter((node) => node?.status === "skipped").map((node) => node.id),
-  );
-  const paintedIds = adapted
-    ? [
-        ...adapted.pageChrome.nodes.map((node) => node.id),
-        ...adapted.fixedOverlays.nodes.map((node) => node.id),
-        ...adapted.sections.map((section) => section.id),
-        ...adapted.pagePaintOrder.flatMap((entry) => [entry.id, ...(entry.sectionIds || [])]),
-      ]
-    : [];
-  const skippedPainted = paintedIds.some((id) => skippedIds.has(id));
+  const skippedIds = collectSkippedNodeIds(inv);
+  const skippedPaintedIds = adapted ? paintedIdsOf(adapted).filter((id) => skippedIds.has(id)) : [];
+  const skippedPainted = skippedPaintedIds.length > 0;
   const pendingModals = adapted
     ? adapted.modals.filter((modal) => modal.triggerStatus !== "determined")
     : [];
+  const problems = gate.ok ? [] : [...gate.problems];
+  if (skippedPainted) {
+    problems.push(`${label} adapted paint output contains skipped node(s): ${[...new Set(skippedPaintedIds)].join(", ")}`);
+  }
   return {
     label,
     ok: gate.ok === true && report.gatePassed === true && report.unknownNotWired === true && skippedPainted === false,
@@ -57,7 +87,8 @@ function consumeOne(label, inv, options) {
     status: inv?.status ?? null,
     wirable: counts.wirable,
     drawOnly: counts.drawOnly,
-    problems: gate.ok ? [] : gate.problems,
+    problems,
+    skippedPainted,
     pendingModalTriggers: pendingModals.length,
     unknownNotWired: report.unknownNotWired === true,
   };

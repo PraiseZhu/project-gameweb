@@ -47,6 +47,39 @@ function isSkipped(node) {
   return node?.status === 'skipped';
 }
 
+function filterSkippedNodeTree(nodes) {
+  return asArray(nodes)
+    .filter((node) => !isSkipped(node))
+    .map((node) => {
+      if (!isPlainObject(node) || !Array.isArray(node.nodes)) return node;
+      return { ...node, nodes: filterSkippedNodeTree(node.nodes) };
+    });
+}
+
+function visitNodeTree(nodes, visit) {
+  for (const node of asArray(nodes)) {
+    if (!isPlainObject(node)) continue;
+    visit(node);
+    visitNodeTree(node.nodes, visit);
+  }
+}
+
+/** Every skipped Figma id owned by the page or any attachment tree. */
+export function collectSkippedNodeIds(inv) {
+  const ids = new Set();
+  const collect = (node) => {
+    if (isSkipped(node) && typeof node.id === 'string' && node.id) ids.add(node.id);
+  };
+  visitNodeTree(inv?.nodes, collect);
+  for (const modal of asArray(inv?.attachments?.modals)) visitNodeTree([modal], collect);
+  for (const component of asArray(inv?.attachments?.components)) visitNodeTree([component], collect);
+  for (const set of asArray(inv?.attachments?.componentSets)) {
+    visitNodeTree([set], collect);
+    for (const variant of asArray(set?.variants)) visitNodeTree([variant], collect);
+  }
+  return ids;
+}
+
 function drawableNodes(inv) {
   return asArray(inv.nodes).filter((node) => !isSkipped(node));
 }
@@ -199,15 +232,19 @@ function classifyPageDirectChildren(inv, byId) {
 /** modal-trigger relations keyed by modal id; only determined are actionable. */
 export function classifyModalTriggers(inv) {
   const triggers = new Map();
+  const skippedIds = collectSkippedNodeIds(inv);
   for (const relation of asArray(inv.relations)) {
     if (relation?.kind !== 'modal-trigger') continue;
     const toId = relation.to?.id;
     if (!toId) continue;
+    const fromId = relation.from?.id ?? null;
+    const blockedBySkipped = skippedIds.has(fromId) ? fromId : (skippedIds.has(toId) ? toId : null);
     const entry = triggers.get(toId) || [];
     entry.push({
-      status: relation.status === 'determined' ? 'determined' : 'unknown',
-      fromId: relation.from?.id ?? null,
+      status: relation.status === 'determined' && !blockedBySkipped ? 'determined' : 'unknown',
+      fromId,
       evidence: relation.evidence ?? null,
+      blockedBySkipped,
     });
     triggers.set(toId, entry);
   }
@@ -436,7 +473,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       failures: [{ reason: 'platform-scope-input-missing' }],
     };
 
-  const modals = asArray(inv.attachments?.modals).map((modal) => {
+  const modals = asArray(inv.attachments?.modals).filter((modal) => !isSkipped(modal)).map((modal) => {
     const triggers = triggerByModal.get(modal.id) || [];
     const determined = triggers.filter((t) => t.status === 'determined');
     return {
@@ -449,32 +486,32 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       triggerFrom: determined.map((t) => t.fromId).filter(Boolean),
       triggerEvidence: determined.map((t) => t.evidence).filter(Boolean),
       pendingHumanConfirmation: determined.length === 0,
-      nodes: asArray(modal.nodes),
+      nodes: filterSkippedNodeTree(modal.nodes),
     };
   });
 
-  const componentSets = asArray(inv.attachments?.componentSets).map((set) => ({
+  const componentSets = asArray(inv.attachments?.componentSets).filter((set) => !isSkipped(set)).map((set) => ({
     componentSetId: set.id,
     name: set.name ?? '',
     box: set.box ?? null,
     propertyDefinitions: set.componentPropertyDefinitions ?? {},
-    variants: asArray(set.variants).map((variant) => ({
+    variants: asArray(set.variants).filter((variant) => !isSkipped(variant)).map((variant) => ({
       componentId: variant.id,
       name: variant.name ?? '',
       order: variant.order ?? 0,
       box: variant.box ?? null,
       componentProperties: variant.componentProperties ?? {},
-      nodes: asArray(variant.nodes),
+      nodes: filterSkippedNodeTree(variant.nodes),
     })),
-    nodes: asArray(set.nodes),
+    nodes: filterSkippedNodeTree(set.nodes),
   }));
 
-  const components = asArray(inv.attachments?.components).map((component) => ({
+  const components = asArray(inv.attachments?.components).filter((component) => !isSkipped(component)).map((component) => ({
     componentId: component.id,
     name: component.name ?? '',
     box: component.box ?? null,
     componentProperties: component.componentProperties ?? {},
-    nodes: asArray(component.nodes),
+    nodes: filterSkippedNodeTree(component.nodes),
   }));
 
   const variantTrees = {};
@@ -483,9 +520,14 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
   }
 
   const unknownNodes = asArray(inv.nodes).filter((node) => node?.status === 'unknown');
-  const unknownModalTriggers = asArray(inv.relations)
-    .filter((relation) => relation?.kind === 'modal-trigger' && relation.status !== 'determined')
-    .map((relation) => ({ toId: relation.to?.id ?? null, evidence: relation.evidence ?? null }));
+  const unknownModalTriggers = [...triggerByModal.entries()].flatMap(([toId, triggers]) => triggers
+    .filter((trigger) => trigger.status !== 'determined')
+    .map((trigger) => ({
+      toId,
+      fromId: trigger.fromId,
+      evidence: trigger.evidence,
+      blockedBySkipped: trigger.blockedBySkipped,
+    })));
 
   return {
     ok: platformScope.complete,
@@ -549,9 +591,7 @@ export function inventoryAcceptanceReport(inv, options = {}) {
   const gate = validateInventory(inv, options);
   const adapted = gate.ok ? adaptInventoryToTruthShape(inv, options) : null;
   const accepted = gate.ok && adapted?.ok === true;
-  const unknownModalCount = accepted
-    ? asArray(inv.relations).filter((r) => r?.kind === 'modal-trigger' && r.status !== 'determined').length
-    : 0;
+  const unknownModalCount = accepted ? adapted.counts.unknownModalTriggers : 0;
   const pageStateGraph = accepted ? classifyPageStateTransitions(inv, options) : { states: [], transitions: [], unresolved: [] };
 
   return {

@@ -96,6 +96,31 @@ test("from-handoff omits skipped nodes from draw-only and paint mapping (issue #
   assert.equal(result.drawOnly.mobile, 0);
 });
 
+test("from-handoff reports skipped attachment ids that collide with painted output", () => {
+  const dir = mkdtempSync(join(tmpdir(), "from-handoff-skipped-attachment-"));
+  const pcDoc = sample("1:1");
+  const mobileDoc = sample("2:2");
+  pcDoc.attachments.components = [
+    {
+      id: "1:1-component",
+      nodes: [{ id: "1:1-bg", status: "skipped", why: "attachment-child" }],
+    },
+  ];
+  rebuildInventoryIndexes(pcDoc);
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: "green-draft", outDir: join(dir, "out"),
+  });
+
+  const result = runFromHandoff(pack.outDir);
+  assert.equal(result.ok, false);
+  assert.ok(result.consume.pc.problems.some((problem) => problem.includes("skipped") && problem.includes("1:1-bg")));
+  assert.ok(result.problems.some((problem) => problem.includes("skipped") && problem.includes("1:1-bg")));
+});
+
 test("from-handoff accepts packed green-draft and does not wire unknown (issue #31 F001)", () => {
   const dir = mkdtempSync(join(tmpdir(), "from-handoff-green-"));
   const pcDoc = sample("1:1");
