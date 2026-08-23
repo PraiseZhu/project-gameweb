@@ -98,6 +98,28 @@ test("componentSets become variantTrees with renderable geometry", () => {
   assert.ok(set.variants.every((v) => v.box));
 });
 
+test("skipped page children stay out of chrome, overlays, and paint order", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:50", scope: "page", type: "FRAME", name: "ref/组件", parentId: PAGE_ID, orderKey: "0.2", status: "skipped", why: "ref" },
+    { id: "100:51", scope: "page", type: "FRAME", name: "sec/skip", parentId: PAGE_ID, orderKey: "0.3", status: "skipped", why: "invisible", role: "sec" },
+  );
+  inv.overlays.push({ id: "100:50", role: "fix", label: "skipped-overlay" });
+  inv.backgrounds.push({ id: "100:50", role: "kv", label: "skipped-bg" });
+  inv.sections.push({ id: "100:51", number: 2, label: "skip", box: { x: 0, y: 0, w: 10, h: 10 } });
+  inv.counts = { determined: 2, unknown: 2, skipped: 2 };
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(adapted.ok, true);
+  const painted = [
+    ...adapted.pageChrome.nodes.map((node) => node.id),
+    ...adapted.fixedOverlays.nodes.map((node) => node.id),
+    ...adapted.sections.map((section) => section.id),
+    ...adapted.pagePaintOrder.flatMap((entry) => [entry.id, ...(entry.sectionIds || [])]),
+  ];
+  assert.equal(painted.includes("100:50"), false);
+  assert.equal(painted.includes("100:51"), false);
+});
+
 test("modals own a hidden layer excluded from scroll", () => {
   const adapted = adaptInventoryToTruthShape(fixture(), { platformScopeInput: { nodes: [], platformRoots: [] } });
   assert.equal(adapted.modals.length, 1);

@@ -5,7 +5,8 @@
  * naming snapshot (inventory/v2). It never re-derives roles from raw Figma layer
  * names (parseLayerName / deriveRole / figma-fetch are not called here).
  * Default gate is status === "ready". Packed green-draft (`allowDraft: true`)
- * is accepted as draft; unknown stays unwired (issue #31 F001).
+ * is accepted as draft; unknown stays draw-only and unwired. skipped nodes
+ * are omitted from consume mapping (issue #34).
  *
  * Contract:
  *  1. entry gate: schema === "inventory/v2" and status === "ready"
@@ -40,6 +41,14 @@ function isPlainObject(value) {
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function isSkipped(node) {
+  return node?.status === 'skipped';
+}
+
+function drawableNodes(inv) {
+  return asArray(inv.nodes).filter((node) => !isSkipped(node));
 }
 
 /** Entry gate. Returns {ok, problems}. Does not throw. */
@@ -77,9 +86,17 @@ export function validateInventory(inv, options = {}) {
  * ("0", "0.1", "0.2", ...). Recover page direct children and their paint order
  * from that source, not from a node-id or name.
  */
+function nodeMapOf(nodes) {
+  const byId = new Map();
+  for (const node of asArray(nodes)) {
+    if (node && typeof node.id === 'string') byId.set(node.id, node);
+  }
+  return byId;
+}
+
 function pageDirectChildren(inv) {
   const pageId = inv.page.id;
-  return asArray(inv.nodes)
+  return drawableNodes(inv)
     .filter((node) => node && node.parentId === pageId)
     .sort((a, b) => {
       const ak = String(a.orderKey ?? '0').split('.').map(Number);
@@ -96,10 +113,16 @@ function pageDirectChildren(inv) {
 
 /** Section ids that live below a page direct child (or are that child). */
 function sectionIdsUnder(inv, childId) {
-  const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
+  const byId = nodeMapOf(inv.nodes);
+  const sectionIds = new Set(
+    asArray(inv.sections)
+      .map((section) => byId.get(section.id) || section)
+      .filter((record) => record && !isSkipped(record))
+      .map((record) => record.id),
+  );
   const out = [];
   if (sectionIds.has(childId)) out.push(childId);
-  for (const node of asArray(inv.nodes)) {
+  for (const node of drawableNodes(inv)) {
     if (!sectionIds.has(node.id)) continue;
     if (asArray(node.ancestorIds).includes(childId)) out.push(node.id);
   }
@@ -111,14 +134,6 @@ function pagePaintOrderOf(inv) {
     const ids = sectionIdsUnder(inv, child.id);
     return ids.length ? { id: child.id, sectionIds: ids } : { id: child.id };
   });
-}
-
-function nodeMapOf(nodes) {
-  const byId = new Map();
-  for (const node of asArray(nodes)) {
-    if (node && typeof node.id === 'string') byId.set(node.id, node);
-  }
-  return byId;
 }
 
 /**
@@ -154,15 +169,19 @@ export function inventorySemanticRecords(inv, options = {}) {
 function classifyPageDirectChildren(inv, byId) {
   const fixedOverlays = asArray(inv.overlays)
     .map((entry) => byId.get(entry.id) || entry)
-    .filter(Boolean);
+    .filter((record) => record && !isSkipped(record));
   const fixedIds = new Set(fixedOverlays.map((n) => n.id));
-  const backgroundIds = new Set(asArray(inv.backgrounds).map((entry) => entry.id));
-  const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
+  const sectionIds = new Set(
+    asArray(inv.sections)
+      .map((section) => byId.get(section.id) || section)
+      .filter((record) => record && !isSkipped(record))
+      .map((record) => record.id),
+  );
 
   const pageChrome = [];
   for (const child of pageDirectChildren(inv)) {
     const record = byId.get(child.id) || child;
-    if (fixedIds.has(child.id)) continue;
+    if (isSkipped(record) || fixedIds.has(child.id)) continue;
     if (record.role === 'sec' || sectionIds.has(child.id)) continue;
     pageChrome.push(record);
   }
@@ -170,7 +189,7 @@ function classifyPageDirectChildren(inv, byId) {
   // when they are not a direct page child (some kv layers sit inside kv/*).
   for (const entry of asArray(inv.backgrounds)) {
     const record = byId.get(entry.id) || entry;
-    if (!record || fixedIds.has(record.id)) continue;
+    if (!record || isSkipped(record) || fixedIds.has(record.id)) continue;
     if (pageChrome.some((n) => n.id === record.id)) continue;
     pageChrome.push(record);
   }
@@ -397,6 +416,10 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
 
   const byId = nodeMapOf(inv.nodes);
   const { pageChrome, fixedOverlays } = classifyPageDirectChildren(inv, byId);
+  const sections = asArray(inv.sections).filter((section) => {
+    const record = byId.get(section.id) || section;
+    return record && !isSkipped(record);
+  });
   const triggerByModal = classifyModalTriggers(inv);
   const pageStateGraph = classifyPageStateTransitions(inv, options);
   const visualStateDiscovery = normalizedVisualStateCandidates(inv);
@@ -478,7 +501,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       lastModified: inv.snapshot.lastModified ?? null,
     },
     page: inv.page,
-    sections: asArray(inv.sections),
+    sections,
     pageChrome: { meta: { id: inv.page.id, name: inv.page.name }, nodes: pageChrome },
     fixedOverlays: { meta: { id: inv.page.id, name: inv.page.name }, nodes: fixedOverlays },
     pagePaintOrder: pagePaintOrderOf(inv),
@@ -505,7 +528,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       determined: inv.counts?.determined ?? 0,
       unknown: inv.counts?.unknown ?? 0,
       skipped: inv.counts?.skipped ?? 0,
-      sections: asArray(inv.sections).length,
+      sections: sections.length,
       pageChrome: pageChrome.length,
       fixedOverlays: fixedOverlays.length,
       modals: modals.length,
