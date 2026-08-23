@@ -204,7 +204,7 @@ export function auditDraftAssetCompleteness(doc, peerDocs = [], options = {}) {
   const cards = auditCardAndReward(doc);
   const morph = options.skipMorphology
     ? { ok: true, problems: [] }
-    : auditDraftGoldMorphology(doc);
+    : auditDraftGoldMorphology(doc, options);
   const index = auditIndexConsistency(doc);
   const peers = options.skipMorphology || !peerDocs.length
     ? { ok: true, problems: [] }
@@ -228,6 +228,10 @@ export function auditLikeCli(doc, peerDocs = [], options = {}) {
     expectedPrefixClasses: goldPrefixClassesFor(doc) || undefined,
     requiredIndexes: requiredIndexPresenceFor(doc) || undefined,
     skipMorphology: readyPair,
+    classRoles: options.classRoles,
+    signatureRoles: options.signatureRoles,
+    signatureEvidence: options.signatureEvidence,
+    settledRules: options.settledRules,
   });
 }
 
