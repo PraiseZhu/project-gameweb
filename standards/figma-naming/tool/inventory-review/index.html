@@ -17,6 +17,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; background: var(--figma); color: var(--ink);
     font: 12px/1.35 Inter, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  body { display: flex; flex-direction: column; }
   button, input, select, textarea { font: inherit; color: inherit; }
   button { background: none; border: 0; cursor: pointer; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -30,7 +31,7 @@
   #bar .meta { color: var(--muted); font-size: 11px; font-family: ui-monospace, Menlo, monospace; }
   #bar .sp { flex: 1; }
 
-  #app { display: flex; height: calc(100% - 40px); }
+  #app { display: flex; flex: 1; min-height: 0; }
 
   #left, #right {
     width: 241px; flex: none; background: #2c2c2c; display: flex; flex-direction: column; min-height: 0;
@@ -38,10 +39,10 @@
   #left { border-right: 1px solid #000; }
   #right { border-left: 1px solid #000; }
 
-  #pages { padding: 6px 0; border-bottom: 1px solid #000; }
+  #pages { padding: 6px 0; border-bottom: 1px solid #000; display: flex; }
   #pages .pg {
-    display: flex; align-items: center; gap: 8px; width: 100%; height: 32px;
-    padding: 0 12px; color: var(--ink); text-align: left;
+    display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; height: 40px;
+    padding: 0 12px; color: var(--ink); text-align: center; font-size: 14px; font-weight: 600;
   }
   #pages .pg:hover { background: var(--hover); }
   #pages .pg.on { background: #383838; }
@@ -60,7 +61,16 @@
     height: 28px; border: 1px solid #4a4a4a; background: #383838; border-radius: 6px; padding: 0 6px; color: var(--muted);
   }
 
-  #listWrap { flex: 1; overflow: auto; }
+  #queue { max-height: 42%; overflow: auto; border-bottom: 1px solid #000; flex: none; }
+  #queue .item {
+    display: block; width: 100%; text-align: left; padding: 10px 12px; min-height: 44px;
+    border-bottom: 1px solid #333; color: var(--ink);
+  }
+  #queue .item .sub { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+  #queue .item.on { background: var(--sel); }
+  #queue .item.on .sub { color: #e8f4ff; }
+  #queue:empty { display: none; }
+  #listWrap { flex: 1; overflow: auto; min-height: 0; }
   #tree { list-style: none; padding: 0 0 24px; }
   #tree .row {
     display: flex; align-items: center; height: 32px; padding-right: 8px;
@@ -105,7 +115,7 @@
     position: absolute; left: 0; top: 0; transform: translateY(-100%);
     color: #9a9a9a; font-size: 11px; padding: 2px 0 4px; pointer-events: none; white-space: nowrap;
   }
-  #world .box { position: absolute; pointer-events: none; border: 0; background: transparent; }
+  #world .box { position: absolute; pointer-events: auto; border: 0; background: transparent; cursor: pointer; }
   #world .box.sel {
     border: 2px solid var(--sel);
     outline: 2px solid #fff;
@@ -113,6 +123,17 @@
     box-shadow: 0 0 0 6px rgba(13,153,255,.4), 0 0 22px rgba(13,153,255,.75);
     background: rgba(13,153,255,.14);
     z-index: 5;
+  }
+  #world .box.review-target {
+    border: 2px dashed var(--unk);
+    background: rgba(245,165,36,.05);
+    z-index: 4;
+  }
+  #world .box.review-target .tag {
+    display: block;
+    background: var(--unk); color: #1e1e1e; font-size: 10px; font-weight: 600;
+    padding: 2px 5px; max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+    border-radius: 2px; white-space: nowrap;
   }
   #world .box .tag {
     position: absolute; left: -2px; top: 0; transform: translateY(calc(-100% - 4px));
@@ -147,7 +168,19 @@
   #right textarea { min-height: 64px; resize: vertical; }
   #write { margin-top: 10px; width: 100%; height: 30px; background: #0d99ff; color: #fff; border-radius: 6px; }
   #write:hover { background: #0b86e0; }
-  #log { margin-top: 8px; color: var(--muted); font-size: 11px; }
+  #log { margin-top: 8px; color: var(--muted); font-size: 12px; min-height: 18px; }
+  #log.ok { color: var(--det); font-weight: 600; }
+  #log.err { color: #f87171; }
+
+  @media (max-width: 900px) {
+    #bar { height: auto; min-height: 44px; flex-wrap: wrap; padding: 8px; }
+    #left, #right { width: 100%; max-height: 36%; }
+    #app { flex-direction: column; }
+    #stage { min-height: 28%; }
+    #pages .pg { height: 44px; font-size: 16px; }
+    #write, #right .seg button { min-height: 44px; height: 44px; }
+    #queue { max-height: 46%; }
+  }
 </style>
 </head>
 <body>
@@ -155,11 +188,13 @@
   <span class="brand">清单人工核对</span>
   <span class="meta" id="fileName"></span>
   <span class="sp"></span>
+  <span class="meta" id="reviewCount">待核 0 层</span>
   <span class="meta" id="counts"></span>
 </div>
 <div id="app">
   <aside id="left">
     <div id="pages"></div>
+    <div id="queue"></div>
     <div id="tabs">
       <button class="on" data-tab="layers">图层</button>
       <button data-tab="assets">资源</button>
@@ -167,7 +202,7 @@
     <div id="searchWrap">
       <input id="search" placeholder="搜索图层" />
       <select id="treeFilter">
-        <option value="review">核对</option>
+        <option value="review" selected>待核</option>
         <option value="all">全部</option>
         <option value="unknown">未知</option>
       </select>
@@ -215,6 +250,7 @@ const world = $("world");
 const state = {
   inventory: null, invFile: "", pageBox: { x: 0, y: 0, w: 1, h: 1 },
   tiles: null, zoom: 0.2, panX: 40, panY: 48,
+  reviewTargets: [],
   selectedId: null, hoverId: null, relatedIds: new Set(),
   q: "", treeFilter: "review", tab: "layers",
   toStatus: "unknown", expanded: new Set(), originX: 0, originY: 0,
@@ -370,8 +406,9 @@ function passFilter(n) {
   if (n.id === "__page__") return true;
   if (state.treeFilter === "unknown") return n.status === "unknown" || (state.kids.get(n.id) || []).some(passFilter);
   if (state.treeFilter === "review") {
-    if (n.status === "skipped") return (state.kids.get(n.id) || []).some(passFilter);
-    return true;
+    const ids = new Set((state.reviewTargets || []).map((t) => t.id));
+    if (ids.has(n.id)) return true;
+    return (state.kids.get(n.id) || []).some(passFilter);
   }
   return true;
 }
@@ -407,6 +444,17 @@ function renderTree() {
         ${n.id === "__page__" ? "" : `<i class="pip ${st}"></i>`}
       </div>
     </li>`;
+  }).join("");
+}
+
+function renderQueue() {
+  const el = $("queue");
+  if (!el) return;
+  const rows = state.reviewTargets || [];
+  el.innerHTML = rows.map((t) => {
+    const cls = t.classes?.[0]?.goldClass?.split("::").at(-1) || "待核";
+    const on = t.id === state.selectedId ? " on" : "";
+    return `<button class="item${on}" data-id="${esc(t.id)}"><span>${esc(t.name || t.id)}</span><span class="sub">${esc(cls)} · ${esc(t.id)}</span></button>`;
   }).join("");
 }
 
@@ -470,6 +518,23 @@ function paintWorld() {
 
 function renderBoxes() {
   world.querySelectorAll(".box").forEach((el) => el.remove());
+  for (const target of state.reviewTargets) {
+    if (!target?.box || isSynth(target.id)) continue;
+    const b = worldBoxOf(target);
+    const el = document.createElement("div");
+    el.className = "box review-target";
+    el.style.left = b.x + "px";
+    el.style.top = b.y + "px";
+    el.style.width = Math.max(1, b.w) + "px";
+    el.style.height = Math.max(1, b.h) + "px";
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    const cls = target.classes?.[0]?.goldClass || "待核";
+    tag.textContent = `${target.name || target.type || "未知"} · ${cls.split("::").at(-1) || "待核"}`;
+    el.appendChild(tag);
+    el.dataset.id = target.id;
+    world.appendChild(el);
+  }
   const n = nodeOf(state.selectedId);
   if (!n?.box || isSynth(n.id)) return;
   const b = worldBoxOf(n);
@@ -552,7 +617,7 @@ function select(n, from = "tree") {
   if (!n) {
     state.selectedId = null; state.relatedIds = new Set();
     $("right").classList.add("empty");
-    renderTree(); renderBoxes();
+    renderQueue(); renderTree(); renderBoxes();
     return;
   }
   state.selectedId = n.id;
@@ -572,10 +637,12 @@ function select(n, from = "tree") {
   ].map(([k, v]) => `<span>${esc(k)}</span><b>${esc(v)}</b>`).join("");
   $("toRole").value = n.role && ROLES.includes(n.role) ? n.role : "img";
   $("stSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.st === state.toStatus));
+  renderQueue();
   renderTree();
   renderBoxes();
   const row = $("tree").querySelector(`[data-id="${CSS.escape(n.id)}"]`);
   row?.scrollIntoView({ block: "nearest" });
+  $("queue")?.querySelector(".item.on")?.scrollIntoView({ block: "nearest" });
   if (from === "tree") revealOnCanvas(n);
 }
 
@@ -603,9 +670,10 @@ async function loadList() {
   const params = new URLSearchParams(location.search);
   state.invFile = params.get("inv") || items.find((x) => x.end === "pc" && x.file.includes("unnamed"))?.file || items[0]?.file || "";
   const shelf = items.find((x) => x.file === state.invFile)?.fileKey;
-  const same = items.filter((x) => x.fileKey === shelf);
-  $("pages").innerHTML = same.map((x) => {
-    const label = x.end === "pc" ? "PC" : "mobile";
+  const same = items.filter((x) => x.fileKey && x.fileKey === shelf);
+  const pages = same.length >= 2 ? same : items;
+  $("pages").innerHTML = pages.map((x) => {
+    const label = x.end === "pc" ? "PC" : x.end === "mobile" ? "手机" : (x.file || "页");
     return `<button class="pg${x.file === state.invFile ? " on" : ""}" data-file="${x.file}">${ICONS.PAGE}<span>${label}</span></button>`;
   }).join("");
   $("pages").onclick = (e) => {
@@ -617,6 +685,20 @@ async function loadList() {
   };
 }
 
+/* REVIEW_TARGETS_HELPER_START */
+async function fetchReviewTargets(invFile, fetcher = fetch) {
+  try {
+    const response = await fetcher("/review-targets.json");
+    if (!response?.ok) return [];
+    const review = await response.json();
+    const page = Object.values(review?.pages || {}).find((item) => item?.inventoryFile === invFile);
+    return Array.isArray(page?.targets) ? page.targets : [];
+  } catch {
+    return [];
+  }
+}
+/* REVIEW_TARGETS_HELPER_END */
+
 async function loadInv() {
   if (!state.invFile) return;
   $("fileName").textContent = state.invFile;
@@ -624,15 +706,25 @@ async function loadInv() {
   state.pageBox = state.inventory.page?.box || { x: 0, y: 0, w: 1000, h: 1000 };
   const c = state.inventory.counts || {};
   $("counts").textContent = `det ${c.determined ?? 0} · unk ${c.unknown ?? 0} · skip ${c.skipped ?? 0} · ${state.inventory.status || ""}`;
+  state.reviewTargets = await fetchReviewTargets(state.invFile);
+  $("reviewCount").textContent = `待核 ${state.reviewTargets.length} 层`;
   const tag = pageTag(state.inventory.requestedNodeId || state.inventory.page?.id);
   try { state.tiles = await (await fetch(`/inventory-review/tiles-${tag}.json`)).json(); }
   catch { state.tiles = null; }
   $("toRole").innerHTML = ROLES.map((r) => `<option>${r}</option>`).join("");
   buildIndex();
+  renderQueue();
   renderTree();
   renderAssets();
   paintWorld();
 }
+$("queue").onclick = (e) => {
+  const btn = e.target.closest(".item"); if (!btn) return;
+  const n = nodeOf(btn.dataset.id) || (state.reviewTargets || []).find((t) => t.id === btn.dataset.id);
+  if (!n) return;
+  select(n, "tree");
+  zoomToNode(n);
+};
 
 $("tree").onclick = (e) => {
   const twist = e.target.closest(".twist");
@@ -704,11 +796,17 @@ $("stSeg").onclick = (e) => {
   $("stSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.st === st));
 };
 $("write").onclick = async () => {
+  const log = $("log");
   const n = nodeOf(state.selectedId);
-  if (!n || n.id === "__page__") return;
+  if (!n || n.id === "__page__") {
+    log.className = "err";
+    log.textContent = "先点一层再写";
+    return;
+  }
   const record = { nodeId: n.id, toStatus: state.toStatus, toRole: $("toRole").value, note: $("note").value, at: new Date().toISOString() };
   const res = await fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ file: state.invFile, record }) });
-  $("log").textContent = res.ok ? "已写入 feedback（draft 未升档）" : await res.text();
+  log.className = res.ok ? "ok" : "err";
+  log.textContent = res.ok ? `已写下 ${n.id} → ${state.toStatus}/${$("toRole").value}（draft 未升档）` : await res.text();
 };
 
 let dragging = null, wasDrag = false, spaceDown = false;
@@ -747,7 +845,8 @@ window.addEventListener("keyup", (e) => {
 window.addEventListener("blur", () => { spaceDown = false; viewport.classList.remove("space"); });
 
 viewport.addEventListener("pointerdown", (e) => {
-  const canPan = spaceDown || e.button === 1 || e.altKey;
+  if (e.target.closest(".box")) return;
+  const canPan = true;
   if (!canPan) return;
   e.preventDefault();
   dragging = { x: e.clientX, y: e.clientY, px: state.panX, py: state.panY };
@@ -766,6 +865,11 @@ viewport.addEventListener("pointermove", (e) => {
 viewport.addEventListener("pointerup", () => { dragging = null; viewport.classList.remove("drag"); });
 viewport.addEventListener("click", (e) => {
   if (wasDrag) { wasDrag = false; return; }
+  const box = e.target.closest(".box");
+  if (box?.dataset.id) {
+    const n = nodeOf(box.dataset.id) || (state.reviewTargets || []).find((t) => t.id === box.dataset.id);
+    if (n) { select(n, "canvas"); return; }
+  }
   const n = hitTest(e.clientX, e.clientY);
   select(n || null, "canvas");
 });
