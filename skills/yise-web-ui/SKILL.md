@@ -7,6 +7,15 @@ description: Reusable Figma-to-Web UI verification Skill: extract provenance-tra
 
 This is the reusable public Skill identity. `demos/yise-ss5-preview` is an Etheria/伊瑟 verification example only, not the Skill identity and not an AppStore application.
 
+## Handoff package entry
+
+The only page-builder entry for a naming handoff package is
+`npm run figma:from-handoff -- <handoff-dir>`. A `green-draft` package remains
+`ready=false`: consume only `determined` records and never wire `unknown`.
+`inventory:check` is deprecated as a package entry; it only retains the
+five-item audit for a single `ready` inventory JSON. Never change draft status
+to `ready` to make a consumer pass.
+
 ## Capability architecture
 
 There are two explicit workflow declarations:

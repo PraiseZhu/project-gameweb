@@ -70,6 +70,8 @@ function fixture(overrides = {}) {
 test("entry gate requires schema/status/ok/hash/fileKey/requestedNodeId/nodes", () => {
   assert.equal(INVENTORY_V2_SCHEMA, "inventory/v2");
   assert.equal(validateInventory(fixture()).ok, true);
+  assert.equal(validateInventory(fixture({ status: "draft" })).ok, false);
+  assert.equal(validateInventory(fixture({ status: "draft" }), { allowDraft: true }).ok, true, "green-draft 必须允许 draft");
 
   const missing = [
     { schema: "other" },

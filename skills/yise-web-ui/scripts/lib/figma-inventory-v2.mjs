@@ -3,11 +3,13 @@
  *
  * This module is the ONLY entry point the page builder uses for the normative
  * naming snapshot (inventory/v2). It never re-derives roles from raw Figma layer
- * names (parseLayerName / deriveRole / figma-fetch are not called here), and it
- * stops on anything that is not a `ready` inventory/v2 package.
+ * names (parseLayerName / deriveRole / figma-fetch are not called here).
+ * Default gate is status === "ready". Packed green-draft (`allowDraft: true`)
+ * is accepted as draft; unknown stays unwired (issue #31 F001).
  *
  * Contract:
- *  1. entry gate: schema === "inventory/v2" and status === "ready".
+ *  1. entry gate: schema === "inventory/v2" and status === "ready"
+ *     (or draft when options.allowDraft).
  *  2. nodes -> page nodes/sections; bg/kv + non-fix -> pageChrome; fix ->
  *     fixedOverlays; page direct-child order -> pagePaintOrder; node id stays
  *     the back-link key on every emitted record.
@@ -41,11 +43,14 @@ function asArray(value) {
 }
 
 /** Entry gate. Returns {ok, problems}. Does not throw. */
-export function validateInventory(inv) {
+export function validateInventory(inv, options = {}) {
   const problems = [];
   if (!isPlainObject(inv)) return { ok: false, problems: ['清单必须是对象'] };
   if (inv.schema !== INVENTORY_V2_SCHEMA) problems.push(`schema 必须是 ${INVENTORY_V2_SCHEMA}`);
-  if (inv.status !== 'ready') problems.push('status 必须是 ready');
+  const allowedStatus = options.allowDraft === true ? ['ready', 'draft'] : ['ready'];
+  if (!allowedStatus.includes(inv.status)) {
+    problems.push(options.allowDraft === true ? 'status 必须是 ready 或 draft' : 'status 必须是 ready');
+  }
   if (inv.ok !== true) problems.push('清单必须 ok === true');
   if (!isPlainObject(inv.page) || typeof inv.page.id !== 'string' || !inv.page.id) problems.push('缺少 page.id');
   if (!isPlainObject(inv.snapshot) || typeof inv.snapshot.hash !== 'string' || !inv.snapshot.hash) problems.push('缺少 snapshot.hash');
@@ -122,8 +127,8 @@ function nodeMapOf(nodes) {
  * owns role/behavior/slice intent, while Figma still owns geometry, renderBox,
  * styles, and export pixels. Unknown records are not semantic authority.
  */
-export function inventorySemanticRecords(inv) {
-  const gate = validateInventory(inv);
+export function inventorySemanticRecords(inv, options = {}) {
+  const gate = validateInventory(inv, options);
   if (!gate.ok) return { ok: false, problems: gate.problems, byNodeId: new Map() };
 
   const byNodeId = new Map();
@@ -385,7 +390,7 @@ export function classifyPageStateTransitions(inv, {
  * componentVariantGraph + variantTrees / hidden modal layer).
  */
 export function adaptInventoryToTruthShape(inv, options = {}) {
-  const gate = validateInventory(inv);
+  const gate = validateInventory(inv, options);
   if (!gate.ok) {
     return { ok: false, error: 'validateInventory failed', problems: gate.problems };
   }
@@ -518,7 +523,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
 
 /** Human/machine-visible acceptance summary (five reverse-acceptance items). */
 export function inventoryAcceptanceReport(inv, options = {}) {
-  const gate = validateInventory(inv);
+  const gate = validateInventory(inv, options);
   const adapted = gate.ok ? adaptInventoryToTruthShape(inv, options) : null;
   const accepted = gate.ok && adapted?.ok === true;
   const unknownModalCount = accepted
@@ -602,7 +607,7 @@ function collectInventoryIds(inv) {
  * dropped a source node silently.
  */
 export function inventoryBacklinkReport(inv, options = {}) {
-  const gate = validateInventory(inv);
+  const gate = validateInventory(inv, options);
   if (!gate.ok) return { ok: false, total: 0, resolved: 0, unresolved: [], gateProblems: gate.problems };
   const ids = collectInventoryIds(inv);
   const adapted = adaptInventoryToTruthShape(inv, options);
