@@ -1,5 +1,6 @@
 {
   "name": "yise-web-ui",
+  "description": "Figma 交接包只用 figma:from-handoff 消费；inventory:check 仅保留单份 ready inventory 诊断。",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,7 +20,8 @@
     "static:visual-assets": "node scripts/static-visual-assets.mjs",
     "static:golden-regression": "node scripts/static-golden-regression.mjs",
     "figma:state-candidate-audit": "node scripts/figma-state-candidate-audit.mjs",
-    "inventory:check": "node scripts/figma-inventory-check.mjs"
+    "inventory:check": "node scripts/figma-inventory-check.mjs",
+    "figma:from-handoff": "node scripts/figma-from-handoff.mjs"
   },
   "dependencies": {
     "css-to-react-native": "^3.2.0",

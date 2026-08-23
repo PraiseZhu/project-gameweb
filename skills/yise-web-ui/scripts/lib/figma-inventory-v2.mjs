@@ -3,11 +3,14 @@
  *
  * This module is the ONLY entry point the page builder uses for the normative
  * naming snapshot (inventory/v2). It never re-derives roles from raw Figma layer
- * names (parseLayerName / deriveRole / figma-fetch are not called here), and it
- * stops on anything that is not a `ready` inventory/v2 package.
+ * names (parseLayerName / deriveRole / figma-fetch are not called here).
+ * Default gate is status === "ready". Packed green-draft (`allowDraft: true`)
+ * is accepted as draft; unknown stays draw-only and unwired. skipped nodes
+ * are omitted from consume mapping (issue #34).
  *
  * Contract:
- *  1. entry gate: schema === "inventory/v2" and status === "ready".
+ *  1. entry gate: schema === "inventory/v2" and status === "ready"
+ *     (or draft when options.allowDraft).
  *  2. nodes -> page nodes/sections; bg/kv + non-fix -> pageChrome; fix ->
  *     fixedOverlays; page direct-child order -> pagePaintOrder; node id stays
  *     the back-link key on every emitted record.
@@ -40,12 +43,23 @@ function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function isSkipped(node) {
+  return node?.status === 'skipped';
+}
+
+function drawableNodes(inv) {
+  return asArray(inv.nodes).filter((node) => !isSkipped(node));
+}
+
 /** Entry gate. Returns {ok, problems}. Does not throw. */
-export function validateInventory(inv) {
+export function validateInventory(inv, options = {}) {
   const problems = [];
   if (!isPlainObject(inv)) return { ok: false, problems: ['清单必须是对象'] };
   if (inv.schema !== INVENTORY_V2_SCHEMA) problems.push(`schema 必须是 ${INVENTORY_V2_SCHEMA}`);
-  if (inv.status !== 'ready') problems.push('status 必须是 ready');
+  const allowedStatus = options.allowDraft === true ? ['ready', 'draft'] : ['ready'];
+  if (!allowedStatus.includes(inv.status)) {
+    problems.push(options.allowDraft === true ? 'status 必须是 ready 或 draft' : 'status 必须是 ready');
+  }
   if (inv.ok !== true) problems.push('清单必须 ok === true');
   if (!isPlainObject(inv.page) || typeof inv.page.id !== 'string' || !inv.page.id) problems.push('缺少 page.id');
   if (!isPlainObject(inv.snapshot) || typeof inv.snapshot.hash !== 'string' || !inv.snapshot.hash) problems.push('缺少 snapshot.hash');
@@ -72,9 +86,17 @@ export function validateInventory(inv) {
  * ("0", "0.1", "0.2", ...). Recover page direct children and their paint order
  * from that source, not from a node-id or name.
  */
+function nodeMapOf(nodes) {
+  const byId = new Map();
+  for (const node of asArray(nodes)) {
+    if (node && typeof node.id === 'string') byId.set(node.id, node);
+  }
+  return byId;
+}
+
 function pageDirectChildren(inv) {
   const pageId = inv.page.id;
-  return asArray(inv.nodes)
+  return drawableNodes(inv)
     .filter((node) => node && node.parentId === pageId)
     .sort((a, b) => {
       const ak = String(a.orderKey ?? '0').split('.').map(Number);
@@ -91,10 +113,16 @@ function pageDirectChildren(inv) {
 
 /** Section ids that live below a page direct child (or are that child). */
 function sectionIdsUnder(inv, childId) {
-  const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
+  const byId = nodeMapOf(inv.nodes);
+  const sectionIds = new Set(
+    asArray(inv.sections)
+      .map((section) => byId.get(section.id) || section)
+      .filter((record) => record && !isSkipped(record))
+      .map((record) => record.id),
+  );
   const out = [];
   if (sectionIds.has(childId)) out.push(childId);
-  for (const node of asArray(inv.nodes)) {
+  for (const node of drawableNodes(inv)) {
     if (!sectionIds.has(node.id)) continue;
     if (asArray(node.ancestorIds).includes(childId)) out.push(node.id);
   }
@@ -108,22 +136,14 @@ function pagePaintOrderOf(inv) {
   });
 }
 
-function nodeMapOf(nodes) {
-  const byId = new Map();
-  for (const node of asArray(nodes)) {
-    if (node && typeof node.id === 'string') byId.set(node.id, node);
-  }
-  return byId;
-}
-
 /**
  * Read the ready inventory's semantic records by Figma node id. These records
  * are intentionally kept separate from the raw Figma snapshot: the inventory
  * owns role/behavior/slice intent, while Figma still owns geometry, renderBox,
  * styles, and export pixels. Unknown records are not semantic authority.
  */
-export function inventorySemanticRecords(inv) {
-  const gate = validateInventory(inv);
+export function inventorySemanticRecords(inv, options = {}) {
+  const gate = validateInventory(inv, options);
   if (!gate.ok) return { ok: false, problems: gate.problems, byNodeId: new Map() };
 
   const byNodeId = new Map();
@@ -149,15 +169,19 @@ export function inventorySemanticRecords(inv) {
 function classifyPageDirectChildren(inv, byId) {
   const fixedOverlays = asArray(inv.overlays)
     .map((entry) => byId.get(entry.id) || entry)
-    .filter(Boolean);
+    .filter((record) => record && !isSkipped(record));
   const fixedIds = new Set(fixedOverlays.map((n) => n.id));
-  const backgroundIds = new Set(asArray(inv.backgrounds).map((entry) => entry.id));
-  const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
+  const sectionIds = new Set(
+    asArray(inv.sections)
+      .map((section) => byId.get(section.id) || section)
+      .filter((record) => record && !isSkipped(record))
+      .map((record) => record.id),
+  );
 
   const pageChrome = [];
   for (const child of pageDirectChildren(inv)) {
     const record = byId.get(child.id) || child;
-    if (fixedIds.has(child.id)) continue;
+    if (isSkipped(record) || fixedIds.has(child.id)) continue;
     if (record.role === 'sec' || sectionIds.has(child.id)) continue;
     pageChrome.push(record);
   }
@@ -165,7 +189,7 @@ function classifyPageDirectChildren(inv, byId) {
   // when they are not a direct page child (some kv layers sit inside kv/*).
   for (const entry of asArray(inv.backgrounds)) {
     const record = byId.get(entry.id) || entry;
-    if (!record || fixedIds.has(record.id)) continue;
+    if (!record || isSkipped(record) || fixedIds.has(record.id)) continue;
     if (pageChrome.some((n) => n.id === record.id)) continue;
     pageChrome.push(record);
   }
@@ -385,13 +409,17 @@ export function classifyPageStateTransitions(inv, {
  * componentVariantGraph + variantTrees / hidden modal layer).
  */
 export function adaptInventoryToTruthShape(inv, options = {}) {
-  const gate = validateInventory(inv);
+  const gate = validateInventory(inv, options);
   if (!gate.ok) {
     return { ok: false, error: 'validateInventory failed', problems: gate.problems };
   }
 
   const byId = nodeMapOf(inv.nodes);
   const { pageChrome, fixedOverlays } = classifyPageDirectChildren(inv, byId);
+  const sections = asArray(inv.sections).filter((section) => {
+    const record = byId.get(section.id) || section;
+    return record && !isSkipped(record);
+  });
   const triggerByModal = classifyModalTriggers(inv);
   const pageStateGraph = classifyPageStateTransitions(inv, options);
   const visualStateDiscovery = normalizedVisualStateCandidates(inv);
@@ -473,7 +501,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       lastModified: inv.snapshot.lastModified ?? null,
     },
     page: inv.page,
-    sections: asArray(inv.sections),
+    sections,
     pageChrome: { meta: { id: inv.page.id, name: inv.page.name }, nodes: pageChrome },
     fixedOverlays: { meta: { id: inv.page.id, name: inv.page.name }, nodes: fixedOverlays },
     pagePaintOrder: pagePaintOrderOf(inv),
@@ -500,7 +528,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       determined: inv.counts?.determined ?? 0,
       unknown: inv.counts?.unknown ?? 0,
       skipped: inv.counts?.skipped ?? 0,
-      sections: asArray(inv.sections).length,
+      sections: sections.length,
       pageChrome: pageChrome.length,
       fixedOverlays: fixedOverlays.length,
       modals: modals.length,
@@ -518,7 +546,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
 
 /** Human/machine-visible acceptance summary (five reverse-acceptance items). */
 export function inventoryAcceptanceReport(inv, options = {}) {
-  const gate = validateInventory(inv);
+  const gate = validateInventory(inv, options);
   const adapted = gate.ok ? adaptInventoryToTruthShape(inv, options) : null;
   const accepted = gate.ok && adapted?.ok === true;
   const unknownModalCount = accepted
@@ -602,7 +630,7 @@ function collectInventoryIds(inv) {
  * dropped a source node silently.
  */
 export function inventoryBacklinkReport(inv, options = {}) {
-  const gate = validateInventory(inv);
+  const gate = validateInventory(inv, options);
   if (!gate.ok) return { ok: false, total: 0, resolved: 0, unresolved: [], gateProblems: gate.problems };
   const ids = collectInventoryIds(inv);
   const adapted = adaptInventoryToTruthShape(inv, options);
