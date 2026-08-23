@@ -25,7 +25,7 @@ function countConsume(inv) {
   let drawOnly = 0;
   for (const node of nodes) {
     if (node?.status === "determined") wirable += 1;
-    else drawOnly += 1;
+    else if (node?.status === "unknown") drawOnly += 1;
   }
   return { wirable, drawOnly };
 }
@@ -35,12 +35,24 @@ function consumeOne(label, inv, options) {
   const report = inventoryAcceptanceReport(inv, options);
   const adapted = gate.ok ? adaptInventoryToTruthShape(inv, options) : null;
   const counts = countConsume(inv);
+  const skippedIds = new Set(
+    (inv.nodes || []).filter((node) => node?.status === "skipped").map((node) => node.id),
+  );
+  const paintedIds = adapted
+    ? [
+        ...adapted.pageChrome.nodes.map((node) => node.id),
+        ...adapted.fixedOverlays.nodes.map((node) => node.id),
+        ...adapted.sections.map((section) => section.id),
+        ...adapted.pagePaintOrder.flatMap((entry) => [entry.id, ...(entry.sectionIds || [])]),
+      ]
+    : [];
+  const skippedPainted = paintedIds.some((id) => skippedIds.has(id));
   const pendingModals = adapted
     ? adapted.modals.filter((modal) => modal.triggerStatus !== "determined")
     : [];
   return {
     label,
-    ok: gate.ok === true && report.gatePassed === true && report.unknownNotWired === true,
+    ok: gate.ok === true && report.gatePassed === true && report.unknownNotWired === true && skippedPainted === false,
     pageId: inv?.requestedNodeId ?? null,
     status: inv?.status ?? null,
     wirable: counts.wirable,

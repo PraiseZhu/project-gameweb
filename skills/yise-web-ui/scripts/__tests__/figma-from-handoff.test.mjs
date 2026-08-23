@@ -46,6 +46,56 @@ function sample(id, extra = {}) {
   });
 }
 
+test("from-handoff omits skipped nodes from draw-only and paint mapping (issue #34)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "from-handoff-skipped-"));
+  const pcDoc = sample("1:1");
+  const mobileDoc = sample("2:2");
+  pcDoc.nodes.push(
+    {
+      id: "1:1-unknown",
+      type: "FRAME",
+      name: "标题",
+      status: "unknown",
+      parentId: "1:1",
+      orderKey: "0.90",
+      box: { x: 0, y: 0, w: 40, h: 12 },
+    },
+    {
+      id: "1:1-skipped",
+      type: "FRAME",
+      name: "ref/组件",
+      status: "skipped",
+      why: "ref",
+      parentId: "1:1",
+      orderKey: "0.91",
+      box: { x: 0, y: 0, w: 40, h: 12 },
+    },
+  );
+  mobileDoc.nodes.push({
+    id: "2:2-skipped",
+    type: "FRAME",
+    name: "ref/组件",
+    status: "skipped",
+    why: "ref",
+    parentId: "2:2",
+    orderKey: "0.91",
+    box: { x: 0, y: 0, w: 40, h: 12 },
+  });
+  rebuildInventoryIndexes(pcDoc);
+  rebuildInventoryIndexes(mobileDoc);
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: "green-draft", outDir: join(dir, "out"),
+  });
+  const result = runFromHandoff(pack.outDir);
+  assert.equal(result.ok, true, (result.problems || []).join("\n"));
+  assert.equal(result.drawOnly.pc, 1);
+  assert.equal(result.drawOnly.mobile, 0);
+});
+
 test("from-handoff accepts packed green-draft and does not wire unknown (issue #31 F001)", () => {
   const dir = mkdtempSync(join(tmpdir(), "from-handoff-green-"));
   const pcDoc = sample("1:1");
