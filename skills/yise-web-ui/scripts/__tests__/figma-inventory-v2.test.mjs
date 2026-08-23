@@ -70,6 +70,8 @@ function fixture(overrides = {}) {
 test("entry gate requires schema/status/ok/hash/fileKey/requestedNodeId/nodes", () => {
   assert.equal(INVENTORY_V2_SCHEMA, "inventory/v2");
   assert.equal(validateInventory(fixture()).ok, true);
+  assert.equal(validateInventory(fixture({ status: "draft" })).ok, false);
+  assert.equal(validateInventory(fixture({ status: "draft" }), { allowDraft: true }).ok, true, "green-draft 必须允许 draft");
 
   const missing = [
     { schema: "other" },
@@ -94,6 +96,28 @@ test("componentSets become variantTrees with renderable geometry", () => {
   assert.equal(set.componentSetId, "100:30");
   assert.deepEqual(adapted.componentVariantGraph.variantTrees["100:30"].map((v) => v.componentId), ["100:31", "100:32"]);
   assert.ok(set.variants.every((v) => v.box));
+});
+
+test("skipped page children stay out of chrome, overlays, and paint order", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:50", scope: "page", type: "FRAME", name: "ref/组件", parentId: PAGE_ID, orderKey: "0.2", status: "skipped", why: "ref" },
+    { id: "100:51", scope: "page", type: "FRAME", name: "sec/skip", parentId: PAGE_ID, orderKey: "0.3", status: "skipped", why: "invisible", role: "sec" },
+  );
+  inv.overlays.push({ id: "100:50", role: "fix", label: "skipped-overlay" });
+  inv.backgrounds.push({ id: "100:50", role: "kv", label: "skipped-bg" });
+  inv.sections.push({ id: "100:51", number: 2, label: "skip", box: { x: 0, y: 0, w: 10, h: 10 } });
+  inv.counts = { determined: 2, unknown: 2, skipped: 2 };
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(adapted.ok, true);
+  const painted = [
+    ...adapted.pageChrome.nodes.map((node) => node.id),
+    ...adapted.fixedOverlays.nodes.map((node) => node.id),
+    ...adapted.sections.map((section) => section.id),
+    ...adapted.pagePaintOrder.flatMap((entry) => [entry.id, ...(entry.sectionIds || [])]),
+  ];
+  assert.equal(painted.includes("100:50"), false);
+  assert.equal(painted.includes("100:51"), false);
 });
 
 test("modals own a hidden layer excluded from scroll", () => {

@@ -14,8 +14,8 @@
  */
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, renameSync, statSync, readdirSync } from "node:fs";
-import { resolve, dirname, normalize, extname, basename } from "node:path";
+import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from "node:fs";
+import { resolve, dirname, normalize, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isSourceInventoryFile, persistReviewedInventory } from "../src/review-save.mjs";
 
@@ -56,26 +56,37 @@ function send(res, code, body, type = "text/plain; charset=utf-8") {
 }
 
 /** 只允许 <root> 内的相对路径；禁止 .. 与绝对路径逃逸 */
-function safePath(urlPath) {
+function safePath(urlPath, dataRoot = root) {
   const rel = decodeURIComponent(urlPath.split("?")[0]).replace(/^\/+/, "");
-  const full = normalize(resolve(root, rel));
-  if (full !== root && !full.startsWith(root + "/")) return null;
+  const full = normalize(resolve(dataRoot, rel));
+  if (full !== dataRoot && !full.startsWith(dataRoot + "/")) return null;
   return full;
 }
 
-function defaultInvFile() {
-  if (!existsSync(root)) return "";
-  const files = readdirSync(root).filter((name) => isSourceInventoryFile(name)).sort();
+function defaultInvFile(dataRoot = root) {
+  if (!existsSync(dataRoot)) return "";
+  const files = readdirSync(dataRoot).filter((name) => isSourceInventoryFile(name)).sort();
   return files.find((name) => name.startsWith("inventory-unnamed-")) || files[0] || "";
 }
 
-function defaultReviewPath() {
-  const file = defaultInvFile();
+function defaultReviewPath(dataRoot = root) {
+  const file = defaultInvFile(dataRoot);
   return file ? `/inventory-review/?inv=${encodeURIComponent(file)}` : "/inventory-review/";
 }
 
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url, "http://localhost");
+export function loadReviewTargetsSidecar(dataRoot) {
+  const sidecar = resolve(dataRoot, "review-targets.json");
+  if (!existsSync(sidecar)) return { schema: "inventory-review-targets/v1", pages: {} };
+  const parsed = JSON.parse(readFileSync(sidecar, "utf8"));
+  if (!parsed || parsed.schema !== "inventory-review-targets/v1" || !parsed.pages || typeof parsed.pages !== "object") {
+    throw new Error("review-targets.json 不是 inventory-review-targets/v1");
+  }
+  return parsed;
+}
+
+export function createInventoryReviewServer({ dataRoot = root, committedPage = COMMITTED_PAGE } = {}) {
+  return createServer(async (req, res) => {
+    const url = new URL(req.url, "http://localhost");
 
   if (req.method === "POST" && url.pathname === "/api/feedback") {
     let body = "";
@@ -84,8 +95,8 @@ const server = createServer(async (req, res) => {
     try { parsed = JSON.parse(body); } catch { return send(res, 400, "bad json"); }
     const file = parsed?.file, record = parsed?.record;
     if (!isSourceInventoryFile(file || "") || !record || typeof record !== "object") return send(res, 400, "bad payload");
-    const fbPath = resolve(root, file.replace(/\.json$/, "-feedback.json"));
-    if (!fbPath.startsWith(root + "/")) return send(res, 400, "bad file");
+    const fbPath = resolve(dataRoot, file.replace(/\.json$/, "-feedback.json"));
+    if (!fbPath.startsWith(dataRoot + "/")) return send(res, 400, "bad file");
     const line = `${JSON.stringify(record)}\n`;
     const existed = existsSync(fbPath);
     writeFileSync(fbPath, line, { flag: "a" });
@@ -112,7 +123,7 @@ const server = createServer(async (req, res) => {
       }), "application/json; charset=utf-8");
     }
     try {
-      const result = persistReviewedInventory(root, file, inv);
+      const result = persistReviewedInventory(dataRoot, file, inv);
       return send(res, 200, JSON.stringify(result), "application/json; charset=utf-8");
     } catch (error) {
       const code = error?.code === "bad-file" || error?.code === "bad-inventory" ? 400 : 500;
@@ -121,9 +132,9 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/api/inventories") {
-    const files = existsSync(root) ? readdirSync(root).filter((name) => isSourceInventoryFile(name)).sort() : [];
+    const files = existsSync(dataRoot) ? readdirSync(dataRoot).filter((name) => isSourceInventoryFile(name)).sort() : [];
     const items = files.map((file) => {
-      const raw = readFileSync(resolve(root, file), "utf8").slice(0, 4000);
+      const raw = readFileSync(resolve(dataRoot, file), "utf8").slice(0, 4000);
       const status = /"status"\s*:\s*"(draft|ready|certified)"/.exec(raw)?.[1] ?? null;
       const pageId = /"requestedNodeId"\s*:\s*"([^"]+)"/.exec(raw)?.[1] ?? null;
       const pageName = /"page"\s*:\s*\{[\s\S]*?"name"\s*:\s*"([^"]+)"/.exec(raw)?.[1] ?? null;
@@ -137,8 +148,16 @@ const server = createServer(async (req, res) => {
 
   if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, "method not allowed");
 
+  if (url.pathname === "/review-targets.json") {
+    try {
+      return send(res, 200, JSON.stringify(loadReviewTargetsSidecar(dataRoot)), MIME[".json"]);
+    } catch (error) {
+      return send(res, 500, JSON.stringify({ ok: false, error: String(error.message || error) }), MIME[".json"]);
+    }
+  }
+
   if (url.pathname === "/") {
-    res.writeHead(302, { Location: defaultReviewPath() });
+    res.writeHead(302, { Location: defaultReviewPath(dataRoot) });
     return res.end();
   }
   if (url.pathname === "/inventory-review" || url.pathname === "/inventory-review/") {
@@ -146,32 +165,38 @@ const server = createServer(async (req, res) => {
   }
 
   if (url.pathname === "/inventory-review/index.html") {
-    if (!existsSync(COMMITTED_PAGE)) {
+    if (!existsSync(committedPage)) {
       return send(res, 500, "核对页 UI 未进仓：standards/figma-naming/tool/inventory-review/index.html。禁止从 _tmp 凑 HTML。");
     }
-    return send(res, 200, readFileSync(COMMITTED_PAGE), MIME[".html"]);
+    return send(res, 200, readFileSync(committedPage), MIME[".html"]);
   }
 
-  const full = safePath(url.pathname);
+  const full = safePath(url.pathname, dataRoot);
   if (!full) return send(res, 403, "forbidden");
   if (full.endsWith(".html")) return send(res, 404, "html is only served from the committed review page");
   if (!existsSync(full) || !statSync(full).isFile()) return send(res, 404, "not found: " + url.pathname);
   const body = readFileSync(full);
   send(res, 200, body, MIME[extname(full).toLowerCase()] || "application/octet-stream");
-});
+  });
+}
 
-server.on("error", (e) => {
-  if (e.code === "EADDRINUSE") console.error(`端口 ${portStart} 被占用，试试 --port <其他>。`);
-  else console.error(e);
-});
+function main() {
+  const server = createInventoryReviewServer({ dataRoot: root });
+  server.on("error", (e) => {
+    if (e.code === "EADDRINUSE") console.error(`端口 ${portStart} 被占用，试试 --port <其他>。`);
+    else console.error(e);
+  });
 
-server.listen(portStart, "127.0.0.1", () => {
-  const url = `http://127.0.0.1:${portStart}${defaultReviewPath()}`;
-  console.log(`清单核对页: ${url}`);
-  console.log(`UI: ${COMMITTED_PAGE}`);
-  console.log(`数据根: ${root}`);
-  if (!noOpen) {
-    const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-    spawn(cmd, [url], { stdio: "ignore", detached: true }).unref();
-  }
-});
+  server.listen(portStart, "127.0.0.1", () => {
+    const url = `http://127.0.0.1:${portStart}${defaultReviewPath(root)}`;
+    console.log(`清单核对页: ${url}`);
+    console.log(`UI: ${COMMITTED_PAGE}`);
+    console.log(`数据根: ${root}`);
+    if (!noOpen) {
+      const cmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+      spawn(cmd, [url], { stdio: "ignore", detached: true }).unref();
+    }
+  });
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) main();

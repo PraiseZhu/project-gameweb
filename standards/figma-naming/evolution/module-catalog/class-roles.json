@@ -1,0 +1,666 @@
+{
+  "schema": "gold-class-roles/v1",
+  "purpose": "金样唯一 type+剥前缀名 → 前缀。不对图层 id。角色冲突的类不出表。",
+  "sourceShelf": "392:18375",
+  "pages": [
+    "392:24190",
+    "392:25877"
+  ],
+  "entries": [
+    {
+      "type": "BOOLEAN_OPERATION",
+      "body": "下滑示意箭头",
+      "role": "img"
+    },
+    {
+      "type": "BOOLEAN_OPERATION",
+      "body": "下滑箭头",
+      "role": "img"
+    },
+    {
+      "type": "BOOLEAN_OPERATION",
+      "body": "右划动箭头",
+      "role": "btn"
+    },
+    {
+      "type": "BOOLEAN_OPERATION",
+      "body": "右滑动按钮",
+      "role": "btn"
+    },
+    {
+      "type": "BOOLEAN_OPERATION",
+      "body": "右滑动箭头",
+      "role": "btn"
+    },
+    {
+      "type": "BOOLEAN_OPERATION",
+      "body": "左划动箭头",
+      "role": "btn"
+    },
+    {
+      "type": "COMPONENT",
+      "body": "pc",
+      "role": "bg"
+    },
+    {
+      "type": "COMPONENT",
+      "body": "左侧导航",
+      "role": "fix"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "ews模块活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "ews活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "logo",
+      "role": "img"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "mobile",
+      "role": "bg"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "切换按钮",
+      "role": "btn"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "图标装饰",
+      "role": "img"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "多语言切换按钮",
+      "role": "btn"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "导航状态",
+      "role": "btn"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "庆典模块活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "庆典活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "新内容模块活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "新赛季活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "移动端导航",
+      "role": "btn"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "角色头像",
+      "role": "btn"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "角色立绘",
+      "role": "switch"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "角色立绘模块",
+      "role": "switch"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "赛季奖励活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "边框背景1",
+      "role": "img"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "边框背景2",
+      "role": "img"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "边框背景3",
+      "role": "img"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "边框背景4",
+      "role": "img"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "边框背景5",
+      "role": "img"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "边框背景6",
+      "role": "img"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "边框背景7",
+      "role": "img"
+    },
+    {
+      "type": "COMPONENT_SET",
+      "body": "进度条",
+      "role": "ind"
+    },
+    {
+      "type": "FRAME",
+      "body": "1",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "10",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "11",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "2",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "3",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "4",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "5",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "6",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "7",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "8",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "9",
+      "role": "sec"
+    },
+    {
+      "type": "FRAME",
+      "body": "calendar",
+      "role": "mix"
+    },
+    {
+      "type": "FRAME",
+      "body": "下载按钮",
+      "role": "btn"
+    },
+    {
+      "type": "FRAME",
+      "body": "今日日期",
+      "role": "dyn"
+    },
+    {
+      "type": "FRAME",
+      "body": "充值按钮",
+      "role": "btn"
+    },
+    {
+      "type": "FRAME",
+      "body": "关闭按钮",
+      "role": "btn"
+    },
+    {
+      "type": "FRAME",
+      "body": "划动区域",
+      "role": "scroll"
+    },
+    {
+      "type": "FRAME",
+      "body": "多语言",
+      "role": "img"
+    },
+    {
+      "type": "FRAME",
+      "body": "多语言按钮",
+      "role": "btn"
+    },
+    {
+      "type": "FRAME",
+      "body": "多语言按钮弹窗",
+      "role": "modal"
+    },
+    {
+      "type": "FRAME",
+      "body": "奖励",
+      "role": "img"
+    },
+    {
+      "type": "FRAME",
+      "body": "奖励列表",
+      "role": "scroll"
+    },
+    {
+      "type": "FRAME",
+      "body": "官网按钮",
+      "role": "btn"
+    },
+    {
+      "type": "FRAME",
+      "body": "导航按钮",
+      "role": "btn"
+    },
+    {
+      "type": "FRAME",
+      "body": "导航长线",
+      "role": "img"
+    },
+    {
+      "type": "FRAME",
+      "body": "弹窗背景",
+      "role": "img"
+    },
+    {
+      "type": "FRAME",
+      "body": "日历可滑动内容",
+      "role": "img"
+    },
+    {
+      "type": "FRAME",
+      "body": "更多按钮",
+      "role": "btn"
+    },
+    {
+      "type": "FRAME",
+      "body": "标题",
+      "role": "img"
+    },
+    {
+      "type": "FRAME",
+      "body": "视频弹窗",
+      "role": "modal"
+    },
+    {
+      "type": "FRAME",
+      "body": "立绘",
+      "role": "img"
+    },
+    {
+      "type": "FRAME",
+      "body": "背景",
+      "role": "img"
+    },
+    {
+      "type": "FRAME",
+      "body": "角色头像切换",
+      "role": "tab"
+    },
+    {
+      "type": "FRAME",
+      "body": "角色立绘切换",
+      "role": "tab"
+    },
+    {
+      "type": "FRAME",
+      "body": "顶部导航-1624尺寸",
+      "role": "modal"
+    },
+    {
+      "type": "GROUP",
+      "body": "充值按钮",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "兑换码按钮",
+      "role": "btn"
+    },
+    {
+      "type": "GROUP",
+      "body": "兑换码背景",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "关闭按钮",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "具体视频播放区域",
+      "role": "hot"
+    },
+    {
+      "type": "GROUP",
+      "body": "复制按钮",
+      "role": "btn"
+    },
+    {
+      "type": "GROUP",
+      "body": "多语言按钮",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "头像",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "官网按钮",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "导航按钮",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "待解锁头像",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "按钮",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "播放按钮",
+      "role": "btn"
+    },
+    {
+      "type": "GROUP",
+      "body": "日历背景边框",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "点击视频播放弹出区域",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "视频展示区域",
+      "role": "hot"
+    },
+    {
+      "type": "GROUP",
+      "body": "视频播放区域",
+      "role": "hot"
+    },
+    {
+      "type": "GROUP",
+      "body": "素材图",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "背景",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "背景边框",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "装饰",
+      "role": "img"
+    },
+    {
+      "type": "GROUP",
+      "body": "角色",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "ews模块活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "ews活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "logo",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "mobile",
+      "role": "bg"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "pc",
+      "role": "bg"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "切换按钮",
+      "role": "btn"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "图标装饰",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "多语言切换按钮",
+      "role": "btn"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "导航状态",
+      "role": "btn"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "左侧导航",
+      "role": "fix"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "庆典模块活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "庆典活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "新内容模块活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "新赛季活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "移动端导航",
+      "role": "btn"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "角色头像",
+      "role": "btn"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "角色立绘",
+      "role": "switch"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "角色立绘模块",
+      "role": "switch"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "赛季奖励活动内容",
+      "role": "switch"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "边框背景1",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "边框背景2",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "边框背景3",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "边框背景4",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "边框背景5",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "边框背景6",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "边框背景7",
+      "role": "img"
+    },
+    {
+      "type": "INSTANCE",
+      "body": "进度条",
+      "role": "ind"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "中景",
+      "role": "kv"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "前景阴影",
+      "role": "kv"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "折扣标背景",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "折扣背景",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "按钮背景",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "播放按钮",
+      "role": "btn"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "日历背景",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "标题装饰 1",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "标题装饰 2",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "视频框",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "视频框 2",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "素材图",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "装饰",
+      "role": "img"
+    },
+    {
+      "type": "RECTANGLE",
+      "body": "边框背景",
+      "role": "img"
+    }
+  ]
+}

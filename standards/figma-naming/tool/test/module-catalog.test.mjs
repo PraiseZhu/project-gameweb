@@ -38,6 +38,19 @@ test("module catalog：按变体结构命中前缀，不看设计师原名", () 
   assert.ok(hits[0].score >= 50);
 });
 
+test("module catalog：原名和 aliases 不参与分数或同分消歧", () => {
+  const entries = [
+    { id: "named", role: "btn", name: "下载按钮", aliases: ["立即下载"], types: ["COMPONENT_SET"], variantCount: 2 },
+    { id: "other", role: "switch", name: "完全不同", types: ["COMPONENT_SET"], variantCount: 2 },
+  ];
+  const matchingName = { type: "COMPONENT_SET", name: "立即下载", variants: [{}, {}] };
+  const unrelatedName = { ...matchingName, name: "Frame 42" };
+
+  assert.equal(scoreCatalogMatch(matchingName, entries[0]), scoreCatalogMatch(unrelatedName, entries[0]));
+  assert.deepEqual(matchNodeToCatalog(matchingName, { entries }), []);
+  assert.deepEqual(matchNodeToCatalog(unrelatedName, { entries }), []);
+});
+
 test("module catalog：三态按钮组件集建议 btn/ 前缀", () => {
   const node = {
     id: "new-2",

@@ -184,6 +184,8 @@ for (const name of ["卡牌", "Icon_SSR 2", "BG"]) {
     assert.equal(missResult.ok, false, missResult.problems.join("\n"));
     applyDraftGoldMorphology(miss);
     assert.equal(miss.nodes[0].name, `img/${name}`);
+    assert.equal(miss.nodes[0].status, "determined");
+    assert.equal(miss.nodes[0].role, "img");
     assert.equal(auditDraftGoldMorphology(miss).ok, true);
   });
 }
@@ -229,8 +231,14 @@ test("验收：母版未命名则 I… 子件已加的前缀要剥掉", () => {
       { id: "I1;m1", type: "FRAME", name: "img/标题", status: "determined", role: "img" },
     ],
   };
-  assert.equal(auditDraftGoldMorphology(miss).ok, false);
-  applyDraftGoldMorphology(miss);
+  const emptyTables = {
+    classRoles: { entries: [] },
+    signatureRoles: { entries: [] },
+    signatureEvidence: { entries: [] },
+    settledRules: { entries: [] },
+  };
+  assert.equal(auditDraftGoldMorphology(miss, emptyTables).ok, false);
+  applyDraftGoldMorphology(miss, emptyTables);
   assert.equal(miss.nodes[1].status, "unknown");
   assert.equal(miss.nodes[1].name, "标题");
 });
