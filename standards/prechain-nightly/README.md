@@ -32,10 +32,23 @@ npm run visual:aggregate -- --date 2026-08-23
 # 不看图的机器干跑，不能代替上面的视觉轮
 npm run eval
 npm run eval -- --rounds 3
+
+# 本目录可直接跑仓内四页夹具
+npm run eval:new-draft-gate
+```
+
+从仓库根目录复跑同一门：
+
+```bash
+node --max-old-space-size=8192 standards/figma-naming/tool/scripts/eval-hybrid-nameless.mjs
 ```
 
 视觉证据默认从 `reports/<date>/visual/evidence/pc/` 与 `reports/<date>/visual/evidence/mobile/` 读取；也可用 `--judge-pc <dir> --judge-mobile <dir>` 分别覆盖。仓内可追踪评测不得依赖被 gitignore 的仓库 `_tmp/` 判断包。
 
 产物在 `reports/<date>/visual/`（含 `ledger.md`）以及机器干跑的 `reports/<date>-prechain-eval.md`。需要 `standards/figma-naming/tool/.env` 里的 `NAMING_LINT_FILE_KEY` 和本地 `.cache/` 快照。
+
+`eval:new-draft-gate` 不读本地快照：四份可公开复跑的 gold / baseline 夹具以确定性
+`*.json.gz` 固定在 `fixtures/new-draft-gate/`，脚本用 Node 内置 zlib 透明读取。`reports/` 仍整体忽略，只保存每次运行产生的临时报告；不要把整棵
+`reports/` 当夹具提交。该评测需要 8 GiB Node heap，因此独立运行，不并入普通 `npm test`。
 
 详见 `docs/PRECHAIN-EVAL.md`。

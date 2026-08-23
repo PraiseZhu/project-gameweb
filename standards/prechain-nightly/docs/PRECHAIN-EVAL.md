@@ -48,6 +48,15 @@ npm run visual:next -- --date 2026-08-23
 npm run visual:aggregate -- --date 2026-08-23
 npm run eval
 npm run eval -- --rounds 3
+
+# 本目录可直接跑仓内四页夹具
+npm run eval:new-draft-gate
+```
+
+从仓库根目录复跑同一门：
+
+```bash
+node --max-old-space-size=8192 standards/figma-naming/tool/scripts/eval-hybrid-nameless.mjs
 ```
 
 `visual:prepare` 默认读取 `reports/<date>/visual/evidence/pc/` 和 `reports/<date>/visual/evidence/mobile/`。证据已在别处时可传 `--judge-pc <dir> --judge-mobile <dir>`；仓内评测不得依赖被 gitignore 的仓库 `_tmp/` 路径。
@@ -55,6 +64,16 @@ npm run eval -- --rounds 3
 本地真稿快照在 `standards/figma-naming/tool/.cache/`，key 走该工具 `.env` 的 `NAMING_LINT_FILE_KEY`。缺快照 fail-closed。不拉 Figma、Lead 不读图、不写 `evolution/ledger.json`。
 
 产物：视觉轮 `reports/<date>/visual/`（含 `ledger.md`）；机器干跑 `reports/<date>-prechain-eval.md` 与 `.json`。
+
+## 可跟踪 newDraftGate 夹具
+
+PR 和新 clone 使用 `fixtures/new-draft-gate/` 下四份确定性 `*.json.gz` 固定输入：PC/mobile 的 gold 与 baseline；脚本用 Node 内置 zlib 透明读取。
+`eval-hybrid-nameless.mjs` 只读这里，不再依赖某天的 `reports/<date>/`；`reports/` 继续保持
+gitignore，用于本地/夜间运行产物。评测逐页要求 recall、precision 都至少 90%，且
+completeness 为 green；任一页不满足时命令非零退出，让 GitHub Check 变红。
+
+该命令需要单独的 8 GiB Node heap，不能塞进普通 `npm test`，以免日常测试和夜间 30 分钟
+健康检查争抢内存。
 
 ## 调度
 

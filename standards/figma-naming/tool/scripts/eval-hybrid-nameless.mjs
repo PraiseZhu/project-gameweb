@@ -18,6 +18,7 @@
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { loadModuleCatalog } from "../src/module-catalog.mjs";
 import {
   compareByHybrid,
@@ -28,9 +29,7 @@ import {
 } from "../../../prechain-nightly/src/prechain-eval.mjs";
 import { rebuildInventoryIndexes } from "../src/inventory.mjs";
 
-const ROOT = resolve(import.meta.dirname, "../../../prechain-nightly/reports/2026-08-21/visual");
-const GOLD = resolve(ROOT, "gold");
-const BASELINE = resolve(ROOT, "rounds/r01");
+const FIXTURES = resolve(import.meta.dirname, "../../../prechain-nightly/fixtures/new-draft-gate");
 const DEFAULTS = Object.freeze({
   FRAME: "Frame",
   GROUP: "Group",
@@ -50,7 +49,9 @@ const DEFAULTS = Object.freeze({
 });
 
 function read(path) {
-  return JSON.parse(readFileSync(path, "utf8"));
+  const bytes = readFileSync(path);
+  const json = path.endsWith(".gz") ? gunzipSync(bytes).toString("utf8") : bytes.toString("utf8");
+  return JSON.parse(json);
 }
 
 function genericClone(input) {
@@ -163,13 +164,13 @@ function print(label, summary) {
 
 function evaluateDevice(device) {
   const files = device === "mobile"
-    ? ["mobile", "mobile.json", "baseline-mobile.json"]
-    : ["pc", "pc.json", "baseline-pc.json"];
+    ? ["mobile", "gold-mobile.json.gz", "baseline-mobile.json.gz"]
+    : ["pc", "gold-pc.json.gz", "baseline-pc.json.gz"];
   const catalog = loadModuleCatalog();
   const totals = { named: [], unnamed: [] };
   const [label, goldFile, baselineFile] = files;
-  const gold = read(resolve(GOLD, goldFile));
-  const baseline = resetInventoryToZero(read(resolve(BASELINE, baselineFile)));
+  const gold = read(resolve(FIXTURES, goldFile));
+  const baseline = resetInventoryToZero(read(resolve(FIXTURES, baselineFile)));
   const named = score(baseline, gold, catalog, { unnamed: false });
   const unnamed = score(genericClone(baseline), gold, catalog, { unnamed: true });
   print(`${label}:named`, named);
@@ -261,4 +262,8 @@ if (requestedDevice) {
     },
     observed: { named: sums("named"), unnamed: sums("unnamed") },
   }, null, 2));
+  if (!rows.every((row) => row.observed.named.newDraftGate.pass === true
+    && row.observed.unnamed.newDraftGate.pass === true)) {
+    process.exitCode = 1;
+  }
 }

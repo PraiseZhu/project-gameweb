@@ -7,6 +7,7 @@
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "eval": "node scripts/nightly-prechain-eval.mjs",
+    "eval:new-draft-gate": "node --max-old-space-size=8192 ../figma-naming/tool/scripts/eval-hybrid-nameless.mjs",
     "visual:prepare": "node scripts/prepare-visual-night.mjs",
     "visual:score": "node scripts/score-round.mjs",
     "visual:aggregate": "node scripts/aggregate-visual-rounds.mjs",
