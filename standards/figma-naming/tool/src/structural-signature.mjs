@@ -107,12 +107,78 @@ export function componentSetSignature(node) {
   ].join("|");
 }
 
+function allNodes(doc) {
+  const byId = new Map();
+  const seen = new Set();
+  const walk = (value) => {
+    if (!value || typeof value !== "object" || seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (typeof value.id === "string" && typeof value.type === "string" && !byId.has(value.id)) {
+      byId.set(value.id, value);
+    }
+    Object.values(value).forEach(walk);
+  };
+  walk(doc);
+  return byId;
+}
+
+function relationVariants(doc, setId) {
+  const byId = allNodes(doc);
+  const rows = [];
+  for (const relation of doc?.relations || []) {
+    if (relation?.kind !== "component-set-has-variant") continue;
+    const fromId = relation.from?.id ?? relation.from;
+    if (fromId !== setId) continue;
+    const id = relation.to?.id ?? relation.to;
+    const node = byId.get(id) || { id, type: "COMPONENT" };
+    rows.push(node);
+  }
+  return rows;
+}
+
+function inferredDefinitions(variants) {
+  const options = variants
+    .map((variant) => String(variant?.name || "").trim())
+    .map((name) => name.slice(name.lastIndexOf("=") + 1).trim())
+    .filter(Boolean);
+  if (!options.length || new Set(options).size !== options.length) return null;
+  return {
+    "Property 1": { type: "VARIANT", variantOptions: options },
+  };
+}
+
+/** Rebuild a sparse COMPONENT_SET from relation evidence without using ids/names in the signature. */
+export function hydrateComponentSet(doc, node) {
+  if (!node || node.type !== "COMPONENT_SET") return node;
+  const related = relationVariants(doc, node.id);
+  if (!related.length) return node;
+  const existing = Array.isArray(node.variants) ? node.variants : [];
+  const byId = new Map(existing.filter((item) => item?.id).map((item) => [item.id, item]));
+  const variants = related.map((item) => byId.get(item.id) || item);
+  const defs = node.componentPropertyDefinitions || inferredDefinitions(variants);
+  return {
+    ...node,
+    variants: variants.length > existing.length ? variants : existing,
+    ...(defs ? { componentPropertyDefinitions: defs } : {}),
+  };
+}
+
+export function componentSetSignatureInDoc(doc, node) {
+  return componentSetSignature(hydrateComponentSet(doc, node));
+}
+
 export function roleFromName(name) {
   return String(name || "").match(ROLE_PREFIX)?.[1] || null;
 }
 
 function componentSetsOf(doc) {
-  return (doc?.attachments?.componentSets || []).filter((node) => node?.type === "COMPONENT_SET");
+  return (doc?.attachments?.componentSets || [])
+    .filter((node) => node?.type === "COMPONENT_SET")
+    .map((node) => hydrateComponentSet(doc, node));
 }
 
 /**
@@ -158,10 +224,13 @@ export function signatureRoleMapFromTable(table) {
   if (table instanceof Map) return table;
   const entries = Array.isArray(table) ? table : (table?.entries || table?.signatures || []);
   const map = new Map();
+  const dropped = new Set();
   for (const entry of entries) {
     if (!entry?.signature || !entry?.role || entry.role === "copy") continue;
+    if (dropped.has(entry.signature)) continue;
     if (map.has(entry.signature) && map.get(entry.signature) !== entry.role) {
       map.delete(entry.signature);
+      dropped.add(entry.signature);
       continue;
     }
     map.set(entry.signature, entry.role);
@@ -169,17 +238,27 @@ export function signatureRoleMapFromTable(table) {
   return map;
 }
 
-/** Return unknown component sets whose signature has a unique gold role. */
-export function signatureHits(doc, roleMap) {
+function legacySignature(signature) {
+  return String(signature || "").replace(/\|props=[^|]*\|tree=.*$/, "");
+}
+
+export function roleForSignature(roleMap, signature) {
   const map = signatureRoleMapFromTable(roleMap);
+  return map.get(signature) || map.get(legacySignature(signature)) || null;
+}
+
+/** Return unknown component sets whose signature has a unique gold role. */
+export function signatureHits(doc, roleMap, options = {}) {
+  const map = signatureRoleMapFromTable(roleMap);
+  const evidenceMap = signatureRoleMapFromTable(options.evidence);
   const hits = [];
   for (const node of componentSetsOf(doc)) {
     if (node.status === "skipped") continue;
     if (node.status === "determined" && node.role && node.role !== "copy") continue;
     const signature = componentSetSignature(node);
-    if ((node.variants || []).length === 1) continue;
-    if (!signatureIsStrong(node)) continue;
-    const role = signature ? map.get(signature) : null;
+    if ((node.variants || []).length === 1 && !evidenceMap.has(signature)) continue;
+    if (!signatureIsStrong(node) && !evidenceMap.has(signature)) continue;
+    const role = signature ? (roleForSignature(evidenceMap, signature) || roleForSignature(map, signature)) : null;
     if (!role) continue;
     hits.push({ node, role, signature, why: `结构签名 ${signature} 唯一对应 ${role}/` });
   }

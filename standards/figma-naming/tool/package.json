@@ -19,6 +19,7 @@
     "release:audit": "node ../scripts/public-release-audit.mjs",
     "inventory:export": "node scripts/export-inventory-page.mjs",
     "inventory:review": "node scripts/serve-inventory-review.mjs",
+    "inventory:review-targets": "node scripts/build-review-targets.mjs",
     "catalog:build": "node scripts/build-module-catalog.mjs",
     "catalog:match": "node scripts/match-module-catalog.mjs",
     "handoff:validate": "node scripts/handoff-validate.mjs",

@@ -1,0 +1,704 @@
+{
+  "schema": "gold-signature-evidence/v1",
+  "purpose": "G3 小图结论绑定结构签名；不写入图层 id，不抄 sec/N。",
+  "entries": [
+    {
+      "signature": "COMPONENT_SET|variants=2|state=1|size=lg|props=VARIANT:2|tree=COMPONENT:4,FRAME:6,GROUP:2,INSTANCE:10,RECTANGLE:20,TEXT:10,VECTOR:6;COMPONENT_SET>COMPONENT*4,COMPONENT>FRAME*6,FRAME>INSTANCE*10,FRAME>RECTANGLE*8,FRAME>VECTOR*4,GROUP>RECTANGLE*4,GROUP>VECTOR*2,INSTANCE>GROUP*2,INSTANCE>RECTANGLE*8,INSTANCE>TEXT*10",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-01.jpg",
+      "source": "pc-gold",
+      "why": "两态语言选择控件，图中明确是可点击状态按钮"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=2|state=1|size=lg|props=VARIANT:2|tree=COMPONENT:4,FRAME:6,INSTANCE:10,RECTANGLE:20,TEXT:10,VECTOR:6;COMPONENT_SET>COMPONENT*4,COMPONENT>FRAME*6,FRAME>INSTANCE*10,FRAME>RECTANGLE*8,FRAME>VECTOR*4,INSTANCE>RECTANGLE*12,INSTANCE>TEXT*10,INSTANCE>VECTOR*2",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-01.jpg",
+      "source": "pc-baseline",
+      "why": "两态语言选择控件，图中明确是可点击状态按钮"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=lg|props=VARIANT:1|tree=COMPONENT:2,RECTANGLE:2;COMPONENT_SET>COMPONENT*2,COMPONENT>RECTANGLE*2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-03.jpg",
+      "source": "pc-gold",
+      "why": "独立 logo 图像组件，无文字容器语义"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=2|state=0|size=xl|props=VARIANT:2|tree=COMPONENT:4,ELLIPSE:2,FRAME:26,GROUP:12,INSTANCE:10,RECTANGLE:32,TEXT:18,VECTOR:2;COMPONENT_SET>COMPONENT*4,COMPONENT>FRAME*4,COMPONENT>INSTANCE*4,FRAME>FRAME*22,FRAME>GROUP*6,FRAME>INSTANCE*6,FRAME>RECTANGLE*10,FRAME>TEXT*14,GROUP>ELLIPSE*2,GROUP>GROUP*2,GROUP>RECTANGLE*16,GROUP>VECTOR*2,INSTANCE>GROUP*4,INSTANCE>RECTANGLE*6,INSTANCE>TEXT*4",
+      "role": "switch",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-05.jpg",
+      "source": "pc-gold",
+      "why": "多页内容卡片轨道，变体代表内容页切换"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=2|state=0|size=xl|props=VARIANT:2|tree=COMPONENT:4,ELLIPSE:2,FRAME:28,GROUP:10,INSTANCE:10,RECTANGLE:32,TEXT:18,VECTOR:2;COMPONENT_SET>COMPONENT*4,COMPONENT>FRAME*4,COMPONENT>INSTANCE*4,FRAME>FRAME*24,FRAME>GROUP*6,FRAME>INSTANCE*6,FRAME>RECTANGLE*10,FRAME>TEXT*14,GROUP>ELLIPSE*2,GROUP>RECTANGLE*16,GROUP>VECTOR*2,INSTANCE>GROUP*4,INSTANCE>RECTANGLE*6,INSTANCE>TEXT*4",
+      "role": "switch",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-05.jpg",
+      "source": "pc-baseline",
+      "why": "多页内容卡片轨道，变体代表内容页切换"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=2|state=1|size=sm|props=VARIANT:2|tree=COMPONENT:4,RECTANGLE:4;COMPONENT_SET>COMPONENT*4,COMPONENT>RECTANGLE*4",
+      "role": "ind",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-06.jpg",
+      "source": "pc-gold",
+      "why": "同一控制点的选中/未选中视觉状态，属于指示器"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=xl|props=VARIANT:1|tree=BOOLEAN_OPERATION:18,COMPONENT:2,ELLIPSE:8,FRAME:48,GROUP:54,RECTANGLE:168,VECTOR:264;BOOLEAN_OPERATION>RECTANGLE*30,BOOLEAN_OPERATION>VECTOR*48,COMPONENT_SET>COMPONENT*2,COMPONENT>ELLIPSE*8,COMPONENT>FRAME*2,COMPONENT>RECTANGLE*6,FRAME>BOOLEAN_OPERATION*18,FRAME>FRAME*34,FRAME>GROUP*54,FRAME>RECTANGLE*66,FRAME>VECTOR*48,GROUP>FRAME*12,GROUP>RECTANGLE*66,GROUP>VECTOR*168",
+      "role": "bg",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-01.jpg",
+      "source": "mobile-gold",
+      "why": "整页级背景图，覆盖移动页高度"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=6|state=0|size=xl|props=none|tree=COMPONENT:12,FRAME:228,GROUP:108,INSTANCE:72,RECTANGLE:306,TEXT:120,VECTOR:108;COMPONENT_SET>COMPONENT*12,COMPONENT>FRAME*12,COMPONENT>INSTANCE*12,FRAME>FRAME*144,FRAME>GROUP*78,FRAME>INSTANCE*60,FRAME>RECTANGLE*84,FRAME>TEXT*108,GROUP>FRAME*6,GROUP>GROUP*18,GROUP>RECTANGLE*198,GROUP>TEXT*12,GROUP>VECTOR*108,INSTANCE>FRAME*66,INSTANCE>GROUP*12,INSTANCE>RECTANGLE*24",
+      "role": "switch",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-08.jpg",
+      "source": "mobile-gold",
+      "why": "多页奖励内容卡片，变体代表内容切换"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=3|state=1|size=lg|props=VARIANT:3|tree=COMPONENT:6,GROUP:12,RECTANGLE:24,VECTOR:2;COMPONENT_SET>COMPONENT*6,COMPONENT>GROUP*6,GROUP>GROUP*6,GROUP>RECTANGLE*24,GROUP>VECTOR*2",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-12.jpg",
+      "source": "pc-gold",
+      "why": "多态角色头像选择控件，变体是可点击头像状态"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=3|state=1|size=lg|props=VARIANT:3|tree=COMPONENT:6,GROUP:6,RECTANGLE:24,VECTOR:2;COMPONENT_SET>COMPONENT*6,COMPONENT>GROUP*6,COMPONENT>RECTANGLE*12,COMPONENT>VECTOR*2,GROUP>RECTANGLE*12",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-12.jpg",
+      "source": "pc-baseline",
+      "why": "多态角色头像选择控件，变体是可点击头像状态"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=2|state=1|size=md|props=VARIANT:2|tree=COMPONENT:4,FRAME:4,RECTANGLE:2,TEXT:4;COMPONENT_SET>COMPONENT*4,COMPONENT>FRAME*4,COMPONENT>RECTANGLE*2,FRAME>TEXT*4",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-14.jpg",
+      "source": "mobile-gold",
+      "why": "选中/未选中切换按钮视觉状态"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=3|state=0|size=xl|props=VARIANT:3|tree=COMPONENT:6,FRAME:26,GROUP:6,INSTANCE:14,RECTANGLE:28,REGULAR_POLYGON:2,TEXT:20,VECTOR:2;COMPONENT_SET>COMPONENT*6,COMPONENT>FRAME*6,COMPONENT>INSTANCE*6,FRAME>FRAME*20,FRAME>INSTANCE*8,FRAME>RECTANGLE*8,FRAME>REGULAR_POLYGON*2,FRAME>TEXT*14,FRAME>VECTOR*2,GROUP>RECTANGLE*12,INSTANCE>GROUP*6,INSTANCE>RECTANGLE*8,INSTANCE>TEXT*6",
+      "role": "switch",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-15.jpg",
+      "source": "pc-gold",
+      "why": "多页赛事内容卡片，变体代表内容切换"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=4|state=0|size=xl|props=VARIANT:4|tree=COMPONENT:8,FRAME:32,GROUP:8,INSTANCE:16,RECTANGLE:32,REGULAR_POLYGON:2,TEXT:22,VECTOR:2;COMPONENT_SET>COMPONENT*8,COMPONENT>FRAME*8,COMPONENT>INSTANCE*8,FRAME>FRAME*16,FRAME>INSTANCE*8,FRAME>RECTANGLE*8,FRAME>REGULAR_POLYGON*2,FRAME>TEXT*22,FRAME>VECTOR*2,GROUP>RECTANGLE*16,INSTANCE>FRAME*8,INSTANCE>GROUP*8,INSTANCE>RECTANGLE*8",
+      "role": "switch",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-gold",
+      "why": "多页赛事内容卡片，变体代表内容切换"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=2|state=1|size=lg|props=VARIANT:2|tree=COMPONENT:4,RECTANGLE:4,TEXT:4;COMPONENT_SET>COMPONENT*4,COMPONENT>RECTANGLE*4,COMPONENT>TEXT*4",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-02.jpg",
+      "source": "pc-baseline+gold",
+      "why": "两态导航条目，图中选中/未选中形态均是可点击导航按钮"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=xl|props=VARIANT:1|tree=COMPONENT:2,FRAME:10,GROUP:10,RECTANGLE:24,TEXT:8,VECTOR:8;COMPONENT_SET>COMPONENT*2,COMPONENT>FRAME*2,COMPONENT>GROUP*4,FRAME>FRAME*6,FRAME>GROUP*4,FRAME>RECTANGLE*10,FRAME>TEXT*8,GROUP>FRAME*2,GROUP>GROUP*2,GROUP>RECTANGLE*14,GROUP>VECTOR*8",
+      "role": "switch",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-11.jpg",
+      "source": "pc-baseline",
+      "why": "角色展示内容组件，由外部头像控制族切换；图片绑定结构签名而非图层 id"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=xl|props=VARIANT:1|tree=COMPONENT:2,FRAME:8,GROUP:10,RECTANGLE:24,TEXT:8,VECTOR:8;COMPONENT_SET>COMPONENT*2,COMPONENT>FRAME*2,COMPONENT>GROUP*2,COMPONENT>RECTANGLE*2,COMPONENT>TEXT*4,FRAME>FRAME*4,FRAME>GROUP*2,FRAME>RECTANGLE*6,FRAME>TEXT*4,GROUP>FRAME*2,GROUP>GROUP*6,GROUP>RECTANGLE*16,GROUP>VECTOR*8",
+      "role": "switch",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-11.jpg",
+      "source": "pc-gold",
+      "why": "角色展示内容组件，由外部头像控制族切换；图片绑定结构签名而非图层 id"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=xl|props=VARIANT:1|tree=COMPONENT:2,RECTANGLE:2;COMPONENT_SET>COMPONENT*2,COMPONENT>RECTANGLE*2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-09.jpg",
+      "source": "pc-baseline+gold",
+      "why": "单变体纯图边框背景，无文字或交互；set-09/set-10 同一精确结构签名"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=xl|props=VARIANT:1|tree=COMPONENT:2,FRAME:12,GROUP:8,RECTANGLE:26,TEXT:8,VECTOR:10;COMPONENT_SET>COMPONENT*2,COMPONENT>FRAME*6,COMPONENT>GROUP*4,COMPONENT>RECTANGLE*2,FRAME>FRAME*6,FRAME>GROUP*2,FRAME>RECTANGLE*16,FRAME>TEXT*8,GROUP>GROUP*2,GROUP>RECTANGLE*8,GROUP>VECTOR*10",
+      "role": "switch",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-11.jpg",
+      "source": "mobile-baseline",
+      "why": "单变体角色展示内容由头像控制族切换；图证据绑定结构签名"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=xl|props=VARIANT:1|tree=COMPONENT:2,FRAME:12,GROUP:10,RECTANGLE:26,TEXT:8,VECTOR:10;COMPONENT_SET>COMPONENT*2,COMPONENT>FRAME*2,COMPONENT>GROUP*2,FRAME>FRAME*6,FRAME>GROUP*2,FRAME>RECTANGLE*16,FRAME>TEXT*8,GROUP>FRAME*4,GROUP>GROUP*6,GROUP>RECTANGLE*10,GROUP>VECTOR*10",
+      "role": "switch",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-11.jpg",
+      "source": "mobile-gold",
+      "why": "单变体角色展示内容由头像控制族切换；图证据绑定结构签名"
+    },
+    {
+      "signature": "NODE|kind=edge-fixed|edge=left|w=narrow|h=short|scope=page|clip=band",
+      "role": "fix",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-page-a.jpg",
+      "source": "pc-page",
+      "why": "左侧导航贴页左边、跨首屏内容保持悬浮；全宽 sec 裁切不是滚动窗"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=left|pageY=upper|w=full|h=tall|text=0|image=1|children=RECTANGLE:3",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "页首标题图是无文字的全宽图像容器；标题外层没有文字后代"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=center|pageY=upper|w=wide|h=medium|text=1|image=1|children=RECTANGLE:1,TEXT:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "下载外层有文字和图片底图，是可点击按钮；文字容器本身不标 img"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=center-right|pageY=upper|w=full|h=full|text=1|image=1|children=RECTANGLE:1,TEXT:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "右上充值外层含文字与图片底图，绑定为可点击按钮"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=right|pageY=upper|w=small|h=medium|text=1|image=1|children=RECTANGLE:1,TEXT:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "右上官网外层含文字与图片底图，绑定为可点击按钮"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=center|pageY=upper|w=full|h=tall|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "下载按钮内部 IMAGE 叶子仅作底图 img；外层按钮保留 btn"
+    },
+    {
+      "signature": "LOCAL|type=BOOLEAN_OPERATION|parent=FRAME|pageX=center|pageY=upper|w=tiny|h=tiny|text=0|image=1|children=BOOLEAN_OPERATION:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "页首居中下滑箭头是装饰提示，不是可点击左右控制"
+    },
+    {
+      "signature": "LOCAL|type=BOOLEAN_OPERATION|parent=FRAME|pageX=right|pageY=middle|w=tiny|h=tiny|text=0|image=1|children=BOOLEAN_OPERATION:2",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "内容区右侧箭头位于可滑动轨道边缘，作为可点击按钮"
+    },
+    {
+      "signature": "LOCAL|type=BOOLEAN_OPERATION|parent=FRAME|pageX=left|pageY=middle|w=tiny|h=short|text=0|image=1|children=BOOLEAN_OPERATION:1,VECTOR:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "内容区左侧箭头与滑动轨道对齐，作为可点击按钮"
+    },
+    {
+      "signature": "LOCAL|type=BOOLEAN_OPERATION|parent=FRAME|pageX=right|pageY=middle|w=tiny|h=short|text=0|image=1|children=BOOLEAN_OPERATION:1,VECTOR:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "内容区右侧箭头与滑动轨道对齐，作为可点击按钮"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=center|pageY=lower|w=small|h=tall|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "标题装饰是 IMAGE 叶子，无文字后代，标 img"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=left|pageY=upper|w=full|h=tall|text=0|image=1|children=RECTANGLE:3",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动页首标题图无文字后代，标 img"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=left|pageY=upper|w=wide|h=short|text=1|image=1|children=FRAME:1,RECTANGLE:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动下载外层有文字和图片底图，标 btn"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=center-right|pageY=upper|w=small|h=short|text=0|image=1|children=BOOLEAN_OPERATION:1,RECTANGLE:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动官网图标有独立可点外层，标 btn"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=center|pageY=upper|w=small|h=short|text=0|image=1|children=BOOLEAN_OPERATION:1,RECTANGLE:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动充值图标有独立可点外层，标 btn"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=center|pageY=lower|w=small|h=tall|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动标题装饰为 IMAGE 叶子，标 img"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=INSTANCE|pageX=left|pageY=lower|w=full|h=full|text=0|image=1|children=RECTANGLE:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-12.jpg",
+      "source": "pc-avatar-g3",
+      "why": "头像按钮实例内的无文字 IMAGE 头像组；小图确认该组是头像图像而非文字容器"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=INSTANCE|pageX=center|pageY=lower|w=full|h=full|text=0|image=1|children=RECTANGLE:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-12.jpg",
+      "source": "pc-avatar-g3",
+      "why": "头像按钮实例内的无文字 IMAGE 头像组；小图确认该组是头像图像而非文字容器"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=INSTANCE|pageX=center-right|pageY=lower|w=full|h=full|text=0|image=1|children=RECTANGLE:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-12.jpg",
+      "source": "pc-avatar-g3",
+      "why": "头像按钮实例内的无文字 IMAGE 头像组；小图确认该组是头像图像而非文字容器"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=INSTANCE|pageX=right|pageY=lower|w=full|h=full|text=0|image=1|children=RECTANGLE:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-12.jpg",
+      "source": "pc-avatar-g3",
+      "why": "头像按钮实例内的无文字 IMAGE 头像组；小图确认该组是头像图像而非文字容器"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=left|pageY=upper|w=tiny|h=full|text=0|image=1|children=LINE:1,RECTANGLE:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "页侧导航长线是无文字图像装饰"
+    },
+    {
+      "signature": "LOCAL|type=BOOLEAN_OPERATION|parent=FRAME|pageX=center|pageY=upper|w=tiny|h=tiny|text=0|image=1|children=BOOLEAN_OPERATION:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "页首下滑提示箭头是装饰，不是控制按钮"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=center|pageY=middle|w=tiny|h=full|text=1|image=0|children=BOOLEAN_OPERATION:1,RECTANGLE:1,TEXT:1",
+      "role": "dyn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "日历今日日期是动态文本控件"
+    },
+    {
+      "signature": "LOCAL|type=BOOLEAN_OPERATION|parent=FRAME|pageX=right|pageY=middle|w=tiny|h=tiny|text=0|image=1|children=BOOLEAN_OPERATION:2",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "内容轨道右侧箭头为可点击控制"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=center-right|pageY=middle|w=full|h=full|text=1|image=1|children=RECTANGLE:1,TEXT:1,VECTOR:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "有字组只作为按钮/素材内部视觉，不把标题容器整体提升为 img"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=right|pageY=middle|w=full|h=full|text=1|image=1|children=RECTANGLE:2,TEXT:2,VECTOR:4",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "有字组仅作为兑换/充值视觉素材的图像部分"
+    },
+    {
+      "signature": "LOCAL|type=INSTANCE|parent=FRAME|pageX=left|pageY=lower|w=wide|h=full|text=0|image=1|children=RECTANGLE:1",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "页下方无文字图像实例是散层素材"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=ROOT|pageX=right|pageY=middle|w=tiny|h=tiny|text=0|image=1|children=FRAME:2",
+      "role": "modal",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "独立离页大 Frame 是弹窗结构"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=right|pageY=lower|w=tiny|h=short|text=0|image=1|children=BOOLEAN_OPERATION:1,RECTANGLE:2",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-hero-controls.jpg",
+      "source": "pc-page-slice",
+      "why": "贴近弹窗边缘的关闭控制是按钮外层"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=right|pageY=upper|w=small|h=short|text=0|image=1|children=RECTANGLE:1,VECTOR:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动官网图标有独立可点外层"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=center|pageY=upper|w=wide|h=full|text=1|image=1|children=FRAME:1",
+      "role": "scroll",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动内容轨道是裁切窗口内重复内容"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=right|pageY=middle|w=small|h=medium|text=0|image=1|children=ELLIPSE:1,RECTANGLE:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "头像/图标控制有独立小型可点外层"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=left|pageY=lower|w=full|h=full|text=0|image=1|children=FRAME:5,RECTANGLE:1",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动页下方无文字图像框是散层素材"
+    },
+    {
+      "signature": "LOCAL|type=INSTANCE|parent=FRAME|pageX=right|pageY=upper|w=full|h=medium|text=1|image=1|children=TEXT:1,VECTOR:2",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动顶部文字+图标外层是按钮"
+    },
+    {
+      "signature": "LOCAL|type=INSTANCE|parent=FRAME|pageX=right|pageY=upper|w=full|h=medium|text=1|image=0|children=TEXT:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动顶部文字控件外层可点击"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=right|pageY=middle|w=full|h=full|text=1|image=1|children=RECTANGLE:2,TEXT:2,VECTOR:4",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "有字视觉组只消费内部图像素材"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=right|pageY=upper|w=small|h=short|text=0|image=1|children=BOOLEAN_OPERATION:1,RECTANGLE:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动充值/官网图标外层是按钮"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=right|pageY=upper|w=small|h=tiny|text=0|image=1|children=BOOLEAN_OPERATION:1,RECTANGLE:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动紧凑图标外层是按钮"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=right|pageY=lower|w=small|h=short|text=0|image=1|children=BOOLEAN_OPERATION:1,RECTANGLE:2",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动页下方关闭/返回控制是按钮"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=ROOT|pageX=right|pageY=middle|w=tiny|h=tiny|text=0|image=1|children=FRAME:2",
+      "role": "modal",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动离页独立 Frame 绑定弹窗"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=right|pageY=lower|w=full|h=full|text=0|image=1|children=RECTANGLE:1,VECTOR:1",
+      "role": "hot",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "移动页边缘视频/热点外层结构"
+    },
+    {
+      "signature": "LOCAL|type=COMPONENT_SET|parent=ROOT|pageX=right|pageY=upper|w=tiny|h=tiny|text=1|image=1|children=COMPONENT:4",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-page-slice",
+      "why": "多态顶部控制组件集是按钮"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=left|pageY=upper|w=full|h=full|text=0|image=1|children=GROUP:1,RECTANGLE:1",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-collision-bucket",
+      "why": "日历背景边框是无文字视觉素材组；容器不承担交互"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=center|pageY=upper|w=full|h=full|text=1|image=1|children=GROUP:6",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-collision-bucket",
+      "why": "日历可滑动内容是图像内容层，滚动职责由外层裁切窗承担"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=GROUP|pageX=left|pageY=middle|w=full|h=full|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-collision-bucket",
+      "why": "视频/边框视觉叶子是图像素材，不是可点外层"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=GROUP|pageX=right|pageY=middle|w=full|h=full|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-collision-bucket",
+      "why": "右侧视频/边框视觉叶子是图像素材"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=GROUP|pageX=right|pageY=upper|w=full|h=full|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-collision-bucket",
+      "why": "顶部视觉叶子有 IMAGE 填充且无文字后代"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=GROUP|pageX=left|pageY=middle|w=small|h=medium|text=0|image=1|children=-",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-controls-bucket",
+      "why": "左侧播放/控制叶子位于可点击外层"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=GROUP|pageX=right|pageY=middle|w=small|h=medium|text=0|image=1|children=-",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-controls-bucket",
+      "why": "右侧播放/控制叶子位于可点击外层"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=GROUP|pageX=right|pageY=upper|w=small|h=medium|text=0|image=1|children=-",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-controls-bucket",
+      "why": "顶部控制叶子位于可点击外层"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=left|pageY=middle|w=full|h=full|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-collision-bucket",
+      "why": "边框/背景图像叶子无文字且不承担交互"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=right|pageY=middle|w=full|h=full|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-collision-bucket",
+      "why": "右侧边框/背景图像叶子无文字"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=right|pageY=upper|w=full|h=full|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-collision-bucket",
+      "why": "顶部背景图像叶子无文字"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=left|pageY=middle|w=wide|h=short|text=0|image=0|children=FRAME:1",
+      "role": "scroll",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-scroll-bucket",
+      "why": "左侧裁切窗包含单一重复轨道，滚动职责在外层"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=right|pageY=middle|w=wide|h=short|text=0|image=0|children=FRAME:2",
+      "role": "scroll",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-scroll-bucket",
+      "why": "右侧裁切窗包含重复轨道，滚动职责在外层"
+    },
+    {
+      "signature": "LOCAL|type=INSTANCE|parent=FRAME|pageX=center|pageY=lower|w=small|h=full|text=0|image=1|children=GROUP:1,RECTANGLE:2",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-avatar-bucket",
+      "why": "头像控制实例有独立可点外层"
+    },
+    {
+      "signature": "LOCAL|type=INSTANCE|parent=FRAME|pageX=center|pageY=lower|w=small|h=full|text=0|image=1|children=GROUP:1,RECTANGLE:2,VECTOR:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-avatar-bucket",
+      "why": "带图标的头像控制实例有可点外层"
+    },
+    {
+      "signature": "LOCAL|type=INSTANCE|parent=FRAME|pageX=right|pageY=lower|w=small|h=full|text=0|image=1|children=GROUP:1,RECTANGLE:2,VECTOR:1",
+      "role": "btn",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-hero-controls.jpg",
+      "source": "mobile-avatar-bucket",
+      "why": "右侧头像控制实例是按钮外层"
+    },
+    {
+      "signature": "LOCAL|type=INSTANCE|parent=FRAME|pageX=center|pageY=lower|w=small|h=tall|text=0|image=1|children=RECTANGLE:1",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-art-bucket",
+      "why": "无文字图像实例是散层素材，不承担交互"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=ROOT|pageX=right|pageY=upper|w=tiny|h=tiny|text=1|image=1|children=FRAME:3",
+      "role": "modal",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-modal-bucket",
+      "why": "离页独立 Frame 是弹窗作用域"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=right|pageY=upper|w=full|h=tall|text=1|image=1|children=BOOLEAN_OPERATION:1,FRAME:2,GROUP:1,RECTANGLE:2,TEXT:1,VECTOR:5",
+      "role": "img",
+      "allowText": true,
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-modal-bucket",
+      "why": "弹窗内部背景视觉层含文字但由外层 modal 承担作用域"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=ROOT|pageX=right|pageY=upper|w=tiny|h=tiny|text=1|image=1|children=FRAME:4",
+      "role": "modal",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-modal-bucket",
+      "why": "独立离页四子层 Frame 是弹窗作用域"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=right|pageY=middle|w=full|h=tall|text=0|image=1|children=FRAME:2,GROUP:2,RECTANGLE:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-art-bucket",
+      "why": "无文字素材组含图像子层，整体为 img 视觉素材"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=right|pageY=middle|w=full|h=tall|text=0|image=1|children=GROUP:4,RECTANGLE:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-art-bucket",
+      "why": "无文字素材组含图像子层，整体为 img 视觉素材"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=right|pageY=upper|w=full|h=tall|text=0|image=1|children=FRAME:2,GROUP:2,RECTANGLE:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-15.jpg",
+      "source": "mobile-art-bucket",
+      "why": "顶部无文字素材组含图像子层"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=sm|props=VARIANT:1|tree=COMPONENT:2,RECTANGLE:2;COMPONENT_SET>COMPONENT*2,COMPONENT>RECTANGLE*2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-16.jpg",
+      "source": "pc-icon-decoration-bucket",
+      "why": "单变体组件集有明确 IMAGE 叶子且小图确认是装饰图标；显式图证允许 1 变体 img，不靠 size 单独推断"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=sm|props=VARIANT:1|tree=COMPONENT:2,RECTANGLE:2;COMPONENT_SET>COMPONENT*2,COMPONENT>RECTANGLE*2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-16.jpg",
+      "source": "mobile-icon-decoration-bucket",
+      "why": "单变体组件集有明确 IMAGE 叶子且小图确认是装饰图标；显式图证允许 1 变体 img，不靠 size 单独推断"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=sm|props=VARIANT:1|tree=COMPONENT:1,RECTANGLE:1;COMPONENT>RECTANGLE*1",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-set-16.jpg",
+      "source": "pc-icon-decoration-sparse-bucket",
+      "why": "同一单变体装饰图在稀疏组件记录中仍是明确 IMAGE 叶子；与富记录签名归为同一图证族"
+    },
+    {
+      "signature": "COMPONENT_SET|variants=1|state=0|size=sm|props=VARIANT:1|tree=COMPONENT:1,RECTANGLE:1;COMPONENT>RECTANGLE*1",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-set-16.jpg",
+      "source": "mobile-icon-decoration-sparse-bucket",
+      "why": "同一单变体装饰图在稀疏组件记录中仍是明确 IMAGE 叶子；与富记录签名归为同一图证族"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=center-right|pageY=upper|w=full|h=tall|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-page-a.jpg",
+      "source": "pc-hero-image-leaf-bucket",
+      "why": "PC 首屏右上 IMAGE 叶子；与 btn 外层分离，局部签名在金样中只对应 img"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=center-right|pageY=upper|w=full|h=full|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-page-a.jpg",
+      "source": "pc-discount-image-leaf-bucket",
+      "why": "PC 折扣标 IMAGE 叶子；局部签名与其他角色不冲突，保留外层交互不抬为 btn"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=right|pageY=upper|w=full|h=tall|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-page-a.jpg",
+      "source": "pc-top-right-image-leaf-bucket",
+      "why": "PC 页右上 IMAGE 叶子；无文字后代且局部签名在金样只归 img"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=left|pageY=upper|w=full|h=full|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-page-a.jpg",
+      "source": "mobile-hero-image-leaf-bucket",
+      "why": "移动首屏左侧 IMAGE 叶子；与下载按钮外层分离，局部签名只对应 img"
+    },
+    {
+      "signature": "LOCAL|type=RECTANGLE|parent=FRAME|pageX=center|pageY=upper|w=full|h=full|text=0|image=1|children=-",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-page-a.jpg",
+      "source": "mobile-discount-image-leaf-bucket",
+      "why": "移动首屏折扣 IMAGE 叶子；与按钮/导航外层分离，局部签名只对应 img"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=COMPONENT|pageX=right|pageY=upper|w=wide|h=medium|text=0|image=1|children=RECTANGLE:4,VECTOR:2",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-feedback.json",
+      "source": "pc-feedback-last-write-wins",
+      "why": "反馈最终确认：多语言组件状态中的纯 IMAGE 视觉层；无文字后代且祖先无 img/，只写 img/"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=INSTANCE|pageX=right|pageY=upper|w=wide|h=medium|text=0|image=1|children=RECTANGLE:2,VECTOR:1",
+      "role": "img",
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-feedback.json",
+      "source": "pc-feedback-last-write-wins",
+      "why": "反馈最终确认：多语言实例中的纯 IMAGE 视觉层；无文字后代且祖先无 img/，只写 img/"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=center|pageY=middle|w=full|h=full|text=1|image=1|children=GROUP:3",
+      "role": "scroll",
+      "genericOnly": true,
+      "shot": "standards/figma-naming/evolution/evidence-shots/pc-feedback.json",
+      "source": "pc-feedback-last-write-wins",
+      "why": "反馈最终确认：日历内容是可滑动裁切窗；滚动角色只绑定该局部签名，不把内部有字奖励整组标 img"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=center-right|pageY=middle|w=full|h=full|text=1|image=1|children=RECTANGLE:1,TEXT:1,VECTOR:2",
+      "role": "img",
+      "allowText": true,
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-feedback.json",
+      "source": "mobile-feedback-last-write-wins",
+      "why": "手机反馈最终确认：母版/实例背景视觉层为 IMAGE，祖先无 img/；组件母版先判，实例子件跟随"
+    },
+    {
+      "signature": "LOCAL|type=GROUP|parent=FRAME|pageX=right|pageY=middle|w=full|h=full|text=1|image=1|children=RECTANGLE:2,TEXT:2,VECTOR:4",
+      "role": "img",
+      "allowText": true,
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-feedback.json",
+      "source": "mobile-feedback-last-write-wins",
+      "why": "手机反馈最终确认：母版/实例背景视觉层为 IMAGE，祖先无 img/；组件母版先判，实例子件跟随"
+    },
+    {
+      "signature": "LOCAL|type=FRAME|parent=FRAME|pageX=center|pageY=upper|w=full|h=full|text=1|image=1|children=GROUP:6",
+      "role": "img",
+      "skipIfParentClips": true,
+      "shot": "standards/figma-naming/evolution/evidence-shots/mobile-feedback.json",
+      "source": "mobile-feedback-last-write-wins",
+      "why": "491:7659 最终为 skipped：祖先已是 mix/或裁切轨道容器，自身仅为整理分组"
+    }
+  ]
+}

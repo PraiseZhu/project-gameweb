@@ -1,0 +1,23 @@
+{
+  "schema": "gold-settled-rules/v1",
+  "entries": [
+    {"fingerprint":"title-deco-is-img","status":"adopted","executor":"localEvidence","role":"img","failClosed":true,"condition":"generic IMAGE-painted decoration with no TEXT descendant and G3 evidence","action":"write img/"},
+    {"fingerprint":"scroll-clip-not-inner-reward","status":"adopted","executor":"geometryScroll","role":"scroll","failClosed":true,"condition":"clipsContent plus overflowing repeated track; inner reward remains img/","action":"write scroll/"},
+    {"fingerprint":"page-band-is-sec","status":"adopted","executor":"geometrySection","role":"sec","failClosed":true,"condition":"page-scope full-width non-overlapping bands; number by current page order","action":"write sec/N"},
+    {"fingerprint":"page-background-is-bg","status":"adopted","executor":"geometryBackground","role":"bg","failClosed":true,"condition":"page-root near full-page clipped visual surface","action":"write bg/"},
+    {"fingerprint":"kv-layered-image-band","status":"adopted","executor":"geometryKv","role":"kv","failClosed":true,"condition":"page-root non-section band with multiple image leaves; conflict stays unknown","action":"write kv/"},
+    {"fingerprint":"calendar-date-cell-is-dyn","status":"adopted","executor":"geometryDyn","role":"dyn","failClosed":true,"condition":"narrow clipped frame containing date text","action":"write dyn/"},
+    {"fingerprint":"button-chrome-is-img","status":"landed","executor":"leafImage","role":"img","failClosed":true,"condition":"IMAGE-painted visual leaf with no img ancestor; text containers and one-variant sets are guarded","action":"write img/"},
+    {"fingerprint":"feedback-pc-pure-image-no-img-ancestor","status":"adopted","executor":"localEvidence","role":"img","failClosed":true,"condition":"G3/feedback-unique LOCAL signature with IMAGE evidence, no TEXT descendant for component/instance visual, and no img ancestor; 1-variant gate remains","action":"write img/"},
+    {"fingerprint":"feedback-pc-calendar-clip-is-scroll","status":"adopted","executor":"localEvidence","role":"scroll","failClosed":true,"condition":"G3/feedback-unique LOCAL signature for clipped calendar content with repeated/overflow track; inner text/reward layers remain unnamed or img only when independently evidenced","action":"write scroll/"},
+    {"fingerprint":"feedback-mobile-mix-child-skipped","status":"adopted","executor":"localSkip","role":null,"failClosed":true,"condition":"feedback-unique LOCAL signature whose immediate ancestor clips the mixed calendar track; redundant grouping node is skipped and children remain independently judged","action":"keep skipped"},
+    {"fingerprint":"avatar-variant-internal-group-skipped","status":"adopted","executor":"skipParentDeterminedBtn","role":null,"failClosed":true,"condition":"GROUP directly under a COMPONENT variant whose parent COMPONENT_SET is already determined btn/; descendants contain IMAGE and no TEXT; page INSTANCE relations remain the clickable owner","action":"keep skipped"},
+    {"fingerprint":"group-with-text-not-img","status":"adopted","executor":"textGuard","role":null,"failClosed":true,"condition":"TEXT descendant in GROUP/FRAME; bg/kv/logo exemptions","action":"keep unnamed"},
+    {"fingerprint":"character-content-is-switch","status":"landed","executor":"characterSwitch","role":"switch","failClosed":true,"condition":"content shown by avatar-control relation, independent of variant count","action":"write switch/"},
+    {"fingerprint":"mix-calendar-when-clustered","status":"adopted","executor":"geometryMix","role":"mix","failClosed":true,"condition":"page FRAME with clipped date-grid child","action":"write mix/"},
+    {"fingerprint":"left-nav-items-are-btn","status":"adopted","executor":"geometryFix","role":"fix","failClosed":true,"condition":"edge-fixed page layer, outside small clip, G3-bound signature","action":"write fix/; descendant controls follow btn/"},
+    {"fingerprint":"modal-outside-frame","status":"adopted","executor":"geometryModal","role":"modal","failClosed":true,"condition":"independent modal scope FRAME outside page tree","action":"write modal/"},
+    {"fingerprint":"video-hot-area","status":"adopted","executor":"geometryHot","role":"hot","failClosed":true,"condition":"wide repeated video area inside modal/component-set scope","action":"write hot/"},
+    {"fingerprint":"all-component-sets-instances-follow","status":"adopted","executor":"followCopies","role":null,"failClosed":true,"condition":"instance or I…;masterId of a uniquely determined component set","action":"follow master prefix"}
+  ]
+}

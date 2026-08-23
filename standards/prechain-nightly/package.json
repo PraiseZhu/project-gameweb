@@ -1,0 +1,23 @@
+{
+  "name": "prechain-nightly",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "未规范稿前置链路夜间评测：50 轮含看图判断，对照规范稿查缺补漏",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "eval": "node scripts/nightly-prechain-eval.mjs",
+    "eval:new-draft-gate": "node --max-old-space-size=8192 ../figma-naming/tool/scripts/eval-hybrid-nameless.mjs",
+    "visual:prepare": "node scripts/prepare-visual-night.mjs",
+    "visual:score": "node scripts/score-round.mjs",
+    "visual:aggregate": "node scripts/aggregate-visual-rounds.mjs",
+    "visual:next": "node scripts/next-visual-wave.mjs",
+    "visual:apply-pair": "node scripts/apply-visual-pair.mjs",
+    "visual:finalize": "node scripts/finalize-visual-round.mjs",
+    "visual:verify": "node scripts/verify-round.mjs",
+    "nightly:assert": "node scripts/assert-visual-complete.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
