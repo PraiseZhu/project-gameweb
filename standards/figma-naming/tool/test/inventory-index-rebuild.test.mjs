@@ -26,9 +26,9 @@ function draft(extra = {}) {
     backgrounds: [],
     modules: [],
     nodes: [
-      { id: "s1", type: "FRAME", name: "sec/1", status: "determined", role: "sec", label: "1", box: { x: 0, y: 0, w: 100, h: 50 } },
-      { id: "bg1", type: "INSTANCE", name: "bg/pc", status: "determined", role: "bg", label: "pc", box: { x: 0, y: 0, w: 100, h: 200 } },
-      { id: "fix1", type: "FRAME", name: "fix/左侧导航", status: "determined", role: "fix", label: "左侧导航", box: { x: 0, y: 0, w: 40, h: 80 } },
+      { id: "s1", type: "FRAME", name: "sec/1", status: "determined", role: "sec", label: "1", box: { x: 0, y: 0, w: 100, h: 50 }, pageBox: { x: 0, y: 0, w: 100, h: 50 } },
+      { id: "bg1", type: "INSTANCE", name: "bg/pc", status: "determined", role: "bg", label: "pc", box: { x: 0, y: 0, w: 100, h: 200 }, pageBox: { x: 0, y: 0, w: 100, h: 200 } },
+      { id: "fix1", type: "FRAME", name: "fix/左侧导航", status: "determined", role: "fix", label: "左侧导航", box: { x: 0, y: 0, w: 40, h: 80 }, pageBox: { x: 0, y: 10, w: 40, h: 80 }, pin: "viewport", viewportBox: { x: 0, y: 10, w: 40, h: 80 } },
     ],
     attachments: { modals: [], componentSets: [], components: [] },
     ...extra,
@@ -44,8 +44,12 @@ test("写回后必须重建 sections，否则 completeness 红", () => {
   rebuildInventoryIndexes(doc);
   assert.equal(doc.sections.length, 1);
   assert.equal(doc.sections[0].id, "s1");
+  assert.deepEqual(doc.sections[0].pageBox, { x: 0, y: 0, w: 100, h: 50 });
   assert.equal(doc.overlays.length, 1);
+  assert.equal(doc.overlays[0].pin, "viewport");
+  assert.deepEqual(doc.overlays[0].pageBox, { x: 0, y: 10, w: 40, h: 80 });
   assert.equal(doc.backgrounds.length, 1);
+  assert.deepEqual(doc.backgrounds[0].pageBox, { x: 0, y: 0, w: 100, h: 200 });
   assert.equal(doc.counts.determined, 3);
   assert.equal(doc.pageCounts.determined, 3);
 

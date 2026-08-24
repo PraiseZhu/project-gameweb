@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -8,14 +8,47 @@ import { join } from "node:path";
 import { writeHandoffPack } from "../../../../standards/figma-naming/tool/src/handoff.mjs";
 import { rebuildInventoryIndexes } from "../../../../standards/figma-naming/tool/src/inventory.mjs";
 import { GOLD_MOBILE_PREFIX_CLASSES } from "../../../../standards/figma-naming/tool/scripts/check-draft-asset-completeness.mjs";
-import { behaviorOf } from "../../../../standards/figma-naming/spec/inventory.mjs";
+import { behaviorOf, stampReadyFields } from "../../../../standards/figma-naming/spec/inventory.mjs";
 import { fixtureJudgment } from "../../../../standards/figma-naming/tool/src/judgment.mjs";
 import { runFromHandoff } from "../figma-from-handoff.mjs";
 
 const CHECK = fileURLToPath(new URL("../figma-inventory-check.mjs", import.meta.url));
 
+
+function writeSlicePngs(dir, doc) {
+  mkdirSync(dir, { recursive: true });
+  for (const node of [
+    ...(doc.nodes || []),
+    ...(doc.attachments?.modals || []).flatMap((item) => item.nodes || []),
+    ...(doc.attachments?.componentSets || []).flatMap((item) => item.nodes || []),
+    ...(doc.attachments?.components || []).flatMap((item) => item.nodes || []),
+  ]) {
+    if (node.status === "determined" && ["img", "bg", "kv"].includes(node.role)) {
+      writeFileSync(join(dir, `${String(node.id).replace(/[:;]/g, "-")}.png`), Buffer.alloc(64, 2));
+    }
+  }
+  return dir;
+}
+
+function packReady(dir, pcDoc, mobileDoc, outName = "out") {
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  return writeHandoffPack({
+    pcPath,
+    mobilePath,
+    pcDoc,
+    mobileDoc,
+    kind: "ready",
+    outDir: join(dir, outName),
+    assetsPc: writeSlicePngs(join(dir, "pc-assets"), pcDoc),
+    assetsMobile: writeSlicePngs(join(dir, "mobile-assets"), mobileDoc),
+  });
+}
+
 function sample(id, status = "ready") {
-  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
+  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => stampReadyFields({
     id: `${id}-${role}`,
     type: role === "btn" ? "INSTANCE" : "FRAME",
     name: `${role}/${role}`,
@@ -53,7 +86,7 @@ test("inventory:check delegates a ready handoff to from-handoff", () => {
   const mobilePath = join(dir, "mobile.json");
   writeFileSync(pcPath, JSON.stringify(pcDoc));
   writeFileSync(mobilePath, JSON.stringify(mobileDoc));
-  const pack = writeHandoffPack({ pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "pack") });
+  const pack = packReady(dir, pcDoc, mobileDoc, "pack");
 
   const expected = runFromHandoff(pack.outDir);
   const actual = runCheck(pack.outDir);

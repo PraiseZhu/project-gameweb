@@ -48,7 +48,22 @@ npm run inventory -- \
 
 链接里的 `node-id` 是拉稿根；`--page` 不改变拉稿范围。抓取、整理、自验任一步失败就停。PC / mobile 各出一份。
 
-产物：`_tmp/inventory-<page>.json` 与 `.txt`。JSON 必须是 `schema: "inventory/v2"`、`status: "ready"`。覆盖页面本体、同货架 modal、页面实际引用的组件集及完整变体、实例关联。没有原型或 `@go` 证据的弹窗入口留在对应关系上的 `unknown`，不改变整份清单 ready。
+产物：`_tmp/inventory-<page>.json` 与 `.txt`。JSON 必须是 `schema: "inventory/v2"`、`status: "ready"`。覆盖页面本体、同货架 modal、页面实际引用的组件集及完整变体、实例关联。节点带 `pageBox`/`parentBox`；`img/` `bg/` `kv/` 带 `sliceExport`（墨迹框、1 倍、png）；`fix/` 钉视口；文字带 `fontFamily`/`fontWeight`/`fontSize`。没有原型或 `@go` 证据的弹窗入口留在对应关系上的 `unknown`，不改变整份清单 ready。
+
+PC + mobile 都编成 ready 后打交接包（不跑判断包、不写回）：
+
+```bash
+node scripts/export-handoff-slices.mjs --inventory ../../../_tmp/inventory-<pc>.json --out ../../../_tmp/out/slices-pc
+node scripts/export-handoff-slices.mjs --inventory ../../../_tmp/inventory-<mobile>.json --out ../../../_tmp/out/slices-mobile
+npm run handoff:pack -- \
+  --pc ../../../_tmp/inventory-<pc>.json \
+  --mobile ../../../_tmp/inventory-<mobile>.json \
+  --out ../../../_tmp/out/handoff-<page> \
+  --assets-pc ../../../_tmp/out/slices-pc \
+  --assets-mobile ../../../_tmp/out/slices-mobile
+```
+
+缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项 → 打包失败。页面和附件里的 determined 都核。切图复制进包内 `assets-pc/` `assets-mobile/`，ready 的 `assets.ok` 必须为 true。切图只按清单契约导，禁止改 scale。做页读包内 png 和 `pageBox`，不要再猜图层名、不要按节点框重导。
 
 ### 3. agent 核一遍并打交接包
 
@@ -74,7 +89,7 @@ npm run handoff:pack -- \
 npm run inventory:review
 ```
 
-核对页 UI 只读仓内 `tool/inventory-review/index.html`。已规范 ready 的复核保存后仍保持 `ready`。
+核对页 UI 只读仓内 `tool/inventory-review/index.html`。已规范 ready 的复核保存后仍保持 `ready`。做页吃 `handoff:pack` 的 ready 包（包内 `assets-pc/` `assets-mobile/`）。
 
 ### 4. 做页消费边界
 
@@ -85,7 +100,7 @@ cd skills/yise-web-ui
 npm run figma:from-handoff -- <交接包目录>
 ```
 
-吃包里的 determined / 分区 / 背景固定层 / 变体树 / modal；unknown 只画不接线。说明见 `handoff/CONSUMER.md`。做页接入由 issue #5 交给 `zhanxinyi-lab`；本侧不改 `skills/yise-web-ui/**` 的渲染实现，只守吃包闸门。
+吃包里的 determined / 分区 / 背景固定层 / 变体树 / modal；unknown 只画不接线。说明见 `handoff/CONSUMER.md`。包 `kind=ready`。缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项则拒。切图在包内 `assets-pc/` `assets-mobile/`。做页接入由 issue #5 交给 `zhanxinyi-lab`；本侧不改 `skills/yise-web-ui/**` 的渲染实现，只守吃包闸门。
 
 ## 不要做
 
