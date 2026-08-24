@@ -392,12 +392,19 @@ function rootRecord(node) {
 }
 
 function componentSetRecord(set, nodes) {
-  const variants = (set.children || []).filter((node) => node.type === "COMPONENT").map((variant, index) => ({
-    ...rootRecord(variant),
-    order: index,
-    componentProperties: variant.componentProperties ?? {},
-    nodes: nodes.filter((node) => node.id === variant.id || node.ancestorIds?.includes(variant.id)),
-  }));
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const variants = (set.children || []).filter((node) => node.type === "COMPONENT").map((variant, index) => {
+    const classified = byId.get(variant.id);
+    return {
+      ...rootRecord(variant),
+      order: index,
+      ...(classified?.status ? { status: classified.status } : {}),
+      ...(classified?.why ? { why: classified.why } : {}),
+      ...(classified?.role ? { role: classified.role } : {}),
+      componentProperties: variant.componentProperties ?? {},
+      nodes: nodes.filter((node) => node.id === variant.id || node.ancestorIds?.includes(variant.id)),
+    };
+  });
   return {
     ...rootRecord(set),
     componentPropertyDefinitions: set.componentPropertyDefinitions ?? {},
