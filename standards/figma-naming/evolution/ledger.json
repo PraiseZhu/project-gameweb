@@ -282,9 +282,9 @@
       "proposal": "本次 PC 1 处。",
       "status": "adopted",
       "note": "[decided:2026-08-18] KV 外层不能带 kv 身份",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-18T10:34:13.090Z",
-      "lastSeen": "2026-08-18T10:34:13.090Z"
+      "lastSeen": "2026-08-24T04:49:50.299Z"
     },
     {
       "fingerprint": "deco-arrow-is-img",
@@ -294,9 +294,9 @@
       "proposal": "本次 PC+mobile 2 处。",
       "status": "adopted",
       "note": "[decided:2026-08-18] 下滑引导箭头是图片切片",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-18T10:34:13.434Z",
-      "lastSeen": "2026-08-18T10:34:13.434Z"
+      "lastSeen": "2026-08-24T04:49:50.346Z"
     },
     {
       "fingerprint": "calendar-is-mix",
@@ -306,9 +306,9 @@
       "proposal": "本次 PC+mobile 7 处。",
       "status": "adopted",
       "note": "[decided:2026-08-18] 日历主体是 mix，外层不命名",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-18T10:34:13.666Z",
-      "lastSeen": "2026-08-18T10:34:13.666Z"
+      "lastSeen": "2026-08-24T04:49:50.392Z"
     },
     {
       "fingerprint": "calendar-week-is-copy",
@@ -318,9 +318,9 @@
       "proposal": "本次 PC+mobile 2 处。",
       "status": "adopted",
       "note": "[decided:2026-08-18] 日历对应周是 copy",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-18T10:34:13.842Z",
-      "lastSeen": "2026-08-18T10:34:13.842Z"
+      "lastSeen": "2026-08-24T04:49:50.445Z"
     },
     {
       "fingerprint": "calendar-arrow-is-click-btn",
@@ -330,9 +330,9 @@
       "proposal": "本次 PC+mobile 2 处。",
       "status": "adopted",
       "note": "[decided:2026-08-18] 日历翻页箭头是点击按钮",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-18T10:34:14.002Z",
-      "lastSeen": "2026-08-18T10:34:14.002Z"
+      "lastSeen": "2026-08-24T04:49:50.491Z"
     },
     {
       "fingerprint": "slider-unnamed",
@@ -342,9 +342,9 @@
       "proposal": "本次 PC 4 + mobile 4，共 8 处。",
       "status": "adopted",
       "note": "[decided:2026-08-18] 轮播 Slider 容器不命名",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-18T10:34:15.044Z",
-      "lastSeen": "2026-08-18T10:34:15.044Z"
+      "lastSeen": "2026-08-24T04:49:50.549Z"
     },
     {
       "fingerprint": "carousel-arrow-is-click-btn",
@@ -354,9 +354,9 @@
       "proposal": "本次 PC 10 处。",
       "status": "adopted",
       "note": "[decided:2026-08-18] 轮播划动箭头是点击按钮",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-18T10:34:15.441Z",
-      "lastSeen": "2026-08-18T10:34:15.441Z"
+      "lastSeen": "2026-08-24T04:49:50.594Z"
     },
     {
       "fingerprint": "avatar-is-btn",
@@ -366,9 +366,9 @@
       "proposal": "本次 PC+mobile 14 项（含组件集与变体）。",
       "status": "adopted",
       "note": "[decided:2026-08-18] 角色头像和锁定头像是 btn",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-18T10:34:15.704Z",
-      "lastSeen": "2026-08-18T10:34:15.704Z"
+      "lastSeen": "2026-08-24T04:49:50.639Z"
     },
     {
       "fingerprint": "switch-control-is-btn",
@@ -378,9 +378,9 @@
       "proposal": "本次组件集+2 变体+2 实例，共 5 项。",
       "status": "adopted",
       "note": "[decided:2026-08-18] 移动活动切换按钮是 btn",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-18T10:34:15.884Z",
-      "lastSeen": "2026-08-18T10:34:15.884Z"
+      "lastSeen": "2026-08-24T04:49:50.685Z"
     },
     {
       "fingerprint": "title-set-unnamed",
@@ -390,9 +390,9 @@
       "proposal": "本次 PC+mobile 4 项。",
       "status": "adopted",
       "note": "[decided:2026-08-18] 标题组件集不命名",
-      "occurrences": 3,
+      "occurrences": 4,
       "firstSeen": "2026-08-18T10:34:16.084Z",
-      "lastSeen": "2026-08-20T06:40:00.000Z"
+      "lastSeen": "2026-08-24T04:49:50.729Z"
     },
     {
       "fingerprint": "mobile-named-modal",
@@ -546,9 +546,9 @@
       "proposal": null,
       "status": "adopted",
       "note": "[decided:2026-08-19] 来自 491 mobile 核对：9047 scroll，9048/9064 img。",
-      "occurrences": 4,
+      "occurrences": 5,
       "firstSeen": "2026-08-19T07:49:42.177Z",
-      "lastSeen": "2026-08-20T11:50:31.395Z"
+      "lastSeen": "2026-08-24T04:49:50.953Z"
     },
     {
       "fingerprint": "catalog-skips-loose-image-parts",
@@ -570,9 +570,9 @@
       "proposal": null,
       "status": "adopted",
       "note": "[decided:2026-08-19] 491:7643 核对改为 mix。",
-      "occurrences": 2,
+      "occurrences": 3,
       "firstSeen": "2026-08-19T07:49:42.353Z",
-      "lastSeen": "2026-08-19T08:22:48.759Z"
+      "lastSeen": "2026-08-24T04:49:50.999Z"
     },
     {
       "fingerprint": "title-deco-is-img",
@@ -582,9 +582,9 @@
       "proposal": null,
       "status": "adopted",
       "note": "[decided:2026-08-19] 491 mobile 核对：装饰 img，标题 unknown。",
-      "occurrences": 4,
+      "occurrences": 5,
       "firstSeen": "2026-08-19T08:22:48.368Z",
-      "lastSeen": "2026-08-20T06:40:00.000Z"
+      "lastSeen": "2026-08-24T04:49:50.775Z"
     },
     {
       "fingerprint": "determined-not-overwritten-by-later-unknown",
@@ -612,15 +612,15 @@
     },
     {
       "fingerprint": "left-nav-items-are-btn",
-      "tier": "auto",
+      "tier": "by-design",
       "title": "页上左侧导航项是 btn，不是 img 也不是 unknown",
       "detail": "错误：组件集写成 btn/导航状态 后页上 fix/ 下实例仍 unknown。目录 types 写了 INSTANCE 但实例无变体分不够 50，completeness 旧闸门只核组件集。正确：页上实例 btn/ + click；apply-gold-morphology 静默补；跨货架定义仍 unknown。",
       "proposal": null,
       "status": "adopted",
       "note": "[decided:2026-08-19] PC 518:6945-6955 人核为 btn。",
-      "occurrences": 2,
+      "occurrences": 3,
       "firstSeen": "2026-08-19T08:56:55.831Z",
-      "lastSeen": "2026-08-19T13:25:46.122Z"
+      "lastSeen": "2026-08-24T04:49:50.818Z"
     },
     {
       "fingerprint": "pc-mobile-same-class-must-sync",
@@ -696,27 +696,27 @@
     },
     {
       "fingerprint": "all-component-sets-instances-follow",
-      "tier": "auto",
+      "tier": "by-design",
       "title": "所有组件集的子件都跟随母版，不限 btn/",
       "detail": "错误：跟随规则只覆盖 btn/img/ind/switch，写回反馈也不自动跟随 I…;母版Id。正确：任意已命名组件集的实例和 I…;母版Id 子件都跟同一前缀；apply-review-feedback / apply-gold-morphology 写回即跟随。",
       "proposal": null,
       "status": "adopted",
       "note": "[decided:2026-08-20] 定死范围=全部组件集，含未命名母版不得给子件加前缀。",
-      "occurrences": 3,
+      "occurrences": 4,
       "firstSeen": "2026-08-20T05:58:37.375Z",
-      "lastSeen": "2026-08-20T06:40:00.000Z"
+      "lastSeen": "2026-08-24T04:49:51.045Z"
     },
     {
       "fingerprint": "group-with-text-not-img",
-      "tier": "auto",
+      "tier": "by-design",
       "title": "下面有文字的分组不能直接 img/",
       "detail": "错误：有字奖励条被标 img/ 且跨端互打。正确：外层有字不标 img/，图走子层；跨端不得把有字奖励同步成 img/。例外仍是 bg/ kv/ logo。名叫视频框的外层 FRAME 跳过命名，往下挖 hot/、img/视频框 2、btn/播放、说明 copy/；不要整框 img/ 再和有字皮肤框互打。",
       "proposal": null,
       "status": "adopted",
       "note": "[decided:2026-08-20] 491 mobile 人核：分组含文字不 img；bg/、kv/、logo 三处例外。",
-      "occurrences": 5,
+      "occurrences": 6,
       "firstSeen": "2026-08-20T06:40:00.000Z",
-      "lastSeen": "2026-08-20T14:31:00.073Z"
+      "lastSeen": "2026-08-24T04:49:50.862Z"
     },
     {
       "fingerprint": "writeback-must-rebuild-index",
@@ -756,15 +756,15 @@
     },
     {
       "fingerprint": "character-content-is-switch",
-      "tier": "auto",
+      "tier": "by-design",
       "title": "头像切换的角色内容即使单变体也是 switch/",
       "detail": "未规范 399:47576：角色立绘模块/角色只有 Default，判断按变体个数放过；规范稿是 switch/。正确：被头像切换展示的角色内容模块是 switch/，不看变体个数。",
       "proposal": "gold-morphology：大尺寸「角色立绘模块」「角色」强制 switch/；completeness 经 auditDraftGoldMorphology 红。",
       "status": "landed",
       "note": "[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态",
-      "occurrences": 1,
+      "occurrences": 2,
       "firstSeen": "2026-08-21T05:34:16.013Z",
-      "lastSeen": "2026-08-21T05:34:16.013Z"
+      "lastSeen": "2026-08-24T04:49:50.907Z"
     },
     {
       "fingerprint": "button-chrome-is-img",
@@ -777,6 +777,18 @@
       "occurrences": 1,
       "firstSeen": "2026-08-21T05:34:16.071Z",
       "lastSeen": "2026-08-21T05:34:16.071Z"
+    },
+    {
+      "fingerprint": "unnamed-unknown-under-named-not-gap",
+      "tier": "by-design",
+      "title": "已命名祖先下的内部零件 unknown 不是漏判",
+      "detail": "错误：拿 unknown 条数或一级边框/头像框底数量当命名正确性下降。正确：已 img/btn/switch/mix 祖先下的内部零件保持 unknown（钉死 2）；对照规范稿只核前缀类。本次 399:47576 PC unknown 301 中 271 在已命名祖先下，mobile 543 中 526 同样。",
+      "proposal": "completeness 继续只核前缀类；人核不要把内部零件抬成二层 img/。",
+      "status": "tracked",
+      "note": "[decided:2026-08-24] 399:47576 人确认：unknown 多不等于缺模块。",
+      "occurrences": 1,
+      "firstSeen": "2026-08-24T04:50:05.581Z",
+      "lastSeen": "2026-08-24T04:50:05.581Z"
     }
   ]
 }

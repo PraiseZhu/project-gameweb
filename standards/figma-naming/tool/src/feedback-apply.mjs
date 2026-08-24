@@ -4,7 +4,7 @@
  * 导航项已是 btn/ 时，旧反馈里的 img 不得复写。
  * 写回后自动：任意组件集实例和 I…;母版Id 子件跟随母版。
  */
-import { applyCrossEndClassSync, applyDraftGoldMorphology } from "./gold-morphology.mjs";
+import { applyCrossEndClassSync, applyDraftGoldMorphology, isTextGroupImgExempt } from "./gold-morphology.mjs";
 import { stampJudgment } from "./judgment.mjs";
 
 const ROLE_PREFIX = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
@@ -126,7 +126,8 @@ function hasTextDescendant(node, byId, seen = new Set()) {
 
 function isImageContainerOverride(node, role, byId) {
   return role === 'img' && ['FRAME', 'GROUP', 'INSTANCE', 'COMPONENT'].includes(String(node.type || '').toUpperCase())
-    && hasTextDescendant(node, byId);
+    && hasTextDescendant(node, byId)
+    && !isTextGroupImgExempt(node);
 }
 
 export function applyReviewFeedback(doc, rows, { previousDoc = null, peerDocs = [], judgePack = null } = {}) {

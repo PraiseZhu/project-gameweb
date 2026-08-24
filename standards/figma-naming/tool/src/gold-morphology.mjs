@@ -374,10 +374,11 @@ function childrenByParent(doc) {
   return kids;
 }
 
-function isTextGroupImgExempt(node) {
+export function isTextGroupImgExempt(node) {
   const body = rawName(node);
   const name = String(node.name || "");
   if (/^logo$/i.test(body) || name.startsWith("img/logo")) return true;
+  if (body === "兑换码背景") return true;
   if (node.role === "bg" || node.role === "kv") return true;
   return name.startsWith("bg/") || name.startsWith("kv/");
 }
