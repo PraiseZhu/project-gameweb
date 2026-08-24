@@ -6,7 +6,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, cpSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { INVENTORY_SCHEMA, INVENTORY_STATUSES, INVENTORY_ROLES } from "../../spec/inventory.mjs";
+import { isSlicePrefix } from "../../spec/spec.mjs";
+import { INVENTORY_SCHEMA, INVENTORY_STATUSES, INVENTORY_ROLES, CROSS_END_MODULE_ROLES, SLICE_EXPORT } from "../../spec/inventory.mjs";
 import { auditLikeCli } from "../scripts/check-draft-asset-completeness.mjs";
 
 export const HANDOFF_SCHEMA = "handoff/v1";
@@ -64,6 +65,10 @@ function consumeSlice(doc) {
       role: node.role ?? null,
       behavior: node.behavior ?? null,
       box: node.box ?? null,
+      pageBox: node.pageBox ?? null,
+      parentBox: node.parentBox ?? null,
+      pin: node.pin ?? null,
+      sliceExport: node.sliceExport ?? null,
       parentId: node.parentId ?? null,
       orderKey: node.orderKey ?? null,
     };
@@ -88,6 +93,106 @@ function consumeSlice(doc) {
   };
 }
 
+function isGeomBox(value) {
+  return value
+    && Number.isFinite(value.x)
+    && Number.isFinite(value.y)
+    && Number.isFinite(value.w)
+    && Number.isFinite(value.h);
+}
+
+function namedReadyFieldProblems(label, node) {
+  const problems = [];
+  const prefix = `${label} ${node.id}`;
+  if (!isGeomBox(node.pageBox)) problems.push(`${prefix} 缺 pageBox`);
+  if (!isGeomBox(node.parentBox)) problems.push(`${prefix} 缺 parentBox`);
+  if (isSlicePrefix(node.role)) {
+    if (
+      node.sliceExport?.bounds !== SLICE_EXPORT.bounds
+      || node.sliceExport?.scale !== SLICE_EXPORT.scale
+      || node.sliceExport?.format !== SLICE_EXPORT.format
+    ) {
+      problems.push(`${prefix} 切图必须按墨迹框 1 倍 png`);
+    }
+  }
+  if (node.role === "fix" && node.pin !== "viewport") problems.push(`${prefix} fix 必须钉视口`);
+  if (node.rotation == null) problems.push(`${prefix} 缺 rotation`);
+  if (node.role === "copy") {
+    if (node.sliceExport) problems.push(`${prefix} 可改字不得带切图`);
+    if (node.text?.fontFamily == null || node.text?.fontWeight == null || node.text?.fontSize == null) {
+      problems.push(`${prefix} 文字缺 fontFamily/fontWeight/fontSize`);
+    }
+  }
+  return problems;
+}
+
+function determinedNodesOf(doc) {
+  return collectNodes(doc || {}).filter((node) => node.status === "determined" && node.role);
+}
+
+function moduleKeyOf(node) {
+  if (node?.status !== "determined" || !CROSS_END_MODULE_ROLES.includes(node.role)) return null;
+  const label = String(node.label ?? "").trim() || String(node.name ?? "").replace(/^[^/]+\//, "").trim();
+  if (!label) return null;
+  return `${node.role}/${label}`;
+}
+
+function collectModuleCandidates(doc) {
+  const byKey = new Map();
+  for (const node of doc?.nodes || []) {
+    const key = moduleKeyOf(node);
+    if (!key) continue;
+    const list = byKey.get(key) || [];
+    list.push(node);
+    byKey.set(key, list);
+  }
+  return byKey;
+}
+
+/** PC/mobile 同一模块：前缀+名字一对一。重复或对不上标单端，不猜图层 id。 */
+export function sameModulesOf(pcDoc, mobileDoc) {
+  const pcMap = collectModuleCandidates(pcDoc);
+  const mobileMap = collectModuleCandidates(mobileDoc);
+  const keys = [...new Set([...pcMap.keys(), ...mobileMap.keys()])].sort();
+  const paired = [];
+  const unmatched = [];
+  for (const key of keys) {
+    const pcNodes = pcMap.get(key) || [];
+    const mobileNodes = mobileMap.get(key) || [];
+    const n = Math.min(pcNodes.length, mobileNodes.length);
+    for (let i = 0; i < n; i += 1) {
+      paired.push({
+        key,
+        role: key.split("/")[0],
+        pcId: pcNodes[i].id,
+        mobileId: mobileNodes[i].id,
+      });
+    }
+    for (const node of pcNodes.slice(n)) unmatched.push({ key, end: "pc-only", id: node.id });
+    for (const node of mobileNodes.slice(n)) unmatched.push({ key, end: "mobile-only", id: node.id });
+  }
+  return { paired, unmatched };
+}
+
+function consumeFingerprintOf(doc) {
+  return collectNodes(doc || {}).map((node) => ({
+    id: node.id,
+    status: node.status ?? null,
+    role: node.role ?? null,
+    pageBox: node.pageBox ?? null,
+    parentBox: node.parentBox ?? null,
+    rotation: node.rotation ?? null,
+    sliceExport: node.sliceExport ?? null,
+    pin: node.pin ?? null,
+    text: node.text ? {
+      fontFamily: node.text.fontFamily ?? null,
+      fontWeight: node.text.fontWeight ?? null,
+      fontSize: node.text.fontSize ?? null,
+    } : null,
+    fills: node.style?.fills ?? null,
+  }));
+}
+
 export function fingerprintInventories(pcDoc, mobileDoc) {
   const payload = {
     pc: pcDoc.requestedNodeId,
@@ -97,15 +202,16 @@ export function fingerprintInventories(pcDoc, mobileDoc) {
     mobileStatus: mobileDoc.status,
     pcCounts: pcDoc.counts ?? null,
     mobileCounts: mobileDoc.counts ?? null,
+    pcFields: consumeFingerprintOf(pcDoc),
+    mobileFields: consumeFingerprintOf(mobileDoc),
   };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
 }
 
-const SLICE_ROLES = new Set(["img", "bg", "kv"]);
 const REVIEW_SHOT_RE = /^(page|sec|kv|bg|fix|modal|set|cmp)(?:[-_]|$)/i;
 
 function isSliceNode(node) {
-  return node?.status === "determined" && SLICE_ROLES.has(node.role) && typeof node.id === "string" && node.id;
+  return node?.status === "determined" && isSlicePrefix(node.role) && typeof node.id === "string" && node.id;
 }
 
 function pageSliceIds(doc) {
@@ -336,6 +442,16 @@ export function validateHandoffPack(dirPath) {
   }
   problems.push(...assetClaimProblems("pc", manifest.assets?.pc, sliceIdsOf(pcDoc)));
   problems.push(...assetClaimProblems("mobile", manifest.assets?.mobile, sliceIdsOf(mobileDoc)));
+  if (manifest.kind === "ready" || manifest.ready === true) {
+    if (manifest.assets?.pc?.ok !== true) problems.push("ready 包 PC assets.ok 必须为 true");
+    if (manifest.assets?.mobile?.ok !== true) problems.push("ready 包 mobile assets.ok 必须为 true");
+    const packedPc = join(full, "assets-pc");
+    const packedMobile = join(full, "assets-mobile");
+    if (!existsSync(packedPc) || !statSync(packedPc).isDirectory()) problems.push("ready 包缺 assets-pc");
+    else problems.push(...hashDir(packedPc, { requiredIds: sliceIdsOf(pcDoc) }).problems.map((item) => `pc 包内 ${item}`));
+    if (!existsSync(packedMobile) || !statSync(packedMobile).isDirectory()) problems.push("ready 包缺 assets-mobile");
+    else problems.push(...hashDir(packedMobile, { requiredIds: sliceIdsOf(mobileDoc) }).problems.map((item) => `mobile 包内 ${item}`));
+  }
   const ok = problems.length === 0 && gate.ok;
   return {
     ok,
@@ -390,12 +506,18 @@ export function validateHandoffPair(pcDoc, mobileDoc, {
   }
 
   const determinedRoles = new Set();
-  for (const doc of [pcDoc, mobileDoc]) {
+  for (const [label, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
     for (const node of collectNodes(doc || {})) {
-      if (node.status === "determined" && node.role && !INVENTORY_ROLES.includes(node.role)) {
+      if (node.status !== "determined" || !node.role) continue;
+      if (!INVENTORY_ROLES.includes(node.role)) {
         problems.push(`${node.id} 角色不在总表：${node.role}`);
       }
-      if (node.status === "determined" && node.role) determinedRoles.add(node.role);
+      determinedRoles.add(node.role);
+    }
+    if (bothReady) {
+      for (const node of determinedNodesOf(doc)) {
+        problems.push(...namedReadyFieldProblems(label, node));
+      }
     }
   }
 
@@ -426,6 +548,7 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
       pc: consumeSlice(pcDoc),
       mobile: consumeSlice(mobileDoc),
     },
+    sameModules: sameModulesOf(pcDoc, mobileDoc),
     assets: {
       pc: assets.pc ?? { ok: false, files: [], problems: ["未提供 --assets-pc"] },
       mobile: assets.mobile ?? { ok: false, files: [], problems: ["未提供 --assets-mobile"] },
@@ -434,6 +557,16 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
       unknownNoInteraction: true,
       unknownModalTriggerNoWire: true,
       prefixOnly: true,
+      sliceBounds: SLICE_EXPORT.bounds,
+      sliceScale: SLICE_EXPORT.scale,
+      sliceFormat: SLICE_EXPORT.format,
+      fixPinsViewport: true,
+      modalHiddenDefault: true,
+      assetsMustCoverSliceIds: true,
+      variantSlicesRequired: true,
+      fillsAllLayers: true,
+      rotationHonored: true,
+      textVsSliceExclusive: true,
       roles: INVENTORY_ROLES,
     },
   };
@@ -469,8 +602,16 @@ export function writeHandoffPack({
   if (assetsMobile && !assets.mobile.ok) {
     throw new Error(["mobile 切图覆盖率不足", ...assets.mobile.problems].join("\n"));
   }
-  const manifest = buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets });
+  if (kind === "ready") {
+    if (!assets.pc.ok) throw new Error(["ready 包必须带齐 PC 切图", ...assets.pc.problems].join("\n"));
+    if (!assets.mobile.ok) throw new Error(["ready 包必须带齐 mobile 切图", ...assets.mobile.problems].join("\n"));
+  }
   mkdirSync(outDir, { recursive: true });
+  const packed = {
+    pc: copyPackedAssets(assets.pc, join(outDir, "assets-pc")),
+    mobile: copyPackedAssets(assets.mobile, join(outDir, "assets-mobile")),
+  };
+  const manifest = buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets: packed });
   const pcOut = join(outDir, "inventory-pc.json");
   const mobileOut = join(outDir, "inventory-mobile.json");
   if (resolve(pcPath) !== resolve(pcOut)) cpSync(pcPath, pcOut);
@@ -478,6 +619,30 @@ export function writeHandoffPack({
   writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   writeFileSync(join(outDir, "README.md"), packReadme(manifest, outDir));
   return { outDir, manifest, pcOut, mobileOut };
+}
+
+function copyPackedAssets(assets, destDir) {
+  if (!assets?.ok) {
+    return {
+      ...assets,
+      files: (assets?.files || []).map((file) => ({
+        file: typeof file === "string" ? file : file.file,
+        bytes: file.bytes,
+        sha256: file.sha256,
+      })),
+    };
+  }
+  mkdirSync(destDir, { recursive: true });
+  const files = [];
+  for (const file of assets.files || []) {
+    const name = typeof file === "string" ? file : file.file;
+    const src = typeof file === "string" ? null : file.path;
+    if (!name || !src || !existsSync(src)) continue;
+    const out = join(destDir, name);
+    cpSync(src, out);
+    files.push({ file: name, bytes: file.bytes, sha256: file.sha256 });
+  }
+  return { ...assets, files, dir: basename(destDir) };
 }
 
 function packReadme(manifest, outDir) {

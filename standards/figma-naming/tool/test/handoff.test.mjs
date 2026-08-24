@@ -5,25 +5,39 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync, readdi
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  validateHandoffPair, writeHandoffPack, writePromotedPair, fingerprintInventories, validateHandoffPack, sliceIdsOf,
+  validateHandoffPair, writeHandoffPack, writePromotedPair, fingerprintInventories, validateHandoffPack, sliceIdsOf, sameModulesOf,
 } from "../src/handoff.mjs";
 import { rebuildInventoryIndexes } from "../src/inventory.mjs";
 import { GOLD_MOBILE_PREFIX_CLASSES } from "../scripts/check-draft-asset-completeness.mjs";
-import { behaviorOf } from "../../spec/inventory.mjs";
+import { behaviorOf, SLICE_EXPORT } from "../../spec/inventory.mjs";
 import { fileURLToPath } from "node:url";
 import { fixtureJudgment } from "../src/judgment.mjs";
 
 function sample(id, extra = {}) {
-  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
-    id: `${id}-${role}`,
-    type: role === "btn" ? "INSTANCE" : "FRAME",
-    name: `${role}/${role}`,
-    status: "determined",
-    role,
-    behavior: behaviorOf(role),
-    via: "prefix",
-    box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
-  }));
+  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => {
+    const box = { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 };
+    const node = {
+      id: `${id}-${role}`,
+      type: role === "btn" ? "INSTANCE" : "FRAME",
+      name: `${role}/${role}`,
+      status: "determined",
+      role,
+      behavior: behaviorOf(role),
+      via: "prefix",
+      box,
+      pageBox: box,
+      parentBox: box,
+      rotation: 0,
+    };
+    if (role === "img" || role === "bg" || role === "kv") {
+      node.sliceExport = { ...SLICE_EXPORT, file: `${id}-${role}.png` };
+    }
+    if (role === "fix") {
+      node.pin = "viewport";
+      node.viewportBox = box;
+    }
+    return node;
+  });
   const doc = rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
@@ -39,6 +53,38 @@ function sample(id, extra = {}) {
   });
   fixtureJudgment(doc);
   return doc;
+}
+
+function writeSlicePngs(dir, doc) {
+  mkdirSync(dir, { recursive: true });
+  for (const node of [
+    ...(doc.nodes || []),
+    ...(doc.attachments?.modals || []).flatMap((item) => item.nodes || []),
+    ...(doc.attachments?.componentSets || []).flatMap((item) => item.nodes || []),
+    ...(doc.attachments?.components || []).flatMap((item) => item.nodes || []),
+  ]) {
+    if (node.status === "determined" && ["img", "bg", "kv"].includes(node.role)) {
+      writeFileSync(join(dir, `${String(node.id).replace(/[:;]/g, "-")}.png`), Buffer.alloc(64, 2));
+    }
+  }
+  return dir;
+}
+
+function packReady(dir, pcDoc, mobileDoc) {
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  return writeHandoffPack({
+    pcPath,
+    mobilePath,
+    pcDoc,
+    mobileDoc,
+    kind: "ready",
+    outDir: join(dir, "out"),
+    assetsPc: writeSlicePngs(join(dir, "pc-assets"), pcDoc),
+    assetsMobile: writeSlicePngs(join(dir, "mobile-assets"), mobileDoc),
+  });
 }
 
 test("handoff：成对 draft 不能打本仓包，指向未规范仓", () => {
@@ -86,12 +132,7 @@ test("handoff：pack 写出 manifest 且本仓包必须是 ready", () => {
   writeFileSync(pcPath, JSON.stringify(sample("1:1")));
   writeFileSync(mobilePath, JSON.stringify(sample("2:2")));
   const outDir = join(dir, "out");
-  const pack = writeHandoffPack({
-    pcPath, mobilePath,
-    pcDoc: sample("1:1"), mobileDoc: sample("2:2"),
-    kind: "ready",
-    outDir,
-  });
+  const pack = packReady(dir, sample("1:1"), sample("2:2"));
   assert.equal(pack.manifest.ready, true);
   assert.equal(pack.manifest.kind, "ready");
   assert.equal(pack.manifest.schema, "handoff/v1");
@@ -162,6 +203,59 @@ test("handoff 必须走 auditLikeCli，禁止另写一套闸门", () => {
   assert.doesNotMatch(src, /auditDraftAssetCompleteness\(/);
 });
 
+test("handoff：成对 ready 缺 parentBox 则拒", () => {
+  const pc = sample("1:1", { status: "ready" });
+  delete pc.nodes.find((node) => node.role === "sec").parentBox;
+  const result = validateHandoffPair(pc, sample("2:2", { status: "ready" }));
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /缺 parentBox/);
+});
+
+test("handoff：成对 ready 附件缺 pageBox 则拒", () => {
+  const pc = sample("1:1", { status: "ready" });
+  const mobile = sample("2:2", { status: "ready" });
+  pc.attachments = {
+    modals: [{
+      id: "m1",
+      type: "FRAME",
+      name: "modal/视频弹窗",
+      nodes: [{
+        id: "modal-img",
+        type: "RECTANGLE",
+        name: "img/弹窗背景",
+        status: "determined",
+        role: "img",
+        behavior: "slice",
+        box: { x: 0, y: 0, w: 10, h: 10 },
+        parentBox: { x: 0, y: 0, w: 10, h: 10 },
+        rotation: 0,
+        sliceExport: { ...SLICE_EXPORT, file: "modal-img.png" },
+      }],
+    }],
+    componentSets: [],
+  };
+  const result = validateHandoffPair(pc, mobile);
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /缺 pageBox/);
+});
+
+test("handoff：成对 ready 缺 pageBox 则拒", () => {
+  const pc = sample("1:1", { status: "ready" });
+  delete pc.nodes.find((node) => node.role === "sec").pageBox;
+  const result = validateHandoffPair(pc, sample("2:2", { status: "ready" }));
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /缺 pageBox/);
+});
+
+test("handoff：成对 ready 缺切图契约则拒", () => {
+  const pc = sample("1:1", { status: "ready" });
+  const img = pc.nodes.find((node) => node.role === "img");
+  delete img.sliceExport;
+  const result = validateHandoffPair(pc, sample("2:2", { status: "ready" }));
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /切图必须按墨迹框 1 倍 png/);
+});
+
 test("handoff：成对 ready 不因附件外壳无 status 被 draft 形态拦下（issue #31）", () => {
   const pc = sample("1:1", { status: "ready" });
   const mobile = sample("2:2", { status: "ready" });
@@ -173,7 +267,14 @@ test("handoff：成对 ready 不因附件外壳无 status 被 draft 形态拦下
         name: "btn/多语言切换按钮",
         variants: [{ id: "v1", name: "Property 1=normal" }],
         nodes: [
-          { id: "setBtn", type: "COMPONENT_SET", name: "btn/多语言切换按钮", status: "determined", role: "btn" },
+          {
+            id: "setBtn", type: "COMPONENT_SET", name: "btn/多语言切换按钮",
+            status: "determined", role: "btn", behavior: "click",
+            box: { x: 0, y: 0, w: 40, h: 40 },
+            pageBox: { x: 0, y: 0, w: 40, h: 40 },
+            parentBox: { x: 0, y: 0, w: 40, h: 40 },
+            rotation: 0,
+          },
         ],
       },
     ],
@@ -187,6 +288,10 @@ test("handoff：成对 ready 不因附件外壳无 status 被 draft 形态拦下
     role: "img",
     behavior: "slice",
     box: { x: 0, y: 0, w: 200, h: 80 },
+    pageBox: { x: 0, y: 0, w: 200, h: 80 },
+    parentBox: { x: 0, y: 0, w: 200, h: 80 },
+    rotation: 0,
+    sliceExport: { ...SLICE_EXPORT, file: "img-bg.png" },
   });
   mobile.nodes.push({
     id: "txt-skip",
@@ -236,14 +341,39 @@ test("handoff：assets 按 determined img/bg/kv 的 node id 覆盖才绿（issue
       writeFileSync(join(assetsPc, `${String(node.id).replace(/[:;]/g, "-")}.png`), Buffer.alloc(64, 2));
     }
   }
-  const pack = writeHandoffPack({
-    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out"), assetsPc,
-  });
+  const pack = packReady(dir, pcDoc, mobileDoc);
   assert.equal(pack.manifest.assets.pc.ok, true);
-  assert.equal(pack.manifest.assets.mobile.ok, false);
+  assert.equal(pack.manifest.assets.mobile.ok, true);
+  assert.ok(existsSync(join(pack.outDir, "assets-pc")));
+  assert.ok(existsSync(join(pack.outDir, "assets-mobile")));
   const loaded = validateHandoffPack(pack.outDir);
-  assert.equal(loaded.ok, true);
+  assert.equal(loaded.ok, true, loaded.problems.join("\n"));
   assert.equal(loaded.kind, "ready");
+});
+
+test("handoff：ready 包缺切图或包内无 png 则拒", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-ready-assets-"));
+  const pcDoc = sample("1:1", { status: "ready" });
+  const mobileDoc = sample("2:2", { status: "ready" });
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  assert.throws(() => writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out"),
+  }), /ready 包必须带齐/);
+});
+
+test("handoff：改 pageBox 后 fingerprint 变，validateHandoffPack 拒", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-fingerprint-"));
+  const pack = packReady(dir, sample("1:1", { status: "ready" }), sample("2:2", { status: "ready" }));
+  const pcPath = join(pack.outDir, "inventory-pc.json");
+  const pcDoc = JSON.parse(readFileSync(pcPath, "utf8"));
+  pcDoc.nodes.find((node) => node.role === "sec").pageBox.x = 99;
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  const loaded = validateHandoffPack(pack.outDir);
+  assert.equal(loaded.ok, false);
+  assert.match(loaded.problems.join("\n"), /fingerprint 过期或被篡改/);
 });
 
 test("handoff：page- 整页缩略图不能冒充切图；实例长 id 可以盖住尾段 node id（issue #31）", () => {
@@ -269,10 +399,9 @@ test("handoff：page- 整页缩略图不能冒充切图；实例长 id 可以盖
       writeFileSync(join(assetsPc, `I491-6940-${String(node.id).replace(/[:;]/g, "-")}.png`), Buffer.alloc(64, 2));
     }
   }
-  const pack = writeHandoffPack({
-    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out-ok"), assetsPc,
-  });
+  const pack = packReady(dir, pcDoc, mobileDoc);
   assert.equal(pack.manifest.assets.pc.ok, true);
+  assert.equal(pack.manifest.assets.mobile.ok, true);
 });
 
 test("handoff：短文件名不能冒充覆盖更长的 node id（issue #31）", () => {
@@ -537,9 +666,7 @@ test("handoff：篡改 manifest fingerprint/schema/kind 则 validateHandoffPack 
   const mobileDoc = sample("2:2", { status: "ready" });
   writeFileSync(pcPath, JSON.stringify(pcDoc));
   writeFileSync(mobilePath, JSON.stringify(mobileDoc));
-  const pack = writeHandoffPack({
-    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out"),
-  });
+  const pack = packReady(dir, pcDoc, mobileDoc);
   const manifestPath = join(pack.outDir, "manifest.json");
   const original = JSON.parse(readFileSync(manifestPath, "utf8"));
   const expected = pack.manifest.fingerprint;
@@ -613,9 +740,7 @@ test("handoff：assets.ok=true 必须按 sliceIdsOf 列出能盖住切图的文�
   for (const id of required) {
     writeFileSync(join(assetsPc, `${String(id).replace(/[:;]/g, "-")}.png`), Buffer.alloc(64, 2));
   }
-  const pack = writeHandoffPack({
-    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out"), assetsPc,
-  });
+  const pack = packReady(dir, pcDoc, mobileDoc);
   const loaded = validateHandoffPack(pack.outDir);
   assert.equal(loaded.ok, true, loaded.problems.join("\n"));
   assert.equal(loaded.manifest.assets.pc.ok, true);
@@ -708,6 +833,9 @@ function withDeterminedTab(doc, id) {
     behavior: "none",
     via: "prefix",
     box: { x: 0, y: 900, w: 80, h: 32 },
+    pageBox: { x: 0, y: 900, w: 80, h: 32 },
+    parentBox: { x: 0, y: 900, w: 80, h: 32 },
+    rotation: 0,
   });
   return rebuildInventoryIndexes(doc);
 }
@@ -727,4 +855,82 @@ test("issue #38：参考稿有 determined tab/ 时 handoff 仍要求 tab/", () =
   );
   assert.equal(present.ok, true, present.problems.join("\n"));
   assert.equal(present.kind, "ready");
+});
+
+test("sameModules：PC/mobile 按前缀+名字一对一，对不上标单端", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  mobile.nodes.push({
+    id: "2:2-extra-scroll",
+    type: "FRAME",
+    name: "scroll/只在手机",
+    status: "determined",
+    role: "scroll",
+    label: "只在手机",
+    behavior: "scroll-x",
+    via: "prefix",
+    box: { x: 0, y: 900, w: 80, h: 32 },
+  });
+  const result = sameModulesOf(pc, mobile);
+  const pairedSec = result.paired.find((row) => row.pcId === "1:1-sec" && row.mobileId === "2:2-sec");
+  assert.ok(pairedSec, JSON.stringify(result.paired));
+  assert.equal(pairedSec.role, "sec");
+  assert.ok(result.unmatched.some((row) => row.end === "mobile-only" && row.id === "2:2-extra-scroll"));
+});
+
+test("sliceIdsOf：页上用到的组件集每个变体里的切图都要覆盖", () => {
+  const doc = sample("1:1");
+  doc.nodes.push({
+    id: "inst-on", type: "INSTANCE", name: "btn/状态", status: "determined", role: "btn",
+    componentId: "var-on", behavior: "click", via: "prefix",
+  });
+  doc.attachments.componentSets = [{
+    id: "set-1", name: "btn/状态",
+    variants: [
+      {
+        id: "var-on", name: "on",
+        nodes: [
+          { id: "var-on", type: "COMPONENT", name: "on", status: "determined", role: "btn" },
+          { id: "img-on", type: "RECTANGLE", name: "img/普通", status: "determined", role: "img" },
+        ],
+      },
+      {
+        id: "var-off", name: "off",
+        nodes: [
+          { id: "var-off", type: "COMPONENT", name: "off", status: "determined", role: "btn" },
+          { id: "img-off", type: "RECTANGLE", name: "img/关掉", status: "determined", role: "img" },
+        ],
+      },
+    ],
+  }];
+  doc.relations = [{
+    kind: "instance-uses-variant", status: "determined",
+    from: { id: "inst-on", scope: "page" },
+    to: { id: "var-on", componentSetId: "set-1" },
+  }];
+  const ids = sliceIdsOf(doc);
+  assert.ok(ids.includes("img-on"), ids.join(","));
+  assert.ok(ids.includes("img-off"), ids.join(","));
+});
+
+test("导切图脚本锁死墨迹框 1 倍 png，拒绝改 scale", () => {
+  const script = fileURLToPath(new URL("../scripts/export-handoff-slices.mjs", import.meta.url));
+  const src = readFileSync(script, "utf8");
+  assert.match(src, /SLICE_EXPORT/);
+  assert.match(src, /format=\$\{format\}/);
+  assert.match(src, /scale=\$\{scale\}/);
+  assert.doesNotMatch(src, /use_absolute_bounds/);
+  const dir = mkdtempSync(join(tmpdir(), "export-slices-"));
+  const inventoryPath = join(dir, "inventory.json");
+  writeFileSync(inventoryPath, JSON.stringify({
+    schema: "inventory/v2",
+    status: "ready",
+    fileKey: "TESTKEY",
+    nodes: [{ id: "1:2", status: "determined", role: "img" }],
+  }));
+  const rejected = spawnSync(process.execPath, [script, "--inventory", inventoryPath, "--out", join(dir, "out"), "--scale", "2"], {
+    encoding: "utf8",
+  });
+  assert.notEqual(rejected.status, 0);
+  assert.match(`${rejected.stderr}\n${rejected.stdout}`, /scale=1/);
 });

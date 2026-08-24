@@ -12,6 +12,8 @@ import {
   SKIP_REASONS,
   RELATION_STATUSES,
   VIA,
+  SLICE_EXPORT,
+  TEXT_REQUIRED,
   behaviorOf,
 } from "../../spec/inventory.mjs";
 import { parseName } from "./parse.mjs";
@@ -98,11 +100,27 @@ function renderBoxOf(node) {
   return { x: b.x, y: b.y, w: b.width, h: b.height };
 }
 
+function relativeBox(inner, origin) {
+  if (!inner || !origin) return null;
+  return {
+    x: inner.x - origin.x,
+    y: inner.y - origin.y,
+    w: inner.w,
+    h: inner.h,
+  };
+}
+
+function percentOf(part, whole) {
+  if (!Number.isFinite(part) || !Number.isFinite(whole) || whole === 0) return null;
+  return (part / whole) * 100;
+}
+
 const LAYOUT_FIELDS = [
   "constraints", "layoutMode", "itemSpacing", "layoutWrap",
   "paddingLeft", "paddingRight", "paddingTop", "paddingBottom",
   "layoutSizingHorizontal", "layoutSizingVertical", "layoutAlign", "layoutGrow",
   "counterAxisAlignItems", "primaryAxisAlignItems", "uniformScaleFactor",
+  "layoutPositioning", "minWidth", "maxWidth", "minHeight", "maxHeight",
 ];
 
 const PROTOTYPE_FIELDS = [
@@ -110,17 +128,31 @@ const PROTOTYPE_FIELDS = [
   "overlayPosition", "preserveScrollPosition", "overlayBackground",
 ];
 
+function lineHeightPercentOf(style) {
+  if (style.lineHeightUnit === "FONT_SIZE_%" && Number.isFinite(style.lineHeightPercentFontSize)) {
+    return style.lineHeightPercentFontSize;
+  }
+  if (style.lineHeightUnit === "FONT_SIZE_%" && Number.isFinite(style.lineHeightPercent)) {
+    return style.lineHeightPercent;
+  }
+  return percentOf(style.lineHeightPx, style.fontSize);
+}
+
 function textOf(node) {
   if (node.type !== "TEXT") return undefined;
   const style = node.style || {};
   const out = {};
   if (node.characters != null) out.characters = node.characters;
   if (Array.isArray(node.lineTypes)) out.lineTypes = node.lineTypes;
-  if (style.fontFamily != null) out.fontFamily = style.fontFamily;
-  if (style.fontSize != null) out.fontSize = style.fontSize;
-  if (style.fontWeight != null) out.fontWeight = style.fontWeight;
-  if (style.lineHeightPx != null) out.lineHeight = style.lineHeightPx;
+  out.fontFamily = style.fontFamily ?? null;
+  out.fontSize = style.fontSize ?? null;
+  out.fontWeight = style.fontWeight ?? null;
+  const lineHeightPercent = lineHeightPercentOf(style);
+  if (lineHeightPercent != null) out.lineHeightPercent = lineHeightPercent;
+  else if (style.lineHeightPx != null) out.lineHeight = style.lineHeightPx;
   if (style.letterSpacing != null) out.letterSpacing = style.letterSpacing;
+  if (style.paragraphSpacing != null) out.paragraphSpacing = style.paragraphSpacing;
+  else if (node.paragraphSpacing != null) out.paragraphSpacing = node.paragraphSpacing;
   if (style.textAlignHorizontal != null) out.align = style.textAlignHorizontal;
   if (style.textAlignVertical != null) out.vAlign = style.textAlignVertical;
   if (style.textAutoResize != null) out.autoResize = style.textAutoResize;
@@ -138,6 +170,60 @@ function textOf(node) {
     out.styleOverrideTable = overrideTable;
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+function instanceOverridesOf(node) {
+  if (node.type !== "INSTANCE") return undefined;
+  const out = {};
+  if (Array.isArray(node.overrides) && node.overrides.length) out.overrides = node.overrides;
+  if (node.componentProperties !== undefined) out.componentProperties = node.componentProperties;
+  if (node.exposedInstances !== undefined) out.exposedInstances = node.exposedInstances;
+  return Object.keys(out).length ? out : undefined;
+}
+
+function sliceFileName(nodeId) {
+  return `${String(nodeId).replace(/[:;]/g, "-")}.${SLICE_EXPORT.format}`;
+}
+
+function sliceExportOf(node, role) {
+  if (!isSlicePrefix(role)) return undefined;
+  return {
+    ...SLICE_EXPORT,
+    file: sliceFileName(node.id),
+  };
+}
+
+function sliceExportMatches(sliceExport) {
+  return sliceExport?.bounds === SLICE_EXPORT.bounds
+    && sliceExport?.scale === SLICE_EXPORT.scale
+    && sliceExport?.format === SLICE_EXPORT.format;
+}
+
+function isGeomBox(value) {
+  return value
+    && Number.isFinite(value.x)
+    && Number.isFinite(value.y)
+    && Number.isFinite(value.w)
+    && Number.isFinite(value.h);
+}
+
+function pageFieldProblems(node, source) {
+  const problems = [];
+  if (!isGeomBox(node.pageBox)) problems.push(`${node.id} 缺 pageBox`);
+  if (!isGeomBox(node.parentBox)) problems.push(`${node.id} 缺 parentBox`);
+  if (isSlicePrefix(node.role) && !sliceExportMatches(node.sliceExport)) {
+    problems.push(`${node.id} 切图必须按墨迹框 1 倍 png`);
+  }
+  if (node.role === "copy" && node.sliceExport) problems.push(`${node.id} 可改字不得带切图`);
+  if (isSlicePrefix(node.role) && node.behavior !== "slice") {
+    problems.push(`${node.id} 切图角色不得当排版字`);
+  }
+  if (node.role === "fix" && node.pin !== "viewport") problems.push(`${node.id} fix 必须钉视口`);
+  if (node.rotation == null) problems.push(`${node.id} 缺 rotation`);
+  if (source.fills?.length && (!Array.isArray(node.style?.fills) || node.style.fills.length !== source.fills.length)) {
+    problems.push(`${node.id} fills 必须全层`);
+  }
+  return problems;
 }
 
 function styleOf(node) {
@@ -219,10 +305,14 @@ export function rebuildInventoryIndexes(inv) {
   inv.counts = countStatuses([...pageNodes, ...extra]);
   const determined = pageNodes.filter((node) => node.status === "determined");
   inv.sections = determined.filter((node) => node.role === "sec").map((node) => ({
-    id: node.id, number: secNumber(node.label), label: node.label, box: node.box,
+    id: node.id, number: secNumber(node.label), label: node.label, box: node.box, pageBox: node.pageBox ?? null,
   })).sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || (a.box?.y ?? 0) - (b.box?.y ?? 0));
-  inv.overlays = determined.filter((node) => node.role === "fix").map((node) => ({ id: node.id, role: "fix", label: node.label }));
-  inv.backgrounds = determined.filter((node) => node.role === "kv" || node.role === "bg").map((node) => ({ id: node.id, role: node.role, label: node.label }));
+  inv.overlays = determined.filter((node) => node.role === "fix").map((node) => ({
+    id: node.id, role: "fix", label: node.label, pin: "viewport", pageBox: node.pageBox ?? node.viewportBox ?? null,
+  }));
+  inv.backgrounds = determined.filter((node) => node.role === "kv" || node.role === "bg").map((node) => ({
+    id: node.id, role: node.role, label: node.label, pageBox: node.pageBox ?? null,
+  }));
   inv.modules = determined.filter((node) => ["switch", "tab", "ind", "scroll", "mix", "dyn", "modal"].includes(node.role)).map((node) => ({ id: node.id, role: node.role, label: node.label }));
   return inv;
 }
@@ -292,8 +382,9 @@ function relationTargetId(relation) {
 }
 
 /** 用完全一致的字段编一棵作用域树；modal/组件定义不混入页面父子链。 */
-function serializeTree(root, scope, counts) {
+function serializeTree(root, scope, counts, pageBox = null) {
   const nodes = [];
+  const origin = pageBox || boxOf(root);
   const walk = (node, parent, orderKey, ctx) => {
     const parsed = parseName(node.name);
     const prefix = parsed.prefix;
@@ -326,16 +417,22 @@ function serializeTree(root, scope, counts) {
     }
 
     counts[status] += 1;
+    const box = boxOf(node);
+    const parentBox = parent ? boxOf(parent) : origin;
     const entry = {
       id: node.id,
       scope,
       type: node.type,
       name: node.name ?? "",
-      box: boxOf(node),
+      box,
       parentId: parent?.id ?? null,
       orderKey,
       status,
     };
+    const pageRel = relativeBox(box, origin);
+    if (pageRel) entry.pageBox = pageRel;
+    const parentRel = relativeBox(box, parentBox);
+    if (parentRel) entry.parentBox = parentRel;
     if (ctx.ancestors.length) {
       entry.ancestorIds = ctx.ancestors.map((a) => a.id);
       entry.ancestorNames = ctx.ancestors.map((a) => a.name ?? "");
@@ -343,7 +440,7 @@ function serializeTree(root, scope, counts) {
     }
     const rb = renderBoxOf(node);
     if (rb) entry.renderBox = rb;
-    if (node.rotation !== undefined) entry.rotation = node.rotation;
+    entry.rotation = node.rotation ?? 0;
     if (node.clipsContent === true) entry.clipsContent = true;
     if (node.isMask !== undefined) entry.isMask = node.isMask;
     if (node.maskType !== undefined) entry.maskType = node.maskType;
@@ -354,6 +451,8 @@ function serializeTree(root, scope, counts) {
     if (Array.isArray(node.exportSettings) && node.exportSettings.length) entry.exportSettings = node.exportSettings;
     if (node.componentId !== undefined) entry.componentId = node.componentId;
     if (node.componentProperties !== undefined) entry.componentProperties = node.componentProperties;
+    const instanceOverrides = instanceOverridesOf(node);
+    if (instanceOverrides) entry.instanceOverrides = instanceOverrides;
     const prototype = prototypeOf(node);
     if (prototype) entry.prototype = prototype;
     const style = styleOf(node);
@@ -373,6 +472,12 @@ function serializeTree(root, scope, counts) {
       entry.params = params;
       entry.behavior = behaviorOf(role, params);
       entry.via = via;
+      const sliceExport = sliceExportOf(node, role);
+      if (sliceExport) entry.sliceExport = sliceExport;
+      if (role === "fix") {
+        entry.pin = "viewport";
+        if (pageRel) entry.viewportBox = pageRel;
+      }
     } else if (status === "unknown") {
       entry.role = null;
       entry.behavior = "none";
@@ -492,11 +597,15 @@ export function buildInventory(document, {
   const { byId, parents } = indexDocument(document);
   const shelf = parents.get(page.id) ?? null;
   const counts = { determined: 0, unknown: 0, skipped: 0 };
-  const pageNodes = serializeTree(page, "page", counts);
+  const pageBox = boxOf(page);
+  const pageNodes = serializeTree(page, "page", counts, pageBox);
   const pageCounts = { ...counts };
 
   const modalRoots = modalsForPage(shelf, page);
-  const modals = modalRoots.map((modal) => ({ ...rootRecord(modal), nodes: serializeTree(modal, `modal:${modal.id}`, counts) }));
+  const modals = modalRoots.map((modal) => ({
+    ...rootRecord(modal),
+    nodes: serializeTree(modal, `modal:${modal.id}`, counts, boxOf(modal)),
+  }));
 
   // 先从页面和 modal 收集引用，再递归收组件内部引用，直到定义闭合。
   const componentOwners = new Map();
@@ -520,7 +629,7 @@ export function buildInventory(document, {
     if (!owner || seenDefinitions.has(owner.id)) continue;
     seenDefinitions.add(owner.id);
     const scope = owner.type === "COMPONENT_SET" ? `component-set:${owner.id}` : `component:${owner.id}`;
-    const nodes = serializeTree(owner, scope, counts);
+    const nodes = serializeTree(owner, scope, counts, boxOf(owner));
     for (const node of nodes) {
       if (node.componentId && !referencedComponentIds.has(node.componentId)) {
         referencedComponentIds.add(node.componentId);
@@ -577,6 +686,7 @@ export function buildInventory(document, {
     scope: { pageId: page.id, shelfId: shelf?.id ?? null, shelfName: shelf?.name ?? null, snapshotRootId: document.id },
     page: { id: page.id, name: page.name ?? "", box: boxOf(page), resolvedFrom: resolved.reason },
     snapshot: { lastModified, hash: snapshotHash },
+    sliceExport: { ...SLICE_EXPORT },
     status,
     counts,
     pageCounts,
@@ -672,6 +782,12 @@ export function validateInventory(inv, document) {
       if (node.role === "copy" && source.type !== "TEXT") problems.push(`${node.id} copy 只能是 TEXT`);
       if (node.behavior !== behaviorOf(node.role, node.params || {})) problems.push(`${node.id} behavior 与 role/params 推不出`);
       if (!VIA.includes(node.via)) problems.push(`${node.id} via 非法: ${node.via}`);
+      problems.push(...pageFieldProblems(node, source));
+    }
+    if (source.type === "TEXT" && node.status !== "skipped" && node.role === "copy") {
+      for (const key of TEXT_REQUIRED) {
+        if (node.text?.[key] == null) problems.push(`${node.id} 文字缺 ${key}`);
+      }
     }
     if (node.status === "unknown" && (node.role != null || node.behavior !== "none")) problems.push(`${node.id} unknown 不得带 role 或 behavior`);
     if (node.status === "skipped" && !SKIP_REASONS.includes(node.why)) problems.push(`${node.id} skipped.why 非法: ${node.why}`);

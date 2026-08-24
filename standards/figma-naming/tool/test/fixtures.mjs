@@ -11,7 +11,7 @@ const F = (name, children = [], props = {}) => ({ id: id(), name, type: "FRAME",
 const G = (name, children = [], props = {}) => ({ id: id(), name, type: "GROUP", absoluteBoundingBox: BOX(), children, ...props });
 const T = (name, characters = "文字", props = {}) => ({
   id: id(), name, type: "TEXT", characters, absoluteBoundingBox: BOX(),
-  style: { textAutoResize: "WIDTH_AND_HEIGHT" }, ...props,
+  style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400, textAutoResize: "WIDTH_AND_HEIGHT" }, ...props,
 });
 const R = (name, props = {}) => ({ id: id(), name, type: "RECTANGLE", absoluteBoundingBox: BOX(), ...props });
 const INST = (name, children = [], props = {}) => ({

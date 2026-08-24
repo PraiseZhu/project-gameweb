@@ -10,6 +10,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SLICE_EXPORT } from "../../spec/inventory.mjs";
 import { loadEnv, token } from "../src/figma.mjs";
 import { sliceIdsOf } from "../src/handoff.mjs";
 import { unnamedRequiresDraft } from "../src/inventory.mjs";
@@ -66,7 +67,13 @@ if (!ids.length) {
 }
 
 const fileKey = opt("--file-key") || inv.fileKey;
-const scale = Number(opt("--scale", "1"));
+const scaleArg = opt("--scale");
+if (scaleArg != null && Number(scaleArg) !== SLICE_EXPORT.scale) {
+  console.error(`切图必须按清单契约 scale=${SLICE_EXPORT.scale}，不能 --scale ${scaleArg}`);
+  process.exit(1);
+}
+const scale = SLICE_EXPORT.scale;
+const format = SLICE_EXPORT.format;
 const API = "https://api.figma.com";
 
 async function fetchWithRetry(url, opts, tries = 4) {
@@ -86,7 +93,7 @@ async function fetchWithRetry(url, opts, tries = 4) {
 async function getImages(idList) {
   const idsParam = idList.map((id) => encodeURIComponent(id)).join(",");
   for (let i = 1; ; i += 1) {
-    const res = await fetchWithRetry(`${API}/v1/images/${fileKey}?ids=${idsParam}&format=png&scale=${scale}`, {
+    const res = await fetchWithRetry(`${API}/v1/images/${fileKey}?ids=${idsParam}&format=${format}&scale=${scale}`, {
       headers: { "X-Figma-Token": token() },
     });
     if (res.status === 403) throw new Error("Figma 403：token 过期或对该文件无权限");

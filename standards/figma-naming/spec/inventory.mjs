@@ -35,6 +35,21 @@ export const ROLE_BEHAVIOR = {
 
 export const ALLOWED_PARAMS = PARAM_NAMES;
 
+/** 切图导出契约：做页只按清单 id 抓对应 png，不再自选导法。 */
+export const SLICE_EXPORT = Object.freeze({
+  bounds: "render",
+  scale: 1,
+  format: "png",
+});
+
+/** 跨端同一模块：只认 determined 前缀 + 剥前缀后的名字，不认图层 id。 */
+export const CROSS_END_MODULE_ROLES = Object.freeze([
+  "sec", "fix", "bg", "kv", "scroll", "switch", "tab", "ind", "mix", "dyn", "modal",
+]);
+
+/** TEXT 必带：字体类型、粗细、字号。判断过程 / 截图不进清单。 */
+export const TEXT_REQUIRED = Object.freeze(["fontFamily", "fontWeight", "fontSize"]);
+
 export function behaviorOf(role, params = {}) {
   if (!role) return "none";
   if (role === "scroll") {
