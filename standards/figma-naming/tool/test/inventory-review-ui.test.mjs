@@ -103,6 +103,140 @@ test("inventory:review 只许读仓内 HTML，禁止回退 _tmp", () => {
   assert.equal(/invNameRe/.test(src), false, "列表不得再用会吃进 reviewed.json 的宽正则");
 });
 
+test("serve-inventory-review：本仓列表隐藏 unnamed，feedback/save 拒 draft 与 unnamed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "review-named-only-"));
+  const named = {
+    schema: "inventory/v2",
+    status: "ready",
+    requestedNodeId: "p",
+    page: { id: "p", name: "pc", box: { x: 0, y: 0, w: 1440, h: 100 } },
+    nodes: [{ id: "s1", type: "FRAME", name: "sec/1", status: "determined", role: "sec" }],
+  };
+  const unnamed = { ...named, status: "draft" };
+  writeFileSync(join(dir, "inventory-392-24190.json"), JSON.stringify(named));
+  writeFileSync(join(dir, "inventory-unnamed-1-2.json"), JSON.stringify(unnamed));
+  const server = createInventoryReviewServer({ dataRoot: dir });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  const origin = `http://127.0.0.1:${address.port}`;
+  try {
+    const listed = await fetch(`${origin}/api/inventories`);
+    assert.equal(listed.status, 200);
+    const payload = await listed.json();
+    assert.deepEqual(payload.items.map((item) => item.file), ["inventory-392-24190.json"]);
+
+    const unnamedFeedback = await fetch(`${origin}/api/feedback`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ file: "inventory-unnamed-1-2.json", record: { nodeId: "s1" } }),
+    });
+    assert.equal(unnamedFeedback.status, 409);
+    assert.match(JSON.stringify(await unnamedFeedback.json()), /project-unnamed-inventory/);
+
+    const draftSave = await fetch(`${origin}/api/save`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ file: "inventory-392-24190.json", inventory: unnamed }),
+    });
+    assert.equal(draftSave.status, 409);
+    assert.match(JSON.stringify(await draftSave.json()), /project-unnamed-inventory/);
+
+    const unnamedReadySave = await fetch(`${origin}/api/save`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ file: "inventory-unnamed-1-2.json", inventory: named }),
+    });
+    assert.equal(unnamedReadySave.status, 409);
+    assert.match(JSON.stringify(await unnamedReadySave.json()), /project-unnamed-inventory/);
+  } finally {
+    await new Promise((done) => server.close(done));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("serve-inventory-review：磁盘 draft 不能靠请求体冒充 ready 写 feedback/save", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "review-disk-draft-"));
+  const diskDraft = {
+    schema: "inventory/v2",
+    status: "draft",
+    requestedNodeId: "p",
+    page: { id: "p", name: "pc", box: { x: 0, y: 0, w: 1440, h: 100 } },
+    nodes: [{ id: "s1", type: "FRAME", name: "sec/1", status: "determined", role: "sec" }],
+  };
+  const forgedReady = { ...diskDraft, status: "ready" };
+  writeFileSync(join(dir, "inventory-demo.json"), JSON.stringify(diskDraft));
+  const server = createInventoryReviewServer({ dataRoot: dir });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const listed = await fetch(`${origin}/api/inventories`);
+    assert.equal(listed.status, 200);
+    assert.deepEqual((await listed.json()).items.map((item) => item.file), []);
+
+    const feedback = await fetch(`${origin}/api/feedback`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ file: "inventory-demo.json", record: { nodeId: "s1" } }),
+    });
+    assert.equal(feedback.status, 409);
+    assert.match(JSON.stringify(await feedback.json()), /project-unnamed-inventory/);
+    assert.equal(existsSync(join(dir, "inventory-demo-feedback.json")), false);
+
+    const save = await fetch(`${origin}/api/save`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ file: "inventory-demo.json", inventory: forgedReady }),
+    });
+    assert.equal(save.status, 409);
+    assert.match(JSON.stringify(await save.json()), /project-unnamed-inventory/);
+    assert.equal(existsSync(join(dir, "inventory-demo.reviewed.json")), false);
+  } finally {
+    await new Promise((done) => server.close(done));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("serve-inventory-review / build-review-targets：缺 status 不当 ready", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "review-missing-status-"));
+  const missing = {
+    schema: "inventory/v2",
+    requestedNodeId: "p",
+    page: { id: "p", name: "pc", box: { x: 0, y: 0, w: 1440, h: 100 } },
+    nodes: [{ id: "s1", type: "FRAME", name: "sec/1", status: "determined", role: "sec" }],
+  };
+  writeFileSync(join(dir, "inventory-demo.json"), JSON.stringify(missing));
+  const server = createInventoryReviewServer({ dataRoot: dir });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const listed = await fetch(`${origin}/api/inventories`);
+    assert.equal(listed.status, 200);
+    assert.deepEqual((await listed.json()).items.map((item) => item.file), []);
+    const feedback = await fetch(`${origin}/api/feedback`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ file: "inventory-demo.json", record: { nodeId: "s1" } }),
+    });
+    assert.equal(feedback.status, 409);
+    const save = await fetch(`${origin}/api/save`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ file: "inventory-demo.json", inventory: { ...missing, status: "ready" } }),
+    });
+    assert.equal(save.status, 409);
+    assert.throws(
+      () => writeReviewTargets({ dir, inventoryPaths: [join(dir, "inventory-demo.json")] }),
+      /project-unnamed-inventory/,
+    );
+  } finally {
+    await new Promise((done) => server.close(done));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("serve-inventory-review：缺 review-targets.json 返回空 pages，不再 404", async () => {
   const dir = mkdtempSync(join(tmpdir(), "review-targets-serve-"));
   const server = createInventoryReviewServer({ dataRoot: dir });
@@ -134,7 +268,7 @@ test("build-review-targets：inventory + feedback last-write 生成正确待核�
   const feedback = join(dir, "inventory-demo-feedback.json");
   writeFileSync(inventory, JSON.stringify({
     schema: "inventory/v2",
-    status: "draft",
+    status: "ready",
     requestedNodeId: "p",
     page: { id: "p", box: { x: 0, y: 0, w: 100, h: 100 } },
     nodes: [
@@ -165,6 +299,39 @@ test("build-review-targets：inventory + feedback last-write 生成正确待核�
     assert.doesNotMatch(source, /491:/);
     assert.doesNotMatch(source, /_tmp/);
     assert.match(readFileSync(resolve(TOOL, "package.json"), "utf8"), /inventory:review-targets/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("build-review-targets：draft / unnamed 文件名必须失败并指向独立仓", () => {
+  const dir = mkdtempSync(join(tmpdir(), "review-targets-unnamed-"));
+  try {
+    const unnamed = join(dir, "inventory-unnamed-1-2.json");
+    writeFileSync(unnamed, JSON.stringify({
+      schema: "inventory/v2",
+      status: "ready",
+      requestedNodeId: "p",
+      page: { id: "p", box: { x: 0, y: 0, w: 100, h: 100 } },
+      nodes: [{ id: "a", type: "FRAME", name: "Frame 1", status: "unknown" }],
+    }));
+    assert.throws(
+      () => writeReviewTargets({ dir, inventoryPaths: [unnamed] }),
+      /project-unnamed-inventory/,
+    );
+
+    const draft = join(dir, "inventory-demo.json");
+    writeFileSync(draft, JSON.stringify({
+      schema: "inventory/v2",
+      status: "draft",
+      requestedNodeId: "p",
+      page: { id: "p", box: { x: 0, y: 0, w: 100, h: 100 } },
+      nodes: [{ id: "a", type: "FRAME", name: "Frame 1", status: "unknown" }],
+    }));
+    assert.throws(
+      () => writeReviewTargets({ dir, inventoryPaths: [draft] }),
+      /project-unnamed-inventory/,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

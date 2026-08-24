@@ -1,8 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyReviewFeedback } from "../src/feedback-apply.mjs";
@@ -155,88 +153,18 @@ test("completeness：实例或 I… 子件没跟随则红", () => {
   assert.match(result.problems.join("\n"), /实例必须跟组件集 img\//);
 });
 
-test("CLI：apply-review-feedback 写盘后子件已跟随", () => {
-  const dir = mkdtempSync(join(tmpdir(), "figma-follow-"));
-  const inv = join(dir, "inventory.json");
-  const fb = join(dir, "feedback.jsonl");
-  writeFileSync(inv, `${JSON.stringify({
-    schema: "inventory/v2",
-    status: "draft",
-    counts: {},
-    nodes: [
-      { id: "m1", type: "RECTANGLE", name: "卡牌", status: "unknown" },
-      { id: "I1;m1", type: "RECTANGLE", name: "卡牌", status: "unknown" },
-    ],
-  }, null, 2)}\n`);
-  writeFileSync(fb, `${JSON.stringify({ nodeId: "m1", toStatus: "determined", toRole: "img" })}\n`);
-  execFileSync(process.execPath, [join(ROOT, "scripts/apply-review-feedback.mjs"), inv, fb], { cwd: ROOT });
-  const doc = JSON.parse(readFileSync(inv, "utf8"));
-  assert.equal(doc.nodes[0].name, "img/卡牌");
-  assert.equal(doc.nodes[1].name, "img/卡牌");
-});
-
-test("CLI：有字 logo 和兑换码背景保持 img/，不改 mix/", () => {
-  const dir = mkdtempSync(join(tmpdir(), "figma-text-img-"));
-  const inv = join(dir, "inventory.json");
-  writeFileSync(inv, `${JSON.stringify({
-    schema: "inventory/v2",
-    status: "draft",
-    counts: {},
-    nodes: [
-      { id: "logo", type: "FRAME", name: "img/logo", status: "determined", role: "img" },
-      { id: "logo-txt", type: "TEXT", name: "品牌", status: "determined", role: "copy", parentId: "logo" },
-      { id: "code", type: "FRAME", name: "img/兑换码背景", status: "determined", role: "img" },
-      { id: "code-txt", type: "TEXT", name: "ABCD", status: "determined", role: "copy", parentId: "code" },
-      { id: "reward", type: "FRAME", name: "img/奖励", status: "determined", role: "img" },
-      { id: "reward-txt", type: "TEXT", name: "积分", status: "determined", role: "copy", parentId: "reward" },
-    ],
-  }, null, 2)}\n`);
-  execFileSync(process.execPath, [join(ROOT, "scripts/apply-review-feedback.mjs"), inv], { cwd: ROOT });
-  const doc = JSON.parse(readFileSync(inv, "utf8"));
-  const byId = Object.fromEntries(doc.nodes.map((node) => [node.id, node]));
-  assert.equal(byId.logo.name, "img/logo");
-  assert.equal(byId.logo.role, "img");
-  assert.equal(byId.code.name, "img/兑换码背景");
-  assert.equal(byId.code.role, "img");
-  assert.equal(byId.reward.name, "奖励");
-  assert.notEqual(byId.reward.role, "img");
-});
-
-test("CLI：--peer 用对端自己的树判断有字容器，不借用主清单 id", () => {
-  const dir = mkdtempSync(join(tmpdir(), "figma-peer-text-"));
-  const inv = join(dir, "pc.json");
-  const peer = join(dir, "mobile.json");
-  writeFileSync(inv, `${JSON.stringify({
-    schema: "inventory/v2",
-    status: "draft",
-    counts: {},
-    nodes: [
-      { id: "pc-logo", type: "FRAME", name: "img/logo", status: "determined", role: "img" },
-      { id: "pc-logo-txt", type: "TEXT", name: "品牌", status: "determined", role: "copy", parentId: "pc-logo" },
-    ],
-  }, null, 2)}\n`);
-  writeFileSync(peer, `${JSON.stringify({
-    schema: "inventory/v2",
-    status: "draft",
-    counts: {},
-    nodes: [
-      { id: "m-reward", type: "FRAME", name: "img/奖励", status: "determined", role: "img" },
-      { id: "m-reward-txt", type: "TEXT", name: "积分", status: "determined", role: "copy", parentId: "m-reward" },
-      { id: "m-code", type: "FRAME", name: "img/兑换码背景", status: "determined", role: "img" },
-      { id: "m-code-txt", type: "TEXT", name: "ABCD", status: "determined", role: "copy", parentId: "m-code" },
-    ],
-  }, null, 2)}\n`);
-  execFileSync(process.execPath, [join(ROOT, "scripts/apply-review-feedback.mjs"), inv, "--peer", peer], { cwd: ROOT });
-  const pc = JSON.parse(readFileSync(inv, "utf8"));
-  const mobile = JSON.parse(readFileSync(peer, "utf8"));
-  const pcById = Object.fromEntries(pc.nodes.map((node) => [node.id, node]));
-  const mobileById = Object.fromEntries(mobile.nodes.map((node) => [node.id, node]));
-  assert.equal(pcById["pc-logo"].name, "img/logo");
-  assert.equal(pcById["pc-logo"].role, "img");
-  assert.equal(mobileById["m-code"].name, "img/兑换码背景");
-  assert.equal(mobileById["m-code"].role, "img");
-  assert.equal(mobileById["m-reward"].name, "奖励");
-  assert.notEqual(mobileById["m-reward"].role, "img");
+test("本仓 apply-review-feedback / apply-gold-morphology CLI 失败并指向独立仓", () => {
+  for (const script of [
+    "scripts/apply-review-feedback.mjs",
+    "scripts/apply-gold-morphology.mjs",
+  ]) {
+    const run = spawnSync(process.execPath, [join(ROOT, script), "inventory.json"], {
+      encoding: "utf8",
+      cwd: ROOT,
+    });
+    assert.notEqual(run.status, 0, script);
+    assert.match(`${run.stderr}\n${run.stdout}`, /project-unnamed-inventory/, script);
+  }
 });
 
 for (const name of ["卡牌", "Icon_SSR 2", "BG"]) {

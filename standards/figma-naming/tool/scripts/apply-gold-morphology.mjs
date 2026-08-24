@@ -1,43 +1,9 @@
 #!/usr/bin/env node
 /**
- * 把已沉淀形态里「机器能定」的前缀写回 draft：
- * 任意组件集实例跟随母版；I…;母版Id 子件跟随；无 img 祖先的切图补 img/。
- * 传入 PC+mobile 两份时，两端同类（type+剥前缀名）互相同步。
- * 不问人。写完再跑 check-draft-asset-completeness。
- *
- * 用法：node scripts/apply-gold-morphology.mjs <inventory.json> [...]
+ * draft 形态写回已迁到 projects/project-unnamed-inventory。
+ * 本仓再跑必须失败，避免假装未规范写回还在这里。
  */
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { finalizeDraftWriteback } from "../src/gold-morphology.mjs";
-import { renderHumanSummary } from "../src/inventory.mjs";
-import { writeFilesAtomically } from "../src/atomic-writeback.mjs";
+import { UNNAMED_REDIRECT } from "../src/inventory.mjs";
 
-async function main() {
-  const files = process.argv.slice(2);
-  if (!files.length) {
-    console.error("用法：node scripts/apply-gold-morphology.mjs <inventory.json> [...]");
-    process.exit(1);
-  }
-  const loaded = files.map((file) => {
-    const abs = path.resolve(file);
-    return { abs, doc: JSON.parse(fs.readFileSync(abs, "utf8")) };
-  });
-  const { applied, counts } = finalizeDraftWriteback(loaded.map((item) => item.doc));
-  const writes = [];
-  const results = loaded.map((item, index) => {
-    writes.push([item.abs, `${JSON.stringify(item.doc, null, 2)}\n`]);
-    writes.push([item.abs.replace(/\.json$/, ".txt"), renderHumanSummary(item.doc)]);
-    return {
-      file: item.abs,
-      applied: applied[index].length,
-      ids: applied[index].map((row) => row.id),
-      counts: counts[index],
-    };
-  });
-  writeFilesAtomically(writes);
-  console.log(JSON.stringify({ ok: true, results }, null, 2));
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+console.error(UNNAMED_REDIRECT);
+process.exit(1);

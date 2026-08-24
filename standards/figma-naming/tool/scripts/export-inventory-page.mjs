@@ -20,6 +20,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from 
 import { resolve, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnv, token } from "../src/figma.mjs";
+import { unnamedRequiresDraft } from "../src/inventory.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 loadEnv(ROOT);
@@ -47,8 +48,13 @@ if (!existsSync(inventoryPath)) {
 }
 
 const inv = JSON.parse(readFileSync(inventoryPath, "utf8"));
-if (inv.schema !== "inventory/v2" || !["draft", "ready", "certified"].includes(inv.status) || !inv.page?.box || !Array.isArray(inv.sections)) {
-  console.error(`不是 inventory/v2 清单（draft/ready 均可）：${inventoryPath}`);
+const unnamedProblem = unnamedRequiresDraft({ status: inv.status, name: basename(inventoryPath) });
+if (unnamedProblem) {
+  console.error(unnamedProblem);
+  process.exit(1);
+}
+if (inv.schema !== "inventory/v2" || inv.status !== "ready" || !inv.page?.box || !Array.isArray(inv.sections)) {
+  console.error(`不是 inventory/v2 ready 清单：${inventoryPath}`);
   process.exit(1);
 }
 

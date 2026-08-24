@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isSourceInventoryFile } from "../src/review-save.mjs";
+import { unnamedRequiresDraft } from "../src/inventory.mjs";
 
 function values(name) {
   const argv = process.argv.slice(2);
@@ -120,7 +121,10 @@ export function writeReviewTargets({ dir, inventoryPaths = [], feedbackPaths = [
   mkdirSync(outDir, { recursive: true });
   const inventories = inventoryPaths.length
     ? inventoryPaths.map((path) => resolved(outDir, path))
-    : readdirSync(outDir).filter(isSourceInventoryFile).sort().map((name) => resolve(outDir, name));
+    : readdirSync(outDir)
+      .filter((name) => isSourceInventoryFile(name) && !unnamedRequiresDraft({ status: "ready", name }))
+      .sort()
+      .map((name) => resolve(outDir, name));
   if (!inventories.length) throw new Error("没有 inventory/v2 输入；请传 --inventory 或把源清单放进 --dir");
   if (feedbackPaths.length > inventories.length) throw new Error("--feedback 数量不能多于 --inventory");
   const entries = inventories.map((inventoryPath, index) => {
@@ -128,6 +132,8 @@ export function writeReviewTargets({ dir, inventoryPaths = [], feedbackPaths = [
     if (inventory?.schema !== "inventory/v2" || !Array.isArray(inventory.nodes)) {
       throw new Error(`${inventoryPath} 不是 inventory/v2`);
     }
+    const unnamedProblem = unnamedRequiresDraft({ status: inventory.status, name: basename(inventoryPath) });
+    if (unnamedProblem) throw new Error(unnamedProblem);
     const explicitFeedback = feedbackPaths[index];
     const feedbackPath = explicitFeedback
       ? resolved(outDir, explicitFeedback)

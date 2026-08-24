@@ -10,7 +10,6 @@ import { INVENTORY_SCHEMA, INVENTORY_STATUSES, INVENTORY_ROLES } from "../../spe
 import { auditLikeCli } from "../scripts/check-draft-asset-completeness.mjs";
 
 export const HANDOFF_SCHEMA = "handoff/v1";
-export const KINDS = ["ready"];
 const UNNAMED_REPO = "projects/project-unnamed-inventory";
 const GREEN_DRAFT_REDIRECT =
   `本仓只打 ready 交接包。green-draft / 判断包写回请到 ${UNNAMED_REPO}`;
@@ -25,19 +24,11 @@ export function parseHandoffArgs(argv) {
     pc: optArg(argv, "--pc"),
     mobile: optArg(argv, "--mobile"),
     out: optArg(argv, "--out"),
-    confirm: optArg(argv, "--confirm"),
     assetsPc: optArg(argv, "--assets-pc"),
     assetsMobile: optArg(argv, "--assets-mobile"),
     reference: optArg(argv, "--reference"),
-    judgePackPc: optArg(argv, "--judge-pack-pc"),
-    judgePackMobile: optArg(argv, "--judge-pack-mobile"),
     allowGreenDraft: argv.includes("--allow-green-draft"),
   };
-}
-
-function rejectGreenDraft(allowGreenDraft) {
-  if (allowGreenDraft) return [GREEN_DRAFT_REDIRECT];
-  return [];
 }
 
 export function loadInventoryFile(filePath) {
@@ -361,8 +352,6 @@ export function validateHandoffPack(dirPath) {
 export function validateHandoffPair(pcDoc, mobileDoc, {
   allowGreenDraft = false,
   referenceDoc = null,
-  judgePackPc = null,
-  judgePackMobile = null,
 } = {}) {
   const problems = [];
   for (const [label, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
@@ -389,11 +378,8 @@ export function validateHandoffPair(pcDoc, mobileDoc, {
   if (!pcGate.ok) problems.push(...pcGate.problems.map((item) => `pc completeness: ${item}`));
   if (!mobileGate.ok) problems.push(...mobileGate.problems.map((item) => `mobile completeness: ${item}`));
 
-  problems.push(...rejectGreenDraft(allowGreenDraft));
   const bothDraft = statuses.every((status) => status === "draft");
-  if (bothDraft) {
-    problems.push(GREEN_DRAFT_REDIRECT);
-  }
+  if (allowGreenDraft || bothDraft) problems.push(GREEN_DRAFT_REDIRECT);
 
   let kind = null;
   if (bothReady && !allowGreenDraft) kind = "ready";
@@ -455,7 +441,6 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
 
 export function writeHandoffPack({
   pcPath, mobilePath, pcDoc, mobileDoc, kind, outDir, assetsPc, assetsMobile, referenceDoc = null,
-  judgePackPc = null, judgePackMobile = null,
 }) {
   if (kind === "green-draft") {
     throw new Error(GREEN_DRAFT_REDIRECT);
@@ -463,8 +448,6 @@ export function writeHandoffPack({
   const gate = validateHandoffPair(pcDoc, mobileDoc, {
     allowGreenDraft: false,
     referenceDoc,
-    judgePackPc,
-    judgePackMobile,
   });
   if (!gate.ok) {
     throw new Error(gate.problems.join("\n"));
@@ -513,30 +496,6 @@ unknown 不赋交互。问题带 fingerprint \`${manifest.fingerprint}\` 开 iss
 `;
 }
 
-export function promoteToReady(doc) {
-  const next = structuredClone(doc);
-  next.status = "ready";
-  return next;
-}
-
-export function writePromotedPair({ pcPath, mobilePath, pcDoc, mobileDoc, outDir, confirm }) {
-  if (!confirm || String(confirm).trim().length < 4) {
-    throw new Error("promote 必须 --confirm <说明>，且至少 4 个字");
-  }
-  mkdirSync(outDir, { recursive: true });
-  const pcNext = promoteToReady(pcDoc);
-  const mobileNext = promoteToReady(mobileDoc);
-  const pcOut = join(outDir, "inventory-pc.json");
-  const mobileOut = join(outDir, "inventory-mobile.json");
-  writeFileSync(pcOut, `${JSON.stringify(pcNext)}\n`);
-  writeFileSync(mobileOut, `${JSON.stringify(mobileNext)}\n`);
-  const receipt = {
-    confirmedAt: new Date().toISOString(),
-    confirm: String(confirm).trim(),
-    pc: pcDoc.requestedNodeId,
-    mobile: mobileDoc.requestedNodeId,
-    fingerprintBefore: fingerprintInventories(pcDoc, mobileDoc),
-  };
-  writeFileSync(join(outDir, "confirm.json"), `${JSON.stringify(receipt, null, 2)}\n`);
-  return { pcOut, mobileOut, receipt, pcDoc: pcNext, mobileDoc: mobileNext };
+export function writePromotedPair() {
+  throw new Error(GREEN_DRAFT_REDIRECT);
 }

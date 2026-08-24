@@ -46,8 +46,6 @@ export function runHandoffPack(argv = process.argv.slice(2)) {
     assetsPc: args.assetsPc,
     assetsMobile: args.assetsMobile,
     referenceDoc,
-    judgePackPc: args.judgePackPc,
-    judgePackMobile: args.judgePackMobile,
   });
   console.log(JSON.stringify({
     ok: true,

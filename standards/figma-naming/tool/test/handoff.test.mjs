@@ -103,21 +103,19 @@ test("handoff：pack 写出 manifest 且本仓包必须是 ready", () => {
   assert.equal(consume.unknown.length, 0);
 });
 
-test("handoff：promote 必须 confirm，写出 ready 包", () => {
-  const dir = mkdtempSync(join(tmpdir(), "promote-"));
+test("handoff：promote 在本仓直接拒并指向未规范仓", () => {
   assert.throws(() => writePromotedPair({
-    pcPath: join(dir, "a"), mobilePath: join(dir, "b"),
-    pcDoc: sample("1:1"), mobileDoc: sample("2:2"),
-    outDir: join(dir, "out"), confirm: "",
-  }), /confirm/);
-  const promoted = writePromotedPair({
-    pcPath: join(dir, "a"), mobilePath: join(dir, "b"),
-    pcDoc: sample("1:1"), mobileDoc: sample("2:2"),
-    outDir: join(dir, "out"), confirm: "判断已完成",
-  });
-  assert.equal(promoted.pcDoc.status, "ready");
-  assert.equal(JSON.parse(readFileSync(promoted.pcOut, "utf8")).status, "ready");
-  assert.ok(existsSync(join(dir, "out", "confirm.json")));
+    pcPath: "a", mobilePath: "b",
+    pcDoc: sample("1:1", { status: "draft" }),
+    mobileDoc: sample("2:2", { status: "draft" }),
+    outDir: "/tmp", confirm: "判断已完成",
+  }), /project-unnamed-inventory/);
+  const result = spawnSync(process.execPath, [
+    fileURLToPath(new URL("../scripts/handoff-promote.mjs", import.meta.url)),
+    "--pc", "a", "--mobile", "b", "--confirm", "判断已完成",
+  ], { encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stderr}\n${result.stdout}`, /project-unnamed-inventory/);
 });
 
 test("handoff：writeHandoffPack 拒绝用 draft 冒充 ready", () => {

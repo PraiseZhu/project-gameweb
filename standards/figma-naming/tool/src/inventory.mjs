@@ -17,9 +17,8 @@ import {
 import { parseName } from "./parse.mjs";
 import { namePatternOf } from "./lint.mjs";
 
-const UNNAMED_INVENTORY_NAME = /^inventory-unnamed-.+/;
 const UNNAMED_REPO = "projects/project-unnamed-inventory";
-const UNNAMED_REDIRECT =
+export const UNNAMED_REDIRECT =
   `本仓只编已规范 ready 清单。未规范稿出清单请到 ${UNNAMED_REPO}（standards/figma-naming/SKILL.md）`;
 
 /** page id 里的冒号不能进文件名；`--name inventory-unnamed-392:24190` 收成 `392-24190`。 */
@@ -28,14 +27,11 @@ export function sanitizeInventoryName(name) {
   return String(name).replace(/:/g, "-");
 }
 
-/** 本仓拒绝未规范 draft / unnamed 名，指向独立仓。 */
+/** 本仓拒绝未规范 draft / unnamed 名 / 非 ready 档，指向独立仓。缺 status 也拒。 */
 export function unnamedRequiresDraft(input) {
   const status = input && input.status;
   const label = String((input && input.name) ?? "").trim();
-  const unnamedName = UNNAMED_INVENTORY_NAME.test(label) || /unnamed/i.test(label);
-  if (unnamedName || status === "draft") {
-    return UNNAMED_REDIRECT;
-  }
+  if (status !== "ready" || /unnamed/i.test(label)) return UNNAMED_REDIRECT;
   return null;
 }
 
