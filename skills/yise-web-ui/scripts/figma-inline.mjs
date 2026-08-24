@@ -29,6 +29,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { DEFAULT_MAX_HTML_BYTES, externalizeQaTruthIfOverLimit } from './lib/html-volume.mjs';
 
 /** 每段：模板文件、区间标记、模板首行注释头的替换目标 */
 const PARTS = {
@@ -143,4 +144,10 @@ if (args.check) {
 }
 
 if (changed) writeFileSync(idxPath, html, 'utf8');
-console.log(JSON.stringify({ ok: true, wroteInto: changed ? 'index.html' : '（本来就一致，没改动）', parts: results }, null, 2));
+const htmlVolume = args.check ? null : externalizeQaTruthIfOverLimit(resolve(args.demo), { limitBytes: DEFAULT_MAX_HTML_BYTES });
+console.log(JSON.stringify({
+  ok: true,
+  wroteInto: changed ? 'index.html' : '（本来就一致，没改动）',
+  parts: results,
+  htmlVolume,
+}, null, 2));

@@ -3,14 +3,13 @@
  *
  * This module is the ONLY entry point the page builder uses for the normative
  * naming snapshot (inventory/v2). It never re-derives roles from raw Figma layer
- * names (parseLayerName / deriveRole / figma-fetch are not called here).
- * Default gate is status === "ready". This repo does not consume green-draft.
- * unknown stays draw-only and unwired. skipped nodes are omitted from consume
- * mapping (issue #34).
+ * names (parseLayerName / deriveRole / figma-fetch are not called here), and it
+ * stops on invalid `inventory/v2` packages. A consumer may explicitly admit a
+ * documented `handoff/v1` green-draft package without relabeling it ready.
  *
  * Contract:
- *  1. entry gate: schema === "inventory/v2" and status === "ready"
- *     (or draft when options.allowDraft).
+ *  1. entry gate: schema === "inventory/v2" and status === "ready", or a
+ *     documented `handoff/v1` green-draft manifest that points to this draft.
  *  2. nodes -> page nodes/sections; bg/kv + non-fix -> pageChrome; fix ->
  *     fixedOverlays; page direct-child order -> pagePaintOrder; node id stays
  *     the back-link key on every emitted record.
@@ -47,15 +46,6 @@ function isSkipped(node) {
   return node?.status === 'skipped';
 }
 
-function filterSkippedNodeTree(nodes) {
-  return asArray(nodes)
-    .filter((node) => !isSkipped(node))
-    .map((node) => {
-      if (!isPlainObject(node) || !Array.isArray(node.nodes)) return node;
-      return { ...node, nodes: filterSkippedNodeTree(node.nodes) };
-    });
-}
-
 function visitNodeTree(nodes, visit) {
   for (const node of asArray(nodes)) {
     if (!isPlainObject(node)) continue;
@@ -80,19 +70,29 @@ export function collectSkippedNodeIds(inv) {
   return ids;
 }
 
-function drawableNodes(inv) {
-  return asArray(inv.nodes).filter((node) => !isSkipped(node));
+const HANDOFF_V1_SCHEMA = 'handoff/v1';
+
+function greenDraftHandoffFor(inv, handoff) {
+  if (!isPlainObject(handoff) || handoff.schema !== HANDOFF_V1_SCHEMA
+    || handoff.kind !== 'green-draft' || handoff.ready !== false
+    || typeof handoff.fingerprint !== 'string' || !handoff.fingerprint
+    || handoff.fileKey !== inv.fileKey || !isPlainObject(handoff.pages)
+    || !isPlainObject(handoff.consume)
+    || handoff.rules?.unknownNoInteraction !== true
+    || handoff.rules?.unknownModalTriggerNoWire !== true) return false;
+  return Object.entries(handoff.pages).some(([platform, page]) => page
+    && page.status === 'draft'
+    && page.requestedNodeId === inv.requestedNodeId
+    && handoff.consume[platform]?.page?.id === inv.page.id);
 }
 
 /** Entry gate. Returns {ok, problems}. Does not throw. */
-export function validateInventory(inv, options = {}) {
+export function validateInventory(inv, { handoff = null } = {}) {
   const problems = [];
   if (!isPlainObject(inv)) return { ok: false, problems: ['清单必须是对象'] };
   if (inv.schema !== INVENTORY_V2_SCHEMA) problems.push(`schema 必须是 ${INVENTORY_V2_SCHEMA}`);
-  const allowedStatus = options.allowDraft === true ? ['ready', 'draft'] : ['ready'];
-  if (!allowedStatus.includes(inv.status)) {
-    problems.push(options.allowDraft === true ? 'status 必须是 ready 或 draft' : 'status 必须是 ready');
-  }
+  const greenDraft = inv.status === 'draft' && greenDraftHandoffFor(inv, handoff);
+  if (inv.status !== 'ready' && !greenDraft) problems.push('status 必须是 ready，或由有效 handoff/v1 green-draft 包引用');
   if (inv.ok !== true) problems.push('清单必须 ok === true');
   if (!isPlainObject(inv.page) || typeof inv.page.id !== 'string' || !inv.page.id) problems.push('缺少 page.id');
   if (!isPlainObject(inv.snapshot) || typeof inv.snapshot.hash !== 'string' || !inv.snapshot.hash) problems.push('缺少 snapshot.hash');
@@ -119,17 +119,9 @@ export function validateInventory(inv, options = {}) {
  * ("0", "0.1", "0.2", ...). Recover page direct children and their paint order
  * from that source, not from a node-id or name.
  */
-function nodeMapOf(nodes) {
-  const byId = new Map();
-  for (const node of asArray(nodes)) {
-    if (node && typeof node.id === 'string') byId.set(node.id, node);
-  }
-  return byId;
-}
-
 function pageDirectChildren(inv) {
   const pageId = inv.page.id;
-  return drawableNodes(inv)
+  return asArray(inv.nodes)
     .filter((node) => node && node.parentId === pageId)
     .sort((a, b) => {
       const ak = String(a.orderKey ?? '0').split('.').map(Number);
@@ -146,16 +138,10 @@ function pageDirectChildren(inv) {
 
 /** Section ids that live below a page direct child (or are that child). */
 function sectionIdsUnder(inv, childId) {
-  const byId = nodeMapOf(inv.nodes);
-  const sectionIds = new Set(
-    asArray(inv.sections)
-      .map((section) => byId.get(section.id) || section)
-      .filter((record) => record && !isSkipped(record))
-      .map((record) => record.id),
-  );
+  const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
   const out = [];
   if (sectionIds.has(childId)) out.push(childId);
-  for (const node of drawableNodes(inv)) {
+  for (const node of asArray(inv.nodes)) {
     if (!sectionIds.has(node.id)) continue;
     if (asArray(node.ancestorIds).includes(childId)) out.push(node.id);
   }
@@ -167,6 +153,14 @@ function pagePaintOrderOf(inv) {
     const ids = sectionIdsUnder(inv, child.id);
     return ids.length ? { id: child.id, sectionIds: ids } : { id: child.id };
   });
+}
+
+function nodeMapOf(nodes) {
+  const byId = new Map();
+  for (const node of asArray(nodes)) {
+    if (node && typeof node.id === 'string') byId.set(node.id, node);
+  }
+  return byId;
 }
 
 /**
@@ -202,19 +196,15 @@ export function inventorySemanticRecords(inv, options = {}) {
 function classifyPageDirectChildren(inv, byId) {
   const fixedOverlays = asArray(inv.overlays)
     .map((entry) => byId.get(entry.id) || entry)
-    .filter((record) => record && !isSkipped(record));
+    .filter(Boolean);
   const fixedIds = new Set(fixedOverlays.map((n) => n.id));
-  const sectionIds = new Set(
-    asArray(inv.sections)
-      .map((section) => byId.get(section.id) || section)
-      .filter((record) => record && !isSkipped(record))
-      .map((record) => record.id),
-  );
+  const backgroundIds = new Set(asArray(inv.backgrounds).map((entry) => entry.id));
+  const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
 
   const pageChrome = [];
   for (const child of pageDirectChildren(inv)) {
     const record = byId.get(child.id) || child;
-    if (isSkipped(record) || fixedIds.has(child.id)) continue;
+    if (fixedIds.has(child.id)) continue;
     if (record.role === 'sec' || sectionIds.has(child.id)) continue;
     pageChrome.push(record);
   }
@@ -222,7 +212,7 @@ function classifyPageDirectChildren(inv, byId) {
   // when they are not a direct page child (some kv layers sit inside kv/*).
   for (const entry of asArray(inv.backgrounds)) {
     const record = byId.get(entry.id) || entry;
-    if (!record || isSkipped(record) || fixedIds.has(record.id)) continue;
+    if (!record || fixedIds.has(record.id)) continue;
     if (pageChrome.some((n) => n.id === record.id)) continue;
     pageChrome.push(record);
   }
@@ -232,19 +222,15 @@ function classifyPageDirectChildren(inv, byId) {
 /** modal-trigger relations keyed by modal id; only determined are actionable. */
 export function classifyModalTriggers(inv) {
   const triggers = new Map();
-  const skippedIds = collectSkippedNodeIds(inv);
   for (const relation of asArray(inv.relations)) {
     if (relation?.kind !== 'modal-trigger') continue;
     const toId = relation.to?.id;
     if (!toId) continue;
-    const fromId = relation.from?.id ?? null;
-    const blockedBySkipped = skippedIds.has(fromId) ? fromId : (skippedIds.has(toId) ? toId : null);
     const entry = triggers.get(toId) || [];
     entry.push({
-      status: relation.status === 'determined' && !blockedBySkipped ? 'determined' : 'unknown',
-      fromId,
+      status: relation.status === 'determined' ? 'determined' : 'unknown',
+      fromId: relation.from?.id ?? null,
       evidence: relation.evidence ?? null,
-      blockedBySkipped,
     });
     triggers.set(toId, entry);
   }
@@ -453,10 +439,6 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
 
   const byId = nodeMapOf(inv.nodes);
   const { pageChrome, fixedOverlays } = classifyPageDirectChildren(inv, byId);
-  const sections = asArray(inv.sections).filter((section) => {
-    const record = byId.get(section.id) || section;
-    return record && !isSkipped(record);
-  });
   const triggerByModal = classifyModalTriggers(inv);
   const pageStateGraph = classifyPageStateTransitions(inv, options);
   const visualStateDiscovery = normalizedVisualStateCandidates(inv);
@@ -473,7 +455,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       failures: [{ reason: 'platform-scope-input-missing' }],
     };
 
-  const modals = asArray(inv.attachments?.modals).filter((modal) => !isSkipped(modal)).map((modal) => {
+  const modals = asArray(inv.attachments?.modals).map((modal) => {
     const triggers = triggerByModal.get(modal.id) || [];
     const determined = triggers.filter((t) => t.status === 'determined');
     return {
@@ -486,32 +468,32 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       triggerFrom: determined.map((t) => t.fromId).filter(Boolean),
       triggerEvidence: determined.map((t) => t.evidence).filter(Boolean),
       pendingHumanConfirmation: determined.length === 0,
-      nodes: filterSkippedNodeTree(modal.nodes),
+      nodes: asArray(modal.nodes),
     };
   });
 
-  const componentSets = asArray(inv.attachments?.componentSets).filter((set) => !isSkipped(set)).map((set) => ({
+  const componentSets = asArray(inv.attachments?.componentSets).map((set) => ({
     componentSetId: set.id,
     name: set.name ?? '',
     box: set.box ?? null,
     propertyDefinitions: set.componentPropertyDefinitions ?? {},
-    variants: asArray(set.variants).filter((variant) => !isSkipped(variant)).map((variant) => ({
+    variants: asArray(set.variants).map((variant) => ({
       componentId: variant.id,
       name: variant.name ?? '',
       order: variant.order ?? 0,
       box: variant.box ?? null,
       componentProperties: variant.componentProperties ?? {},
-      nodes: filterSkippedNodeTree(variant.nodes),
+      nodes: asArray(variant.nodes),
     })),
-    nodes: filterSkippedNodeTree(set.nodes),
+    nodes: asArray(set.nodes),
   }));
 
-  const components = asArray(inv.attachments?.components).filter((component) => !isSkipped(component)).map((component) => ({
+  const components = asArray(inv.attachments?.components).map((component) => ({
     componentId: component.id,
     name: component.name ?? '',
     box: component.box ?? null,
     componentProperties: component.componentProperties ?? {},
-    nodes: filterSkippedNodeTree(component.nodes),
+    nodes: asArray(component.nodes),
   }));
 
   const variantTrees = {};
@@ -520,14 +502,9 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
   }
 
   const unknownNodes = asArray(inv.nodes).filter((node) => node?.status === 'unknown');
-  const unknownModalTriggers = [...triggerByModal.entries()].flatMap(([toId, triggers]) => triggers
-    .filter((trigger) => trigger.status !== 'determined')
-    .map((trigger) => ({
-      toId,
-      fromId: trigger.fromId,
-      evidence: trigger.evidence,
-      blockedBySkipped: trigger.blockedBySkipped,
-    })));
+  const unknownModalTriggers = asArray(inv.relations)
+    .filter((relation) => relation?.kind === 'modal-trigger' && relation.status !== 'determined')
+    .map((relation) => ({ toId: relation.to?.id ?? null, evidence: relation.evidence ?? null }));
 
   return {
     ok: platformScope.complete,
@@ -543,7 +520,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       lastModified: inv.snapshot.lastModified ?? null,
     },
     page: inv.page,
-    sections,
+    sections: asArray(inv.sections),
     pageChrome: { meta: { id: inv.page.id, name: inv.page.name }, nodes: pageChrome },
     fixedOverlays: { meta: { id: inv.page.id, name: inv.page.name }, nodes: fixedOverlays },
     pagePaintOrder: pagePaintOrderOf(inv),
@@ -570,7 +547,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       determined: inv.counts?.determined ?? 0,
       unknown: inv.counts?.unknown ?? 0,
       skipped: inv.counts?.skipped ?? 0,
-      sections: sections.length,
+      sections: asArray(inv.sections).length,
       pageChrome: pageChrome.length,
       fixedOverlays: fixedOverlays.length,
       modals: modals.length,
@@ -590,13 +567,18 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
 export function inventoryAcceptanceReport(inv, options = {}) {
   const gate = validateInventory(inv, options);
   const adapted = gate.ok ? adaptInventoryToTruthShape(inv, options) : null;
+  const greenDraft = gate.ok && inv.status === 'draft' && greenDraftHandoffFor(inv, options.handoff);
   const accepted = gate.ok && adapted?.ok === true;
-  const unknownModalCount = accepted ? adapted.counts.unknownModalTriggers : 0;
+  const ready = accepted && inv.status === 'ready';
+  const unknownModalCount = accepted
+    ? asArray(inv.relations).filter((r) => r?.kind === 'modal-trigger' && r.status !== 'determined').length
+    : 0;
   const pageStateGraph = accepted ? classifyPageStateTransitions(inv, options) : { states: [], transitions: [], unresolved: [] };
 
   return {
     gatePassed: accepted,
-    ready: accepted,
+    ready,
+    greenDraft,
     blocked: !accepted,
     blockedReason: accepted ? null : (adapted?.platformScope?.reason || 'inventory-not-ready'),
     gateProblems: [

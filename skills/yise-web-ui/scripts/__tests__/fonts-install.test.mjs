@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const SCRIPT = join(ROOT, 'scripts/fonts-install.mjs');
+const BUNDLED_FONTS = existsSync(join(ROOT, 'fonts/registry.json'));
+const bundledOnly = (name, fn) => (BUNDLED_FONTS ? test : test.skip)(name, fn);
 
 function run(cwd, args = []) {
   try {
@@ -20,7 +22,7 @@ function run(cwd, args = []) {
   }
 }
 
-test('real fonts/: all bundled registry fonts validate (existence + bytes + sha256 + mapping)', () => {
+bundledOnly('real fonts/: all bundled registry fonts validate (existence + bytes + sha256 + mapping)', () => {
   const r = run(ROOT, ['--check']);
   assert.equal(r.code, 0, JSON.stringify(r.json && r.json.problems));
   assert.equal(r.json.ok, true);
@@ -34,7 +36,7 @@ test('real fonts/: all bundled registry fonts validate (existence + bytes + sha2
   }
 });
 
-test('registry sha256/bytes anchors match actual bundled bytes', () => {
+bundledOnly('registry sha256/bytes anchors match actual bundled bytes', () => {
   const reg = JSON.parse(readFileSync(join(ROOT, 'fonts/registry.json'), 'utf8'));
   for (const [family, e] of Object.entries(reg.families)) {
     if (!e.file) continue;
@@ -68,7 +70,7 @@ test('hash mismatch -> non-zero exit (tamper/corruption detected, not silently p
   assert.ok(r.json.problems.some((p) => /Bad Fam/.test(p)));
 });
 
-test('licenseReview surfaces unclear licenses as blockers, not silent clearance', () => {
+bundledOnly('licenseReview surfaces unclear licenses as blockers, not silent clearance', () => {
   const r = run(ROOT, ['--check']);
   // the two CJK free-commercial fonts must be flagged for manual license review
   const flagged = (r.json.licenseReview || []).map((x) => x.family);

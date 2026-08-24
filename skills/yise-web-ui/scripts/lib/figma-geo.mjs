@@ -93,6 +93,7 @@
 /** §5.3 前缀表（keys 用于解析前缀；语义字符串仅作文档）。 */
 import { extractPrototypeLeaves } from './figma-prototype-truth.mjs';
 import { deriveRole, parseLayerName } from './figma-name-semantics.mjs';
+import { isIndProgressPaint } from './figma-owner-model.mjs';
 
 const PREFIX_SEMANTICS = {
   sec: '分区 → 顶层 z-index 层，按 y 序',
@@ -796,9 +797,13 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
         /* Exported pixels remain atomic, but an exported owner may still carry
            structural interaction descendants (for example Slider -> ind/*).
            Walk those descendants so controls are not erased by the asset guard;
-           neutral paint descendants keep the existing baked-subtree skip. */
-        if (hasStructuralDescendant(child) || hasBlendDescendant(child)) walk(child, cptr, childOwnerPtrs, child);
-        else for (const c of child.children || []) skipSubtree(c, (prefix || 'export') + '/ ??????????????????????');
+           unnamed SOLID paint under ind/ is the progress fill and must stay
+           even when the parent is an export unit. Neutral paint descendants
+           keep the existing baked-subtree skip. */
+        const ownerRole = deriveRole(child).role;
+        const keepIndPaint = (node.children || []).some((leaf) => isIndProgressPaint(leaf, { ownerRole }));
+        if (hasStructuralDescendant(child) || hasBlendDescendant(child) || keepIndPaint) walk(child, cptr, childOwnerPtrs, child);
+        else for (const c of child.children || []) skipSubtree(c, (prefix || 'export') + '/ baked-subtree');
         return;
       }
       /* A visually empty container that clips a visible descendant (child renderBox
@@ -854,6 +859,12 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
           return Number(box.width) === 0 || Number(box.height) === 0;
         });
       };
+      const ownerRole = deriveRole(ownerNode).role;
+      if (isIndProgressPaint(child, { ownerRole })) {
+        nodes.push(makeNode(child, cptr, { parentPtr: ptr, ownerPtrs: childOwnerPtrs }));
+        walk(child, cptr, childOwnerPtrs, child);
+        return;
+      }
       if (isPureContainer(child) && !preserveOwnerRoot && !isStructuralOwner(child) && !isSwitchPageOwner(ownerNode, child) && !clipsDescendant(child) && !isCompositeVisualGroup(child) && !isZeroAxisVectorGroup(child)) {
         skipped.push({
           nodeId: child.id,

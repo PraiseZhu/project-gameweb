@@ -49,6 +49,8 @@ test('assets-manifest:清单含路径/sha256/字节数/总大小,限内 exit 0',
   assert.equal(hero.sha256, hashFile(join(dir, 'assets/hero.png')));
   assert.equal(out.totalBytes, out.files.reduce((s, f) => s + f.size, 0));
   assert.equal(out.maxTotalBytes, 8 * 1024 * 1024); // 缺省 8MB
+  assert.equal(out.htmlLimitMb, 10);
+  assert.equal(out.htmlLimitBytes, 10 * 1024 * 1024);
   assert.equal(out.indexHtmlBytes > 0, true);
   assert.equal(out.grandTotalBytes, out.totalBytes + out.indexHtmlBytes);
 });

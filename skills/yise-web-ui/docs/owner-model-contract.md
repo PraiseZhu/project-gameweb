@@ -36,7 +36,7 @@
 ## 三、关键纯函数（供 extract/truth/门复用）
 
 - `checkStructContract(node)` → `{ ok, missing[] }`：报节点缺哪些必填结构字段。
-- `isPassthroughContainer(node)` → bool：纯容器只在**无结构语义**（无 clipsContent/isMask/opacity<1/非直通 blend/无 fill/stroke/effect）时可穿透。
+- `isPassthroughContainer(node)` → bool：纯容器只在**无结构语义**（无 clipsContent/isMask/opacity<1/非直通 blend/无 fill/stroke/effect）时可穿透。`ind/` owners never passthrough. Unnamed SOLID RECTANGLE/VECTOR children of `ind/` are paint, not passthrough.
 - `classifyBgScope(node, ownerPath, ctx)` → `{ scope, via, evidence }`：bg 的 page-shared/section-local/group-decoration 按 **owner 树位置**判，不按名字/几何。
 - `auditStructure(nodes)` → `{ total, contractOk, missing{}, passthrough, unresolved[] }`：一批节点的结构健康报告 + 缺 parentId/orderKey 的 unresolved 清单。
 

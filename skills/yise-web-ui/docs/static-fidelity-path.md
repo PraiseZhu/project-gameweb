@@ -93,3 +93,29 @@ Use `static-golden-regression` only after accepted baseline capture. Its PC and
 mobile roots are independent, so a PC pass cannot hide absent mobile evidence.
 If browser/raster evidence for SS6 is not available, baseline registration and
 later upgrade claims stay capture-blocked; never fabricate the baseline.
+
+## 5. Five static P0s stay separate
+
+Do not merge these into one root cause. Each needs its own owner, geometry,
+and Figma crop. Static human acceptance is required before Translation,
+Interaction, or Resize.
+
+1. **PC `ind/` / progress** — keep named `ind/` owners. Unnamed SOLID
+   RECTANGLE/VECTOR fill descendants of `ind/` stay paint nodes; do not
+   guess `class=progress`. PC geometry comes from Figma `1:180`.
+2. **PC / mobile bottom gap** — two independent paint facts, not one white
+   card. (a) QA `.frame` must not be an opaque white card in product view.
+   (b) After-hero sections may receive `layoutOffsetDesign`; the
+   `pageBackground` layer must receive the same offset and extend through
+   `pageScrollHeight`. If only sections shift, the painted bg ends early
+   and the tail looks like a short background. Diagnose against Figma
+   `1:180` / `20:2205`; do not stretch the product viewport to hide it.
+3. **Mobile overall scale** — mobile uses the native `20:2205` tree
+   (`designWidth` 750). Do not enlarge a PC 1920 white card to fill a 412
+   product view. `data-plat-fallback="mobile-uses-pc-tree"` is a failure.
+4. **Mobile `ind/` / progress** — same naming/owner rule as PC, but
+   geometry comes from the mobile tree. Do not reuse PC boxes.
+5. **zh-CN copy** — Figma font size, line-height, align, wrap, and manual
+   breaks. Official-site wrap/weight is a later Translation axis; it is
+   language-generic official-site evidence, not a Korean-only rule, and
+   must not rewrite zh-CN static copy.

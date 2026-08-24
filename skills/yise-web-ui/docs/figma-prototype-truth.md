@@ -2,10 +2,10 @@
 
 `figma-prototype-truth/v1` is an optional, reusable, read-only evidence audit
 for prototype interactions and motion claims. It is not a prerequisite for the
-Main, Translation, Resize, or Interaction Skill workflow.
+Main, Translation, Interaction, or Resize Skill workflow.
 
 This conclusion is scoped to the optional Prototype Truth Audit. It does not
-block the normal demo, Translation, Resize, or Interaction workflow. Use
+block the normal demo, Translation, Interaction, or Resize workflow. Use
 `npm run prototype:audit -- --fixture <snapshot.json>` only when an explicit
 observed-prototype gate is required.
 

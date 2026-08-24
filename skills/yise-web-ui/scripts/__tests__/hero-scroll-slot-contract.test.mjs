@@ -48,5 +48,7 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /revealDistance/);
   assert.doesNotMatch(render, /slotOffset/);
   assert.match(render, /data-hero-visual-motion/);
+  assert.match(render, /data-hero-bg-gap/);
+  assert.match(render, /data-hero-bg-follow/);
   assert.doesNotMatch(render, /display\s*:\s*none[^\n]*hero/i);
 });

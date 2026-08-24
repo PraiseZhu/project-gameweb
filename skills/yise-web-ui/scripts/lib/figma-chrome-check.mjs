@@ -88,12 +88,23 @@ export function runChromeCheck({ demoDir, expectedSelects = 2 }) {
     *walk() { yield this; for (const c of this.children) yield* c.walk(); }
   }
 
-  function blockOf(id) {
+  function tagOf(id) {
     const i = html.indexOf(`<script id="${id}"`);
     if (i < 0) return null;
-    const s = html.indexOf('>', i) + 1;
-    const e = html.indexOf('</' + 'script>', s);
-    return html.slice(s, e);
+    const gt = html.indexOf('>', i);
+    if (gt < 0) return null;
+    const e = html.indexOf('</' + 'script>', gt + 1);
+    return {
+      open: html.slice(i, gt + 1),
+      text: e < 0 ? '' : html.slice(gt + 1, e),
+    };
+  }
+  function blockOf(id) {
+    return tagOf(id)?.text ?? null;
+  }
+  function attrOf(open, name) {
+    const m = new RegExp(`\\b${name}=["']([^"']+)["']`, 'i').exec(open || '');
+    return m ? m[1] : null;
   }
 
   const canonical = (v) => {
@@ -143,7 +154,14 @@ export function runChromeCheck({ demoDir, expectedSelects = 2 }) {
     head, body, documentElement: docEl,
     createElement: (t) => new El(t),
     createTextNode: (t) => { const e = new El('#text'); e.textContent = t; return e; },
-    getElementById: (id) => (staticBlocks[id] != null ? { textContent: staticBlocks[id] } : null),
+    getElementById: (id) => {
+      if (staticBlocks[id] == null && !tagOf(id)) return null;
+      const tag = tagOf(id) || { open: '', text: staticBlocks[id] || '' };
+      return {
+        textContent: tag.text,
+        getAttribute: (name) => attrOf(tag.open, name),
+      };
+    },
     querySelectorAll: () => [],
     querySelector: () => null,
     addEventListener: () => {},
@@ -158,6 +176,17 @@ export function runChromeCheck({ demoDir, expectedSelects = 2 }) {
     value: { clipboard: { writeText: () => {} } }, configurable: true, writable: true,
   });
   globalThis.getComputedStyle = () => ({ fontSize: '16px' });
+  globalThis.fetch = async (url) => {
+    const file = String(url || '').split('?')[0].replace(/^\.\//, '');
+    const abs = join(demoDir, file);
+    const body = readFileSync(abs, 'utf8');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => JSON.parse(body),
+      text: async () => body,
+    };
+  };
 
   /* ── 先装 Skill 层通用渲染器（壳会调 renderApp，它委托给 window.__figmaRender）── */
   {

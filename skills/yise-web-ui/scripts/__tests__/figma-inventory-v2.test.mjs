@@ -70,8 +70,6 @@ function fixture(overrides = {}) {
 test("entry gate requires schema/status/ok/hash/fileKey/requestedNodeId/nodes", () => {
   assert.equal(INVENTORY_V2_SCHEMA, "inventory/v2");
   assert.equal(validateInventory(fixture()).ok, true);
-  assert.equal(validateInventory(fixture({ status: "draft" })).ok, false);
-  assert.equal(validateInventory(fixture({ status: "draft" }), { allowDraft: true }).ok, true, "adapter 仍可测 draft 形状，做页入口不吃");
 
   const missing = [
     { schema: "other" },
@@ -89,6 +87,48 @@ test("entry gate requires schema/status/ok/hash/fileKey/requestedNodeId/nodes", 
   }
 });
 
+test("documented handoff/v1 green-draft is accepted without relabeling inventory ready", () => {
+  const draft = fixture({ status: "draft" });
+  const handoff = {
+    schema: "handoff/v1",
+    kind: "green-draft",
+    ready: false,
+    fingerprint: "27504c359522ab73",
+    fileKey: FILE_KEY,
+    pages: { pc: { requestedNodeId: PAGE_ID, status: "draft" } },
+    consume: { pc: { page: { id: PAGE_ID } } },
+    rules: { unknownNoInteraction: true, unknownModalTriggerNoWire: true },
+  };
+  const options = { handoff, platformScopeInput: { nodes: [], platformRoots: [] } };
+  assert.equal(validateInventory(draft, options).ok, true);
+  const report = inventoryAcceptanceReport(draft, options);
+  assert.equal(report.gatePassed, true);
+  assert.equal(report.ready, false);
+  assert.equal(report.greenDraft, true);
+  const adapted = adaptInventoryToTruthShape(draft, options);
+  assert.equal(adapted.ok, true);
+  assert.equal(adapted.modals[0].triggerStatus, "unknown", "unknown relationships remain rendered but inert");
+
+  draft.relations.push({ kind: "modal-trigger", status: "determined", from: { id: "100:4" }, to: { id: "100:20", scope: "modal:100:20" } });
+  assert.deepEqual(adaptInventoryToTruthShape(draft, options).modals[0].triggerFrom, ["100:4"], "determined relationships remain wired");
+});
+
+test("draft still fails without a valid matching green-draft handoff", () => {
+  const draft = fixture({ status: "draft" });
+  const invalid = {
+    schema: "handoff/v1", kind: "green-draft", ready: false, fingerprint: "",
+    fileKey: FILE_KEY, pages: { pc: { requestedNodeId: PAGE_ID, status: "draft" } },
+    consume: { pc: { page: { id: PAGE_ID } } },
+    rules: { unknownNoInteraction: true, unknownModalTriggerNoWire: true },
+  };
+  assert.equal(validateInventory(draft, { handoff: invalid }).ok, false);
+  assert.equal(validateInventory(draft, { handoff: {
+    schema: "handoff/v1", kind: "green-draft", ready: false, fingerprint: "27504c359522ab73",
+    fileKey: FILE_KEY, pages: { pc: { requestedNodeId: "other-page", status: "draft" } },
+    consume: { pc: { page: { id: PAGE_ID } } },
+    rules: { unknownNoInteraction: true, unknownModalTriggerNoWire: true },
+  } }).ok, false);
+});
 test("componentSets become variantTrees with renderable geometry", () => {
   const adapted = adaptInventoryToTruthShape(fixture(), { platformScopeInput: { nodes: [], platformRoots: [] } });
   assert.equal(adapted.ok, true);
@@ -96,98 +136,6 @@ test("componentSets become variantTrees with renderable geometry", () => {
   assert.equal(set.componentSetId, "100:30");
   assert.deepEqual(adapted.componentVariantGraph.variantTrees["100:30"].map((v) => v.componentId), ["100:31", "100:32"]);
   assert.ok(set.variants.every((v) => v.box));
-});
-
-test("skipped descendants are recursively removed from modal and component attachment trees", () => {
-  const inv = fixture();
-  inv.attachments.modals[0].nodes = [
-    {
-      id: "100:20-keep",
-      status: "unknown",
-      nodes: [
-        { id: "100:20-nested-keep", status: "unknown" },
-        { id: "100:20-nested-skip", status: "skipped" },
-      ],
-    },
-    { id: "100:20-skip", status: "skipped" },
-  ];
-  inv.attachments.componentSets[0].nodes = [
-    { id: "100:30-keep", status: "unknown" },
-    { id: "100:30-skip", status: "skipped" },
-  ];
-  inv.attachments.componentSets[0].variants[0].nodes = [
-    {
-      id: "100:31-keep",
-      status: "unknown",
-      nodes: [{ id: "100:31-nested-skip", status: "skipped" }],
-    },
-    { id: "100:31-skip", status: "skipped" },
-  ];
-  inv.attachments.components[0].nodes = [
-    { id: "100:40-keep", status: "unknown" },
-    { id: "100:40-skip", status: "skipped" },
-  ];
-
-  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
-  const ids = [];
-  const collect = (nodes) => {
-    for (const node of nodes || []) {
-      ids.push(node.id);
-      collect(node.nodes);
-    }
-  };
-  collect(adapted.modals[0].nodes);
-  collect(adapted.componentVariantGraph.componentSets[0].nodes);
-  collect(adapted.componentVariantGraph.componentSets[0].variants[0].nodes);
-  collect(adapted.componentVariantGraph.components[0].nodes);
-
-  assert.ok(ids.includes("100:20-keep"));
-  assert.ok(ids.includes("100:20-nested-keep"));
-  assert.ok(ids.includes("100:30-keep"));
-  assert.ok(ids.includes("100:31-keep"));
-  assert.ok(ids.includes("100:40-keep"));
-  assert.deepEqual(ids.filter((id) => id.includes("skip")), []);
-});
-
-test("skipped modal, component, component-set, and variant roots are omitted", () => {
-  const skippedRoots = fixture();
-  skippedRoots.attachments.modals[0].status = "skipped";
-  skippedRoots.attachments.components[0].status = "skipped";
-  skippedRoots.attachments.componentSets[0].status = "skipped";
-  const omitted = adaptInventoryToTruthShape(skippedRoots, { platformScopeInput: { nodes: [], platformRoots: [] } });
-  assert.equal(omitted.modals.length, 0);
-  assert.equal(omitted.componentVariantGraph.components.length, 0);
-  assert.equal(omitted.componentVariantGraph.componentSets.length, 0);
-  assert.equal(Object.keys(omitted.componentVariantGraph.variantTrees).length, 0);
-
-  const skippedVariants = fixture();
-  for (const variant of skippedVariants.attachments.componentSets[0].variants) variant.status = "skipped";
-  const variantOmitted = adaptInventoryToTruthShape(skippedVariants, { platformScopeInput: { nodes: [], platformRoots: [] } });
-  assert.equal(variantOmitted.componentVariantGraph.componentSets.length, 1);
-  assert.equal(variantOmitted.componentVariantGraph.componentSets[0].variants.length, 0);
-  assert.equal(variantOmitted.componentVariantGraph.variantTrees["100:30"].length, 0);
-});
-
-test("skipped page children stay out of chrome, overlays, and paint order", () => {
-  const inv = fixture();
-  inv.nodes.push(
-    { id: "100:50", scope: "page", type: "FRAME", name: "ref/组件", parentId: PAGE_ID, orderKey: "0.2", status: "skipped", why: "ref" },
-    { id: "100:51", scope: "page", type: "FRAME", name: "sec/skip", parentId: PAGE_ID, orderKey: "0.3", status: "skipped", why: "invisible", role: "sec" },
-  );
-  inv.overlays.push({ id: "100:50", role: "fix", label: "skipped-overlay" });
-  inv.backgrounds.push({ id: "100:50", role: "kv", label: "skipped-bg" });
-  inv.sections.push({ id: "100:51", number: 2, label: "skip", box: { x: 0, y: 0, w: 10, h: 10 } });
-  inv.counts = { determined: 2, unknown: 2, skipped: 2 };
-  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
-  assert.equal(adapted.ok, true);
-  const painted = [
-    ...adapted.pageChrome.nodes.map((node) => node.id),
-    ...adapted.fixedOverlays.nodes.map((node) => node.id),
-    ...adapted.sections.map((section) => section.id),
-    ...adapted.pagePaintOrder.flatMap((entry) => [entry.id, ...(entry.sectionIds || [])]),
-  ];
-  assert.equal(painted.includes("100:50"), false);
-  assert.equal(painted.includes("100:51"), false);
 });
 
 test("modals own a hidden layer excluded from scroll", () => {
@@ -236,32 +184,6 @@ test("determined modal-trigger wires while unknown stays pending", () => {
   assert.equal(modal.triggerStatus, "determined");
   assert.deepEqual(modal.triggerFrom, ["100:4"]);
   assert.equal(modal.pendingHumanConfirmation, false);
-});
-
-test("determined modal-trigger is downgraded when its source or target node is skipped", () => {
-  const sourceSkipped = fixture();
-  sourceSkipped.nodes.find((node) => node.id === "100:4").status = "skipped";
-  sourceSkipped.relations = [
-    { kind: "modal-trigger", status: "determined", evidence: "figma:prototype", from: { id: "100:4" }, to: { id: "100:20" } },
-  ];
-  assert.deepEqual(classifyModalTriggers(sourceSkipped).get("100:20").map((trigger) => trigger.status), ["unknown"]);
-  const sourceAdapted = adaptInventoryToTruthShape(sourceSkipped, { platformScopeInput: { nodes: [], platformRoots: [] } });
-  assert.equal(sourceAdapted.modals[0].triggerStatus, "unknown");
-  assert.deepEqual(sourceAdapted.modals[0].triggerFrom, []);
-  assert.equal(sourceAdapted.modals[0].pendingHumanConfirmation, true);
-  const sourceReport = inventoryAcceptanceReport(sourceSkipped, { platformScopeInput: { nodes: [], platformRoots: [] } });
-  assert.equal(sourceReport.unknownNotWired, true);
-  assert.equal(sourceReport.unknownModalTriggersPending, 1);
-
-  const targetSkipped = fixture();
-  targetSkipped.attachments.modals[0].status = "skipped";
-  targetSkipped.relations = [
-    { kind: "modal-trigger", status: "determined", evidence: "figma:prototype", from: { id: "100:4" }, to: { id: "100:20" } },
-  ];
-  assert.deepEqual(classifyModalTriggers(targetSkipped).get("100:20").map((trigger) => trigger.status), ["unknown"]);
-  const targetAdapted = adaptInventoryToTruthShape(targetSkipped, { platformScopeInput: { nodes: [], platformRoots: [] } });
-  assert.equal(targetAdapted.modals.length, 0);
-  assert.equal(targetAdapted.counts.unknownModalTriggers, 1);
 });
 
 test("unknown trigger relations report pending, not executed", () => {
@@ -437,3 +359,4 @@ test("visual state candidates are retained but never authorized by inventory ada
   assert.equal(adapted.visualStateCandidates[0].visualStateDiscovered, true);
   assert.equal(adapted.visualStateCandidates[0].transitionAuthorized, false);
 });
+

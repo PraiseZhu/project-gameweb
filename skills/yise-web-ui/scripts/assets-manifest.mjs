@@ -22,6 +22,7 @@ import { buildAssetsManifest, stableJson, TOOL_VERSION } from './lib/fs-utils.mj
 // 不 export:本文件是可执行脚本(顶层就跑并 process.exit),被 import 会直接把宿主进程退掉。
 // pr-block 侧的同名常量各自声明,靠 __tests__/comp-fix-p1.test.mjs 的跨文件一致性断言锁住。
 const DEFAULT_MAX_TOTAL_MB = 8;
+const DEFAULT_MAX_HTML_MB = 10;
 const ASSETS_REPORT_NAME = 'report-assets.json';
 
 function fail(problems) {
@@ -78,6 +79,13 @@ if (totalBytes > maxTotalBytes) {
       `——压图/换格式(webp)/删无用资产后重跑。最大几项:${top.join('、')}`,
   );
 }
+const maxHtmlBytes = Math.floor(DEFAULT_MAX_HTML_MB * 1024 * 1024);
+if (indexHtmlBytes != null && indexHtmlBytes > maxHtmlBytes) {
+  problems.push(
+    `index.html ${(indexHtmlBytes / 1024 / 1024).toFixed(2)}MB 超过 HTML 体积闸门 ${DEFAULT_MAX_HTML_MB}MB` +
+      '——图必须外链；超限时把 #qa-truth 改成 data-src="truth.json"，不要把图或整份 truth 内联进 html',
+  );
+}
 
 const payload = {
   ok: problems.length === 0,
@@ -94,6 +102,8 @@ const payload = {
   effectiveLimitMb: maxTotalMb,
   overrideReason,
   indexHtmlBytes,
+  htmlLimitMb: DEFAULT_MAX_HTML_MB,
+  htmlLimitBytes: maxHtmlBytes,
   grandTotalBytes: totalBytes + (indexHtmlBytes ?? 0),
   files: manifest.files,
   // 闸门跑过的凭据:assets 段逐文件 sha 进报告。pr-block 用它比对"现在的 assets/ 就是

@@ -10,6 +10,7 @@ import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from '
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { failJson, failProblems, isPlainObject, safeJsonForScript, stableJson } from './lib/fs-utils.mjs';
+import { DEFAULT_MAX_HTML_BYTES, externalizeQaTruthIfOverLimit } from './lib/html-volume.mjs';
 import { validateTruth } from './lib/schema.mjs';
 
 const args = process.argv.slice(2);
@@ -153,4 +154,15 @@ if (embedMode) {
   embedded = true;
 }
 
-console.log(JSON.stringify({ ok: true, written: truthPath, embedded, topKeys: Object.keys(JSON.parse(fresh)) }));
+let htmlVolume = null;
+if (embedMode) {
+  htmlVolume = externalizeQaTruthIfOverLimit(demoDir, { limitBytes: DEFAULT_MAX_HTML_BYTES });
+}
+
+console.log(JSON.stringify({
+  ok: true,
+  written: truthPath,
+  embedded,
+  htmlVolume,
+  topKeys: Object.keys(JSON.parse(fresh)),
+}));

@@ -37,22 +37,49 @@ export function platOfWidth(width, breakpoints = DEFAULT_BREAKPOINTS) {
 }
 
 /**
+ * Resolve the layout composition separately from the device-category label.
+ * A product may still label 768px as `pad` in its device picker while its
+ * observed responsive design deliberately keeps the PC layout tree above a
+ * 750px mobile cutoff. `compositionBreakpoints` makes that policy explicit
+ * instead of accidentally depending on the presence or absence of a pad tree.
+ */
+export function compositionBucketForWidth(width, compositionBreakpoints = null) {
+  const w = n(width, NaN);
+  if (!Number.isFinite(w)) return null;
+  const list = Array.isArray(compositionBreakpoints) && compositionBreakpoints.length
+    ? compositionBreakpoints
+    : DEFAULT_BREAKPOINTS;
+  const bp = list.find((b) => w >= n(b.min) && (b.max == null || w <= n(b.max)));
+  if (!bp) return null;
+  if (bp.key === 'mobile') return 'mobile';
+  if (bp.key === 'tablet' || bp.key === 'pad') return 'pad';
+  if (bp.key === 'desktop' || bp.key === 'pc') return 'pc';
+  return null;
+}
+
+/**
  * Which truth tree the renderer may use at this width.
  * Tablet without a pad tree reuses PC (`pad-uses-pc-tree`). Mobile without a
  * mobile tree also falls back to PC rather than inventing a layout.
  */
-export function compositionKeyForViewport({ width, platforms = {}, breakpoints = DEFAULT_BREAKPOINTS } = {}) {
+export function compositionKeyForViewport({
+  width,
+  platforms = {},
+  breakpoints = DEFAULT_BREAKPOINTS,
+  compositionBreakpoints = null,
+} = {}) {
   const requested = platOfWidth(width, breakpoints);
-  if (requested === 'mobile' && platforms.mobile) {
+  const composition = compositionBucketForWidth(width, compositionBreakpoints);
+  if (composition === 'mobile' && platforms.mobile) {
     return { requested, key: 'mobile', fallback: null };
   }
-  if (requested === 'pad' && platforms.pad) {
+  if (composition === 'pad' && platforms.pad) {
     return { requested, key: 'pad', fallback: null };
   }
-  if (requested === 'pad' && !platforms.pad) {
+  if (composition === 'pad' && !platforms.pad) {
     return { requested, key: 'pc', fallback: 'pad-uses-pc-tree' };
   }
-  if (requested === 'mobile' && !platforms.mobile) {
+  if (composition === 'mobile' && !platforms.mobile) {
     return { requested, key: 'pc', fallback: 'mobile-uses-pc-tree' };
   }
   return { requested: requested || 'pc', key: 'pc', fallback: null };
@@ -164,6 +191,7 @@ export function classifyResizeIntent({
   width,
   platforms = {},
   breakpoints = DEFAULT_BREAKPOINTS,
+  compositionBreakpoints = null,
   dragActive = false,
   forceFullRender = false,
   grid = false,
@@ -176,7 +204,7 @@ export function classifyResizeIntent({
   padPx = 0,
   layoutPlanes = null,
 } = {}) {
-  const composition = compositionKeyForViewport({ width, platforms, breakpoints });
+  const composition = compositionKeyForViewport({ width, platforms, breakpoints, compositionBreakpoints });
   return {
     schema: RESIZE_SKILL_SCHEMA,
     plat: composition.requested,

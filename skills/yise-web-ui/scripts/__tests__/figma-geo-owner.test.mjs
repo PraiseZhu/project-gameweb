@@ -13,6 +13,21 @@ function fixture(root) {
 const box = (x = 0, y = 0) => ({ x, y, width: 100, height: 100 });
 const empty = (id, name, type = 'FRAME', children = []) => ({ id, name, type, absoluteBoundingBox: box(), fills: [], strokes: [], effects: [], children });
 
+test('keeps unnamed SOLID paint under ind/ instead of baking it away', () => {
+  const fill = {
+    ...empty('fill', 'Rectangle 1', 'RECTANGLE'),
+    fills: [{ type: 'SOLID', visible: true, color: { r: 1, g: 1, b: 0, a: 1 } }],
+  };
+  const root = empty('root', 'sec/test', 'FRAME', [
+    empty('ind', 'ind/bar', 'FRAME', [fill]),
+  ]);
+  const f = fixture(root);
+  const out = extractGeometry({ ...f, sectionId: 'root', emitStructural: true, emitOwnerPath: true });
+  assert.ok(out.nodes.some((n) => n.id.value === 'ind'));
+  assert.ok(out.nodes.some((n) => n.id.value === 'fill'));
+  assert.equal(out.nodes.find((n) => n.id.value === 'fill').parentId.value, 'ind');
+});
+
 test('keeps empty structural owners while passing generic containers through', () => {
   const root = empty('root', 'sec/test', 'FRAME', [
     empty('switch', 'switch/role', 'INSTANCE', [empty('leaf', 'txt/value', 'TEXT')]),

@@ -50,6 +50,7 @@ const PREVIEW_HOSTS = new Set(['github.com', 'gitlab.com', 'workers.xd.team']);
 // 与 assets-manifest.mjs 保持一致(那边是可执行脚本不能被 import,一致性由测试锁住)
 const ASSETS_REPORT_NAME = 'report-assets.json';
 const DEFAULT_ASSETS_LIMIT_MB = 8;
+const DEFAULT_HTML_LIMIT_MB = 10;
 
 function die(msg, code = 1) {
   console.error(msg);
@@ -283,6 +284,17 @@ if (existsSync(join(demoDir, 'assets'))) {
       assetsReport = ar;
       trustedAssetsBox = markTrustedRun('assets-recompute', { totalBytes: actualTotal, files: actual.length });
     }
+  }
+}
+const indexHtmlPath = join(demoDir, 'index.html');
+if (existsSync(indexHtmlPath)) {
+  const htmlBytes = readFileSync(indexHtmlPath).length;
+  const htmlLimit = Math.floor(DEFAULT_HTML_LIMIT_MB * 1024 * 1024);
+  if (htmlBytes > htmlLimit) {
+    problems.push(
+      `html: index.html ${(htmlBytes / 1024 / 1024).toFixed(2)}MB 超过 HTML 体积闸门 ${DEFAULT_HTML_LIMIT_MB}MB` +
+        '——图必须外链；超限时 #qa-truth 改 data-src="truth.json"，不要把图或整份 truth 内联进 html',
+    );
   }
 }
 /* ── 可信侧重跑 verify 门 A/B/C/D/F/X(P0-1 的落地;见文件头「架构主线」)。

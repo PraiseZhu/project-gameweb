@@ -1226,6 +1226,8 @@
     };
     const __base = __platBases[__plat] || 'pc';
     const __hasNative = (__base === __plat);
+    /* Static mobile scale: native 20:2205 tree at designWidth 750.
+       Fallback to the PC tree on a phone viewport is not a scale fix. */
     const __activeTruth = __platforms[__base] || t;
     const motionAdapter = ctx.motionAdapter || ctx.motion || null;
     const __rawRoot = (ctx.rawTruth && ctx.rawTruth.platforms && ctx.rawTruth.platforms[__base])
@@ -1407,6 +1409,21 @@
     const pageScrollHeight = pageScope && heroLayoutOffsetDesign > 0
       ? Math.max(pageContentHeight, ...ids.map((id) => shiftedSectionBottom(id)))
       : pageContentHeight;
+    /* Hero slot only moves after-hero *sections*. pageBackground stays at Figma
+       y, so the last painted bg slice ends early and the shifted tail looks like
+       a short background / white card. Keep the first-screen KV at page origin;
+       only nodes whose Figma y is below the first section bottom receive the
+       same layoutOffsetDesign. Do not translate the whole paint layer. */
+    const heroSectionBottomY = heroSlot
+      ? Number(heroSlot.firstSectionY != null ? heroSlot.firstSectionY : (sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && sections[heroSlot.sectionId].meta.y) || pageOriginY)
+        + Number((sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && sections[heroSlot.sectionId].meta.height) || heroSlot.heroHeight || 0)
+      : 0;
+    const afterHeroBackgroundShift = (node) => {
+      if (!(heroLayoutOffsetDesign > 0) || !heroSlot) return 0;
+      const y = Number(node && node.box && node.box.y);
+      if (!Number.isFinite(y)) return 0;
+      return y > heroSectionBottomY + 0.5 ? heroLayoutOffsetDesign : 0;
+    };
     frame.setAttribute('data-hero-scroll-slot', heroSlot ? 'active' : 'fallback-missing-page-structure');
     if (heroSlot) {
       frame.setAttribute('data-hero-section', heroSlot.sectionId);
@@ -2267,6 +2284,7 @@
       const paint = (list, rawList, container, options = {}) => {
        const paintOriginX = options.originX ?? secX;
        const paintOriginY = options.originY ?? secY;
+       const backgroundHeroShift = options.backgroundHeroShift === true;
        const suppressInteractions = options.suppressInteractions === true;
        /* A component-set tree includes its canvas COMPONENT root.  When that
           tree is mounted inside an already-rendered INSTANCE, the root is a
@@ -2584,6 +2602,23 @@
             && isText
             && childLayoutAlign === 'INHERIT'
             && childLayoutSizing === 'HUG';
+          if (backgroundHeroShift && parentAutoLayoutMode === 'VERTICAL'
+              && heroLayoutOffsetDesign > 0
+              && afterHeroBackgroundShift(n) > 0
+              && !(parent.el.getAttribute('data-hero-bg-gap-inserted') === '1')) {
+            /* Vertical auto-layout owns slice stacking. Insert one spacer at the
+               first after-hero slice so later slices travel with sections, while
+               the first-screen slice stays at Figma y. */
+            const gap = document.createElement('div');
+            gap.setAttribute('data-hero-bg-gap', '1');
+            gap.style.flex = '0 0 ' + heroLayoutOffsetDesign + 'px';
+            gap.style.width = '100%';
+            gap.style.height = heroLayoutOffsetDesign + 'px';
+            gap.style.pointerEvents = 'none';
+            parent.el.appendChild(gap);
+            parent.el.setAttribute('data-hero-bg-gap-inserted', '1');
+            parent.el.setAttribute('data-hero-bg-gap-design', String(heroLayoutOffsetDesign));
+          }
           if (pel.getAttribute('data-auto-layout') !== parentAutoLayoutMode) {
             const padT = Number(__u(parentLayout.paddingTop) || 0);
             const padR = Number(__u(parentLayout.paddingRight) || 0);
@@ -2793,7 +2828,21 @@
            ⚠️ 读 n.clipsContent，**不是 n.style.clipsContent** —— 提取器把它放在条目顶层。
            之前写成 st.clipsContent，条件永远为假，overflow 一次都没生效过，
            而且不报错、页面只是"多出一截"，肉眼极难发现。是新加的裁剪断言把它揪出来的。 */
-        if (n.clipsContent === true && !hscrollTrackClipRelease) el.style.overflow = 'hidden';
+        if (n.clipsContent === true && !hscrollTrackClipRelease) {
+          /* After-hero sections are shifted by layoutOffsetDesign. A page
+             background root that still clips to its Figma height cuts the
+             shifted tail, which reads as a short background. Keep first-screen
+             KV unmoved; only release this clip when the layer is following. */
+          const isPageBackgroundRoot = backgroundHeroShift && pageStageMode
+            && /^bg\//i.test(String(n.name || ''));
+          if (isPageBackgroundRoot && heroLayoutOffsetDesign > 0) {
+            el.style.overflow = 'visible';
+            el.style.height = (pageScrollHeight || box.h || 0) + 'px';
+            el.setAttribute('data-hero-bg-clip', 'released-to-page-scroll-height');
+          } else {
+            el.style.overflow = 'hidden';
+          }
+        }
         if (evidenceAttrs && evidenceAttrs['data-hscroll'] === 'x') {
           /* This same Figma node is the clipped viewport. Its nested source
              content remains the real track; do not duplicate or synthesize a
@@ -3459,7 +3508,16 @@
           const _localizedSourceTitle = sourceNoWrapTitle && !semanticBreak
             && String(ctx.prefs && ctx.prefs.lang || '') !== 'zh-CN'
             && val != null && !inlineHugs && !constraint.openFlow && Number(box.w) > 0;
-          if (!inlineHugs && !constraint.openFlow && (fitAuthorized || _localizedSourceTitle || semanticBreak)) {
+          /* zh-CN static copy keeps Figma fontSize/lineHeight/align/wrap.
+             Official-site wrap/weight is a later Translation axis. Step-fit on
+             zh-CN was shrinking 体验优化 titles that already match the source. */
+          const _zhSourceExact = String(ctx.prefs && ctx.prefs.lang || '') === 'zh-CN';
+          if (_zhSourceExact) {
+            el.setAttribute('data-fit-policy', 'zh-cn-figma-exact');
+            el.setAttribute('data-text-layout-policy',
+              el.getAttribute('data-text-layout-policy') || 'figma-exact');
+          }
+          if (!_zhSourceExact && !inlineHugs && !constraint.openFlow && (fitAuthorized || _localizedSourceTitle || semanticBreak)) {
             el.setAttribute('data-fit-group', _fitGroupKey);
             if (_localizedSourceTitle) {
               el.setAttribute('data-fit-inline-policy', 'source-title-group-glyph-safe-width');
@@ -3915,7 +3973,13 @@
               layer.setAttribute('data-paint-source-key', key);
               layer.setAttribute('data-paint-node-count', String((bg?.nodes.length || 0) + (chrome?.nodes.length || 0)));
             }
-            if (bg) paint(bg.nodes, bg.raw, layer);
+            if (bg) {
+              if (layer && heroLayoutOffsetDesign > 0) {
+                layer.setAttribute('data-hero-bg-follow', 'after-hero-slices');
+                layer.setAttribute('data-hero-bg-shift-design', String(heroLayoutOffsetDesign));
+              }
+              paint(bg.nodes, bg.raw, layer, { originX: pageX, originY: pageY, backgroundHeroShift: true });
+            }
             if (chrome) paint(chrome.nodes, chrome.raw, layer);
             const orderedSections = asArr(entry.sectionIds);
             for (const sectionId of orderedSections) sectionLayerById.set(__u(sectionId), layer);
@@ -3931,7 +3995,7 @@
              产出这份 fixture 绑定顺序，不能把这个分支当作一比一还原结果。 */
           stage.setAttribute('data-paint-order-fallback', 'missing-pagePaintOrder');
           const legacyBg = appendLayer('legacy-background', 0);
-          if (hasPageBg) paint(pageBgNodes, pageBgRaw, legacyBg);
+          if (hasPageBg) paint(pageBgNodes, pageBgRaw, legacyBg, { originX: pageX, originY: pageY, backgroundHeroShift: true });
           const legacyChrome = appendLayer('legacy-pageChrome', 1);
           if (__activeTruth.pageChrome && __activeTruth.pageChrome.nodes) {
             paint(asArr(__activeTruth.pageChrome.nodes), asArr(rawPageChrome.nodes), legacyChrome);

@@ -15,8 +15,8 @@ npm run release:audit
 It checks identity metadata, the explicit private boundary, and credential/machine-path patterns in publishable files. Passing the audit is a release-boundary check, not GitHub publication and not visual completion.
 
 The Skill is organized as a Main Skill (complete Figma extraction, static
-structure, Demo接线, and final review), plus independent Translation, Resize,
-and Interaction axes, and an optional Figma Prototype Truth Audit. Interaction
+structure, Demo接线, and final review), plus independent Translation, Interaction,
+and Resize axes, and an optional Figma Prototype Truth Audit. Interaction
 is the rename of the former Motion Skill; existing motion files remain
 publishable and are not deleted. Resize is `scripts/lib/resize/index.mjs` plus
 `docs/resize-skill.md`. `explicit-empty`, `field-absent`, and `unavailable`

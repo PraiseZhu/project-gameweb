@@ -52,10 +52,12 @@
   })();
   if (PRODUCT_VIEW) document.documentElement.setAttribute('data-product-view', '1');
 
-  /* ── truth ── */
+  /* ── truth ──
+     默认内嵌在 #qa-truth。index.html 超过 10MB 时 truth.mjs 会把块改成
+     data-src="truth.json"（外置，页面需本地预览服务，不能再当纯 file:// 单文件）。 */
   var truthEl = document.getElementById('qa-truth');
   if (!truthEl) throw new Error('figma-chrome: 缺 <script id="qa-truth"> 内嵌真值块');
-  var RAW_TRUTH = JSON.parse(truthEl.textContent);
+  var RAW_TRUTH = null;
   function unwrap(n) {
     if (n && typeof n === 'object' && !Array.isArray(n) && 'value' in n && n.provenance) return n.value;
     if (Array.isArray(n)) return n.map(unwrap);
@@ -66,7 +68,35 @@
     }
     return n;
   }
-  var TRUTH = unwrap(RAW_TRUTH);
+  function parseEmbeddedTruth() {
+    var src = truthEl.getAttribute && truthEl.getAttribute('data-src');
+    if (src) return null;
+    var text = (truthEl.textContent || '').trim();
+    if (!text) throw new Error('figma-chrome: #qa-truth 为空且没有 data-src');
+    return JSON.parse(text);
+  }
+  function bootWithTruth(raw) {
+    RAW_TRUTH = raw;
+    TRUTH = unwrap(RAW_TRUTH);
+    continueChromeBoot();
+  }
+  var TRUTH = null;
+  var externalTruth = (typeof truthEl.getAttribute === 'function') ? truthEl.getAttribute('data-src') : null;
+  var embeddedText = (truthEl.textContent || '').trim();
+  if (embeddedText) {
+    bootWithTruth(JSON.parse(embeddedText));
+  } else if (externalTruth) {
+    fetch(externalTruth, { cache: 'no-store' }).then(function (res) {
+      if (!res.ok) throw new Error('figma-chrome: 加载 ' + externalTruth + ' 失败 HTTP ' + res.status);
+      return res.json();
+    }).then(bootWithTruth).catch(function (err) {
+      throw new Error((err && err.message) || String(err));
+    });
+    return;
+  } else {
+    bootWithTruth(parseEmbeddedTruth());
+  }
+  function continueChromeBoot() {
 
   /* Motion adapter is an explicit demo opt-in generated from motion.config.json
      by figma-inline. Missing config intentionally means no official-motion claim. */
@@ -91,6 +121,12 @@
 
   var GROUPS = PRESETS.deviceGroups || [];
   var BREAKPOINTS = PRESETS.breakpoints || [];
+  /* Device picker buckets come from the shared kit. A page may separately
+     declare the layout tree observed on its official site; this must never be
+     inferred from whether a pad Figma tree happens to exist. */
+  var COMPOSITION_BREAKPOINTS = Array.isArray(cfg.compositionBreakpoints) && cfg.compositionBreakpoints.length
+    ? cfg.compositionBreakpoints
+    : BREAKPOINTS;
   var FREE = { name: '自由状态', free: true };
 
   /* ── 状态 ── */
@@ -147,6 +183,8 @@
     return !!(g && g.key !== 'PC' && !isFree() && curDev() && curDev().width && curDev().height);
   }
   function viewport() {
+    var product = productViewportSize();
+    if (product) return { w: product.w, h: product.h, dpr: product.dpr, src: product.src, orientation: S.orientation };
     var d = orientedDevice(curDev());
     if (isFree() || !d || !d.width) return { w: S.freeW, h: S.freeH, dpr: 1, src: '自由状态', orientation: S.orientation };
     return { w: d.width, h: d.height, dpr: d.dpr || 1, src: '机型锁定', orientation: S.orientation };
@@ -157,6 +195,13 @@
       if (w >= b.min && (b.max == null || w <= b.max)) return b;
     }
     return { key: '?', label: '?' };
+  }
+  function compositionBpOf(w) {
+    for (var i = 0; i < COMPOSITION_BREAKPOINTS.length; i++) {
+      var b = COMPOSITION_BREAKPOINTS[i];
+      if (w >= b.min && (b.max == null || w <= b.max)) return b;
+    }
+    return { key: '?' };
   }
   function presetMetric(axis, fallback, reducer) {
     var vals = [];
@@ -273,8 +318,9 @@
     '.chip{position:absolute;left:10px;top:-21px;font-size:11px;color:var(--dim);white-space:nowrap;',
     'font-variant-numeric:tabular-nums}',
     '.chip b{color:#fff}',
-    '.frame{background:#fff;overflow:visible;transform-origin:0 0;border-radius:6px;',
+    '.frame{background:transparent;overflow:visible;transform-origin:0 0;border-radius:6px;',
     'box-shadow:0 0 0 1px #000}',
+    '[data-product-view="1"] .frame{background:transparent;border-radius:0;box-shadow:none}',
     '.resize-rail{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:11px}',
     '.resize-rail input{width:150px}',
     '.resize-rail .num{color:#fff;font-variant-numeric:tabular-nums;min-width:45px;text-align:center}',
@@ -619,7 +665,23 @@
     var width = window.innerWidth || document.documentElement.clientWidth || 0;
     var requested = platOfWidth(width);
     var platforms = (TRUTH && TRUTH.platforms) || {};
-    return requested === 'mobile' && platforms.mobile ? 'mobile' : 'pc';
+    if (requested === 'mobile' && platforms.mobile) return 'mobile';
+    if (requested === 'pad' && platforms.pad) return 'pad';
+    return 'pc';
+  }
+
+  /* Product view uses the real browser viewport as the simulated device.
+     QA mode still locks to presets. Using the PC 1920 lock on a 412-wide
+     product window is the mobile-too-large failure: it scales a PC white
+     card instead of the native 20:2205 tree. */
+  function productViewportSize() {
+    if (!PRODUCT_VIEW) return null;
+    return {
+      w: window.innerWidth || document.documentElement.clientWidth || 0,
+      h: window.innerHeight || document.documentElement.clientHeight || 0,
+      dpr: window.devicePixelRatio || 1,
+      src: 'product-view',
+    };
   }
 
   function renderInto(container, state) {
@@ -988,6 +1050,7 @@
     wrap.style.display = '';
 
     frame.style.width = vp.w + 'px';
+    if (PRODUCT_VIEW) frame.setAttribute('data-product-viewport-src', vp.src || 'product-view');
     /* screen 即独立模拟 viewport（2026-08-05 用户红框：页面不能上下顶天立地）。
        frame 固定可视尺寸 = viewport（宽 vp.w、高 vp.h），全页多分区内容在 frame **内部纵向滚动**
        （overflow-y:auto），外层 stage 只装一屏高的屏幕容器、四周留黑色呼吸空间 —— 不再被整页
@@ -1371,10 +1434,10 @@
     scheduleStaticKvChromeSync();
   }, { passive: true });
   function compositionKeyForViewport(vp) {
-    var requested = platOfWidth(vp && vp.w);
+    var composition = compositionBpOf(vp && vp.w).key;
     var platforms = (TRUTH && TRUTH.platforms) || {};
-    if (requested === 'mobile' && platforms.mobile) return 'mobile';
-    if (requested === 'pad' && platforms.pad) return 'pad';
+    if (composition === 'mobile' && platforms.mobile) return 'mobile';
+    if ((composition === 'tablet' || composition === 'pad') && platforms.pad) return 'pad';
     return 'pc';
   }
   function beginResizeDrag() {
@@ -1985,6 +2048,10 @@
       if (!cfg.matrix || !(key in ({ plat: 1, region: 1, os: 1, mode: 1, lang: 1 }))) {
         throw new Error('__qa.setPref: 未声明的维度 ' + key);
       }
+      /* Platform is a geometry preference: use the same device-routing path as
+         the visible platform buttons, otherwise syncAll immediately derives PC
+         again from the old device viewport. */
+      if (key === 'plat') syncDeviceToPlat(value);
       S.prefs[key] = value; persist(); syncAll();
     },
     scale: function () { return typeof cfg.scale === 'function' ? cfg.scale.call(cfg) : 1; },
@@ -2085,4 +2152,5 @@
       : function (fn) { return setTimeout(fn, 0); };
     raf(function () { winResizeScheduled = false; render(); });
   });
+  } // continueChromeBoot
 })();

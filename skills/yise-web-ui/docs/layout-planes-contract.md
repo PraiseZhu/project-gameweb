@@ -36,6 +36,7 @@ Unknown or ambiguous planes do not block the preview-first milestone. They do bl
 - Background plane policy: cover-crop.
 - Foreground plane policy: source-ui-scale.
 - PC seasonal foreground implementation may be width-scale, but that is not a universal rule.
+- Mobile static scale uses the native mobile tree (`20:2205`, designWidth 750). A 412 product view must not enlarge a PC 1920 white card. `data-plat-fallback="mobile-uses-pc-tree"` is a static failure, not a resize claim.
 - Directory and top-right actions remain a separate overlay only when the raw source owner tree identifies a fixed or overlay owner. Otherwise they belong to the foreground plane.
 
 ## Human adjudication

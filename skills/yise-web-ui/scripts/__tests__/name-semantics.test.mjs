@@ -61,6 +61,8 @@ F('opacity<1 不可穿透', isPassthroughContainer({ type: 'FRAME', style: { opa
 F('blendMode 非直通不可穿透', isPassthroughContainer({ type: 'FRAME', style: { blendMode: 'MULTIPLY' } }) === false);
 F('有 fill 不可穿透', isPassthroughContainer({ type: 'FRAME', style: { fills: [{ type: 'SOLID', opacity: 1 }] } }) === false);
 F('有 effect 不可穿透', isPassthroughContainer({ type: 'FRAME', style: { effects: [{ type: 'DROP_SHADOW', visible: true }] } }) === false);
+F('ind/ 空 owner 不可穿透', isPassthroughContainer({ name: 'ind/progress', type: 'FRAME', clipsContent: false, style: {} }) === false);
+F('ind/ 下无名 SOLID 不是穿透容器', isPassthroughContainer({ name: 'Rectangle 1', type: 'RECTANGLE', fills: [{ type: 'SOLID', visible: true }] }, { ownerRole: 'ind' }) === false);
 
 console.log('— classifyBgScope 靠 owner 树位置 —');
 const secs = new Set(['1:467']);

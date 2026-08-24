@@ -61,3 +61,13 @@ test('registry does not accept source-node or asset fields even when opaque refs
   assert.ok(result.problems[0].violations.some((item) => item.key === 'sourceFrameId'));
   assert.ok(result.problems[0].violations.some((item) => item.key === 'assetKey'));
 });
+
+test('registry rejects material nested inside arrays, not only top-level objects', () => {
+  const result = validateAcceptedStaticStateRegistry([{
+    ...valid[0],
+    meta: [{ style: { color: 'red' } }],
+  }]);
+  assert.equal(result.ok, false);
+  assert.ok(result.problems.some((item) => /static material/.test(item.reason)));
+  assert.ok(result.problems.some((item) => (item.violations || []).some((v) => v.key === 'style')));
+});

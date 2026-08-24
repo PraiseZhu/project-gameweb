@@ -1,7 +1,12 @@
 ---
 name: yise-web-ui
-description: Reusable Figma-to-Web UI verification Skill: extract provenance-tracked truth, render auditable demos, run deterministic gates, and verify with Chrome. The Etheria demo is only a local verification example; this is not an AppStore app.
+trigger: yisewebui
+description: >-
+  Figma 转网页还原与验收（yise web ui / yisewebui）。从 Figma 抽带来源的真值、接线可验收 Demo、跑确定性门并用 Chrome 核验。
+  触发词：yisewebui、yise-web-ui、伊瑟网页还原。Etheria demo 只是本地核验样例，不是 AppStore 应用。
 ---
+
+<command-name>yisewebui</command-name>
 
 # yise-web-ui - Figma-to-Web UI verification Skill
 
@@ -10,11 +15,30 @@ This is the reusable public Skill identity. `demos/yise-ss5-preview` is an Ether
 ## Handoff package entry
 
 The only page-builder entry for a naming handoff package is
-`npm run figma:from-handoff -- <handoff-dir>`. This repo only accepts
-`kind=ready`. Unnamed judge-pack / green-draft lives in
-`projects/project-unnamed-inventory`. `inventory:check` is deprecated as a
-package entry; it only retains the five-item audit for a single `ready`
-inventory JSON. Never change draft status to `ready` to make a consumer pass.
+`npm run figma:from-handoff -- <handoff-dir>`. A `green-draft` package remains
+`ready=false`: consume only `determined` records and never wire `unknown`.
+`inventory:check` is deprecated as a package entry; it only retains the
+five-item audit for a single `ready` inventory JSON. Never change draft status
+to `ready` to make a consumer pass.
+
+**Direct Figma extract is not a handoff.** Fetching live Figma nodes (`1:180` /
+`20:2205` and the like) and running local `extract` / `truth` / `index.html` is
+a `figma-showcase` **candidate**. It must be labelled
+`latest-Figma local extract baseline`, never
+`latest inventory/handoff baseline`. Switch names found in truth prove
+**extraction recognition**, not click acceptance. Unresolved switch/page
+relations stay inert (fail-closed); do not guess-wire them.
+
+**A page that opens is not a finished Skill run.** Chrome can show a candidate
+and still fail gates C/D/F/X, skip Switch click checks, skip Resize, and reuse
+old copy/status/asset fixtures. Report those as `not-claimed` or failed. Do not
+say the page matches Figma, and do not treat a reused local fixture as proof
+that the latest inventory chain ran.
+
+If completeness / naming-library blocks green-draft (for example requiring a
+prefix the current draft does not have), keep the local candidate for visual
+observation and file the completeness issue upstream. Do not silently bypass
+handoff by pretending the local extract is the inventory consumer.
 
 ## Capability architecture
 
@@ -30,6 +54,13 @@ There are two explicit workflow declarations:
   and the later deterministic gates. It is separate from `figma-showcase`; do not
   block a Figma-only showcase candidate on product repo or PR prerequisites.
 
+`yisewebui` stops after each axis for human acceptance. Order is Main
+static → Translation → Interaction → Resize. Do not open the next axis until
+the previous one is accepted. Later axes must not mutate accepted static
+geometry, assets, or zh-CN copy. Directory static stays in Main; directory
+click/scrollspy stays in Interaction; directory stretch stays in Resize. Do
+not invent a fourth Skill.
+
 The default workflow is the **Main Skill**: extract Figma truth, structure
 content/geometry/components/states/interactions, record official behavior
 references, wire the Demo, and run deterministic gates/final review. It is
@@ -37,21 +68,22 @@ complemented by independent reusable capabilities and one optional audit:
 
 - **Translation Skill** — locale/copy context plus font, glyph, weight, and
   browser typography evidence (`scripts/lib/translation/index.mjs`).
-- **Resize Skill** — viewport stretch, composition base, preview 1:1 fit,
-  background/UI/sea plane policies, and hero lock/exit/release geometry while
-  the window size changes (`scripts/lib/resize/index.mjs`; see
-  `docs/resize-skill.md`).
 - **Interaction Skill** — formerly Motion Skill. Click, switch/tab, directory
   scrollspy, and retained motion contracts
   (`scripts/lib/figma-interaction-contract.mjs`,
   `scripts/lib/motion-contract.mjs`). File names stay for compatibility; new
   text must say Interaction, not Motion. Implementation is waiting for a later
-  modification pass (`docs/interaction-skill.md`).
+  modification pass (`docs/interaction-skill.md`). Directory click/scrollspy
+  stays in this axis; do not split the directory into a fourth Skill.
+- **Resize Skill** — viewport stretch, composition base, preview 1:1 fit,
+  background/UI/sea plane policies, and hero lock/exit/release geometry while
+  the window size changes (`scripts/lib/resize/index.mjs`; see
+  `docs/resize-skill.md`). Directory stretch stays here with the rest of Resize.
 
 **Figma Prototype Truth Audit** is optional evidence, not a prerequisite. It is
 read-only and fail-closed when explicitly requested. `observed` can support a
 prototype interaction claim; `explicit-empty`, `field-absent`, and `unavailable`
-remain `unverified` and do not block the ordinary Main/Translation/Resize/Interaction flow.
+remain `unverified` and do not block the ordinary Main/Translation/Interaction/Resize flow.
 See [docs/skill-architecture.md](docs/skill-architecture.md) for the module
 boundary, invocation, and output-status contract.
 
@@ -988,6 +1020,10 @@ demo 是产品代码的**镜像视图**，改动的 source of truth 永远是产
    `node scripts/assets-manifest.mjs --demo <dir> [--max-total <MB> --override-reason "<理由>"]`——
    图片 / 组件 bundle 一律落 demo 的 `assets/` 独立文件、HTML 用相对路径引用（不全内联：
    实测 hero 图内联能把单文件顶到 10MB 量级，首屏卡、GitHub 预览打不开、PR diff 不可读）。
+   **切图当场转 WebP**（透明图无损，不透明 quality 90；PNG 原图留盘做几何校对）。
+   **10MB 卡的是 `index.html` 自身**，不是 `assets/` 文件夹：超限时 `#qa-truth` 改成
+   `data-src="truth.json"`（页面需本地预览服务）。同事建站器压过了、开发嫌不够灵活，
+   所以质量档等拿到他们的文件后再调，现在不在抽图时一把压死角色/透明 UI。
    assets/ 总体积超生效阀 exit 2。这些文件逐个 sha 进 `inputHashes.assets` 防伪链，
    换了图不重跑 verify → report 失效；`pr-block --require-deployed` 也会逐个比对线上资产字节。
 

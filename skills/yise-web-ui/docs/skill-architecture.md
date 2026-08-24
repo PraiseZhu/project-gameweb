@@ -3,7 +3,7 @@
 This repository exposes a Main Skill plus three named axes and one optional
 evidence module. The Main Skill owns the complete extraction-to-demo workflow,
 including component/state structure, official behavior references, demo wiring,
-and final review. Translation, Resize, and Interaction are independent axes.
+and final review. Translation, Interaction, and Resize are independent axes.
 The old Motion label is kept only on existing file names. The normal workflow
 is complete without a Figma prototype snapshot; prototype evidence is an audit
 that may be requested when a claim needs it.
@@ -12,18 +12,21 @@ Workflow declarations are explicit and separate. `figma-showcase` is a Figma-onl
 candidate path: `preview-first` must inspect `index.html?product=1`, produce a
 candidate evidence level, screenshot, URL/command, source-platform evidence, and
 `not-claimed` capabilities, then the product view is opened immediately for
-human review. `product-qa` is the later product-repo / sandbox / PR evidence
-workflow and must not be silently assumed by a Figma-only showcase.
+human review. Opening the page does not mean gates, Switch clicks, Resize, or
+handoff passed. Direct Figma extract is labelled a local extract baseline, not
+an inventory/handoff baseline. `product-qa` is the later product-repo /
+sandbox / PR evidence workflow and must not be silently assumed by a Figma-only
+showcase. The only inventory consumer remains `figma:from-handoff`.
 
 ```mermaid
 flowchart LR
   S[Main Skill\nFigma extraction + static structure + demo review] --> T[Translation Skill\ncopy + typography]
-  S --> R[Resize Skill\nstretch + composition + hero geometry]
   S --> I[Interaction Skill\nclick / switch / scrollspy\nformerly Motion]
+  S --> R[Resize Skill\nstretch + composition + hero geometry]
   S -. optional audit .-> P[Figma Prototype Truth Audit\nread-only, fail-closed]
   T --> O[Auditable demo + reports]
-  R --> O
   I --> O
+  R --> O
   P --> A[Prototype audit result\nobserved / explicit-empty / field-absent / unavailable]
 ```
 
@@ -31,15 +34,22 @@ flowchart LR
 
 | Module | Owns | Does not own | Normal output |
 | --- | --- | --- | --- |
-| Main Skill | provenance-tracked content structure, geometry/modeling, demo scaffolding, deterministic A–F/X verification | locale decisions, stretch policy, timed effects, Figma writes | `spec.json`, `truth.json`, demo shell, verification reports |
+| Main Skill | provenance-tracked content structure, geometry/modeling, demo scaffolding, deterministic A–F/X verification. Figma slice export delivers WebP (PNG kept for geometry). HTML volume gate is 10MB on `index.html` itself; over limit, `#qa-truth` points at `truth.json` instead of inlining. | locale decisions, stretch policy, timed effects, Figma writes, official-site compressor quality tables (wait for the builder file) | `spec.json`, `truth.json`, demo shell, verification reports |
 | Translation Skill | locale mapping, copy context, font/glyph/weight diagnostics and translation-specific browser checks | geometry truth, stretch, prototype claims | translation evidence and independent pass/unverified findings |
-| Resize Skill | viewport-to-platform map, composition base, light-drag vs full rebuild, preview 1:1 fit, background/UI/sea plane policies, hero lock/exit/release geometry while the window size changes | locale, click wiring, Figma fetch, page node IDs | `scripts/lib/resize/index.mjs` decisions and stretch evidence |
 | Interaction Skill (formerly Motion) | click, switch/tab, directory scrollspy, retained motion contracts; implementation waiting for a later pass | stretch policy, typography, Figma/token edits | interaction evidence; frozen file names until the later pass |
+| Resize Skill | viewport-to-platform map, composition base, light-drag vs full rebuild, preview 1:1 fit, background/UI/sea plane policies, hero lock/exit/release geometry while the window size changes | locale, click wiring, Figma fetch, page node IDs | `scripts/lib/resize/index.mjs` decisions and stretch evidence |
 | Figma Prototype Truth Audit (optional) | read-only classification of explicit prototype fields and a requested `requireObserved` gate | inferring motion from Properties metadata, screenshots, names, variants, or missing data | audit status: `observed`, `explicit-empty`, `field-absent`, or `unavailable`; `unverified` when no observed evidence exists |
 
-Main Skill owns Figma extraction and the static page. Directory click/scrollspy
-source wiring currently still lives in Main until the Interaction pass moves
-it. Stretch policy is no longer an unnamed pile inside chrome/renderer.
+Main Skill owns Figma extraction and the static page, including directory
+static restore. Directory click/scrollspy stays in Interaction; directory
+stretch stays in Resize. Do not split the directory into a fourth Skill.
+
+`yisewebui` is a stop-layer workflow: finish Main static, stop for human
+acceptance, then Translation, then Interaction, then Resize. A later axis
+must not rewrite accepted static owners, fills, copy, or platform trees.
+SS5 `1:180` / `20:2205` on port 4201 is a local extract candidate, not the
+repair site for later axes. Official-site evidence for Interaction and
+Resize is language-generic; do not label it as a Korean-only rule.
 
 ### Extraction and interaction contract
 
@@ -141,11 +151,12 @@ visual evidence grade, the run may only report `candidate` and must not say
 ## Invocation and gate policy
 
 1. Run the Main Skill for every demo. It performs Figma extraction, structure,
-   official-site observation, Demo接线, and final review. Stretch work uses the
-   Resize Skill; click/switch/scrollspy work uses the Interaction Skill.
+   official-site observation, Demo接线, and final review. Click/switch/scrollspy
+   work uses the Interaction Skill; stretch work uses the Resize Skill.
 2. Run Translation as an independent axis when the demo contains locale or
-   typography work. Run Resize when viewport, composition, or hero-while-resize
-   behavior is in scope.
+   typography work. Run Interaction when click, switch/tab, or directory
+   scrollspy is in scope. Run Resize when viewport, composition, or
+   hero-while-resize behavior is in scope.
 3. Run the Prototype Truth Audit only when a task explicitly asks whether a
    Figma prototype interaction/transition is evidenced. Use
    `npm run prototype:truth -- --fixture <snapshot.json>` for a non-blocking

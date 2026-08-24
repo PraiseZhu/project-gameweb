@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -8,47 +8,13 @@ import { join } from "node:path";
 import { writeHandoffPack } from "../../../../standards/figma-naming/tool/src/handoff.mjs";
 import { rebuildInventoryIndexes } from "../../../../standards/figma-naming/tool/src/inventory.mjs";
 import { GOLD_MOBILE_PREFIX_CLASSES } from "../../../../standards/figma-naming/tool/scripts/check-draft-asset-completeness.mjs";
-import { behaviorOf, stampReadyFields } from "../../../../standards/figma-naming/spec/inventory.mjs";
-import { fixtureJudgment } from "../../../../standards/figma-naming/tool/src/judgment.mjs";
+import { behaviorOf } from "../../../../standards/figma-naming/spec/inventory.mjs";
 import { runFromHandoff } from "../figma-from-handoff.mjs";
 
 const CHECK = fileURLToPath(new URL("../figma-inventory-check.mjs", import.meta.url));
 
-
-function writeSlicePngs(dir, doc) {
-  mkdirSync(dir, { recursive: true });
-  for (const node of [
-    ...(doc.nodes || []),
-    ...(doc.attachments?.modals || []).flatMap((item) => item.nodes || []),
-    ...(doc.attachments?.componentSets || []).flatMap((item) => item.nodes || []),
-    ...(doc.attachments?.components || []).flatMap((item) => item.nodes || []),
-  ]) {
-    if (node.status === "determined" && ["img", "bg", "kv"].includes(node.role)) {
-      writeFileSync(join(dir, `${String(node.id).replace(/[:;]/g, "-")}.png`), Buffer.alloc(64, 2));
-    }
-  }
-  return dir;
-}
-
-function packReady(dir, pcDoc, mobileDoc, outName = "out") {
-  const pcPath = join(dir, "pc.json");
-  const mobilePath = join(dir, "mo.json");
-  writeFileSync(pcPath, JSON.stringify(pcDoc));
-  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
-  return writeHandoffPack({
-    pcPath,
-    mobilePath,
-    pcDoc,
-    mobileDoc,
-    kind: "ready",
-    outDir: join(dir, outName),
-    assetsPc: writeSlicePngs(join(dir, "pc-assets"), pcDoc),
-    assetsMobile: writeSlicePngs(join(dir, "mobile-assets"), mobileDoc),
-  });
-}
-
-function sample(id, status = "ready") {
-  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => stampReadyFields({
+function sample(id, status = "draft") {
+  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
     id: `${id}-${role}`,
     type: role === "btn" ? "INSTANCE" : "FRAME",
     name: `${role}/${role}`,
@@ -58,7 +24,7 @@ function sample(id, status = "ready") {
     via: "prefix",
     box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
   }));
-  const doc = rebuildInventoryIndexes({
+  return rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
     status,
@@ -70,15 +36,13 @@ function sample(id, status = "ready") {
     attachments: { componentSets: [], modals: [] },
     relations: [],
   });
-  fixtureJudgment(doc);
-  return doc;
 }
 
 function runCheck(path, json = true) {
   return spawnSync(process.execPath, json ? [CHECK, path, "--json"] : [CHECK, path], { encoding: "utf8" });
 }
 
-test("inventory:check delegates a ready handoff to from-handoff", () => {
+test("inventory:check delegates a green-draft handoff to from-handoff", () => {
   const dir = mkdtempSync(join(tmpdir(), "inventory-check-pack-"));
   const pcDoc = sample("1:1");
   const mobileDoc = sample("2:2");
@@ -86,20 +50,20 @@ test("inventory:check delegates a ready handoff to from-handoff", () => {
   const mobilePath = join(dir, "mobile.json");
   writeFileSync(pcPath, JSON.stringify(pcDoc));
   writeFileSync(mobilePath, JSON.stringify(mobileDoc));
-  const pack = packReady(dir, pcDoc, mobileDoc, "pack");
+  const pack = writeHandoffPack({ pcPath, mobilePath, pcDoc, mobileDoc, kind: "green-draft", outDir: join(dir, "pack") });
 
   const expected = runFromHandoff(pack.outDir);
   const actual = runCheck(pack.outDir);
   assert.equal(actual.status, 0, actual.stderr);
   assert.match(actual.stderr, /吃包请用 figma:from-handoff/);
   assert.deepEqual(JSON.parse(actual.stdout), expected);
-  assert.equal(JSON.parse(actual.stdout).ready, true);
+  assert.equal(JSON.parse(actual.stdout).ready, false);
 });
 
 test("inventory:check rejects a standalone draft without suggesting ready", () => {
   const dir = mkdtempSync(join(tmpdir(), "inventory-check-draft-"));
   const path = join(dir, "inventory.json");
-  writeFileSync(path, JSON.stringify(sample("1:1", "draft")));
+  writeFileSync(path, JSON.stringify(sample("1:1")));
   const actual = runCheck(path, false);
   assert.notEqual(actual.status, 0);
   assert.match(actual.stderr, /figma:from-handoff/);

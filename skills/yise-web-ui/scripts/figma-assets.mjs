@@ -7,6 +7,10 @@
  * 老师 SKILL.md（P6 第 4 条，硬门）：图片一律落 demo 的 assets/ 独立文件、
  * HTML 用相对路径引用，不全内联。
  *
+ * 2026-08-24：抽图当场转 WebP（透明图无损，不透明 quality 90），PNG 原图留在
+ * assets/ 当几何校对源。页面 #qa-assets 引用 WebP。HTML 体积闸门卡的是
+ * index.html 自身 10MB（常见超因是整份 truth 内嵌），不是 assets/ 文件夹。
+ *
  * 实测依据：既有同类产物是 14.3MB 自包含单文件，预算上限 15MB，已经贴线。
  * 而且 base64 让字节涨约 33%，还让浏览器无法缓存图片 —— 加载预算只会越来越难守。
  *
@@ -34,6 +38,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { PNG } from 'pngjs';
+import { encodeWebpBatch } from './lib/encode-webp.mjs';
 import { deriveRole } from './lib/figma-name-semantics.mjs';
 
 const API = 'https://api.figma.com/v1';
@@ -53,6 +58,7 @@ function parseArgs(argv) {
     else if (k === '--scale') a.scale = Number(argv[++i]);
     else if (k === '--dry-run') a.dryRun = true;
     else if (k === '--only') a.only = String(argv[++i] || '').split(',').map((s) => s.trim()).filter(Boolean);
+    else if (k === '--no-webp') a.noWebp = true;
     else fail(`未知参数：${k}`);
   }
   if (!a.demo) fail('必须给 --demo <dir>');
@@ -277,8 +283,34 @@ async function figmaGet(url, token) {
 }
 
 /** nodeId → 文件名。带上 nodeId 保证唯一，不靠图层名（图层名会重复、会带斜杠） */
-function assetFileName(nodeId) {
-  return nodeId.replace(/[:;]/g, '-') + '.png';
+export function assetFileName(nodeId, ext = 'png') {
+  return nodeId.replace(/[:;]/g, '-') + '.' + ext;
+}
+
+/** 按 PNG 源 sha 去重后再转 WebP。页面引用 WebP；PNG 留盘做几何校对。 */
+export function planWebpDelivery(manifest, { assetsDir, demoDir }) {
+  const seen = new Map();
+  const jobs = [];
+  const aliases = [];
+  for (const [id, rec] of Object.entries(manifest || {})) {
+    if (!rec?.file) continue;
+    const sha = rec.pngSha256 || rec.sha256;
+    if (!sha) continue;
+    if (seen.has(sha)) {
+      aliases.push({ nodeId: id, duplicateOf: seen.get(sha) });
+      continue;
+    }
+    seen.set(sha, id);
+    const pngName = rec.pngFile || rec.file;
+    const webpRel = String(pngName).replace(/\.png$/i, '.webp');
+    jobs.push({
+      nodeId: id,
+      src: join(assetsDir || join(demoDir, 'assets'), String(pngName).replace(/^assets\//, '')),
+      dest: join(demoDir, webpRel),
+      webpRel,
+    });
+  }
+  return { jobs, aliases };
 }
 
 function cropPng(buf, sx, sy, sw, sh) {
@@ -475,10 +507,13 @@ async function main() {
 
       writeFileSync(join(assetsDir, file), buf);
       bytes += buf.length;
+      const pngSha = createHash('sha256').update(buf).digest('hex');
 
       manifest[p.nodeId] = {
         file: `assets/${file}`,
-        sha256: createHash('sha256').update(buf).digest('hex'),
+        pngFile: `assets/${file}`,
+        pngSha256: pngSha,
+        sha256: pngSha,
         bytes: buf.length,
         name: p.name, reason: p.reason, designSize: `${p.w}x${p.h}`, exportScale: p.scale,
         pixelSize: pxW != null ? `${pxW}x${pxH}` : null,
@@ -498,6 +533,43 @@ async function main() {
     }
   }
 
+  let webp = { attempted: 0, converted: 0, duplicates: 0, skipped: false, why: null };
+  if (!a.noWebp) {
+    const plan = planWebpDelivery(manifest, { assetsDir, demoDir });
+    webp.attempted = plan.jobs.length;
+    webp.duplicates = plan.aliases.length;
+    const encoded = encodeWebpBatch(plan.jobs.map((j) => ({ src: j.src, dest: j.dest })));
+    webp.skipped = !!encoded.skipped;
+    webp.why = encoded.why || null;
+    const bySrc = new Map((encoded.results || []).map((r) => [r.src.replace(/\\/g, '/'), r]));
+    const recById = (id) => manifest[id];
+    for (const job of plan.jobs) {
+      const rec = recById(job.nodeId);
+      if (!rec) continue;
+      const hit = bySrc.get(job.src.replace(/\\/g, '/')) || encoded.results?.find((r) => r.dest.replace(/\\/g, '/') === job.dest.replace(/\\/g, '/'));
+      if (!hit) continue;
+      rec.file = job.webpRel;
+      rec.webpFile = job.webpRel;
+      rec.sha256 = createHash('sha256').update(readFileSync(job.dest)).digest('hex');
+      rec.bytes = hit.bytes;
+      rec.webp = { bytes: hit.bytes, lossless: hit.lossless, alpha: hit.alpha };
+      webp.converted += 1;
+    }
+    for (const alias of plan.aliases) {
+      const src = recById(alias.duplicateOf);
+      const dest = recById(alias.nodeId);
+      if (!src || !dest || !src.webpFile) continue;
+      dest.file = src.webpFile;
+      dest.webpFile = src.webpFile;
+      dest.sha256 = src.sha256;
+      dest.bytes = src.bytes;
+      dest.webp = src.webp;
+      dest.duplicateOf = alias.duplicateOf;
+    }
+    bytes = Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0);
+  }
+  out.webp = webp;
+
   const mergedNoUrl = previous ? (previous.noUrl || []).filter((x) => !onlySet.has(x.nodeId)).concat(noUrl) : noUrl;
   const mergedFailed = previous ? (previous.failed || []).filter((x) => !onlySet.has(x.nodeId)).concat(failed) : failed;
   const mergedClamped = previous ? (previous.clamped || []).filter((x) => !onlySet.has(x.nodeId)).concat(clampedList) : clampedList;
@@ -509,6 +581,7 @@ async function main() {
              '可校验的替代品是这里的 sha256 + nodeId + 稿版本（对应老师门 D 的 asset-sha 绑定）。',
       designVersion, exportScale: scale,
       counts: { requested: picks.length, downloaded: Object.keys(manifest).length, noUrl: noUrl.length, failed: failed.length },
+      webp,
       totalBytes: bytes,
       assets: manifest,
       noUrl,      // Figma 导不出的：不静默丢，列出来（同类产物里出现过这种）
@@ -560,4 +633,3 @@ async function main() {
 if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href) {
   main().catch((e) => fail(e?.message || String(e)));
 }
-

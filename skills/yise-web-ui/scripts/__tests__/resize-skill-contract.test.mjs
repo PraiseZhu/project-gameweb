@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   platOfWidth,
+  compositionBucketForWidth,
   compositionKeyForViewport,
   lightDragPathAllowed,
   viewFitScale,
@@ -27,6 +28,21 @@ test('tablet without a pad tree reuses PC instead of inventing a layout', () => 
   const nativeMobile = compositionKeyForViewport({ width: 390, platforms: { mobile: true } });
   assert.equal(nativeMobile.key, 'mobile');
   assert.equal(nativeMobile.fallback, null);
+});
+
+test('a product can keep the pad picker while explicitly using desktop composition above its observed mobile cutoff', () => {
+  const observedComposition = [
+    { key: 'mobile', min: 0, max: 750 },
+    { key: 'desktop', min: 751, max: null },
+  ];
+  assert.equal(platOfWidth(768), 'pad');
+  assert.equal(compositionBucketForWidth(750, observedComposition), 'mobile');
+  assert.equal(compositionBucketForWidth(751, observedComposition), 'pc');
+  assert.equal(compositionKeyForViewport({
+    width: 768,
+    platforms: { mobile: true, pad: true },
+    compositionBreakpoints: observedComposition,
+  }).key, 'pc');
 });
 
 test('light drag is legal only on the same composition base', () => {

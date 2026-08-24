@@ -23,11 +23,11 @@ function stateKeyOf({ page, platform, state } = {}) {
 }
 
 function scanMaterial(value, path, violations) {
-  if (!isObject(value)) return;
   if (Array.isArray(value)) {
     value.forEach((item, index) => scanMaterial(item, `${path}[${index}]`, violations));
     return;
   }
+  if (!isObject(value)) return;
   for (const [key, child] of Object.entries(value)) {
     const childPath = path ? `${path}.${key}` : key;
     if (MATERIAL_KEYS.has(key)) violations.push({ path: childPath, key });

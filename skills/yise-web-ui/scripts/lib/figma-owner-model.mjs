@@ -61,13 +61,25 @@ export function checkStructContract(node) {
  *   - blendMode 非 PASS_THROUGH/NORMAL（组内混合）
  *   - 有 fill/stroke/effect（自己长得出东西）
  * 全都没有 → 纯穿透容器（可穿过，孩子挂到最近有渲染的祖先）。 */
-export function isPassthroughContainer(node) {
+export function isIndProgressPaint(node, { ownerRole } = {}) {
+  if (ownerRole !== 'ind') return false;
+  const type = String(node?.type || '').toUpperCase();
+  if (!['RECTANGLE', 'VECTOR', 'LINE', 'ELLIPSE', 'STAR', 'REGULAR_POLYGON'].includes(type)) return false;
+  if (deriveRole(node).role) return false;
+  const fills = node.fills || node.style?.fills || [];
+  return fills.some((fill) => fill && fill.visible !== false && fill.type === 'SOLID');
+}
+
+export function isPassthroughContainer(node, ctx = {}) {
   if (!node || typeof node !== 'object') return false;
   const role = deriveRole(node, { legacy: true }).role;
   /* Structural/component owners remain addressable even when visually empty;
      otherwise extraction would flatten the owner and lose interaction truth. */
   if (['sec', 'fix', 'scroll', 'switch', 'tab', 'ind', 'swpage', 'mix'].includes(role)) return false;
   if (['INSTANCE', 'COMPONENT', 'COMPONENT_SET'].includes(String(node.type || '').toUpperCase())) return false;
+  /* Unnamed SOLID paint under ind/ is the progress fill. Keep it; do not
+     infer a progress role from class names or drop it as a pure container. */
+  if (isIndProgressPaint(node, ctx)) return false;
   const st = node.style || node;
   const hasFill = Array.isArray(st.fills) && st.fills.some((f) => f && f.visible !== false && (f.type !== 'SOLID' || (f.opacity == null ? 1 : f.opacity) > 0));
   const hasStroke = st.strokeWeight > 0 || st.strokeColor != null;
