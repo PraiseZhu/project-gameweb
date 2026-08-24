@@ -41,7 +41,7 @@ export function parseName(raw) {
     body: null, params: [], unknownPrefix: null, suggestion: null,
   };
 
-  // 半角 / 、全角 ／ 、反斜杠 \ 都当作「试图用前缀」；斜杠两侧允许误打的空格
+  // 半角 / 、全角 ／ 、反斜杠 \ 都当作「试图用前缀」；/ 与 ／ 合法，\ 仍报错。斜杠两侧允许误打的空格
   const m = PREFIX_RE.exec(name);
   if (!m) return out;
   const [, cand, sp1, slash, sp2, rest] = m;

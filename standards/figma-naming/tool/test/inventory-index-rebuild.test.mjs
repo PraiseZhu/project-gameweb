@@ -147,18 +147,34 @@ test("页上用到的组件集变体算在页上：当前展开没有 hot，变�
 });
 
 function goldClassDoc(roles, pageWidth) {
+  const switchId = roles.includes("switch") ? `n${roles.indexOf("switch")}` : null;
+  const scrollId = roles.includes("scroll") ? `n${roles.indexOf("scroll")}` : null;
+  const nodes = roles.map((role, index) => ({
+    id: `n${index}`,
+    type: "FRAME",
+    name: role === "sec" ? "sec/1-首屏" : `${role}/x`,
+    status: "determined",
+    role,
+    label: role === "sec" ? "1-首屏" : "x",
+    parentId: role === "ind" && switchId ? switchId : null,
+    box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
+  }));
+  if (scrollId) {
+    nodes.push({
+      id: `${scrollId}-track`,
+      type: "FRAME",
+      name: "轨道",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: scrollId,
+      box: { x: 0, y: 0, w: 80, h: 32 },
+    });
+  }
   return rebuildInventoryIndexes({
     schema: "inventory/v2",
     status: "draft",
     page: { id: "p", box: { x: 0, y: 0, w: pageWidth, h: 1000 } },
-    nodes: roles.map((role, index) => ({
-      id: `n${index}`,
-      type: "FRAME",
-      name: `${role}/x`,
-      status: "determined",
-      role,
-      box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
-    })),
+    nodes,
     attachments: { modals: [], componentSets: [], components: [] },
   });
 }

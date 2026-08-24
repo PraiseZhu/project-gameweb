@@ -20,7 +20,7 @@ import {
   signatureHits,
 } from "./structural-signature.mjs";
 
-const ROLE_PREFIX = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
+const ROLE_PREFIX = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab|copy)[/／]/;
 const CARD_ART_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘)$/;
 /** 组件身份前缀：实例有证据时可回写母版。sec/bg/scroll/fix/kv 是位置类，母版不跟。 */
 const IDENTITY_ROLES = new Set(["btn", "img", "ind", "switch", "tab", "modal", "mix", "dyn", "hot"]);
@@ -41,7 +41,7 @@ function structuralNameAllowed(node) {
 }
 
 function hasPrefix(node, role) {
-  return node.status === "determined" && node.role === role && String(node.name ?? "").startsWith(`${role}/`);
+  return node.status === "determined" && node.role === role && new RegExp(`^${role}[/／]`).test(String(node.name ?? ""));
 }
 
 function variantLabels(node) {
@@ -201,7 +201,7 @@ function setRoleInstances(doc, options = {}) {
   }
   const fixIds = new Set();
   for (const node of doc.nodes || []) {
-    if (node && (node.role === "fix" || String(node.name || "").startsWith("fix/"))) fixIds.add(node.id);
+    if (node && (node.role === "fix" || /^fix[/／]/.test(String(node.name || "")))) fixIds.add(node.id);
   }
   const underFix = (id) => {
     const seen = new Set();
@@ -346,7 +346,7 @@ export function hasImgAncestor(node, byId) {
     seen.add(current);
     const parent = byId.get(current);
     if (!parent) break;
-    if (hasPrefix(parent, "img") || String(parent.name || "").startsWith("img/")) return true;
+    if (hasPrefix(parent, "img") || /^img[/／]/.test(String(parent.name || ""))) return true;
     current = parent.parentId;
   }
   return false;
@@ -358,7 +358,7 @@ function hasImgAncestorAcrossCopies(node, copies) {
   while (current && !seen.has(current)) {
     seen.add(current);
     const parents = copies.get(current) || [];
-    if (parents.some((parent) => hasPrefix(parent, "img") || String(parent.name || "").startsWith("img/"))) return true;
+    if (parents.some((parent) => hasPrefix(parent, "img") || /^img[/／]/.test(String(parent.name || "")))) return true;
     current = parents[0]?.parentId || null;
   }
   return false;
@@ -377,10 +377,10 @@ function childrenByParent(doc) {
 export function isTextGroupImgExempt(node) {
   const body = rawName(node);
   const name = String(node.name || "");
-  if (/^logo$/i.test(body) || name.startsWith("img/logo")) return true;
+  if (/^logo$/i.test(body) || /^img[/／]logo/.test(name)) return true;
   if (body === "兑换码背景") return true;
   if (node.role === "bg" || node.role === "kv") return true;
-  return name.startsWith("bg/") || name.startsWith("kv/");
+  return /^bg[/／]/.test(name) || /^kv[/／]/.test(name);
 }
 
 function isVideoFrameWrapper(node) {
@@ -1082,7 +1082,7 @@ function geometryMixHits(doc) {
   if (!pageWidth) return hits;
   for (const node of indexNodes(doc).values()) {
     if (node.status === "skipped" || node.status === "determined" || node.type !== "FRAME" || node.scope !== "page") continue;
-    if (node.role === "sec" || String(node.name || "").startsWith("sec/")) continue;
+    if (node.role === "sec" || /^sec[/／]/.test(String(node.name || ""))) continue;
     if ((Number(node.box?.w) || 0) < pageWidth * 0.7) continue;
     if ((Number(node.box?.h) || 0) > (Number(doc.page?.box?.h) || 0) * 0.25) continue;
     const children = kids.get(node.id) || [];
@@ -1352,7 +1352,7 @@ function scopeRootOf(node, byId) {
     seen.add(current);
     const parent = byId.get(current);
     if (!parent) break;
-    if (String(parent.name || "").startsWith("sec/") || parent.role === "sec") return parent;
+    if (/^sec[/／]/.test(String(parent.name || "")) || parent.role === "sec") return parent;
     current = parent.parentId;
   }
   return null;

@@ -11,7 +11,8 @@ const F = (name, children = [], props = {}) => ({ id: id(), name, type: "FRAME",
 const G = (name, children = [], props = {}) => ({ id: id(), name, type: "GROUP", absoluteBoundingBox: BOX(), children, ...props });
 const T = (name, characters = "文字", props = {}) => ({
   id: id(), name, type: "TEXT", characters, absoluteBoundingBox: BOX(),
-  style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400, textAutoResize: "WIDTH_AND_HEIGHT" }, ...props,
+  style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400, textAutoResize: "WIDTH_AND_HEIGHT", ...props.style },
+  ...Object.fromEntries(Object.entries(props).filter(([key]) => key !== "style")),
 });
 const R = (name, props = {}) => ({ id: id(), name, type: "RECTANGLE", absoluteBoundingBox: BOX(), ...props });
 const INST = (name, children = [], props = {}) => ({
@@ -83,7 +84,7 @@ export function dirtyTree() {
   seq = 0;
   return F("pc", [
     F("sec/1-首屏", [T("占位", "占位")]),               // 与 sec/1-重复 撞号 → N-SEC-DUP-NUMBER
-    R("img／装饰", IMG_FILL),                           // N-PREFIX-SLASH（全角斜杠）
+    R("img\\装饰", IMG_FILL),                           // N-PREFIX-SLASH（反斜杠）
     R("imge/背景", IMG_FILL),                           // N-PREFIX-NOT-IN-TABLE（拼错，带建议）
     T("part / ten", "十"),                              // N-PREFIX-NOT-IN-TABLE（自造；空格合法，不再报 SLASH）
     G("btn/充值@link=", []),                            // N-PARAM-EMPTY

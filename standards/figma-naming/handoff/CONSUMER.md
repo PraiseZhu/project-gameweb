@@ -14,7 +14,7 @@ npm run handoff:pack -- \
   --out ../../../_tmp/out/handoff-<page>
 ```
 
-包 `kind=ready`。不要 `--allow-green-draft`，不要判断包。缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项 → 打包失败。未提供 `--assets-pc` / `--assets-mobile` 仍可打 ready，`assets.ok` 为 false。传了切图目录却盖不住 `sliceIdsOf` → 打包失败。`export-handoff-slices` 是可选工具，不是装箱前置。
+包 `kind=ready`。不要 `--allow-green-draft`，不要判断包。缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项 → 打包失败。不要传 `--assets-pc` / `--assets-mobile`：PNG 不进交接包。`export-handoff-slices` 是做页可选工具，不是装箱前置。
 
 未规范稿去 `projects/project-unnamed-inventory`。本仓 `--allow-green-draft` 直接失败。禁止手改 JSON 的 `status`。
 
@@ -25,9 +25,9 @@ cd skills/yise-web-ui
 npm run figma:from-handoff -- <交接包目录>
 ```
 
-`inventory:check` 不是做页吃包入口。它只保留对单份 `status=ready` inventory JSON 的五项诊断；若误传完整 handoff 目录，会提示并转调 `figma:from-handoff`。非 ready 包不可被消费。
+`inventory:check` 不是做页吃包入口。它只保留对单份 `status=ready` inventory JSON 的五项诊断。吃包用 `figma:from-handoff`。非 ready 包不可被消费。
 
-消费包时要核 `manifest.schema` / `kind` / `ready` / `fingerprint`，对不上就不要吃。png 由做页按清单契约自己导，不要求包内 `assets-pc/` `assets-mobile/`。
+交接包只交清单。切图按节点 `sliceExport`（墨迹框、1 倍、png、完整 node id）由做页自己导出，包里不带 PNG。消费包时要核 `manifest.schema` / `kind` / `ready` / `fingerprint`，对不上就不要吃。
 
 ## 做页读什么
 
@@ -43,7 +43,7 @@ npm run figma:from-handoff -- <交接包目录>
 行为看清单里的 `role` + `params`，禁止 `parseLayerName` / `deriveRole` 再猜图层名。
 
 摆位置用 `pageBox`（相对这一页）和 `parentBox`（相对父层），不要拿画布 `box` 去摆。`fix/` 钉视口，坐标用 `viewportBox` / `pageBox`。  
-切图按节点 `sliceExport`：墨迹框、1 倍、png，文件名是完整 node id。只导 `img/` `bg/` `kv/`。页上用到的组件集**每个变体**里的切图都要导，不能只导当前看见的那一张。做页按这份契约自己导出，不要再走 `figma-assets` 的 `use_absolute_bounds` 按节点框重导。  
+切图按节点 `sliceExport`：墨迹框、1 倍、png，文件名是完整 node id。只导 `img/` `bg/` `kv/`。页上用到的组件集**每个变体**里的切图都要导，不能只导当前看见的那一张。做页按这份契约自己导出，包里没有现成 PNG，不要再走 `figma-assets` 的 `use_absolute_bounds` 按节点框重导。  
 TEXT 默认可改字；一旦 `role` 是 `img/` `bg/` `kv/` 就按切图，不排字。  
 有 `rotation` 必须按这个角度摆，不能当 0。`style.fills` 用全层，不能只吃第一层。  
 拉伸读 `layout.constraints`（钉左/钉右/居中/随页）。遮罩/裁切读 `isMask` `maskChildren` `clipsContent`，按父层裁，不让子层漏边。  

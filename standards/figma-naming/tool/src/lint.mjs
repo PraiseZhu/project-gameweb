@@ -106,8 +106,8 @@ export function lint(root) {
             ? `${parsed.suggestion}/${parsed.body}${parsed.params.map((p) => p.raw).join("")}`
             : undefined);
       }
-      if (usesPrefixSyntax(parsed) && parsed.slash !== "/") {
-        add("N-PREFIX-SLASH", `分隔符是 \`${parsed.slash}\`，必须是半角 \`/\``,
+      if (usesPrefixSyntax(parsed) && parsed.slash !== "/" && parsed.slash !== "／") {
+        add("N-PREFIX-SLASH", `分隔符是 \`${parsed.slash}\`，必须是半角 \`/\` 或全角 \`／\``,
           `${parsed.prefixRaw}/${parsed.body}${parsed.params.map((p) => p.raw).join("")}`);
       }
     }

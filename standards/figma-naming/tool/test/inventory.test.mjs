@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanTree } from "./fixtures.mjs";
-import { buildInventory, validateInventory, renderHumanSummary, resolvePageRoot, unnamedRequiresDraft, sanitizeInventoryName } from "../src/inventory.mjs";
+import { buildInventory, validateInventory, auditDeclaredStructure, renderHumanSummary, resolvePageRoot, unnamedRequiresDraft, sanitizeInventoryName } from "../src/inventory.mjs";
 import { INVENTORY_SCHEMA } from "../../spec/inventory.mjs";
 
 const TOOL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,6 +34,50 @@ test("cleanTree：有前缀的进 determined，无前缀 TEXT 是 copy，ref 整
   const text = renderHumanSummary(inv);
   assert.match(text, /sec\/1/);
   assert.match(text, /已确定/);
+});
+
+test("全角斜杠升 determined，与半角同一身份", () => {
+  const tree = {
+    id: "r", name: "pc", type: "FRAME",
+    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 },
+    children: [{
+      id: "b", name: "btn／播放", type: "FRAME",
+      absoluteBoundingBox: { x: 0, y: 0, width: 40, height: 20 },
+      children: [],
+    }],
+  };
+  const inv = buildInventory(tree, { requestedNodeId: "r" });
+  const row = inv.nodes.find((n) => n.id === "b");
+  assert.equal(row.status, "determined");
+  assert.equal(row.role, "btn");
+  assert.equal(row.behavior, "click");
+  assert.equal(validateInventory(inv, tree).ok, true);
+});
+
+test("结构硬闸：@sec 没靶、空滑动、ind 无轮播会红；光 btn 和 unknown 不红", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 40 },
+    ...extra,
+  });
+  const bad = node("page", "FRAME", "pc", [
+    node("sec1", "FRAME", "sec/1-首屏"),
+    node("nav", "FRAME", "btn/跳转@sec=9"),
+    node("empty", "FRAME", "scroll/空"),
+    node("dot", "FRAME", "ind/进度条"),
+    node("plain", "FRAME", "btn/播放"),
+    node("anon", "GROUP", "内容组"),
+  ]);
+  const inv = buildInventory(bad, { requestedNodeId: "page" });
+  const check = validateInventory(inv, bad);
+  assert.equal(check.ok, false);
+  const text = check.problems.join("\n");
+  assert.match(text, /@sec=9 指向的分区不存在/);
+  assert.match(text, /滑动容器内没有任何子层/);
+  assert.match(text, /作用域内没有任何 switch/);
+  assert.equal(inv.nodes.find((n) => n.id === "plain").status, "determined");
+  assert.equal(inv.nodes.find((n) => n.id === "anon").status, "unknown");
+  assert.equal(auditDeclaredStructure(inv).ok, false);
 });
 
 test("unknown 不得带 role / 不得赋行为", () => {
@@ -241,6 +285,146 @@ test("本仓未规范 CLI 一律失败并指向独立仓", () => {
     assert.notEqual(run.status, 0, script);
     assert.match(`${run.stderr}\n${run.stdout}`, /project-unnamed-inventory/, script);
   }
+});
+
+test("做页字段：相对页/父层坐标、fix 钉视口、切图墨迹框、行高百分比、实例改动", () => {
+  const page = {
+    id: "page", name: "pc", type: "FRAME",
+    absoluteBoundingBox: { x: 100, y: 200, width: 1000, height: 2000 },
+    children: [
+      {
+        id: "sec", name: "sec/1-首屏", type: "FRAME",
+        absoluteBoundingBox: { x: 100, y: 200, width: 1000, height: 800 },
+        children: [
+          {
+            id: "img:1", name: "img/角色", type: "RECTANGLE",
+            absoluteBoundingBox: { x: 150, y: 260, width: 200, height: 300 },
+            absoluteRenderBounds: { x: 140, y: 250, width: 220, height: 320 },
+            rotation: 15,
+            fills: [{ type: "IMAGE" }, { type: "GRADIENT_LINEAR" }],
+          },
+          {
+            id: "txt", name: "标题", type: "TEXT", characters: "夏日",
+            absoluteBoundingBox: { x: 180, y: 280, width: 120, height: 40 },
+            style: {
+              fontFamily: "Source Han Sans", fontSize: 20, fontWeight: 700,
+              lineHeightPx: 30, paragraphSpacing: 8, textAutoResize: "HEIGHT",
+            },
+            minWidth: 80, maxWidth: 400, minHeight: 20, maxHeight: 80,
+            layoutPositioning: "ABSOLUTE",
+          },
+        ],
+      },
+      {
+        id: "fix", name: "fix/左侧导航", type: "FRAME",
+        absoluteBoundingBox: { x: 100, y: 240, width: 80, height: 400 },
+        children: [],
+      },
+      {
+        id: "inst", name: "btn/状态", type: "INSTANCE", componentId: "on",
+        absoluteBoundingBox: { x: 200, y: 1100, width: 40, height: 40 },
+        componentProperties: { "Property 1": "on" },
+        overrides: [{ id: "child", overriddenFields: ["characters"] }],
+      },
+    ],
+  };
+  const set = {
+    id: "set", name: "btn/状态", type: "COMPONENT_SET",
+    absoluteBoundingBox: { x: 0, y: 0, width: 40, height: 40 },
+    componentPropertyDefinitions: {
+      "Property 1": { type: "VARIANT", defaultValue: "on", variantOptions: ["on", "off"] },
+    },
+    children: [
+      { id: "on", name: "Property 1=on", type: "COMPONENT", absoluteBoundingBox: { x: 0, y: 0, width: 40, height: 40 }, children: [] },
+      { id: "off", name: "Property 1=off", type: "COMPONENT", absoluteBoundingBox: { x: 50, y: 0, width: 40, height: 40 }, children: [] },
+    ],
+  };
+  const shelf = {
+    id: "shelf", name: "货架", type: "FRAME",
+    absoluteBoundingBox: { x: 0, y: 0, width: 2000, height: 3000 },
+    children: [page, set],
+  };
+
+  const built = buildInventory(shelf, { requestedNodeId: "page" });
+  assert.deepEqual(built.sliceExport, { bounds: "render", scale: 1, format: "png" });
+  const sec = built.nodes.find((n) => n.id === "sec");
+  assert.deepEqual(sec.pageBox, { x: 0, y: 0, w: 1000, h: 800 });
+  const img = built.nodes.find((n) => n.id === "img:1");
+  assert.deepEqual(img.sliceExport, { bounds: "render", scale: 1, format: "png", file: "img-1.png" });
+  assert.equal(img.rotation, 15);
+  assert.equal(img.style.fills.length, 2);
+  const txt = built.nodes.find((n) => n.id === "txt");
+  assert.equal(txt.text.fontFamily, "Source Han Sans");
+  assert.equal(txt.text.fontWeight, 700);
+  assert.equal(txt.text.fontSize, 20);
+  assert.equal(txt.text.lineHeightPercent, 150);
+  assert.equal(txt.text.paragraphSpacing, 8);
+  assert.equal(txt.layout.maxWidth, 400);
+  const check = validateInventory(built, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+  const fix = built.nodes.find((n) => n.id === "fix");
+  assert.equal(fix.pin, "viewport");
+  const inst = built.nodes.find((n) => n.id === "inst");
+  assert.deepEqual(inst.instanceOverrides.overrides, [{ id: "child", overriddenFields: ["characters"] }]);
+  assert.deepEqual(img.parentBox, { x: 50, y: 60, w: 200, h: 300 });
+  assert.equal(txt.layout.layoutPositioning, "ABSOLUTE");
+  assert.deepEqual(fix.viewportBox, { x: 0, y: 40, w: 80, h: 400 });
+});
+
+test("做页字段缺一则校验红：字体三项、切图契约、fix 钉视口、rotation", () => {
+  const page = {
+    id: "page", name: "pc", type: "FRAME",
+    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 },
+    children: [
+      {
+        id: "img:1", name: "img/角色", type: "RECTANGLE",
+        absoluteBoundingBox: { x: 0, y: 0, width: 10, height: 10 },
+        fills: [{ type: "IMAGE" }],
+      },
+      {
+        id: "fix", name: "fix/左侧导航", type: "FRAME",
+        absoluteBoundingBox: { x: 0, y: 0, width: 10, height: 10 },
+        children: [],
+      },
+      {
+        id: "txt", name: "标题", type: "TEXT", characters: "夏日",
+        absoluteBoundingBox: { x: 0, y: 0, width: 10, height: 10 },
+        style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400 },
+      },
+    ],
+  };
+  const built = buildInventory(page, { requestedNodeId: "page" });
+  const img = built.nodes.find((n) => n.id === "img:1");
+  const fix = built.nodes.find((n) => n.id === "fix");
+  const txt = built.nodes.find((n) => n.id === "txt");
+
+  const noSlice = structuredClone(built);
+  delete noSlice.nodes.find((n) => n.id === "img:1").sliceExport;
+  const noSliceCheck = validateInventory(noSlice, page);
+  assert.equal(noSliceCheck.ok, false);
+  assert.match(noSliceCheck.problems.join("\n"), /切图必须按墨迹框 1 倍 png/);
+
+  const noPin = structuredClone(built);
+  delete noPin.nodes.find((n) => n.id === "fix").pin;
+  const noPinCheck = validateInventory(noPin, page);
+  assert.equal(noPinCheck.ok, false);
+  assert.match(noPinCheck.problems.join("\n"), /fix 必须钉视口/);
+
+  const noRotation = structuredClone(built);
+  delete noRotation.nodes.find((n) => n.id === "img:1").rotation;
+  const noRotationCheck = validateInventory(noRotation, page);
+  assert.equal(noRotationCheck.ok, false);
+  assert.match(noRotationCheck.problems.join("\n"), /缺 rotation/);
+
+  const noFont = structuredClone(built);
+  delete noFont.nodes.find((n) => n.id === "txt").text.fontFamily;
+  const noFontCheck = validateInventory(noFont, page);
+  assert.equal(noFontCheck.ok, false);
+  assert.match(noFontCheck.problems.join("\n"), /文字缺 fontFamily/);
+
+  assert.ok(img.sliceExport);
+  assert.equal(fix.pin, "viewport");
+  assert.equal(txt.text.fontFamily, "Source Han Sans");
 });
 
 test("export-inventory-page / export-handoff-slices 拒绝 draft 和 unnamed 文件名", () => {

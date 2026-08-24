@@ -1,12 +1,12 @@
 /**
  * Figma layer naming semantics.
  *
- * Implements standards/figma-naming v2.8 / A-v1.6 as a source-only role hint:
+ * Implements standards/figma-naming v2.9 / A-v1.7 as a source-only role hint:
  * - unprefixed TEXT is editable copy (copy role);
  * - TEXT named with img/, bg/, or kv/ is a visual asset/slice; name overrides node type;
- * - prefixes are case-insensitive and may contain spaces around the ASCII slash;
+ * - prefixes are case-insensitive and may contain spaces around ASCII or full-width slash;
  * - txt/ and swpage/ are legacy compatibility warnings until 2026-11-12, not standard roles;
- * - full-width slash and backslash separators are invalid;
+ * - backslash separators are invalid; full-width slash is accepted;
  * - unlabelled nodes are not inferred as img or switch from type/fill.
  *
  * Naming never rewrites Figma owner tree, paint order, clipping, mask,
@@ -60,13 +60,13 @@ export function parseLayerName(name) {
     else if (part.trim()) out.flags.push(part.trim());
   }
 
-  if (/[\\／＼]/.test(head)) {
+  if (/[\\＼]/.test(head)) {
     out.label = head.trim();
-    out.errors.push({ code: 'invalid-separator', message: 'Use ASCII slash "/" as the naming separator; full-width slash and backslash are invalid.' });
+    out.errors.push({ code: 'invalid-separator', message: 'Use ASCII slash "/" or full-width slash "／" as the naming separator; backslash is invalid.' });
     return out;
   }
 
-  const match = /^([A-Za-z]+)\s*\/\s*(.*)$/.exec(head);
+  const match = /^([A-Za-z]+)\s*[\/／]\s*(.*)$/.exec(head);
   if (!match) {
     out.label = head.trim();
     return out;

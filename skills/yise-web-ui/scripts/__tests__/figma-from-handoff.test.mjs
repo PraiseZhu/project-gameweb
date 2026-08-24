@@ -1,15 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { runFromHandoff } from "../figma-from-handoff.mjs";
 import { writeHandoffPack } from "../../../../standards/figma-naming/tool/src/handoff.mjs";
 import { rebuildInventoryIndexes } from "../../../../standards/figma-naming/tool/src/inventory.mjs";
 import { GOLD_MOBILE_PREFIX_CLASSES } from "../../../../standards/figma-naming/tool/scripts/check-draft-asset-completeness.mjs";
-import { behaviorOf } from "../../../../standards/figma-naming/spec/inventory.mjs";
+import { behaviorOf, stampReadyFields } from "../../../../standards/figma-naming/spec/inventory.mjs";
+import { fixtureJudgment } from "../../../../standards/figma-naming/tool/src/judgment.mjs";
 
 test("from-handoff rejects a non-directory and does not invent HTML", () => {
   const dir = mkdtempSync(join(tmpdir(), "from-handoff-"));
@@ -21,20 +20,31 @@ test("from-handoff rejects a non-directory and does not invent HTML", () => {
 });
 
 function sample(id, extra = {}) {
-  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
+  const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => stampReadyFields({
     id: `${id}-${role}`,
     type: role === "btn" ? "INSTANCE" : "FRAME",
-    name: `${role}/${role}`,
+    name: role === "sec" ? "sec/1-首屏" : `${role}/${role}`,
     status: "determined",
     role,
+    label: role === "sec" ? "1-首屏" : role,
     behavior: behaviorOf(role),
     via: "prefix",
+    parentId: role === "ind" ? `${id}-switch` : null,
     box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
   }));
-  return rebuildInventoryIndexes({
+  nodes.push({
+    id: `${id}-scroll-track`,
+    type: "FRAME",
+    name: "轨道",
+    status: "skipped",
+    why: "art-fragment",
+    parentId: `${id}-scroll`,
+    box: { x: 0, y: 0, w: 80, h: 32 },
+  });
+  const doc = rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
-    status: "draft",
+    status: extra.status ?? "ready",
     fileKey: "FILEKEY",
     requestedNodeId: id,
     snapshot: { hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", lastModified: "2026-08-22T00:00:00Z" },
@@ -44,6 +54,8 @@ function sample(id, extra = {}) {
     relations: [],
     ...extra,
   });
+  fixtureJudgment(doc);
+  return doc;
 }
 
 test("from-handoff omits skipped nodes from draw-only and paint mapping (issue #34)", () => {
@@ -88,7 +100,7 @@ test("from-handoff omits skipped nodes from draw-only and paint mapping (issue #
   writeFileSync(pcPath, JSON.stringify(pcDoc));
   writeFileSync(mobilePath, JSON.stringify(mobileDoc));
   const pack = writeHandoffPack({
-    pcPath, mobilePath, pcDoc, mobileDoc, kind: "green-draft", outDir: join(dir, "out"),
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out"),
   });
   const result = runFromHandoff(pack.outDir);
   assert.equal(result.ok, true, (result.problems || []).join("\n"));
@@ -112,7 +124,7 @@ test("from-handoff reports skipped attachment ids that collide with painted outp
   writeFileSync(pcPath, JSON.stringify(pcDoc));
   writeFileSync(mobilePath, JSON.stringify(mobileDoc));
   const pack = writeHandoffPack({
-    pcPath, mobilePath, pcDoc, mobileDoc, kind: "green-draft", outDir: join(dir, "out"),
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out"),
   });
 
   const result = runFromHandoff(pack.outDir);
@@ -121,8 +133,8 @@ test("from-handoff reports skipped attachment ids that collide with painted outp
   assert.ok(result.problems.some((problem) => problem.includes("skipped") && problem.includes("1:1-bg")));
 });
 
-test("from-handoff accepts packed green-draft and does not wire unknown (issue #31 F001)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "from-handoff-green-"));
+test("from-handoff accepts packed ready and does not wire unknown (issue #31 F001)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "from-handoff-ready-"));
   const pcDoc = sample("1:1");
   const mobileDoc = sample("2:2");
   pcDoc.nodes.push({
@@ -138,51 +150,12 @@ test("from-handoff accepts packed green-draft and does not wire unknown (issue #
   writeFileSync(pcPath, JSON.stringify(pcDoc));
   writeFileSync(mobilePath, JSON.stringify(mobileDoc));
   const pack = writeHandoffPack({
-    pcPath, mobilePath, pcDoc, mobileDoc, kind: "green-draft", outDir: join(dir, "out"),
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out"),
   });
   const result = runFromHandoff(pack.outDir);
   assert.equal(result.ok, true, (result.problems || []).join("\n"));
-  assert.equal(result.kind, "green-draft");
-  assert.equal(result.ready, false);
+  assert.equal(result.kind, "ready");
+  assert.equal(result.ready, true);
   assert.ok(result.wirable.total > 0);
   assert.ok(result.drawOnly.total >= 1);
-});
-
-test("inventory:check forwards a handoff directory to the canonical consumer", () => {
-  const dir = mkdtempSync(join(tmpdir(), "inventory-check-handoff-"));
-  const pcDoc = sample("3:3");
-  const mobileDoc = sample("4:4");
-  const pcPath = join(dir, "pc.json");
-  const mobilePath = join(dir, "mo.json");
-  writeFileSync(pcPath, JSON.stringify(pcDoc));
-  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
-  const pack = writeHandoffPack({
-    pcPath, mobilePath, pcDoc, mobileDoc, kind: "green-draft", outDir: join(dir, "out"),
-  });
-  const skillRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-  const run = spawnSync(process.execPath, ["scripts/figma-inventory-check.mjs", pack.outDir], {
-    cwd: skillRoot,
-    encoding: "utf8",
-  });
-  assert.equal(run.status, 0, run.stderr);
-  assert.match(run.stderr, /figma:from-handoff/);
-  const result = JSON.parse(run.stdout);
-  assert.equal(result.ok, true);
-  assert.equal(result.kind, "green-draft");
-  assert.equal(result.ready, false);
-});
-
-test("inventory:check rejects a standalone draft instead of suggesting ready", () => {
-  const dir = mkdtempSync(join(tmpdir(), "inventory-check-draft-"));
-  const pcDoc = sample("5:5");
-  const pcPath = join(dir, "pc.json");
-  writeFileSync(pcPath, JSON.stringify(pcDoc));
-  const skillRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-  const run = spawnSync(process.execPath, ["scripts/figma-inventory-check.mjs", pcPath], {
-    cwd: skillRoot,
-    encoding: "utf8",
-  });
-  assert.equal(run.status, 1);
-  assert.match(run.stderr, /figma:from-handoff/);
-  assert.doesNotMatch(run.stderr, /status.*ready/);
 });

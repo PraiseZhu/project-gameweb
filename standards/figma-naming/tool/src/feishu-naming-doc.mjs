@@ -300,8 +300,8 @@ export function buildDesignerDoc() {
       type: "table",
       rows: [
         ["可以", "不行"],
-        ["IMG/、Sec/（大小写无所谓）", "全角斜杠 ／、反斜杠 \\"],
-        ["img / 装饰（斜杠两边有空格）", "自造前缀：icon/、part/、txt/ 等总表没有的词"],
+        ["IMG/、Sec/（大小写无所谓）", "反斜杠 \\"],
+        ["img / 装饰、img／装饰（半角或全角斜杠）", "自造前缀：icon/、part/、txt/ 等总表没有的词"],
         ["Figma 自动名 Group/2、文案里自带斜杠", "斜杠前是英文词、但不在总表里"],
       ],
     },

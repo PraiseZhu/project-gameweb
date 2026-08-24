@@ -48,11 +48,21 @@ function mobileDoc(roles) {
     nodes: roles.map((role, index) => ({
       id: `n${index}`,
       type: "FRAME",
-      name: `${role}/x`,
+      name: role === "sec" ? "sec/1-首屏" : `${role}/x`,
       status: "determined",
       role,
+      label: role === "sec" ? "1-首屏" : "x",
+      parentId: role === "ind" && roles.includes("switch") ? `n${roles.indexOf("switch")}` : null,
       box: { x: 0, y: index * 40, w: 80, h: 32 },
-    })),
+    })).concat(roles.includes("scroll") ? [{
+      id: "scroll-track",
+      type: "FRAME",
+      name: "轨道",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: `n${roles.indexOf("scroll")}`,
+      box: { x: 0, y: 0, w: 80, h: 32 },
+    }] : []),
     attachments: { modals: [], componentSets: [], components: [] },
   });
 }

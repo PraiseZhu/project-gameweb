@@ -4,7 +4,7 @@
  * 不写回 Figma；没有原型或命名证据的关系一律标 unknown。
  */
 import { createHash } from "node:crypto";
-import { PREFIXES, SPEC_VERSION, isSlicePrefix } from "../../spec/spec.mjs";
+import { PREFIXES, PARAMS, SPEC_VERSION, isSlicePrefix } from "../../spec/spec.mjs";
 import {
   INVENTORY_SCHEMA,
   INVENTORY_ROLES,
@@ -13,8 +13,8 @@ import {
   RELATION_STATUSES,
   VIA,
   SLICE_EXPORT,
-  TEXT_REQUIRED,
   behaviorOf,
+  determinedReadyFieldProblems,
 } from "../../spec/inventory.mjs";
 import { parseName } from "./parse.mjs";
 import { namePatternOf } from "./lint.mjs";
@@ -94,12 +94,6 @@ function boxOf(node) {
   return { x: b.x, y: b.y, w: b.width, h: b.height };
 }
 
-function renderBoxOf(node) {
-  const b = node.absoluteRenderBounds;
-  if (!b || b.width == null) return undefined;
-  return { x: b.x, y: b.y, w: b.width, h: b.height };
-}
-
 function relativeBox(inner, origin) {
   if (!inner || !origin) return null;
   return {
@@ -113,6 +107,12 @@ function relativeBox(inner, origin) {
 function percentOf(part, whole) {
   if (!Number.isFinite(part) || !Number.isFinite(whole) || whole === 0) return null;
   return (part / whole) * 100;
+}
+
+function renderBoxOf(node) {
+  const b = node.absoluteRenderBounds;
+  if (!b || b.width == null) return undefined;
+  return { x: b.x, y: b.y, w: b.width, h: b.height };
 }
 
 const LAYOUT_FIELDS = [
@@ -191,39 +191,6 @@ function sliceExportOf(node, role) {
     ...SLICE_EXPORT,
     file: sliceFileName(node.id),
   };
-}
-
-function sliceExportMatches(sliceExport) {
-  return sliceExport?.bounds === SLICE_EXPORT.bounds
-    && sliceExport?.scale === SLICE_EXPORT.scale
-    && sliceExport?.format === SLICE_EXPORT.format;
-}
-
-function isGeomBox(value) {
-  return value
-    && Number.isFinite(value.x)
-    && Number.isFinite(value.y)
-    && Number.isFinite(value.w)
-    && Number.isFinite(value.h);
-}
-
-function pageFieldProblems(node, source) {
-  const problems = [];
-  if (!isGeomBox(node.pageBox)) problems.push(`${node.id} 缺 pageBox`);
-  if (!isGeomBox(node.parentBox)) problems.push(`${node.id} 缺 parentBox`);
-  if (isSlicePrefix(node.role) && !sliceExportMatches(node.sliceExport)) {
-    problems.push(`${node.id} 切图必须按墨迹框 1 倍 png`);
-  }
-  if (node.role === "copy" && node.sliceExport) problems.push(`${node.id} 可改字不得带切图`);
-  if (isSlicePrefix(node.role) && node.behavior !== "slice") {
-    problems.push(`${node.id} 切图角色不得当排版字`);
-  }
-  if (node.role === "fix" && node.pin !== "viewport") problems.push(`${node.id} fix 必须钉视口`);
-  if (node.rotation == null) problems.push(`${node.id} 缺 rotation`);
-  if (source.fills?.length && (!Array.isArray(node.style?.fills) || node.style.fills.length !== source.fills.length)) {
-    problems.push(`${node.id} fills 必须全层`);
-  }
-  return problems;
 }
 
 function styleOf(node) {
@@ -574,13 +541,165 @@ function makeModalRelations(pageNodes, modals) {
   return relations;
 }
 
-function allNodesOf(inv) {
+export function allNodesOf(inv) {
   return [
     ...(inv.nodes || []),
     ...(inv.attachments?.modals || []).flatMap((item) => item.nodes || []),
     ...(inv.attachments?.componentSets || []).flatMap((item) => item.nodes || []),
     ...(inv.attachments?.components || []).flatMap((item) => item.nodes || []),
   ];
+}
+
+function ancestorsOf(node, byId) {
+  if (Array.isArray(node.ancestorIds) && node.ancestorIds.length) {
+    return node.ancestorIds.map((id) => byId.get(id)).filter(Boolean);
+  }
+  const out = [];
+  const seen = new Set();
+  let current = node;
+  while (current?.parentId && !seen.has(current.parentId)) {
+    seen.add(current.parentId);
+    const parent = byId.get(current.parentId);
+    if (!parent) break;
+    out.unshift(parent);
+    current = parent;
+  }
+  return out;
+}
+
+function nearestSecScope(node, byId) {
+  const sec = [...ancestorsOf(node, byId)].reverse().find((item) => item.status === "determined" && item.role === "sec");
+  return sec?.id ?? "__root__";
+}
+
+function paramProblemsOf(node) {
+  const problems = [];
+  if (node.status !== "determined" || !node.role) return problems;
+  for (const [key, value] of Object.entries(node.params || {})) {
+    const spec = PARAMS[key];
+    if (!spec) {
+      problems.push(`${node.id} @${key} 不在参数表内`);
+      continue;
+    }
+    if (!spec.on.includes(node.role)) {
+      problems.push(`${node.id} @${key} 不能用在 ${node.role}/ 上`);
+      continue;
+    }
+    if (spec.value === "none") {
+      if (value !== true && value !== "" && value != null) {
+        problems.push(`${node.id} @${key} 是纯标记，不能带值`);
+      }
+    } else if (value == null || value === true || value === "") {
+      problems.push(`${node.id} @${key}= 缺值`);
+    } else if (spec.value === "int" && !/^[1-9]\d*$/.test(String(value))) {
+      problems.push(`${node.id} @${key}=${value} 必须是正整数`);
+    } else if (spec.value === "ratio") {
+      const number = Number(value);
+      if (!Number.isFinite(number) || number < 0 || number > 1) {
+        problems.push(`${node.id} @${key}=${value} 必须是 0–1`);
+      }
+    }
+  }
+  return problems;
+}
+
+/** 前缀已说死的结构：出清单硬闸。不挡 unknown、光 btn/、切图没命名、同名 ind、货架 modal、全角斜杠。 */
+export function auditDeclaredStructure(inv) {
+  const problems = [];
+  const nodes = allNodesOf(inv);
+  const pageNodes = inv.nodes || [];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+
+  for (const node of nodes) problems.push(...paramProblemsOf(node));
+
+  const secs = pageNodes.filter((node) => node.status === "determined" && node.role === "sec");
+  const numbered = [];
+  for (const section of secs) {
+    const body = section.label || parseName(section.name).body || "";
+    const match = /^(\d+)/.exec(String(body));
+    if (!match) problems.push(`${section.id} 分区名未以编号开头`);
+    else numbered.push({ node: section, num: Number(match[1]) });
+  }
+  const byNum = new Map();
+  for (const item of numbered) {
+    if (!byNum.has(item.num)) byNum.set(item.num, []);
+    byNum.get(item.num).push(item);
+  }
+  for (const [num, group] of byNum) {
+    if (group.length < 2) continue;
+    for (const item of group) problems.push(`${item.node.id} 分区编号 ${num} 重复`);
+  }
+
+  const nestedIds = new Set();
+  for (const section of secs) {
+    const semantic = ancestorsOf(section, byId).find((item) => (
+      item.status === "determined" && item.role && PREFIXES[item.role] && item.role !== "ref"
+    ));
+    if (!semantic) continue;
+    nestedIds.add(section.id);
+    problems.push(`${section.id} 分区嵌在语义节点 ${semantic.name} 内`);
+  }
+
+  const byParent = new Map();
+  for (const section of secs) {
+    if (nestedIds.has(section.id)) continue;
+    const parentId = section.parentId ?? "__root__";
+    if (!byParent.has(parentId)) byParent.set(parentId, []);
+    byParent.get(parentId).push(section);
+  }
+  let baseline = null;
+  for (const [parentId, items] of byParent) {
+    if (!baseline || items.length > baseline.items.length) baseline = { parentId, items };
+  }
+  if (baseline && byParent.size > 1) {
+    for (const [parentId, items] of byParent) {
+      if (parentId === baseline.parentId) continue;
+      for (const section of items) problems.push(`${section.id} 分区分散在不同逻辑父层`);
+    }
+  }
+
+  const presentNums = new Set(numbered.map((item) => item.num));
+  for (const node of pageNodes) {
+    const raw = node.params?.sec;
+    if (raw == null || raw === true || raw === "") continue;
+    if (!/^[1-9]\d*$/.test(String(raw))) continue;
+    const num = Number(raw);
+    if (!presentNums.has(num)) problems.push(`${node.id} @sec=${raw} 指向的分区不存在`);
+  }
+
+  for (const node of nodes) {
+    if (node.status !== "determined" || node.role !== "scroll") continue;
+    if (![...byId.values()].some((child) => child.parentId === node.id)) {
+      problems.push(`${node.id} 滑动容器内没有任何子层`);
+    }
+  }
+
+  const switchesByScope = new Map();
+  const indicators = [];
+  for (const node of pageNodes) {
+    if (node.status !== "determined") continue;
+    if (node.role === "switch") {
+      const scope = nearestSecScope(node, byId);
+      const list = switchesByScope.get(scope) ?? [];
+      list.push(node);
+      switchesByScope.set(scope, list);
+    }
+    if (node.role === "ind") {
+      indicators.push({
+        node,
+        hasSwitchAncestor: ancestorsOf(node, byId).some((item) => item.status === "determined" && item.role === "switch"),
+        scope: nearestSecScope(node, byId),
+      });
+    }
+  }
+  for (const item of indicators) {
+    if (item.hasSwitchAncestor) continue;
+    const candidates = switchesByScope.get(item.scope) ?? [];
+    if (candidates.length === 0) problems.push(`${item.node.id} 作用域内没有任何 switch/`);
+    else if (candidates.length >= 2) problems.push(`${item.node.id} 作用域内有 ${candidates.length} 个候选轮播`);
+  }
+
+  return { ok: problems.length === 0, problems };
 }
 
 export function buildInventory(document, {
@@ -782,12 +901,7 @@ export function validateInventory(inv, document) {
       if (node.role === "copy" && source.type !== "TEXT") problems.push(`${node.id} copy 只能是 TEXT`);
       if (node.behavior !== behaviorOf(node.role, node.params || {})) problems.push(`${node.id} behavior 与 role/params 推不出`);
       if (!VIA.includes(node.via)) problems.push(`${node.id} via 非法: ${node.via}`);
-      problems.push(...pageFieldProblems(node, source));
-    }
-    if (source.type === "TEXT" && node.status !== "skipped" && node.role === "copy") {
-      for (const key of TEXT_REQUIRED) {
-        if (node.text?.[key] == null) problems.push(`${node.id} 文字缺 ${key}`);
-      }
+      problems.push(...determinedReadyFieldProblems(node, { source }));
     }
     if (node.status === "unknown" && (node.role != null || node.behavior !== "none")) problems.push(`${node.id} unknown 不得带 role 或 behavior`);
     if (node.status === "skipped" && !SKIP_REASONS.includes(node.why)) problems.push(`${node.id} skipped.why 非法: ${node.why}`);
@@ -838,5 +952,6 @@ export function validateInventory(inv, document) {
     if (!modal.nodes?.some((node) => node.id === modal.id)) problems.push(`弹窗 ${modal.id} 缺完整节点树`);
     if (!(inv.relations || []).some((relation) => relation.kind === "modal-trigger" && relation.to?.id === modal.id)) problems.push(`弹窗 ${modal.id} 缺触发关系记录`);
   }
+  problems.push(...auditDeclaredStructure(inv).problems);
   return { ok: problems.length === 0, problems, warnings };
 }

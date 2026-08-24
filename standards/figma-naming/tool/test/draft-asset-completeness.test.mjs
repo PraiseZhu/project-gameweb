@@ -65,12 +65,23 @@ test("draft asset completeness：ready 清单跳过形态发现，外壳无 stat
   const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
     id: `n-${role}`,
     type: role === "btn" ? "INSTANCE" : "FRAME",
-    name: `${role}/${role}`,
+    name: role === "sec" ? "sec/1-首屏" : `${role}/${role}`,
     status: "determined",
     role,
+    label: role === "sec" ? "1-首屏" : role,
     behavior: behaviorOf(role),
+    parentId: role === "ind" ? "n-switch" : null,
     box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
   }));
+  nodes.push({
+    id: "scroll-track",
+    type: "FRAME",
+    name: "轨道",
+    status: "skipped",
+    why: "art-fragment",
+    parentId: "n-scroll",
+    box: { x: 0, y: 0, w: 80, h: 32 },
+  });
   nodes.push({
     id: "img-bg",
     type: "FRAME",
