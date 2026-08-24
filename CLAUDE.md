@@ -38,8 +38,8 @@ Project Gameweb/
 
 ## 协作约定
 
-- **Figma 命名稿交接**：用户提供带 `node-id` 的 Figma 货架链接后，执行 `standards/figma-naming/SKILL.md`（先守「硬门」G0–G4）。未规范稿发链接后自动跑到判断写回 draft；G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。原始 draft 不可直接做页。同事自助：completeness 绿后 `handoff:pack --allow-green-draft`，包 `ready=false`。主人测命名才核对并 `handoff:promote` 升 ready、沉淀 skill/台账。金样只当形态样本，不对图层 id、不对模块顺序抄名。核对页 UI 冻结在 `standards/figma-naming/tool/inventory-review/index.html`，禁止写 `_tmp`、禁止每次重写。核对页可预览 draft，不能在页上保存升档。unknown 不赋交互。不写回 Figma；做页接入见 issue #5（`zhanxinyi-lab`）和 `standards/figma-naming/handoff/CONSUMER.md`。
-- **做页消费边界**：同事自助走 `handoff:pack --allow-green-draft`（机器绿即可，不等人工核对）；主人测命名才核对并 `handoff:promote`。做页吃交接包里的已确定项；`unknown` 只画不赋交互。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
+- **Figma 命名稿交接**：用户提供带 `node-id` 的 Figma 货架链接后，执行 `standards/figma-naming/SKILL.md`（先守「硬门」G0–G4）。未规范稿全仓只有一条出清单链路：发链接后自动跑到判断包看图写回 draft。G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。原始 draft / 只跑 morph 的稿不可直接做页。做页吃的是同一条链路写回后的 `handoff:pack --allow-green-draft`，包 `ready=false`。主人测命名才核对并 `handoff:promote` 升 ready、沉淀 skill/台账。金样只当形态样本，不对图层 id、不对模块顺序抄名。核对页 UI 冻结在 `standards/figma-naming/tool/inventory-review/index.html`，禁止写 `_tmp`、禁止每次重写。核对页可预览 draft，不能在页上保存升档。unknown 不赋交互。不写回 Figma；做页接入见 issue #5（`zhanxinyi-lab`）和 `standards/figma-naming/handoff/CONSUMER.md`。
+- **做页消费边界**：未规范稿不做第二套出清单。做页只吃命名侧判断写回后的交接包：`handoff:pack --allow-green-draft`（不等主人升 ready）。主人测命名才核对并 `handoff:promote`。做页吃交接包里的已确定项；`unknown` 只画不赋交互。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
 - **代码评审**：通过 `/review` 触发
 - **测试覆盖**：参见 VERSIONING.md

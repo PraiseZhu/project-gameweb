@@ -1,6 +1,6 @@
 /**
- * 未规范稿机器前置链路的唯一实现。
- * catalog 只检索不写盘；写回走 gold-morphology；闸门走 completeness CLI 同一入口。
+ * 未规范稿机器收口：目录检索不写盘 + morph 跟随/同步 + completeness。
+ * 这不是第二条出清单路。未规范清单必须先走判断包看图写回；本文件只给写回后的稿做 morph 收口和夜间稳定性对照。
  * 夜间评测必须调用本文件，禁止再抄词表或漏传冻住前缀类。
  */
 import { loadClassRoles, loadSettledRules, loadSignatureEvidence, loadSignatureRoles, matchInventoryToCatalog } from "./module-catalog.mjs";

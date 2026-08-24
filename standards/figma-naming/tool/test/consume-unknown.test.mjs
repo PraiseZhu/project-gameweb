@@ -8,6 +8,7 @@ import { writeHandoffPack } from "../src/handoff.mjs";
 import { rebuildInventoryIndexes } from "../src/inventory.mjs";
 import { GOLD_MOBILE_PREFIX_CLASSES } from "../scripts/check-draft-asset-completeness.mjs";
 import { behaviorOf } from "../../spec/inventory.mjs";
+import { fixtureJudgment } from "../src/judgment.mjs";
 
 function sample(id, extra = {}) {
   const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
@@ -20,7 +21,7 @@ function sample(id, extra = {}) {
     via: "prefix",
     box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
   }));
-  return rebuildInventoryIndexes({
+  const doc = rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
     status: "draft",
@@ -33,6 +34,8 @@ function sample(id, extra = {}) {
     relations: [],
     ...extra,
   });
+  fixtureJudgment(doc);
+  return doc;
 }
 
 test("consume：unknown 节点与 unknown modal trigger 只画不接线", () => {

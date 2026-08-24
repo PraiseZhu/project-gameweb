@@ -11,12 +11,12 @@ disable-model-invocation: false
 
 工作目录：`standards/figma-naming/tool/`。规范正文：`standards/figma-naming/spec/naming-spec.md`。判断经验：`standards/figma-naming/evolution/ledger.json`。
 
-两条路共用同一份清单格式。不写回 Figma，不用插件交接，不用官方远程 MCP 改名。
+未规范稿全仓只有一条出清单链路：判断包看图写回 → morph 收口 → completeness。做页不另拉一套清单。已规范 ready 与未规范 draft 共用同一份清单格式。不写回 Figma，不用插件交接，不用官方远程 MCP 改名。
 
 | 稿 | 机器出口 | 人核 | 做页可吃 |
 |---|---|---|---|
 | 已规范命名 | `status: "ready"` | 可选 | 是，吃 ready 包 |
-| 未规范 / 任意命名 | `status: "draft"` | 主人测命名时才核；核对页不能保存升档 | 原始 draft 否。completeness 绿后 `handoff:pack --allow-green-draft` 可吃（`kind=green-draft`，`ready=false`）。主人确认后 `handoff:promote` 才是 ready |
+| 未规范 / 任意命名 | `status: "draft"` | 主人测命名时才核；核对页不能保存升档 | 原始 draft 否。必须先走判断包看图写回，再 completeness 绿，才能 `handoff:pack --allow-green-draft`（`kind=green-draft`，`ready=false`）。只跑 morph 不能打包。主人确认后 `handoff:promote` 才是 ready |
 
 金样（`1:180` / `20:2205` / `392:24190` / `392:25877` / `52:3263`）只当**形态样本**：看「kv / scroll / switch 长什么样」。不是答案本。新稿图层 id 不同、模块顺序不同、内容不同，**禁止**按 id 或 `sec/N` 序号去抄名字。
 
@@ -181,7 +181,7 @@ npm run inventory -- \
 6. **对立解释排不掉才 `unknown`**：既像按钮又像标签、热区证据不足。不许为了少干活一律 `unknown`。
 7. **出口只核前缀**：`determined` 非 copy 的 `name` 必须以 `role/` 开头。后缀不作为对错，也不拿设计师原名当参考。同类模块前缀与规范稿一致即可。
 
-机器出口保持 `draft`。核对页不能保存 draft、不能在页上点升档。主人确认后用 `handoff:promote` 升 ready；同事做页用 `handoff:pack --allow-green-draft`。
+机器出口保持 `draft`。核对页不能保存 draft、不能在页上点升档。主人确认后用 `handoff:promote` 升 ready。做页吃的 green-draft 必须是同一条判断写回后的清单：判断包 → 看图写回 → morph → completeness，禁止只拉树 + morph 就 `handoff:pack`。
 
 核对页改某层母版，该层所有实例一起变（改「装饰」= 所有装饰实例）。不把父级「标题」卷进来。已经 `determined` 的层，后一条 unknown 不得复写；写回时跳过并报冲突。
 
@@ -229,16 +229,16 @@ cd standards/figma-naming/tool
 npm run inventory:review
 ```
 
-核对页 UI 只读仓内 `tool/inventory-review/index.html`。不要打开或生成 `_tmp/inventory-review/index.html`。未规范 draft 可用 `?inv=inventory-unnamed-<page>.json` 打开预览。同一货架下必须能切 PC / mobile。核对页不能保存 draft、不能在页上点升档。升 ready 走 `handoff:promote`（主人确认后）。同事做页走 `handoff:pack --allow-green-draft`，不要等核对页。
+核对页 UI 只读仓内 `tool/inventory-review/index.html`。不要打开或生成 `_tmp/inventory-review/index.html`。未规范 draft 可用 `?inv=inventory-unnamed-<page>.json` 打开预览。同一货架下必须能切 PC / mobile。核对页不能保存 draft、不能在页上点升档。升 ready 走 `handoff:promote`（主人确认后）。做页走同一条判断写回后的 `handoff:pack --allow-green-draft`，不要等核对页升档，但也不能跳过判断包。
 
 已规范 ready 的复核是可选检查，保存后仍保持 `ready`。unknown 必须显式保留，不能用位置、文案或常识补成确定关系。
 
 ### 6. 做页消费边界
 
-两条路不要混：
+未规范出清单只有上面这条。做页不另编清单、不另跑 morph-only。
 
-- **同事自助（不等人工核对）**：PC+mobile completeness 都绿后 `npm run handoff:pack -- --allow-green-draft`。包 `kind=green-draft`，**不是 ready**，禁止手改 status。做页吃包里的 determined / 分区 / 背景固定层 / 变体树 / modal；unknown 只画不接线。说明见 `handoff/CONSUMER.md`。
-- **主人测命名**：核对页确认后才 `handoff:promote` 升 ready、写 skill/台账、`catalog:build`。
+- **做页吃包**：吃判断写回后的 `handoff:pack --allow-green-draft --judge-pack-pc … --judge-pack-mobile …`。包 `kind=green-draft`，**不是 ready**，禁止手改 status。只跑 morph / 缺判断包 / 缺 `judgment.visual` 一律拒。做页吃包里的 determined / 分区 / 背景固定层 / 变体树 / modal；unknown 只画不接线。说明见 `handoff/CONSUMER.md`。
+- **主人测命名**：核对页确认后才 `handoff:promote` 升 ready、写 skill/台账、`catalog:build`。这是同一份清单的升档，不是第二条出清单路。
 
 做页接入由 issue #5 交给 `zhanxinyi-lab`；本侧不改 `skills/yise-web-ui/**`。
 
@@ -249,7 +249,7 @@ npm run inventory:review
 1. 左侧 Page 链接拉整张画布；`--page` 出 PC + mobile 两份，必须 `--status draft --name inventory-unnamed-392-24190`（冒号改短横线）。已有合格 draft 不要重跑 inventory。
 2. 未规范导图必导整页 `page.png` + 全套 `set-*.png`。弹窗图会导出，但判断包/G2 只收 page/set jpg。不要给每个 unknown 层出图。`prep-judge-pack` 必须带整页 `page-*.jpg` **和** 组件集 `set-*.jpg`（从 `inventory-review/img-*/set-*.png` 压）。缺 set 图 = 包没做完。
 3. G2：`stat` 列出页切片 + 组件集切片。空白 jpeg 先修再判；非空且 set 数对齐就继续判断，不等点头。
-4. 判断：先 `npm run catalog:match -- --inventory <draft>`。目录只给弱前缀建议、不写盘；弹窗 0 命中正常，多命中不得直接采信。再截图 + jq。每轮最多 2 张小图。写回 draft。任意组件集写成前缀后，页上实例、集内实例、`I…;母版Id` 子件都必须机器跟随。PC/mobile 两份一起收口：`node scripts/apply-gold-morphology.mjs <pc.json> <mobile.json>`。写回反馈用 `apply-review-feedback.mjs --from <上一份稿> [--peer <另一端.json>]`，写回后自动跟随，不必再手跑一遍 morph。旧图层 id 按父层+类型+剥前缀名+顺序映射；导航项已是 btn/ 时旧反馈 img 不复写。这类漏项不要拿去问人。
+4. 判断：先 `npm run catalog:match -- --inventory <draft>`。目录只给弱前缀建议、不写盘；弹窗 0 命中正常，多命中不得直接采信。再截图 + jq。每轮最多 2 张小图。写回 draft。任意组件集写成前缀后，页上实例、集内实例、`I…;母版Id` 子件都必须机器跟随。PC/mobile 两份一起收口：`node scripts/apply-gold-morphology.mjs <pc.json> <mobile.json>`。写回反馈必须带本次判断包：`apply-review-feedback.mjs --from <上一份稿> [--peer <另一端.json>] --judge-pack <本端判断包目录>`。`--peer` 只同步前缀，会清掉对端旧判断戳；对端必须自己再跑一遍并带自己的 `--judge-pack`。不带 `--judge-pack` 会清掉旧判断戳，不能拿上次的包冒充本次看图。写回后自动跟随，不必再手跑一遍 morph。旧图层 id 按父层+类型+剥前缀名+顺序映射；导航项已是 btn/ 时旧反馈 img 不复写。这类漏项不要拿去问人。
 5. 跑 `node scripts/check-draft-asset-completeness.mjs` 两份 draft，必须绿。只核前缀和结构（素材图、划动裁切层 `scroll/`、多变体内容集 `switch/`、状态组件 `btn/`/`ind/`、弹窗 `modal/`、跨货架定义 unknown、页上左侧导航实例 `btn/`、组件集实例与 `I…;母版Id` 跟随、有字分组不得 `img/`——`bg/` `kv/` `logo` 例外）。写回后必须重建 `sections` / `overlays` / `backgrounds` / `modules` / `counts` / `pageCounts`；索引空或过期 → 红。相对规范稿缺前缀类 → 红（按页宽用冻住的 PC/mobile 核心前缀类，不读 live 规范稿 JSON）。`tab/` 不是每份稿都有：冻结核心表不含 `tab`；只有 `--reference` / `referenceDoc` 这份参考稿里已有 determined `tab/` 时，`auditLikeCli` 才把 `tab` 并进必检。禁止把 `btn/` 改成 `tab/`，禁止手补 inventory / 改 status 伪造 `tab/`。PC 缺分区/悬浮/底图/模块索引、mobile 缺分区/底图/模块索引 → 红，不靠「有 determined 节点才查空数组」。后缀和设计师原名不对错。然后停，等人**确认判断已完成**。
 6. 人确认后才做步骤 4：改 SKILL「已沉淀形态」+ `evolution-note.mjs`（先 list 再加 occurrence）。交回必须点名本次 fingerprint。
 

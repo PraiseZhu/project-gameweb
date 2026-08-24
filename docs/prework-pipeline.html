@@ -363,13 +363,13 @@
     <article class="node branch" style="margin-left:0">
       <div class="stamp">8a</div>
       <div class="card">
-        <div class="kicker">同事自助 · 不等人核</div>
+        <div class="kicker">做页吃同一份清单 · 不另出清单</div>
         <h2>做页包 green-draft</h2>
         <div class="grid" style="grid-template-columns:1fr 1fr">
-          <div class="cell"><b>输入</b>双绿 draft</div>
-          <div class="cell"><b>执行</b>handoff:pack --allow-green-draft</div>
-          <div class="cell"><b class="accept">验收</b>两端同档 draft、同一文件、completeness 绿。包必须 ready=false</div>
-          <div class="cell"><b class="fail">失败</b>没开关、一边红、手改 status</div>
+          <div class="cell"><b>输入</b>第 5–7 关写回后的双绿 draft + 判断包</div>
+          <div class="cell"><b>执行</b>handoff:pack --allow-green-draft --judge-pack-pc/mobile</div>
+          <div class="cell"><b class="accept">验收</b>两端同档 draft、同一文件、判断写回戳齐、completeness 绿。包必须 ready=false</div>
+          <div class="cell"><b class="fail">失败</b>只跑 morph、缺判断包、没开关、一边红、手改 status</div>
           <div class="cell"><b>产出</b>green-draft 包。确定的接线，unknown 只画不点</div>
           <div class="cell"><b class="who">确认</b>机器 pack</div>
         </div>
@@ -488,11 +488,11 @@
         <td>主人</td>
       </tr>
       <tr>
-        <td>8a 同事包</td>
-        <td>双绿 draft</td>
-        <td>handoff:pack --allow-green-draft</td>
-        <td>同档、同文件、绿灯；ready=false</td>
-        <td>拒包；禁止手改 status</td>
+        <td>8a 做页包</td>
+        <td>判断写回后的双绿 draft</td>
+        <td>handoff:pack --allow-green-draft --judge-pack-*</td>
+        <td>同档、同文件、判断戳齐、绿灯；ready=false。不另出清单</td>
+        <td>只跑 morph / 缺判断包 / 手改 status 拒</td>
         <td>green-draft 交接包</td>
         <td>机器</td>
       </tr>

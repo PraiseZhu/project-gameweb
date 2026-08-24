@@ -4,6 +4,7 @@
  * 已知结构漏了前缀 → 红。
  */
 import { rebuildInventoryIndexes } from "./inventory.mjs";
+import { stampJudgment } from "./judgment.mjs";
 import {
   loadClassRoles,
   loadSettledRules,
@@ -2111,5 +2112,6 @@ export function finalizeDraftWriteback(docs, options = {}) {
     for (const doc of list) applyClipAndRewardPrefixes(doc);
   }
   const counts = list.map((doc) => recountStatuses(doc));
+  for (const doc of list) stampJudgment(doc, { morphology: true });
   return { applied, counts };
 }

@@ -239,6 +239,7 @@ test("resetInventoryToZero 清掉已写回前缀，copy 保留", () => {
 test("评测核必须走现行 draft-prechain，禁止自备闸门词表", () => {
   const src = readFileSync(new URL("../src/prechain-eval.mjs", import.meta.url), "utf8");
   assert.match(src, /runDraftMachinePipeline/);
+  assert.match(src, /这不是第二条出清单路/);
   assert.doesNotMatch(src, /CARD_ART_RE|CLIP_RE|IMAGE_BODY_RE/);
   assert.doesNotMatch(src, /auditDraftAssetCompleteness\(/);
   assert.doesNotMatch(src, /goldPrefixClassesFor\(/);

@@ -5,6 +5,7 @@
  * 写回后自动：任意组件集实例和 I…;母版Id 子件跟随母版。
  */
 import { applyCrossEndClassSync, applyDraftGoldMorphology } from "./gold-morphology.mjs";
+import { stampJudgment } from "./judgment.mjs";
 
 const ROLE_PREFIX = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
 
@@ -128,7 +129,7 @@ function isImageContainerOverride(node, role, byId) {
     && hasTextDescendant(node, byId);
 }
 
-export function applyReviewFeedback(doc, rows, { previousDoc = null, peerDocs = [] } = {}) {
+export function applyReviewFeedback(doc, rows, { previousDoc = null, peerDocs = [], judgePack = null } = {}) {
   const byId = indexById(doc);
   const idMap = previousDoc ? buildIdMap(previousDoc, doc) : new Map();
   const last = new Map();
@@ -209,6 +210,16 @@ export function applyReviewFeedback(doc, rows, { previousDoc = null, peerDocs = 
     const toPeer = applyCrossEndClassSync(doc, peer);
     const toSelf = applyCrossEndClassSync(peer, doc);
     peerSync.push({ toPeer: toPeer.applied, toSelf: toSelf.applied });
+    // 对端只做同类同步。本调用没交对端判断包，必须清掉旧 visual/judgePack，
+    // 不能拿对端上次戳配合本端本次包去打 green-draft。对端要自己当 current 带 --judge-pack。
+    stampJudgment(peer, { visual: false, morphology: true, judgePack: null });
   }
+  const boundPack = judgePack && judgePack.schema === "judge-pack/v1" ? judgePack : null;
+  stampJudgment(doc, {
+    visual: Boolean(boundPack),
+    morphology: true,
+    feedbackApplied: applied.length,
+    judgePack: boundPack,
+  });
   return { applied, missing, remapped, conflicts, skippedUnknown, idMapSize: idMap.size, morphology: morphology.applied, peerSync };
 }

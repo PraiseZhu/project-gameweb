@@ -11,6 +11,9 @@ import { rebuildInventoryIndexes } from "../src/inventory.mjs";
 import { GOLD_MOBILE_PREFIX_CLASSES } from "../scripts/check-draft-asset-completeness.mjs";
 import { behaviorOf } from "../../spec/inventory.mjs";
 import { fileURLToPath } from "node:url";
+import { applyReviewFeedback } from "../src/feedback-apply.mjs";
+import { finalizeDraftWriteback } from "../src/gold-morphology.mjs";
+import { fixtureJudgment } from "../src/judgment.mjs";
 
 function sample(id, extra = {}) {
   const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
@@ -23,18 +26,21 @@ function sample(id, extra = {}) {
     via: "prefix",
     box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
   }));
-  return rebuildInventoryIndexes({
+  const doc = rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
     status: "draft",
     fileKey: "FILEKEY",
     requestedNodeId: id,
+    snapshot: { hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", lastModified: "2026-08-22T00:00:00Z" },
     page: { id, box: { x: 0, y: 0, w: 750, h: 1200 } },
     nodes,
     attachments: { componentSets: [], modals: [] },
     relations: [],
     ...extra,
   });
+  fixtureJudgment(doc);
+  return doc;
 }
 
 test("handoff：成对 draft 无开关不能打 ready 包", () => {
@@ -647,6 +653,84 @@ test("handoff：缺冻住前缀类不能打 green-draft", () => {
   const result = validateHandoffPair(thin, sample("2:2"), { allowGreenDraft: true });
   assert.equal(result.ok, false);
   assert.match(result.problems.join("\n"), /相对规范稿缺前缀类|规范稿有/);
+});
+
+test("handoff：只跑 morph、没有判断包写回不能打 green-draft", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  delete pc.judgment;
+  delete mobile.judgment;
+  const missing = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
+  assert.equal(missing.ok, false);
+  assert.match(missing.problems.join("\n"), /缺判断写回/);
+
+  pc.judgment = { schema: "judgment-writeback/v1", snapshotHash: pc.snapshot.hash, visual: false, morphology: true, feedbackApplied: 0, judgePack: null, at: "2026-08-24T00:00:00Z" };
+  mobile.judgment = { ...pc.judgment, snapshotHash: mobile.snapshot.hash };
+  const morphOnly = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
+  assert.equal(morphOnly.ok, false);
+  assert.match(morphOnly.problems.join("\n"), /只跑了 morph/);
+});
+
+test("handoff CLI：green-draft 缺判断包目录直接拒", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-cli-judge-"));
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
+  writeFileSync(pcPath, JSON.stringify(sample("1:1")));
+  writeFileSync(mobilePath, JSON.stringify(sample("2:2")));
+  const result = spawnSync(process.execPath, [
+    fileURLToPath(new URL("../scripts/handoff-pack.mjs", import.meta.url)),
+    "--pc", pcPath, "--mobile", mobilePath, "--out", join(dir, "out"), "--allow-green-draft",
+  ], { encoding: "utf8" });
+  assert.notEqual(result.status, 0);
+  assert.match(`${result.stderr}\n${result.stdout}`, /必须同时传 --judge-pack-pc/);
+});
+
+test("handoff：判断写回后的清单与命名测同一闸门，可打 green-draft", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  const judged = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
+  assert.equal(judged.ok, true, judged.problems.join("\n"));
+  assert.equal(judged.kind, "green-draft");
+  assert.equal(pc.judgment.visual, true);
+  assert.equal(pc.judgment.morphology, true);
+  assert.equal(pc.judgment.judgePack.schema, "judge-pack/v1");
+});
+
+test("handoff：旧合法戳经无 --judge-pack 写回后不能打 green-draft", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  applyReviewFeedback(pc, [], {});
+  applyReviewFeedback(mobile, [], {});
+  assert.equal(pc.judgment.judgePack, null);
+  assert.equal(pc.judgment.visual, false);
+  const result = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /缺判断包记录|只跑了 morph/);
+});
+
+test("handoff：本端本次包不得配合对端旧戳打 green-draft", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  applyReviewFeedback(pc, [], {
+    peerDocs: [mobile],
+    judgePack: pc.judgment.judgePack,
+  });
+  assert.equal(pc.judgment.visual, true);
+  assert.equal(mobile.judgment.visual, false);
+  assert.equal(mobile.judgment.judgePack, null);
+  const result = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /缺判断包记录|只跑了 morph/);
+});
+
+test("handoff：判断写回后 morph 收口仍可打 green-draft", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  finalizeDraftWriteback([pc, mobile]);
+  const judged = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
+  assert.equal(judged.ok, true, judged.problems.join("\n"));
+  assert.equal(pc.judgment.visual, true);
+  assert.equal(pc.judgment.judgePack.schema, "judge-pack/v1");
 });
 
 test("issue #38：无 tab/ 的合法稿可打 green-draft，不改 unknown / #34 消费", () => {

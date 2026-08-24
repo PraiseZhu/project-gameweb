@@ -1,6 +1,7 @@
 /**
- * 未规范稿前置链路评测核：从 0 模拟 catalog + 金样形态写回 + completeness，
- * 对照规范稿只核前缀。不读图、不写 Figma、不写 evolution/ledger.json。
+ * 未规范稿前置链路评测核：从 0 模拟 morph 收口 + completeness，对照规范稿只核前缀。
+ * 不读图、不写 Figma、不写 evolution/ledger.json。
+ * 这不是第二条出清单路，也不能代替判断包看图写回。
  *
  * 50 轮是隔离克隆上的机器稳定性；验收门假绿 = completeness 绿但对照规范稿前缀不对。
  */
