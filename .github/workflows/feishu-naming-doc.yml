@@ -1,0 +1,63 @@
+# 仓内命名规范变了，重铺飞书设计师页并对账。
+# 飞书是发布件：前缀 / 参数 / 报警码 / 版本号必须和 spec.mjs 一致。
+name: feishu-naming-doc
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'standards/figma-naming/spec/naming-spec.md'
+      - 'standards/figma-naming/spec/spec.mjs'
+      - 'standards/figma-naming/tool/src/rules.mjs'
+      - 'standards/figma-naming/tool/src/feishu-naming-doc.mjs'
+      - 'standards/figma-naming/tool/src/feishu-docx.mjs'
+      - 'standards/figma-naming/tool/scripts/feishu-naming-doc.mjs'
+      - '.github/workflows/feishu-naming-doc.yml'
+  schedule:
+    - cron: '0 16 * * *'   # UTC 16:00 = 北京时间 0:00，夜间对账
+  workflow_dispatch:
+    inputs:
+      command:
+        description: publish 重铺并对账；audit 只对账
+        type: choice
+        options: [publish, audit]
+        default: publish
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: feishu-naming-doc
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: standards/figma-naming/tool
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate designer doc
+        run: npm run feishu:doc -- generate
+
+      - name: Publish or audit Feishu
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+        run: |
+          if [ -z "$FEISHU_APP_ID" ] || [ -z "$FEISHU_APP_SECRET" ]; then
+            echo "skip: FEISHU_APP_ID / FEISHU_APP_SECRET 未配置。飞书由本机 sync-local 铺，GitHub 不配密钥。"
+            echo "生成稿已在上一步自检。"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            npm run feishu:doc -- audit
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            npm run feishu:doc -- "${{ github.event.inputs.command }}"
+          else
+            npm run feishu:doc -- publish
+          fi
