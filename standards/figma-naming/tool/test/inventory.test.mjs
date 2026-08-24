@@ -111,10 +111,35 @@ test("v2：页面附件包含货架 modal、组件全变体和实例关联", () 
   assert.equal(inv.attachments.modals[0].nodes.length, 2);
   assert.equal(inv.attachments.componentSets.length, 1);
   assert.deepEqual(inv.attachments.componentSets[0].variants.map((v) => v.id), ["on", "off"]);
+  const classified = Object.fromEntries(inv.attachments.componentSets[0].nodes.map((item) => [item.id, item.status]));
+  for (const variant of inv.attachments.componentSets[0].variants) {
+    assert.equal(variant.status, classified[variant.id]);
+  }
   assert.ok(inv.relations.some((r) => r.kind === "instance-uses-variant" && r.status === "determined"));
   assert.ok(inv.relations.some((r) => r.kind === "modal-trigger" && r.status === "unknown"));
   const check = validateInventory(inv, tree);
   assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
+test("v2：组件集 variants 带上节点 status，skipped 变体根可被消费侧丢掉", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const set = node("set", "COMPONENT_SET", "img/logo", [
+    node("keep", "COMPONENT", "img/logo-cn"),
+    node("drop", "COMPONENT", "Property 1=en"),
+  ]);
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [node("instance", "INSTANCE", "img/logo", [], { componentId: "keep" })]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, set]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const variants = inv.attachments.componentSets[0].variants;
+  assert.deepEqual(variants.map((item) => item.id), ["keep", "drop"]);
+  assert.equal(variants.find((item) => item.id === "keep").status, "determined");
+  assert.equal(variants.find((item) => item.id === "drop").status, "skipped");
 });
 
 test("v2：未规范货架上名字带「弹窗」的 FRAME 也进附件", () => {
