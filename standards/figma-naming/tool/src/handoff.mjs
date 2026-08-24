@@ -25,6 +25,7 @@ export function parseHandoffArgs(argv) {
     confirm: optArg(argv, "--confirm"),
     assetsPc: optArg(argv, "--assets-pc"),
     assetsMobile: optArg(argv, "--assets-mobile"),
+    reference: optArg(argv, "--reference"),
     allowGreenDraft: argv.includes("--allow-green-draft"),
   };
 }
@@ -344,7 +345,7 @@ export function validateHandoffPack(dirPath) {
   };
 }
 
-export function validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft = false } = {}) {
+export function validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft = false, referenceDoc = null } = {}) {
   const problems = [];
   for (const [label, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
     if (!doc || doc.schema !== INVENTORY_SCHEMA) problems.push(`${label} schema 必须是 ${INVENTORY_SCHEMA}`);
@@ -362,10 +363,10 @@ export function validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft = false 
   const statuses = [pcDoc?.status, mobileDoc?.status];
   const bothReady = statuses.every((status) => status === "ready");
   const pcGate = pcDoc
-    ? auditLikeCli(pcDoc, mobileDoc ? [mobileDoc] : [], { readyPair: bothReady })
+    ? auditLikeCli(pcDoc, mobileDoc ? [mobileDoc] : [], { readyPair: bothReady, referenceDoc })
     : { ok: false, problems: ["缺 PC"] };
   const mobileGate = mobileDoc
-    ? auditLikeCli(mobileDoc, pcDoc ? [pcDoc] : [], { readyPair: bothReady })
+    ? auditLikeCli(mobileDoc, pcDoc ? [pcDoc] : [], { readyPair: bothReady, referenceDoc })
     : { ok: false, problems: ["缺 mobile"] };
   if (!pcGate.ok) problems.push(...pcGate.problems.map((item) => `pc completeness: ${item}`));
   if (!mobileGate.ok) problems.push(...mobileGate.problems.map((item) => `mobile completeness: ${item}`));
@@ -431,8 +432,8 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
   };
 }
 
-export function writeHandoffPack({ pcPath, mobilePath, pcDoc, mobileDoc, kind, outDir, assetsPc, assetsMobile }) {
-  const gate = validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft: kind === "green-draft" });
+export function writeHandoffPack({ pcPath, mobilePath, pcDoc, mobileDoc, kind, outDir, assetsPc, assetsMobile, referenceDoc = null }) {
+  const gate = validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft: kind === "green-draft", referenceDoc });
   if (!gate.ok) {
     throw new Error(gate.problems.join("\n"));
   }

@@ -25,7 +25,9 @@ export function howToFix(problem) {
   if (/弹窗/.test(text)) return "按 Skill：弹窗附件前缀 modal/，不靠 page 切片才写。";
   if (/缺前缀类：/.test(text) && /\bdyn\b/.test(text)) return "按已沉淀形态：今日标记 dyn/，不要写成 ind/。";
   if (/缺前缀类：/.test(text) && /\bmix\b/.test(text)) return "按已沉淀形态：日历外层多层背景用 mix/，划动裁切层才是 scroll/。";
-  if (/缺前缀类：/.test(text) && /\btab\b/.test(text)) return "按已沉淀形态：头像切换外围是 tab/，头像单项是 btn/。";
+  if (/缺前缀类：/.test(text) && /\btab\b/.test(text)) {
+    return "参考稿确实有页签条才要 tab/：头像切换外围是 tab/，头像单项是 btn/。本稿没有页签条就不要把 btn/ 改成 tab/，也不要手补 inventory。";
+  }
   if ((/缺前缀类：/.test(text) && /\bbg\b/.test(text)) || /backgrounds 为空/.test(text)) {
     return "页背景实例/组件写成 bg/，写回后重建 backgrounds 索引。";
   }

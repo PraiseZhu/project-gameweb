@@ -4,6 +4,7 @@ import { rebuildInventoryIndexes } from "../src/inventory.mjs";
 import {
   GOLD_MOBILE_PREFIX_CLASSES,
   GOLD_PC_PREFIX_CLASSES,
+  OPTIONAL_GOLD_PREFIX_CLASSES,
   auditDraftAssetCompleteness,
   auditGoldPrefixClasses,
   auditLikeCli,
@@ -89,8 +90,8 @@ test("completeness：modules 空但有 switch\/scroll 要红", () => {
 });
 
 test("规范稿对照只核前缀类，不抄图层 id", () => {
-  // 冻结自 392:24190 规范稿页面 determined 前缀类；不读 live inventory JSON。
-  const goldPc = ["bg", "btn", "dyn", "fix", "hot", "img", "ind", "kv", "mix", "scroll", "sec", "switch", "tab"];
+  // 冻结自 392:24190 规范稿页面 determined 核心前缀类；不读 live inventory JSON。tab/ 不进核心表。
+  const goldPc = GOLD_PC_PREFIX_CLASSES;
   const named = {
     nodes: goldPc.map((role, index) => ({
       id: `n${index}`,
@@ -184,6 +185,25 @@ test("goldPrefixClassesFor：按页宽选冻住 PC / mobile 前缀类", () => {
   assert.equal(goldPrefixClassesFor({ page: { box: {} } }), null);
 });
 
+test("goldPrefixClassesFor：参考稿有 determined tab/ 才并进必检", () => {
+  const pc = { page: { box: { w: 3840 } } };
+  const withTab = goldClassDoc([...GOLD_PC_PREFIX_CLASSES, "tab"], 3840);
+  const withoutTab = goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840);
+  const unknownTab = goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840);
+  unknownTab.nodes.push({
+    id: "unknown-tab",
+    type: "FRAME",
+    name: "tab/页签",
+    status: "unknown",
+    role: "tab",
+    box: { x: 0, y: 800, w: 80, h: 32 },
+  });
+  assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: withTab }), [...GOLD_PC_PREFIX_CLASSES, "tab"]);
+  assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: withoutTab }), GOLD_PC_PREFIX_CLASSES);
+  assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: unknownTab }), GOLD_PC_PREFIX_CLASSES);
+  assert.equal(OPTIONAL_GOLD_PREFIX_CLASSES.includes("tab"), true);
+});
+
 test("requiredIndexPresenceFor：PC 要分区/悬浮/底图/模块，mobile 不要 overlays", () => {
   assert.deepEqual(requiredIndexPresenceFor({ page: { box: { w: 3840 } } }), {
     sections: true, overlays: true, backgrounds: true, modules: true,
@@ -217,4 +237,60 @@ test("auditLikeCli：冻住前缀类和结构索引都齐则绿", () => {
   assert.equal(auditLikeCli(pc).ok, true, auditLikeCli(pc).problems.join("\n"));
   assert.equal(auditLikeCli(mobile).ok, true, auditLikeCli(mobile).problems.join("\n"));
   assert.equal((mobile.overlays || []).length, 0);
+});
+
+test("issue #38：SS6 无 tab/ 但有 btn/ + switch/ 时 completeness 绿", () => {
+  const pcRoles = GOLD_PC_PREFIX_CLASSES.filter((role) => role !== "tab");
+  const mobileRoles = GOLD_MOBILE_PREFIX_CLASSES.filter((role) => role !== "tab");
+  assert.equal(pcRoles.includes("btn") && pcRoles.includes("switch"), true);
+  assert.equal(pcRoles.includes("tab"), false);
+  const pc = goldClassDoc(pcRoles, 3840);
+  const mobile = goldClassDoc(mobileRoles, 750);
+  const noTabReference = goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840);
+  const pcResult = auditLikeCli(pc, [], { referenceDoc: noTabReference });
+  const mobileResult = auditLikeCli(mobile);
+  assert.equal(pcResult.ok, true, pcResult.problems.join("\n"));
+  assert.equal(mobileResult.ok, true, mobileResult.problems.join("\n"));
+  assert.doesNotMatch(pcResult.problems.join("\n"), /缺前缀类：.*\btab\b/);
+  assert.doesNotMatch(mobileResult.problems.join("\n"), /缺前缀类：.*\btab\b/);
+});
+
+test("issue #38：参考稿确实有 tab/ 时仍要求 tab/", () => {
+  const doc = goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840);
+  const reference = goldClassDoc([...GOLD_PC_PREFIX_CLASSES, "tab"], 3840);
+  const result = auditLikeCli(doc, [], { referenceDoc: reference });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /相对规范稿缺前缀类：tab/);
+  const present = goldClassDoc([...GOLD_PC_PREFIX_CLASSES, "tab"], 3840);
+  const presentResult = auditLikeCli(present, [], { referenceDoc: reference });
+  assert.equal(presentResult.ok, true, presentResult.problems.join("\n"));
+});
+
+test("issue #38：禁止用 unknown 或改 status 伪造 tab/ 过闸", () => {
+  const reference = goldClassDoc([...GOLD_PC_PREFIX_CLASSES, "tab"], 3840);
+  const unknownTab = goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840);
+  unknownTab.nodes.push({
+    id: "fake-tab",
+    type: "FRAME",
+    name: "tab/伪造页签",
+    status: "unknown",
+    role: "tab",
+    box: { x: 0, y: 800, w: 80, h: 32 },
+  });
+  const unknownResult = auditLikeCli(unknownTab, [], { referenceDoc: reference });
+  assert.equal(unknownResult.ok, false);
+  assert.match(unknownResult.problems.join("\n"), /相对规范稿缺前缀类：tab/);
+
+  const skippedTab = goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840);
+  skippedTab.nodes.push({
+    id: "skip-tab",
+    type: "FRAME",
+    name: "tab/跳过页签",
+    status: "skipped",
+    role: "tab",
+    box: { x: 0, y: 800, w: 80, h: 32 },
+  });
+  const skippedResult = auditLikeCli(skippedTab, [], { referenceDoc: reference });
+  assert.equal(skippedResult.ok, false);
+  assert.match(skippedResult.problems.join("\n"), /相对规范稿缺前缀类：tab/);
 });

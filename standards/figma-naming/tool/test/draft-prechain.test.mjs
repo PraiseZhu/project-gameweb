@@ -16,6 +16,8 @@ test("completeness CLI 必须调用 auditLikeCli，禁止另写一套前缀类�
   const src = readFileSync(COMPLETENESS, "utf8");
   assert.match(src, /export function auditLikeCli/);
   assert.match(src, /requiredIndexPresenceFor/);
+  assert.match(src, /goldPrefixClassesFor\(doc, \{ referenceDoc: options\.referenceDoc \}\)/);
+  assert.match(src, /--reference/);
   assert.match(src, /return \{ file: item\.file, \.\.\.auditLikeCli\(/);
 });
 

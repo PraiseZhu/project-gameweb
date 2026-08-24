@@ -30,7 +30,13 @@ export function runDraftMachinePipeline(docs, catalog, options = {}) {
   });
   const completeness = clones.map((doc, index) => {
     const peers = clones.filter((_, other) => other !== index);
-    return auditLikeCli(doc, peers, { classRoles, signatureRoles, signatureEvidence, settledRules });
+    return auditLikeCli(doc, peers, {
+      classRoles,
+      signatureRoles,
+      signatureEvidence,
+      settledRules,
+      referenceDoc: options.referenceDoc,
+    });
   });
   return {
     docs: clones,
