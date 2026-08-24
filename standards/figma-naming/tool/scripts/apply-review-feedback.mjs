@@ -7,9 +7,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyReviewFeedback } from "../src/feedback-apply.mjs";
+import { applyReviewFeedback, setDetermined } from "../src/feedback-apply.mjs";
 import { rebuildInventoryIndexes, renderHumanSummary } from "../src/inventory.mjs";
-import { applyClipAndRewardPrefixes } from "../src/gold-morphology.mjs";
+import { applyClipAndRewardPrefixes, isTextGroupImgExempt } from "../src/gold-morphology.mjs";
 import { writeFilesAtomically } from "../src/atomic-writeback.mjs";
 import { readJudgePack } from "../src/judgment.mjs";
 
@@ -56,38 +56,43 @@ const result = applyReviewFeedback(inv, rows, {
   judgePack,
 });
 
-const allNodes = [];
-const collectNodes = (value) => {
-  if (Array.isArray(value)) return value.forEach(collectNodes);
-  if (!value || typeof value !== "object") return;
-  if (typeof value.id === "string" && typeof value.type === "string") allNodes.push(value);
-  Object.values(value).forEach(collectNodes);
-};
-collectNodes(inv);
+function collectNodes(value, out = []) {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectNodes(item, out));
+    return out;
+  }
+  if (!value || typeof value !== "object") return out;
+  if (typeof value.id === "string" && typeof value.type === "string") out.push(value);
+  Object.values(value).forEach((child) => collectNodes(child, out));
+  return out;
+}
 
-function hasTextDescendant(node, seen = new Set()) {
+function hasTextDescendant(node, allNodes, seen = new Set()) {
   if (!node || seen.has(node.id)) return false;
   seen.add(node.id);
   return allNodes
     .filter((candidate) => candidate.parentId === node.id)
-    .some((child) => child.type === "TEXT" || hasTextDescendant(child, seen));
+    .some((child) => child.type === "TEXT" || hasTextDescendant(child, allNodes, seen));
 }
 
-function reclassifyTextContainers(value) {
+function reclassifyTextContainers(value, allNodes) {
   if (Array.isArray(value)) {
-    value.forEach(reclassifyTextContainers);
+    value.forEach((item) => reclassifyTextContainers(item, allNodes));
     return;
   }
   if (!value || typeof value !== "object") return;
   if (typeof value.id === "string" && typeof value.type === "string"
       && ["FRAME", "GROUP", "INSTANCE", "COMPONENT"].includes(value.type)
-      && hasTextDescendant(value)
-      && value.role === "img" && String(value.name || "").startsWith("img/")) {
+      && hasTextDescendant(value, allNodes)
+      && value.role === "img" && String(value.name || "").startsWith("img/")
+      && !isTextGroupImgExempt(value)) {
     setDetermined(value, "mix");
   }
-  Object.values(value).forEach(reclassifyTextContainers);
+  Object.values(value).forEach((child) => reclassifyTextContainers(child, allNodes));
 }
-reclassifyTextContainers(inv);
+
+reclassifyTextContainers(inv, collectNodes(inv));
+for (const item of peers) reclassifyTextContainers(item.doc, collectNodes(item.doc));
 
 const clip = applyClipAndRewardPrefixes(inv);
 const peerClip = peers.map((item) => applyClipAndRewardPrefixes(item.doc));

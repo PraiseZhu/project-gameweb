@@ -21,10 +21,6 @@
   - 现象:一级/二级/三级按钮矩形、按钮背景、播放按钮 1 被 unknown 或标成 btn/。可点的是外层分组。
   - 提案:IMAGE_BODY 覆盖这些名字；leafImageNodes 写 img/；completeness 红。
   - 备注:[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态
-- `character-content-is-switch` **头像切换的角色内容即使单变体也是 switch/** — 出现 1 次,首见 2026-08-21,最近 2026-08-21,status: landed
-  - 现象:未规范 399:47576：角色立绘模块/角色只有 Default，判断按变体个数放过；规范稿是 switch/。正确：被头像切换展示的角色内容模块是 switch/，不看变体个数。
-  - 提案:gold-morphology：大尺寸「角色立绘模块」「角色」强制 switch/；completeness 经 auditDraftGoldMorphology 红。
-  - 备注:[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态
 - `full-prechain-must-see-images` **完整前置必须看图** — 出现 1 次,首见 2026-08-20,最近 2026-08-20,status: adopted
   - 现象:错误：把从0验收收成不看图只测门，清单会瘦、漏热区/切换。正确：编稿→切片G2→看图判断写回→completeness；图和结构都要看。
   - 备注:[decided:2026-08-20] 491 人确认：完整前置必须看图。
@@ -35,9 +31,6 @@
 - `variant-counts-as-on-page` **页上组件集的全部变体算在页上** — 出现 2 次,首见 2026-08-20,最近 2026-08-20,status: adopted
   - 现象:错误：验收只扫当前展开的 page.nodes，皮肤视频变体里的 hot/ 不算，PC 缺 hot 误红。正确：变体一切换就在页上；completeness 前缀类必须把页上用到的 componentSets 全部变体树算进去。
   - 备注:[decided:2026-08-20] 491 人确认：变体等同页上，热区在皮肤视频变体里也算过关。
-- `group-with-text-not-img` **下面有文字的分组不能直接 img/** — 出现 5 次,首见 2026-08-20,最近 2026-08-20,status: adopted
-  - 现象:错误：有字奖励条被标 img/ 且跨端互打。正确：外层有字不标 img/，图走子层；跨端不得把有字奖励同步成 img/。例外仍是 bg/ kv/ logo。名叫视频框的外层 FRAME 跳过命名，往下挖 hot/、img/视频框 2、btn/播放、说明 copy/；不要整框 img/ 再和有字皮肤框互打。
-  - 备注:[decided:2026-08-20] 491 mobile 人核：分组含文字不 img；bg/、kv/、logo 三处例外。
 - `pc-mobile-same-class-must-sync` **PC/mobile 同类问题必须两边一起写回** — 出现 3 次,首见 2026-08-19,最近 2026-08-20,status: adopted
   - 现象:错误：PC 把头像框/icon 写成 img/ 后 mobile 实例拷贝 I…;母版Id 和同名层仍 unknown。正确：子件 id 以 ;母版Id 结尾必须跟母版前缀；一端确定的 type+剥前缀名立刻同步另一端。
   - 备注:[decided:2026-08-19] 491 PC 装饰滞后于 mobile，人核才发现。
@@ -56,12 +49,6 @@
 - `master-layer-copies-follow` **I…;母版Id 子件必须跟随母版前缀** — 出现 2 次,首见 2026-08-20,最近 2026-08-20,status: adopted
   - 现象:错误：母版 491:9235 已是 img/卡牌，页上实例里的 I491:8079;491:9235 仍 unknown。正确：id 以 ;母版Id 结尾的子件跟母版任意已确定前缀。
   - 备注:[decided:2026-08-20] gold-morphology followLayerCopies + PC/mobile class sync。
-- `all-component-sets-instances-follow` **所有组件集的子件都跟随母版，不限 btn/** — 出现 3 次,首见 2026-08-20,最近 2026-08-20,status: adopted
-  - 现象:错误：跟随规则只覆盖 btn/img/ind/switch，写回反馈也不自动跟随 I…;母版Id。正确：任意已命名组件集的实例和 I…;母版Id 子件都跟同一前缀；apply-review-feedback / apply-gold-morphology 写回即跟随。
-  - 备注:[decided:2026-08-20] 定死范围=全部组件集，含未命名母版不得给子件加前缀。
-- `left-nav-items-are-btn` **页上左侧导航项是 btn，不是 img 也不是 unknown** — 出现 2 次,首见 2026-08-19,最近 2026-08-19,status: adopted
-  - 现象:错误：组件集写成 btn/导航状态 后页上 fix/ 下实例仍 unknown。目录 types 写了 INSTANCE 但实例无变体分不够 50，completeness 旧闸门只核组件集。正确：页上实例 btn/ + click；apply-gold-morphology 静默补；跨货架定义仍 unknown。
-  - 备注:[decided:2026-08-19] PC 518:6945-6955 人核为 btn。
 - `switch-must-judge-all-variants` **switch 必须判完组件集全部变体，不能只看页上当前展开的子件** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: landed
   - 现象:2026-08-18 未规范 491:7364 页上锁在「周年庆典」（三张奖励卡），视频热区在组件集变体「皮肤视频」491:8385。只对页上当前树会误报「稿里没有这层」。轮播切换展示的内容本质上都要进清单。
   - 提案:判 switch/ 时打开 attachments.componentSets 每个 variant；当前实例 componentProperties 只说明页上展开哪一个，不代替其它子件。
@@ -101,17 +88,76 @@
 
 ## 无法自动化（by-design，只计数观察）
 
+- `unnamed-unknown-under-named-not-gap` **已命名祖先下的内部零件 unknown 不是漏判** — 出现 1 次,首见 2026-08-24,最近 2026-08-24,status: tracked
+  - 现象:错误：拿 unknown 条数或一级边框/头像框底数量当命名正确性下降。正确：已 img/btn/switch/mix 祖先下的内部零件保持 unknown（钉死 2）；对照规范稿只核前缀类。本次 399:47576 PC unknown 301 中 271 在已命名祖先下，mobile 543 中 526 同样。
+  - 提案:completeness 继续只核前缀类；人核不要把内部零件抬成二层 img/。
+  - 备注:[decided:2026-08-24] 399:47576 人确认：unknown 多不等于缺模块。
+- `all-component-sets-instances-follow` **所有组件集的子件都跟随母版，不限 btn/** — 出现 4 次,首见 2026-08-20,最近 2026-08-24,status: adopted
+  - 现象:错误：跟随规则只覆盖 btn/img/ind/switch，写回反馈也不自动跟随 I…;母版Id。正确：任意已命名组件集的实例和 I…;母版Id 子件都跟同一前缀；apply-review-feedback / apply-gold-morphology 写回即跟随。
+  - 备注:[decided:2026-08-20] 定死范围=全部组件集，含未命名母版不得给子件加前缀。
+- `mix-calendar-when-clustered` **日历外层元素混杂时用 mix，不要 unknown** — 出现 3 次,首见 2026-08-19,最近 2026-08-24,status: adopted
+  - 现象:PC 已是 mix/calendar。mobile 日历外层有多层背景装饰时同样 mix/，不要因为「日历外层不命名」整块 unknown。
+  - 备注:[decided:2026-08-19] 491:7643 核对改为 mix。
+- `scroll-clip-not-inner-reward` **scroll 只写在划动裁切层，奖励图是 img** — 出现 5 次,首见 2026-08-19,最近 2026-08-24,status: adopted
+  - 现象:同层里名字带划动/可划动的 FRAME 才是 scroll/。同尺寸奖励列表是轨道图，必须 img/。旧闸门按奖励两字强制 scroll，会放过裁切层、误伤轨道图。
+  - 备注:[decided:2026-08-19] 来自 491 mobile 核对：9047 scroll，9048/9064 img。
+- `character-content-is-switch` **头像切换的角色内容即使单变体也是 switch/** — 出现 2 次,首见 2026-08-21,最近 2026-08-24,status: landed
+  - 现象:未规范 399:47576：角色立绘模块/角色只有 Default，判断按变体个数放过；规范稿是 switch/。正确：被头像切换展示的角色内容模块是 switch/，不看变体个数。
+  - 提案:gold-morphology：大尺寸「角色立绘模块」「角色」强制 switch/；completeness 经 auditDraftGoldMorphology 红。
+  - 备注:[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态
+- `group-with-text-not-img` **下面有文字的分组不能直接 img/** — 出现 6 次,首见 2026-08-20,最近 2026-08-24,status: adopted
+  - 现象:错误：有字奖励条被标 img/ 且跨端互打。正确：外层有字不标 img/，图走子层；跨端不得把有字奖励同步成 img/。例外仍是 bg/ kv/ logo。名叫视频框的外层 FRAME 跳过命名，往下挖 hot/、img/视频框 2、btn/播放、说明 copy/；不要整框 img/ 再和有字皮肤框互打。
+  - 备注:[decided:2026-08-20] 491 mobile 人核：分组含文字不 img；bg/、kv/、logo 三处例外。
+- `left-nav-items-are-btn` **页上左侧导航项是 btn，不是 img 也不是 unknown** — 出现 3 次,首见 2026-08-19,最近 2026-08-24,status: adopted
+  - 现象:错误：组件集写成 btn/导航状态 后页上 fix/ 下实例仍 unknown。目录 types 写了 INSTANCE 但实例无变体分不够 50，completeness 旧闸门只核组件集。正确：页上实例 btn/ + click；apply-gold-morphology 静默补；跨货架定义仍 unknown。
+  - 备注:[decided:2026-08-19] PC 518:6945-6955 人核为 btn。
+- `title-deco-is-img` **标题组件集不命名，子层装饰是 img** — 出现 5 次,首见 2026-08-19,最近 2026-08-24,status: adopted
+  - 现象:错误：标题有字就把整棵标题树（含装饰）改回 unknown。原因：标题组件集本身不是切图，装饰才是。正确口径：标题集/默认变体不命名；装饰 img/ 打包；改装饰母版只带动装饰实例。
+  - 备注:[decided:2026-08-19] 491 mobile 核对：装饰 img，标题 unknown。
+- `title-set-unnamed` **标题组件集不命名** — 出现 4 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:标题集/默认变体不命名；子层装饰按功能另判为 img/。
+  - 提案:本次 PC+mobile 4 项。
+  - 备注:[decided:2026-08-18] 标题组件集不命名
+- `switch-control-is-btn` **移动活动切换按钮是 btn** — 出现 2 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:错误：活动分类切换按钮和变体判成 tab，实例未判。原因：按钮是内容外控制；活动内容本体才是 switch。正确口径：btn/切换按钮；所有实例/变体同判。
+  - 提案:本次组件集+2 变体+2 实例，共 5 项。
+  - 备注:[decided:2026-08-18] 移动活动切换按钮是 btn
+- `avatar-is-btn` **角色头像和锁定头像是 btn** — 出现 2 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:错误：头像单项及 highlight/normal/disable 组件变体判成 tab。原因：每个头像是独立可点控制；外围头像切换分组才可 tab。正确口径：btn/角色头像，锁定态 btn/待解锁头像。
+  - 提案:本次 PC+mobile 14 项（含组件集与变体）。
+  - 备注:[decided:2026-08-18] 角色头像和锁定头像是 btn
+- `carousel-arrow-is-click-btn` **轮播划动箭头是点击按钮** — 出现 2 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:错误：左右划动箭头写 btn 但 behavior=switch。原因：被翻的内容才是 switch，箭头只是控制。正确口径：btn/左划动箭头或 btn/右划动箭头，behavior=click。
+  - 提案:本次 PC 10 处。
+  - 备注:[decided:2026-08-18] 轮播划动箭头是点击按钮
+- `slider-unnamed` **轮播 Slider 容器不命名** — 出现 2 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:错误：Slider 容器判成 ind。原因：轮播圆点才是 ind，Slider 本身只是布局容器。正确口径：Slider 不命名。
+  - 提案:本次 PC 4 + mobile 4，共 8 处。
+  - 备注:[decided:2026-08-18] 轮播 Slider 容器不命名
+- `calendar-arrow-is-click-btn` **日历翻页箭头是点击按钮** — 出现 2 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:错误：日历右箭头的行为判成 scroll。原因：scroll 只给裁切轨道；箭头是单独触发动作。正确口径：btn/右滑动箭头，behavior=click。
+  - 提案:本次 PC+mobile 2 处。
+  - 备注:[decided:2026-08-18] 日历翻页箭头是点击按钮
+- `calendar-week-is-copy` **日历对应周是 copy** — 出现 2 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:错误：日历“对应周”判成 ind。原因：它是表头文字分组，不是轮播页码或状态点。正确口径：copy/对应周。
+  - 提案:本次 PC+mobile 2 处。
+  - 备注:[decided:2026-08-18] 日历对应周是 copy
+- `calendar-is-mix` **日历主体是 mix，外层不命名** — 出现 2 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:错误：日历外层和 PC 内部可滑内容都判 scroll。原因：PC 日历主体是混合表格内容，不是独立横滑裁切条。正确口径：外层不命名、主体 mix/calendar、今日 dyn/；移动仅裁切条为 scroll，格子仍 img。
+  - 提案:本次 PC+mobile 7 处。
+  - 备注:[decided:2026-08-18] 日历主体是 mix，外层不命名
+- `deco-arrow-is-img` **下滑引导箭头是图片切片** — 出现 2 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:错误：下滑示意箭头判成 btn/scroll。原因：没有原型或明确点击证据，箭头只承担视觉引导。正确口径：img/下滑箭头（移动可写 img/下滑示意箭头）。
+  - 提案:本次 PC+mobile 2 处。
+  - 备注:[decided:2026-08-18] 下滑引导箭头是图片切片
+- `kv-outer-unnamed` **KV 外层不能带 kv 身份** — 出现 2 次,首见 2026-08-18,最近 2026-08-24,status: adopted
+  - 现象:错误：把主视觉承载分组写成 kv/。原因：外层只负责布局；真正可消费的三层才是背景、中景、前景阴影。正确口径：外层不命名，内层分别 kv/背景、kv/中景、kv/前景阴影。
+  - 提案:本次 PC 1 处。
+  - 备注:[decided:2026-08-18] KV 外层不能带 kv 身份
 - `no-prefix-under-img-btn` **img/ 或 btn/ 下面的零件不用再命名** — 出现 2 次,首见 2026-08-14,最近 2026-08-21,status: landed
   - 现象:img/立绘下卡牌/Icon_SSR 不得再 img/；跟随母版和跨端同步遇到 img 祖先也不抬
   - 提案:img/btn 认领后关子树；ind 组件内部零件不出条目。
   - 备注:[decided:2026-08-21] 闸门已进 gold-morphology + 单测 + SKILL 已沉淀形态
-- `scroll-clip-not-inner-reward` **scroll 只写在划动裁切层，奖励图是 img** — 出现 4 次,首见 2026-08-19,最近 2026-08-20,status: adopted
-  - 现象:同层里名字带划动/可划动的 FRAME 才是 scroll/。同尺寸奖励列表是轨道图，必须 img/。旧闸门按奖励两字强制 scroll，会放过裁切层、误伤轨道图。
-  - 备注:[decided:2026-08-19] 来自 491 mobile 核对：9047 scroll，9048/9064 img。
-- `title-set-unnamed` **标题组件集不命名** — 出现 3 次,首见 2026-08-18,最近 2026-08-20,status: adopted
-  - 现象:标题集/默认变体不命名；子层装饰按功能另判为 img/。
-  - 提案:本次 PC+mobile 4 项。
-  - 备注:[decided:2026-08-18] 标题组件集不命名
 - `card-art-is-img` **卡片视觉资产必须判 img** — 出现 4 次,首见 2026-08-18,最近 2026-08-20,status: adopted
   - 现象:素材图、边框背景/背景边框、立绘、卡牌、Icon_SSR、弹窗纯底 BG 等整块视觉资产标 img/。父级已是 img/btn 时内部一级边框零件不抬升；父级没有切图前缀时整块要补 img/。
   - 提案:本次 PC+mobile 和完整变体子树补齐卡片资产。
@@ -122,9 +168,6 @@
 - `judge-confirm-then-settle` **判断写回后等人确认再沉淀** — 出现 2 次,首见 2026-08-19,最近 2026-08-20,status: adopted
   - 现象:判断写回 draft 后必须停，等人确认判断已完成。人确认前禁止写 skill / 台账；确认后必须沉淀，没写不许宣称本单收工。
   - 备注:[decided:2026-08-19] 发链接一窗出清单；沉淀单独等人确认。
-- `title-deco-is-img` **标题组件集不命名，子层装饰是 img** — 出现 4 次,首见 2026-08-19,最近 2026-08-20,status: adopted
-  - 现象:错误：标题有字就把整棵标题树（含装饰）改回 unknown。原因：标题组件集本身不是切图，装饰才是。正确口径：标题集/默认变体不命名；装饰 img/ 打包；改装饰母版只带动装饰实例。
-  - 备注:[decided:2026-08-19] 491 mobile 核对：装饰 img，标题 unknown。
 - `determined-not-overwritten-by-later-unknown` **已 determined 不得被后一条 unknown 复写** — 出现 3 次,首见 2026-08-19,最近 2026-08-20,status: adopted
   - 现象:错误：装饰已标 img/ 后，写回按 JSONL 最后一条把同一 id 改回 unknown。正确口径：同一 id 先 determined 后 unknown 时保留 determined，报冲突。标题改 unknown 只作用标题，不覆盖装饰。
   - 备注:[decided:2026-08-19] 写回跳过「determined 之后的 unknown」。
@@ -141,9 +184,6 @@
 - `prefix-only-module-grade` **模块只核前缀，后缀和设计师原名不作参考** — 出现 2 次,首见 2026-08-19,最近 2026-08-19,status: adopted
   - 现象:组件集/弹窗/裁切条只要求 role/ 前缀正确。后缀对错不计。检索用类型和变体结构，不用设计师原名。
   - 备注:[decided:2026-08-19] 只核前缀，设计师原名不一定正确。
-- `mix-calendar-when-clustered` **日历外层元素混杂时用 mix，不要 unknown** — 出现 2 次,首见 2026-08-19,最近 2026-08-19,status: adopted
-  - 现象:PC 已是 mix/calendar。mobile 日历外层有多层背景装饰时同样 mix/，不要因为「日历外层不命名」整块 unknown。
-  - 备注:[decided:2026-08-19] 491:7643 核对改为 mix。
 - `module-catalog-shots-for-new-drafts` **新稿用模块目录数据+切片套同类名** — 出现 1 次,首见 2026-08-19,最近 2026-08-19,status: adopted
   - 现象:规范稿组件集/弹窗做成 evolution/module-catalog（JSON+压缩jpg）。新稿按设计师原名和类型检索，命中则沿用 catalog.name 并用目录切片对照。未命中不得抄旧图层 id。人确认过的新模块再 build 进目录。
   - 备注:[decided:2026-08-19] 新稿旧模块换位/加模块：同类名保持不变。
@@ -166,42 +206,6 @@
   - 现象:错误：多语言、顶部导航、视频弹窗留 unknown。原因：它们是移动页独立 modal 附件，不应摊进 PC 或页面正文。正确口径：modal/多语言按钮弹窗、modal/顶部导航、modal/视频弹窗。
   - 提案:本次 mobile 3 处。
   - 备注:[decided:2026-08-18] 移动端命名弹窗必须挂附件
-- `switch-control-is-btn` **移动活动切换按钮是 btn** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：活动分类切换按钮和变体判成 tab，实例未判。原因：按钮是内容外控制；活动内容本体才是 switch。正确口径：btn/切换按钮；所有实例/变体同判。
-  - 提案:本次组件集+2 变体+2 实例，共 5 项。
-  - 备注:[decided:2026-08-18] 移动活动切换按钮是 btn
-- `avatar-is-btn` **角色头像和锁定头像是 btn** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：头像单项及 highlight/normal/disable 组件变体判成 tab。原因：每个头像是独立可点控制；外围头像切换分组才可 tab。正确口径：btn/角色头像，锁定态 btn/待解锁头像。
-  - 提案:本次 PC+mobile 14 项（含组件集与变体）。
-  - 备注:[decided:2026-08-18] 角色头像和锁定头像是 btn
-- `carousel-arrow-is-click-btn` **轮播划动箭头是点击按钮** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：左右划动箭头写 btn 但 behavior=switch。原因：被翻的内容才是 switch，箭头只是控制。正确口径：btn/左划动箭头或 btn/右划动箭头，behavior=click。
-  - 提案:本次 PC 10 处。
-  - 备注:[decided:2026-08-18] 轮播划动箭头是点击按钮
-- `slider-unnamed` **轮播 Slider 容器不命名** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：Slider 容器判成 ind。原因：轮播圆点才是 ind，Slider 本身只是布局容器。正确口径：Slider 不命名。
-  - 提案:本次 PC 4 + mobile 4，共 8 处。
-  - 备注:[decided:2026-08-18] 轮播 Slider 容器不命名
-- `calendar-arrow-is-click-btn` **日历翻页箭头是点击按钮** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：日历右箭头的行为判成 scroll。原因：scroll 只给裁切轨道；箭头是单独触发动作。正确口径：btn/右滑动箭头，behavior=click。
-  - 提案:本次 PC+mobile 2 处。
-  - 备注:[decided:2026-08-18] 日历翻页箭头是点击按钮
-- `calendar-week-is-copy` **日历对应周是 copy** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：日历“对应周”判成 ind。原因：它是表头文字分组，不是轮播页码或状态点。正确口径：copy/对应周。
-  - 提案:本次 PC+mobile 2 处。
-  - 备注:[decided:2026-08-18] 日历对应周是 copy
-- `calendar-is-mix` **日历主体是 mix，外层不命名** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：日历外层和 PC 内部可滑内容都判 scroll。原因：PC 日历主体是混合表格内容，不是独立横滑裁切条。正确口径：外层不命名、主体 mix/calendar、今日 dyn/；移动仅裁切条为 scroll，格子仍 img。
-  - 提案:本次 PC+mobile 7 处。
-  - 备注:[decided:2026-08-18] 日历主体是 mix，外层不命名
-- `deco-arrow-is-img` **下滑引导箭头是图片切片** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：下滑示意箭头判成 btn/scroll。原因：没有原型或明确点击证据，箭头只承担视觉引导。正确口径：img/下滑箭头（移动可写 img/下滑示意箭头）。
-  - 提案:本次 PC+mobile 2 处。
-  - 备注:[decided:2026-08-18] 下滑引导箭头是图片切片
-- `kv-outer-unnamed` **KV 外层不能带 kv 身份** — 出现 1 次,首见 2026-08-18,最近 2026-08-18,status: adopted
-  - 现象:错误：把主视觉承载分组写成 kv/。原因：外层只负责布局；真正可消费的三层才是背景、中景、前景阴影。正确口径：外层不命名，内层分别 kv/背景、kv/中景、kv/前景阴影。
-  - 提案:本次 PC 1 处。
-  - 备注:[decided:2026-08-18] KV 外层不能带 kv 身份
 - `stale-user-labels` **人判标签会过期，稿改过就不能套用** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: tracked
   - 现象:walk 对 userConfirmed 先比对打标时的名字；对不上就 staleLabel 重问，不落回判据。2:18904 标签过期后曾被判回 img/icon 并进可直接改。probe 的 userLabels.stale 是这条链的现场位，和 plugin-data 换 id 丢记录不是同一根因。
   - 提案:过期只重问。旧 probe 里的 stale 字段留作对照，不删。

@@ -207,6 +207,9 @@ npm run inventory -- \
 - 已 `determined` 的层，后一条 unknown 不得复写。写回反馈同一 id 先 img 后 unknown 时保留 determined，报冲突
 - `fix/左侧导航` 下每一项是可点切换，前缀 `btn/`（`behavior=click`），不是 `img/`，也不是 unknown。跨货架**定义**仍 unknown，不伪造本地组件集；**页上实例**按可点判 `btn/`
 - 一端人核过的形态必须立刻同步到另一端（PC ↔ mobile）：装饰 `img/`、划动 `scroll/`、奖励图 `img/`、头像框/icon/卡牌。不能只改当前这份。写回用两份 draft 一起收口。
+- **对照规范稿只核前缀类，不拿 unknown 条数当正确性。** 已 `img/` `btn/` `switch/` `mix/` 祖先下的 `一级边框`、头像框底、内部零件保持 unknown，这是钉死 2，不是漏判。有字的标题组件集保持不命名（`title-set-unnamed`）。
+- 竖版 KV 只有一层切图时用 `img/`，不要为了齐 PC 的 `kv/背景|中景|阴影` 去拆三层。mobile 没有左侧导航就没有 `fix/`；没有 PC 那种整块可播放热区就没有 `hot/`。
+- `Slider` 容器按口径不命名；若 morph 已写成 `tab/`，不得再用 unknown 复写。头像切换外围才可为 `tab/`。`兑换码背景` 即使有字也保持 `img/`，不改 `mix/`。
 
 ### 4. 人确认判断完成后才沉淀
 

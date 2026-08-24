@@ -175,6 +175,70 @@ test("CLI：apply-review-feedback 写盘后子件已跟随", () => {
   assert.equal(doc.nodes[1].name, "img/卡牌");
 });
 
+test("CLI：有字 logo 和兑换码背景保持 img/，不改 mix/", () => {
+  const dir = mkdtempSync(join(tmpdir(), "figma-text-img-"));
+  const inv = join(dir, "inventory.json");
+  writeFileSync(inv, `${JSON.stringify({
+    schema: "inventory/v2",
+    status: "draft",
+    counts: {},
+    nodes: [
+      { id: "logo", type: "FRAME", name: "img/logo", status: "determined", role: "img" },
+      { id: "logo-txt", type: "TEXT", name: "品牌", status: "determined", role: "copy", parentId: "logo" },
+      { id: "code", type: "FRAME", name: "img/兑换码背景", status: "determined", role: "img" },
+      { id: "code-txt", type: "TEXT", name: "ABCD", status: "determined", role: "copy", parentId: "code" },
+      { id: "reward", type: "FRAME", name: "img/奖励", status: "determined", role: "img" },
+      { id: "reward-txt", type: "TEXT", name: "积分", status: "determined", role: "copy", parentId: "reward" },
+    ],
+  }, null, 2)}\n`);
+  execFileSync(process.execPath, [join(ROOT, "scripts/apply-review-feedback.mjs"), inv], { cwd: ROOT });
+  const doc = JSON.parse(readFileSync(inv, "utf8"));
+  const byId = Object.fromEntries(doc.nodes.map((node) => [node.id, node]));
+  assert.equal(byId.logo.name, "img/logo");
+  assert.equal(byId.logo.role, "img");
+  assert.equal(byId.code.name, "img/兑换码背景");
+  assert.equal(byId.code.role, "img");
+  assert.equal(byId.reward.name, "奖励");
+  assert.notEqual(byId.reward.role, "img");
+});
+
+test("CLI：--peer 用对端自己的树判断有字容器，不借用主清单 id", () => {
+  const dir = mkdtempSync(join(tmpdir(), "figma-peer-text-"));
+  const inv = join(dir, "pc.json");
+  const peer = join(dir, "mobile.json");
+  writeFileSync(inv, `${JSON.stringify({
+    schema: "inventory/v2",
+    status: "draft",
+    counts: {},
+    nodes: [
+      { id: "pc-logo", type: "FRAME", name: "img/logo", status: "determined", role: "img" },
+      { id: "pc-logo-txt", type: "TEXT", name: "品牌", status: "determined", role: "copy", parentId: "pc-logo" },
+    ],
+  }, null, 2)}\n`);
+  writeFileSync(peer, `${JSON.stringify({
+    schema: "inventory/v2",
+    status: "draft",
+    counts: {},
+    nodes: [
+      { id: "m-reward", type: "FRAME", name: "img/奖励", status: "determined", role: "img" },
+      { id: "m-reward-txt", type: "TEXT", name: "积分", status: "determined", role: "copy", parentId: "m-reward" },
+      { id: "m-code", type: "FRAME", name: "img/兑换码背景", status: "determined", role: "img" },
+      { id: "m-code-txt", type: "TEXT", name: "ABCD", status: "determined", role: "copy", parentId: "m-code" },
+    ],
+  }, null, 2)}\n`);
+  execFileSync(process.execPath, [join(ROOT, "scripts/apply-review-feedback.mjs"), inv, "--peer", peer], { cwd: ROOT });
+  const pc = JSON.parse(readFileSync(inv, "utf8"));
+  const mobile = JSON.parse(readFileSync(peer, "utf8"));
+  const pcById = Object.fromEntries(pc.nodes.map((node) => [node.id, node]));
+  const mobileById = Object.fromEntries(mobile.nodes.map((node) => [node.id, node]));
+  assert.equal(pcById["pc-logo"].name, "img/logo");
+  assert.equal(pcById["pc-logo"].role, "img");
+  assert.equal(mobileById["m-code"].name, "img/兑换码背景");
+  assert.equal(mobileById["m-code"].role, "img");
+  assert.equal(mobileById["m-reward"].name, "奖励");
+  assert.notEqual(mobileById["m-reward"].role, "img");
+});
+
 for (const name of ["卡牌", "Icon_SSR 2", "BG"]) {
   test(`验收：无 img 祖先的 ${name} 必须 img/`, () => {
     const miss = {

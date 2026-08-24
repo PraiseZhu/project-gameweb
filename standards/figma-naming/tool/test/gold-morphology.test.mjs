@@ -969,6 +969,17 @@ test("有字 logo 保留 img/；普通有字容器不能 img/", () => {
   assert.equal(logo.nodes[0].name, "img/logo");
   assert.equal(logo.nodes[0].role, "img");
 
+  const code = {
+    nodes: [
+      { id: "code", type: "FRAME", name: "img/兑换码背景", status: "determined", role: "img" },
+      { id: "txt", type: "TEXT", name: "ABCD", status: "determined", role: "copy", parentId: "code" },
+    ],
+  };
+  assert.deepEqual(auditDraftGoldMorphology(code), { ok: true, problems: [] });
+  applyDraftGoldMorphology(code);
+  assert.equal(code.nodes[0].name, "img/兑换码背景");
+  assert.equal(code.nodes[0].role, "img");
+
   const reward = {
     nodes: [
       { id: "box", type: "FRAME", name: "img/奖励", status: "determined", role: "img" },
