@@ -49,6 +49,7 @@ figma-naming/
 5. 涉及新后果 → 先看 `spec/consumer-assumptions.md` 有没有对应假定，没有就先加假定并升版
 6. 两头测：故意犯一次要触发，干净稿要保持 0 报警
 7. `npm run rules` 重新生成 `tool/docs/RULES.md`
+8. 合进 `main` 后，GitHub Actions `feishu-naming-doc` 必须重铺飞书设计师页并对账。对账红 = 没发完。飞书页只读，不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
 
 ## 与 skills/ 的关系
 

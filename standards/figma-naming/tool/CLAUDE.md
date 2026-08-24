@@ -38,6 +38,7 @@
 | 内容 | 事实来源 | 谁锁 |
 |---|---|---|
 | 前缀总表、@参数表、前缀形态参数、排除词表 | `spec/naming-spec.md` §1/§2/§4 | `test/spec-drift.test.mjs` |
+| 设计师飞书页上的前缀 / 参数 / 报警码 / 版本号 | 同上，经 `src/feishu-naming-doc.mjs` 生成 | `test/feishu-naming-doc.test.mjs` 锁生成稿；合 `main` 后 `feishu-naming-doc` workflow 重铺并对账 |
 | 规则**元信息**（错误码 / 级别 / 处置 / 依据性质 / 依赖假定） | `spec/naming-spec.md` §6 清单表 | 同上，逐条比对 |
 | 规则的 `why` / `fix` 文案 | `src/rules.mjs` | **不锁**（锁自然语言会让正文失去可读性）。约束是「每条必须有非空 spec 引用 + assumes 全部已定义」 |
 | 「不改会怎样」成立的前提 | `spec/consumer-assumptions.md` | 版本号 + 条目集合受锁 |
