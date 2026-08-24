@@ -107,9 +107,20 @@ export function runFromHandoff(dirPath) {
       problems: pack.problems,
     };
   }
+  if (pack.kind !== "ready" || pack.ready !== true) {
+    return {
+      ok: false,
+      kind: pack.kind ?? null,
+      ready: pack.ready === true,
+      fingerprint: pack.fingerprint ?? null,
+      wirable: { pc: 0, mobile: 0, total: 0 },
+      drawOnly: { pc: 0, mobile: 0, total: 0 },
+      problems: ["本仓做页只吃 kind=ready 交接包。green-draft / 未规范稿请到 projects/project-unnamed-inventory"],
+    };
+  }
 
   const options = {
-    allowDraft: pack.kind === "green-draft",
+    allowDraft: false,
     platformScopeInput: EMPTY_PLATFORM_SCOPE,
   };
   const pc = consumeOne("pc", pack.pcDoc, options);

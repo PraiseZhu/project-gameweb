@@ -8,56 +8,31 @@ const SKILL_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../SKILL
 const PROJECT_CLAUDE_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../CLAUDE.md");
 
 const REQUIRED_IN_SKILL = [
-  "硬门（Lead / Worker 同一套，不许降级）",
-  "G0 步骤是闸门",
-  "G1 禁读",
-  "G2 切片闸门",
-  "G3 上下文预算",
-  "G4 派工",
-  "send_to_lead",
-  "page.png",
-  "pack.json",
-  "每轮最多 Read **2** 张小图",
-  "禁止再 Read 任何图片",
-  "禁止「先做到完美再汇报」",
-  "截图和结构数据必须同时用",
-  "set-*.jpg",
-  "人确认前禁止写 skill / 台账",
-  "确认判断已完成",
-  "发链接后自动跑到判断写回",
-  "未规范稿次日开跑",
-  "核对页 UI 冻结",
-  "禁止写 `_tmp/inventory-review/index.html`",
-  "链路验收口径（未规范稿 0–7）",
-  "左侧 Page 链接可开工",
-  "导图不是每层一张",
-  "目录不是自动命名器",
-  "词表是漏项保险",
-  "未规范稿全仓只有一条出清单链路",
-  "做页不另编清单",
+  "已规范命名稿",
+  "status: \"ready\"",
+  "本仓只编已规范 ready",
+  "project-unnamed-inventory",
+  "不做判断包看图写回",
+  "做页只吃 ready",
 ];
 
 const REQUIRED_IN_PROJECT_CLAUDE = [
-  "判断包上下文硬门",
-  "G0 步骤是闸门",
-  "G1 禁读",
-  "G2 切片闸门",
-  "G3 上下文预算",
-  "G4 派工",
-  "核对页 UI 冻结",
-  "链路验收口径",
-  "未规范稿全仓只有一条出清单链路",
-  "未规范稿不做第二套出清单",
+  "已规范设计稿",
+  "project-unnamed-inventory",
+  "只吃 ready",
+  "未规范稿出清单不在本仓",
 ];
 
-test("SKILL.md 必须保留判断包硬门全文，删掉即红", () => {
+test("SKILL.md 必须写清本仓只走已规范 ready，未规范指向独立仓", () => {
   const text = readFileSync(SKILL_PATH, "utf8");
   const missing = REQUIRED_IN_SKILL.filter((needle) => !text.includes(needle));
-  assert.deepEqual(missing, [], `SKILL.md 缺硬门条文：${missing.join("；")}`);
+  assert.deepEqual(missing, [], `SKILL.md 缺本仓口径：${missing.join("；")}`);
+  assert.equal(text.includes("发链接后自动跑到判断写回"), false, "本仓 SKILL 不得再把判断写回当默认开工");
 });
 
-test("项目 CLAUDE.md 必须点名同一套硬门，只写在 skill 里不够", () => {
+test("项目 CLAUDE.md 必须把未规范出清单指到独立仓", () => {
   const text = readFileSync(PROJECT_CLAUDE_PATH, "utf8");
   const missing = REQUIRED_IN_PROJECT_CLAUDE.filter((needle) => !text.includes(needle));
-  assert.deepEqual(missing, [], `CLAUDE.md 缺硬门条文：${missing.join("；")}`);
+  assert.deepEqual(missing, [], `CLAUDE.md 缺本仓口径：${missing.join("；")}`);
+  assert.equal(text.includes("判断包上下文硬门"), false, "判断硬门应在 unnamed 仓，不在本仓 CLAUDE");
 });

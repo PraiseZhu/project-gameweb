@@ -15,7 +15,6 @@ import {
   buildInventory, snapshotHashOf, renderHumanSummary, validateInventory, findNode,
   unnamedRequiresDraft, sanitizeInventoryName,
 } from "../src/inventory.mjs";
-import { INVENTORY_STATUSES } from "../../spec/inventory.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 loadEnv(ROOT);
@@ -42,8 +41,8 @@ const outArg = opt("--out");
 const rawOutNameArg = opt("--name");
 const statusFlag = requiredOpt("--status");
 const statusArg = statusFlag.present ? statusFlag.value : "ready";
-if (!INVENTORY_STATUSES.includes(statusArg)) {
-  console.error(`--status 只能是 ${INVENTORY_STATUSES.join(" / ")}，收到：${statusArg}`);
+if (statusArg !== "ready") {
+  console.error(unnamedRequiresDraft({ status: statusArg }) || `--status 本仓只能是 ready，收到：${statusArg}`);
   process.exit(1);
 }
 const unnamedProblem = unnamedRequiresDraft({ status: statusArg, name: rawOutNameArg });
@@ -134,4 +133,4 @@ writeFileSync(txtPath, renderHumanSummary(inv));
 console.log(renderHumanSummary(inv));
 console.log(`JSON  ${jsonPath}`);
 console.log(`摘要  ${txtPath}`);
-console.log(`status=${inv.status} — ${inv.status === "draft" ? "未规范稿待人工核对，未升 ready。" : "规范命名稿已编成可交接清单；做页先消费已确定项。"}`);
+console.log(`status=${inv.status} — 规范命名稿已编成可交接清单；做页先消费已确定项。`);

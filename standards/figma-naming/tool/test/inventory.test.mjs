@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cleanTree } from "./fixtures.mjs";
 import { buildInventory, validateInventory, renderHumanSummary, resolvePageRoot, unnamedRequiresDraft, sanitizeInventoryName } from "../src/inventory.mjs";
@@ -171,52 +173,78 @@ test("v2：跨货架 componentId 在 draft 留 unknown 关系，在 ready 仍阻
   assert.match(readyCheck.problems.join("\n"), /未解析/);
 });
 
-test("unnamedRequiresDraft：必须同时 draft 和 inventory-unnamed-* 名", () => {
-  assert.equal(unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed-1-2" }), null);
+test("unnamedRequiresDraft：本仓拒绝 draft / unnamed，指向未规范仓", () => {
   assert.equal(unnamedRequiresDraft({ status: "ready", name: "inventory-392-24190" }), null);
-  assert.match(
-    unnamedRequiresDraft({ status: "ready", name: "inventory-unnamed-1-2" }) || "",
-    /--status draft/,
-  );
-  assert.match(
-    unnamedRequiresDraft({ status: "draft" }) || "",
-    /inventory-unnamed/,
-  );
-  assert.match(
-    unnamedRequiresDraft({ status: "draft", name: "foo" }) || "",
-    /inventory-unnamed/,
-  );
-  assert.match(
-    unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed-" }) || "",
-    /inventory-unnamed/,
-  );
+  assert.match(unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed-1-2" }) || "", /project-unnamed-inventory/);
+  assert.match(unnamedRequiresDraft({ status: "ready", name: "inventory-unnamed-1-2" }) || "", /project-unnamed-inventory/);
+  assert.match(unnamedRequiresDraft({ status: "draft" }) || "", /project-unnamed-inventory/);
+  assert.match(unnamedRequiresDraft({ status: "certified", name: "inventory-392-24190" }) || "", /project-unnamed-inventory/);
+  assert.match(unnamedRequiresDraft({ name: "inventory-392-24190" }) || "", /project-unnamed-inventory/);
 });
 
 test("sanitizeInventoryName：page id 冒号改短横线", () => {
   assert.equal(sanitizeInventoryName("inventory-unnamed-392:24190"), "inventory-unnamed-392-24190");
-  assert.equal(unnamedRequiresDraft({
+  assert.match(unnamedRequiresDraft({
     status: "draft",
     name: "inventory-unnamed-392:24190",
-  }), null);
-  assert.match(
-    unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed:392-24190" }) || "",
-    /inventory-unnamed/,
-  );
+  }) || "", /project-unnamed-inventory/);
 });
 
-test("bin/inventory：draft 无 name 或错误 name 在拉稿前失败", () => {
+test("bin/inventory：draft / unnamed 在拉稿前失败并指向未规范仓", () => {
   const bin = resolve(TOOL_ROOT, "bin/inventory.mjs");
   const missingName = spawnSync(process.execPath, [bin, "--status", "draft"], { encoding: "utf8" });
   assert.notEqual(missingName.status, 0);
-  assert.match(missingName.stderr, /inventory-unnamed/);
-  const badName = spawnSync(process.execPath, [bin, "--status", "draft", "--name", "foo"], { encoding: "utf8" });
+  assert.match(missingName.stderr, /project-unnamed-inventory/);
+  const badName = spawnSync(process.execPath, [bin, "--status", "draft", "--name", "inventory-unnamed-1-2"], { encoding: "utf8" });
   assert.notEqual(badName.status, 0);
-  assert.match(badName.stderr, /inventory-unnamed/);
-  const malformedSeparator = spawnSync(process.execPath, [bin, "--status", "draft", "--name", "inventory-unnamed:392-24190"], { encoding: "utf8" });
-  assert.notEqual(malformedSeparator.status, 0);
-  assert.match(malformedSeparator.stderr, /inventory-unnamed/);
-  const colonName = spawnSync(process.execPath, [bin, "--status", "draft", "--name", "inventory-unnamed-392:24190"], { encoding: "utf8" });
-  assert.notEqual(colonName.status, 0);
-  assert.doesNotMatch(colonName.stderr, /只能包含字母/);
-  assert.match(`${colonName.stderr}\n${colonName.stdout}`, /figma 链接|fileKey|--file/i);
+  assert.match(badName.stderr, /project-unnamed-inventory/);
+  const certified = spawnSync(process.execPath, [bin, "--status", "certified"], { encoding: "utf8" });
+  assert.notEqual(certified.status, 0);
+  assert.match(certified.stderr, /project-unnamed-inventory|ready/);
+});
+
+test("本仓未规范 CLI 一律失败并指向独立仓", () => {
+  for (const script of [
+    "scripts/prep-judge-pack.mjs",
+    "scripts/match-module-catalog.mjs",
+    "scripts/eval-hybrid-nameless.mjs",
+    "scripts/apply-review-feedback.mjs",
+    "scripts/apply-gold-morphology.mjs",
+    "scripts/handoff-promote.mjs",
+  ]) {
+    const run = spawnSync(process.execPath, [resolve(TOOL_ROOT, script)], { encoding: "utf8" });
+    assert.notEqual(run.status, 0, script);
+    assert.match(`${run.stderr}\n${run.stdout}`, /project-unnamed-inventory/, script);
+  }
+});
+
+test("export-inventory-page / export-handoff-slices 拒绝 draft 和 unnamed 文件名", () => {
+  const dir = mkdtempSync(join(tmpdir(), "named-export-gate-"));
+  try {
+    const draftPath = join(dir, "inventory-392-24190.json");
+    const unnamedPath = join(dir, "inventory-unnamed-1-2.json");
+    const body = JSON.stringify({
+      schema: "inventory/v2",
+      status: "draft",
+      fileKey: "FILEKEY",
+      page: { box: { x: 0, y: 0, w: 10, h: 10 } },
+      sections: [],
+    });
+    writeFileSync(draftPath, body);
+    writeFileSync(unnamedPath, JSON.stringify({ ...JSON.parse(body), status: "ready" }));
+    for (const [script, extra] of [
+      ["scripts/export-inventory-page.mjs", []],
+      ["scripts/export-handoff-slices.mjs", ["--out", join(dir, "out")]],
+    ]) {
+      for (const inventory of [draftPath, unnamedPath]) {
+        const run = spawnSync(process.execPath, [resolve(TOOL_ROOT, script), "--inventory", inventory, ...extra], {
+          encoding: "utf8",
+        });
+        assert.notEqual(run.status, 0, `${script} ${inventory}`);
+        assert.match(`${run.stderr}\n${run.stdout}`, /project-unnamed-inventory/, `${script} ${inventory}`);
+      }
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

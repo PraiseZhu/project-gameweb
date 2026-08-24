@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from "
 import { resolve, dirname, normalize, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isSourceInventoryFile, persistReviewedInventory } from "../src/review-save.mjs";
+import { unnamedRequiresDraft } from "../src/inventory.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(SCRIPT_DIR, "../../../..");
@@ -63,10 +64,31 @@ function safePath(urlPath, dataRoot = root) {
   return full;
 }
 
+function readSourceInventory(dataRoot, file) {
+  if (!isSourceInventoryFile(file || "")) return { error: "bad file" };
+  const full = resolve(dataRoot, file);
+  if (full !== dataRoot && !full.startsWith(`${dataRoot}/`)) return { error: "bad file" };
+  if (!existsSync(full) || !statSync(full).isFile()) return { error: "missing file" };
+  let doc;
+  try {
+    doc = JSON.parse(readFileSync(full, "utf8"));
+  } catch {
+    return { error: "bad json" };
+  }
+  const unnamedProblem = unnamedRequiresDraft({ status: doc?.status, name: file });
+  if (unnamedProblem) return { error: unnamedProblem, code: 409 };
+  return { doc, full };
+}
+
+function namedSourceInventoryFiles(dataRoot) {
+  if (!existsSync(dataRoot)) return [];
+  return readdirSync(dataRoot)
+    .filter((name) => isSourceInventoryFile(name) && !readSourceInventory(dataRoot, name).error)
+    .sort();
+}
+
 function defaultInvFile(dataRoot = root) {
-  if (!existsSync(dataRoot)) return "";
-  const files = readdirSync(dataRoot).filter((name) => isSourceInventoryFile(name)).sort();
-  return files.find((name) => name.startsWith("inventory-unnamed-")) || files[0] || "";
+  return namedSourceInventoryFiles(dataRoot)[0] || "";
 }
 
 function defaultReviewPath(dataRoot = root) {
@@ -95,6 +117,11 @@ export function createInventoryReviewServer({ dataRoot = root, committedPage = C
     try { parsed = JSON.parse(body); } catch { return send(res, 400, "bad json"); }
     const file = parsed?.file, record = parsed?.record;
     if (!isSourceInventoryFile(file || "") || !record || typeof record !== "object") return send(res, 400, "bad payload");
+    const source = readSourceInventory(dataRoot, file);
+    if (source.error) {
+      const code = source.code === 409 ? 409 : 400;
+      return send(res, code, JSON.stringify({ ok: false, error: source.error }), "application/json; charset=utf-8");
+    }
     const fbPath = resolve(dataRoot, file.replace(/\.json$/, "-feedback.json"));
     if (!fbPath.startsWith(dataRoot + "/")) return send(res, 400, "bad file");
     const line = `${JSON.stringify(record)}\n`;
@@ -116,11 +143,14 @@ export function createInventoryReviewServer({ dataRoot = root, committedPage = C
     if (inv?.schema !== "inventory/v2" || !Array.isArray(inv.nodes)) {
       return send(res, 400, JSON.stringify({ ok: false, error: "不是 inventory/v2" }), "application/json; charset=utf-8");
     }
-    if (inv.status !== "ready") {
-      return send(res, 409, JSON.stringify({
-        ok: false,
-        error: "draft 不能在核对页保存清单。刚才的判定已写入 *-feedback.json，不会丢。升 ready 请用「核对完成」或 handoff:promote。",
-      }), "application/json; charset=utf-8");
+    const source = readSourceInventory(dataRoot, file);
+    if (source.error) {
+      const code = source.code === 409 ? 409 : 400;
+      return send(res, code, JSON.stringify({ ok: false, error: source.error }), "application/json; charset=utf-8");
+    }
+    const unnamedProblem = unnamedRequiresDraft({ status: inv.status, name: file });
+    if (unnamedProblem) {
+      return send(res, 409, JSON.stringify({ ok: false, error: unnamedProblem }), "application/json; charset=utf-8");
     }
     try {
       const result = persistReviewedInventory(dataRoot, file, inv);
@@ -132,7 +162,7 @@ export function createInventoryReviewServer({ dataRoot = root, committedPage = C
   }
 
   if (req.method === "GET" && url.pathname === "/api/inventories") {
-    const files = existsSync(dataRoot) ? readdirSync(dataRoot).filter((name) => isSourceInventoryFile(name)).sort() : [];
+    const files = namedSourceInventoryFiles(dataRoot);
     const items = files.map((file) => {
       const raw = readFileSync(resolve(dataRoot, file), "utf8").slice(0, 4000);
       const status = /"status"\s*:\s*"(draft|ready|certified)"/.exec(raw)?.[1] ?? null;

@@ -12,6 +12,7 @@ import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnv, token } from "../src/figma.mjs";
 import { sliceIdsOf } from "../src/handoff.mjs";
+import { unnamedRequiresDraft } from "../src/inventory.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 loadEnv(ROOT);
@@ -49,8 +50,13 @@ if (!existsSync(inventoryPath)) {
 }
 
 const inv = JSON.parse(readFileSync(inventoryPath, "utf8"));
-if (inv.schema !== "inventory/v2" || !inv.fileKey) {
-  console.error(`不是可用的 inventory/v2：${inventoryPath}`);
+const unnamedProblem = unnamedRequiresDraft({ status: inv.status, name: basename(inventoryPath) });
+if (unnamedProblem) {
+  console.error(unnamedProblem);
+  process.exit(1);
+}
+if (inv.schema !== "inventory/v2" || inv.status !== "ready" || !inv.fileKey) {
+  console.error(`不是 inventory/v2 ready 清单：${inventoryPath}`);
   process.exit(1);
 }
 const ids = sliceIdsOf(inv);

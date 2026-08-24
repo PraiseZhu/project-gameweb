@@ -18,7 +18,7 @@
 
 ## 做页前交接：inventory/v2
 
-当前面向人的主入口是“货架链接 → 抓取整棵货架 → 整理/自验 → `inventory/v2`”。已规范命名稿出 `ready`；未规范稿按 `SKILL.md` 用规范和台账按功能认模块，当前只产出 `draft`。核对页暂不支持保存或升档，升 `ready` 是后续能力。不对金样图层 id 或模块顺序抄名。本链路不开插件、不写回 Figma。
+当前面向人的主入口是“已规范货架链接 → 抓取整棵货架 → 整理/自验 → `inventory/v2` ready → ready 交接包”。未规范稿不在本仓，去 `projects/project-unnamed-inventory`。本链路不开插件、不写回 Figma。
 
 1. 人提供带 `node-id` 的 Figma 货架链接。链接的 `node-id` 始终指向整棵
    画布货架，覆盖页面本体、同货架 modal 和组件定义；不要只给某个页面链接。
@@ -32,15 +32,7 @@
      --page <pc 或 mobile 页 id>
    ```
 
-   未规范稿必须显式出 draft：
-
-   ```bash
-   npm run inventory -- \
-     --file "<整棵画布货架的 Figma 链接>" \
-     --page <pc 或 mobile 页 id> \
-     --status draft \
-     --name inventory-unnamed-<page>
-   ```
+   未规范稿不要在本仓跑。CLI 会拒绝 `--status draft` / `inventory-unnamed-*`。
 
    例如规范稿：
 
@@ -52,8 +44,7 @@
 
    链接里的 `node-id` 是拉稿根；`--page` 只在已拉取的树中选择页面，不改变拉稿范围。
 3. 命令自验通过后产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 的
-   `schema` 为 `inventory/v2`。规范稿 `status` 为 `ready`；未规范稿必须是 `draft`，
-   当前不能在核对页升档。清单覆盖页面本体、同货架 modal、页面实际引用的组件集/
+   `schema` 为 `inventory/v2`。本仓 `status` 为 `ready`。清单覆盖页面本体、同货架 modal、页面实际引用的组件集/
    完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持为对应关系上的 `unknown`。
 4. 运行可视化核对页：
 
@@ -65,7 +56,7 @@
    `status: "ready"`。移动端核对使用 `?inv=inventory-392-25877.json`。
 
 做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
-完整组件变体树和 modal 附件本体。`unknown` 节点只画样子，不赋交互；`unknown` 的
+完整组件变体树和 modal 附件本体。摆位置用 `pageBox` / `parentBox`；`fix/` 钉视口；切图按 `sliceExport`（墨迹框、1 倍、png）。`unknown` 节点只画样子，不赋交互；`unknown` 的
 `modal-trigger` 不自动接线。做页接入见 issue #5（指派 `zhanxinyi-lab`）。本工具不改
 `skills/yise-web-ui/**`，不写回 Figma。
 

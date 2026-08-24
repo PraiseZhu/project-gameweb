@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * 打做页交接包。默认只要 ready。未规范稿必须是判断写回后的 draft，completeness 绿时加 --allow-green-draft。
- *   node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir> [--allow-green-draft]
- *   [--judge-pack-pc <dir>] [--judge-pack-mobile <dir>]
+ * 打做页交接包。本仓只要成对 ready。
+ *   node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir>
  *   [--assets-pc <dir>] [--assets-mobile <dir>] [--reference <参考稿.json>]
+ * 未规范 green-draft 请到 projects/project-unnamed-inventory。
  */
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,24 +14,22 @@ import {
 export function runHandoffPack(argv = process.argv.slice(2)) {
   const args = parseHandoffArgs(argv);
   if (!args.pc || !args.mobile) {
-    console.error("用法：node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir> [--allow-green-draft] [--judge-pack-pc <dir>] [--judge-pack-mobile <dir>] [--reference <参考稿.json>]");
+    console.error("用法：node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir> [--reference <参考稿.json>]");
     process.exit(1);
   }
   const pc = loadInventoryFile(args.pc);
   const mobile = loadInventoryFile(args.mobile);
-  if (args.allowGreenDraft && (!args.judgePackPc || !args.judgePackMobile)) {
+  if (args.allowGreenDraft) {
     console.error(JSON.stringify({
       ok: false,
-      problems: ["green-draft 必须同时传 --judge-pack-pc 和 --judge-pack-mobile，禁止跳过判断包"],
+      problems: ["本仓只打 ready 交接包。green-draft / 判断包写回请到 projects/project-unnamed-inventory"],
     }, null, 2));
     process.exit(1);
   }
   const referenceDoc = args.reference ? loadInventoryFile(args.reference).doc : null;
   const gate = validateHandoffPair(pc.doc, mobile.doc, {
-    allowGreenDraft: args.allowGreenDraft,
+    allowGreenDraft: false,
     referenceDoc,
-    judgePackPc: args.judgePackPc,
-    judgePackMobile: args.judgePackMobile,
   });
   if (!gate.ok) {
     console.error(JSON.stringify({ ok: false, problems: gate.problems }, null, 2));
@@ -48,8 +46,6 @@ export function runHandoffPack(argv = process.argv.slice(2)) {
     assetsPc: args.assetsPc,
     assetsMobile: args.assetsMobile,
     referenceDoc,
-    judgePackPc: args.judgePackPc,
-    judgePackMobile: args.judgePackMobile,
   });
   console.log(JSON.stringify({
     ok: true,
