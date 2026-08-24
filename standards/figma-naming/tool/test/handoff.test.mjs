@@ -648,3 +648,45 @@ test("handoff：缺冻住前缀类不能打 green-draft", () => {
   assert.equal(result.ok, false);
   assert.match(result.problems.join("\n"), /相对规范稿缺前缀类|规范稿有/);
 });
+
+test("issue #38：无 tab/ 的合法稿可打 green-draft，不改 unknown / #34 消费", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  assert.equal(pc.nodes.some((node) => node.role === "tab"), false);
+  assert.equal(pc.nodes.some((node) => node.role === "btn"), true);
+  assert.equal(pc.nodes.some((node) => node.role === "switch"), true);
+  const pack = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
+  assert.equal(pack.ok, true, pack.problems.join("\n"));
+  assert.equal(pack.kind, "green-draft");
+});
+
+function withDeterminedTab(doc, id) {
+  doc.nodes.push({
+    id,
+    type: "FRAME",
+    name: "tab/页签条",
+    status: "determined",
+    role: "tab",
+    behavior: "none",
+    via: "prefix",
+    box: { x: 0, y: 900, w: 80, h: 32 },
+  });
+  return rebuildInventoryIndexes(doc);
+}
+
+test("issue #38：参考稿有 determined tab/ 时 handoff 仍要求 tab/", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  const reference = withDeterminedTab(sample("3:3"), "ref-tab");
+  const missing = validateHandoffPair(pc, mobile, { allowGreenDraft: true, referenceDoc: reference });
+  assert.equal(missing.ok, false);
+  assert.match(missing.problems.join("\n"), /相对规范稿缺前缀类：tab/);
+
+  const present = validateHandoffPair(
+    withDeterminedTab(sample("4:4"), "pc-tab"),
+    withDeterminedTab(sample("5:5"), "mo-tab"),
+    { allowGreenDraft: true, referenceDoc: reference },
+  );
+  assert.equal(present.ok, true, present.problems.join("\n"));
+  assert.equal(present.kind, "green-draft");
+});

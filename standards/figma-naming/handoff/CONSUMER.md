@@ -20,7 +20,7 @@ npm run handoff:pack -- \
   --assets-mobile ../../../_tmp/inventory-review/img-<mobile>
 ```
 
-`--allow-green-draft`：两份 completeness 都绿即可打包。包里 `kind=green-draft`，**不是 ready**。禁止手改 JSON 的 `status`。做页入口收交接目录：`kind=green-draft` 时按 draft 吃 determined；unknown 只画不接线。
+`--allow-green-draft`：两份 completeness 都绿即可打包。包里 `kind=green-draft`，**不是 ready**。禁止手改 JSON 的 `status`。做页入口收交接目录：`kind=green-draft` 时按 draft 吃 determined；unknown 只画不接线。`tab/` 不是每份稿都有；只有对照参考稿、且参考稿里已有 determined `tab/` 时，才给 completeness / `handoff:pack` 加 `--reference <参考稿.json>`。没有页签条不要把 `btn/` 改成 `tab/`，也不要手补 inventory。
 
 ## 做页只有一个吃包入口
 
