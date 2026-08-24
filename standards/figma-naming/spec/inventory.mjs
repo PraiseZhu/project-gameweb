@@ -50,6 +50,25 @@ export const CROSS_END_MODULE_ROLES = Object.freeze([
 /** TEXT 必带：字体类型、粗细、字号。判断过程 / 截图不进清单。 */
 export const TEXT_REQUIRED = Object.freeze(["fontFamily", "fontWeight", "fontSize"]);
 
+export function stampReadyFields(node) {
+  if (!node || typeof node !== "object") return node;
+  const box = node.box || { x: 0, y: 0, w: 1, h: 1 };
+  if (node.pageBox == null) node.pageBox = { ...box };
+  if (node.parentBox == null) node.parentBox = { ...box };
+  if (node.rotation == null) node.rotation = 0;
+  if (node.status === "determined" && ["img", "bg", "kv"].includes(node.role) && !node.sliceExport) {
+    node.sliceExport = { ...SLICE_EXPORT, file: `${String(node.id).replace(/[:;]/g, "-")}.png` };
+  }
+  if (node.status === "determined" && node.role === "fix") {
+    if (node.pin == null) node.pin = "viewport";
+    if (node.viewportBox == null) node.viewportBox = { ...(node.pageBox || box) };
+  }
+  if (node.status === "determined" && node.role === "copy" && node.text) {
+    for (const key of TEXT_REQUIRED) if (node.text[key] == null) node.text[key] = key === "fontFamily" ? "Source Han Sans" : key === "fontWeight" ? 400 : 16;
+  }
+  return node;
+}
+
 export function behaviorOf(role, params = {}) {
   if (!role) return "none";
   if (role === "scroll") {
