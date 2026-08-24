@@ -5,7 +5,9 @@
 
 ## 项目目标
 
-游戏 Web 页面设计 skill 集合：多个游戏宣发页 skill + 配套脚本与工具链
+游戏 Web 页面设计 skill 集合：已规范设计稿出清单，再交给做页 skill 做到 HTML。
+
+未规范稿出清单不在本仓，在 `projects/project-unnamed-inventory`。
 
 ## 技术栈
 
@@ -26,20 +28,21 @@ Project Gameweb/
 ├── skills/             # 按项目切：一个游戏宣发页一个 skill
 │   └── yise-web-ui/    # 伊瑟宣发页 UI skill
 └── standards/          # 横切复用：被多个 skill 共同引用的规范与工具链
-    ├── figma-naming/       # 图层命名规范 + 体检工具 + inventory/v2 抽取与人工核对
-    └── prechain-nightly/   # 未规范稿前置链路夜间评测（独立于仓内健康检查）
+    └── figma-naming/   # 图层命名规范 + 已规范稿 inventory/v2 ready 抽取
 ```
 
 **`skills/` — 按项目切。** 一个游戏宣发页对应一个 skill，每个 skill **自包含**：自己的 `SKILL.md`（含 frontmatter）、`package.json`、`scripts/` 与 `__tests__/`、`docs/`、以及自己的发布边界清单。skill 之间不互相 import，各自可以独立发布。
 
-**`standards/` — 横切复用。** 放不属于任何单个游戏、而是被多个 skill 共同引用的规范与工具链。`standards/figma-naming/`：命名规范正文（`spec/`）、体检工具（CLI）、以及做页前的 `inventory/v2` 抽取与人工核对链路。`standards/prechain-nightly/`：未规范稿从 0 跑前置链路的夜间评测与次日台账，不并入仓内健康检查，也不写命名台账。
+**`standards/` — 横切复用。** 放不属于任何单个游戏、而是被多个 skill 共同引用的规范与工具链。`standards/figma-naming/`：命名规范正文（`spec/`）、体检工具（CLI）、以及已规范稿的 `inventory/v2` ready 抽取。
 
-**落位规则**：新增一个游戏宣发页 skill → 放 `skills/<name>/`；新增一份跨项目共用的规范或工具链 → 放 `standards/<name>/`。判断不清时，看它是否只服务于单个游戏：是则进 `skills/`，否则进 `standards/`。
+**落位规则**：新增一个游戏宣发页 skill → 放 `skills/<name>/`；新增一份跨项目共用的规范或工具链 → 放 `standards/<name>/`。判断不清时，看它是否只服务于单个游戏：是则进 `skills/`，否则进 `standards/`。未规范出清单不进本仓。
 
 ## 协作约定
 
-- **Figma 命名稿交接**：用户提供带 `node-id` 的 Figma 货架链接后，执行 `standards/figma-naming/SKILL.md`（先守「硬门」G0–G4）。未规范稿全仓只有一条出清单链路：发链接后自动跑到判断包看图写回 draft。G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。原始 draft / 只跑 morph 的稿不可直接做页。做页吃的是同一条链路写回后的 `handoff:pack --allow-green-draft`，包 `ready=false`。主人测命名才核对并 `handoff:promote` 升 ready、沉淀 skill/台账。金样只当形态样本，不对图层 id、不对模块顺序抄名。核对页 UI 冻结在 `standards/figma-naming/tool/inventory-review/index.html`，禁止写 `_tmp`、禁止每次重写。核对页可预览 draft，不能在页上保存升档。unknown 不赋交互。不写回 Figma；做页接入见 issue #5（`zhanxinyi-lab`）和 `standards/figma-naming/handoff/CONSUMER.md`。
-- **做页消费边界**：未规范稿不做第二套出清单。做页只吃命名侧判断写回后的交接包：`handoff:pack --allow-green-draft`（不等主人升 ready）。主人测命名才核对并 `handoff:promote`。做页吃交接包里的已确定项；`unknown` 只画不赋交互。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
+- **本仓链路**：已规范设计稿 → 脚本抓 inventory/v2 ready → agent 按 skill 核前缀/结构并打 ready 交接包 → 做页 skill 吃 ready 包做到 HTML。
+- **Figma 命名稿交接**：用户提供带 `node-id` 的已规范货架链接后，执行 `standards/figma-naming/SKILL.md`。默认 `npm run inventory` 出 `status: ready`。agent 核一遍后 `handoff:pack` 打 ready 包。不写回 Figma，不用插件交接。
+- **做页消费边界**：做页只吃 ready。unknown 只画不赋交互。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
+- **未规范稿**：丢未规范链接时停，去 `projects/project-unnamed-inventory`。本仓 CLI 拒绝 `--status draft` / `inventory-unnamed-*` / `--allow-green-draft`。
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
 - **代码评审**：通过 `/review` 触发
 - **测试覆盖**：参见 VERSIONING.md
@@ -48,19 +51,7 @@ Project Gameweb/
 
 - 遵循 `~/.claude/rules/node/` 下的语言规范
 - 全局规范：`~/.claude/rules/common/`
-- 项目特定 invariants：判断包上下文硬门见下节；与 `standards/figma-naming/SKILL.md`「硬门」同步，违反即停
-
-## 判断包上下文硬门（Lead 与 Worker 同一套）
-
-权威文本：`standards/figma-naming/SKILL.md`「硬门」。这里是项目级命令，不是建议。
-
-- **G0 步骤是闸门**：发链接后自动跑到判断写回 draft。切片能 `stat` 出非空白体积就继续判断，不必等人点头。判断写回后停，等人确认判断已完成；人确认前禁止写 skill / 台账，确认后必须沉淀，没写不许宣称本单收工。用户问进度：只查执行体状态 + `stat`，Lead 自己禁止 Read 图。
-- **G1 禁读**：禁止 Read `inventory-*.json` 全文、`page.png`、`sec-*.png`、`pack.json`。
-- **G2 切片闸门**：重导后立刻 `stat`（路径 / 字节 / 像素）。非空且 set 数对齐就自动判断；空白先修。G2 不用 `send_to_lead` 等人点头。
-- **G3 上下文预算**：超长会话或已读过图 → 禁止再 Read 任何图片。Lead 自动派干净执行体，不许让用户自己新开聊天。每轮最多 2 张 `page-*.jpg`。
-- **G4 派工**：默认 Lead 本窗跑到判断写回。G3 命中才派干净执行体，`initial_task` 必须点名硬门四条。判断写回后 `send_to_lead` 等人确认，确认前禁止沉淀。
-- **核对页 UI 冻结**：权威文件 `standards/figma-naming/tool/inventory-review/index.html`，必须进 git。禁止写 `_tmp/inventory-review/index.html`，禁止每次任务重写一版。
-- **链路验收口径**：未规范稿 0–7 的订正验收见 `standards/figma-naming/SKILL.md`「链路验收口径」。左侧 Page 链接可开工；导图不是每层一张；目录不是自动命名器；词表是漏项保险。可视对照 `docs/prework-pipeline.html`。
+- 项目特定 invariants：本仓只编已规范 ready、做页只吃 ready；未规范判断硬门在 unnamed 仓
 
 ## 敏感数据保护
 
@@ -92,6 +83,5 @@ Project Gameweb/
 
 ## 项目特定记录
 
-- 2026-08-18：Lead 会话 `64a3f830` 在 cache 598k 上再 Read 3 张切片，请求涨到 647k 炸会话。硬门 G0–G4 已写入 `standards/figma-naming/SKILL.md`。
-- 2026-08-18：未规范稿 `399:47576`（491 PC/mobile）跑清单的踩坑与次日开跑顺序写在 `standards/figma-naming/SKILL.md`「未规范稿次日开跑」。先不管做页衔接。
-- 2026-08-19：未规范稿改为发链接后自动跑到判断写回；判断写回与沉淀拆开，等人确认判断已完成再写 skill/台账。G3 命中由 Lead 自动派干净执行体，不让用户自己新开聊天。
+- 2026-08-24：未规范出清单整包隔离到 `projects/project-unnamed-inventory`。本仓只走已规范 ready → 做页 HTML。
+- 2026-08-18：Lead 会话 `64a3f830` 在 cache 598k 上再 Read 3 张切片，请求涨到 647k 炸会话。判断硬门现只约束 unnamed 仓。

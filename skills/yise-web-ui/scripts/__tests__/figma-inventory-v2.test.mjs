@@ -71,7 +71,7 @@ test("entry gate requires schema/status/ok/hash/fileKey/requestedNodeId/nodes", 
   assert.equal(INVENTORY_V2_SCHEMA, "inventory/v2");
   assert.equal(validateInventory(fixture()).ok, true);
   assert.equal(validateInventory(fixture({ status: "draft" })).ok, false);
-  assert.equal(validateInventory(fixture({ status: "draft" }), { allowDraft: true }).ok, true, "green-draft 必须允许 draft");
+  assert.equal(validateInventory(fixture({ status: "draft" }), { allowDraft: true }).ok, true, "adapter 仍可测 draft 形状，做页入口不吃");
 
   const missing = [
     { schema: "other" },

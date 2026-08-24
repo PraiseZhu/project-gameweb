@@ -12,7 +12,7 @@
 | 想体检自己的稿 | [`tool/README.md`](tool/README.md) 的「命名体检快速开始」 |
 | 要改判定逻辑 | [`tool/CLAUDE.md`](tool/CLAUDE.md) |
 
-现行交接：人给已规范命名、带 `node-id` 的货架链接 → `npm run inventory` → `_tmp/inventory-<page>.json`（`schema=inventory/v2`、`status=ready`）→ 做页先消费已确定项。不写回 Figma，不用插件交接。做页接入见 issue #5（指派 `zhanxinyi-lab`）。
+现行交接：人给已规范命名、带 `node-id` 的货架链接 → `npm run inventory` → `_tmp/inventory-<page>.json`（`schema=inventory/v2`、`status=ready`）→ `handoff:pack` 打 ready 包 → 做页只吃 ready。不写回 Figma，不用插件交接。未规范稿去 `projects/project-unnamed-inventory`。做页接入见 issue #5（指派 `zhanxinyi-lab`）。
 
 ## 为什么分成两半
 

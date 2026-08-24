@@ -24,7 +24,7 @@ function sample(id, extra = {}) {
   const doc = rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
-    status: "draft",
+    status: extra.status ?? "ready",
     fileKey: "FILEKEY",
     requestedNodeId: id,
     snapshot: { hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", lastModified: "2026-08-22T00:00:00Z" },
@@ -65,7 +65,7 @@ test("consume：unknown 节点与 unknown modal trigger 只画不接线", () => 
     mobilePath,
     pcDoc,
     mobileDoc,
-    kind: "green-draft",
+    kind: "ready",
     outDir: join(dir, "out"),
   });
   const result = runFromHandoff(pack.outDir);

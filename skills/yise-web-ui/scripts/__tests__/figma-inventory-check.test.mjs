@@ -14,7 +14,7 @@ import { runFromHandoff } from "../figma-from-handoff.mjs";
 
 const CHECK = fileURLToPath(new URL("../figma-inventory-check.mjs", import.meta.url));
 
-function sample(id, status = "draft") {
+function sample(id, status = "ready") {
   const nodes = GOLD_MOBILE_PREFIX_CLASSES.map((role, index) => ({
     id: `${id}-${role}`,
     type: role === "btn" ? "INSTANCE" : "FRAME",
@@ -45,7 +45,7 @@ function runCheck(path, json = true) {
   return spawnSync(process.execPath, json ? [CHECK, path, "--json"] : [CHECK, path], { encoding: "utf8" });
 }
 
-test("inventory:check delegates a green-draft handoff to from-handoff", () => {
+test("inventory:check delegates a ready handoff to from-handoff", () => {
   const dir = mkdtempSync(join(tmpdir(), "inventory-check-pack-"));
   const pcDoc = sample("1:1");
   const mobileDoc = sample("2:2");
@@ -53,20 +53,20 @@ test("inventory:check delegates a green-draft handoff to from-handoff", () => {
   const mobilePath = join(dir, "mobile.json");
   writeFileSync(pcPath, JSON.stringify(pcDoc));
   writeFileSync(mobilePath, JSON.stringify(mobileDoc));
-  const pack = writeHandoffPack({ pcPath, mobilePath, pcDoc, mobileDoc, kind: "green-draft", outDir: join(dir, "pack") });
+  const pack = writeHandoffPack({ pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "pack") });
 
   const expected = runFromHandoff(pack.outDir);
   const actual = runCheck(pack.outDir);
   assert.equal(actual.status, 0, actual.stderr);
   assert.match(actual.stderr, /吃包请用 figma:from-handoff/);
   assert.deepEqual(JSON.parse(actual.stdout), expected);
-  assert.equal(JSON.parse(actual.stdout).ready, false);
+  assert.equal(JSON.parse(actual.stdout).ready, true);
 });
 
 test("inventory:check rejects a standalone draft without suggesting ready", () => {
   const dir = mkdtempSync(join(tmpdir(), "inventory-check-draft-"));
   const path = join(dir, "inventory.json");
-  writeFileSync(path, JSON.stringify(sample("1:1")));
+  writeFileSync(path, JSON.stringify(sample("1:1", "draft")));
   const actual = runCheck(path, false);
   assert.notEqual(actual.status, 0);
   assert.match(actual.stderr, /figma:from-handoff/);

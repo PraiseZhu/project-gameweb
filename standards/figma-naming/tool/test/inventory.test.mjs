@@ -171,52 +171,27 @@ test("v2：跨货架 componentId 在 draft 留 unknown 关系，在 ready 仍阻
   assert.match(readyCheck.problems.join("\n"), /未解析/);
 });
 
-test("unnamedRequiresDraft：必须同时 draft 和 inventory-unnamed-* 名", () => {
-  assert.equal(unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed-1-2" }), null);
+test("unnamedRequiresDraft：本仓拒绝 draft / unnamed，指向未规范仓", () => {
   assert.equal(unnamedRequiresDraft({ status: "ready", name: "inventory-392-24190" }), null);
-  assert.match(
-    unnamedRequiresDraft({ status: "ready", name: "inventory-unnamed-1-2" }) || "",
-    /--status draft/,
-  );
-  assert.match(
-    unnamedRequiresDraft({ status: "draft" }) || "",
-    /inventory-unnamed/,
-  );
-  assert.match(
-    unnamedRequiresDraft({ status: "draft", name: "foo" }) || "",
-    /inventory-unnamed/,
-  );
-  assert.match(
-    unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed-" }) || "",
-    /inventory-unnamed/,
-  );
+  assert.match(unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed-1-2" }) || "", /project-unnamed-inventory/);
+  assert.match(unnamedRequiresDraft({ status: "ready", name: "inventory-unnamed-1-2" }) || "", /project-unnamed-inventory/);
+  assert.match(unnamedRequiresDraft({ status: "draft" }) || "", /project-unnamed-inventory/);
 });
 
 test("sanitizeInventoryName：page id 冒号改短横线", () => {
   assert.equal(sanitizeInventoryName("inventory-unnamed-392:24190"), "inventory-unnamed-392-24190");
-  assert.equal(unnamedRequiresDraft({
+  assert.match(unnamedRequiresDraft({
     status: "draft",
     name: "inventory-unnamed-392:24190",
-  }), null);
-  assert.match(
-    unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed:392-24190" }) || "",
-    /inventory-unnamed/,
-  );
+  }) || "", /project-unnamed-inventory/);
 });
 
-test("bin/inventory：draft 无 name 或错误 name 在拉稿前失败", () => {
+test("bin/inventory：draft / unnamed 在拉稿前失败并指向未规范仓", () => {
   const bin = resolve(TOOL_ROOT, "bin/inventory.mjs");
   const missingName = spawnSync(process.execPath, [bin, "--status", "draft"], { encoding: "utf8" });
   assert.notEqual(missingName.status, 0);
-  assert.match(missingName.stderr, /inventory-unnamed/);
-  const badName = spawnSync(process.execPath, [bin, "--status", "draft", "--name", "foo"], { encoding: "utf8" });
+  assert.match(missingName.stderr, /project-unnamed-inventory/);
+  const badName = spawnSync(process.execPath, [bin, "--status", "draft", "--name", "inventory-unnamed-1-2"], { encoding: "utf8" });
   assert.notEqual(badName.status, 0);
-  assert.match(badName.stderr, /inventory-unnamed/);
-  const malformedSeparator = spawnSync(process.execPath, [bin, "--status", "draft", "--name", "inventory-unnamed:392-24190"], { encoding: "utf8" });
-  assert.notEqual(malformedSeparator.status, 0);
-  assert.match(malformedSeparator.stderr, /inventory-unnamed/);
-  const colonName = spawnSync(process.execPath, [bin, "--status", "draft", "--name", "inventory-unnamed-392:24190"], { encoding: "utf8" });
-  assert.notEqual(colonName.status, 0);
-  assert.doesNotMatch(colonName.stderr, /只能包含字母/);
-  assert.match(`${colonName.stderr}\n${colonName.stdout}`, /figma 链接|fileKey|--file/i);
+  assert.match(badName.stderr, /project-unnamed-inventory/);
 });

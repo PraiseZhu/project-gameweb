@@ -10,13 +10,11 @@ This is the reusable public Skill identity. `demos/yise-ss5-preview` is an Ether
 ## Handoff package entry
 
 The only page-builder entry for a naming handoff package is
-`npm run figma:from-handoff -- <handoff-dir>`. A `green-draft` package remains
-`ready=false`: consume only `determined` records and never wire `unknown`.
-Unnamed green-draft must come from the same judge-pack writeback path as naming
-review; morphology-only drafts are rejected at `handoff:pack`. `inventory:check`
-is deprecated as a package entry; it only retains the five-item audit for a
-single `ready` inventory JSON. Never change draft status to `ready` to make a
-consumer pass.
+`npm run figma:from-handoff -- <handoff-dir>`. This repo only accepts
+`kind=ready`. Unnamed judge-pack / green-draft lives in
+`projects/project-unnamed-inventory`. `inventory:check` is deprecated as a
+package entry; it only retains the five-item audit for a single `ready`
+inventory JSON. Never change draft status to `ready` to make a consumer pass.
 
 ## Capability architecture
 

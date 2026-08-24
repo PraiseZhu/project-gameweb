@@ -11,8 +11,6 @@ import { rebuildInventoryIndexes } from "../src/inventory.mjs";
 import { GOLD_MOBILE_PREFIX_CLASSES } from "../scripts/check-draft-asset-completeness.mjs";
 import { behaviorOf } from "../../spec/inventory.mjs";
 import { fileURLToPath } from "node:url";
-import { applyReviewFeedback } from "../src/feedback-apply.mjs";
-import { finalizeDraftWriteback } from "../src/gold-morphology.mjs";
 import { fixtureJudgment } from "../src/judgment.mjs";
 
 function sample(id, extra = {}) {
@@ -29,8 +27,8 @@ function sample(id, extra = {}) {
   const doc = rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
-    status: "draft",
-    fileKey: "FILEKEY",
+    status: extra.status ?? "ready",
+    fileKey: extra.fileKey ?? "FILEKEY",
     requestedNodeId: id,
     snapshot: { hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", lastModified: "2026-08-22T00:00:00Z" },
     page: { id, box: { x: 0, y: 0, w: 750, h: 1200 } },
@@ -43,26 +41,32 @@ function sample(id, extra = {}) {
   return doc;
 }
 
-test("handoff：成对 draft 无开关不能打 ready 包", () => {
-  const result = validateHandoffPair(sample("1:1"), sample("2:2"));
+test("handoff：成对 draft 不能打本仓包，指向未规范仓", () => {
+  const result = validateHandoffPair(sample("1:1", { status: "draft" }), sample("2:2", { status: "draft" }));
   assert.equal(result.ok, false);
-  assert.match(result.problems.join("\n"), /allow-green-draft/);
+  assert.match(result.problems.join("\n"), /project-unnamed-inventory/);
 });
 
-test("handoff：成对 draft 加开关是 green-draft", () => {
+test("handoff：--allow-green-draft 在本仓直接拒", () => {
   const result = validateHandoffPair(sample("1:1"), sample("2:2"), { allowGreenDraft: true });
-  assert.equal(result.ok, true);
-  assert.equal(result.kind, "green-draft");
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /project-unnamed-inventory/);
+});
+
+test("handoff：成对 ready 可打包", () => {
+  const result = validateHandoffPair(sample("1:1"), sample("2:2"));
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.equal(result.kind, "ready");
 });
 
 test("handoff：同一 page 拒", () => {
-  const result = validateHandoffPair(sample("1:1"), sample("1:1"), { allowGreenDraft: true });
+  const result = validateHandoffPair(sample("1:1"), sample("1:1"));
   assert.equal(result.ok, false);
   assert.match(result.problems.join("\n"), /同一 page/);
 });
 
 test("handoff：fileKey 不一致拒", () => {
-  const result = validateHandoffPair(sample("1:1"), sample("2:2", { fileKey: "OTHER" }), { allowGreenDraft: true });
+  const result = validateHandoffPair(sample("1:1"), sample("2:2", { fileKey: "OTHER" }));
   assert.equal(result.ok, false);
   assert.match(result.problems.join("\n"), /fileKey/);
 });
@@ -70,12 +74,12 @@ test("handoff：fileKey 不一致拒", () => {
 test("handoff：completeness 红则拒", () => {
   const bad = sample("1:1");
   bad.nodes[0].name = "导航状态";
-  const result = validateHandoffPair(bad, sample("2:2"), { allowGreenDraft: true });
+  const result = validateHandoffPair(bad, sample("2:2"));
   assert.equal(result.ok, false);
   assert.match(result.problems.join("\n"), /completeness/);
 });
 
-test("handoff：pack 写出 manifest 且 green-draft 不得称 ready", () => {
+test("handoff：pack 写出 manifest 且本仓包必须是 ready", () => {
   const dir = mkdtempSync(join(tmpdir(), "handoff-"));
   const pcPath = join(dir, "pc.json");
   const mobilePath = join(dir, "mo.json");
@@ -85,11 +89,11 @@ test("handoff：pack 写出 manifest 且 green-draft 不得称 ready", () => {
   const pack = writeHandoffPack({
     pcPath, mobilePath,
     pcDoc: sample("1:1"), mobileDoc: sample("2:2"),
-    kind: "green-draft",
+    kind: "ready",
     outDir,
   });
-  assert.equal(pack.manifest.ready, false);
-  assert.equal(pack.manifest.kind, "green-draft");
+  assert.equal(pack.manifest.ready, true);
+  assert.equal(pack.manifest.kind, "ready");
   assert.equal(pack.manifest.schema, "handoff/v1");
   assert.ok(pack.manifest.fingerprint);
   assert.ok(existsSync(join(outDir, "manifest.json")));
@@ -120,21 +124,37 @@ test("handoff：writeHandoffPack 拒绝用 draft 冒充 ready", () => {
   const dir = mkdtempSync(join(tmpdir(), "handoff-fake-"));
   const pcPath = join(dir, "pc.json");
   const mobilePath = join(dir, "mo.json");
+  const pcDoc = sample("1:1", { status: "draft" });
+  const mobileDoc = sample("2:2", { status: "draft" });
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  assert.throws(() => writeHandoffPack({
+    pcPath, mobilePath,
+    pcDoc, mobileDoc,
+    kind: "ready",
+    outDir: join(dir, "out"),
+  }), /project-unnamed-inventory|kind 与清单不一致/);
+});
+
+test("handoff：writeHandoffPack 拒绝 green-draft kind", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-green-"));
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
   writeFileSync(pcPath, JSON.stringify(sample("1:1")));
   writeFileSync(mobilePath, JSON.stringify(sample("2:2")));
   assert.throws(() => writeHandoffPack({
     pcPath, mobilePath,
     pcDoc: sample("1:1"), mobileDoc: sample("2:2"),
-    kind: "ready",
+    kind: "green-draft",
     outDir: join(dir, "out"),
-  }), /allow-green-draft|kind 与清单不一致/);
+  }), /project-unnamed-inventory/);
 });
 
 test("handoff：fingerprint 稳定", () => {
   const a = fingerprintInventories(sample("1:1"), sample("2:2"));
   const b = fingerprintInventories(sample("1:1"), sample("2:2"));
   assert.equal(a, b);
-  const c = fingerprintInventories(sample("1:1", { status: "ready" }), sample("2:2", { status: "ready" }));
+  const c = fingerprintInventories(sample("1:1"), sample("9:9"));
   assert.notEqual(a, c);
 });
 
@@ -542,7 +562,7 @@ test("handoff：篡改 manifest fingerprint/schema/kind 则 validateHandoffPack 
 
   const badKind = tamper({ kind: "green-draft", ready: false });
   assert.equal(badKind.ok, false);
-  assert.match(badKind.problems.join("\n"), /manifest\.kind 与闸门不一致/);
+  assert.match(badKind.problems.join("\n"), /project-unnamed-inventory|manifest\.kind/);
 
   const badReady = tamper({ ready: false });
   assert.equal(badReady.ok, false);
@@ -629,11 +649,11 @@ test("export-handoff-slices：漏 --out 必须退出，不得写进 cwd（issue 
   assert.equal(after.some((name) => name.endsWith(".png")), false);
 });
 
-test("handoff：缺冻住前缀类不能打 green-draft", () => {
+test("handoff：缺冻住前缀类不能打 ready", () => {
   const thin = rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
-    status: "draft",
+    status: "ready",
     fileKey: "FILEKEY",
     requestedNodeId: "1:1",
     page: { id: "1:1", box: { x: 0, y: 0, w: 1440, h: 2000 } },
@@ -650,28 +670,12 @@ test("handoff：缺冻住前缀类不能打 green-draft", () => {
     attachments: { componentSets: [], modals: [] },
     relations: [],
   });
-  const result = validateHandoffPair(thin, sample("2:2"), { allowGreenDraft: true });
+  const result = validateHandoffPair(thin, sample("2:2"));
   assert.equal(result.ok, false);
   assert.match(result.problems.join("\n"), /相对规范稿缺前缀类|规范稿有/);
 });
 
-test("handoff：只跑 morph、没有判断包写回不能打 green-draft", () => {
-  const pc = sample("1:1");
-  const mobile = sample("2:2");
-  delete pc.judgment;
-  delete mobile.judgment;
-  const missing = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
-  assert.equal(missing.ok, false);
-  assert.match(missing.problems.join("\n"), /缺判断写回/);
-
-  pc.judgment = { schema: "judgment-writeback/v1", snapshotHash: pc.snapshot.hash, visual: false, morphology: true, feedbackApplied: 0, judgePack: null, at: "2026-08-24T00:00:00Z" };
-  mobile.judgment = { ...pc.judgment, snapshotHash: mobile.snapshot.hash };
-  const morphOnly = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
-  assert.equal(morphOnly.ok, false);
-  assert.match(morphOnly.problems.join("\n"), /只跑了 morph/);
-});
-
-test("handoff CLI：green-draft 缺判断包目录直接拒", () => {
+test("handoff CLI：--allow-green-draft 直接拒并指向未规范仓", () => {
   const dir = mkdtempSync(join(tmpdir(), "handoff-cli-judge-"));
   const pcPath = join(dir, "pc.json");
   const mobilePath = join(dir, "mo.json");
@@ -682,66 +686,18 @@ test("handoff CLI：green-draft 缺判断包目录直接拒", () => {
     "--pc", pcPath, "--mobile", mobilePath, "--out", join(dir, "out"), "--allow-green-draft",
   ], { encoding: "utf8" });
   assert.notEqual(result.status, 0);
-  assert.match(`${result.stderr}\n${result.stdout}`, /必须同时传 --judge-pack-pc/);
+  assert.match(`${result.stderr}\n${result.stdout}`, /project-unnamed-inventory/);
 });
 
-test("handoff：判断写回后的清单与命名测同一闸门，可打 green-draft", () => {
-  const pc = sample("1:1");
-  const mobile = sample("2:2");
-  const judged = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
-  assert.equal(judged.ok, true, judged.problems.join("\n"));
-  assert.equal(judged.kind, "green-draft");
-  assert.equal(pc.judgment.visual, true);
-  assert.equal(pc.judgment.morphology, true);
-  assert.equal(pc.judgment.judgePack.schema, "judge-pack/v1");
-});
-
-test("handoff：旧合法戳经无 --judge-pack 写回后不能打 green-draft", () => {
-  const pc = sample("1:1");
-  const mobile = sample("2:2");
-  applyReviewFeedback(pc, [], {});
-  applyReviewFeedback(mobile, [], {});
-  assert.equal(pc.judgment.judgePack, null);
-  assert.equal(pc.judgment.visual, false);
-  const result = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
-  assert.equal(result.ok, false);
-  assert.match(result.problems.join("\n"), /缺判断包记录|只跑了 morph/);
-});
-
-test("handoff：本端本次包不得配合对端旧戳打 green-draft", () => {
-  const pc = sample("1:1");
-  const mobile = sample("2:2");
-  applyReviewFeedback(pc, [], {
-    peerDocs: [mobile],
-    judgePack: pc.judgment.judgePack,
-  });
-  assert.equal(pc.judgment.visual, true);
-  assert.equal(mobile.judgment.visual, false);
-  assert.equal(mobile.judgment.judgePack, null);
-  const result = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
-  assert.equal(result.ok, false);
-  assert.match(result.problems.join("\n"), /缺判断包记录|只跑了 morph/);
-});
-
-test("handoff：判断写回后 morph 收口仍可打 green-draft", () => {
-  const pc = sample("1:1");
-  const mobile = sample("2:2");
-  finalizeDraftWriteback([pc, mobile]);
-  const judged = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
-  assert.equal(judged.ok, true, judged.problems.join("\n"));
-  assert.equal(pc.judgment.visual, true);
-  assert.equal(pc.judgment.judgePack.schema, "judge-pack/v1");
-});
-
-test("issue #38：无 tab/ 的合法稿可打 green-draft，不改 unknown / #34 消费", () => {
+test("issue #38：无 tab/ 的合法 ready 稿可打包，不改 unknown / #34 消费", () => {
   const pc = sample("1:1");
   const mobile = sample("2:2");
   assert.equal(pc.nodes.some((node) => node.role === "tab"), false);
   assert.equal(pc.nodes.some((node) => node.role === "btn"), true);
   assert.equal(pc.nodes.some((node) => node.role === "switch"), true);
-  const pack = validateHandoffPair(pc, mobile, { allowGreenDraft: true });
+  const pack = validateHandoffPair(pc, mobile);
   assert.equal(pack.ok, true, pack.problems.join("\n"));
-  assert.equal(pack.kind, "green-draft");
+  assert.equal(pack.kind, "ready");
 });
 
 function withDeterminedTab(doc, id) {
@@ -762,15 +718,15 @@ test("issue #38：参考稿有 determined tab/ 时 handoff 仍要求 tab/", () =
   const pc = sample("1:1");
   const mobile = sample("2:2");
   const reference = withDeterminedTab(sample("3:3"), "ref-tab");
-  const missing = validateHandoffPair(pc, mobile, { allowGreenDraft: true, referenceDoc: reference });
+  const missing = validateHandoffPair(pc, mobile, { referenceDoc: reference });
   assert.equal(missing.ok, false);
   assert.match(missing.problems.join("\n"), /相对规范稿缺前缀类：tab/);
 
   const present = validateHandoffPair(
     withDeterminedTab(sample("4:4"), "pc-tab"),
     withDeterminedTab(sample("5:5"), "mo-tab"),
-    { allowGreenDraft: true, referenceDoc: reference },
+    { referenceDoc: reference },
   );
   assert.equal(present.ok, true, present.problems.join("\n"));
-  assert.equal(present.kind, "green-draft");
+  assert.equal(present.kind, "ready");
 });

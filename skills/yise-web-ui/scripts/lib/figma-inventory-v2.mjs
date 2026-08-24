@@ -4,9 +4,9 @@
  * This module is the ONLY entry point the page builder uses for the normative
  * naming snapshot (inventory/v2). It never re-derives roles from raw Figma layer
  * names (parseLayerName / deriveRole / figma-fetch are not called here).
- * Default gate is status === "ready". Packed green-draft (`allowDraft: true`)
- * is accepted as draft; unknown stays draw-only and unwired. skipped nodes
- * are omitted from consume mapping (issue #34).
+ * Default gate is status === "ready". This repo does not consume green-draft.
+ * unknown stays draw-only and unwired. skipped nodes are omitted from consume
+ * mapping (issue #34).
  *
  * Contract:
  *  1. entry gate: schema === "inventory/v2" and status === "ready"
