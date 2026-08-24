@@ -9,6 +9,22 @@ import { FEISHU_TABLE_LIMIT } from "./feishu-docx.mjs";
 export const FEISHU_DOCUMENT_ID = "XtXudyWuToo4i0xTF0TckunbngL";
 export const FEISHU_DOCUMENT_URL = `https://xd.feishu.cn/docx/${FEISHU_DOCUMENT_ID}`;
 
+/** 合进 main 后，本机定时只盯这些文件。SHA 没变就不铺飞书。 */
+export const FEISHU_SYNC_PATHS = [
+  "standards/figma-naming/spec/naming-spec.md",
+  "standards/figma-naming/spec/spec.mjs",
+  "standards/figma-naming/tool/src/rules.mjs",
+  "standards/figma-naming/tool/src/feishu-naming-doc.mjs",
+  "standards/figma-naming/tool/src/feishu-docx.mjs",
+];
+
+export function decideLocalSync({ hasSecrets, currentSha, stampedSha }) {
+  if (!hasSecrets) return { action: "fail", reason: "missing-secret" };
+  if (!currentSha) return { action: "fail", reason: "missing-sha" };
+  if (stampedSha && stampedSha === currentSha) return { action: "skip", reason: "unchanged" };
+  return { action: "publish", reason: stampedSha ? "changed" : "first-run" };
+}
+
 const PREFIX_TIPS = {
   sec: "必须带编号，如 sec/1-首屏。中间可隔无前缀容器，不要分区套分区",
   fix: "侧边导航、回顶。不参与分区流",

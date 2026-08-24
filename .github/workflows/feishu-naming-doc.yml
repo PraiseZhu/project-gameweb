@@ -50,9 +50,9 @@ jobs:
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
         run: |
           if [ -z "$FEISHU_APP_ID" ] || [ -z "$FEISHU_APP_SECRET" ]; then
-            echo "FEISHU_APP_ID / FEISHU_APP_SECRET 未配置，飞书发布/对账没跑。"
-            echo "生成稿已在上一步自检。配好 secret 后重跑本 workflow。"
-            exit 1
+            echo "skip: FEISHU_APP_ID / FEISHU_APP_SECRET 未配置。飞书由本机 sync-local 铺，GitHub 不配密钥。"
+            echo "生成稿已在上一步自检。"
+            exit 0
           fi
           if [ "${{ github.event_name }}" = "schedule" ]; then
             npm run feishu:doc -- audit

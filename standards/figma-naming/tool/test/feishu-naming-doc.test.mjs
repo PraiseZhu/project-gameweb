@@ -17,9 +17,11 @@ import {
   prefixesByGroup,
   paramRows,
   ruleRows,
+  decideLocalSync,
   FEISHU_DOCUMENT_ID,
+  FEISHU_SYNC_PATHS,
 } from "../src/feishu-naming-doc.mjs";
-import { publishDesignerDoc, FEISHU_TABLE_LIMIT } from "../src/feishu-docx.mjs";
+import { publishDesignerDoc, FEISHU_TABLE_LIMIT, FEISHU_COLUMN_WIDTH, columnSetOf } from "../src/feishu-docx.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -54,6 +56,18 @@ test("报警表覆盖 RULES 每一个错误码，修法来自 rule.fix", () => {
   for (const row of rows) {
     assert.equal(row.fix, RULES[row.code].fix);
   }
+});
+
+test("列宽按列数拉齐，两列表和三列表总宽一致", () => {
+  assert.deepEqual(FEISHU_COLUMN_WIDTH[2], [520, 1280]);
+  assert.deepEqual(FEISHU_COLUMN_WIDTH[3], [400, 540, 860]);
+  assert.equal(FEISHU_COLUMN_WIDTH[2].reduce((a, b) => a + b, 0), 1800);
+  assert.equal(FEISHU_COLUMN_WIDTH[3].reduce((a, b) => a + b, 0), 1800);
+  assert.deepEqual(columnSetOf([400, 540, 860]), [
+    { column_index: 0, column_width: 400 },
+    { column_index: 1, column_width: 540 },
+    { column_index: 2, column_width: 860 },
+  ]);
 });
 
 test("飞书表按 9 行上限切开，含表头", () => {
@@ -124,6 +138,40 @@ test("CLI generate 不调飞书且退出 0", () => {
   assert.equal(payload.ok, true);
   assert.equal(payload.version, SPEC_VERSION);
   assert.equal(payload.document_id, FEISHU_DOCUMENT_ID);
+});
+
+test("本机同步：没密钥红，SHA 没变跳过，变了才铺", () => {
+  assert.equal(FEISHU_SYNC_PATHS.length, 5);
+  assert.deepEqual(decideLocalSync({ hasSecrets: false, currentSha: "a", stampedSha: "" }), {
+    action: "fail",
+    reason: "missing-secret",
+  });
+  assert.deepEqual(decideLocalSync({ hasSecrets: true, currentSha: "", stampedSha: "" }), {
+    action: "fail",
+    reason: "missing-sha",
+  });
+  assert.deepEqual(decideLocalSync({ hasSecrets: true, currentSha: "a", stampedSha: "a" }), {
+    action: "skip",
+    reason: "unchanged",
+  });
+  assert.deepEqual(decideLocalSync({ hasSecrets: true, currentSha: "b", stampedSha: "a" }), {
+    action: "publish",
+    reason: "changed",
+  });
+  assert.deepEqual(decideLocalSync({ hasSecrets: true, currentSha: "b", stampedSha: "" }), {
+    action: "publish",
+    reason: "first-run",
+  });
+});
+
+test("CLI sync-local 没密钥退出非 0，不写 stamp", () => {
+  const run = spawnSync(process.execPath, ["scripts/feishu-naming-doc.mjs", "sync-local"], {
+    cwd: ROOT,
+    encoding: "utf8",
+    env: { ...process.env, FEISHU_APP_ID: "", FEISHU_APP_SECRET: "", FEISHU_SYNC_STAMP: "/tmp/feishu-sync-should-not-write.json" },
+  });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr || "", /FEISHU_APP_ID/);
 });
 
 test("publish 先清文档再按稿灌段和表", async () => {

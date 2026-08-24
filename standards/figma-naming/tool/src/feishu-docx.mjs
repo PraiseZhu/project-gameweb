@@ -4,6 +4,15 @@
  */
 const API = "https://open.feishu.cn/open-apis";
 export const FEISHU_TABLE_LIMIT = 9;
+/** 飞书默认列宽 100。单位像素。16:9（约 1920 内容区）总宽 1800，两列表/三列表拉齐。 */
+export const FEISHU_COLUMN_WIDTH = {
+  2: [520, 1280],
+  3: [400, 540, 860],
+};
+
+export function columnSetOf(widths) {
+  return widths.map((column_width, column_index) => ({ column_index, column_width }));
+}
 
 export const BLOCK_TYPE = {
   p: 2,
@@ -142,11 +151,12 @@ export function createFeishuDocx({ token, fetchImpl = fetch, sleepImpl } = {}) {
     if (height > FEISHU_TABLE_LIMIT || width > FEISHU_TABLE_LIMIT) {
       throw new Error(`飞书单表上限 ${FEISHU_TABLE_LIMIT}×${FEISHU_TABLE_LIMIT}，收到 ${height}×${width}`);
     }
+    const columnWidth = FEISHU_COLUMN_WIDTH[width] ?? Array.from({ length: width }, () => 240);
     const created = await request("POST", `/docx/v1/documents/${encodeURIComponent(documentId)}/blocks/${encodeURIComponent(documentId)}/children`, {
       body: {
         children: [{
           block_type: 31,
-          table: { property: { row_size: height, column_size: width, header_row: true } },
+          table: { property: { row_size: height, column_size: width, header_row: true, column_width: columnWidth } },
         }],
       },
     });
@@ -175,7 +185,12 @@ export function createFeishuDocx({ token, fetchImpl = fetch, sleepImpl } = {}) {
         body: { requests: updates.slice(i, i + 50) },
       });
     }
-    return { table_block_id: tableBlockId, rows: height, columns: width, filled: updates.length };
+    for (const { column_index, column_width } of columnSetOf(columnWidth)) {
+      await request("PATCH", `/docx/v1/documents/${encodeURIComponent(documentId)}/blocks/${encodeURIComponent(tableBlockId)}`, {
+        body: { update_table_property: { column_index, column_width } },
+      });
+    }
+    return { table_block_id: tableBlockId, rows: height, columns: width, filled: updates.length, column_width: columnWidth };
   }
 
   function blockText(block) {
