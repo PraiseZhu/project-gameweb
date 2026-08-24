@@ -87,6 +87,16 @@ function packReady(dir, pcDoc, mobileDoc) {
   });
 }
 
+function packReadyWithoutAssets(dir, pcDoc, mobileDoc) {
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  return writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out"),
+  });
+}
+
 test("handoff：成对 draft 不能打本仓包，指向未规范仓", () => {
   const result = validateHandoffPair(sample("1:1", { status: "draft" }), sample("2:2", { status: "draft" }));
   assert.equal(result.ok, false);
@@ -328,19 +338,8 @@ test("handoff：提供 assets 但只有核对底图则打包失败（issue #31�
 
 test("handoff：assets 按 determined img/bg/kv 的 node id 覆盖才绿（issue #31）", () => {
   const dir = mkdtempSync(join(tmpdir(), "handoff-cover-"));
-  const pcPath = join(dir, "pc.json");
-  const mobilePath = join(dir, "mo.json");
   const pcDoc = sample("1:1", { status: "ready" });
   const mobileDoc = sample("2:2", { status: "ready" });
-  writeFileSync(pcPath, JSON.stringify(pcDoc));
-  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
-  const assetsPc = join(dir, "pc-assets");
-  mkdirSync(assetsPc);
-  for (const node of pcDoc.nodes) {
-    if (node.status === "determined" && ["img", "bg", "kv"].includes(node.role)) {
-      writeFileSync(join(assetsPc, `${String(node.id).replace(/[:;]/g, "-")}.png`), Buffer.alloc(64, 2));
-    }
-  }
   const pack = packReady(dir, pcDoc, mobileDoc);
   assert.equal(pack.manifest.assets.pc.ok, true);
   assert.equal(pack.manifest.assets.mobile.ok, true);
@@ -351,17 +350,39 @@ test("handoff：assets 按 determined img/bg/kv 的 node id 覆盖才绿（issue
   assert.equal(loaded.kind, "ready");
 });
 
-test("handoff：ready 包缺切图或包内无 png 则拒", () => {
-  const dir = mkdtempSync(join(tmpdir(), "handoff-ready-assets-"));
+test("handoff：未提供 assets 仍可打 ready，assets.ok 为 false", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-ready-no-assets-"));
+  const pack = packReadyWithoutAssets(dir, sample("1:1", { status: "ready" }), sample("2:2", { status: "ready" }));
+  assert.equal(pack.manifest.kind, "ready");
+  assert.equal(pack.manifest.assets.pc.ok, false);
+  assert.equal(pack.manifest.assets.mobile.ok, false);
+  assert.equal(pack.manifest.rules.assetsMustCoverSliceIds, false);
+  assert.equal(existsSync(join(pack.outDir, "assets-pc")), false);
+  const loaded = validateHandoffPack(pack.outDir);
+  assert.equal(loaded.ok, true, loaded.problems.join("\n"));
+});
+
+test("handoff：info 包塞空 assets-pc 则 validateHandoffPack 拒", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-empty-assets-dir-"));
+  const pack = packReadyWithoutAssets(dir, sample("1:1", { status: "ready" }), sample("2:2", { status: "ready" }));
+  mkdirSync(join(pack.outDir, "assets-pc"));
+  const loaded = validateHandoffPack(pack.outDir);
+  assert.equal(loaded.ok, false);
+  assert.match(loaded.problems.join("\n"), /pc 包内 资产目录没有图|缺切图/);
+});
+
+test("handoff：assets.ok=true 但缺 assets-pc 目录则拒", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-forged-ok-no-dir-"));
   const pcDoc = sample("1:1", { status: "ready" });
-  const mobileDoc = sample("2:2", { status: "ready" });
-  const pcPath = join(dir, "pc.json");
-  const mobilePath = join(dir, "mo.json");
-  writeFileSync(pcPath, JSON.stringify(pcDoc));
-  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
-  assert.throws(() => writeHandoffPack({
-    pcPath, mobilePath, pcDoc, mobileDoc, kind: "ready", outDir: join(dir, "out"),
-  }), /ready 包必须带齐/);
+  const pack = packReadyWithoutAssets(dir, pcDoc, sample("2:2", { status: "ready" }));
+  const manifestPath = join(pack.outDir, "manifest.json");
+  const original = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const fakeFiles = sliceIdsOf(pcDoc).map((id) => `${String(id).replace(/[:;]/g, "-")}.png`);
+  original.assets.pc = { ok: true, files: fakeFiles, problems: [], missing: [] };
+  writeFileSync(manifestPath, `${JSON.stringify(original, null, 2)}\n`);
+  const loaded = validateHandoffPack(pack.outDir);
+  assert.equal(loaded.ok, false);
+  assert.match(loaded.problems.join("\n"), /assets\.ok=true 但缺 assets-pc/);
 });
 
 test("handoff：改 pageBox 后 fingerprint 变，validateHandoffPack 拒", () => {
