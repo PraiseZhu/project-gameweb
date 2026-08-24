@@ -2,7 +2,7 @@
 /**
  * 把核对页 JSONL 写回 draft。可带上一份稿做旧 id 映射。
  *
- * node scripts/apply-review-feedback.mjs <inventory.json> [feedback.jsonl] [--from previous.json]
+ * node scripts/apply-review-feedback.mjs <inventory.json> [feedback.jsonl] [--from previous.json] [--judge-pack <dir>]
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -11,6 +11,7 @@ import { applyReviewFeedback } from "../src/feedback-apply.mjs";
 import { rebuildInventoryIndexes, renderHumanSummary } from "../src/inventory.mjs";
 import { applyClipAndRewardPrefixes } from "../src/gold-morphology.mjs";
 import { writeFilesAtomically } from "../src/atomic-writeback.mjs";
+import { readJudgePack } from "../src/judgment.mjs";
 
 function opt(name) {
   const i = process.argv.indexOf(name);
@@ -28,8 +29,9 @@ const invPath = process.argv[2];
 const feedbackPath = process.argv[3] && !String(process.argv[3]).startsWith("--") ? process.argv[3] : null;
 const fromPath = opt("--from");
 const peerPaths = optAll("--peer");
+const judgePackPath = opt("--judge-pack");
 if (!invPath) {
-  console.error("usage: node scripts/apply-review-feedback.mjs <inventory.json> [feedback.jsonl] [--from previous.json] [--peer other.json]");
+  console.error("usage: node scripts/apply-review-feedback.mjs <inventory.json> [feedback.jsonl] [--from previous.json] [--peer other.json] [--judge-pack <dir>]");
   process.exit(1);
 }
 
@@ -39,7 +41,20 @@ const rows = feedbackPath
   : [];
 const previousDoc = fromPath ? JSON.parse(fs.readFileSync(fromPath, "utf8")) : null;
 const peers = peerPaths.map((file) => ({ path: path.resolve(file), doc: JSON.parse(fs.readFileSync(file, "utf8")) }));
-const result = applyReviewFeedback(inv, rows, { previousDoc, peerDocs: peers.map((item) => item.doc) });
+let judgePack = null;
+if (judgePackPath) {
+  const pack = readJudgePack(judgePackPath);
+  if (!pack.ok) {
+    console.error(JSON.stringify({ ok: false, problems: pack.problems }, null, 2));
+    process.exit(1);
+  }
+  judgePack = pack.summary;
+}
+const result = applyReviewFeedback(inv, rows, {
+  previousDoc,
+  peerDocs: peers.map((item) => item.doc),
+  judgePack,
+});
 
 const allNodes = [];
 const collectNodes = (value) => {
@@ -99,6 +114,7 @@ console.log(JSON.stringify({
   remapped: result.remapped,
   conflicts: result.conflicts,
   skippedUnknown: result.skippedUnknown,
+  judgment: inv.judgment ?? null,
   morphology: result.morphology?.length ?? 0,
   peerSync: result.peerSync?.map((row) => ({ toPeer: row.toPeer.length, toSelf: row.toSelf.length })),
   clipFixed,

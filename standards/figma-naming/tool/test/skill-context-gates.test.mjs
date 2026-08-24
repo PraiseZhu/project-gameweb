@@ -33,6 +33,8 @@ const REQUIRED_IN_SKILL = [
   "导图不是每层一张",
   "目录不是自动命名器",
   "词表是漏项保险",
+  "未规范稿全仓只有一条出清单链路",
+  "做页不另编清单",
 ];
 
 const REQUIRED_IN_PROJECT_CLAUDE = [
@@ -44,6 +46,8 @@ const REQUIRED_IN_PROJECT_CLAUDE = [
   "G4 派工",
   "核对页 UI 冻结",
   "链路验收口径",
+  "未规范稿全仓只有一条出清单链路",
+  "未规范稿不做第二套出清单",
 ];
 
 test("SKILL.md 必须保留判断包硬门全文，删掉即红", () => {

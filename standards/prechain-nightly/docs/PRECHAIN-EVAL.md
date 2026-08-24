@@ -22,9 +22,9 @@
 
 不要把一轮拆成并行分片，不要空判交卷，不要没绿就结束。50 轮后只写本包 `ledger.md`。
 
-## 机器干跑（不能代替看图）
+## 机器干跑（不能代替看图，也不是第二条出清单路）
 
-`npm run eval` 是不看图的机器对照，不是视觉轮，也不是另一套手动步骤。默认 50 轮隔离克隆，不改源清单：
+`npm run eval` 只测 morph 收口稳不稳定，不是视觉轮，也不是做页/命名出清单入口。默认 50 轮隔离克隆，不改源清单：
 
 1. 剥掉总表前缀，编 `draft`
 2. `catalog:match` 命中只写前缀
@@ -32,7 +32,7 @@
 4. `check-draft-asset-completeness`
 5. 对照规范稿：同稿按图层 id，未规范稿按 `type::剥前缀名` 形态类
 
-机器链路只调用 `figma-naming/tool/src/draft-prechain.mjs`（目录不写盘 + 形态写回 + `auditLikeCli`）。规则/闸门改在命名工具里，评测自动跟上；本包禁止再抄词表。假绿 = completeness 绿，但某一层对照规范稿前缀仍漏/错（类齐不等于层齐）。
+未规范清单仍必须走 Skill 判断包看图写回。机器链路只调用 `figma-naming/tool/src/draft-prechain.mjs` 做收口对照。规则/闸门改在命名工具里，评测自动跟上；本包禁止再抄词表。假绿 = completeness 绿，但某一层对照规范稿前缀仍漏/错（类齐不等于层齐）。
 
 两把尺子分工固定：新稿/无名稿只看 `newDraftGate`，即本稿实际存在的消费层逐页 recall、precision 都至少 90%，且 completeness 绿；全量 gold determined 的旧尺只用于 `gold-id` 同稿剥前缀再认回的回归对照，不判新稿通过。
 

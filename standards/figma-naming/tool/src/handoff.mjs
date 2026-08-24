@@ -1,6 +1,6 @@
 /**
  * 真稿交接：校验成对清单、打做页包、主人确认后升 ready。
- * 不做假清单。green-draft = 机器 completeness 绿、尚未人工核对。
+ * 不做假清单。green-draft = 判断包看图写回 + completeness 绿、尚未主人升 ready。
  * 两端都是 ready 时 completeness 只核索引/前缀类/determined 前缀写入，不跑 draft 形态发现（issue #31）。
  */
 import { createHash } from "node:crypto";
@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, cpSync, r
 import { basename, join, resolve } from "node:path";
 import { INVENTORY_SCHEMA, INVENTORY_STATUSES, INVENTORY_ROLES } from "../../spec/inventory.mjs";
 import { auditLikeCli } from "../scripts/check-draft-asset-completeness.mjs";
+import { judgmentProblems } from "./judgment.mjs";
 
 export const HANDOFF_SCHEMA = "handoff/v1";
 export const KINDS = ["ready", "green-draft"];
@@ -26,6 +27,8 @@ export function parseHandoffArgs(argv) {
     assetsPc: optArg(argv, "--assets-pc"),
     assetsMobile: optArg(argv, "--assets-mobile"),
     reference: optArg(argv, "--reference"),
+    judgePackPc: optArg(argv, "--judge-pack-pc"),
+    judgePackMobile: optArg(argv, "--judge-pack-mobile"),
     allowGreenDraft: argv.includes("--allow-green-draft"),
   };
 }
@@ -345,7 +348,12 @@ export function validateHandoffPack(dirPath) {
   };
 }
 
-export function validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft = false, referenceDoc = null } = {}) {
+export function validateHandoffPair(pcDoc, mobileDoc, {
+  allowGreenDraft = false,
+  referenceDoc = null,
+  judgePackPc = null,
+  judgePackMobile = null,
+} = {}) {
   const problems = [];
   for (const [label, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
     if (!doc || doc.schema !== INVENTORY_SCHEMA) problems.push(`${label} schema 必须是 ${INVENTORY_SCHEMA}`);
@@ -371,11 +379,17 @@ export function validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft = false,
   if (!pcGate.ok) problems.push(...pcGate.problems.map((item) => `pc completeness: ${item}`));
   if (!mobileGate.ok) problems.push(...mobileGate.problems.map((item) => `mobile completeness: ${item}`));
 
+  const bothDraft = statuses.every((status) => status === "draft");
+  if (bothDraft) {
+    problems.push(...judgmentProblems(pcDoc, { label: "pc", judgePackDir: judgePackPc }));
+    problems.push(...judgmentProblems(mobileDoc, { label: "mobile", judgePackDir: judgePackMobile }));
+  }
+
   let kind = null;
   if (bothReady) kind = "ready";
-  else if (allowGreenDraft && statuses.every((status) => status === "draft") && pcGate.ok && mobileGate.ok) kind = "green-draft";
-  else if (statuses.every((status) => status === "draft") && !allowGreenDraft) {
-    problems.push("draft 不能打正式 ready 包；同事自助请加 --allow-green-draft，主人确认后用 handoff:promote");
+  else if (allowGreenDraft && bothDraft && pcGate.ok && mobileGate.ok) kind = "green-draft";
+  else if (bothDraft && !allowGreenDraft) {
+    problems.push("draft 不能打正式 ready 包；判断写回后请加 --allow-green-draft，主人确认后用 handoff:promote");
   } else if (new Set(statuses.filter(Boolean)).size > 1) {
     problems.push(`PC/mobile status 必须同档，收到 ${statuses.join(",")}`);
   }
@@ -409,7 +423,7 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
     fileKey: pcDoc.fileKey ?? mobileDoc.fileKey ?? null,
     createdAt: new Date().toISOString(),
     warning: kind === "green-draft"
-      ? "机器 completeness 已绿，尚未人工核对。不是 ready。做页可按 determined 接线；unknown 只画不点。问题开 issue 给命名侧。"
+      ? "判断包看图写回 + completeness 已绿，尚未主人确认。不是 ready。做页可按 determined 接线；unknown 只画不点。问题开 issue 给命名侧。"
       : null,
     pages: {
       pc: { file: basename(pcPath), requestedNodeId: pcDoc.requestedNodeId, status: pcDoc.status, counts: pcDoc.counts ?? null },
@@ -432,8 +446,16 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
   };
 }
 
-export function writeHandoffPack({ pcPath, mobilePath, pcDoc, mobileDoc, kind, outDir, assetsPc, assetsMobile, referenceDoc = null }) {
-  const gate = validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft: kind === "green-draft", referenceDoc });
+export function writeHandoffPack({
+  pcPath, mobilePath, pcDoc, mobileDoc, kind, outDir, assetsPc, assetsMobile, referenceDoc = null,
+  judgePackPc = null, judgePackMobile = null,
+}) {
+  const gate = validateHandoffPair(pcDoc, mobileDoc, {
+    allowGreenDraft: kind === "green-draft",
+    referenceDoc,
+    judgePackPc,
+    judgePackMobile,
+  });
   if (!gate.ok) {
     throw new Error(gate.problems.join("\n"));
   }

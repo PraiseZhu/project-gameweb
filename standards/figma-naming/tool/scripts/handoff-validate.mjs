@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 校验成对真稿清单能不能交出。
- *   node scripts/handoff-validate.mjs --pc <pc.json> --mobile <mobile.json> [--allow-green-draft] [--reference <参考稿.json>]
+ *   node scripts/handoff-validate.mjs --pc <pc.json> --mobile <mobile.json> [--allow-green-draft] [--judge-pack-pc <dir>] [--judge-pack-mobile <dir>] [--reference <参考稿.json>]
  */
 import { fileURLToPath } from "node:url";
 import { loadInventoryFile, parseHandoffArgs, validateHandoffPair } from "../src/handoff.mjs";
@@ -9,13 +9,18 @@ import { loadInventoryFile, parseHandoffArgs, validateHandoffPair } from "../src
 export function runHandoffValidate(argv = process.argv.slice(2)) {
   const args = parseHandoffArgs(argv);
   if (!args.pc || !args.mobile) {
-    console.error("用法：node scripts/handoff-validate.mjs --pc <pc.json> --mobile <mobile.json> [--allow-green-draft] [--reference <参考稿.json>]");
+    console.error("用法：node scripts/handoff-validate.mjs --pc <pc.json> --mobile <mobile.json> [--allow-green-draft] [--judge-pack-pc <dir>] [--judge-pack-mobile <dir>] [--reference <参考稿.json>]");
     process.exit(1);
   }
   const pc = loadInventoryFile(args.pc);
   const mobile = loadInventoryFile(args.mobile);
   const referenceDoc = args.reference ? loadInventoryFile(args.reference).doc : null;
-  const result = validateHandoffPair(pc.doc, mobile.doc, { allowGreenDraft: args.allowGreenDraft, referenceDoc });
+  const result = validateHandoffPair(pc.doc, mobile.doc, {
+    allowGreenDraft: args.allowGreenDraft,
+    referenceDoc,
+    judgePackPc: args.judgePackPc,
+    judgePackMobile: args.judgePackMobile,
+  });
   console.log(JSON.stringify({
     ok: result.ok,
     kind: result.kind,

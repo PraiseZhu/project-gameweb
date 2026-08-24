@@ -10,6 +10,7 @@ import { writeHandoffPack } from "../../../../standards/figma-naming/tool/src/ha
 import { rebuildInventoryIndexes } from "../../../../standards/figma-naming/tool/src/inventory.mjs";
 import { GOLD_MOBILE_PREFIX_CLASSES } from "../../../../standards/figma-naming/tool/scripts/check-draft-asset-completeness.mjs";
 import { behaviorOf } from "../../../../standards/figma-naming/spec/inventory.mjs";
+import { fixtureJudgment } from "../../../../standards/figma-naming/tool/src/judgment.mjs";
 
 test("from-handoff rejects a non-directory and does not invent HTML", () => {
   const dir = mkdtempSync(join(tmpdir(), "from-handoff-"));
@@ -31,7 +32,7 @@ function sample(id, extra = {}) {
     via: "prefix",
     box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
   }));
-  return rebuildInventoryIndexes({
+  const doc = rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
     status: "draft",
@@ -44,6 +45,8 @@ function sample(id, extra = {}) {
     relations: [],
     ...extra,
   });
+  fixtureJudgment(doc);
+  return doc;
 }
 
 test("from-handoff omits skipped nodes from draw-only and paint mapping (issue #34)", () => {

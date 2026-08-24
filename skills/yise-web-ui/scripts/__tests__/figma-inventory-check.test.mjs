@@ -9,6 +9,7 @@ import { writeHandoffPack } from "../../../../standards/figma-naming/tool/src/ha
 import { rebuildInventoryIndexes } from "../../../../standards/figma-naming/tool/src/inventory.mjs";
 import { GOLD_MOBILE_PREFIX_CLASSES } from "../../../../standards/figma-naming/tool/scripts/check-draft-asset-completeness.mjs";
 import { behaviorOf } from "../../../../standards/figma-naming/spec/inventory.mjs";
+import { fixtureJudgment } from "../../../../standards/figma-naming/tool/src/judgment.mjs";
 import { runFromHandoff } from "../figma-from-handoff.mjs";
 
 const CHECK = fileURLToPath(new URL("../figma-inventory-check.mjs", import.meta.url));
@@ -24,7 +25,7 @@ function sample(id, status = "draft") {
     via: "prefix",
     box: { x: 0, y: index * 40, w: role === "hot" ? 400 : 80, h: role === "hot" ? 220 : 32 },
   }));
-  return rebuildInventoryIndexes({
+  const doc = rebuildInventoryIndexes({
     ok: true,
     schema: "inventory/v2",
     status,
@@ -36,6 +37,8 @@ function sample(id, status = "draft") {
     attachments: { componentSets: [], modals: [] },
     relations: [],
   });
+  fixtureJudgment(doc);
+  return doc;
 }
 
 function runCheck(path, json = true) {
