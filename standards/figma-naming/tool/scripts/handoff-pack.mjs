@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 打做页交接包。本仓只要成对 ready。
+ * 打做页交接包。本仓只要成对 ready。交接包只装箱信息，切图目录可选。
  *   node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir>
  *   [--assets-pc <dir>] [--assets-mobile <dir>] [--reference <参考稿.json>]
  * 未规范 green-draft 请到 projects/project-unnamed-inventory。

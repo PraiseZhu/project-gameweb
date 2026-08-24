@@ -401,6 +401,15 @@ function assetClaimProblems(end, assets, requiredIds) {
   return problems;
 }
 
+function packedAssetDirProblems(end, dirPath, assets, requiredIds) {
+  const dirExists = existsSync(dirPath) && statSync(dirPath).isDirectory();
+  if (assets?.ok === true && !dirExists) {
+    return [`${end} assets.ok=true 但缺 ${basename(dirPath)}`];
+  }
+  if (!dirExists) return [];
+  return hashDir(dirPath, { requiredIds }).problems.map((item) => `${end} 包内 ${item}`);
+}
+
 export function validateHandoffPack(dirPath) {
   const full = resolve(dirPath);
   const manifestPath = join(full, "manifest.json");
@@ -443,14 +452,8 @@ export function validateHandoffPack(dirPath) {
   problems.push(...assetClaimProblems("pc", manifest.assets?.pc, sliceIdsOf(pcDoc)));
   problems.push(...assetClaimProblems("mobile", manifest.assets?.mobile, sliceIdsOf(mobileDoc)));
   if (manifest.kind === "ready" || manifest.ready === true) {
-    if (manifest.assets?.pc?.ok !== true) problems.push("ready 包 PC assets.ok 必须为 true");
-    if (manifest.assets?.mobile?.ok !== true) problems.push("ready 包 mobile assets.ok 必须为 true");
-    const packedPc = join(full, "assets-pc");
-    const packedMobile = join(full, "assets-mobile");
-    if (!existsSync(packedPc) || !statSync(packedPc).isDirectory()) problems.push("ready 包缺 assets-pc");
-    else problems.push(...hashDir(packedPc, { requiredIds: sliceIdsOf(pcDoc) }).problems.map((item) => `pc 包内 ${item}`));
-    if (!existsSync(packedMobile) || !statSync(packedMobile).isDirectory()) problems.push("ready 包缺 assets-mobile");
-    else problems.push(...hashDir(packedMobile, { requiredIds: sliceIdsOf(mobileDoc) }).problems.map((item) => `mobile 包内 ${item}`));
+    problems.push(...packedAssetDirProblems("pc", join(full, "assets-pc"), manifest.assets?.pc, sliceIdsOf(pcDoc)));
+    problems.push(...packedAssetDirProblems("mobile", join(full, "assets-mobile"), manifest.assets?.mobile, sliceIdsOf(mobileDoc)));
   }
   const ok = problems.length === 0 && gate.ok;
   return {
@@ -562,7 +565,7 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
       sliceFormat: SLICE_EXPORT.format,
       fixPinsViewport: true,
       modalHiddenDefault: true,
-      assetsMustCoverSliceIds: true,
+      assetsMustCoverSliceIds: false,
       variantSlicesRequired: true,
       fillsAllLayers: true,
       rotationHonored: true,
@@ -602,14 +605,10 @@ export function writeHandoffPack({
   if (assetsMobile && !assets.mobile.ok) {
     throw new Error(["mobile 切图覆盖率不足", ...assets.mobile.problems].join("\n"));
   }
-  if (kind === "ready") {
-    if (!assets.pc.ok) throw new Error(["ready 包必须带齐 PC 切图", ...assets.pc.problems].join("\n"));
-    if (!assets.mobile.ok) throw new Error(["ready 包必须带齐 mobile 切图", ...assets.mobile.problems].join("\n"));
-  }
   mkdirSync(outDir, { recursive: true });
   const packed = {
-    pc: copyPackedAssets(assets.pc, join(outDir, "assets-pc")),
-    mobile: copyPackedAssets(assets.mobile, join(outDir, "assets-mobile")),
+    pc: copyPackedAssets(assets.pc, assets.pc.ok ? join(outDir, "assets-pc") : null),
+    mobile: copyPackedAssets(assets.mobile, assets.mobile.ok ? join(outDir, "assets-mobile") : null),
   };
   const manifest = buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets: packed });
   const pcOut = join(outDir, "inventory-pc.json");
@@ -622,7 +621,7 @@ export function writeHandoffPack({
 }
 
 function copyPackedAssets(assets, destDir) {
-  if (!assets?.ok) {
+  if (!assets?.ok || !destDir) {
     return {
       ...assets,
       files: (assets?.files || []).map((file) => ({

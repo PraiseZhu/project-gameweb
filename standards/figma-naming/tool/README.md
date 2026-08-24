@@ -55,7 +55,7 @@
    UI 固定在仓内 `inventory-review/index.html`，不要写 `_tmp`。人可选核对身份和弹窗入口，`unknown` 必须显式保留；保存 reviewed 清单不改变
    `status: "ready"`。移动端核对使用 `?inv=inventory-392-25877.json`。
 
-已规范稿两端都 `ready` 后：按 `sliceExport` 导切图（墨迹框、1 倍、png），再 `handoff:pack`（不要 `--allow-green-draft`）。包里带 `pageBox`/`parentBox`、`sameModules`、变体切图覆盖。做页只读包，不猜图层名，不按节点框重导。
+已规范稿两端都 `ready` 后：`handoff:pack`（不要 `--allow-green-draft`）。包里带 `pageBox`/`parentBox`、`sameModules`、切图契约 `sliceExport`。交接包不导 png；做页按契约自己导，不猜图层名，不按节点框重导。
 
 做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
 完整组件变体树和 modal 附件本体。摆位置用 `pageBox` / `parentBox`；`fix/` 钉视口；切图按 `sliceExport`（墨迹框、1 倍、png）。`unknown` 节点只画样子，不赋交互；`unknown` 的
