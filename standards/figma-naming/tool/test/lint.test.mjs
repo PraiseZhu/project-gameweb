@@ -22,11 +22,13 @@ const testRoot = (children) => ({
 });
 const testText = (id, name, characters, props = {}) => ({
   id, name, type: "TEXT", characters, absoluteBoundingBox: TEST_BOX,
-  style: { textAutoResize: "WIDTH_AND_HEIGHT" }, ...props,
+  style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400, textAutoResize: "WIDTH_AND_HEIGHT", ...props.style },
+  ...Object.fromEntries(Object.entries(props).filter(([key]) => key !== "style")),
 });
 const testTextWithoutCharacters = (id, name, props = {}) => ({
   id, name, type: "TEXT", absoluteBoundingBox: TEST_BOX,
-  style: { textAutoResize: "WIDTH_AND_HEIGHT" }, ...props,
+  style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400, textAutoResize: "WIDTH_AND_HEIGHT", ...props.style },
+  ...Object.fromEntries(Object.entries(props).filter(([key]) => key !== "style")),
 });
 const testFrame = (id, name, children = [], props = {}) => ({
   id, name, type: "FRAME", absoluteBoundingBox: TEST_BOX, children, ...props,
@@ -265,8 +267,8 @@ test("TEXT 自动名与文字内容相等时，前缀语法规则都不报", () 
   const r = lint(testRoot([
     // 尾随空白专门锁住「去空白后相等」，不能只用原字符串相等自证。
     testText("t-auto", "part / one ", "part / one"),
-    // 这一条命中 N-PREFIX-SLASH；结构闸门必须覆盖剩余两条语法规则而非只覆盖自造前缀。
-    testText("t-slash", "img／装饰", "img／装饰"),
+    // 这一条若不当自动名，会命中 N-PREFIX-SLASH（反斜杠）；结构闸门必须覆盖剩余语法规则。
+    testText("t-slash", "img\\装饰", "img\\装饰"),
   ]));
   const prefixFindings = r.findings.filter((f) => PREFIX_SYNTAX_CODES.has(f.code));
   assert.deepEqual(prefixFindings, [], "Figma 自动 TEXT 名不应被当作前缀声明");
@@ -399,16 +401,26 @@ test("半角斜杠两侧空格合法：img / 装饰 识别为 img 且 0 语法�
   );
 });
 
-test("全角斜杠仍报 N-PREFIX-SLASH，半角修复建议保留", () => {
+test("全角斜杠与半角斜杠同义，不报 N-PREFIX-SLASH", () => {
   const img = { fills: [{ type: "IMAGE", visible: true }] };
   const r = lint(testRoot([
     { id: "fw", name: "img／装饰", type: "RECTANGLE", absoluteBoundingBox: TEST_BOX, ...img },
   ]));
   assert.equal(parseName("img／装饰").prefix, "img");
   assert.equal(parseName("img／装饰").slash, "／");
+  assert.equal(byCode(r, "N-PREFIX-SLASH").length, 0);
+});
+
+test("反斜杠仍报 N-PREFIX-SLASH，半角修复建议保留", () => {
+  const img = { fills: [{ type: "IMAGE", visible: true }] };
+  const r = lint(testRoot([
+    { id: "bs", name: "img\\装饰", type: "RECTANGLE", absoluteBoundingBox: TEST_BOX, ...img },
+  ]));
+  assert.equal(parseName("img\\装饰").prefix, "img");
+  assert.equal(parseName("img\\装饰").slash, "\\");
   const slash = byCode(r, "N-PREFIX-SLASH");
   assert.equal(slash.length, 1);
-  assert.equal(slash[0].name, "img／装饰");
+  assert.equal(slash[0].name, "img\\装饰");
   assert.equal(slash[0].suggestion, "img/装饰");
 });
 

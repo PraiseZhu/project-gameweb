@@ -5,7 +5,7 @@
  *   node scripts/export-handoff-slices.mjs --inventory _tmp/inventory-392-24190.json --out _tmp/out/slices-pc
  *
  * 文件名用 compact node id（392-24235.png / I399-46576-399-45705.png），
- * 给 handoff:pack --assets-pc/--assets-mobile 用。已存在的 PNG 跳过。
+ * 给做页按清单自导切图用，不进 handoff:pack。已存在的 PNG 跳过。
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";

@@ -2,13 +2,16 @@
  * 真稿交接：校验成对 ready 清单并打做页包。
  * 本仓不打 green-draft。未规范判断写回在 projects/project-unnamed-inventory。
  * 两端都是 ready 时 completeness 只核索引/前缀类/determined 前缀写入，不跑 draft 形态发现（issue #31）。
+ * 另接 auditDeclaredStructure：前缀已说死的结构错误直接拒包。
+ * 切图 PNG 不进包；manifest.assets 只列 sliceExport 与 node id，做页自导。
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, cpSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { isSlicePrefix } from "../../spec/spec.mjs";
-import { INVENTORY_SCHEMA, INVENTORY_STATUSES, INVENTORY_ROLES, CROSS_END_MODULE_ROLES, SLICE_EXPORT } from "../../spec/inventory.mjs";
+import { INVENTORY_SCHEMA, INVENTORY_STATUSES, INVENTORY_ROLES, CROSS_END_MODULE_ROLES, SLICE_EXPORT, determinedReadyFieldProblems, sliceExportMatches } from "../../spec/inventory.mjs";
 import { auditLikeCli } from "../scripts/check-draft-asset-completeness.mjs";
+import { allNodesOf, auditDeclaredStructure } from "./inventory.mjs";
 
 export const HANDOFF_SCHEMA = "handoff/v1";
 const UNNAMED_REPO = "projects/project-unnamed-inventory";
@@ -25,8 +28,7 @@ export function parseHandoffArgs(argv) {
     pc: optArg(argv, "--pc"),
     mobile: optArg(argv, "--mobile"),
     out: optArg(argv, "--out"),
-    assetsPc: optArg(argv, "--assets-pc"),
-    assetsMobile: optArg(argv, "--assets-mobile"),
+    packedAssets: argv.includes("--assets-pc") || argv.includes("--assets-mobile"),
     reference: optArg(argv, "--reference"),
     allowGreenDraft: argv.includes("--allow-green-draft"),
   };
@@ -91,43 +93,6 @@ function consumeSlice(doc) {
       variantCount: Array.isArray(set.variants) ? set.variants.length : 0,
     })),
   };
-}
-
-function isGeomBox(value) {
-  return value
-    && Number.isFinite(value.x)
-    && Number.isFinite(value.y)
-    && Number.isFinite(value.w)
-    && Number.isFinite(value.h);
-}
-
-function namedReadyFieldProblems(label, node) {
-  const problems = [];
-  const prefix = `${label} ${node.id}`;
-  if (!isGeomBox(node.pageBox)) problems.push(`${prefix} 缺 pageBox`);
-  if (!isGeomBox(node.parentBox)) problems.push(`${prefix} 缺 parentBox`);
-  if (isSlicePrefix(node.role)) {
-    if (
-      node.sliceExport?.bounds !== SLICE_EXPORT.bounds
-      || node.sliceExport?.scale !== SLICE_EXPORT.scale
-      || node.sliceExport?.format !== SLICE_EXPORT.format
-    ) {
-      problems.push(`${prefix} 切图必须按墨迹框 1 倍 png`);
-    }
-  }
-  if (node.role === "fix" && node.pin !== "viewport") problems.push(`${prefix} fix 必须钉视口`);
-  if (node.rotation == null) problems.push(`${prefix} 缺 rotation`);
-  if (node.role === "copy") {
-    if (node.sliceExport) problems.push(`${prefix} 可改字不得带切图`);
-    if (node.text?.fontFamily == null || node.text?.fontWeight == null || node.text?.fontSize == null) {
-      problems.push(`${prefix} 文字缺 fontFamily/fontWeight/fontSize`);
-    }
-  }
-  return problems;
-}
-
-function determinedNodesOf(doc) {
-  return collectNodes(doc || {}).filter((node) => node.status === "determined" && node.role);
 }
 
 function moduleKeyOf(node) {
@@ -208,7 +173,7 @@ export function fingerprintInventories(pcDoc, mobileDoc) {
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
 }
 
-const REVIEW_SHOT_RE = /^(page|sec|kv|bg|fix|modal|set|cmp)(?:[-_]|$)/i;
+const PACKED_ASSETS_REDIRECT = "切图 PNG 不进交接包。清单只写 sliceExport（谁切、墨迹框 1 倍 png）；做页按 node id 自己导出。";
 
 function isSliceNode(node) {
   return node?.status === "determined" && isSlicePrefix(node.role) && typeof node.id === "string" && node.id;
@@ -315,99 +280,35 @@ export function sliceIdsOf(doc) {
   return [...new Set([...pageSliceIds(doc), ...attachmentSliceIds(doc)])];
 }
 
-function compactNodeId(nodeId) {
-  return String(nodeId || "").replace(/[:;]/g, "-");
-}
-
-function fileStem(fileName) {
-  return String(fileName || "").replace(/\.[^.]+$/, "");
-}
-
-function fileCoversNode(fileName, nodeId) {
-  const compact = compactNodeId(nodeId);
-  if (!compact) return false;
-  const stem = fileStem(fileName);
-  if (REVIEW_SHOT_RE.test(fileName) || REVIEW_SHOT_RE.test(stem)) return false;
-  if (stem === compact || compactNodeId(stem) === compact) return true;
-  return stem.endsWith(`-${compact}`);
-}
-
-function hashDir(dir, { requiredIds = [] } = {}) {
-  if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
-    return { ok: false, files: [], covered: [], missing: requiredIds, problems: [`资产目录不存在：${dir || "(空)"}`] };
-  }
-  const files = [];
-  const walk = (root) => {
-    for (const name of readdirSync(root, { withFileTypes: true })) {
-      const full = join(root, name.name);
-      if (name.isDirectory()) walk(full);
-      else if (/\.(png|jpe?g|webp|svg)$/i.test(name.name)) {
-        const buf = readFileSync(full);
-        files.push({
-          file: name.name,
-          path: full,
-          bytes: buf.length,
-          sha256: createHash("sha256").update(buf).digest("hex"),
-        });
-      }
-    }
+function slicePlanOf(doc) {
+  const ids = sliceIdsOf(doc);
+  return {
+    packed: false,
+    exportBy: "page-build",
+    sliceExport: { ...SLICE_EXPORT },
+    ids,
   };
-  walk(dir);
-  const empty = files.filter((file) => file.bytes < 32);
-  const sliceFiles = files.filter((file) => !REVIEW_SHOT_RE.test(file.file));
-  const problems = empty.map((file) => `空白或过小：${file.file} (${file.bytes}B)`);
-  const covered = [];
-  const missing = [];
-  for (const id of requiredIds) {
-    if (sliceFiles.some((file) => file.bytes >= 32 && fileCoversNode(file.file, id))) covered.push(id);
-    else missing.push(id);
-  }
-  if (!files.length) problems.push(`资产目录没有图：${dir}`);
-  else if (!sliceFiles.length && requiredIds.length) {
-    problems.push("核对底图（page/sec/kv/bg/fix）不算切图，缺 img/bg/kv 覆盖");
-  }
-  for (const id of missing.slice(0, 40)) problems.push(`缺切图：${id}`);
-  if (missing.length > 40) problems.push(`另缺 ${missing.length - 40} 张切图`);
-  const ok = problems.length === 0 && sliceFiles.length > 0 && missing.length === 0;
-  return { ok, files, covered, missing, problems };
 }
 
-function assetFileNames(assets) {
-  return (Array.isArray(assets?.files) ? assets.files : [])
-    .map((file) => (typeof file === "string" ? file : file?.file))
-    .filter(Boolean);
-}
-
-function assetClaimProblems(end, assets, requiredIds) {
-  if (!assets || typeof assets !== "object") return [];
-  const required = [...new Set((requiredIds || []).filter(Boolean))];
-  const listed = Array.isArray(assets.problems) ? assets.problems : [];
-  const missing = Array.isArray(assets.missing) ? assets.missing : [];
-  const fileNames = assetFileNames(assets);
-  const actuallyMissing = required.filter((id) => !fileNames.some((name) => fileCoversNode(name, id)));
+function packedAssetProblems(assets) {
+  if (!assets || typeof assets !== "object") return ["缺 assets 切图计划"];
   const problems = [];
-  if (assets.ok === true) {
-    if (listed.length) problems.push(`${end} assets.ok=true 但 problems 非空`);
-    if (missing.length || actuallyMissing.length) {
-      problems.push(`${end} assets.ok=true 但仍缺切图`);
-      for (const id of actuallyMissing.slice(0, 40)) problems.push(`${end} 缺切图：${id}`);
+  for (const end of ["pc", "mobile"]) {
+    const row = assets[end];
+    if (!row || typeof row !== "object") {
+      problems.push(`${end} 缺切图计划`);
+      continue;
     }
-    if (required.length && !fileNames.length) {
-      problems.push(`${end} assets.ok=true 但未列出切图文件`);
+    if (row.packed === true || row.ok === true || (Array.isArray(row.files) && row.files.length)) {
+      problems.push(`${end} ${PACKED_ASSETS_REDIRECT}`);
     }
-  } else if (assets.ok === false) {
-    if (!listed.length && !missing.length) problems.push(`${end} assets.ok=false 但未写 problems/missing`);
+    if (row.exportBy !== "page-build") problems.push(`${end} 切图须由做页按清单自导`);
+    if (!sliceExportMatches(row.sliceExport)) {
+      problems.push(`${end} 切图契约必须是墨迹框 1 倍 png`);
+    }
+    if (!Array.isArray(row.ids)) problems.push(`${end} 缺 slice ids`);
   }
   return problems;
-}
-
-function packedAssetDirProblems(end, dirPath, assets, requiredIds) {
-  const dirExists = existsSync(dirPath) && statSync(dirPath).isDirectory();
-  if (assets?.ok === true && !dirExists) {
-    return [`${end} assets.ok=true 但缺 ${basename(dirPath)}`];
-  }
-  if (!dirExists) return [];
-  return hashDir(dirPath, { requiredIds }).problems.map((item) => `${end} 包内 ${item}`);
 }
 
 export function validateHandoffPack(dirPath) {
@@ -449,11 +350,13 @@ export function validateHandoffPack(dirPath) {
   if (mobilePageId && mobilePageId !== mobileDoc.requestedNodeId) {
     problems.push(`manifest.pages.mobile.requestedNodeId 与清单不一致：${mobilePageId} vs ${mobileDoc.requestedNodeId}`);
   }
-  problems.push(...assetClaimProblems("pc", manifest.assets?.pc, sliceIdsOf(pcDoc)));
-  problems.push(...assetClaimProblems("mobile", manifest.assets?.mobile, sliceIdsOf(mobileDoc)));
-  if (manifest.kind === "ready" || manifest.ready === true) {
-    problems.push(...packedAssetDirProblems("pc", join(full, "assets-pc"), manifest.assets?.pc, sliceIdsOf(pcDoc)));
-    problems.push(...packedAssetDirProblems("mobile", join(full, "assets-mobile"), manifest.assets?.mobile, sliceIdsOf(mobileDoc)));
+  problems.push(...packedAssetProblems(manifest.assets));
+  for (const [end, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
+    const expected = sliceIdsOf(doc).slice().sort();
+    const actual = [...(manifest.assets?.[end]?.ids || [])].slice().sort();
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      problems.push(`${end} slice ids 与清单不一致`);
+    }
   }
   const ok = problems.length === 0 && gate.ok;
   return {
@@ -496,6 +399,20 @@ export function validateHandoffPair(pcDoc, mobileDoc, {
     : { ok: false, problems: ["缺 mobile"] };
   if (!pcGate.ok) problems.push(...pcGate.problems.map((item) => `pc completeness: ${item}`));
   if (!mobileGate.ok) problems.push(...mobileGate.problems.map((item) => `mobile completeness: ${item}`));
+  if (pcDoc) {
+    const structure = auditDeclaredStructure(pcDoc);
+    if (!structure.ok) problems.push(...structure.problems.map((item) => `pc structure: ${item}`));
+  }
+  if (mobileDoc) {
+    const structure = auditDeclaredStructure(mobileDoc);
+    if (!structure.ok) problems.push(...structure.problems.map((item) => `mobile structure: ${item}`));
+  }
+  for (const [label, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
+    for (const node of allNodesOf(doc || {})) {
+      if (node.status !== "determined") continue;
+      problems.push(...determinedReadyFieldProblems(node, { label }));
+    }
+  }
 
   const bothDraft = statuses.every((status) => status === "draft");
   if (allowGreenDraft || bothDraft) problems.push(GREEN_DRAFT_REDIRECT);
@@ -509,18 +426,12 @@ export function validateHandoffPair(pcDoc, mobileDoc, {
   }
 
   const determinedRoles = new Set();
-  for (const [label, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
+  for (const doc of [pcDoc, mobileDoc]) {
     for (const node of collectNodes(doc || {})) {
-      if (node.status !== "determined" || !node.role) continue;
-      if (!INVENTORY_ROLES.includes(node.role)) {
+      if (node.status === "determined" && node.role && !INVENTORY_ROLES.includes(node.role)) {
         problems.push(`${node.id} 角色不在总表：${node.role}`);
       }
-      determinedRoles.add(node.role);
-    }
-    if (bothReady) {
-      for (const node of determinedNodesOf(doc)) {
-        problems.push(...namedReadyFieldProblems(label, node));
-      }
+      if (node.status === "determined" && node.role) determinedRoles.add(node.role);
     }
   }
 
@@ -553,8 +464,8 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
     },
     sameModules: sameModulesOf(pcDoc, mobileDoc),
     assets: {
-      pc: assets.pc ?? { ok: false, files: [], problems: ["未提供 --assets-pc"] },
-      mobile: assets.mobile ?? { ok: false, files: [], problems: ["未提供 --assets-mobile"] },
+      pc: assets.pc ?? slicePlanOf(pcDoc),
+      mobile: assets.mobile ?? slicePlanOf(mobileDoc),
     },
     rules: {
       unknownNoInteraction: true,
@@ -576,10 +487,13 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
 }
 
 export function writeHandoffPack({
-  pcPath, mobilePath, pcDoc, mobileDoc, kind, outDir, assetsPc, assetsMobile, referenceDoc = null,
+  pcPath, mobilePath, pcDoc, mobileDoc, kind, outDir, assetsPc, assetsMobile, packedAssets = false, referenceDoc = null,
 }) {
   if (kind === "green-draft") {
     throw new Error(GREEN_DRAFT_REDIRECT);
+  }
+  if (assetsPc || assetsMobile || packedAssets) {
+    throw new Error(PACKED_ASSETS_REDIRECT);
   }
   const gate = validateHandoffPair(pcDoc, mobileDoc, {
     allowGreenDraft: false,
@@ -592,25 +506,11 @@ export function writeHandoffPack({
     throw new Error(`kind 与清单不一致：传入 ${kind}，实际 ${gate.kind}`);
   }
   const assets = {
-    pc: assetsPc
-      ? hashDir(assetsPc, { requiredIds: sliceIdsOf(pcDoc) })
-      : { ok: false, files: [], covered: [], missing: sliceIdsOf(pcDoc), problems: ["未提供 --assets-pc"] },
-    mobile: assetsMobile
-      ? hashDir(assetsMobile, { requiredIds: sliceIdsOf(mobileDoc) })
-      : { ok: false, files: [], covered: [], missing: sliceIdsOf(mobileDoc), problems: ["未提供 --assets-mobile"] },
+    pc: slicePlanOf(pcDoc),
+    mobile: slicePlanOf(mobileDoc),
   };
-  if (assetsPc && !assets.pc.ok) {
-    throw new Error(["PC 切图覆盖率不足", ...assets.pc.problems].join("\n"));
-  }
-  if (assetsMobile && !assets.mobile.ok) {
-    throw new Error(["mobile 切图覆盖率不足", ...assets.mobile.problems].join("\n"));
-  }
+  const manifest = buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets });
   mkdirSync(outDir, { recursive: true });
-  const packed = {
-    pc: copyPackedAssets(assets.pc, assets.pc.ok ? join(outDir, "assets-pc") : null),
-    mobile: copyPackedAssets(assets.mobile, assets.mobile.ok ? join(outDir, "assets-mobile") : null),
-  };
-  const manifest = buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets: packed });
   const pcOut = join(outDir, "inventory-pc.json");
   const mobileOut = join(outDir, "inventory-mobile.json");
   if (resolve(pcPath) !== resolve(pcOut)) cpSync(pcPath, pcOut);
@@ -618,30 +518,6 @@ export function writeHandoffPack({
   writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   writeFileSync(join(outDir, "README.md"), packReadme(manifest, outDir));
   return { outDir, manifest, pcOut, mobileOut };
-}
-
-function copyPackedAssets(assets, destDir) {
-  if (!assets?.ok || !destDir) {
-    return {
-      ...assets,
-      files: (assets?.files || []).map((file) => ({
-        file: typeof file === "string" ? file : file.file,
-        bytes: file.bytes,
-        sha256: file.sha256,
-      })),
-    };
-  }
-  mkdirSync(destDir, { recursive: true });
-  const files = [];
-  for (const file of assets.files || []) {
-    const name = typeof file === "string" ? file : file.file;
-    const src = typeof file === "string" ? null : file.path;
-    if (!name || !src || !existsSync(src)) continue;
-    const out = join(destDir, name);
-    cpSync(src, out);
-    files.push({ file: name, bytes: file.bytes, sha256: file.sha256 });
-  }
-  return { ...assets, files, dir: basename(destDir) };
 }
 
 function packReadme(manifest, outDir) {
@@ -654,6 +530,7 @@ function packReadme(manifest, outDir) {
 做页只读本目录：
 - \`manifest.json\` 的 \`consume.pc\` / \`consume.mobile\`（determined 接线，unknown 只画）
 - \`inventory-pc.json\` / \`inventory-mobile.json\` 全树（需要变体/关系时）
+- 切图按节点 \`sliceExport\` 自己导出，包里不带 PNG
 
 unknown 不赋交互。问题带 fingerprint \`${manifest.fingerprint}\` 开 issue。
 目录：\`${outDir}\`

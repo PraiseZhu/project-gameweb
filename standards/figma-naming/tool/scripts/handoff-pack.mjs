@@ -2,7 +2,7 @@
 /**
  * 打做页交接包。本仓只要成对 ready。交接包只装箱信息，切图目录可选。
  *   node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir>
- *   [--assets-pc <dir>] [--assets-mobile <dir>] [--reference <参考稿.json>]
+ *   [--reference <参考稿.json>] 切图 PNG 不进包。
  * 未规范 green-draft 请到 projects/project-unnamed-inventory。
  */
 import { resolve } from "node:path";
@@ -14,7 +14,7 @@ import {
 export function runHandoffPack(argv = process.argv.slice(2)) {
   const args = parseHandoffArgs(argv);
   if (!args.pc || !args.mobile) {
-    console.error("用法：node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir> [--reference <参考稿.json>]");
+    console.error("用法：node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir> [--reference <参考稿.json>]\n切图 PNG 不进交接包，不要传 --assets-pc / --assets-mobile。");
     process.exit(1);
   }
   const pc = loadInventoryFile(args.pc);
@@ -23,6 +23,13 @@ export function runHandoffPack(argv = process.argv.slice(2)) {
     console.error(JSON.stringify({
       ok: false,
       problems: ["本仓只打 ready 交接包。green-draft / 判断包写回请到 projects/project-unnamed-inventory"],
+    }, null, 2));
+    process.exit(1);
+  }
+  if (args.packedAssets) {
+    console.error(JSON.stringify({
+      ok: false,
+      problems: ["切图 PNG 不进交接包。清单只写 sliceExport；做页按 node id 自己导出。"],
     }, null, 2));
     process.exit(1);
   }
@@ -43,8 +50,7 @@ export function runHandoffPack(argv = process.argv.slice(2)) {
     mobileDoc: mobile.doc,
     kind: gate.kind,
     outDir,
-    assetsPc: args.assetsPc,
-    assetsMobile: args.assetsMobile,
+    packedAssets: args.packedAssets,
     referenceDoc,
   });
   console.log(JSON.stringify({

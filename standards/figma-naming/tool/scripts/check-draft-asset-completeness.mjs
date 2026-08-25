@@ -19,29 +19,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { auditCrossEndClassSync, auditDraftGoldMorphology, hasImgAncestor } from "../src/gold-morphology.mjs";
-import { rebuildInventoryIndexes } from "../src/inventory.mjs";
+import { allNodesOf, rebuildInventoryIndexes } from "../src/inventory.mjs";
 
 const CARD_ART_RE = /^(素材图|素材|边框背景\d*|背景边框|立绘)$/;
 
 function auditCardAndReward(doc) {
-  const nodes = [];
-  const walk = (value) => {
-    if (Array.isArray(value)) return value.forEach(walk);
-    if (!value || typeof value !== "object") return;
-    if (typeof value.id === "string" && typeof value.type === "string") nodes.push(value);
-    Object.values(value).forEach(walk);
-  };
-  walk(doc);
+  const nodes = allNodesOf(doc);
   const byId = new Map();
   for (const node of nodes) byId.set(node.id, node);
 
   const problems = [];
   for (const node of nodes) {
-    const rawName = String(node.name ?? "").replace(/^img\//, "");
+    const rawName = String(node.name ?? "").replace(/^img[/／]/, "");
     if (node.status === "unknown" && CARD_ART_RE.test(rawName) && !hasImgAncestor(node, byId)) {
       problems.push(`${node.id}「${node.name}」是卡片视觉资产却仍为 unknown`);
     }
-    if (node.status === "determined" && node.role && node.role !== "copy" && !String(node.name ?? "").startsWith(`${node.role}/`)) {
+    if (node.status === "determined" && node.role && node.role !== "copy" && !new RegExp(`^${node.role}[/／]`).test(String(node.name ?? ""))) {
       problems.push(`${node.id} 已确定为 ${node.role}，但 name 未写入 ${node.role}/ 前缀`);
     }
 
@@ -49,7 +42,7 @@ function auditCardAndReward(doc) {
   return { ok: problems.length === 0, problems };
 }
 
-const PAGE_PREFIX_RE = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab)\//;
+const PAGE_PREFIX_RE = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab)[/／]/;
 
 function collectPrefix(found, node) {
   if (node?.status !== "determined") return;

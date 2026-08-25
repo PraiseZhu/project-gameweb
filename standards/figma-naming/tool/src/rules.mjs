@@ -28,9 +28,9 @@ export const RULES = {
   "N-PREFIX-SLASH": {
     severity: "P1", disposition: "must_fix", basis: "deterministic",
     layer: "语法", spec: "§1 / §4.1", assumes: ["A0"],
-    title: "分隔符不是半角斜杠",
-    why: "全角 ／、反斜杠 \\ 匹配不上前缀语法（A0），该切的图不切、该接的交互不接，这层退化成普通图层。前缀大小写、斜杠两侧空格在消费侧都合法，不算错误。",
-    fix: "把全角 ／ 或反斜杠 \\ 改成半角 `/`。",
+    title: "分隔符不是斜杠",
+    why: "反斜杠 \\ 匹配不上前缀语法（A0），该切的图不切、该接的交互不接，这层退化成普通图层。前缀大小写、斜杠两侧空格、全角 ／ 在消费侧都合法，不算错误。",
+    fix: "把反斜杠 \\ 改成半角 `/` 或全角 `／`。",
   },
   "N-PREFIX-NOT-IN-TABLE": {
     severity: "P0", disposition: "must_fix", basis: "deterministic",

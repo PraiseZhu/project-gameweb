@@ -15,7 +15,7 @@ F('img / spaced slash 等价', (() => { const p = parseLayerName('img / label');
 F('switch/角色', parseLayerName('switch/角色').role === 'switch');
 F('txt/ 是 legacy warning 而非标准', (() => { const p = parseLayerName('txt/title'); return p.role === null && p.legacyRole === 'txt' && p.warnings.some((w) => w.code === 'legacy-prefix'); })());
 F('swpage/ 是 legacy warning 而非标准', (() => { const p = parseLayerName('swpage/one'); return p.role === null && p.legacyRole === 'swpage' && p.warnings.some((w) => w.code === 'legacy-prefix'); })());
-F('全角斜杠是命名错误', (() => { const p = parseLayerName('img／bad'); return p.role === null && p.errors.some((e) => e.code === 'invalid-separator'); })());
+F('全角斜杠与半角等价', (() => { const p = parseLayerName('img／bad'); return p.role === 'img' && p.label === 'bad' && p.errors.length === 0; })());
 F('反斜杠是命名错误', (() => { const p = parseLayerName('img\\bad'); return p.role === null && p.errors.some((e) => e.code === 'invalid-separator'); })());
 F('@参数解析 key=value', (() => { const p = parseLayerName('btn/下载@state=hover@primary'); return p.params.state === 'hover' && p.flags.includes('primary'); })());
 F('无前缀不算 role', parseLayerName('随便一个名字').role === null);

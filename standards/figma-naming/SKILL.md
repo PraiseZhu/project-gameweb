@@ -46,7 +46,7 @@ npm run inventory -- \
   --page 392:24190
 ```
 
-链接里的 `node-id` 是拉稿根；`--page` 不改变拉稿范围。抓取、整理、自验任一步失败就停。PC / mobile 各出一份。
+链接里的 `node-id` 是拉稿根；`--page` 不改变拉稿范围。抓取、整理、自验任一步失败就停。自验含确定性结构：`@sec` 没靶、`ind/` 无/多 `switch/`、`scroll/` 没轨道、`sec/` 重号嵌套分散、参数非法。已确定节点必须带 `pageBox` / `parentBox` / `rotation`；文字必须带字体三项；切图必须带墨迹框 1 倍 png；`fix/` 必须钉视口。缺一字段就停。全角斜杠与半角同义，不算错。PC / mobile 各出一份。
 
 产物：`_tmp/inventory-<page>.json` 与 `.txt`。JSON 必须是 `schema: "inventory/v2"`、`status: "ready"`。覆盖页面本体、同货架 modal、页面实际引用的组件集及完整变体、实例关联。节点带 `pageBox`/`parentBox`；`img/` `bg/` `kv/` 带 `sliceExport`（墨迹框、1 倍、png）；`fix/` 钉视口；文字带 `fontFamily`/`fontWeight`/`fontSize`。没有原型或 `@go` 证据的弹窗入口留在对应关系上的 `unknown`，不改变整份清单 ready。
 
@@ -96,7 +96,7 @@ cd skills/yise-web-ui
 npm run figma:from-handoff -- <交接包目录>
 ```
 
-吃包里的 determined / 分区 / 背景固定层 / 变体树 / modal；unknown 只画不接线。说明见 `handoff/CONSUMER.md`。包 `kind=ready`。缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项则拒。png 由做页按 `sliceExport` 自己导。做页接入由 issue #5 交给 `zhanxinyi-lab`；本侧不改 `skills/yise-web-ui/**` 的渲染实现，只守吃包闸门。
+吃包里的 determined / 分区 / 背景固定层 / 变体树 / modal；unknown 只画不接线。说明见 `handoff/CONSUMER.md`。包 `kind=ready`。缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项则拒。切图按 `sliceExport` 由做页自导，包里不带 PNG。做页接入由 issue #5 交给 `zhanxinyi-lab`；本侧不改 `skills/yise-web-ui/**` 的渲染实现，只守吃包闸门。
 
 ## 不要做
 
