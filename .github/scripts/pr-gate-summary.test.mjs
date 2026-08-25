@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -169,7 +169,34 @@ test('CLI missing --log is fail-closed for non-zero exit', () => {
 });
 
 test('CLI missing summary path throws instead of writing pass', () => {
-  assert.throws(() => main(['--exit-code', '2']), /缺 summary 路径/);
+  withTempDir((dir) => {
+    const previous = process.env.GITHUB_STEP_SUMMARY;
+    delete process.env.GITHUB_STEP_SUMMARY;
+    try {
+      assert.throws(() => main(['--exit-code', '2']), /缺 summary 路径/);
+    } finally {
+      if (previous === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+      else process.env.GITHUB_STEP_SUMMARY = previous;
+    }
+    assert.equal(existsSync(join(dir, 'summary.md')), false);
+  });
+});
+
+test('CLI without --summary writes to GITHUB_STEP_SUMMARY', () => {
+  withTempDir((dir) => {
+    const summary = join(dir, 'from-env.md');
+    const previous = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = summary;
+    try {
+      const md = main(['--exit-code', '2']);
+      assert.match(md, /读不到失败原文/);
+      assert.match(readFileSync(summary, 'utf8'), /读不到失败原文/);
+      assert.doesNotMatch(md, /## PR 审核通过/);
+    } finally {
+      if (previous === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+      else process.env.GITHUB_STEP_SUMMARY = previous;
+    }
+  });
 });
 
 test('spawned CLI writes summary from a real die()-shaped log file', () => {
