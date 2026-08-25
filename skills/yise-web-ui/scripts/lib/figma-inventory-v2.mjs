@@ -46,6 +46,16 @@ function isSkipped(node) {
   return node?.status === 'skipped';
 }
 
+/** Drop skipped records from a paint tree. Keep determined and unknown. */
+function omitSkippedNodes(nodes) {
+  return asArray(nodes).flatMap((node) => {
+    if (!isPlainObject(node) || isSkipped(node)) return [];
+    const next = { ...node };
+    if (Array.isArray(node.nodes)) next.nodes = omitSkippedNodes(node.nodes);
+    return [next];
+  });
+}
+
 function visitNodeTree(nodes, visit) {
   for (const node of asArray(nodes)) {
     if (!isPlainObject(node)) continue;
@@ -122,7 +132,7 @@ export function validateInventory(inv, { handoff = null } = {}) {
 function pageDirectChildren(inv) {
   const pageId = inv.page.id;
   return asArray(inv.nodes)
-    .filter((node) => node && node.parentId === pageId)
+    .filter((node) => node && node.parentId === pageId && !isSkipped(node))
     .sort((a, b) => {
       const ak = String(a.orderKey ?? '0').split('.').map(Number);
       const bk = String(b.orderKey ?? '0').split('.').map(Number);
@@ -193,27 +203,27 @@ export function inventorySemanticRecords(inv, options = {}) {
  * overlay may be nested below a section (e.g. fix/左侧导航 under sec/1) and is
  * therefore not always a page direct child.
  */
+function liveRecord(byId, entry) {
+  const record = (entry && byId.get(entry.id)) || entry;
+  return record && !isSkipped(record) ? record : null;
+}
+
 function classifyPageDirectChildren(inv, byId) {
-  const fixedOverlays = asArray(inv.overlays)
-    .map((entry) => byId.get(entry.id) || entry)
-    .filter(Boolean);
+  const fixedOverlays = asArray(inv.overlays).map((entry) => liveRecord(byId, entry)).filter(Boolean);
   const fixedIds = new Set(fixedOverlays.map((n) => n.id));
-  const backgroundIds = new Set(asArray(inv.backgrounds).map((entry) => entry.id));
   const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
 
   const pageChrome = [];
   for (const child of pageDirectChildren(inv)) {
-    const record = byId.get(child.id) || child;
-    if (fixedIds.has(child.id)) continue;
-    if (record.role === 'sec' || sectionIds.has(child.id)) continue;
+    const record = liveRecord(byId, child);
+    if (!record || fixedIds.has(child.id) || record.role === 'sec' || sectionIds.has(child.id)) continue;
     pageChrome.push(record);
   }
   // Also keep the inventory's declared kv/bg role records as page chrome even
   // when they are not a direct page child (some kv layers sit inside kv/*).
   for (const entry of asArray(inv.backgrounds)) {
-    const record = byId.get(entry.id) || entry;
-    if (!record || fixedIds.has(record.id)) continue;
-    if (pageChrome.some((n) => n.id === record.id)) continue;
+    const record = liveRecord(byId, entry);
+    if (!record || fixedIds.has(record.id) || pageChrome.some((n) => n.id === record.id)) continue;
     pageChrome.push(record);
   }
   return { pageChrome, fixedOverlays };
@@ -455,7 +465,8 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       failures: [{ reason: 'platform-scope-input-missing' }],
     };
 
-  const modals = asArray(inv.attachments?.modals).map((modal) => {
+  const liveAttachments = (list) => asArray(list).filter((entry) => entry && !isSkipped(entry));
+  const modals = liveAttachments(inv.attachments?.modals).map((modal) => {
     const triggers = triggerByModal.get(modal.id) || [];
     const determined = triggers.filter((t) => t.status === 'determined');
     return {
@@ -468,32 +479,32 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       triggerFrom: determined.map((t) => t.fromId).filter(Boolean),
       triggerEvidence: determined.map((t) => t.evidence).filter(Boolean),
       pendingHumanConfirmation: determined.length === 0,
-      nodes: asArray(modal.nodes),
+      nodes: omitSkippedNodes(modal.nodes),
     };
   });
 
-  const componentSets = asArray(inv.attachments?.componentSets).map((set) => ({
+  const componentSets = liveAttachments(inv.attachments?.componentSets).map((set) => ({
     componentSetId: set.id,
     name: set.name ?? '',
     box: set.box ?? null,
     propertyDefinitions: set.componentPropertyDefinitions ?? {},
-    variants: asArray(set.variants).map((variant) => ({
+    variants: liveAttachments(set.variants).map((variant) => ({
       componentId: variant.id,
       name: variant.name ?? '',
       order: variant.order ?? 0,
       box: variant.box ?? null,
       componentProperties: variant.componentProperties ?? {},
-      nodes: asArray(variant.nodes),
+      nodes: omitSkippedNodes(variant.nodes),
     })),
-    nodes: asArray(set.nodes),
+    nodes: omitSkippedNodes(set.nodes),
   }));
 
-  const components = asArray(inv.attachments?.components).map((component) => ({
+  const components = liveAttachments(inv.attachments?.components).map((component) => ({
     componentId: component.id,
     name: component.name ?? '',
     box: component.box ?? null,
     componentProperties: component.componentProperties ?? {},
-    nodes: asArray(component.nodes),
+    nodes: omitSkippedNodes(component.nodes),
   }));
 
   const variantTrees = {};

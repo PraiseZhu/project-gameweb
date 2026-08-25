@@ -1,0 +1,178 @@
+{
+  "$comment": "figma-acceptance-harness 验收预设数据。所有 width/height 为 CSS 逻辑像素（竖屏），非物理分辨率；横屏对调宽高。dpr 仅影响图片清晰度与 1px 边框，不影响布局。",
+  "version": "1.0.0",
+  "updated": "2026-08-03",
+  "source": "Chrome DevTools 内置设备列表（Standard，16 项）+ 桌面端补充档位",
+
+  "breakpoints": [
+    { "key": "mobile",  "min": 0,    "max": 750,      "label": "mobile（稳宽 750）" },
+    { "key": "tablet",  "min": 751,  "max": 1023,     "label": "tablet（751–1023）" },
+    { "key": "desktop", "min": 1024, "max": null,     "label": "desktop（≥1024）" }
+  ],
+  "breakpointEdges": [
+    { "$comment": "断点交界的 1px 两侧，错版几乎只发生在这里。项目有几个断点就给几对。", "pair": [750, 751] },
+    { "pair": [1023, 1024] }
+  ],
+
+  "deviceGroups": [
+    {
+      "key": "PC",
+      "freeResize": true,
+      "defaultIndex": 3,
+      "$comment": "唯一可自由拉伸的组。拉伸后设备转为「自由状态」（devIdx = -1）。",
+      "devices": [
+        { "name": "老款笔记本",          "width": 1366, "height": 768,  "dpr": 1, "note": "桌面分辨率占比最高档之一" },
+        { "name": "MacBook Air",        "width": 1440, "height": 900,  "dpr": 2 },
+        { "name": "笔记本 · 125% 缩放",  "width": 1536, "height": 864,  "dpr": 1, "note": "1920 屏在 Windows 默认 125% 缩放下的真实 CSS 宽度，最易被漏" },
+        { "name": "台式 1080p",          "width": 1920, "height": 1080, "dpr": 1 },
+        { "name": "2K 显示器",           "width": 2560, "height": 1440, "dpr": 1 },
+        { "name": "4K 显示器",           "width": 3840, "height": 2160, "dpr": 1 }
+      ]
+    },
+    {
+      "key": "iPhone",
+      "freeResize": false,
+      "defaultIndex": 1,
+      "devices": [
+        { "name": "iPhone SE",         "width": 375, "height": 667, "dpr": 2 },
+        { "name": "iPhone 12 Pro",     "width": 390, "height": 844, "dpr": 3 },
+        { "name": "iPhone XR",         "width": 414, "height": 896, "dpr": 2 },
+        { "name": "iPhone 14 Pro Max", "width": 430, "height": 932, "dpr": 3 }
+      ]
+    },
+    {
+      "key": "Android",
+      "freeResize": false,
+      "defaultIndex": 1,
+      "devices": [
+        { "name": "Galaxy S8+",       "width": 360, "height": 740, "dpr": 4 },
+        { "name": "Pixel 7",          "width": 412, "height": 915, "dpr": 2.625 },
+        { "name": "Galaxy S20 Ultra", "width": 412, "height": 915, "dpr": 3.5, "note": "视口同 Pixel 7，仅 DPR 不同；布局验收只需测一个" }
+      ]
+    },
+    {
+      "key": "折叠屏",
+      "freeResize": false,
+      "defaultIndex": 0,
+      "devices": [
+        { "name": "Z Fold 5 · 折叠",     "width": 344,  "height": 882,  "dpr": 2.625, "note": "全列表最窄，内容挤压/文字溢出的下限档" },
+        { "name": "Surface Duo · 单屏",  "width": 540,  "height": 720,  "dpr": 2.5 },
+        { "name": "Surface Duo · 双屏",  "width": 1114, "height": 705,  "dpr": 2.5, "note": "横向展开，含铰链缝" },
+        { "name": "Zenbook Fold · 折叠", "width": 853,  "height": 1280, "dpr": 2 },
+        { "name": "Zenbook Fold · 展开", "width": 1280, "height": 1706, "dpr": 2 }
+      ]
+    },
+    {
+      "key": "iPad",
+      "freeResize": false,
+      "defaultIndex": 0,
+      "devices": [
+        { "name": "iPad Mini",     "width": 768,  "height": 1024, "dpr": 2 },
+        { "name": "iPad Air",      "width": 820,  "height": 1180, "dpr": 2 },
+        { "name": "Surface Pro 7", "width": 912,  "height": 1368, "dpr": 2 },
+        { "name": "iPad Pro",      "width": 1024, "height": 1366, "dpr": 2 }
+      ]
+    }
+  ],
+
+  "otherReference": {
+    "$comment": "智能屏，宽而矮，用于验证依赖视口高度的布局（100vh、首屏折叠位）。当前控制栏未列为设备组。",
+    "devices": [
+      { "name": "Nest Hub",     "width": 1024, "height": 600, "dpr": 2 },
+      { "name": "Nest Hub Max", "width": 1280, "height": 800, "dpr": 2 }
+    ]
+  },
+
+  "distinctWidths": {
+    "mobile":  [344, 360, 375, 390, 412, 414, 430],
+    "foldTablet": [540, 768, 820, 853, 912],
+    "largeTablet": [1024, 1280],
+    "desktop": [1366, 1440, 1536, 1920, 2560, 3840]
+  },
+
+  "minimalAcceptanceSet": [
+    { "width": 344,  "height": 882,  "covers": "Galaxy Z Fold 5 折叠态", "verifies": "最窄边界，文字溢出 / 内容挤压" },
+    { "width": 360,  "height": 800,  "covers": "Android 主流",           "verifies": "移动端基准布局" },
+    { "width": 390,  "height": 844,  "covers": "iPhone 主流",            "verifies": "移动端基准布局" },
+    { "width": 430,  "height": 932,  "covers": "iPhone 14 Pro Max",      "verifies": "手机最宽边界" },
+    { "width": 768,  "height": 1024, "covers": "iPad Mini",              "verifies": "平板 / 断点切换下沿" },
+    { "width": 1024, "height": 1366, "covers": "iPad Pro",               "verifies": "平板 / 断点切换上沿" },
+    { "width": 1440, "height": 900,  "covers": "笔记本",                 "verifies": "桌面基准布局" },
+    { "width": 1920, "height": 1080, "covers": "台式",                   "verifies": "桌面宽屏，容器 max-width 行为" }
+  ],
+  "conditionalSet": [
+    { "width": 1024, "height": 600, "when": "项目有 100vh / 首屏折叠设计" },
+    { "width": 1536, "height": 864, "when": "目标用户以 Windows 笔记本为主（125% 是 Windows 默认缩放）" }
+  ],
+
+  "regions": [
+    { "key": "CN", "name": "中国大陆" },
+    { "key": "GL", "name": "Global" }
+  ],
+  "regionAffects": [
+    "第三方登录入口（微信/QQ/Apple ⇄ Google/Apple/Discord）",
+    "支付方式（微信支付/支付宝 ⇄ 信用卡/PayPal）",
+    "页脚合规信息（备案号·许可证·防沉迷 ⇄ Privacy·Cookie·Age Rating）",
+    "客服入口（在线客服/公众号 ⇄ 邮件/Support 站）",
+    "社交分享渠道（微信/微博/QQ ⇄ X/Facebook/Discord）",
+    "日期与货币格式（2026/08/03·¥ ⇄ Aug 3, 2026·$）"
+  ],
+
+  "languages": [
+    { "key": "zh-CN",  "name": "简体中文",         "ready": true },
+    { "key": "zh-TW",  "name": "繁體中文",         "ready": true },
+    { "key": "en-US",  "name": "English",          "ready": true },
+    { "key": "ja-JP",  "name": "日本語",           "ready": true },
+    { "key": "ko-KR",  "name": "한국어",           "ready": true },
+    { "key": "de-DE",  "name": "Deutsch",          "ready": false },
+    { "key": "fr-FR",  "name": "Français",         "ready": false },
+    { "key": "es-ES",  "name": "Español",          "ready": false },
+    { "key": "pt-BR",  "name": "Português (BR)",   "ready": false },
+    { "key": "ru-RU",  "name": "Русский",          "ready": false },
+    { "key": "th-TH",  "name": "ไทย",              "ready": false },
+    { "key": "vi-VN",  "name": "Tiếng Việt",       "ready": false },
+    { "key": "id-ID",  "name": "Bahasa Indonesia", "ready": false },
+    { "key": "pseudo", "name": "长文案压测",       "ready": true, "stress": true,
+      "note": "伪本地化：基于 en-US 加重音符号并拉长约 1.5 倍，用于压测按钮与标签溢出" }
+  ],
+  "languageFallback": "en-US",
+
+  "states": [
+    { "group": "默认",     "items": [ { "key": "default", "name": "正常态" } ] },
+    { "group": "加载",     "items": [
+      { "key": "skeleton.full",    "name": "全页骨架" },
+      { "key": "skeleton.partial", "name": "局部骨架" },
+      { "key": "loading.more",     "name": "分页加载中" } ] },
+    { "group": "空",       "items": [
+      { "key": "empty.nodata", "name": "无数据" },
+      { "key": "empty.search", "name": "无搜索结果" } ] },
+    { "group": "错误",     "items": [
+      { "key": "error.request", "name": "请求失败" },
+      { "key": "error.offline", "name": "断网" },
+      { "key": "error.403",     "name": "无权限" } ] },
+    { "group": "数据极值", "items": [
+      { "key": "data.longtext", "name": "超长文本" },
+      { "key": "data.noimage",  "name": "图片缺失" },
+      { "key": "data.min",      "name": "单条数据" } ] },
+    { "group": "弹层",     "items": [
+      { "key": "modal.reward",  "name": "奖励弹窗" },
+      { "key": "drawer.rule",   "name": "规则抽屉" },
+      { "key": "toast.success", "name": "Toast 成功" },
+      { "key": "confirm.leave", "name": "二次确认" } ] },
+    { "group": "身份",     "items": [
+      { "key": "auth.guest", "name": "未登录" },
+      { "key": "auth.user",  "name": "已登录" },
+      { "key": "auth.vip",   "name": "会员" } ] },
+    { "group": "业务时序", "items": [
+      { "key": "phase.before", "name": "赛季前" },
+      { "key": "phase.during", "name": "进行中" },
+      { "key": "phase.after",  "name": "已结束" } ] },
+    { "group": "交互",     "items": [
+      { "key": "state.disabled", "name": "按钮禁用" } ] }
+  ],
+  "stateNotes": [
+    "平铺模式下弹层必须强制常显：禁用自动关闭、遮罩点击关闭、进出场动画，否则截图会截到空白。",
+    "平铺只在当前尺寸下进行，不做「尺寸 × 状态」笛卡尔积（8 档 × 23 状态 = 184 屏，页面会卡死）。",
+    "状态 key 以项目 states.mjs 为唯一事实来源，本文件的 key 仅作分类参考。"
+  ]
+}

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +71,21 @@ test('device-presets-check allows missing upstream only after index and local co
   assert.equal(out.status, 'unchecked');
   assert.deepEqual(out.indexSummary, { groups: 2, devices: 2, breakpoints: 3 });
   assert.equal(out.adaptationChecks.ok, true);
+});
+
+test('bundled default devices keep kit PC/iPhone/Android and omit fold/iPad', () => {
+  const bundled = JSON.parse(readFileSync(join(ROOT, 'templates/figma-harness-kit-device-presets.json'), 'utf8'));
+  const defaults = JSON.parse(readFileSync(join(ROOT, 'templates/default-devices.json'), 'utf8'));
+  const kitPath = join(ROOT, '../../../../reference/figma-harness-kit/data/device-presets.json');
+  const kit = existsSync(kitPath) ? JSON.parse(readFileSync(kitPath, 'utf8')) : bundled;
+  assert.deepEqual(bundled.deviceGroups.map((g) => g.key), kit.deviceGroups.map((g) => g.key));
+  assert.deepEqual(defaults.deviceGroups.map((g) => g.key), ['PC', 'iPhone', 'Android']);
+  assert.equal(defaults.deviceGroups.reduce((n, g) => n + g.devices.length, 0), 13);
+  assert.equal(defaults.deviceGroups.find((g) => g.key === 'PC').defaultIndex, 3);
+  const pc = defaults.deviceGroups.find((g) => g.key === 'PC');
+  const kitPc = kit.deviceGroups.find((g) => g.key === 'PC');
+  assert.deepEqual(pc.devices, kitPc.devices);
+  assert.deepEqual(pc.devices, bundled.deviceGroups.find((g) => g.key === 'PC').devices);
 });
 
 test('device-presets-check requires tablet fallback/TODO when no tablet frame exists', () => {

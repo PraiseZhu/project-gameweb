@@ -7,19 +7,37 @@ The static visual-asset gate is a separate hard gate before static completion,
 
 ## Required chain
 
-For every visible Figma `IMAGE` fill on every declared platform:
+For every visible Figma `IMAGE` fill **and every non-skipped declared
+`sliceExport` owner** on every declared platform:
 
 ```text
-source node ID → Figma imageRef → assets-manifest entry → rendered DOM asset
+source node ID → Figma imageRef or sliceExport.file → assets-manifest entry → rendered DOM asset
 ```
 
-The manifest record requires a file and hash and must preserve `imageRefs`. DOM
+A declared slice owner is a source-backed visual contract even when the owner
+has no IMAGE fill of its own (composite `bg/`, `img/` frames, navigation rails,
+card borders). Nested slice descendants are covered by the outermost source
+owner; they must not require a second DOM host.
+
+The Main static axis audits the current page tree only. Modal and
+component-variant trees stay in truth for Interaction/Switch, but they are not
+simultaneously visible page pixels and must not block Main. Unknown source
+leaves stay `unknownUnresolved`: draw-only, never wired, never counted as
+static completion.
+
+The manifest record requires a file and hash. IMAGE fills must preserve
+`imageRefs`. Slice owners must preserve the declared `sliceExport.file`. DOM
 evidence must show the matching node's asset rendered, complete, and visible.
 
 A child fill may be covered by a baked owner only when the child record names
 `bakedIntoOwner`, includes an explanation, and the owner manifest record
 contains the same `imageRef`, file, and hash. Names, old seasonal files, or an
 asset from another platform are never evidence.
+
+Interactive non-rect owners (`BOOLEAN_OPERATION`, `VECTOR`, and similar) with
+`behavior=click` and no slice / no source geometry remain a red gate
+(`interactive-nonrect-source-geometry-missing`). Do not invent CSS chevrons,
+diamonds, or screenshots to pass that gate.
 
 ## Provenance wrappers
 

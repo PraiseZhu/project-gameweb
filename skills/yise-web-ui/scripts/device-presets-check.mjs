@@ -22,7 +22,10 @@
  * 但会明说「内容一致、字节不同」。sha256 双方如实报出，供需要严格一致时核对。
  *
  * ═══ 配置（spec.devicePresets，路径全部配置化）═══
- *   upstream   上游文件路径，相对 demo 目录解析（默认 ../../../figma-harness-kit/data/device-presets.json）
+ *   upstream   上游文件路径，相对 demo 目录解析。未配置时用随包
+ *              `templates/default-devices.json`（kit 的 PC / iPhone / Android 子集，
+ *              不含折叠屏和 iPad）。完整 kit 原文另存
+ *              `templates/figma-harness-kit-device-presets.json`，只作对照，不是 QA 默认。
  *   local      本地副本路径，相对 demo 目录解析（默认 fixtures/device-presets.json）
  *
  * ═══ 用法 ═══
@@ -33,6 +36,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 function fail(msg) {
   console.error(JSON.stringify({ ok: false, error: msg }, null, 2));
@@ -55,7 +59,8 @@ const spec = JSON.parse(readFileSync(specPath, 'utf8'));
 const cfg = spec.devicePresets || {};
 
 const localPath = resolve(demoDir, cfg.local || 'fixtures/device-presets.json');
-const upstreamPath = resolve(demoDir, cfg.upstream || '../../../figma-harness-kit/data/device-presets.json');
+const bundledQa = fileURLToPath(new URL('../templates/default-devices.json', import.meta.url));
+const upstreamPath = cfg.upstream ? resolve(demoDir, cfg.upstream) : bundledQa;
 const indexPath = join(demoDir, 'index.html');
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');

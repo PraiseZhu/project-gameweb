@@ -263,9 +263,26 @@ test('--update-chrome 仍只换 chrome 段;--update-adapter 只换 adapter 段',
   const classicHtml = readFileSync(classicIndex, 'utf8');
   assert.ok(!classicHtml.includes('CHROME-DIRTY'), 'figma chrome 段未被替换');
   assert.equal(classicHtml, classicOrig, 'figma 壳只换 chrome 段,其余字节不动');
+  const classicDevices = classicHtml.match(/<script id="qa-devices"[\s\S]*?<\/script>/);
+  const origDevices = classicOrig.match(/<script id="qa-devices"[\s\S]*?<\/script>/);
+  assert.ok(classicDevices && origDevices, 'qa-devices 段必须保留');
+  assert.equal(classicDevices[0], origDevices[0], '--update-chrome 不得改写 qa-devices 换行');
   const noAdapter = run(INIT, ['--dir', classicDir, '--update-adapter']);
   assert.notEqual(noAdapter.status, 0);
   assert.match(json(noAdapter).error, /QA_COMPONENT_ADAPTER/);
+
+  const crlfDir = join(tmpDir('upd-classic-crlf'), 'demo');
+  run(INIT, ['--dir', crlfDir, '--name', 'cc-crlf']);
+  const crlfIndex = join(crlfDir, 'index.html');
+  const crlfOrig = readFileSync(crlfIndex, 'utf8').replace(/\n/g, '\r\n');
+  writeFileSync(crlfIndex, crlfOrig);
+  const crlfChrome = run(INIT, ['--dir', crlfDir, '--update-chrome']);
+  assert.equal(crlfChrome.status, 0, crlfChrome.stdout + crlfChrome.stderr);
+  const crlfHtml = readFileSync(crlfIndex, 'utf8');
+  const crlfDevices = crlfHtml.match(/<script id="qa-devices"[\s\S]*?<\/script>/);
+  const crlfOrigDevices = crlfOrig.match(/<script id="qa-devices"[\s\S]*?<\/script>/);
+  assert.ok(crlfDevices && crlfOrigDevices, 'CRLF qa-devices 段必须保留');
+  assert.equal(crlfDevices[0], crlfOrigDevices[0], '--update-chrome 不得把 qa-devices 从 CRLF 收成 LF');
 
   // 组件 demo:改脏两段后各自更新,互不越界
   const { dir } = initComponent('upd-comp');

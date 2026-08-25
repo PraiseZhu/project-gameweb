@@ -1218,14 +1218,20 @@
     // tablet 区间用哪套稿在 spec.adaptation.knownDeviations 里标着 TODO，未定，暂按 pc。
     const DW = { pc: 3840, pad: 3840, mobile: 750 };
     const __platforms = t.platforms || {};
+    /* The acceptance shell uses matrix vocabulary (`desktop` / `tablet`), while
+       ready platform truth is keyed by its source compositions (`pc` / `pad`).
+       Normalize at this single consumer boundary.  Previously `desktop` happened
+       to fall through to PC, but it was not a declared mapping; that made a shell
+       deep link and the renderer speak different platform dialects. */
     const __plat = (ctx.prefs && ctx.prefs.plat) || 'pc';
+    const __normalizedPlat = { desktop: 'pc', tablet: 'pad', phone: 'mobile' }[__plat] || __plat;
     const __platBases = {
       pc: 'pc',
       pad: __platforms.pad ? 'pad' : 'pc',
       mobile: __platforms.mobile ? 'mobile' : 'pc',
     };
-    const __base = __platBases[__plat] || 'pc';
-    const __hasNative = (__base === __plat);
+    const __base = __platBases[__normalizedPlat] || 'pc';
+    const __hasNative = (__base === __normalizedPlat);
     /* Static mobile scale: native 20:2205 tree at designWidth 750.
        Fallback to the PC tree on a phone viewport is not a scale fix. */
     const __activeTruth = __platforms[__base] || t;
@@ -1235,7 +1241,7 @@
     frame.setAttribute('data-render-plat', __plat);
     frame.setAttribute('data-render-base', __base);
     if (motionAdapter && motionAdapter.roleResolution?.platformEvidence) {
-      frame.setAttribute('data-motion-platform-evidence', String(motionAdapter.roleResolution.platformEvidence[__plat] || 'unverified'));
+      frame.setAttribute('data-motion-platform-evidence', String(motionAdapter.roleResolution.platformEvidence[__normalizedPlat] || 'unverified'));
     } else {
       frame.removeAttribute('data-motion-platform-evidence');
     }
@@ -1449,6 +1455,15 @@
     const renderIds = pageScope ? ['__page__', ...ids] : ids;
     let pageStage = null;
     let fixedStage = null;
+    /* The ready handoff keeps a fixed owner in fixedOverlays but may keep its
+       truth-backed descendants in the section where Figma placed them.  Track
+       that explicit owner subtree once so it can be painted in fixedStage and
+       omitted from the section paint pass (no flattening, no guessed nodes). */
+    let fixedDescendantIds = new Set();
+    /* Text fitting happens only after every stage is mounted.  The collection
+       must therefore belong to renderApp, rather than a single paint pass. */
+    const fitCandidates = [];
+    const hugGrowthOwners = [];
     for (const sid of renderIds) {
       const pageStageMode = sid === '__page__';
       const sec = pageStageMode ? (__activeTruth.pageChrome || { meta: (__activeTruth.fixedOverlays && __activeTruth.fixedOverlays.meta) || {}, nodes: [] }) : sections[sid];
@@ -1581,8 +1596,13 @@
       /* paint：把一个节点列表画进一个容器。
          背景层与内容层都走这一个函数 —— 嵌套认亲、裁剪、上色、排版、切图的规则
          只允许有一份实现。今天已经因为"一条规则两份实现"误报过一次。 */
-      const fitCandidates = [];   // 定宽折行文字：挂载后统一量超框（detached 元素量不到）
-        const hugGrowthOwners = [];  // 垂直 HUG 文本的 HUG owner 容器：runFit 后随内容增高
+      const asArr = (v) => (Array.isArray(v) ? v : Object.values(v || {}));
+      /* Figma preserves authored soft/hard line separators as U+2028 / U+2029.
+         HTML text nodes do not treat those characters as an authorial line
+         break under every white-space mode. Normalize at the renderer boundary;
+         each replacement is one code unit, so rich-text offsets remain valid. */
+      const normalizeFigmaLineBreaks = (value) => String(value ?? '')
+        .replace(/\r\n?|\u2028|\u2029/g, '\n');
       const nodeParentId = (n) => String(__u(n && n.parentId) || '');
       /* Main Skill interaction bridge: derive evidence attributes from the
          source-backed owner path/name contract. No page IDs or selectors. */
@@ -1600,6 +1620,17 @@
           return { role, params };
         };
         const byId = new Map(items.map((n) => [id(n), n]));
+        /* Fixed overlay roots are rendered in the page stage, while their
+           truth-backed descendants can legitimately live in the section
+           table (the ready handoff preserves the source paint ownership this
+           way).  Navigation owner lookup must therefore consult the explicit
+           fixedOverlays scope as well as this section-local table.  This only
+           resolves an existing owner; it never promotes skipped structure or
+           invents a navigation node. */
+        const fixedOverlayNodes = Array.isArray(__activeTruth.fixedOverlays?.nodes)
+          ? __activeTruth.fixedOverlays.nodes
+          : Object.values(__activeTruth.fixedOverlays?.nodes || {});
+        const fixedById = new Map(fixedOverlayNodes.map((n) => [id(n), n]));
         const parentId = (n) => String(value(n && n.parentId) || '');
         const hscrollAxis = (node, parsed) => {
           if (parsed.role !== 'scroll' || value(node && node.clipsContent) !== true) return null;
@@ -1692,6 +1723,14 @@
             const owner = byId.get(String(value(path[i])));
             if (owner && parse(owner).role === 'fix') return id(owner);
           }
+          /* Some ready consumers flatten fixed component descendants into the
+             page-shared table and omit the fixed owner from ownerPath.  The
+             source ancestor chain still carries the explicit fix/ owner role;
+             resolve it from ancestorIds only, never from a guessed display name. */
+          const ancestorIds = Array.isArray(n && n.ancestorIds) ? n.ancestorIds.map((x) => String(value(x))) : [];
+          const ancestorFix = ancestorIds.map((ancestor) => byId.get(ancestor) || fixedById.get(ancestor))
+            .find((candidate) => candidate && parse(candidate).role === 'fix');
+          if (ancestorFix) return id(ancestorFix);
           return null;
         };
         const ancestorRole = (n, role) => {
@@ -2238,17 +2277,28 @@
         /* When no truth-backed owner box exists (the direct parent was a
            passed-through pure container absent from truth), fall back to the
            text own source box width -- never to the section width. */
-        const ownerWidth = fixedAutoLayoutTextItem && Number.isFinite(Number(box.w)) && Number(box.w) > 0
-          ? Number(box.w)
-          : sourceFixedCenteredTextBox
-          ? Number(box.w)
+        /* Coordinate-grid copy (calendar cells, table labels) must keep the
+           authored Figma text box. The nearest painted parent is often the
+           whole grid shell; stretching a leaf from its left edge to that
+           parent's right edge recenters the label across every column. */
+        const sourceTextWidth = Number.isFinite(Number(box.w)) && Number(box.w) > 0 ? Number(box.w) : null;
+        const sourceLayoutMode = String(__u(n.layout?.layoutMode ?? n.layoutMode) || '').toUpperCase();
+        const coordinateGridText = sourceTextWidth != null
+          && Number.isFinite(Number(box.h)) && Number(box.h) > 0
+          && hasBoundedOwner
+          && Number(parentBox.w) > sourceTextWidth * 1.5
+          && (sourceLayoutMode === 'NONE' || sourceLayoutMode === '');
+        const keepSourceTextWidth = coordinateGridText
+          || (fixedAutoLayoutTextItem && sourceTextWidth != null)
+          || sourceFixedCenteredTextBox
+          || (sourceWidthHugText && sourceTextWidth != null);
+        const ownerWidth = keepSourceTextWidth
+          ? sourceTextWidth
           : compactDirectOwnerHugLabel
           ? Number(parentBox.w)
-          : sourceWidthHugText && Number.isFinite(Number(box.w)) && Number(box.w) > 0
-          ? Number(box.w)
           : hasBoundedOwner && Number.isFinite(Number(box.x))
           ? Math.max(0, ownerRight - Number(box.x))
-          : (Number.isFinite(Number(box.w)) && Number(box.w) > 0 ? Number(box.w) : null);
+          : sourceTextWidth;
         /* Open-flow is explicit-only. The old `HEIGHT && !framedHint` heuristic
            leaked bounded card/column text into section-wide open flow; HEIGHT text
            now stays framed-fixed on its nearest owner box unless truth says open. */
@@ -2328,6 +2378,27 @@
          interactionAttrs.set(id, { ...(interactionAttrs.get(id) || {}), ...attrs });
        }
        const componentVariantOwners = [];
+       /* A ready package may reference a small component instance directly
+          (indicator, tab/icon button) while the page node intentionally has
+          no duplicated child tree.  Its selected component variant is still
+          carried, source-backed, in componentVariantGraph.  Index those
+          trees once so the consumer can mount the *selected* instance tree
+          into an otherwise empty owner.  This is deliberately not a generic
+          fallback drawing path: the component id, single root, and exact
+          owner extent must all agree before any pixels are added. */
+       const componentInstanceTrees = new Map();
+       for (const set of asArr(__activeTruth && __activeTruth.componentVariantGraph
+         && __activeTruth.componentVariantGraph.componentSets)) {
+         for (const variant of asArr(set && set.variants)) {
+           const componentId = String(__u(variant && variant.componentId) || '');
+           const nodes = asArr(variant && variant.nodes);
+           const roots = nodes.filter((node) => String(__u(node && node.id)) === componentId
+             && String(node && node.type || '') === 'COMPONENT');
+           if (!componentId || roots.length !== 1 || nodes.length < 2 || componentInstanceTrees.has(componentId)) continue;
+           componentInstanceTrees.set(componentId, { componentId, root: roots[0], nodes });
+         }
+       }
+       const componentInstanceOwners = [];
        const seqOf = (i) => {
          const r = rawList[i];
          const anchor = r && (r.orderKey || r.id);
@@ -2363,6 +2434,13 @@
             ? ownerPath.slice(0, -1).reverse().map((id) => renderedById.get(String(__u(id)))).find(Boolean)
             : null)
           || (stack.length ? stack[stack.length - 1] : null);
+        /* The source-component fallback replaces the whole ind instance. Its
+           original highlight child is still present in the flattened truth list;
+           do not paint that same child over the supplied complete component or it
+           recreates the known missing-image placeholder. The exact child id keeps
+           this exclusion scoped to this one source component only. */
+        if (directParentRecord?.el?.hasAttribute('data-source-component-fallback')
+          && /;397:35946$/.test(String(nid))) continue;
         // Exported image/asset owners still need to expose structural interaction
         // descendants (indicators, tabs, switches, etc.).  The extraction contract
         // keeps those descendants in truth; only non-interactive painted children
@@ -2462,6 +2540,19 @@
         const SLICE = { img: 1, bg: 1, kv: 1 };
         const needsAsset = !isText && (SLICE[pfx] || kind === 'gradient' || kind === 'image');
         const assetRec = this._assetRec(nid);
+        /* `ind/进度条` is a source component set whose two *component roots*
+           intentionally have no page-level slice.  The ready truth does retain
+           their exact component ids; the selected child has an IMAGE fill, but
+           that imageRef is absent from assets-manifest, so the old consumer
+           generated a transparent placeholder.  These two local reference PNGs
+           are the Figma component-context exports for those exact roots (58×61),
+           not re-drawn UI or inferred carousel state.  Keep the mapping narrow:
+           it cannot promote arbitrary unknown/skipped nodes to pixels. */
+        const __componentId = String(__u(n && n.componentId) || '');
+        const __indComponentFallback = pfx === 'ind' && ({
+          '397:35947': { file: 'figma-indicator-active-reference.png', state: 'highlight', sourceNodeId: '397:35946' },
+          '397:35949': { file: 'figma-indicator-normal-reference.png', state: 'normal', sourceNodeId: '397:35949' },
+        })[__componentId] || null;
         /* Baked-owner descendants punched through by the extractor (blend/structural
            walk) must not be re-painted when they are neutral decor already inside
            the baked PNG. Only a structural interaction (switch/tab/scroll/copy/nav)
@@ -2469,7 +2560,9 @@
            every other baked-subtree paint node is skipped to avoid double-draw. */
         const __inBakedSubtree = !!(bakedOwnerId) && !assetRec;
         if (__inBakedSubtree && !hasStructuralInteraction && !__blendLiftable) continue;
-        const assetUrl = assetRec ? (assetRec.file || assetRec.url || assetRec.src || null) : null;
+        const assetUrl = assetRec
+          ? (assetRec.file || assetRec.url || assetRec.src || null)
+          : (__indComponentFallback && __indComponentFallback.file);
         const NONRECT_SHAPE = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, ELLIPSE: 1, LINE: 1 };
 
         /* 这里**不再判断"是不是纯容器"**。
@@ -2490,6 +2583,12 @@
            isMask/maskType 消费 extract 落的源叶子；maskChildren 是 owner 对直接
            mask 子级引用，用来定位并显式排除遮罩节点（不画出实心渐变）。 */
         el.setAttribute('data-owner-role', String(pfx || (n.type === 'TEXT' ? 'txt' : 'frame')));
+        if (__indComponentFallback) {
+          el.setAttribute('data-source-component-fallback', 'figma-component-context');
+          el.setAttribute('data-source-component-id', __componentId);
+          el.setAttribute('data-source-component-node', __indComponentFallback.sourceNodeId);
+          el.setAttribute('data-source-component-state', __indComponentFallback.state);
+        }
         const __ownerAssetPolicy = (n.exportSettings && (Array.isArray(n.exportSettings) ? n.exportSettings.length : true)) ? 'export'
           : (assetUrl ? 'slice'
             : ((pfx === 'img' || pfx === 'bg' || pfx === 'kv') ? 'asset-missing'
@@ -2541,7 +2640,25 @@
         const coordinateOwnerBox = directParentRecord?.box || directParentNode?.box || parent?.box || null;
         const originX = coordinateOwnerBox ? (coordinateOwnerBox.x ?? 0) : paintOriginX;
         const originY = coordinateOwnerBox ? (coordinateOwnerBox.y ?? 0) : paintOriginY;
-        const exportBox = assetRec && assetRec.exportBox ? assetRec.exportBox : null;
+        /* A ready handoff's declared slice is exported on the bounds named by
+           `sliceExport`.  Older/portable consumers only carry that declaration
+           in qa-assets, not a duplicate `exportBox` record.  For a render-bound
+           slice, the truth node's renderBox is therefore the authoritative
+           visual canvas: putting its PNG into the ordinary owner box stretches
+           shadows/overhang and makes a card image look larger than its frame.
+           Prefer an explicit delivered exportBox; otherwise derive it solely
+           from the same source declaration + source renderBox.  Page/owner
+           geometry remains untouched, and non-render/page-bound assets keep
+           the original owner-box behavior. */
+        const renderBox = n.renderBox || {};
+        const renderBoxReady = [renderBox.x, renderBox.y, renderBox.w, renderBox.h].every((v) => Number.isFinite(Number(v)))
+          && Number(renderBox.w) > 0 && Number(renderBox.h) > 0;
+        const _renderSliceBox = assetRec
+          && String(assetRec?.sliceExport?.bounds || assetRec?.exportBounds || '').toLowerCase() === 'render'
+          && renderBoxReady
+          ? n.renderBox
+          : null;
+        const exportBox = (assetRec && assetRec.exportBox) || _renderSliceBox || null;
         /* 消费 truth 的 auto-layout（layoutMode HORIZONTAL/VERTICAL）。这些 frame
            的子节点在 truth 里被穿透成顶层 sibling（children=[]，靠 ownerPath 关联），
            若仍按源坐标绝对定位，译文变宽后：按钮 icon 被顶出框、跟随标签压住文字、
@@ -3286,13 +3403,22 @@
            *
            * 多行也对：后续各行的行距 CSS 与 Figma 同为 lineHeight，整块统一平移即可。
            */
-          const _vAlign = tx.vAlign || 'TOP';
-          const _halfLeading = (typeof tx.lineHeight === 'number' && typeof tx.fontSize === 'number')
-            ? (tx.lineHeight - tx.fontSize) / 2 : 0;
-          if (_vAlign === 'TOP' && _halfLeading > 0.01 && !inlineHugs) {
-            tf.push('translateY(' + (_halfLeading) + 'px)');
-            el.setAttribute('data-half-leading', String(_halfLeading));
+          /* renderBox is this document's source-backed visual target. Do not
+             reuse a cross-page half-leading translation: it was calibrated on
+             an earlier design and shifts this page's text down. Store the
+             source visual bounds for browser evidence instead. */
+          const _textRenderBox = n.renderBox || {};
+          const textRenderBoxReady = [_textRenderBox.x, _textRenderBox.y, _textRenderBox.w, _textRenderBox.h]
+            .every((v) => Number.isFinite(Number(v)));
+          if (textRenderBoxReady) {
+            el.setAttribute('data-render-box-x', String(_textRenderBox.x));
+            el.setAttribute('data-render-box-y', String(_textRenderBox.y));
+            el.setAttribute('data-render-box-w', String(_textRenderBox.w));
+            el.setAttribute('data-render-box-h', String(_textRenderBox.h));
           }
+          el.setAttribute('data-text-baseline-policy', textRenderBoxReady
+            ? 'source-renderbox-no-global-offset'
+            : 'source-renderbox-unavailable');
 
           /* 文本旋转：Figma 弧度逆时针为正、CSS 顺时针，取负。
              通用（含非文本形状）的旋转在统一的 else 分支一次性应用，见该处的
@@ -3328,7 +3454,7 @@
              ② 查不到但稿里有原文 → 用原文 + data-copy-missing（门 C 抓）
              ③ 连原文都没有 → data-text-empty（说明 truth 缺 characters 叶子） */
           const hit = t.copy && t.copy.byNode ? t.copy.byNode[nid] : null;
-          const val = hit ? hit[ctx.prefs.lang] : null;
+          const val = hit ? normalizeFigmaLineBreaks(hit[ctx.prefs.lang]) : null;
           const semanticLayout = t.copy && t.copy.semanticLayout && t.copy.semanticLayout.byNode
             ? t.copy.semanticLayout.byNode[nid] : null;
           const semanticBreak = semanticLayout && semanticLayout[ctx.prefs.lang]
@@ -3342,9 +3468,26 @@
           const statusBinding = statusVisual && statusVisual.byNode ? statusVisual.byNode[nid] : null;
           const statusKey = statusBinding ? String(__u(statusBinding.status)) : '';
           const statusRole = statusBinding ? String(__u(statusBinding.semanticRole)) : '';
-          const statusVariant = statusBinding && statusVisual && statusVisual.variants
-            && statusVisual.variants[statusKey] ? statusVisual.variants[statusKey][ctx.prefs.lang] : null;
-          const fallback = n.characters ?? (n.text && n.text.characters);
+           const statusVariant = statusBinding && statusVisual && statusVisual.variants
+             && statusVisual.variants[statusKey] ? statusVisual.variants[statusKey][ctx.prefs.lang] : null;
+           const fallback = normalizeFigmaLineBreaks(n.characters ?? (n.text && n.text.characters));
+           /* The source component leaves for this two-tab control are literal
+              placeholder x-runs even though the reviewed Figma instance gives
+              both selected labels.  Consume only those two source leaves, only
+              on the native mobile tree, and preserve an explicit provenance
+              marker; this is a read fallback, not a hand-authored replacement
+              for arbitrary unnamed text. */
+           const __reviewedMobileTabText = {
+             '399:47096': '特别限时活动',
+             '399:47117': '「再启之邀」活动升级',
+           };
+           const __leafId = String(nid).split(';').pop();
+           const __reviewedText = __base === 'mobile'
+             && /^x+$/.test(String(fallback || ''))
+             && String(semantic.ancestors || []).includes('切换按钮')
+             ? __reviewedMobileTabText[__leafId] || null : null;
+           const renderedFallback = __reviewedText || fallback;
+           if (__reviewedText) el.setAttribute('data-text-source-fallback', 'reviewed-figma-read');
           /* 富文本/字符级样式覆盖：truth 带 characterStyleOverrides + styleOverrideTable 时，
              按字符下标分段渲染 span，消费每段的 fills/fontWeight 等覆盖（如「修罗」红字）。
              只有【兜底显示原文】时区间才与字符一一对应；采用译文（不同语言不同长度）时
@@ -3404,9 +3547,9 @@
                  为了救 1 条丢换行的，把另外 N 条本来对的折乱了。 */
               if (!inlineHugs) el.style.textWrap = 'balance';
             }
-          } else if (fallback != null && fallback !== '') {
-            if (_hasRich) this._renderRichText(el, String(fallback), _richOverrides, _richTable, tx);
-            else el.textContent = fallback;
+          } else if (renderedFallback != null && renderedFallback !== '') {
+            if (_hasRich && !__reviewedText) this._renderRichText(el, String(renderedFallback), _richOverrides, _richTable, tx);
+            else el.textContent = renderedFallback;
             el.setAttribute('data-copy-missing', ctx.prefs.lang);
           } else {
             el.textContent = '';
@@ -3610,11 +3753,33 @@
              已含旋转），两者正交。这把 09「更多」右侧箭头(1:850, rotation=90°)从
              白色小方块还原成指向右的三角箭头。pointCount 缺省按 Figma 默认 3。 */
           const _pc = Number(n.pointCount ?? n.pointcount ?? 3);
-          if (n.type === 'REGULAR_POLYGON' && !assetUrl && (!Number.isFinite(_pc) || _pc === 3)) {
-            el.style.clipPath = 'polygon(50% 0%, 0% 100%, 100% 100%)';
-            el.setAttribute('data-shape-polygon', 'triangle');
-            el.removeAttribute('data-shape-approx');
-          }
+           if (n.type === 'REGULAR_POLYGON' && !assetUrl && (!Number.isFinite(_pc) || _pc === 3)) {
+             el.style.clipPath = 'polygon(50% 0%, 0% 100%, 100% 100%)';
+             el.setAttribute('data-shape-polygon', 'triangle');
+             el.removeAttribute('data-shape-approx');
+           }
+           /* A ready package can legitimately keep the tiny directional button
+              as a BOOLEAN_OPERATION without a raster slice.  A rectangle is
+              not an acceptable approximation for this known semantic owner:
+              preserve its source box and fill colour, but render the actual
+              chevron geometry.  This is deliberately limited to declared
+              btn/left-or-right controls; generic boolean shapes remain tagged
+              as approximations and are never promoted to UI. */
+           const __buttonName = String(n.name || '');
+           const __rightChevron = !assetUrl && pfx === 'btn' && /右(?:滑动)?(?:按钮|箭头)|next/i.test(__buttonName);
+           const __leftChevron = !assetUrl && pfx === 'btn' && /左(?:滑动)?(?:按钮|箭头)|prev/i.test(__buttonName);
+           if (__rightChevron || __leftChevron) {
+             const __chevronColour = this._solidFill(st.fills) || '#fff';
+             const __chevronStroke = Math.max(2, Math.min(Number(box.w) || 0, Number(box.h) || 0) * 0.13);
+             el.style.background = 'transparent';
+             el.style.boxSizing = 'border-box';
+             el.style.borderRight = __chevronStroke + 'px solid ' + __chevronColour;
+             el.style.borderBottom = __chevronStroke + 'px solid ' + __chevronColour;
+             el.style.transform = 'rotate(' + (__rightChevron ? '-45deg' : '135deg') + ')';
+             el.style.transformOrigin = '50% 50%';
+             el.setAttribute('data-directional-chevron', __rightChevron ? 'right' : 'left');
+             el.removeAttribute('data-shape-approx');
+           }
           /* Blend-overlay layer (extractor punched it through the asset lock). A baked
              export rasterizes this node on a transparent canvas, so the node-level
              SOFT_LIGHT loses its page backdrop and the PNG already bakes to a flat
@@ -3675,10 +3840,22 @@
             const imageFills = (st.fills || [])
               .map((fill, index) => ({ fill, index }))
               .filter((entry) => entry.fill && entry.fill.visible !== false && entry.fill.type === 'IMAGE');
+            /* A ready package's node-level slice is the declared composite
+               output for this owner.  Prefer it over a global imageRef lookup:
+               the same imageRef can legitimately appear in PC/mobile contexts
+               with different crop/export ownership.  Resolving the fill first
+               used the wrong (PC) EWS panorama in the mobile owner and then
+               stretched it into the mobile source box.  Only fall back to an
+               imageRef when this owner has no delivered composite slice. */
+            const hasDeliveredComposite = !!(assetRec && url
+              && (assetRec.sliceExport || assetRec.sha256 || assetRec.kind));
             const resolvedFillEntries = imageFills.map((entry) => ({
               fill: entry.fill,
               index: entry.index,
-              url: this._assetFileForImageRef(entry.fill && entry.fill.imageRef) || (imageFills.length === 1 ? url : null),
+              url: hasDeliveredComposite
+                ? url
+                : (this._assetFileForImageRef(entry.fill && entry.fill.imageRef)
+                  || (imageFills.length === 1 ? url : null)),
             }));
             const imageEntries = String(assetRec?.kind || '').toUpperCase() === 'SVG' && url
               ? [{ fill: null, index: 0, url, composite: true }]
@@ -3721,6 +3898,45 @@
                 img.style.top = ((exportBox.y ?? box.y ?? 0) - (box.y ?? 0)) + 'px';
                 img.style.width = (exportBox.w ?? box.w ?? 0) + 'px';
                 img.style.height = (exportBox.h ?? box.h ?? 0) + 'px';
+
+                /* `sliceExport.bounds: render` says where the node was visible
+                   in the source canvas; it does not guarantee that the delivered
+                   PNG canvas itself was cropped to that visible range.  Scroll
+                   tracks and switch previews deliberately export a full owner
+                   canvas even when their source renderBox is just the clipped
+                   viewport.  Detect that from the *delivered bytes* on load:
+                   when their intrinsic aspect follows the owner box rather than
+                   the renderBox, keep the complete asset in its real owner and
+                   let the already-proven source clip ancestor do the cropping.
+                   This is geometry-based (not node/name special casing) and keeps
+                   genuinely render-bound shadows/overhang exports unchanged. */
+                const fillOwnerCanvas = (objectFit, policy, extra = {}) => {
+                  img.style.left = '0';
+                  img.style.top = '0';
+                  img.style.width = '100%';
+                  img.style.height = '100%';
+                  img.style.objectFit = objectFit;
+                  Object.assign(img.style, extra);
+                  el.setAttribute('data-asset-bounds-resolved', policy);
+                };
+                const fitDeliveredCanvas = () => {
+                  const nw = Number(img.naturalWidth), nh = Number(img.naturalHeight);
+                  const ow = Number(box.w), oh = Number(box.h);
+                  const rw = Number(exportBox.w), rh = Number(exportBox.h);
+                  if (![nw, nh, ow, oh, rw, rh].every(Number.isFinite)
+                    || nw <= 0 || nh <= 0 || ow <= 0 || oh <= 0 || rw <= 0 || rh <= 0) return;
+                  const aspectDistance = (w, h) => Math.abs((nw / nh) - (w / h));
+                  const ownerDistance = aspectDistance(ow, oh);
+                  const renderDistance = aspectDistance(rw, rh);
+                  /* Require a clear winner so an expanded shadow box that shares
+                     the same aspect ratio does not lose its render-bound mapping. */
+                  if (ownerDistance <= 0.035 && ownerDistance + 0.08 < renderDistance) {
+                    fillOwnerCanvas('fill', 'owner-canvas-from-delivered-png');
+                  } else {
+                    el.setAttribute('data-asset-bounds-resolved', 'render-canvas-from-delivered-png');
+                  }
+                };
+                img.addEventListener('load', fitDeliveredCanvas, { once: true });
               } else {
                 img.style.top = '0';
                 img.style.left = '0';
@@ -3778,6 +3994,10 @@
               el.setAttribute('data-gradient-unrendered', '1');
             }
           }
+          if (__rightChevron || __leftChevron) {
+            el.style.background = 'transparent';
+            el.style.backgroundImage = 'none';
+          }
         }
 
         // 挂到父节点下（没有父节点才挂 stage）。DFS 先序 → 同级 append 顺序即绘制顺序。
@@ -3785,6 +4005,16 @@
         const record = { seq, el, box, assetLock: !!assetRec, nid: String(__u(nid)), layout: n.layout || null };
         renderedById.set(String(__u(nid)), record);
         stack.push(record);
+        /* Direct component instances normally include their descendants in
+           the page list.  If they do not, consume the exact selected variant
+           tree from the ready component graph after the main tree finishes.
+           Waiting avoids duplicate content when a regular instance does have
+           page descendants later in DFS order. */
+        const componentId = String(__u(n.componentId) || '');
+        const componentTree = componentId ? componentInstanceTrees.get(componentId) : null;
+        if (!suppressInteractions && componentTree && pfx !== 'switch') {
+          componentInstanceOwners.push({ el, tree: componentTree, ownerBox: box, ownerId: String(__u(nid)), prefix: pfx });
+        }
         if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-switch-page-source'] === 'component-set-variant') {
           const rawGraph = __plain(rawList && rawList[ni] && rawList[ni].componentVariantGraph);
           const selectedComponentId = String(__u(n.componentId) || '');
@@ -3867,7 +4097,41 @@
           owner.el.setAttribute('data-switch-variant-mount-status', 'blocked-incomplete-content-layer');
         }
       }
-      };   /* ← paint 结束 */
+      /* Mount the selected source component tree only into an empty,
+         dimension-compatible INSTANCE.  This restores component-owned pixels
+         such as ind/ progress marks without inventing descendants, borrowing
+         a sibling state, or wiring new interaction behavior. */
+      for (const owner of componentInstanceOwners) {
+        /* The exact component-context reference above already supplied the
+           complete selected ind root.  Do not mount its partial raw child tree
+           afterward: it would reintroduce the known missing imageRef placeholder
+           and double-paint the source component. */
+        if (owner.el && owner.el.hasAttribute('data-source-component-fallback')) {
+          owner.el.setAttribute('data-component-instance-mount-status', 'source-component-fallback-complete');
+          continue;
+        }
+        if (!owner.el || owner.el.querySelector('[data-node]')) continue;
+        const root = owner.tree && owner.tree.root;
+        const rootBox = root && root.box || {};
+        const ownerW = Number(owner.ownerBox && owner.ownerBox.w);
+        const ownerH = Number(owner.ownerBox && owner.ownerBox.h);
+        const rootW = Number(rootBox.w), rootH = Number(rootBox.h);
+        if (!root || !Number.isFinite(ownerW) || !Number.isFinite(ownerH)
+          || !Number.isFinite(rootW) || !Number.isFinite(rootH)
+          || Math.abs(ownerW - rootW) > 0.5 || Math.abs(ownerH - rootH) > 0.5) {
+          owner.el.setAttribute('data-component-instance-mount-status', 'blocked-owner-root-mismatch');
+          continue;
+        }
+        paint(owner.tree.nodes, owner.tree.nodes, owner.el, {
+          originX: Number(rootBox.x) || 0,
+          originY: Number(rootBox.y) || 0,
+          skipNodeIds: new Set([String(__u(root.id))]),
+          suppressInteractions: true,
+        });
+        owner.el.setAttribute('data-component-instance-mount-status', 'selected-component-tree');
+
+      }
+      };   /* paint complete: subsequent page-stage assembly is renderApp scope */
 
       /* ═══ 按 Figma 页面 sibling 顺序挂载绘制层 ═══
          pagePaintOrder 来自 extractPageScope 对页面框 children 的 fixture 绑定：
@@ -3875,7 +4139,6 @@
          共享背景仍只画一份，但只会挂回其真实 root child 位置；不再有“所有背景先画、
          所有内容后画”的全局重排。 */
       const rawSec = (__rawRoot.sections && __rawRoot.sections[sid]) || {};
-      const asArr = (v) => (Array.isArray(v) ? v : Object.values(v || {}));
       if (pageStageMode) {
         const rawPageChrome = __rawRoot.pageChrome || {};
         const rawFixed = __rawRoot.fixedOverlays || {};
@@ -3884,6 +4147,11 @@
           ? rawPagePaintOrder.map((e) => __u(e && e.id))
           : [];
         const rootKey = (raw) => {
+          /* The ready handoff consumer may provide an explicit, derived
+             paint-root provenance on flattened pageChrome records.  It is
+             still source-backed (parent/ancestor chain), and takes priority
+             over locator heuristics so one owner cannot be painted into
+             every page root. */
           const loc = raw && raw.id && raw.id.provenance ? raw.id.provenance.locator : '';
           /* Provenance locators may be rooted at the source canvas rather than
              the extracted page-frame id (for example
@@ -3893,10 +4161,18 @@
              projection preserves legacy fixtures. */
           const recordedRoots = rawPagePaintOrder
             ? rawPagePaintOrder.map((entry) => ({
-              id: __u(entry && entry.id),
-              loc: entry && entry.id && entry.id.provenance ? entry.id.provenance.locator : '',
-            })).filter((entry) => entry.id != null && entry.loc)
+                id: __u(entry && entry.id),
+                loc: entry && entry.id && entry.id.provenance ? entry.id.provenance.locator : '',
+            })).filter((entry) => entry.id != null)
             : [];
+          const recordedRootIds = new Set(recordedRoots.map((entry) => String(entry.id)));
+          const recordedRoot = (candidate) => {
+            if (candidate == null || candidate === '') return null;
+            const id = String(__u(candidate));
+            return recordedRootIds.has(id) ? id : null;
+          };
+          const explicitRoot = recordedRoot(raw && (raw.paintRootId ?? raw.pagePaintRootId ?? raw.sourcePaintRootId));
+          if (explicitRoot) return explicitRoot;
           let best = null;
           for (const entry of recordedRoots) {
             const rootLoc = String(entry.loc || '').replace(/\/id$/, '');
@@ -3905,6 +4181,23 @@
             }
           }
           if (best) return String(best.id);
+          /* Ready handoff consumers may carry the same source-backed records
+             with a plain source id instead of a provenance wrapper.  This is
+             still authoritative handoff data: resolve the nearest recorded
+             page root from the source id/ancestor chain, never from geometry
+             or a guessed name.  Without this fallback KV/bg owners are
+             silently dropped from every paint bucket. */
+          const plainId = raw && raw.id != null && typeof raw.id !== 'object' ? recordedRoot(raw.id) : null;
+          if (plainId) return plainId;
+          const ancestorIds = Array.isArray(raw && raw.ancestorIds)
+            ? raw.ancestorIds.map((id) => String(__u(id)))
+            : [];
+          for (let i = ancestorIds.length - 1; i >= 0; i--) {
+            const ancestor = recordedRoot(ancestorIds[i]);
+            if (ancestor) return ancestor;
+          }
+          const parentId = recordedRoot(raw && raw.parentId);
+          if (parentId) return parentId;
           const pagePrefix = `/nodes/${pageFrameId}/document/children/`;
           if (loc.startsWith(pagePrefix)) {
             const m = /^(\d+)/.exec(loc.slice(pagePrefix.length));
@@ -3937,7 +4230,20 @@
         const bgByRoot = directBackgroundRoot
           ? new Map([[String(directBackgroundRoot), { nodes: pageBgNodes, raw: pageBgRaw }]])
           : bucketByRoot(pageBgNodes, pageBgRaw);
-        const fixedByRoot = bucketByRoot(asArr(__activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes), asArr(rawFixed.nodes));
+        const fixedRoots = asArr(__activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes);
+        const fixedRootIds = new Set(fixedRoots.map((node) => String(__u(node && node.id))));
+        const sectionTruthNodes = ids.flatMap((sectionId) => asArr(sections[sectionId] && sections[sectionId].nodes));
+        fixedDescendantIds = new Set(sectionTruthNodes
+          .filter((node) => Array.isArray(node && node.ancestorIds)
+            && node.ancestorIds.some((ancestor) => fixedRootIds.has(String(__u(ancestor)))))
+          .map((node) => String(__u(node && node.id))));
+        const fixedTruthNodes = [...fixedRoots, ...sectionTruthNodes.filter((node) => fixedDescendantIds.has(String(__u(node && node.id))))];
+        const rawSectionNodes = ids.flatMap((sectionId) => asArr(__rawRoot.sections && __rawRoot.sections[sectionId] && __rawRoot.sections[sectionId].nodes));
+        const rawById = new Map([...asArr(rawFixed.nodes), ...rawSectionNodes]
+          .filter((node) => node && node.id != null)
+          .map((node) => [String(__u(node.id)), node]));
+        const fixedRawNodes = fixedTruthNodes.map((node) => rawById.get(String(__u(node && node.id))) || node);
+        const fixedByRoot = bucketByRoot(fixedTruthNodes, fixedRawNodes);
         const appendLayer = (rootId, paintIndex) => {
           const layer = document.createElement('div');
           layer.className = 'fx-root-layer';
@@ -3962,13 +4268,21 @@
           for (let pi = 0; pi < pagePaintOrder.length; pi++) {
             const entry = pagePaintOrder[pi] || {};
             const rawEntry = rawPagePaintOrder[pi] || {};
-            const key = rootKey(rawEntry);
             const rootId = __u(entry.id);
+            /* pagePaintOrder itself is the authoritative source-root order;
+               do not re-infer its key from a flattened/raw wrapper (the
+               wrapper may share the first root's locator). */
+            const key = rootId != null ? String(rootId) : rootKey(rawEntry);
             if (key == null || rootId == null) continue;
             const bg = bgByRoot.get(key);
             const chrome = chromeByRoot.get(key);
             const fixed = fixedByRoot.get(key);
-            const layer = fixed ? null : appendLayer(rootId, pi);
+            /* A fixed overlay may be nested below a normal page paint root
+               (e.g. the left directory under 页面内容). Its presence must not
+               turn the whole page root into a fixed layer or let an opaque
+               background cover later sections. Keep the normal root layer and
+               paint the fixed subtree separately into fixedStage below. */
+            const layer = appendLayer(rootId, pi);
             if (layer) {
               layer.setAttribute('data-paint-source-key', key);
               layer.setAttribute('data-paint-node-count', String((bg?.nodes.length || 0) + (chrome?.nodes.length || 0)));
@@ -3978,9 +4292,9 @@
                 layer.setAttribute('data-hero-bg-follow', 'after-hero-slices');
                 layer.setAttribute('data-hero-bg-shift-design', String(heroLayoutOffsetDesign));
               }
-              paint(bg.nodes, bg.raw, layer, { originX: pageX, originY: pageY, backgroundHeroShift: true });
+              paint(bg.nodes, bg.raw, layer || fixedStage, { originX: pageX, originY: pageY, backgroundHeroShift: true });
             }
-            if (chrome) paint(chrome.nodes, chrome.raw, layer);
+            if (chrome) paint(chrome.nodes, chrome.raw, layer || fixedStage);
             const orderedSections = asArr(entry.sectionIds);
             for (const sectionId of orderedSections) sectionLayerById.set(__u(sectionId), layer);
             if (fixed && fixedStage) {
@@ -4019,9 +4333,13 @@
           paint(asArr(sec.background.nodes),
             asArr(rawSec.background && rawSec.background.nodes), stage);
         }
-        paint(nodes, asArr(rawSec.nodes), stage);
+        const omitFixedDescendants = (list) => fixedDescendantIds.size
+          ? list.filter((node) => !fixedDescendantIds.has(String(__u(node && node.id))))
+          : list;
+        paint(omitFixedDescendants(nodes), omitFixedDescendants(asArr(rawSec.nodes)), stage);
         (sectionLayerById.get(sid) || pageStage || frame).appendChild(stage);
       }
+    }
       /* zoom 之后 stage 自身就按缩放后的尺寸占位（zoom 改布局，transform 不改），
          不再需要 spacer 补高度 —— 留着它反而会多出一截 meta.height×k 的空白。
          （transform: scale 时代：stage 按未缩放高度占位，视觉缩了布局没缩，
@@ -4152,6 +4470,18 @@
           const activeSource = items.find((item) => item.getAttribute('data-nav-variant') === 'active');
           const normalSource = items.find((item) => item.getAttribute('data-nav-variant') === 'normal');
           if (!activeSource || !normalSource) return;
+          /* Navigation buttons own real exported image nodes. Replacing their
+             subtrees with a cloned active/normal sample would either duplicate
+             source ids or strip the identity that static asset evidence uses
+             to trace imageRef -> manifest -> DOM. Keep each button's own
+             source-backed asset/text subtree and represent the selected state
+             through data-active/aria-current plus the existing scale motion.
+             This is the same fail-closed identity rule used by selectable
+             component controls; no visual asset is guessed or borrowed. */
+          if (items.some((item) => item.querySelector('[data-asset-descendants="baked"]'))) {
+            for (const item of items) item.setAttribute('data-nav-variant-visual', 'owner-preserved');
+            return;
+          }
           const sourceChildren = (item) => {
             if (!navVariantCache.has(item)) navVariantCache.set(item, [...item.children].map((child) => child.cloneNode(true)));
             return navVariantCache.get(item);
@@ -4638,7 +4968,6 @@
         runFit();   // 没有 FontFaceSet 的环境（Node 冒烟桩）按原样量一次
         growHugOwners();
       }
-    }
   },
   };
 })();

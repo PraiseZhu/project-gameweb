@@ -104,3 +104,26 @@ test('sc-static-copy-figma: zh-CN keeps Figma metrics; official wrap is later Tr
   assert.match(staticDoc, /zh-CN copy/);
   assert.match(staticDoc, /language-generic official-site evidence/);
 });
+
+test('sc-static-text-baseline: source renderBox is retained without a cross-page leading offset', () => {
+  assert.match(renderSrc, /data-render-box-y/);
+  assert.match(renderSrc, /source-renderbox-no-global-offset/);
+  assert.doesNotMatch(renderSrc, /data-half-leading/);
+  assert.doesNotMatch(renderSrc, /tf\.push\('translateY\(' \+ \(_halfLeading\)/);
+});
+
+test('sc-ready-consume-contracts: legal owner mapping without invented visuals', () => {
+  assert.match(renderSrc, /paintRootId/);
+  assert.match(renderSrc, /fixedDescendantIds/);
+  assert.match(renderSrc, /owner-canvas-from-delivered-png/);
+  assert.match(renderSrc, /hasDeliveredComposite/);
+  assert.match(renderSrc, /coordinateGridText/);
+  assert.match(renderSrc, /n\.layout\?\.layoutMode \?\? n\.layoutMode/);
+  assert.match(renderSrc, /normalizeFigmaLineBreaks/);
+  assert.match(renderSrc, /selected-component-tree/);
+  assert.doesNotMatch(renderSrc, /semantic-directional-chevron/);
+  assert.doesNotMatch(renderSrc, /data-indicator-fallback/);
+  assert.doesNotMatch(renderSrc, /左侧导航/);
+  assert.doesNotMatch(renderSrc, /__placeholderButtonTreeRepaired/);
+  assert.doesNotMatch(renderSrc, /render-canvas-preserve-aspect-cover/);
+});

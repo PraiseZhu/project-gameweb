@@ -230,18 +230,26 @@
     var bp = bpOf(w);
     return bp.key === 'mobile' ? 'mobile' : bp.key === 'tablet' ? 'pad' : bp.key === 'desktop' ? 'pc' : null;
   }
+  /* The ready truth classifies desktop as `pc`, while this demo's matrix calls
+     the same choice `desktop`.  Platform clicks must compare canonical values,
+     otherwise Desktop cannot find its 1920px device and leaves the prior phone
+     viewport active. */
+  function canonicalPlat(p) {
+    return p === 'desktop' ? 'pc' : p === 'tablet' ? 'pad' : p === 'phone' ? 'mobile' : p;
+  }
   /* 手动点 plat 档 → 切到该断点的代表设备（视口与稿别不许分叉）。
      没有对应断点的设备组时退到自由状态代表宽（390/768/1920 是区间代表值，不是断点）。 */
   function syncDeviceToPlat(p) {
+    var wanted = canonicalPlat(p);
     for (var i = 0; i < GROUPS.length; i++) {
       var d = GROUPS[i].devices[GROUPS[i].defaultIndex || 0];
-      if (d && d.width && platOfWidth(d.width) === p) {
+      if (d && d.width && canonicalPlat(platOfWidth(d.width)) === wanted) {
         S.groupIdx = i; S.devIdx = GROUPS[i].defaultIndex || 0;
         S.freeW = d.width; S.freeH = d.height;
         return;
       }
     }
-    var rep = p === 'mobile' ? [390, 844] : p === 'pad' ? [768, 1024] : [1920, 1080];
+    var rep = wanted === 'mobile' ? [390, 844] : wanted === 'pad' ? [768, 1024] : [1920, 1080];
     S.devIdx = -1; S.freeW = rep[0]; S.freeH = rep[1];
   }
 
@@ -1383,7 +1391,13 @@
        切设备（syncDeviceToPlat），切设备/拉伸走到这里统一重算。仅当矩阵真有该选项才写。 */
     var platOpts = (((cfg.matrix || {}).plat || {}).options) || [];
     var curPlat = platOfWidth(viewport().w);
-    if (curPlat && platOpts.some(function (o) { return o.v === curPlat; })) S.prefs.plat = curPlat;
+    /* Keep the matrix's public value in the URL/prefs, but compare it through
+       the same canonical mapping used by syncDeviceToPlat.  Without this, a
+       1920px PC viewport derives `pc`, cannot match matrix value `desktop`,
+       and retains the previous `mobile` preference so the renderer selects the
+       phone composition at desktop geometry. */
+    var curOpt = curPlat && platOpts.find(function (o) { return canonicalPlat(o.v) === canonicalPlat(curPlat); });
+    if (curOpt) S.prefs.plat = curOpt.v;
     /* 拖拽轻路径：控制栏两行 DOM 与 viewport 宽度无关（只有读数/滑块值/设备名下拉文本变），
        拖拽中跳过 buildBar1/buildBar2 的全量 innerHTML 重建，只 syncToolbar 同步控件值/禁用态。
        松手后 endResizeDrag 已把 _resizeDragActive 清掉，这里走完整重建。 */

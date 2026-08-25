@@ -9,6 +9,7 @@ import {
   adaptInventoryToTruthShape,
   inventoryAcceptanceReport,
   inventoryBacklinkReport,
+  collectSkippedNodeIds,
 } from "../lib/figma-inventory-v2.mjs";
 
 const FILE_KEY = "synthetic-file-key";
@@ -358,5 +359,51 @@ test("visual state candidates are retained but never authorized by inventory ada
   const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
   assert.equal(adapted.visualStateCandidates[0].visualStateDiscovered, true);
   assert.equal(adapted.visualStateCandidates[0].transitionAuthorized, false);
+});
+
+test("adaptInventoryToTruthShape omits skipped attachment and page nodes from paint trees (issue #34)", () => {
+  const inv = fixture();
+  inv.nodes.push({
+    id: "100:99",
+    scope: "page",
+    type: "FRAME",
+    name: "slice-child",
+    parentId: PAGE_ID,
+    orderKey: "0.9",
+    status: "skipped",
+    why: "slice-child",
+  });
+  inv.attachments.modals[0].nodes = [
+    { id: "100:20", name: "modal/video", status: "determined" },
+    { id: "100:21", name: "art-fragment", status: "skipped", why: "art-fragment" },
+  ];
+  inv.attachments.componentSets[0].variants[0].nodes = [
+    { id: "100:31", name: "Property 1=a", status: "determined" },
+    { id: "100:31-skip", name: "inner", status: "skipped", why: "invisible" },
+  ];
+  inv.attachments.components[0].nodes = [
+    { id: "100:40", name: "bg/pc", status: "determined" },
+    { id: "100:41", name: "bg-part", status: "skipped", why: "slice-child" },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const skipped = collectSkippedNodeIds(inv);
+  assert.equal(skipped.has("100:99"), true);
+  assert.equal(skipped.has("100:21"), true);
+  assert.equal(skipped.has("100:31-skip"), true);
+  assert.equal(skipped.has("100:41"), true);
+  const painted = [
+    ...adapted.pageChrome.nodes.map((node) => node.id),
+    ...adapted.fixedOverlays.nodes.map((node) => node.id),
+    ...adapted.pagePaintOrder.map((entry) => entry.id),
+    ...adapted.modals.flatMap((modal) => modal.nodes.map((node) => node.id)),
+    ...adapted.componentVariantGraph.componentSets.flatMap((set) => set.variants.flatMap((variant) => variant.nodes.map((node) => node.id))),
+    ...adapted.componentVariantGraph.components.flatMap((component) => component.nodes.map((node) => node.id)),
+  ];
+  for (const id of ["100:99", "100:21", "100:31-skip", "100:41"]) {
+    assert.equal(painted.includes(id), false, id);
+  }
+  assert.deepEqual(adapted.modals[0].nodes.map((node) => node.id), ["100:20"]);
+  assert.deepEqual(adapted.componentVariantGraph.componentSets[0].variants[0].nodes.map((node) => node.id), ["100:31"]);
+  assert.deepEqual(adapted.componentVariantGraph.components[0].nodes.map((node) => node.id), ["100:40"]);
 });
 

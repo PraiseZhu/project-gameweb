@@ -108,14 +108,19 @@ test("from-handoff omits skipped nodes from draw-only and paint mapping (issue #
   assert.equal(result.drawOnly.mobile, 0);
 });
 
-test("from-handoff reports skipped attachment ids that collide with painted output", () => {
+test("from-handoff omits skipped attachment children from paint output (issue #34)", () => {
   const dir = mkdtempSync(join(tmpdir(), "from-handoff-skipped-attachment-"));
   const pcDoc = sample("1:1");
   const mobileDoc = sample("2:2");
   pcDoc.attachments.components = [
     {
       id: "1:1-component",
-      nodes: [{ id: "1:1-bg", status: "skipped", why: "attachment-child" }],
+      status: "determined",
+      name: "bg/pc",
+      nodes: [
+        { id: "1:1-bg", status: "determined", name: "bg/pc" },
+        { id: "1:1-skip", status: "skipped", why: "attachment-child" },
+      ],
     },
   ];
   rebuildInventoryIndexes(pcDoc);
@@ -128,9 +133,8 @@ test("from-handoff reports skipped attachment ids that collide with painted outp
   });
 
   const result = runFromHandoff(pack.outDir);
-  assert.equal(result.ok, false);
-  assert.ok(result.consume.pc.problems.some((problem) => problem.includes("skipped") && problem.includes("1:1-bg")));
-  assert.ok(result.problems.some((problem) => problem.includes("skipped") && problem.includes("1:1-bg")));
+  assert.equal(result.ok, true, (result.problems || []).join("\n"));
+  assert.equal(result.consume.pc.skippedPainted, false);
 });
 
 test("from-handoff accepts packed ready and does not wire unknown (issue #31 F001)", () => {

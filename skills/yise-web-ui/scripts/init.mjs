@@ -48,16 +48,17 @@ const chromeJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/qa-chrome.j
 const adapterJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/qa-component-adapter.js'), 'utf8').replace(/\r\n/g, '\n'));
 const figmaRenderJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/figma-render.js'), 'utf8').replace(/\r\n/g, '\n'));
 const figmaChromeJs = inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/figma-chrome.js'), 'utf8').replace(/\r\n/g, '\n'));
-const defaultDevicesJson = readFileSync(join(SKILL_ROOT, 'templates/default-devices.json'), 'utf8').trim();
+const defaultDevicesJson = readFileSync(join(SKILL_ROOT, 'templates/default-devices.json'), 'utf8').replace(/\r\n/g, '\n').trim();
 
 /** 只替换 index.html 里某个标记段(chrome / adapter 共用一套语义)。 */
 function replaceMarkedBlock(marker, code, flag) {
   const indexPath = join(dir, 'index.html');
   if (!existsSync(indexPath)) failJson(`${flag} 需要已存在的 index.html:${indexPath}`);
-  // 统一 LF(与 figma-inline 同政策):component-shell.html 是 CRLF,标记段正则要求 `*/\n`,
-  // 不归一化的话组件模式 --update-chrome / --update-adapter 会永远报「缺标记段」。
-  const html = readFileSync(indexPath, 'utf8').replace(/\r\n/g, '\n');
-  const re = new RegExp(`(\\/\\* ${marker}_BEGIN[\\s\\S]*?\\*\\/\\n)[\\s\\S]*?(\\n\\/\\* ${marker}_END \\*\\/)`);
+  /* Match CRLF or LF in place. Do not normalize the rest of the file: a
+     CRLF device table in #qa-devices must keep its original bytes. The
+     replacement body stays LF because the inlined templates are LF. */
+  const html = readFileSync(indexPath, 'utf8');
+  const re = new RegExp(`(\\/\\* ${marker}_BEGIN[\\s\\S]*?\\*\\/\\r?\\n)[\\s\\S]*?(\\r?\\n\\/\\* ${marker}_END \\*\\/)`);
   if (!re.test(html)) failJson(`index.html 缺 ${marker}_BEGIN/END 标记段——不是 init.mjs 生成的结构(或不是组件模式 demo),手动升级`);
   writeFileSync(indexPath, html.replace(re, `$1${code}$2`));
   console.log(JSON.stringify({ ok: true, updated: indexPath, block: marker }));

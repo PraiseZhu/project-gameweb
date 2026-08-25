@@ -33,7 +33,7 @@ logic.
 
 | Rule | Meaning |
 |---|---|
-| Platform from width | `0–750` mobile, `751–1023` pad, `≥1024` pc. Kit breakpoints stay the source; this is the default map. |
+| Platform from width | `0–750` mobile, `751–1023` pad, `≥1024` pc. QA device groups are the kit PC / iPhone / Android subset; fold and iPad groups are omitted. |
 | Composition base | Native mobile/pad trees win when present. Pad without a pad tree is `pad-uses-pc-tree`. Never invent a third layout. |
 | Light drag | Continuous edge-drag / slider may skip content rebuild only on the same composition base. Language, device, window resize, and W/H box stay on the full path. |
 | Preview 1:1 | Default `scale=1`. Decorative padding yields before shrink. A truly smaller window may scale, and that scale must be reported. |

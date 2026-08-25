@@ -62,7 +62,7 @@ DOM node count 不是完成证据。必须结合 Chrome 截图、bounding rect�
 
 | 项 | 要求 |
 |---|---|
-| 输入 | `spec.adaptation`、`fixtures/device-presets.json`、真实 Figma frame、truth、当前 viewport。 |
+| 输入 | `spec.adaptation`、`fixtures/device-presets.json`（必须与 Skill `templates/default-devices.json` 一致：kit 的 PC / iPhone / Android 子集，不含折叠屏和 iPad）、真实 Figma frame、truth、当前 viewport。 |
 | 命令 | `node scripts/device-presets-check.mjs --demo <demo>`；Chrome smoke/browser rail gate；必要时用 Playwright 做 breakpoint 和 scroll probe。 |
 | 输出 | 设备 preset、`data-render-plat` / `data-render-base`、viewport 截图、scroll 证据。 |
 | 证据 | preset 来自 fixture 或明确 fallback；PC / phone / tablet 的 frame id、尺寸、hash；首屏和滚动后的 rect。 |
