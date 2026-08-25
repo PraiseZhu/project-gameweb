@@ -18,44 +18,57 @@
 
 ## 做页前交接：inventory/v2
 
-当前面向人的主入口是“已规范货架链接 → 抓取整棵货架 → 整理/自验 → `inventory/v2` ready → ready 交接包”。未规范稿不在本仓，去 `projects/project-unnamed-inventory`。本链路不开插件、不写回 Figma。
+当前面向人的主入口是触发词 `出清单`：已规范货架链接 → 抓取整棵货架 → 整理/自验 → `inventory/v2` ready → ready 交接包 → 做页 `figma:from-handoff` 吃包闸门绿才交付。未规范稿不在本仓，去 `projects/project-unnamed-inventory`。本链路不开插件、不写回 Figma。命令一律从仓库根起跑，每步自己 `cd`。
 
 1. 人提供带 `node-id` 的 Figma 货架链接。链接的 `node-id` 始终指向整棵
    画布货架，覆盖页面本体、同货架 modal 和组件定义；不要只给某个页面链接。
-2. 在 `standards/figma-naming/tool/` 按稿种选命令：
+2. 从仓库根进入 `standards/figma-naming/tool/` 按稿种选命令：
 
    已规范命名稿（默认 ready）：
 
    ```bash
-   npm run inventory -- \
-     --file "<整棵画布货架的 Figma 链接>" \
-     --page <pc 或 mobile 页 id>
+   cd standards/figma-naming/tool
+   npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc 或 mobile 页 id>
    ```
 
    未规范稿不要在本仓跑。CLI 会拒绝 `--status draft` / `inventory-unnamed-*`。
 
-   例如规范稿：
-
-   ```bash
-   npm run inventory -- \
-     --file "https://www.figma.com/design/<fileKey>/...?node-id=392-18375" \
-     --page 392:24190
-   ```
+   链接形如 `https://www.figma.com/design/<fileKey>/...?node-id=392-18375`，`--page` 另给 `392:24190` 这类页 id。
 
    链接里的 `node-id` 是拉稿根；`--page` 只在已拉取的树中选择页面，不改变拉稿范围。
 3. 命令自验通过后产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 的
    `schema` 为 `inventory/v2`。本仓 `status` 为 `ready`。清单覆盖页面本体、同货架 modal、页面实际引用的组件集/
    完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持为对应关系上的 `unknown`。
-4. 运行可视化核对页：
+4. 核对页可选。人没要求就跳过：
 
    ```bash
+   cd standards/figma-naming/tool
    npm run inventory:review
    ```
 
    UI 固定在仓内 `inventory-review/index.html`，不要写 `_tmp`。人可选核对身份和弹窗入口，`unknown` 必须显式保留；保存 reviewed 清单不改变
    `status: "ready"`。移动端核对使用 `?inv=inventory-392-25877.json`。
 
-已规范稿两端都 `ready` 后：`handoff:pack`（不要 `--allow-green-draft`）。包里带 `pageBox`/`parentBox`、`sameModules`、切图契约 `sliceExport`。交接包不导 png；做页按契约自己导，不猜图层名，不按节点框重导。
+5. 已规范稿两端都 `ready` 后打交接包（不要 `--allow-green-draft`）：
+
+   ```bash
+   cd standards/figma-naming/tool
+   npm run handoff:pack -- \
+     --pc ../../../_tmp/inventory-<pc>.json \
+     --mobile ../../../_tmp/inventory-<mobile>.json \
+     --out ../../../_tmp/out/handoff-<page>
+   ```
+
+   包里带 `pageBox`/`parentBox`、`sameModules`、切图契约 `sliceExport`。交接包不导 png；`manifest.assets.pc/mobile.packed` 为 `false` 仍可 ready。做页按契约自己导，不猜图层名，不按节点框重导。
+
+6. 交付终点是做页吃包闸门（只验包，不写 HTML）：
+
+   ```bash
+   cd skills/yise-web-ui
+   npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
+   ```
+
+   退出码 0，且 stdout 顶层 `ok/kind/ready` 为 true/`ready`/true；`consume.pc.unknownNotWired` 与 `consume.mobile.unknownNotWired` 都为 true。没有顶层 `unknownNotWired`。闸门绿才算交付。
 
 做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
 完整组件变体树和 modal 附件本体。摆位置用 `pageBox` / `parentBox`；`fix/` 钉视口；切图按 `sliceExport`（墨迹框、1 倍、png）由做页自导，交接包不带 PNG。`unknown` 节点只画样子，不赋交互；`unknown` 的

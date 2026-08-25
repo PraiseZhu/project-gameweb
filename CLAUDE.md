@@ -37,10 +37,18 @@ Project Gameweb/
 
 **落位规则**：新增一个游戏宣发页 skill → 放 `skills/<name>/`；新增一份跨项目共用的规范或工具链 → 放 `standards/<name>/`。判断不清时，看它是否只服务于单个游戏：是则进 `skills/`，否则进 `standards/`。未规范出清单不进本仓。
 
+## 触发词扫描（本仓）
+
+| 规则 | 直接触发词 | 动作 |
+|------|-----------|------|
+| 已规范稿出清单 | 出清单 | 立即执行 `standards/figma-naming/SKILL.md`，不要先问要不要跑 |
+
+用户丢带 `node-id` 的已规范货架链接、且要交给做页时，同样直接跑该 skill。未规范链接不停在本仓硬编，指向 `projects/project-unnamed-inventory`。
+
 ## 协作约定
 
-- **本仓链路**：已规范设计稿 → 脚本抓 inventory/v2 ready → agent 按 skill 核前缀/结构并打 ready 交接包 → 做页 skill 吃 ready 包做到 HTML。
-- **Figma 命名稿交接**：用户提供带 `node-id` 的已规范货架链接后，执行 `standards/figma-naming/SKILL.md`。默认 `npm run inventory` 出 `status: ready`。agent 核一遍后 `handoff:pack` 打 ready 包。不写回 Figma，不用插件交接。
+- **本仓链路**：已规范设计稿 → 脚本抓 inventory/v2 ready → agent 按 skill 核前缀/结构并打 ready 交接包 → `figma:from-handoff` 吃包闸门绿才交付。做页 skill 只吃 ready 包做到 HTML。
+- **Figma 命名稿交接**：命中 `出清单` 后，执行 `standards/figma-naming/SKILL.md`。默认 `npm run inventory` 出 `status: ready`。agent 核一遍后 `handoff:pack` 打 ready 包，再跑做页 `figma:from-handoff`。闸门绿才算交付。不写回 Figma，不用插件交接。
 - **做页消费边界**：做页只吃 ready。unknown 只画不赋交互。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
 - **未规范稿**：丢未规范链接时停，去 `projects/project-unnamed-inventory`。本仓 CLI 拒绝 `--status draft` / `inventory-unnamed-*` / `--allow-green-draft`。
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
