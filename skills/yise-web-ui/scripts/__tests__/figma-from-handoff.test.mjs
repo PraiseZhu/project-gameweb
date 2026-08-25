@@ -118,7 +118,7 @@ test("from-handoff omits skipped attachment children from paint output (issue #3
       status: "determined",
       name: "bg/pc",
       nodes: [
-        { id: "1:1-bg", status: "determined", name: "bg/pc" },
+        stampReadyFields({ id: "1:1-bg", status: "determined", name: "bg/pc", role: "bg", behavior: "slice" }),
         { id: "1:1-skip", status: "skipped", why: "attachment-child" },
       ],
     },

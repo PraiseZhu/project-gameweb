@@ -70,7 +70,7 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 
 脚本已经按规范前缀编好 ready。agent 只核：
 
-- determined 非 copy 的 `name` 以 `role/` 开头
+- determined 非 copy 的 `name` 以 `role/` 开头；`via=structure` 的 mix 自动拆 `img/` / `scroll/` 例外，看 `role` + `sliceExport`；BOOLEAN `btn/` 看 click + `sliceExport`
 - `sections` / `overlays` / `backgrounds` / `modules` 字段在；mobile 的 `overlays` 可以是空数组
 - unknown 保持 unknown，不猜交互
 - 两端 page id 不同、fileKey 相同

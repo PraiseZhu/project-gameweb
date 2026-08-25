@@ -30,3 +30,25 @@ test('unlabelled image fill can still be exported by fill evidence without becom
   assert.deepEqual(picks.map((pick) => pick.nodeId), ['image-fill']);
   assert.match(picks[0].reason, /image/);
 });
+
+test('BOOLEAN btn with sliceExport is sliced without an img/ prefix', () => {
+  const picks = pickSliceNodes(truthWith([
+    {
+      id: '395:35371',
+      type: 'BOOLEAN_OPERATION',
+      name: 'btn/右滑动箭头',
+      box: { x: 0, y: 0, w: 16, h: 16 },
+      sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '395-35371.png' },
+      style: { fills: [{ type: 'SOLID', visible: true }] },
+    },
+    {
+      id: 'plain-btn',
+      type: 'FRAME',
+      name: 'btn/播放',
+      box: { x: 60, y: 0, w: 80, h: 32 },
+      style: { fills: [{ type: 'SOLID', visible: true }] },
+    },
+  ]));
+  assert.deepEqual(picks.map((pick) => pick.nodeId), ['395:35371']);
+  assert.match(picks[0].reason, /sliceExport/);
+});

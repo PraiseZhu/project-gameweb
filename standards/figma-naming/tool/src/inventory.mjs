@@ -17,7 +17,7 @@ import {
   determinedReadyFieldProblems,
 } from "../../spec/inventory.mjs";
 import { parseName } from "./parse.mjs";
-import { namePatternOf } from "./lint.mjs";
+import { hasImageFill, namePatternOf } from "./lint.mjs";
 
 const UNNAMED_REPO = "projects/project-unnamed-inventory";
 export const UNNAMED_REDIRECT =
@@ -186,11 +186,37 @@ function sliceFileName(nodeId) {
 }
 
 function sliceExportOf(node, role) {
-  if (!isSlicePrefix(role)) return undefined;
+  if (!isSlicePrefix(role) && !booleanBtnVisual(node, role)) return undefined;
   return {
     ...SLICE_EXPORT,
     file: sliceFileName(node.id),
   };
+}
+
+function boxOverflows(inner, viewport) {
+  if (!inner || !viewport) return false;
+  const left = viewport.x;
+  if (!Number.isFinite(left) || !Number.isFinite(viewport.w) || viewport.w <= 0) return false;
+  return inner.x < left - 0.5 || inner.x + inner.w > left + viewport.w + 0.5;
+}
+
+function mixScrollViewport(node, parent) {
+  if (node.type !== "FRAME" && node.type !== "GROUP") return false;
+  if (node.clipsContent !== true) return false;
+  const kids = node.children || [];
+  if (kids.some((child) => parseName(child.name).prefix === "scroll")) return false;
+  const viewport = boxOf(node);
+  if (kids.some((child) => boxOverflows(boxOf(child), viewport))) return true;
+  const parentBox = parent ? boxOf(parent) : null;
+  return Boolean(parentBox && boxOverflows(viewport, parentBox));
+}
+
+function booleanBtnVisual(node, role) {
+  return role === "btn" && node.type === "BOOLEAN_OPERATION";
+}
+
+function mixImageLeaf(node) {
+  return hasImageFill(node) && !(node.children || []).length;
 }
 
 function styleOf(node) {
@@ -355,12 +381,6 @@ function serializeTree(root, scope, counts, pageBox = null) {
   const walk = (node, parent, orderKey, ctx) => {
     const parsed = parseName(node.name);
     const prefix = parsed.prefix;
-    const nextCtx = {
-      underRef: ctx.underRef || prefix === "ref",
-      underHidden: ctx.underHidden || node.visible === false,
-      underSlice: ctx.underSlice || isSlicePrefix(prefix),
-      ancestors: [...ctx.ancestors, { id: node.id, name: node.name, type: node.type }],
-    };
 
     let status;
     let role = null;
@@ -377,11 +397,23 @@ function serializeTree(root, scope, counts, pageBox = null) {
       status = "determined"; role = prefix; via = "prefix"; params = paramsOf(parsed);
     } else if (node.type === "TEXT" && !parsed.unknownPrefix) {
       status = "determined"; role = "copy"; via = "prefix";
+    } else if (ctx.underMix && !prefix && mixScrollViewport(node, parent)) {
+      status = "determined"; role = "scroll"; via = "structure";
+    } else if (ctx.underMix && !prefix && mixImageLeaf(node)) {
+      status = "determined"; role = "img"; via = "structure";
     } else if (!prefix && namePatternOf(node.name) === "figma-default" && node.type !== "TEXT") {
       status = "skipped"; why = "art-fragment";
     } else {
       status = "unknown";
     }
+
+    const nextCtx = {
+      underRef: ctx.underRef || prefix === "ref",
+      underHidden: ctx.underHidden || node.visible === false,
+      underSlice: ctx.underSlice || isSlicePrefix(prefix) || (status === "determined" && (isSlicePrefix(role) || booleanBtnVisual(node, role))),
+      underMix: ctx.underMix || prefix === "mix",
+      ancestors: [...ctx.ancestors, { id: node.id, name: node.name, type: node.type }],
+    };
 
     counts[status] += 1;
     const box = boxOf(node);
@@ -435,7 +467,9 @@ function serializeTree(root, scope, counts, pageBox = null) {
     if (text) entry.text = text;
     if (status === "determined") {
       entry.role = role;
-      entry.label = parsed.body || (role === "copy" ? (text?.characters ?? "") : "");
+      entry.label = parsed.body
+        || (role === "copy" ? (text?.characters ?? "") : "")
+        || (via === "structure" && (role === "img" || role === "scroll") ? (node.name || node.id) : "");
       entry.params = params;
       entry.behavior = behaviorOf(role, params);
       entry.via = via;
@@ -455,7 +489,7 @@ function serializeTree(root, scope, counts, pageBox = null) {
     nodes.push(entry);
     (node.children || []).forEach((child, index) => walk(child, node, `${orderKey}.${index}`, nextCtx));
   };
-  walk(root, null, "0", { underRef: false, underHidden: false, underSlice: false, ancestors: [] });
+  walk(root, null, "0", { underRef: false, underHidden: false, underSlice: false, underMix: false, ancestors: [] });
   return nodes;
 }
 

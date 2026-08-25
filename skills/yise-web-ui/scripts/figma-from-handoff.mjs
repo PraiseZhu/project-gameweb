@@ -47,19 +47,19 @@ function paintedIdsOf(adapted) {
     ...adapted.pagePaintOrder.flatMap((entry) => [entry.id, ...(entry.sectionIds || [])]),
   ];
   for (const modal of adapted.modals) {
-    ids.push(modal.id);
+    if (modal.id) ids.push(modal.id);
     collectNodeTreeIds(modal.nodes, ids);
   }
   for (const set of adapted.componentVariantGraph.componentSets) {
-    ids.push(set.componentSetId);
+    if (set.componentSetId) ids.push(set.componentSetId);
     collectNodeTreeIds(set.nodes, ids);
     for (const variant of set.variants) {
-      ids.push(variant.componentId);
+      if (variant.componentId) ids.push(variant.componentId);
       collectNodeTreeIds(variant.nodes, ids);
     }
   }
   for (const component of adapted.componentVariantGraph.components) {
-    ids.push(component.componentId);
+    if (component.componentId) ids.push(component.componentId);
     collectNodeTreeIds(component.nodes, ids);
   }
   return ids.filter(Boolean);

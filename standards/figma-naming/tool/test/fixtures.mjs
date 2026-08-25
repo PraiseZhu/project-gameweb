@@ -36,7 +36,7 @@ export function cleanTree() {
       ]),
     ]),
     F("sec/2-日历", [
-      // mix/：只命名容器，内部一层不动 —— 内部的无名 TEXT / 图像叶子都应豁免
+      // mix/：只命名容器；lint 豁免内部前缀/漏标切图，清单把带图叶子拆成 img/
       G("mix/calendar", [
         T("4月10日", "4月10日"),
         R("色块底", IMG_FILL),

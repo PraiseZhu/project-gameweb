@@ -176,7 +176,8 @@ export function fingerprintInventories(pcDoc, mobileDoc) {
 const PACKED_ASSETS_REDIRECT = "切图 PNG 不进交接包。清单只写 sliceExport（谁切、墨迹框 1 倍 png）；做页按 node id 自己导出。";
 
 function isSliceNode(node) {
-  return node?.status === "determined" && isSlicePrefix(node.role) && typeof node.id === "string" && node.id;
+  if (node?.status !== "determined" || typeof node.id !== "string" || !node.id) return false;
+  return isSlicePrefix(node.role) || sliceExportMatches(node.sliceExport);
 }
 
 function pageSliceIds(doc) {

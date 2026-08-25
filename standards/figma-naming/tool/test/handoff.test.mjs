@@ -70,6 +70,52 @@ test("handoff：成对 ready 可打包", () => {
   assert.equal(result.kind, "ready");
 });
 
+test("handoff：BOOLEAN btn 的 sliceExport 进入切图计划", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  pc.nodes.push(stampReadyFields({
+    id: "395:35371",
+    type: "BOOLEAN_OPERATION",
+    name: "btn/右滑动箭头",
+    status: "determined",
+    role: "btn",
+    label: "右滑动箭头",
+    behavior: "click",
+    via: "prefix",
+    sliceExport: { bounds: "render", scale: 1, format: "png", file: "395-35371.png" },
+    parentId: "1:1-mix",
+    box: { x: 10, y: 20, w: 52, h: 54 },
+  }));
+  rebuildInventoryIndexes(pc);
+  fixtureJudgment(pc);
+  const result = validateHandoffPair(pc, mobile);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.ok(sliceIdsOf(pc).includes("395:35371"));
+});
+
+test("handoff：via=structure 的 mix 自动拆 img 默认名可通过 ready 装箱并进切图计划", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  pc.nodes.push(stampReadyFields({
+    id: "395:34993",
+    type: "RECTANGLE",
+    name: "Rectangle 84370",
+    status: "determined",
+    role: "img",
+    label: "Rectangle 84370",
+    behavior: "slice",
+    via: "structure",
+    parentId: "1:1-mix",
+    box: { x: 10, y: 20, w: 40, h: 40 },
+  }));
+  rebuildInventoryIndexes(pc);
+  fixtureJudgment(pc);
+  const result = validateHandoffPair(pc, mobile);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.doesNotMatch(result.problems.join("\n"), /name 未写入 img\/ 前缀/);
+  assert.ok(sliceIdsOf(pc).includes("395:34993"));
+});
+
 test("handoff：同一 page 拒", () => {
   const result = validateHandoffPair(sample("1:1"), sample("1:1"));
   assert.equal(result.ok, false);

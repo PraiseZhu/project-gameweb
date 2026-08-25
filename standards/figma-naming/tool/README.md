@@ -2,7 +2,7 @@
 
 给一个 Figma 稿链接，可做两件事：把已规范命名稿编成做页前的 `inventory/v2` ready 清单，或对稿件出**图层命名体检报告**。做页前交接是当前主入口；命名体检是独立的既有工具。
 
-规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.9），20 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后由本机 `sync-local` 有变才重铺（密钥放本机，不进 GitHub）；不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
+规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.11），20 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后由本机 `sync-local` 有变才重铺（密钥放本机，不进 GitHub）；不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
 
 ## 判什么、不判什么
 
@@ -134,7 +134,7 @@ figma-naming-lint · pc 3840×17241 · 规范 v2.1 (2026-08-04) · 假定 A-v1.1
 - **TEXT 不需要前缀**。节点类型本身已说明它是文字。**文案 key 怎么生成不在本工具的管辖范围**——那是下游的事（见 `spec/consumer-assumptions.md` A6）
 - **`btn/` 不带动作参数是合规的**。点击后发生什么由前端配置决定，不属于命名规范的职责
 - `ref/` 子树内的一切（整树忽略）
-- `dyn/` `mix/` 子树的前缀与烙图问题（子树免前缀，内部自动拆）
+- `dyn/` `mix/` 子树的前缀与烙图问题（子树免前缀语法；`mix/` 带图叶子由清单自动拆成 `img/`）
 - 已有任何识别前缀的节点不报「该切没命名」——设计师已经声明过这层是什么
 - 整页预览导出节点内部的文字（按面积阈值判定为噪音，不构成切图）
 

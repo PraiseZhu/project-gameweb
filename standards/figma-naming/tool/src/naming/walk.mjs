@@ -183,7 +183,7 @@ function statePairReason(count, horizontalInfo) {
 三种可能，后果不同：
 · \`tab/\`（页签，最可能）→ 它是页签条的一项，内部零件仍需各自命名；同时它控制的内容区应该是 \`switch/\`
 · \`switch/\`（它自己就是切换器）→ 内部零件仍需各自命名
-· \`mix/\`（图文混排块）→ 只命名这个容器，内部一层不动，那 ${count} 条全部作废`;
+· \`mix/\`（图文混排块）→ 只命名这个容器；内部带图叶子由清单自动拆成 img/，文字仍可改`;
 }
 
 function arrowPairIn(parent) {

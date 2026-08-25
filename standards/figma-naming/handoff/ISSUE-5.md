@@ -21,7 +21,7 @@
 
 - 身份：`role` / `params` / `behavior` / `status`。禁止 `parseLayerName` / `deriveRole` 兜底。
 - 位置：`pageBox`（相对这一页）、`parentBox`（相对父层）。不要拿画布 `box` 去摆。`fix/` 用 `pin=viewport` + `viewportBox`。
-- 切图：只导 `img/` `bg/` `kv/`。按节点 `sliceExport`（墨迹框、1 倍、png、文件名=完整 node id）。页上用到的组件集**每个变体**里的切图都要盖住。做页自己导，不要求交接包 `assets.ok=true`。
+- 切图：导 `img/` `bg/` `kv/`（含 mix 自动拆的 `img/`），以及带 `sliceExport` 的 BOOLEAN `btn/`。`mix/` 容器不切。mix 里裁切溢出框升 `scroll/`。按节点 `sliceExport`（墨迹框、1 倍、png、文件名=完整 node id）。页上用到的组件集**每个变体**里的切图都要盖住。做页自己导，不要求交接包 `assets.ok=true`。不要猜 `skipped` 子层。
 - 禁止第二套导图：不要再用 `figma-assets.mjs` 的 `use_absolute_bounds=true` 按节点框重导。
 - 文字：`fontFamily` `fontWeight` `fontSize`；再用 `lineHeightPercent`、`paragraphSpacing`、外层 min/max。
 - 样式：`rotation` 不能当 0；`style.fills` 用全层；拉伸读 `layout.constraints`；遮罩读 `isMask` / `maskChildren` / `clipsContent`。

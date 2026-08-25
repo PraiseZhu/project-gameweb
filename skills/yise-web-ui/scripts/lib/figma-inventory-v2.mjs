@@ -148,11 +148,17 @@ function pageDirectChildren(inv) {
 
 /** Section ids that live below a page direct child (or are that child). */
 function sectionIdsUnder(inv, childId) {
-  const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
+  const byId = nodeMapOf(inv.nodes);
+  const sectionIds = new Set(
+    asArray(inv.sections)
+      .map((section) => byId.get(section.id) || section)
+      .filter((record) => record && !isSkipped(record))
+      .map((record) => record.id),
+  );
   const out = [];
   if (sectionIds.has(childId)) out.push(childId);
   for (const node of asArray(inv.nodes)) {
-    if (!sectionIds.has(node.id)) continue;
+    if (isSkipped(node) || !sectionIds.has(node.id)) continue;
     if (asArray(node.ancestorIds).includes(childId)) out.push(node.id);
   }
   return [...new Set(out)];

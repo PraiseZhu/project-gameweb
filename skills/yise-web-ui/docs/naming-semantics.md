@@ -30,6 +30,8 @@ txt/ and swpage/ are not v2.8 standard prefixes. They are accepted only as compa
 
 Unlabelled nodes must not be inferred as img or switch from node type, component type, or image fill. Asset export may still use real source evidence such as IMAGE fill, gradients, masks, export settings, or non-rect geometry, but that is asset pipeline evidence, not naming role inference.
 
+`inventory/v2` may promote image-fill leaves under `mix/` to determined `img` (`via=structure`) with `sliceExport`. Page-building consumes that inventory role; it does not re-guess skipped art-fragments. `scroll/` nested in `mix/` keeps clip-and-slide behavior.
+
 `ind/` is a structural owner. Its unnamed SOLID RECTANGLE/VECTOR descendants remain paint nodes (progress fill). Do not infer `progress` from class names. PC and mobile keep separate geometry trees.
 
 ## Owner model

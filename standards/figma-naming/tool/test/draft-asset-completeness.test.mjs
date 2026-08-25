@@ -43,6 +43,42 @@ test("draft asset completeness：已确定消费身份必须把前缀写入 name
   assert.match(result.problems[0], /name 未写入 btn\/ 前缀/);
 });
 
+test("draft asset completeness：via=structure 的 mix 自动 scroll 不要求 name 写 scroll/", () => {
+  const doc = rebuildInventoryIndexes({ nodes: [
+    node("slide", "FRAME", "可滑动内容", {
+      role: "scroll",
+      label: "可滑动内容",
+      behavior: "scroll-x",
+      via: "structure",
+    }),
+  ] });
+  const result = auditDraftAssetCompleteness(doc);
+  assert.equal(result.problems.filter((p) => p.includes("name 未写入")).length, 0, result.problems.join("\n"));
+});
+
+test("draft asset completeness：via=structure 的 mix 自动拆 img 不要求 name 写 img/", () => {
+  const doc = rebuildInventoryIndexes({ nodes: [
+    node("cell", "RECTANGLE", "Rectangle 84370", {
+      role: "img",
+      label: "Rectangle 84370",
+      behavior: "slice",
+      via: "structure",
+      sliceExport: { bounds: "render", scale: 1, format: "png", file: "cell.png" },
+    }),
+  ] });
+  const result = auditDraftAssetCompleteness(doc);
+  assert.equal(result.problems.filter((p) => p.includes("name 未写入")).length, 0, result.problems.join("\n"));
+});
+
+test("draft asset completeness：via=prefix 的 img 仍必须把前缀写入 name", () => {
+  const doc = rebuildInventoryIndexes({ nodes: [
+    node("named", "RECTANGLE", "日历背景", { role: "img", label: "日历背景", behavior: "slice", via: "prefix" }),
+  ] });
+  const result = auditDraftAssetCompleteness(doc);
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /name 未写入 img\/ 前缀/);
+});
+
 test("draft asset completeness：img 祖先下的内部立绘 unknown 不红", () => {
   const doc = rebuildInventoryIndexes({ nodes: [
     { id: "pack", type: "GROUP", name: "img/角色", status: "determined", role: "img", label: "角色", behavior: "slice" },
