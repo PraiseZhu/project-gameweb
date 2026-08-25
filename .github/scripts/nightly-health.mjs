@@ -2,12 +2,13 @@
 // 夜间仓内健康检查：扫 skills/* 与 standards/*。
 // 每个进仓目录必须能跑 npm test；有 release:audit / fonts:check 就一并跑。
 // 没有 package.json、没有可核验的 test、放错位置 → 失败，不静默跳过。
+// 完整夜间另出分级报告：今晚红 / 已知债 / 缺口；红灯只跟今晚红。
 //
 //   node .github/scripts/nightly-health.mjs           # 安装并跑完全部
 //   node .github/scripts/nightly-health.mjs --list    # 只打印将检查的包
 
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -16,6 +17,14 @@ const ROOT = resolve(process.env.NIGHTLY_HEALTH_ROOT || fileURLToPath(new URL('.
 const LIST_ONLY = process.argv.includes('--list');
 const KNOWN_TOP = new Set(['skills', 'standards']);
 const SKIP_DIR_NAMES = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', '.cache']);
+const GAP_BROKEN = new Set([
+  'scripts/__tests__/figma-from-handoff.test.mjs',
+  'scripts/__tests__/figma-inventory-check.test.mjs',
+]);
+const GRADE_TONIGHT = 'tonight';
+const GRADE_DEBT = 'debt';
+const GRADE_GAP = 'gap';
+const GRADE_GONE = 'gone';
 
 function die(message) {
   console.error(message);
@@ -186,12 +195,6 @@ function countRealTapCases(output, files = []) {
     .length;
 }
 
-function isInside(root, abs) {
-  const base = resolve(root);
-  const target = resolve(abs);
-  return target === base || target.startsWith(base + '/');
-}
-
 function realInside(root, abs) {
   try {
     const base = realpathSync(root);
@@ -202,18 +205,245 @@ function realInside(root, abs) {
   }
 }
 
+function argValue(name) {
+  const idx = process.argv.indexOf(name);
+  if (idx !== -1 && process.argv[idx + 1]) return process.argv[idx + 1];
+  return '';
+}
+
 function loadOwnedExclusions(packageDir) {
   const file = join(packageDir, 'scripts', 'nightly-exclusions.json');
   if (!existsSync(file)) return { demo: new Set(), broken: new Map() };
   try {
     const data = JSON.parse(readFileSync(file, 'utf8'));
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return { error: `${relative(ROOT, file)} 不是对象` };
+    }
+    if (data.demo !== undefined && !Array.isArray(data.demo)) {
+      return { error: `${relative(ROOT, file)} demo 不是数组` };
+    }
+    if (data.broken !== undefined && (!data.broken || typeof data.broken !== 'object' || Array.isArray(data.broken))) {
+      return { error: `${relative(ROOT, file)} broken 不是对象` };
+    }
     return {
       demo: new Set(data.demo ?? []),
       broken: new Map(Object.entries(data.broken ?? {})),
     };
   } catch {
-    return { demo: new Set(), broken: new Map() };
+    return { error: `${relative(ROOT, file)} 无法解析` };
   }
+}
+
+function stripRunnerNoise(text) {
+  return String(text)
+    .replace(/\/(?:private\/)?(?:var\/folders\/[^\s]+|tmp\/[^\s]+|Users\/[^\s]+)/g, '<path>')
+    .replace(/[A-Za-z]:\\[^\s]+/g, '<path>')
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, '<time>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function fingerprintOf(item) {
+  return `${item.package}|${item.check}|${stripRunnerNoise(item.summary)}`;
+}
+
+function beijingDate(now = process.env.NIGHTLY_HEALTH_NOW || Date.now()) {
+  const value = typeof now === 'number' || /^\d+$/.test(String(now)) ? Number(now) : Date.parse(now);
+  const date = new Date(Number.isFinite(value) ? value : Date.now());
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function addBeijingDays(yyyyMmDd, days) {
+  const [year, month, day] = String(yyyyMmDd).split('-').map(Number);
+  const utc = Date.UTC(year, month - 1, day + days);
+  const date = new Date(utc);
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function defaultNightlyBranch(ref) {
+  const value = String(ref || '').replace(/^refs\/heads\//, '');
+  return value || 'main';
+}
+
+function pickYesterdayNightlyRun(runs, { currentRunId, now, defaultBranch = 'main' } = {}) {
+  const today = beijingDate(now);
+  const yesterday = addBeijingDays(today, -1);
+  const branch = defaultNightlyBranch(defaultBranch);
+  const matches = (Array.isArray(runs) ? runs : [])
+    .filter((run) => {
+      if (!run || run.id === currentRunId) return false;
+      if (run.status !== 'completed') return false;
+      if (run.head_branch !== branch) return false;
+      return beijingDate(run.created_at) === yesterday;
+    })
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  return matches[0] || null;
+}
+
+function inferCheck(text) {
+  if (/排除项|exclusions|无法解析|不是数组|不是对象/.test(text)) return 'exclusions';
+  if (/npm test/.test(text)) return 'npm test';
+  if (/TAP|真实用例|没有实际通过/.test(text)) return 'TAP';
+  if (/release:audit/.test(text)) return 'release:audit';
+  if (/fonts:check/.test(text)) return 'fonts:check';
+  if (/npm ci|npm install/.test(text)) return 'install';
+  if (/放错|package\.json|SKILL\.md|嵌套/.test(text)) return 'placement';
+  if (/可核验的 npm test|公开 \*\.test\.mjs|没有声明/.test(text)) return 'file-proof';
+  return 'health';
+}
+
+function gradedItem({ grade, package: pkg, check, path, summary }) {
+  const item = { grade, package: pkg, check, path, summary };
+  item.fingerprint = fingerprintOf(item);
+  return item;
+}
+
+function failureItem(message) {
+  const text = String(message);
+  const colon = text.indexOf(': ');
+  const pkg = colon === -1 ? 'repo' : text.slice(0, colon);
+  return gradedItem({
+    grade: GRADE_TONIGHT,
+    package: pkg,
+    check: inferCheck(text),
+    path: pkg,
+    summary: text,
+  });
+}
+
+function isHandoffGap(rel) {
+  return GAP_BROKEN.has(rel) || /figma-from-handoff|figma-inventory-check/.test(rel);
+}
+
+function exclusionItems(target) {
+  const owned = loadOwnedExclusions(target.packageDir);
+  if (owned.error) return { error: `${target.name}: ${owned.error}` };
+  const items = [...owned.demo].sort().map((rel) => gradedItem({
+    grade: GRADE_GAP,
+    package: target.name,
+    check: 'demo',
+    path: rel,
+    summary: 'demo: current page',
+  }));
+  for (const rel of [...owned.broken.keys()].sort()) {
+    const gap = isHandoffGap(rel);
+    items.push(gradedItem({
+      grade: gap ? GRADE_GAP : GRADE_DEBT,
+      package: target.name,
+      check: gap ? 'handoff-gap' : 'broken',
+      path: rel,
+      summary: String(owned.broken.get(rel)),
+    }));
+  }
+  return { items };
+}
+
+function fingerprintList(data) {
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.fingerprints)) {
+    return data.fingerprints.map((fingerprint) => ({ fingerprint }));
+  }
+  return null;
+}
+
+function loadBaseline(path) {
+  if (!path || !existsSync(path)) return { present: false, fingerprints: new Set() };
+  try {
+    const list = fingerprintList(JSON.parse(readFileSync(path, 'utf8')));
+    if (!list) return { present: false, corrupt: true, fingerprints: new Set() };
+    const fingerprints = new Set(
+      list.map((item) => (typeof item === 'string' ? item : item?.fingerprint)).filter(Boolean),
+    );
+    if (!fingerprints.size && list.length) return { present: false, corrupt: true, fingerprints: new Set() };
+    return { present: true, fingerprints };
+  } catch {
+    return { present: false, corrupt: true, fingerprints: new Set() };
+  }
+}
+
+function applyBaseline(items, baseline) {
+  if (!baseline.present) return items;
+  const known = baseline.fingerprints;
+  return items.map((item) => {
+    if (item.grade === GRADE_TONIGHT && known.has(item.fingerprint)) {
+      return { ...item, grade: GRADE_DEBT };
+    }
+    return item;
+  });
+}
+
+function goneItems(current, baseline) {
+  if (!baseline.present) return [];
+  const now = new Set(current.map((item) => item.fingerprint));
+  const gone = [];
+  for (const fingerprint of [...baseline.fingerprints].sort()) {
+    if (now.has(fingerprint)) continue;
+    gone.push({
+      grade: GRADE_GONE,
+      package: 'repo',
+      check: 'fingerprint',
+      path: fingerprint,
+      summary: fingerprint,
+      fingerprint,
+    });
+  }
+  return gone;
+}
+
+function renderReport({ date, baselineLabel, targets, items }) {
+  const tonight = items.filter((item) => item.grade === GRADE_TONIGHT);
+  const debt = items.filter((item) => item.grade === GRADE_DEBT);
+  const gap = items.filter((item) => item.grade === GRADE_GAP);
+  const gone = items.filter((item) => item.grade === GRADE_GONE);
+  const inboundRed = tonight.length > 0;
+  const lines = [
+    `夜巡 ${date}`,
+    `进仓检查：${inboundRed ? '红' : '绿'}`,
+    `包：${targets}`,
+    `今晚红：${tonight.length}`,
+    `已知债：${debt.length}`,
+    `缺口：${gap.length}`,
+    `基线：${baselineLabel}`,
+    '',
+  ];
+  const sections = [
+    ['今晚红', tonight],
+    ['已知债', debt],
+    ['缺口', gap],
+    ['已消失', gone],
+  ];
+  for (const [title, list] of sections) {
+    lines.push(`## ${title}`);
+    if (!list.length) lines.push('- （无）');
+    else {
+      for (const item of list) {
+        lines.push(`- [${item.package}] ${item.check}`);
+        lines.push(`  哪里：${item.path}`);
+        lines.push(`  为什么：${item.summary}`);
+      }
+    }
+    lines.push('');
+  }
+  return `${lines.join('\n').trim()}\n`;
+}
+
+function writeText(filePath, content, { mkdir = true } = {}) {
+  if (!filePath) return;
+  if (mkdir) mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, content);
+}
+
+function writeOutputs(doc, markdown) {
+  writeText(argValue('--json') || process.env.NIGHTLY_HEALTH_REPORT_JSON || '', `${JSON.stringify(doc, null, 2)}\n`);
+  writeText(argValue('--md') || process.env.NIGHTLY_HEALTH_REPORT_MD || '', markdown);
 }
 
 function defaultPublicRoots(packageDir) {
@@ -234,6 +464,7 @@ function listPublicTests(packageDir) {
   });
   if (listed.status !== 0) return { error: listed.stderr || listed.stdout || 'test-public --list 失败' };
   const owned = loadOwnedExclusions(packageDir);
+  if (owned.error) return { error: owned.error };
   const files = [];
   const excluded = new Set();
   for (const line of (listed.stdout || '').split('\n').map((item) => item.trim()).filter(Boolean)) {
@@ -458,11 +689,58 @@ function provePublicTests(target) {
   return null;
 }
 
+function finishReport({ targets, failures }) {
+  const date = beijingDate();
+  const baselinePath = argValue('--baseline') || process.env.NIGHTLY_HEALTH_BASELINE || '';
+  const baseline = loadBaseline(baselinePath);
+  const seenFail = new Set();
+  let items = [];
+  for (const message of failures) {
+    const item = failureItem(message);
+    if (seenFail.has(item.fingerprint)) continue;
+    seenFail.add(item.fingerprint);
+    items.push(item);
+  }
+  for (const target of targets) {
+    const extra = exclusionItems(target);
+    if (extra.error) items.push(failureItem(extra.error));
+    else items.push(...extra.items);
+  }
+  items = applyBaseline(items, baseline);
+  items = [...items, ...goneItems(items, baseline)];
+  const tonight = items.filter((item) => item.grade === GRADE_TONIGHT);
+  const baselineLabel = baseline.present
+    ? '有昨日'
+    : '无昨日基线，不能当新';
+  const markdown = renderReport({ date, baselineLabel, targets: targets.length, items });
+  const persisted = items.filter((item) => item.grade !== GRADE_GONE);
+  const doc = {
+    date,
+    baseline: baseline.present ? 'yesterday' : 'none',
+    baseline_label: baselineLabel,
+    targets: targets.length,
+    items: persisted,
+  };
+  writeOutputs(doc, markdown);
+  process.stdout.write(markdown);
+  if (tonight.length) {
+    die(`夜间健康检查失败 ${tonight.length} 项:\n- ${tonight.map((item) => item.summary).join('\n- ')}`);
+  }
+  console.log(`夜间健康检查通过：${targets.length} 个包`);
+}
+
+function noTargetFailures(discoveryProblems) {
+  const details = discoveryProblems.length ? `:\n- ${discoveryProblems.join('\n- ')}` : '';
+  return [`skills/ 与 standards/ 下没有可检查的包${details}`, ...discoveryProblems];
+}
+
 function main() {
   const { targets, problems: discoveryProblems } = discoverTargets();
   if (targets.length === 0) {
-    const details = discoveryProblems.length ? `:\n- ${discoveryProblems.join('\n- ')}` : '';
-    die(`skills/ 与 standards/ 下没有可检查的包${details}`);
+    const failures = noTargetFailures(discoveryProblems);
+    if (LIST_ONLY) die(failures[0]);
+    finishReport({ targets, failures });
+    return;
   }
 
   console.log(`将检查 ${targets.length} 个包:`);
@@ -502,13 +780,31 @@ function main() {
     }
   }
 
-  if (failures.length) {
-    die(`夜间健康检查失败 ${failures.length} 项:\n- ${failures.join('\n- ')}`);
-  }
-
-  console.log(`\n夜间健康检查通过：${targets.length} 个包`);
+  finishReport({ targets, failures });
 }
 
-export { collectTargets, placementProblems, testLooksRunnable, looksLikeFakeSummary, findNestedPackages, findNestedSkillFiles, lastCount, collectTestFiles, parseTap, countRealTapCases, listPublicTests, hasDeclaredTest };
+export {
+  collectTargets,
+  placementProblems,
+  testLooksRunnable,
+  looksLikeFakeSummary,
+  findNestedPackages,
+  findNestedSkillFiles,
+  lastCount,
+  collectTestFiles,
+  parseTap,
+  countRealTapCases,
+  listPublicTests,
+  hasDeclaredTest,
+  fingerprintOf,
+  beijingDate,
+  addBeijingDays,
+  pickYesterdayNightlyRun,
+  loadBaseline,
+  applyBaseline,
+  exclusionItems,
+  renderReport,
+  stripRunnerNoise,
+};
 
 if (process.argv[1] && resolve(process.argv[1]) === HERE) main();

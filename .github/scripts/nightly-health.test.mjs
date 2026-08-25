@@ -51,8 +51,8 @@ test('发现逻辑不依赖当前包名或可选附加脚本', () => {
 
 test('守卫或列包失败后工作流仍会尝试真实夜间检查', () => {
   const workflow = readFileSync(WORKFLOW, 'utf8');
-  assert.match(workflow, /if:\s*\$\{\{\s*always\(\)\s*\}\}\s*\n\s*run:\s*node \.github\/scripts\/nightly-health\.mjs --list/);
-  assert.match(workflow, /if:\s*\$\{\{\s*always\(\)\s*\}\}\s*\n\s*run:\s*node \.github\/scripts\/nightly-health\.mjs\s*(?:\n|$)/);
+  assert.match(workflow, /if:\s*\$\{\{\s*always\(\)\s*\}\}[\s\S]*continue-on-error:\s*true[\s\S]*run:\s*node \.github\/scripts\/nightly-health\.mjs --list/);
+  assert.match(workflow, /if:\s*\$\{\{\s*always\(\)\s*\}\}[\s\S]*run:\s*node \.github\/scripts\/nightly-health\.mjs\s*(?:\n|$)/);
 });
 
 test('仓库根 package.json 必须红', () => {
@@ -62,6 +62,21 @@ test('仓库根 package.json 必须红', () => {
   rmSync(root, { recursive: true, force: true });
   assert.notEqual(res.status, 0);
   assert.match(res.stderr, /仓库根有 package.json/);
+});
+
+test('零包完整夜间仍写今晚红报告再失败', () => {
+  const root = makeRoot();
+  writeFileSync(join(root, 'package.json'), '{"name":"nope"}');
+  const { res, json, md } = runPatrol(root);
+  const doc = JSON.parse(readFileSync(json, 'utf8'));
+  const text = readFileSync(md, 'utf8');
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(res.status, 0);
+  assert.equal(doc.targets, 0);
+  assert.equal(doc.items.some((item) => item.grade === 'tonight' && /没有可检查的包/.test(item.summary)), true);
+  assert.match(text, /## 今晚红/);
+  assert.match(text, /没有可检查的包/);
+  assertNoNewLabel(text);
 });
 
 test('skills 根上直接放 SKILL.md 必须红', () => {
@@ -679,3 +694,269 @@ test('lister 给出包外路径必须红', () => {
   assert.notEqual(res.status, 0);
   assert.match(`${res.stdout}\n${res.stderr}`, /包外路径/);
 });
+
+function writeHealthySkill(root, name, extras = {}) {
+  const dir = join(root, 'skills', name);
+  writePkg(dir, { test: 'node --test test/*.test.mjs' });
+  writePublicTest(dir);
+  if (extras.exclusions) {
+    mkdirSync(join(dir, 'scripts'), { recursive: true });
+    writeFileSync(join(dir, 'scripts', 'nightly-exclusions.json'), JSON.stringify(extras.exclusions, null, 2));
+  }
+  return dir;
+}
+
+function assertNoNewLabel(text) {
+  assert.match(text, /无昨日基线/);
+  assert.doesNotMatch(text, /今晚新/);
+}
+
+function runPatrol(root, extra = {}) {
+  const json = extra.json || join(root, 'report.json');
+  const md = extra.md || join(root, 'report.md');
+  const args = [SCRIPT, '--json', json, '--md', md];
+  if (extra.baseline) args.push('--baseline', extra.baseline);
+  return {
+    json,
+    md,
+    res: spawnSync(process.execPath, args, {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        NIGHTLY_HEALTH_ROOT: root,
+        NIGHTLY_HEALTH_NOW: extra.now || '2026-08-24T16:00:00Z',
+      },
+    }),
+  };
+}
+
+test('排除项不合法是今晚红，不是缺口', () => {
+  const root = makeRoot();
+  writeHealthySkill(root, 'yise');
+  mkdirSync(join(root, 'skills', 'yise', 'scripts', '__tests__'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'yise', 'scripts', '__tests__', 'comp-paint-order.test.mjs'), 'import test from "node:test"; test("demo", () => {});');
+  writeFileSync(join(root, 'skills', 'yise', 'scripts', 'test-public.mjs'), 'console.log("test/ok.test.mjs");\nconsole.log("# exclude scripts/__tests__/comp-paint-order.test.mjs :: demo: current page");\n');
+  writeFileSync(join(root, 'skills', 'yise', 'scripts', 'nightly-exclusions.json'), JSON.stringify({ demo: [], broken: {} }));
+  const { res, json, md } = runPatrol(root);
+  const doc = JSON.parse(readFileSync(json, 'utf8'));
+  const text = readFileSync(md, 'utf8');
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(res.status, 0);
+  assert.equal(doc.items.filter((item) => item.grade === 'tonight').length >= 1, true);
+  assert.match(text, /## 今晚红/);
+  assertNoNewLabel(text);
+});
+
+test('broken 进已知债，demo 和交接 broken 进缺口，进程仍绿', () => {
+  const root = makeRoot();
+  writeHealthySkill(root, 'yise', {
+    exclusions: {
+      demo: ['scripts/__tests__/hero-scroll-slot.test.mjs'],
+      broken: {
+        'scripts/__tests__/comp-fix-r7.test.mjs': 'tailwind 内部 API',
+        'scripts/__tests__/figma-from-handoff.test.mjs': 'green-draft 已转 unnamed',
+      },
+    },
+  });
+  const { res, json, md } = runPatrol(root);
+  const doc = JSON.parse(readFileSync(json, 'utf8'));
+  const text = readFileSync(md, 'utf8');
+  const mdPrints = [...text.matchAll(/为什么：([^\n]+)/g)].map((m) => m[1]);
+  const jsonPrints = doc.items.map((item) => item.summary);
+  rmSync(root, { recursive: true, force: true });
+  assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
+  assert.equal(doc.items.some((item) => item.grade === 'tonight'), false);
+  assert.equal(doc.items.some((item) => item.grade === 'debt' && /comp-fix-r7/.test(item.path)), true);
+  assert.equal(doc.items.some((item) => item.grade === 'gap' && /hero-scroll-slot/.test(item.path)), true);
+  assert.equal(doc.items.some((item) => item.grade === 'gap' && /figma-from-handoff/.test(item.path)), true);
+  assert.deepEqual([...mdPrints].sort(), [...jsonPrints].sort());
+  assert.match(text, /## 已知债/);
+  assert.match(text, /## 缺口/);
+});
+
+test('路径噪声去掉后指纹相同，换包名则不同', async () => {
+  const { fingerprintOf } = await import('./nightly-health.mjs');
+  const a = fingerprintOf({
+    package: 'skills/yise-web-ui',
+    check: 'health',
+    summary: 'fail at /Users/runner/work/a/nightly-health.mjs:12 2026-08-24T16:00:00.000Z',
+  });
+  const b = fingerprintOf({
+    package: 'skills/yise-web-ui',
+    check: 'health',
+    summary: 'fail at /tmp/other/nightly-health.mjs:12 2026-08-25T01:02:03.000Z',
+  });
+  const c = fingerprintOf({
+    package: 'standards/figma-naming/tool',
+    check: 'health',
+    summary: 'fail at /tmp/other/nightly-health.mjs:12 2026-08-25T01:02:03.000Z',
+  });
+  assert.equal(a, b);
+  assert.notEqual(a, c);
+});
+
+test('无基线禁止标新发现，北京 0 点日期是当天', () => {
+  const root = makeRoot();
+  writeHealthySkill(root, 'okpkg');
+  writeFileSync(join(root, 'package.json'), '{"name":"nope"}');
+  const { res, json, md } = runPatrol(root, { now: '2026-08-24T16:00:00Z' });
+  const doc = JSON.parse(readFileSync(json, 'utf8'));
+  const text = readFileSync(md, 'utf8');
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(res.status, 0);
+  assert.equal(doc.date, '2026-08-25');
+  assertNoNewLabel(text);
+});
+
+test('昨日同指纹进已知债，昨日有今晚无进已消失', () => {
+  const root = makeRoot();
+  writeHealthySkill(root, 'okpkg');
+  writeFileSync(join(root, 'package.json'), '{"name":"nope"}');
+  const first = runPatrol(root);
+  const firstDoc = JSON.parse(readFileSync(first.json, 'utf8'));
+  const fp = firstDoc.items.find((item) => item.grade === 'tonight').fingerprint;
+  const baseline = join(root, 'yesterday.json');
+  writeFileSync(baseline, JSON.stringify({ items: [{ fingerprint: fp }] }));
+  const second = runPatrol(root, { baseline, json: join(root, 'second.json'), md: join(root, 'second.md') });
+  const secondDoc = JSON.parse(readFileSync(second.json, 'utf8'));
+  writeFileSync(join(root, 'skills', 'okpkg', 'package.json'), JSON.stringify({ name: 'tmp', scripts: { test: 'node --test test/*.test.mjs' } }));
+  rmSync(join(root, 'package.json'));
+  const goneRun = runPatrol(root, { baseline, json: join(root, 'gone.json'), md: join(root, 'gone.md') });
+  const goneDoc = JSON.parse(readFileSync(goneRun.json, 'utf8'));
+  const goneText = readFileSync(goneRun.md, 'utf8');
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(first.res.status, 0);
+  assert.equal(second.res.status, 0, `${second.res.stdout}\n${second.res.stderr}`);
+  assert.equal(secondDoc.items.some((item) => item.grade === 'debt' && item.fingerprint === fp), true);
+  assert.equal(goneRun.res.status, 0, `${goneRun.res.stdout}\n${goneRun.res.stderr}`);
+  assert.equal(goneDoc.items.some((item) => item.fingerprint === fp), false);
+  assert.match(goneText, /## 已消失/);
+  assert.match(goneText, new RegExp(fp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('坏基线按无基线，禁止标新', () => {
+  const root = makeRoot();
+  writeHealthySkill(root, 'okpkg');
+  writeFileSync(join(root, 'package.json'), '{"name":"nope"}');
+  const baseline = join(root, 'yesterday.json');
+  writeFileSync(baseline, '{not json');
+  const { res, md } = runPatrol(root, { baseline });
+  const text = readFileSync(md, 'utf8');
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(res.status, 0);
+  assertNoNewLabel(text);
+});
+
+test('exclusions JSON 坏了是今晚红，缺文件不红', () => {
+  const root = makeRoot();
+  writeHealthySkill(root, 'okpkg');
+  mkdirSync(join(root, 'skills', 'okpkg', 'scripts'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'okpkg', 'scripts', 'nightly-exclusions.json'), '{bad');
+  const bad = runPatrol(root, { json: join(root, 'bad.json'), md: join(root, 'bad.md') });
+  const badDoc = JSON.parse(readFileSync(bad.json, 'utf8'));
+  writeFileSync(join(root, 'skills', 'okpkg', 'scripts', 'nightly-exclusions.json'), JSON.stringify({ demo: {}, broken: [] }));
+  const schema = runPatrol(root, { json: join(root, 'schema.json'), md: join(root, 'schema.md') });
+  const schemaDoc = JSON.parse(readFileSync(schema.json, 'utf8'));
+  rmSync(join(root, 'skills', 'okpkg', 'scripts', 'nightly-exclusions.json'));
+  const missing = runPatrol(root, { json: join(root, 'missing.json'), md: join(root, 'missing.md') });
+  rmSync(root, { recursive: true, force: true });
+  assert.notEqual(bad.res.status, 0);
+  assert.equal(badDoc.items.some((item) => item.grade === 'tonight' && /无法解析/.test(item.summary)), true);
+  assert.notEqual(schema.res.status, 0);
+  assert.equal(schemaDoc.items.some((item) => item.grade === 'tonight' && /demo 不是数组|broken 不是对象/.test(item.summary)), true);
+  assert.equal(missing.res.status, 0, `${missing.res.stdout}\n${missing.res.stderr}`);
+});
+
+test('夜巡工作流有 artifact 往返和 always 写 Summary，没有 pull_request', () => {
+  const workflow = readFileSync(WORKFLOW, 'utf8');
+  assert.match(workflow, /if:\s*\$\{\{\s*always\(\)\s*\}\}/);
+  assert.match(workflow, /GITHUB_STEP_SUMMARY/);
+  assert.match(workflow, /actions\/github-script@v7/);
+  assert.match(workflow, /listWorkflowRuns/);
+  assert.match(workflow, /head_branch === branch/);
+  assert.match(workflow, /beijingDate\(run\.created_at\) === yesterday/);
+  assert.match(workflow, /上一北京日、默认分支/);
+  assert.match(workflow, /actions\/download-artifact@v4/);
+  assert.match(workflow, /run-id:/);
+  assert.match(workflow, /github-token:\s*\$\{\{\s*github\.token\s*\}\}/);
+  assert.match(workflow, /repository:\s*\$\{\{\s*github\.repository\s*\}\}/);
+  assert.match(workflow, /include-hidden-files:\s*true/);
+  assert.match(workflow, /steps\.prev-nightly\.outcome/);
+  assert.match(workflow, /listWorkflowRuns 失败/);
+  assert.match(workflow, /昨日基线已就位|无昨日基线/);
+  assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /name:\s*nightly-fingerprints/);
+  assert.match(workflow, /retention-days:\s*2/);
+  assert.match(workflow, /continue-on-error:\s*true/);
+  assert.match(workflow, /List packages under check[\s\S]*continue-on-error:\s*true[\s\S]*nightly-health\.mjs --list/);
+  assert.match(workflow, /actions:\s*read/);
+  assert.doesNotMatch(workflow, /downloadArtifact/);
+  assert.doesNotMatch(workflow, /pull_request/);
+  assert.doesNotMatch(workflow, /issues:\s*write/);
+  assert.doesNotMatch(workflow, /pull-requests:\s*write/);
+  assert.doesNotMatch(workflow, /reports\/nightly|git add|git commit/);
+});
+
+test('选基线只要上一北京日默认分支，跨 ref 和更早的 run 不算昨日', async () => {
+  const { pickYesterdayNightlyRun } = await import('./nightly-health.mjs');
+  const now = '2026-08-25T16:00:00Z';
+  const yesterdayMain = {
+    id: 11,
+    status: 'completed',
+    head_branch: 'main',
+    created_at: '2026-08-24T16:05:00Z',
+  };
+  const olderMain = {
+    id: 10,
+    status: 'completed',
+    head_branch: 'main',
+    created_at: '2026-08-23T16:05:00Z',
+  };
+  const otherRef = {
+    id: 12,
+    status: 'completed',
+    head_branch: 'feat/nightly-patrol-report',
+    created_at: '2026-08-24T16:10:00Z',
+  };
+  const todayDispatch = {
+    id: 13,
+    status: 'completed',
+    head_branch: 'main',
+    created_at: '2026-08-25T16:01:00Z',
+  };
+  const picked = pickYesterdayNightlyRun(
+    [todayDispatch, otherRef, yesterdayMain, olderMain],
+    { currentRunId: 99, now, defaultBranch: 'main' },
+  );
+  const none = pickYesterdayNightlyRun(
+    [todayDispatch, otherRef, olderMain],
+    { currentRunId: 99, now, defaultBranch: 'main' },
+  );
+  assert.equal(picked?.id, 11);
+  assert.equal(none, null);
+});
+
+test('脚本不写 GITHUB_STEP_SUMMARY，留给 workflow always 步骤', () => {
+  const root = makeRoot();
+  writeHealthySkill(root, 'okpkg');
+  const summary = join(root, 'step-summary.md');
+  const json = join(root, 'report.json');
+  const md = join(root, 'report.md');
+  writeFileSync(summary, '');
+  const res = spawnSync(process.execPath, [SCRIPT, '--json', json, '--md', md], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NIGHTLY_HEALTH_ROOT: root,
+      NIGHTLY_HEALTH_NOW: '2026-08-24T16:00:00Z',
+      GITHUB_STEP_SUMMARY: summary,
+    },
+  });
+  const summaryText = readFileSync(summary, 'utf8');
+  const report = readFileSync(md, 'utf8');
+  rmSync(root, { recursive: true, force: true });
+  assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
+  assert.match(report, /夜巡 /);
+  assert.equal(summaryText, '');
+});
+
