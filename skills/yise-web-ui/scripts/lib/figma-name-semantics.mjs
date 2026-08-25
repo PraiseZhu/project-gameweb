@@ -1,13 +1,14 @@
 /**
  * Figma layer naming semantics.
  *
- * Implements standards/figma-naming v2.9 / A-v1.7 as a source-only role hint:
+ * Implements standards/figma-naming v2.10 / A-v1.8 as a source-only role hint:
  * - unprefixed TEXT is editable copy (copy role);
  * - TEXT named with img/, bg/, or kv/ is a visual asset/slice; name overrides node type;
  * - prefixes are case-insensitive and may contain spaces around ASCII or full-width slash;
  * - txt/ and swpage/ are legacy compatibility warnings until 2026-11-12, not standard roles;
  * - backslash separators are invalid; full-width slash is accepted;
- * - unlabelled nodes are not inferred as img or switch from type/fill.
+ * - unlabelled nodes are not inferred as img or switch from type/fill;
+ * - inventory/v2 may still promote mix/ image-fill leaves to img via=structure.
  *
  * Naming never rewrites Figma owner tree, paint order, clipping, mask,
  * opacity, or blend semantics.

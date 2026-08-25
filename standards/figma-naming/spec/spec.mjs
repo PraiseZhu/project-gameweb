@@ -7,12 +7,12 @@
  * 住在 spec/：人读正文和机器表同一层。tool/ 与 skills/ 都读这里，不必下到工具目录。
  * 本文件保持零 Node 依赖，以便 Figma 插件打包。
  */
-export const SPEC_VERSION = "v2.9 (2026-08-24)";
+export const SPEC_VERSION = "v2.11 (2026-08-25)";
 /** 相对 figma-naming/ 根的展示路径 */
 export const SPEC_DOC = "spec/naming-spec.md";
 
 /** 下游消费假定（判定后果的前提），见 spec/consumer-assumptions.md */
-export const ASSUMPTIONS_VERSION = "A-v1.7 (2026-08-24)";
+export const ASSUMPTIONS_VERSION = "A-v1.9 (2026-08-25)";
 export const ASSUMPTIONS_DOC = "spec/consumer-assumptions.md";
 
 /**
@@ -60,8 +60,8 @@ export const PREFIXES = {
     structural: true, exemptSubtree: "NAMING", // §1：子树免前缀语法与图像未命名报警
   },
   mix: {
-    group: "复合", desc: "图文混排大块（自动拆）", params: [],
-    structural: true, exemptSubtree: "NAMING", // §1：只命名容器，内部一层不动
+    group: "复合", desc: "图文混排大块（自动拆切图）", params: [],
+    structural: true, exemptSubtree: "NAMING", // §1：只命名容器；清单把带图叶子拆成 img/
   },
   scroll: {
     group: "复合", desc: "可滑动区", params: ["x", "y"], structural: true,
@@ -184,7 +184,7 @@ export const DISPOSITIONS = ["must_fix", "must_answer", "confirm"];
 export const BASES = ["deterministic", "heuristic"];
 
 /** consumer-assumptions.md 里定义的假定编号 */
-export const ASSUMPTION_IDS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7"];
+export const ASSUMPTION_IDS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8"];
 
 export const PREFIX_NAMES = Object.keys(PREFIXES);
 export const PARAM_NAMES = Object.keys(PARAMS);

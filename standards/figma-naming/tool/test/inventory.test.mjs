@@ -612,3 +612,201 @@ test("做页字段缺一则校验红：字体三项、切图契约、fix 钉视�
   assert.equal(fix.pin, "viewport");
   assert.equal(txt.text.fontFamily, "Source Han Sans");
 });
+
+function mixNode(id, type, name, extra = {}) {
+  return {
+    id, type, name,
+    absoluteBoundingBox: { x: 0, y: 0, width: 40, height: 20 },
+    children: [],
+    ...extra,
+  };
+}
+
+test("mix/ 子树带图叶子自动升 img 切图，文字仍 copy，scroll 身份不变", () => {
+  const page = mixNode("page", "FRAME", "pc", {
+    children: [
+      mixNode("mix", "FRAME", "mix/calendar", {
+        children: [
+          mixNode("copy", "TEXT", "4月10日", {
+            characters: "4月10日",
+            style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400 },
+          }),
+          mixNode("cell", "RECTANGLE", "Rectangle 84370", {
+            fills: [{ type: "IMAGE", visible: true }],
+          }),
+          mixNode("named", "RECTANGLE", "img/日历背景", { fills: [{ type: "IMAGE", visible: true }] }),
+          mixNode("scroll", "FRAME", "scroll/划动区域", {
+            children: [
+              mixNode("track", "FRAME", "轨道", {
+                children: [
+                  mixNode("inner", "RECTANGLE", "Rectangle 84405", { fills: [{ type: "IMAGE", visible: true }] }),
+                ],
+              }),
+            ],
+          }),
+          mixNode("plain", "GROUP", "Group 1312316715"),
+        ],
+      }),
+    ],
+  });
+  const inv = buildInventory(page, { requestedNodeId: "page" });
+  const byId = Object.fromEntries(inv.nodes.map((n) => [n.id, n]));
+  assert.equal(byId.mix.status, "determined");
+  assert.equal(byId.mix.role, "mix");
+  assert.equal(byId.mix.sliceExport, undefined);
+  assert.equal(byId.copy.status, "determined");
+  assert.equal(byId.copy.role, "copy");
+  assert.equal(byId.copy.sliceExport, undefined);
+  assert.equal(byId.cell.status, "determined");
+  assert.equal(byId.cell.role, "img");
+  assert.equal(byId.cell.via, "structure");
+  assert.equal(byId.cell.behavior, "slice");
+  assert.deepEqual(byId.cell.sliceExport, { bounds: "render", scale: 1, format: "png", file: "cell.png" });
+  assert.equal(byId.named.status, "determined");
+  assert.equal(byId.named.role, "img");
+  assert.equal(byId.named.via, "prefix");
+  assert.equal(byId.scroll.status, "determined");
+  assert.equal(byId.scroll.role, "scroll");
+  assert.equal(byId.scroll.behavior, "scroll-x");
+  assert.equal(byId.scroll.sliceExport, undefined);
+  assert.equal(byId.inner.status, "determined");
+  assert.equal(byId.inner.role, "img");
+  assert.equal(byId.inner.via, "structure");
+  assert.ok(byId.inner.sliceExport);
+  assert.equal(byId.plain.status, "skipped");
+  assert.equal(byId.plain.why, "art-fragment");
+  const check = validateInventory(inv, page);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
+test("mix/ 带图容器下的文字仍 copy，不升容器 img", () => {
+  const page = mixNode("page", "FRAME", "pc", {
+    children: [
+      mixNode("mix", "FRAME", "mix/calendar", {
+        children: [
+          mixNode("cell", "FRAME", "日期格", {
+            fills: [{ type: "IMAGE", visible: true }],
+            children: [
+              mixNode("bg", "RECTANGLE", "Rectangle 1", { fills: [{ type: "IMAGE", visible: true }] }),
+              mixNode("label", "TEXT", "4月10日", {
+                characters: "4月10日",
+                style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400 },
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+  const inv = buildInventory(page, { requestedNodeId: "page" });
+  const byId = Object.fromEntries(inv.nodes.map((n) => [n.id, n]));
+  assert.equal(byId.cell.status, "unknown");
+  assert.equal(byId.cell.sliceExport, undefined);
+  assert.equal(byId.bg.status, "determined");
+  assert.equal(byId.bg.role, "img");
+  assert.equal(byId.bg.via, "structure");
+  assert.equal(byId.label.status, "determined");
+  assert.equal(byId.label.role, "copy");
+  assert.equal(byId.label.sliceExport, undefined);
+});
+
+test("mix/ 子层已是 scroll/ 时外层裁切框不再套一层 scroll", () => {
+  const page = mixNode("page", "FRAME", "pc", {
+    absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 200 },
+    children: [
+      mixNode("mix", "FRAME", "mix/calendar", {
+        clipsContent: true,
+        absoluteBoundingBox: { x: 0, y: 0, width: 200, height: 120 },
+        children: [
+          mixNode("wrap", "FRAME", "日历内容", {
+            clipsContent: true,
+            absoluteBoundingBox: { x: 0, y: 0, width: 200, height: 120 },
+            children: [
+              mixNode("slide", "FRAME", "scroll/可滑动内容", {
+                clipsContent: true,
+                absoluteBoundingBox: { x: 20, y: 10, width: 260, height: 100 },
+                children: [
+                  mixNode("cell", "RECTANGLE", "Rectangle 1", {
+                    fills: [{ type: "IMAGE", visible: true }],
+                    absoluteBoundingBox: { x: 20, y: 10, width: 40, height: 40 },
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+  const inv = buildInventory(page, { requestedNodeId: "page" });
+  const byId = Object.fromEntries(inv.nodes.map((n) => [n.id, n]));
+  assert.notEqual(byId.wrap.role, "scroll");
+  assert.equal(byId.slide.status, "determined");
+  assert.equal(byId.slide.role, "scroll");
+  assert.equal(byId.slide.via, "prefix");
+  assert.equal(byId.cell.status, "determined");
+  assert.equal(byId.cell.role, "img");
+});
+
+test("mix/ 内裁切溢出框自动升 scroll，BOOLEAN btn 带切图", () => {
+  const page = mixNode("page", "FRAME", "pc", {
+    absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 200 },
+    children: [
+      mixNode("mix", "FRAME", "mix/calendar", {
+        clipsContent: true,
+        absoluteBoundingBox: { x: 0, y: 0, width: 200, height: 120 },
+        children: [
+          mixNode("slide", "FRAME", "可滑动内容", {
+            clipsContent: true,
+            absoluteBoundingBox: { x: 20, y: 10, width: 260, height: 100 },
+            children: [
+              mixNode("track", "GROUP", "Group 1", {
+                absoluteBoundingBox: { x: 20, y: 10, width: 260, height: 80 },
+                children: [
+                  mixNode("cell", "RECTANGLE", "Rectangle 1", {
+                    fills: [{ type: "IMAGE", visible: true }],
+                    absoluteBoundingBox: { x: 20, y: 10, width: 40, height: 40 },
+                  }),
+                  mixNode("label", "TEXT", "对应周", {
+                    characters: "对应周",
+                    style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400 },
+                    absoluteBoundingBox: { x: 70, y: 10, width: 40, height: 16 },
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+      mixNode("arrow", "BOOLEAN_OPERATION", "btn/右滑动箭头", {
+        absoluteBoundingBox: { x: 300, y: 40, width: 52, height: 54 },
+        fills: [{ type: "SOLID", color: { r: 1, g: 1, b: 1, a: 1 } }],
+        children: [
+          mixNode("part", "BOOLEAN_OPERATION", "Subtract", {
+            fills: [{ type: "IMAGE", visible: true }],
+            absoluteBoundingBox: { x: 300, y: 40, width: 31, height: 54 },
+          }),
+        ],
+      }),
+    ],
+  });
+  const inv = buildInventory(page, { requestedNodeId: "page" });
+  const byId = Object.fromEntries(inv.nodes.map((n) => [n.id, n]));
+  assert.equal(byId.slide.status, "determined");
+  assert.equal(byId.slide.role, "scroll");
+  assert.equal(byId.slide.via, "structure");
+  assert.equal(byId.slide.behavior, "scroll-x");
+  assert.equal(byId.slide.sliceExport, undefined);
+  assert.equal(byId.cell.status, "determined");
+  assert.equal(byId.cell.role, "img");
+  assert.equal(byId.label.status, "determined");
+  assert.equal(byId.label.role, "copy");
+  assert.equal(byId.arrow.status, "determined");
+  assert.equal(byId.arrow.role, "btn");
+  assert.equal(byId.arrow.behavior, "click");
+  assert.deepEqual(byId.arrow.sliceExport, { bounds: "render", scale: 1, format: "png", file: "arrow.png" });
+  assert.equal(byId.part.status, "skipped");
+  assert.equal(byId.part.why, "slice-child");
+  const check = validateInventory(inv, page);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});

@@ -25,8 +25,9 @@
  *
  * ═══ 切图判定（与渲染层同一套规则，不许两份实现）═══
  *   前缀 img/ bg/ kv/  →  切
+ *   清单 sliceExport（含 BOOLEAN btn/）→ 切
  *   填充是渐变或 IMAGE →  切
- *   其余              →  不切（scroll/ 是容器、btn/ 是按钮，都不该切）
+ *   其余              →  不切（scroll/ 是容器；普通 btn/ 无 sliceExport 不切）
  *
  * ═══ 用法 ═══
  *   node scripts/figma-assets.mjs --demo <dir>              # 按 truth.json 找出该切的节点并导出
@@ -180,6 +181,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const derived = deriveRole(n);
       if (derived.errors?.length) continue;
       const pfx = SLICE_PREFIXES.has(derived.role) ? derived.role : null;
+      const listedSlice = Boolean(n.sliceExport);
       if (n.type === 'TEXT' && !pfx) continue;               // unprefixed TEXT is editable copy; visual names can override type
       /* Lead decision (2026-08-10): the page-background owner root (bg/*) is no
          longer baked as one giant PNG — its 233-node subtree is restored in truth
@@ -230,9 +232,9 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
          alpha 与原始绘制顺序，拆成 CSS 节点会让局部纹理/背景跨出真实可见区。 */
       const hasMaskOwner = Array.isArray(n.maskChildren) && n.maskChildren.length > 0;
       const onlyGradient = fills.length === 1 && String(fills[0].type).startsWith('GRADIENT');
-      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !bigNonRect && !hasMaskOwner) continue;
+      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !hasMaskOwner) continue;
 
-      if (!(SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
+      if (!(listedSlice || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
       const effects = ((n.style || {}).effects || []).filter((e) => e && e.visible !== false);
       const descendantEffects = ((n.style || {}).descendantEffects || []).filter((e) => e && e.effectType);
       const allEffectTypes = [
@@ -259,7 +261,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
         .map((f) => String(f.imageRef)))];
       out.push({
         sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
-        reason: hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
+        reason: listedSlice ? '清单 sliceExport' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
         w, h, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
         imageRefs: imageRefs.length ? imageRefs : undefined,
         renderCropPolicy: exportBounds === 'render' && isBakedImageOwner ? 'top-left-render-canvas' : null,
