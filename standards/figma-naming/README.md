@@ -8,11 +8,11 @@
 | 你是 | 看这里 |
 |---|---|
 | 设计师 —— 我该怎么给图层起名 | [`spec/naming-spec.md`](spec/naming-spec.md) |
-| 要把已规范命名稿交给做页 | [`tool/README.md`](tool/README.md) 的「做页前交接：inventory/v2」 |
+| 要把已规范命名稿交给做页 | 触发词 `出清单` → [`SKILL.md`](SKILL.md)；命令细节见 [`tool/README.md`](tool/README.md) 的「做页前交接：inventory/v2」 |
 | 想体检自己的稿 | [`tool/README.md`](tool/README.md) 的「命名体检快速开始」 |
 | 要改判定逻辑 | [`tool/CLAUDE.md`](tool/CLAUDE.md) |
 
-现行交接：人给已规范命名、带 `node-id` 的货架链接 → `npm run inventory` → `_tmp/inventory-<page>.json`（`schema=inventory/v2`、`status=ready`）→ `handoff:pack` 打 ready 包 → 做页只吃 ready。不写回 Figma，不用插件交接。未规范稿去 `projects/project-unnamed-inventory`。做页接入见 issue #5（指派 `zhanxinyi-lab`）。
+现行交接：说出 `出清单` → 人给已规范命名、带 `node-id` 的货架链接 → `npm run inventory` → `_tmp/inventory-<page>.json`（`schema=inventory/v2`、`status=ready`）→ `handoff:pack` 打 ready 包 → 做页 `figma:from-handoff` 吃包闸门绿才交付。做页只吃 ready。不写回 Figma，不用插件交接。未规范稿去 `projects/project-unnamed-inventory`。做页接入见 issue #5。
 
 ## 为什么分成两半
 

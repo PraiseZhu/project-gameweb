@@ -22,7 +22,7 @@ npm run handoff:pack -- \
 
 ```bash
 cd skills/yise-web-ui
-npm run figma:from-handoff -- <交接包目录>
+npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 ```
 
 `inventory:check` 不是做页吃包入口。它只保留对单份 `status=ready` inventory JSON 的五项诊断。吃包用 `figma:from-handoff`。非 ready 包不可被消费。
