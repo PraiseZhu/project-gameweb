@@ -66,14 +66,7 @@
     "scripts/__tests__/_responsive-acceptance.test.mjs",
     "scripts/__tests__/_responsive-behavior.test.mjs",
     "scripts/__tests__/_responsive-breakpoint-structure.test.mjs",
-    "scripts/__tests__/_section03-locale-diagnosis.mjs",
-    "scripts/__tests__/figma-auto-layout.test.mjs",
-    "scripts/__tests__/figma-text-box-alignment.test.mjs",
-    "scripts/__tests__/figma-prototype-truth.test.mjs",
-    "scripts/__tests__/figma-richtext.test.mjs",
-    "scripts/__tests__/font-routing.test.mjs",
-    "scripts/__tests__/hero-scroll-slot.test.mjs",
-    "scripts/__tests__/comp-paint-order.test.mjs"
+    "scripts/__tests__/_section03-locale-diagnosis.mjs"
   ],
   "privateReasons": {
     "demos/": "Etheria/伊瑟 fixtures, captures, generated truth, assets, and page-specific evidence.",
@@ -126,14 +119,7 @@
     "scripts/__tests__/_responsive-acceptance.test.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
     "scripts/__tests__/_responsive-behavior.test.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
     "scripts/__tests__/_responsive-breakpoint-structure.test.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
-    "scripts/__tests__/_section03-locale-diagnosis.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
-    "scripts/__tests__/figma-auto-layout.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。",
-    "scripts/__tests__/figma-text-box-alignment.test.mjs": "通用能力测试但 fixture 绑死当前页 design-previews(公开包无法运行),归入 test:demo 私有验收套件。",
-    "scripts/__tests__/figma-prototype-truth.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。",
-    "scripts/__tests__/figma-richtext.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。",
-    "scripts/__tests__/font-routing.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。",
-    "scripts/__tests__/hero-scroll-slot.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。",
-    "scripts/__tests__/comp-paint-order.test.mjs": "通用能力测试但 fixture 绑死 SS5 私有 demo(公开包无法运行),归入 test:demo 私有验收套件。"
+    "scripts/__tests__/_section03-locale-diagnosis.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。"
   },
   "requiredAudit": [
     "package.name=yise-web-ui",

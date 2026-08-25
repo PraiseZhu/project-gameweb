@@ -1,13 +1,5 @@
 {
-  "demo": [
-    "scripts/__tests__/figma-auto-layout.test.mjs",
-    "scripts/__tests__/figma-text-box-alignment.test.mjs",
-    "scripts/__tests__/figma-prototype-truth.test.mjs",
-    "scripts/__tests__/figma-richtext.test.mjs",
-    "scripts/__tests__/font-routing.test.mjs",
-    "scripts/__tests__/hero-scroll-slot.test.mjs",
-    "scripts/__tests__/comp-paint-order.test.mjs"
-  ],
+  "demo": [],
   "broken": {
     "scripts/__tests__/comp-fix-r7.test.mjs": "tailwind 内部 API / 钉版契约与现实现脱节",
     "scripts/__tests__/qa-hifi-demo.test.mjs": "init 输出已换壳，旧四件套断言失效",
