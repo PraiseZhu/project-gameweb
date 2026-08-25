@@ -3,7 +3,7 @@ name: figma-naming
 trigger: 出清单
 description: >
   已规范 Figma 货架链接出 inventory/v2 ready 清单并打交接包。
-  触发词：出清单。用户提供带 node-id 的已规范货架链接时使用。
+  对人只交交接包路径。触发词：出清单。用户提供带 node-id 的已规范货架链接时使用。
   未规范稿出清单不在本仓。
 disable-model-invocation: false
 ---
@@ -14,7 +14,7 @@ disable-model-invocation: false
 
 命令一律从仓库根起跑，每步自己 `cd`，不要假定还停在上一步的目录。出清单 / 打包在 `standards/figma-naming/tool/`；吃包在 `skills/yise-web-ui/`。规范正文：`standards/figma-naming/spec/naming-spec.md`。
 
-本仓只编已规范 ready。脚本按图层前缀抓树、几何、组件集、变体，出 `status: "ready"`。agent 核前缀/结构后打 ready 交接包，再跑做页 `figma:from-handoff`。闸门绿才算交付。做页只吃 ready。不做判断包看图写回。
+本仓只编已规范 ready。脚本按图层前缀抓树、几何、组件集、变体，出 `status: "ready"`。agent 核前缀/结构后打 ready 交接包，再跑做页 `figma:from-handoff`。闸门绿才算交付。对人只交交接包路径，不要把两份 inventory JSON 或核对页链接当交付物。做页只吃 ready。不做判断包看图写回。
 
 未规范 / 任意命名稿去 `projects/project-unnamed-inventory`。本仓遇到 `--status draft`、`inventory-unnamed-*`、`--allow-green-draft` 直接失败。
 
@@ -77,14 +77,7 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 
 过不了：停，点名 node id，不打包。
 
-核对页可选。人没要求就跳过。要开时从仓库根跑：
-
-```bash
-cd standards/figma-naming/tool
-npm run inventory:review
-```
-
-开了也不改 `ready`，unknown 必须显式保留。核对页 UI 只读仓内 `tool/inventory-review/index.html`。
+人没点名不要起 `inventory:review`，不要发核对页链接。
 
 ### 4. 打 ready 交接包
 
@@ -121,11 +114,13 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 - stdout 顶层 `ok: true`、`kind: "ready"`、`ready: true`
 - `consume.pc.unknownNotWired` 与 `consume.mobile.unknownNotWired` 都是 `true`（没有顶层 `unknownNotWired`）
 
-闸门绿之后把包路径、fingerprint、wirable / drawOnly 计数交给做页 skill。禁止接着跑抽真值 / 搭页 / `figma:preview`。`inventory:check` 不是吃包入口。消费细则见 `handoff/CONSUMER.md`。
+闸门绿之后对人只交交接包路径 `_tmp/out/handoff-<page>`，可带 fingerprint。禁止接着跑抽真值 / 搭页 / `figma:preview`。`inventory:check` 不是吃包入口。消费细则见 `handoff/CONSUMER.md`。
 
 ### 6. 才能说交付
 
-必须同时成立：两端 ready JSON、交接包 `kind=ready`、吃包闸门绿。缺一不可称完成。交付物是交接包目录，不是 HTML。
+必须同时成立：两端 ready JSON、交接包 `kind=ready`、吃包闸门绿。缺一不可称完成。
+
+对人只交交接包路径 `_tmp/out/handoff-<page>`。不要把 `_tmp/inventory-<page>.json`、核对页 URL 当交付物。交付物是交接包目录，不是 HTML，也不是两份 JSON。
 
 ## 失败就停
 
@@ -146,5 +141,6 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 - 不要把 unknown 写成确定关系
 - 不要用插件或本机桥做 inventory 交接，不要写回 Figma
 - 不要只丢画布里某一个 PC/手机 frame；左侧 Page 链接才是正常输入
-- 不要把核对页当成必做
+- 不要把两份 inventory JSON 或核对页链接当对人交付物
+- 不要默认起 `inventory:review`
 - 不要在本 skill 写 HTML 或继续做页渲染

@@ -20,15 +20,7 @@
    未规范稿去 `projects/project-unnamed-inventory`。本仓拒绝 `--status draft`。
    链接里的 `node-id` 是拉稿根，`--page` 只在已拉取的树中选页面，不能拿 `--page` 代替拉稿根。
 3. 命令产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 为 `schema: "inventory/v2"`、`status: ready`。抓取、整理或自验失败即停止。
-4. 核对页可选。人没要求就跳过。要开时从仓库根跑：
-
-   ```bash
-   cd standards/figma-naming/tool
-   npm run inventory:review
-   ```
-
-   复核页面身份、modal 入口、组件集/完整变体和实例关联。核对页 UI 只读仓内 `inventory-review/index.html`，禁止写 `_tmp/inventory-review/index.html`，禁止每次重写。没有原型或 `@go` 证据的弹窗入口保持对应关系上的 `unknown`，不猜；复核保存不改变整份清单的 `ready` 状态。移动端用 `?inv=inventory-392-25877.json`。
-5. 两端 ready 后 `handoff:pack` 打交接包；再从仓库根 `cd skills/yise-web-ui` 跑 `figma:from-handoff`。吃包闸门绿才交付。命令不写 HTML。unknown 节点只画样子、不赋交互，unknown 的 `modal-trigger` 不自动接线。
+4. 两端 ready 后 `handoff:pack` 打交接包；再从仓库根 `cd skills/yise-web-ui` 跑 `figma:from-handoff`。吃包闸门绿才交付。对人只交交接包路径，不要把两份 inventory JSON 或核对页链接当交付物。命令不写 HTML。unknown 节点只画样子、不赋交互，unknown 的 `modal-trigger` 不自动接线。
 
 做页消费边界：先按已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、完整
 组件变体树和 modal 附件本体搭页；`unknown` 节点只画样子、不赋交互；
@@ -53,8 +45,7 @@
 | 形态 | 状态 | 说明 |
 |---|---|---|
 | `inventory/v2` CLI | **当前主入口** | `npm run inventory -- --file "<整棵货架链接>" --page <页面 id>` → `_tmp/inventory-<page>.json/.txt`，自验通过输出 `ready` |
-| `handoff:pack` + 吃包闸门 | **交付终点** | 两端 ready 后打包，再 `figma:from-handoff`；闸门绿才算交付，不写 HTML |
-| `inventory:review` | 可选人工复核 | `npm run inventory:review` → 可视化核对身份和弹窗入口；移动端使用 `?inv=inventory-392-25877.json`，不改变 ready 状态 |
+| `handoff:pack` + 吃包闸门 | **交付终点** | 两端 ready 后打包，再 `figma:from-handoff`；闸门绿才算交付。对人只交交接包路径，不写 HTML |
 | 命令行 | 已可用 | `npm run lint -- "<figma 链接>"` → 终端摘要 + `report/naming-report.{md,json}` |
 | 本机桥 / Figma 插件 | 已有实现，非本轮入口 | 仍服务既有命名实现；本轮不得用于 inventory 交接，也不在此轮修改写回逻辑 |
 

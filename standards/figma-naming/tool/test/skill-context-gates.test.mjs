@@ -24,7 +24,7 @@ const REQUIRED_IN_SKILL = [
   "做页只吃 ready",
   "figma:from-handoff",
   "不写 HTML",
-  "核对页可选",
+  "对人只交交接包路径",
   "出清单",
 ];
 
@@ -40,6 +40,11 @@ test("SKILL.md 必须写清本仓只走已规范 ready，未规范指向独立�
   const missing = REQUIRED_IN_SKILL.filter((needle) => !text.includes(needle));
   assert.deepEqual(missing, [], `SKILL.md 缺本仓口径：${missing.join("；")}`);
   assert.equal(text.includes("发链接后自动跑到判断写回"), false, "本仓 SKILL 不得再把判断写回当默认开工");
+  assert.equal(text.includes("核对页可选"), false, "本仓 SKILL 不得把核对页写成交接步骤");
+  assert.equal(text.includes("/inventory-review/?inv="), false, "本仓 SKILL 不得把核对页链接当交付物");
+  const reviewBash = bashBlocksOf(text).some((block) => block.includes("inventory:review"));
+  assert.equal(reviewBash, false, "本仓 SKILL 不得把 inventory:review 写进 bash 步骤");
+  assert.match(text, /对人只交交接包路径 `_tmp\/out\/handoff-<page>`/);
 });
 
 test("项目 CLAUDE.md 必须把未规范出清单指到独立仓", () => {
@@ -108,7 +113,7 @@ function sampleReady(id) {
 
 function assertHandoffBashBlocksSelfCd(text, label) {
   const blocks = bashBlocksOf(text);
-  const handoff = blocks.filter((block) => /npm run (inventory|inventory:review|handoff:pack|figma:from-handoff)\b/.test(block));
+  const handoff = blocks.filter((block) => /npm run (inventory|handoff:pack|figma:from-handoff)\b/.test(block));
   assert.ok(handoff.length >= 1, `${label} 缺交接 bash 块`);
   for (const [index, block] of handoff.entries()) {
     const cd = cdTargetOf(block);
@@ -131,7 +136,7 @@ function assertHandoffBashBlocksSelfCd(text, label) {
 test("SKILL.md 每个 bash 块从仓库根自己 cd，_tmp 解析到仓库根", () => {
   const text = readFileSync(SKILL_PATH, "utf8");
   const blocks = bashBlocksOf(text);
-  assert.ok(blocks.length >= 4, `至少要有 inventory / review / pack / from-handoff 四块，收到 ${blocks.length}`);
+  assert.ok(blocks.length >= 3, `至少要有 inventory / pack / from-handoff 三块，收到 ${blocks.length}`);
   for (const [index, block] of blocks.entries()) {
     const cd = cdTargetOf(block);
     assert.ok(cd, `bash 块 ${index + 1} 缺 cd`);
@@ -163,7 +168,7 @@ test("tool/CLAUDE.md 交接命令块也必须从仓库根自己 cd", () => {
   const text = readFileSync(TOOL_CLAUDE_PATH, "utf8");
   assertHandoffBashBlocksSelfCd(text, "tool/CLAUDE.md");
   assert.match(text, /cd standards\/figma-naming\/tool\n\s*npm run inventory --/);
-  assert.match(text, /cd standards\/figma-naming\/tool\n\s*npm run inventory:review/);
+  assert.equal(text.includes("npm run inventory:review"), false, "tool/CLAUDE.md 不得把核对页写进交接步骤");
 });
 
 test("吃包完成条件字段必须和脚本返回值同名", () => {

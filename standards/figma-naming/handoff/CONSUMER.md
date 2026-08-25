@@ -25,7 +25,7 @@ cd skills/yise-web-ui
 npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 ```
 
-`inventory:check` 不是做页吃包入口。它只保留对单份 `status=ready` inventory JSON 的五项诊断。吃包用 `figma:from-handoff`。非 ready 包不可被消费。
+`inventory:check` 不是做页吃包入口。它只保留对单份 `status=ready` inventory JSON 的五项诊断。吃包用 `figma:from-handoff`。非 ready 包不可被消费。对人只交交接包目录，不要把两端 inventory JSON 当交付物。
 
 交接包只交清单。切图按节点 `sliceExport`（墨迹框、1 倍、png、完整 node id）由做页自己导出，包里不带 PNG。消费包时要核 `manifest.schema` / `kind` / `ready` / `fingerprint`，对不上就不要吃。
 
