@@ -73,7 +73,7 @@
 | `spec/consumer-assumptions.md` | 下游消费假定 A0–A7，规则 `why` 成立的前提 | 改假定要重新评估引用它的规则是否还成立；版本号受锁 |
 | `spec/spec.mjs` | 前缀表 / 参数表 / 前缀形态参数 / 排除词表的机器可读镜像 | 只做镜像，不新增规则。升版时同步两个版本号。`src/spec.mjs` 只做兼容转发 |
 | `src/parse.mjs` | 图层名 → 结构。**不判对错**，只拆开并标出可疑处 | 判定参数全部来自 `PREFIX_SYNTAX`，不许在这里写死数值；严重度判定不许写进这里 |
-| `src/rules.mjs` | 20 条错误码的 `why` / `fix`（元信息是 §6 的镜像） | 新增规则要先进 §6 清单表。写不出 `why` 或指不到假定编号的规则不要加 |
+| `src/rules.mjs` | 21 条错误码的 `why` / `fix`（元信息是 §6 的镜像） | 新增规则要先进 §6 清单表。写不出 `why` 或指不到假定编号的规则不要加 |
 | `src/lint.mjs` | 遍历树产出 findings + 体检根自检。纯函数，不碰网络与文件系统 | 新增规则必须在 `rules.mjs` 先登记，否则 `push()` 抛错 |
 | `src/report.mjs` | findings → 终端 / Markdown / JSON，按 `disposition` 分区 + 按组件归并 | 归并键四段「组件 + 错误码 + 实例内位置索引 + 图层名」，少任何一段都会少报动作数 |
 | `src/figma.mjs` | Figma REST 最小封装 + lastModified 缓存 | — |

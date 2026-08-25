@@ -80,6 +80,101 @@ test("结构硬闸：@sec 没靶、空滑动、ind 无轮播会红；光 btn 和
   assert.equal(auditDeclaredStructure(inv).ok, false);
 });
 
+test("结构硬闸：fix/@from 没靶会红；对上分区不红并写入 overlays.from", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 40 },
+    ...extra,
+  });
+  const bad = node("page", "FRAME", "pc", [
+    node("sec1", "FRAME", "sec/1-首屏"),
+    node("fix", "FRAME", "fix/导航@from=2", [node("btn", "FRAME", "btn/导航")]),
+  ]);
+  const badInv = buildInventory(bad, { requestedNodeId: "page" });
+  const badCheck = validateInventory(badInv, bad);
+  assert.equal(badCheck.ok, false);
+  assert.match(badCheck.problems.join("\n"), /@from=2 指向的分区不存在/);
+
+  const ok = node("page", "FRAME", "pc", [
+    node("sec1", "FRAME", "sec/1-首屏"),
+    node("sec2", "FRAME", "sec/2-日历"),
+    node("fix", "FRAME", "fix/导航@from=2", [node("btn", "FRAME", "btn/导航")]),
+  ]);
+  const okInv = buildInventory(ok, { requestedNodeId: "page" });
+  assert.equal(validateInventory(okInv, ok).ok, true, validateInventory(okInv, ok).problems.join("\n"));
+  const overlay = okInv.overlays.find((item) => item.id === "fix");
+  assert.equal(overlay.from, 2);
+  assert.equal(overlay.pin, "viewport");
+  assert.equal(okInv.nodes.find((n) => n.id === "fix").params.from, "2");
+  assert.match(renderHumanSummary(okInv), /from=sec\/2/);
+});
+
+test("@go 按弹窗图层名接线；同名或多个对不上则红", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 40 },
+    ...extra,
+  });
+  const page = node("page", "FRAME", "pc", [
+    node("sec1", "FRAME", "sec/1-首屏", [
+      node("play", "FRAME", "btn/播放@go=modal/视频弹窗"),
+    ]),
+  ]);
+  const modal = node("modal", "FRAME", "modal/视频弹窗", [node("close", "FRAME", "btn/关闭")]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, modal]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  assert.equal(validateInventory(inv, shelf).ok, true, validateInventory(inv, shelf).problems.join("\n"));
+  const hit = inv.relations.find((r) => r.kind === "modal-trigger" && r.status === "determined");
+  assert.equal(hit.from.id, "play");
+  assert.equal(hit.to.id, "modal");
+  assert.equal(hit.evidence, "name-param:@go");
+
+  const shared = node("shelf-shared", "FRAME", "cn_pc", [
+    node("page-shared", "FRAME", "pc", [
+      node("sec-shared", "FRAME", "sec/1-首屏", [
+        node("nav-page", "FRAME", "btn/导航@go=modal/顶部导航"),
+      ]),
+      node("fix-nav", "FRAME", "fix/导航@from=1", [
+        node("nav-fix", "FRAME", "btn/导航@go=modal/顶部导航"),
+      ]),
+    ]),
+    node("modal-nav", "FRAME", "modal/顶部导航"),
+  ]);
+  const sharedInv = buildInventory(shared, { requestedNodeId: "page-shared" });
+  assert.equal(validateInventory(sharedInv, shared).ok, true, validateInventory(sharedInv, shared).problems.join("\n"));
+  const sharedHits = sharedInv.relations.filter((r) => r.kind === "modal-trigger" && r.status === "determined");
+  assert.deepEqual(sharedHits.map((r) => r.from.id).sort(), ["nav-fix", "nav-page"]);
+  assert.ok(sharedHits.every((r) => r.to.id === "modal-nav" && r.evidence === "name-param:@go"));
+  assert.equal(sharedInv.relations.filter((r) => r.kind === "modal-trigger" && r.status === "unknown").length, 0);
+
+  const missing = node("shelf-missing", "FRAME", "cn_pc", [
+    node("page-missing", "FRAME", "pc", [
+      node("sec-missing", "FRAME", "sec/1-首屏", [
+        node("play-missing", "FRAME", "btn/播放@go=modal/没有这扇窗"),
+      ]),
+    ]),
+    node("modal-other", "FRAME", "modal/视频弹窗"),
+  ]);
+  const missingInv = buildInventory(missing, { requestedNodeId: "page-missing" });
+  const missingCheck = validateInventory(missingInv, missing);
+  assert.equal(missingCheck.ok, false);
+  assert.match(missingCheck.problems.join("\n"), /@go=modal\/没有这扇窗 对不上任何 modal/);
+
+  const dup = node("shelf2", "FRAME", "cn_pc", [
+    node("page2", "FRAME", "pc", [
+      node("sec2", "FRAME", "sec/1-首屏", [
+        node("play2", "FRAME", "btn/播放@go=modal/视频弹窗"),
+      ]),
+    ]),
+    node("m1", "FRAME", "modal/视频弹窗"),
+    node("m2", "FRAME", "modal/视频弹窗"),
+  ]);
+  const dupInv = buildInventory(dup, { requestedNodeId: "page2" });
+  const dupCheck = validateInventory(dupInv, dup);
+  assert.equal(dupCheck.ok, false);
+  assert.match(dupCheck.problems.join("\n"), /命中 2 个同名 modal/);
+});
+
 test("unknown 不得带 role / 不得赋行为", () => {
   const tree = {
     id: "r", name: "pc", type: "FRAME",

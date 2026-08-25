@@ -55,7 +55,7 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 
 链接形如 `https://www.figma.com/design/<fileKey>/...?node-id=392-18375`，`--page` 另给 `392:24190` 这类页 id。链接里的 `node-id` 是拉稿根；`--page` 不改变拉稿范围。PC / mobile 各出一份。抓取、整理、自验任一步失败就停。
 
-自验含确定性结构：`@sec` 没靶、`ind/` 无/多 `switch/`、`scroll/` 没轨道、`sec/` 重号嵌套分散、参数非法。缺完成标准里的字段就停。全角斜杠与半角同义，不算错。`inventory` 自验不挡没命名的 unknown、光 `btn/`、命名体检启发式报警。打包时 `handoff:pack` 另跑 completeness：无 `img/` 祖先、名字整段是 `素材图` / `素材` / `边框背景`+数字 / `背景边框` / `立绘` 的 unknown 仍会失败，停在打包，不改 JSON。
+自验含确定性结构：`@sec` 没靶、`fix/@from` 没靶、`@go` 对不上或命中多个同名 `modal/`、`ind/` 无/多 `switch/`、`scroll/` 没轨道、`sec/` 重号嵌套分散、参数非法。缺完成标准里的字段就停。全角斜杠与半角同义，不算错。`inventory` 自验不挡没命名的 unknown、光 `btn/`、命名体检启发式报警。打包时 `handoff:pack` 另跑 completeness：无 `img/` 祖先、名字整段是 `素材图` / `素材` / `边框背景`+数字 / `背景边框` / `立绘` 的 unknown 仍会失败，停在打包，不改 JSON。
 
 完成标准（两端都要）：
 
@@ -63,7 +63,7 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 - `_tmp/inventory-<page>.json` 与 `.txt` 落地
 - JSON 必须是 `schema: "inventory/v2"`、`status: "ready"`、`ok: true`
 - 覆盖页面本体、同货架 modal、页面实际引用的组件集及完整变体、实例关联
-- 节点带 `pageBox`/`parentBox`；`img/` `bg/` `kv/`、BOOLEAN `btn/`、页上 `ind/` 变体根带 `sliceExport`（墨迹框、1 倍、png）；`fix/` 钉视口；文字带 `fontFamily`/`fontWeight`/`fontSize`
+- 节点带 `pageBox`/`parentBox`；`img/` `bg/` `kv/`、BOOLEAN `btn/`、页上 `ind/` 变体根带 `sliceExport`（墨迹框、1 倍、png）；`fix/` 钉视口，写了 `@from=N` 的 overlays 带 `from`；文字带 `fontFamily`/`fontWeight`/`fontSize`
 - 没有原型或 `@go` 证据的弹窗入口留在对应关系上的 `unknown`，不改变整份清单 ready
 
 ### 3. agent 核一遍

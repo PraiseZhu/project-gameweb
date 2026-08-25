@@ -42,12 +42,12 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 只核前缀：`btn/` `img/` `scroll/` `switch/` `fix/` `bg/` `kv/` `modal/` `ind/` `tab/` `hot/` `mix/` `sec/` `dyn/`。  
 行为看清单里的 `role` + `params`，禁止 `parseLayerName` / `deriveRole` 再猜图层名。
 
-摆位置用 `pageBox`（相对这一页）和 `parentBox`（相对父层），不要拿画布 `box` 去摆。`fix/` 钉视口，坐标用 `viewportBox` / `pageBox`。  
+摆位置用 `pageBox`（相对这一页）和 `parentBox`（相对父层），不要拿画布 `box` 去摆。`fix/` 钉视口，坐标用 `viewportBox` / `pageBox`。写了 `params.from` / `overlays.from` 的，滚到该 `sec/N` 及以下才出现；不写则进页就钉。`@from` 只在 `fix/` 上，不要当成 `btn/@sec`。  
 切图按节点 `sliceExport`：墨迹框、1 倍、png，文件名是完整 node id。导 `img/` `bg/` `kv/`（含 mix 自动拆的 `img/`），带 `sliceExport` 的 BOOLEAN `btn/`，以及页上用到的 `ind/` 组件集每个变体根。`mix/` 容器本身不切。mix 里无前缀的裁切溢出框升 `scroll/`；设计师写成 `scroll/可滑动内容` 同样接滑动裁切。页上用到的组件集**每个变体**里的切图都要导，不能只导当前看见的那一张。做页按这份契约自己导出，包里没有现成 PNG，不要再走 `figma-assets` 的 `use_absolute_bounds` 按节点框重导，也不要去猜 `skipped` 子层。  
 TEXT 默认可改字；一旦 `role` 是 `img/` `bg/` `kv/` 就按切图，不排字。  
 有 `rotation` 必须按这个角度摆，不能当 0。`style.fills` 用全层，不能只吃第一层。  
 拉伸读 `layout.constraints`（钉左/钉右/居中/随页）。遮罩/裁切读 `isMask` `maskChildren` `clipsContent`，按父层裁，不让子层漏边。  
-弹窗默认隐藏、不进页面滚动高度；只有 `modal-trigger` 为 determined 才接线，unknown 不接。  
+弹窗默认隐藏、不进页面滚动高度；只有 `modal-trigger` 为 determined 才接线，unknown 不接。`params.go` 抄的是弹窗图层名（`modal/顶部导航`），不是 node id。  
 文字必带 `fontFamily` `fontWeight` `fontSize`，再用 `lineHeightPercent`、`paragraphSpacing`、外层 min/max。换不出百分比才留 `lineHeight` 像素。  
 实例相对母版的改动在 `instanceOverrides`。布局约束原样带 Figma 字段，含 `layoutPositioning`。  
 PC/手机同一模块看 `sameModules`：按前缀+名字一对一配对；对不上标 `pc-only` / `mobile-only`。配对上的各用各端 `pageBox`，不能拿 PC 坐标摆手机。  

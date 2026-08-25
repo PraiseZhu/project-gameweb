@@ -139,6 +139,27 @@ test("handoff：结构硬闸红则拒", () => {
   assert.match(result.problems.join("\n"), /structure:.*@sec=9/);
 });
 
+test("handoff：fix/@from 没靶则拒", () => {
+  const bad = sample("1:1");
+  bad.nodes.push(stampReadyFields({
+    id: "1:1-fix-from",
+    type: "FRAME",
+    name: "fix/导航@from=9",
+    status: "determined",
+    role: "fix",
+    label: "导航",
+    params: { from: "9" },
+    behavior: "overlay",
+    via: "prefix",
+    pin: "viewport",
+    box: { x: 0, y: 0, w: 40, h: 40 },
+  }));
+  rebuildInventoryIndexes(bad);
+  const result = validateHandoffPair(bad, sample("2:2"));
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /structure:.*@from=9/);
+});
+
 test("handoff：completeness 红则拒", () => {
   const bad = sample("1:1");
   bad.nodes[0].name = "导航状态";

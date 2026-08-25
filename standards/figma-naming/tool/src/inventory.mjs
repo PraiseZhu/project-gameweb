@@ -301,9 +301,14 @@ export function rebuildInventoryIndexes(inv) {
   inv.sections = determined.filter((node) => node.role === "sec").map((node) => ({
     id: node.id, number: secNumber(node.label), label: node.label, box: node.box, pageBox: node.pageBox ?? null,
   })).sort((a, b) => (a.number ?? 1e9) - (b.number ?? 1e9) || (a.box?.y ?? 0) - (b.box?.y ?? 0));
-  inv.overlays = determined.filter((node) => node.role === "fix").map((node) => ({
-    id: node.id, role: "fix", label: node.label, pin: "viewport", pageBox: node.pageBox ?? node.viewportBox ?? null,
-  }));
+  inv.overlays = determined.filter((node) => node.role === "fix").map((node) => {
+    const overlay = {
+      id: node.id, role: "fix", label: node.label, pin: "viewport", pageBox: node.pageBox ?? node.viewportBox ?? null,
+    };
+    const from = positiveIntParam(node.params?.from);
+    if (from != null) overlay.from = from;
+    return overlay;
+  });
   inv.backgrounds = determined.filter((node) => node.role === "kv" || node.role === "bg").map((node) => ({
     id: node.id, role: node.role, label: node.label, pageBox: node.pageBox ?? null,
   }));
@@ -547,10 +552,39 @@ function findPrototypeTargets(node) {
   return [...new Set(candidates)];
 }
 
+function modalNameKey(name) {
+  const parsed = parseName(name);
+  if (parsed.prefix === "modal" && parsed.body) return `modal/${parsed.body}`;
+  return String(name || "").trim();
+}
+
+function groupModalsByName(modals) {
+  const byName = new Map();
+  for (const modal of modals || []) {
+    const key = modalNameKey(modal.name);
+    if (!key) continue;
+    const list = byName.get(key) ?? [];
+    list.push(modal);
+    byName.set(key, list);
+  }
+  return byName;
+}
+
+function modalsNamed(byName, raw) {
+  if (raw == null || raw === true || raw === "") return [];
+  const key = modalNameKey(raw) || String(raw);
+  return byName.get(key) || byName.get(`modal/${key}`) || [];
+}
+
+function positiveIntParam(value) {
+  if (value == null || value === true || value === "") return null;
+  if (!/^[1-9]\d*$/.test(String(value))) return null;
+  return Number(value);
+}
+
 function makeModalRelations(pageNodes, modals) {
   const relations = [];
   const modalById = new Map(modals.map((modal) => [modal.id, modal]));
-  const pageById = new Map(pageNodes.map((node) => [node.id, node]));
   const linked = new Set();
   for (const node of pageNodes) {
     for (const targetId of findPrototypeTargets(node)) {
@@ -563,20 +597,23 @@ function makeModalRelations(pageNodes, modals) {
       });
     }
   }
+  const byName = groupModalsByName(modals);
+  for (const node of pageNodes) {
+    const hits = modalsNamed(byName, node.params?.go);
+    if (hits.length !== 1) continue;
+    const modal = hits[0];
+    linked.add(modal.id);
+    relations.push({
+      kind: "modal-trigger", status: "determined", evidence: "name-param:@go",
+      from: { id: node.id, scope: "page" }, to: { id: modal.id, scope: `modal:${modal.id}` },
+    });
+  }
   for (const modal of modals) {
     if (linked.has(modal.id)) continue;
-    const directGo = [...pageById.values()].find((node) => node.params?.go === modal.id);
-    if (directGo) {
-      relations.push({
-        kind: "modal-trigger", status: "determined", evidence: "name-param:@go",
-        from: { id: directGo.id, scope: "page" }, to: { id: modal.id, scope: `modal:${modal.id}` },
-      });
-    } else {
-      relations.push({
-        kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link",
-        from: null, to: { id: modal.id, scope: `modal:${modal.id}` },
-      });
-    }
+    relations.push({
+      kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link",
+      from: null, to: { id: modal.id, scope: `modal:${modal.id}` },
+    });
   }
   return relations;
 }
@@ -700,11 +737,21 @@ export function auditDeclaredStructure(inv) {
 
   const presentNums = new Set(numbered.map((item) => item.num));
   for (const node of pageNodes) {
-    const raw = node.params?.sec;
-    if (raw == null || raw === true || raw === "") continue;
-    if (!/^[1-9]\d*$/.test(String(raw))) continue;
-    const num = Number(raw);
-    if (!presentNums.has(num)) problems.push(`${node.id} @sec=${raw} 指向的分区不存在`);
+    const num = positiveIntParam(node.params?.sec);
+    if (num != null && !presentNums.has(num)) problems.push(`${node.id} @sec=${node.params.sec} 指向的分区不存在`);
+  }
+  for (const node of pageNodes) {
+    if (node.status !== "determined" || node.role !== "fix") continue;
+    const num = positiveIntParam(node.params?.from);
+    if (num != null && !presentNums.has(num)) problems.push(`${node.id} @from=${node.params.from} 指向的分区不存在`);
+  }
+  const modalByName = groupModalsByName(inv.attachments?.modals);
+  for (const node of pageNodes) {
+    const go = node.params?.go;
+    if (go == null || go === true || go === "") continue;
+    const hits = modalsNamed(modalByName, go);
+    if (hits.length === 0) problems.push(`${node.id} @go=${go} 对不上任何 modal/`);
+    else if (hits.length > 1) problems.push(`${node.id} @go=${go} 命中 ${hits.length} 个同名 modal/`);
   }
 
   for (const node of nodes) {
@@ -879,7 +926,10 @@ export function renderHumanSummary(inv) {
   if (!inv.sections?.length) lines.push("  （无）");
   lines.push("");
   lines.push("悬浮 / 底图");
-  for (const overlay of inv.overlays || []) lines.push(`  fix  ${overlay.label}   ${overlay.id}`);
+  for (const overlay of inv.overlays || []) {
+    const from = Number.isFinite(overlay.from) ? `  from=sec/${overlay.from}` : "";
+    lines.push(`  fix  ${overlay.label}${from}   ${overlay.id}`);
+  }
   for (const background of inv.backgrounds || []) lines.push(`  ${background.role}   ${background.label}   ${background.id}`);
   if (!inv.overlays?.length && !inv.backgrounds?.length) lines.push("  （无）");
   lines.push("");

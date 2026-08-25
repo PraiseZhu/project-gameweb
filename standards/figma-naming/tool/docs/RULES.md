@@ -1,8 +1,8 @@
 # 检查规则表
 
 > 本文件由 `npm run rules` 从 `src/rules.mjs` 生成，**不要手改**。
-> 依据规范：v2.12 (2026-08-25) — `spec/naming-spec.md`
-> 下游假定：A-v1.10 (2026-08-25) — `spec/consumer-assumptions.md`
+> 依据规范：v2.13 (2026-08-25) — `spec/naming-spec.md`
+> 下游假定：A-v1.11 (2026-08-25) — `spec/consumer-assumptions.md`
 
 ## 三个维度
 
@@ -43,6 +43,7 @@
 | `N-IND-NO-CAROUSEL` | 作用域内没有轮播候选 | P0 | must_fix | deterministic | §1 | A4 |
 | `N-IND-CAROUSEL-AMBIGUOUS` | 作用域内轮播候选不唯一 | P0 | must_fix | deterministic | §1 | A4 |
 | `N-NAV-TARGET-MISSING` | @sec 指向的分区不存在 | P0 | must_fix | deterministic | §1 / §2 | A2 |
+| `N-FIX-FROM-MISSING` | @from 指向的分区不存在 | P0 | must_fix | deterministic | §1 / §2 | A2 |
 | `N-MODAL-INLINE` | 弹窗叠画在页面稿上 | P1 | must_fix | deterministic | §1 | A7 |
 | `N-SCROLL-NO-TRACK` | 滑动区没有内容轨道 | P1 | must_fix | deterministic | §1 | A5 |
 | `N-KV-SINGLE-LAYER` | KV 只有单层 | P2 | confirm | heuristic | §5 | A1 |
@@ -50,7 +51,7 @@
 | `N-TEXT-FIXED-SIZE` | 文字是固定尺寸文本框 | P2 | confirm | heuristic | §3 | A6 |
 | `N-NAME-DUPLICATE` | 两个图层同名 | P1 | must_fix | deterministic | §6 | A1 |
 
-## 必须改 · `must_fix`（16 条）
+## 必须改 · `must_fix`（17 条）
 
 ### `N-PREFIX-NOT-IN-TABLE` 前缀词不在总表内
 
@@ -62,14 +63,14 @@
 ### `N-PARAM-EMPTY` @参数缺值
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
-- **不改会怎样**：`@link=` / `@go=` / `@sec=` 后面空着，等于声明了动作却没说动作是什么。下游据此生成的元素点了没反应（A3），且不会报错。
+- **不改会怎样**：`@link=` / `@go=` / `@sec=` / `@from=` 后面空着，等于声明了动作却没说动作是什么。下游据此生成的元素点了没反应，或 `fix/` 不知道从哪一屏开始钉（A3），且不会报错。
 - **怎么改**：补上值，或去掉该参数。
 - **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
 
 ### `N-PARAM-BAD-VALUE` @参数取值不合法
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
-- **不改会怎样**：`@sec=` 必须是正整数、`@parallax=` 必须在 0–1、`@x`/`@y` 是纯标记不能带值。取值越界会让跳转指错分区或视差计算失真（依据 A3）。
+- **不改会怎样**：`@sec=` / `@from=` 必须是正整数、`@parallax=` 必须在 0–1、`@x`/`@y` 是纯标记不能带值。取值越界会让跳转指错分区、`fix/` 从错误屏开始钉或视差计算失真（依据 A3）。
 - **怎么改**：按 §2 参数表修正取值。
 - **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
 
@@ -115,6 +116,13 @@
 - **怎么改**：改成实际存在的分区编号，或补上缺失的那屏 `sec/`。
 - **规范依据**：`spec/naming-spec.md` §1 / §2 ｜ **依赖假定**：A2（见 `spec/consumer-assumptions.md`）
 
+### `N-FIX-FROM-MISSING` @from 指向的分区不存在
+
+- **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
+- **不改会怎样**：`fix/` 写了 `@from=N`，但体检根子树里没有编号为 N 的分区。下游按这个号决定从哪一屏开始钉视口（A2）；靶不存在时层会一直不出现，或被当成进页就钉。
+- **怎么改**：改成实际存在的分区编号，或补上缺失的那屏 `sec/`。不要把 `@from` 写在 `btn/` 上。
+- **规范依据**：`spec/naming-spec.md` §1 / §2 ｜ **依赖假定**：A2（见 `spec/consumer-assumptions.md`）
+
 ### `N-PREFIX-SLASH` 分隔符不是斜杠
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
@@ -132,7 +140,7 @@
 ### `N-PARAM-MISPLACED` @参数用在了不支持它的前缀上
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
-- **不改会怎样**：参数只在特定前缀上有意义（`@parallax` 只对 kv/、`@sec` 只对 btn/、`@x`/`@y` 只对 scroll/），挂错位置一律无效（依据 A3）。
+- **不改会怎样**：参数只在特定前缀上有意义（`@parallax` 只对 kv/、`@sec` 只对 btn/、`@from` 只对 fix/、`@x`/`@y` 只对 scroll/），挂错位置一律无效（依据 A3）。
 - **怎么改**：把参数挪到正确的前缀节点上，或改用该前缀支持的参数。
 - **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
 
@@ -201,7 +209,7 @@
 | 前缀 | 分类 | 含义 | 可挂 @参数 | 约束 |
 |---|---|---|---|---|
 | `sec/` | 结构 | 屏幕分区（section） | — | 结构语义 |
-| `fix/` | 结构 | 视口固定悬浮层 | — | 结构语义 |
+| `fix/` | 结构 | 视口固定悬浮层 | `@from` | 结构语义 |
 | `ref/` | 结构 | 说明性参考稿（整个子树忽略） | — | 整个子树忽略 |
 | `img/` | 视觉 | 静态装饰图、美术字标题 | — | 命名即切图 |
 | `bg/` | 视觉 | 大面积底图 | — | 命名即切图 |
@@ -223,6 +231,7 @@
 | `@link` | 必填，任意字符串 | `btn/` `hot/` | 跳转语义（URL 在配置里，不写死在稿里） |
 | `@go` | 必填，任意字符串 | `btn/` `hot/` | 点击触发状态转移 |
 | `@sec` | 必填，正整数 | `btn/` | 滚动跳转到分区 N |
+| `@from` | 必填，正整数 | `fix/` | 滚到分区 N 及以下才出现并钉视口 |
 | `@parallax` | 必填，0–1 的数 | `kv/` | 视差系数 0–1 |
 | `@x` | 纯标记，不带值 | `scroll/` | 横滑（默认） |
 | `@y` | 纯标记，不带值 | `scroll/` | 纵滑 |

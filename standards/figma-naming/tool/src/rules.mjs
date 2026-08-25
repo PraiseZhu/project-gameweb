@@ -43,14 +43,14 @@ export const RULES = {
     severity: "P0", disposition: "must_fix", basis: "deterministic",
     layer: "语法", spec: "§2", assumes: ["A3"],
     title: "@参数缺值",
-    why: "`@link=` / `@go=` / `@sec=` 后面空着，等于声明了动作却没说动作是什么。下游据此生成的元素点了没反应（A3），且不会报错。",
+    why: "`@link=` / `@go=` / `@sec=` / `@from=` 后面空着，等于声明了动作却没说动作是什么。下游据此生成的元素点了没反应，或 `fix/` 不知道从哪一屏开始钉（A3），且不会报错。",
     fix: "补上值，或去掉该参数。",
   },
   "N-PARAM-BAD-VALUE": {
     severity: "P0", disposition: "must_fix", basis: "deterministic",
     layer: "语法", spec: "§2", assumes: ["A3"],
     title: "@参数取值不合法",
-    why: "`@sec=` 必须是正整数、`@parallax=` 必须在 0–1、`@x`/`@y` 是纯标记不能带值。取值越界会让跳转指错分区或视差计算失真（依据 A3）。",
+    why: "`@sec=` / `@from=` 必须是正整数、`@parallax=` 必须在 0–1、`@x`/`@y` 是纯标记不能带值。取值越界会让跳转指错分区、`fix/` 从错误屏开始钉或视差计算失真（依据 A3）。",
     fix: "按 §2 参数表修正取值。",
   },
   "N-PARAM-UNKNOWN": {
@@ -64,7 +64,7 @@ export const RULES = {
     severity: "P1", disposition: "must_fix", basis: "deterministic",
     layer: "语法", spec: "§2", assumes: ["A3"],
     title: "@参数用在了不支持它的前缀上",
-    why: "参数只在特定前缀上有意义（`@parallax` 只对 kv/、`@sec` 只对 btn/、`@x`/`@y` 只对 scroll/），挂错位置一律无效（依据 A3）。",
+    why: "参数只在特定前缀上有意义（`@parallax` 只对 kv/、`@sec` 只对 btn/、`@from` 只对 fix/、`@x`/`@y` 只对 scroll/），挂错位置一律无效（依据 A3）。",
     fix: "把参数挪到正确的前缀节点上，或改用该前缀支持的参数。",
   },
 
@@ -124,6 +124,13 @@ export const RULES = {
     title: "@sec 指向的分区不存在",
     why: "导航项指向体检根子树里不存在的分区号，点击后滚动不到任何位置（A2）——验收时表现为导航失灵。",
     fix: "改成实际存在的分区编号，或补上缺失的那屏 `sec/`。",
+  },
+  "N-FIX-FROM-MISSING": {
+    severity: "P0", disposition: "must_fix", basis: "deterministic",
+    layer: "结构", spec: "§1 / §2", assumes: ["A2"],
+    title: "@from 指向的分区不存在",
+    why: "`fix/` 写了 `@from=N`，但体检根子树里没有编号为 N 的分区。下游按这个号决定从哪一屏开始钉视口（A2）；靶不存在时层会一直不出现，或被当成进页就钉。",
+    fix: "改成实际存在的分区编号，或补上缺失的那屏 `sec/`。不要把 `@from` 写在 `btn/` 上。",
   },
   "N-MODAL-INLINE": {
     severity: "P1", disposition: "must_fix", basis: "deterministic",

@@ -20,13 +20,13 @@
 ## 必读字段（做页只读清单，不再回 Figma 抽数）
 
 - 身份：`role` / `params` / `behavior` / `status`。禁止 `parseLayerName` / `deriveRole` 兜底。
-- 位置：`pageBox`（相对这一页）、`parentBox`（相对父层）。不要拿画布 `box` 去摆。`fix/` 用 `pin=viewport` + `viewportBox`。
+- 位置：`pageBox`（相对这一页）、`parentBox`（相对父层）。不要拿画布 `box` 去摆。`fix/` 用 `pin=viewport` + `viewportBox`。有 `params.from` / `overlays.from` 时，滚到该 `sec/N` 及以下才出现。
 - 切图：导 `img/` `bg/` `kv/`（含 mix 自动拆的 `img/`），带 `sliceExport` 的 BOOLEAN `btn/`，以及页上用到的 `ind/` 组件集每个变体根。`mix/` 容器不切。mix 里裁切溢出框升 `scroll/`。按节点 `sliceExport`（墨迹框、1 倍、png、文件名=完整 node id）。页上用到的组件集**每个变体**里的切图都要盖住。做页自己导，不要求交接包 `assets.ok=true`。不要猜 `skipped` 子层。
 - 禁止第二套导图：不要再用 `figma-assets.mjs` 的 `use_absolute_bounds=true` 按节点框重导。
 - 文字：`fontFamily` `fontWeight` `fontSize`；再用 `lineHeightPercent`、`paragraphSpacing`、外层 min/max。
 - 样式：`rotation` 不能当 0；`style.fills` 用全层；拉伸读 `layout.constraints`；遮罩读 `isMask` / `maskChildren` / `clipsContent`。
 - 跨端：`sameModules` 按前缀+名字一对一；对不上标 `pc-only` / `mobile-only`。配对上的各用各端 `pageBox`。
-- 弹窗默认隐藏、不进页面滚动高度；只有 `modal-trigger` 为 determined 才接线。
+- 弹窗默认隐藏、不进页面滚动高度；只有 `modal-trigger` 为 determined 才接线。`params.go` 抄弹窗图层名，不是 node id。
 - TEXT 默认可改字；`img/` `bg/` `kv/` 按切图，不排字。
 
 失败场景：缺 `pageBox` 却用画布坐标；unknown 接线；只导当前变体切图；按节点框重导把柔边压扁；缺字体三项还排字。
