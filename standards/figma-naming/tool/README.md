@@ -39,17 +39,7 @@
 3. 命令自验通过后产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 的
    `schema` 为 `inventory/v2`。本仓 `status` 为 `ready`。清单覆盖页面本体、同货架 modal、页面实际引用的组件集/
    完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持为对应关系上的 `unknown`。
-4. 核对页可选。人没要求就跳过：
-
-   ```bash
-   cd standards/figma-naming/tool
-   npm run inventory:review
-   ```
-
-   UI 固定在仓内 `inventory-review/index.html`，不要写 `_tmp`。人可选核对身份和弹窗入口，`unknown` 必须显式保留；保存 reviewed 清单不改变
-   `status: "ready"`。移动端核对使用 `?inv=inventory-392-25877.json`。
-
-5. 已规范稿两端都 `ready` 后打交接包（不要 `--allow-green-draft`）：
+4. 已规范稿两端都 `ready` 后打交接包（不要 `--allow-green-draft`）：
 
    ```bash
    cd standards/figma-naming/tool
@@ -59,9 +49,9 @@
      --out ../../../_tmp/out/handoff-<page>
    ```
 
-   包里带 `pageBox`/`parentBox`、`sameModules`、切图契约 `sliceExport`。交接包不导 png；`manifest.assets.pc/mobile.packed` 为 `false` 仍可 ready。做页按契约自己导，不猜图层名，不按节点框重导。
+   包里带 `pageBox`/`parentBox`、`sameModules`、切图契约 `sliceExport`。交接包不导 png；`manifest.assets.pc/mobile.packed` 为 `false` 仍可 ready。做页按契约自己导，不猜图层名，不按节点框重导。对人只交这个包路径，不要把两份 inventory JSON 或核对页链接当交付物。
 
-6. 交付终点是做页吃包闸门（只验包，不写 HTML）：
+5. 交付终点是做页吃包闸门（只验包，不写 HTML）：
 
    ```bash
    cd skills/yise-web-ui
@@ -192,7 +182,6 @@ npm run build:plugin -- --labels path/to/user-labels.json
 | 阶段 | 状态 |
 |---|---|
 | `inventory/v2` 抽取命令 | 已可用，自验通过输出 `ready` |
-| inventory 人工核对页 | 可选复核，不改变 `ready` |
 | 命令行体检 | 已可用（既有命名工具） |
 | Figma 插件 / 本机桥 | 既有命名实现，非本轮交接入口 |
 | 重跑基线对比（修好几条 / 有没有改出新问题） | 已可用（阶段 B，见 `docs/PLAN.md`） |
