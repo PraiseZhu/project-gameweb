@@ -1,0 +1,66 @@
+# PR 进仓检查：开 PR / 再 push 时跑同一把 nightly-health.mjs。
+# 失败写 Job Summary（错误 / 问题 / 导致），不设 required check，不拦合并。
+# fork PR 也走 pull_request（不用 pull_request_target）。闸没跑 ≠ 通过。
+name: pr-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-gate:
+    name: pr-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            skills/*/package-lock.json
+            standards/*/package-lock.json
+            standards/*/tool/package-lock.json
+
+      - name: Guard nightly discovery
+        run: node --test .github/scripts/nightly-health.test.mjs
+
+      - name: Run PR-gate summary tests
+        run: node --test .github/scripts/pr-gate-summary.test.mjs
+
+      - name: Run nightly health on this PR
+        id: health
+        continue-on-error: true
+        run: |
+          set +e
+          node .github/scripts/nightly-health.mjs > health.log 2>&1
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Write PR summary
+        id: summary
+        if: always()
+        continue-on-error: true
+        run: |
+          node .github/scripts/pr-gate-summary.mjs \
+            --log health.log \
+            --exit-code "${{ steps.health.outputs.exit_code || 1 }}" \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail job when health or summary failed
+        if: always()
+        run: |
+          health="${{ steps.health.outputs.exit_code }}"
+          summary="${{ steps.summary.outcome }}"
+          if [ "$summary" != "success" ]; then
+            echo "翻译层失败（outcome=${summary:-missing}）。闸不能假绿。"
+            exit 1
+          fi
+          if [ -z "$health" ] || [ "$health" != "0" ]; then
+            echo "进仓检查未通过（exit ${health:-missing}）。Summary 已写，不锁 Merge。"
+            exit 1
+          fi
