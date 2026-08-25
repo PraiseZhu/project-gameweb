@@ -102,7 +102,10 @@ Interaction, or Resize.
 
 1. **PC `ind/` / progress** — keep named `ind/` owners. Unnamed SOLID
    RECTANGLE/VECTOR fill descendants of `ind/` stay paint nodes; do not
-   guess `class=progress`. PC geometry comes from Figma `1:180`.
+   guess `class=progress`. An empty INSTANCE may mount the selected
+   `componentVariantGraph` tree when the owner box matches that root;
+   a missing highlight `imageRef` stays a red asset gate, never a
+   borrowed Figma reference PNG. PC geometry comes from Figma `1:180`.
 2. **PC / mobile bottom gap** — two independent paint facts, not one white
    card. (a) QA `.frame` must not be an opaque white card in product view.
    (b) After-hero sections may receive `layoutOffsetDesign`; the
@@ -116,6 +119,9 @@ Interaction, or Resize.
 4. **Mobile `ind/` / progress** — same naming/owner rule as PC, but
    geometry comes from the mobile tree. Do not reuse PC boxes.
 5. **zh-CN copy** — Figma font size, line-height, align, wrap, and manual
-   breaks. Official-site wrap/weight is a later Translation axis; it is
+   breaks. Do not squeeze letter-spacing or invent a px to hide overflow.
+   Official-site wrap/weight is a later Translation axis; it is
    language-generic official-site evidence, not a Korean-only rule, and
-   must not rewrite zh-CN static copy.
+   must not rewrite zh-CN static copy. Missing copy stays
+   `data-copy-missing` / translation input; do not hard-code review
+   strings or a Frame name into a 2×2 grid.

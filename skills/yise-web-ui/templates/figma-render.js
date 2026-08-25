@@ -3468,26 +3468,9 @@
           const statusBinding = statusVisual && statusVisual.byNode ? statusVisual.byNode[nid] : null;
           const statusKey = statusBinding ? String(__u(statusBinding.status)) : '';
           const statusRole = statusBinding ? String(__u(statusBinding.semanticRole)) : '';
-           const statusVariant = statusBinding && statusVisual && statusVisual.variants
-             && statusVisual.variants[statusKey] ? statusVisual.variants[statusKey][ctx.prefs.lang] : null;
-           const fallback = normalizeFigmaLineBreaks(n.characters ?? (n.text && n.text.characters));
-           /* The source component leaves for this two-tab control are literal
-              placeholder x-runs even though the reviewed Figma instance gives
-              both selected labels.  Consume only those two source leaves, only
-              on the native mobile tree, and preserve an explicit provenance
-              marker; this is a read fallback, not a hand-authored replacement
-              for arbitrary unnamed text. */
-           const __reviewedMobileTabText = {
-             '399:47096': '特别限时活动',
-             '399:47117': '「再启之邀」活动升级',
-           };
-           const __leafId = String(nid).split(';').pop();
-           const __reviewedText = __base === 'mobile'
-             && /^x+$/.test(String(fallback || ''))
-             && String(semantic.ancestors || []).includes('切换按钮')
-             ? __reviewedMobileTabText[__leafId] || null : null;
-           const renderedFallback = __reviewedText || fallback;
-           if (__reviewedText) el.setAttribute('data-text-source-fallback', 'reviewed-figma-read');
+          const statusVariant = statusBinding && statusVisual && statusVisual.variants
+            && statusVisual.variants[statusKey] ? statusVisual.variants[statusKey][ctx.prefs.lang] : null;
+          const fallback = normalizeFigmaLineBreaks(n.characters ?? (n.text && n.text.characters));
           /* 富文本/字符级样式覆盖：truth 带 characterStyleOverrides + styleOverrideTable 时，
              按字符下标分段渲染 span，消费每段的 fills/fontWeight 等覆盖（如「修罗」红字）。
              只有【兜底显示原文】时区间才与字符一一对应；采用译文（不同语言不同长度）时
@@ -3547,9 +3530,9 @@
                  为了救 1 条丢换行的，把另外 N 条本来对的折乱了。 */
               if (!inlineHugs) el.style.textWrap = 'balance';
             }
-          } else if (renderedFallback != null && renderedFallback !== '') {
-            if (_hasRich && !__reviewedText) this._renderRichText(el, String(renderedFallback), _richOverrides, _richTable, tx);
-            else el.textContent = renderedFallback;
+          } else if (fallback != null && fallback !== '') {
+            if (_hasRich) this._renderRichText(el, String(fallback), _richOverrides, _richTable, tx);
+            else el.textContent = fallback;
             el.setAttribute('data-copy-missing', ctx.prefs.lang);
           } else {
             el.textContent = '';

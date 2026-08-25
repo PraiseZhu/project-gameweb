@@ -121,9 +121,17 @@ test('sc-ready-consume-contracts: legal owner mapping without invented visuals',
   assert.match(renderSrc, /n\.layout\?\.layoutMode \?\? n\.layoutMode/);
   assert.match(renderSrc, /normalizeFigmaLineBreaks/);
   assert.match(renderSrc, /selected-component-tree/);
+  assert.match(chromeSrc, /function canonicalPlat\(p\)/);
+  assert.match(chromeSrc, /p === 'desktop' \? 'pc'/);
+  assert.match(staticDoc, /empty INSTANCE may mount the selected/);
+  assert.match(staticDoc, /Do not squeeze letter-spacing/);
   assert.doesNotMatch(renderSrc, /semantic-directional-chevron/);
   assert.doesNotMatch(renderSrc, /data-indicator-fallback/);
   assert.doesNotMatch(renderSrc, /左侧导航/);
   assert.doesNotMatch(renderSrc, /__placeholderButtonTreeRepaired/);
   assert.doesNotMatch(renderSrc, /render-canvas-preserve-aspect-cover/);
+  assert.doesNotMatch(renderSrc, /特别限时活动/);
+  assert.doesNotMatch(renderSrc, /再启之邀/);
+  assert.doesNotMatch(renderSrc, /Frame 1312316801/);
+  assert.doesNotMatch(renderSrc, /幻金掠夜/);
 });

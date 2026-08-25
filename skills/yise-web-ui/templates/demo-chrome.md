@@ -28,7 +28,7 @@ chrome 运行时。它是**验收/调试工具，不是交付物**：壳里能�
 
 ## 切换器条（matrix 驱动,自动生成）
 
-- 视口行按 `figma-harness-kit` 的 PC / iPhone / Android 子集：设备下拉自带尺寸和 DPR；只有 PC 可自由拉伸。不收录折叠屏和 iPad。内容行：区域与语言相互独立，状态下拉 + 平铺全部状态 + 复制组合链接。
+- 视口行按 `figma-harness-kit` 的 PC / iPhone / Android 子集：设备下拉自带尺寸和 DPR；只有 PC 可自由拉伸。不收录折叠屏和 iPad。矩阵值 `desktop` / `tablet` / `phone` 与稿别 `pc` / `pad` / `mobile` 必须同一套映射，点 Desktop 要切到 PC 默认档并画 PC 树，不能留着上一台手机视口。内容行：区域与语言相互独立，状态下拉 + 平铺全部状态 + 复制组合链接。
 - 每组是 seg 按钮,当前项高亮;**选择持久化到 localStorage**(key 恒为 `qa-hifi:<meta.name>:prefs`,
   与 spec 的 `verify.persistence.storageKey` 必须一字不差),流程状态(step/输入值/弹窗)不持久化,刷新回初始态。
 - **切换入口选择器约定(验收 clickPref 认这些,按序优先)**:`[data-qa-pref="<key>:<value>"]`(首选)、
