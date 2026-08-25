@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   health:
@@ -31,12 +32,103 @@ jobs:
       - name: Guard nightly discovery
         run: node --test .github/scripts/nightly-health.test.mjs
 
+      - name: Find previous nightly run
+        id: prev-nightly
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const beijingDate = (value) => new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'Asia/Shanghai',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+            }).format(new Date(value));
+            const addBeijingDays = (yyyyMmDd, days) => {
+              const [year, month, day] = yyyyMmDd.split('-').map(Number);
+              const date = new Date(Date.UTC(year, month - 1, day + days));
+              const y = date.getUTCFullYear();
+              const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+              const d = String(date.getUTCDate()).padStart(2, '0');
+              return `${y}-${m}-${d}`;
+            };
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'nightly-health.yml',
+              branch: context.payload.repository?.default_branch || 'main',
+              per_page: 30,
+            });
+            const today = beijingDate(Date.now());
+            const yesterday = addBeijingDays(today, -1);
+            const branch = context.payload.repository?.default_branch || 'main';
+            const prev = (data.workflow_runs || [])
+              .filter((run) => run.id !== context.runId
+                && run.status === 'completed'
+                && run.head_branch === branch
+                && beijingDate(run.created_at) === yesterday)
+              .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+            if (!prev) {
+              core.info('无昨日基线：没有上一北京日、默认分支上的 completed nightly-health run');
+              return;
+            }
+            core.setOutput('run_id', String(prev.id));
+            core.info(`昨日基线 run_id=${prev.id} created_at=${prev.created_at} head_branch=${prev.head_branch}`);
+
+      - name: Restore yesterday fingerprints
+        if: ${{ always() && steps.prev-nightly.outputs.run_id }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: nightly-fingerprints
+          path: .nightly-baseline
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.prev-nightly.outputs.run_id }}
+
+      - name: Log baseline restore
+        if: ${{ always() }}
+        run: |
+          if [ -f .nightly-baseline/report.json ]; then
+            echo "昨日基线已就位：.nightly-baseline/report.json（run_id=${{ steps.prev-nightly.outputs.run_id }}）"
+          elif [ "${{ steps.prev-nightly.outcome }}" != "success" ]; then
+            echo "无昨日基线：listWorkflowRuns 失败（outcome=${{ steps.prev-nightly.outcome }}）"
+          elif [ -n "${{ steps.prev-nightly.outputs.run_id }}" ]; then
+            echo "无昨日基线：run_id=${{ steps.prev-nightly.outputs.run_id }} 没有 nightly-fingerprints/report.json（过期、未上传或下载失败）"
+          else
+            echo "无昨日基线：没有上一北京日、默认分支上的 completed nightly-health run"
+          fi
+
       - name: List packages under check
         # 守卫自身红了也要继续列真实包，避免整晚只留下守卫报错。
+        # 列包失败不能把 job 拉红：红灯只跟完整夜间的今晚红。
         if: ${{ always() }}
+        continue-on-error: true
         run: node .github/scripts/nightly-health.mjs --list
 
       - name: Run nightly health
         # 列包失败也要尝试跑完整检查，保留各包自测与附加审计结果。
         if: ${{ always() }}
+        env:
+          NIGHTLY_HEALTH_BASELINE: .nightly-baseline/report.json
+          NIGHTLY_HEALTH_REPORT_JSON: .nightly-out/report.json
+          NIGHTLY_HEALTH_REPORT_MD: .nightly-out/report.md
         run: node .github/scripts/nightly-health.mjs
+
+      - name: Write patrol summary
+        if: ${{ always() }}
+        run: |
+          if [ -f .nightly-out/report.md ]; then
+            cat .nightly-out/report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Store tonight fingerprints
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-fingerprints
+          path: .nightly-out/report.json
+          include-hidden-files: true
+          retention-days: 2
+          if-no-files-found: ignore
