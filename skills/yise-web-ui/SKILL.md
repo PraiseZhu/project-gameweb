@@ -59,7 +59,10 @@ static → Translation → Interaction → Resize. Do not open the next axis unt
 the previous one is accepted. Later axes must not mutate accepted static
 geometry, assets, or zh-CN copy. Directory static stays in Main; directory
 click/scrollspy stays in Interaction; directory stretch stays in Resize. Do
-not invent a fourth Skill.
+not invent a fourth Skill. After Resize is accepted, run the Pack delivery
+step (`docs/pack-skill.md`, `node scripts/pack-demo.mjs --demo <dir>`): whole
+served folder ≤ 15MB. Pack is not a restore axis and must not run before
+static / Translation / Interaction / Resize acceptance.
 
 The default workflow is the **Main Skill**: extract Figma truth, structure
 content/geometry/components/states/interactions, record official behavior
@@ -69,16 +72,26 @@ complemented by independent reusable capabilities and one optional audit:
 - **Translation Skill** — locale/copy context plus font, glyph, weight, and
   browser typography evidence (`scripts/lib/translation/index.mjs`).
 - **Interaction Skill** — formerly Motion Skill. Click, switch/tab, directory
-  scrollspy, and retained motion contracts
+  scrollspy, independent `btn/` normal/highlight replacement, programmatic
+  hover/press, named modal openers, and retained motion contracts
   (`scripts/lib/figma-interaction-contract.mjs`,
+  `scripts/lib/figma-button-press-contract.mjs`,
   `scripts/lib/motion-contract.mjs`). File names stay for compatibility; new
-  text must say Interaction, not Motion. Implementation is waiting for a later
-  modification pass (`docs/interaction-skill.md`). Directory click/scrollspy
-  stays in this axis; do not split the directory into a fourth Skill.
+  text must say Interaction, not Motion. See `docs/interaction-skill.md`.
+  Directory click/scrollspy stays in this axis; do not split the directory
+  into a fourth Skill. Hover/press CSS and left/right switch replacement
+  may land in `templates/figma-render.js` without changing accepted static
+  geometry. Arrows are commands on one source-backed owner; incomplete
+  graphs stay unresolved. See `docs/interaction-skill.md`.
 - **Resize Skill** — viewport stretch, composition base, preview 1:1 fit,
   background/UI/sea plane policies, and hero lock/exit/release geometry while
   the window size changes (`scripts/lib/resize/index.mjs`; see
   `docs/resize-skill.md`). Directory stretch stays here with the rest of Resize.
+- **Pack (delivery, not a Skill axis)** — after Resize acceptance only.
+  Lossy WebP, font subset/woff2, SHA collapse, truth externalize, 15MB
+  served-folder budget. Keep `figma-indicator-*` fallback files. See
+  `docs/pack-skill.md`. Slice-time WebP (alpha lossless / opaque q90) and the
+  10MB `index.html` gate stay in Main.
 
 **Figma Prototype Truth Audit** is optional evidence, not a prerequisite. It is
 read-only and fail-closed when explicitly requested. `observed` can support a

@@ -55,6 +55,22 @@ test('sc-html-10mb-webp: HTML volume is 10MB on index.html, assets folder is fre
   assert.match(skill, /10MB/);
 });
 
+test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', () => {
+  const skill = read('SKILL.md');
+  const arch = read('docs/skill-architecture.md');
+  const pack = read('docs/pack-skill.md');
+  const lib = read('scripts/lib/pack-demo.mjs');
+  assert.match(skill, /Main\s+static → Translation → Interaction → Resize/);
+  assert.match(skill, /After Resize is accepted, run the Pack delivery/);
+  assert.match(skill, /Pack is not a restore axis/);
+  assert.match(arch, /Pack delivery/);
+  assert.match(arch, /not a restore axis/);
+  assert.match(pack, /not a fourth restore axis/);
+  assert.match(pack, /after Resize is accepted/);
+  assert.match(lib, /DEFAULT_PACK_BUDGET_BYTES = 15 \* 1024 \* 1024/);
+  assert.match(lib, /figma-indicator/);
+});
+
 test('sc-prior-test-gaps: unknown stays inert; #38 is record-only', () => {
   const entry = read('docs/page-making-inventory-entry.md');
   assert.match(entry, /Keep unresolved switch\/page relations\ninert/);

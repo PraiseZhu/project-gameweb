@@ -3,6 +3,13 @@
  * `data-switch-*` contract. Geometry and DOM stay outside this module.
  */
 import { deriveInteractionModel } from './figma-interaction-contract.mjs';
+import {
+  BUTTON_PRESS_SCHEMA,
+  BUTTON_PRESS_SELECTOR,
+  BUTTON_PRESS_TOKENS,
+  buttonPressCss,
+  buttonPressKeyboardScript,
+} from './figma-button-press-contract.mjs';
 
 const cloneAttrs = (attrs) => Object.fromEntries(Object.entries(attrs || {}).map(([key, value]) => [key, String(value)]));
 const byId = (entries = []) => new Map(entries.map((entry) => [String(entry.id), entry]));
@@ -65,7 +72,20 @@ export function buildRendererInteractionPayload(model = {}) {
     }
     switches.push({ id: switchId, source: 'switch-direct-child', pageIds: pages.map((page) => String(page.id)), initialIndex: initial.index, initialEvidence: initial.evidence });
   }
-  return { schema: 'figma-render-interaction-payload/v1', attributes: [...attributes.entries()].map(([id, attrs]) => ({ id, attrs })), switches, unresolved, stats: { switches: switches.length, pages: switches.reduce((total, entry) => total + entry.pageIds.length, 0), unresolved: unresolved.length } };
+  return {
+    schema: 'figma-render-interaction-payload/v1',
+    attributes: [...attributes.entries()].map(([id, attrs]) => ({ id, attrs })),
+    switches,
+    unresolved,
+    buttonPress: {
+      schema: BUTTON_PRESS_SCHEMA,
+      selector: BUTTON_PRESS_SELECTOR,
+      tokens: BUTTON_PRESS_TOKENS,
+      css: buttonPressCss(),
+      keyboard: buttonPressKeyboardScript(),
+    },
+    stats: { switches: switches.length, pages: switches.reduce((total, entry) => total + entry.pageIds.length, 0), unresolved: unresolved.length },
+  };
 }
 
 export function buildRendererInteractionPayloadFromNodes(nodes = []) {

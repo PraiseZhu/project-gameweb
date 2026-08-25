@@ -91,7 +91,15 @@ fixtures demonstrate named navigation and language controls/variants, but do
 not yet contain a complete, source-proven mobile menu state tree plus close
 relation in the canonical Skill package.
 
-Therefore this contract can represent the template profile, but it does not
-ship a built-in determined `mobile-navigation → menu-open` rule. A future
-profile must cite actual template prototype/inventory-review evidence and join
-to accepted static state output; otherwise it remains unresolved.
+A profile may now become determined from inventory names when the extracted
+modal tree and matching `btn/` label are unique on that platform:
+
+- `btn/导航按钮` → `modal/顶部导航-1624尺寸` (`menu-open`)
+- `btn/多语言按钮` → `modal/多语言按钮弹窗` (`language-open`)
+- the two overlays are mutually exclusive
+- `btn/关闭按钮` inside a modal returns that platform to `default`
+
+Evidence kind is `template-naming`. Prototype remains valid when present, but
+an empty prototype no longer blocks these uniquely named openers. Ambiguous
+matches, missing modal trees, and PC pages that have no mobile overlay stay
+unresolved. Profiles still must not carry Figma node IDs or static geometry.

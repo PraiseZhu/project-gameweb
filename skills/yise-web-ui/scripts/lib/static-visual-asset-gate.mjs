@@ -284,15 +284,27 @@ export function evaluateStaticVisualAssetCoverage({
     .map((entry) => [sourceKey(entry.platform, entry.nodeId), entry]));
   const required = new Set(asArray(requiredPlatforms).map(String).filter(Boolean));
   if (!required.size) requirements.forEach((entry) => required.add(entry.platform));
+  /* `--scope main` projects variant/modal trees out of the truth before this
+     gate runs.  The resumable exporter, however, retains its complete prior
+     run so it can resume a later all-scope audit.  Compare export progress to
+     the requirements that are actually in this audit; otherwise an unrelated
+     pending variant makes a fully rendered Main page fail its static gate. */
+  const requirementSourceKeys = new Set(requirements.map((entry) => sourceKey(entry.platform, entry.nodeId)));
   const failures = [];
   const covered = [];
+  if (unknownUnresolved.length) {
+    failures.push({
+      reason: 'image-fill-unknown-unresolved',
+      nodeIds: unknownUnresolved.map((entry) => `${entry.platform}:${entry.nodeId}`),
+    });
+  }
 
   if (!manifest) failures.push({ reason: 'asset-manifest-missing' });
-  if (manifest?.exportRun?.partial === true || asArray(manifest?.failed).length || asArray(manifest?.noUrl).length) {
-    failures.push({ reason: 'asset-export-partial-or-unresolved' });
-  }
   const requiredSourceKeys = asArray(manifest?.exportRun?.requiredSourceKeys).map(String);
   const completedSourceKeys = new Set(asArray(manifest?.exportRun?.completedSourceKeys).map(String));
+  if (manifest?.exportRun?.partial === true) {
+    failures.push({ reason: 'asset-export-partial-or-unresolved' });
+  }
   if (!requiredSourceKeys.length) {
     const legacyRequired = asArray(manifest?.exportRun?.requiredNodeIds).map(String);
     const legacyCompleted = new Set(asArray(manifest?.exportRun?.completedNodeIds).map(String));
@@ -303,8 +315,14 @@ export function evaluateStaticVisualAssetCoverage({
       if (missing.length) failures.push({ reason: 'asset-export-batch-incomplete', nodeIds: missing });
     }
   } else {
-    const missing = requiredSourceKeys.filter((key) => !completedSourceKeys.has(key));
+    const scopedRequiredSourceKeys = requiredSourceKeys.filter((key) => requirementSourceKeys.has(key));
+    const missing = scopedRequiredSourceKeys.filter((key) => !completedSourceKeys.has(key));
     if (missing.length) failures.push({ reason: 'asset-export-batch-incomplete', sourceKeys: missing });
+    const unresolvedForRequirement = [...asArray(manifest?.failed), ...asArray(manifest?.noUrl)]
+      .some((entry) => requirementSourceKeys.has(sourceKey(entry?.platform, entry?.nodeId)));
+    if (missing.length || unresolvedForRequirement) {
+      failures.push({ reason: 'asset-export-partial-or-unresolved' });
+    }
   }
 
   for (const platform of required) {

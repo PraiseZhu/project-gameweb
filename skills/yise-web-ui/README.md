@@ -18,18 +18,20 @@ Commands (each step must succeed; `truth.mjs` refuses to emit an empty `{}` shel
 8. `node scripts/figma-inline.mjs --demo <demo-dir> --check` — syncs the renderer + chrome into the page.
 9. `npm run figma:preview:first -- --demo <demo-dir>` — opens `index.html?product=1` in headless Chrome and fails unless meaningful Figma-derived content covers enough of the product frame (not a placeholder, QA-only shell, or one flat source image over a blank page). The JSON output includes `evidenceLevel:"candidate"`, screenshot path, product-view URL/command, source-platform evidence, and unclaimed capabilities.
 
-Steps 4-8 can also run as one command: `node scripts/figma-build.mjs --demo <demo-dir> --fetch` (build only, never acceptance; run step 9 after it). As soon as step 9 passes, immediately open the reported `index.html?product=1` product-view URL for human review; do not wait for product repo/sandbox/PR setup unless you are switching to the separate `product-qa` workflow. A page that opens is still a candidate: Switch names in truth are extraction recognition only; unresolved relations stay inert; reused copy/status/asset fixtures do not prove the inventory/handoff chain ran. Direct Figma extract of SS5 `1:180` / `20:2205` (port 4201) is a `latest-Figma local extract baseline`, not an inventory/handoff baseline. `yisewebui` stops after Main static for human acceptance before Translation, Interaction, or Resize.
+Steps 4-8 can also run as one command: `node scripts/figma-build.mjs --demo <demo-dir> --fetch` (build only, never acceptance; run step 9 after it). As soon as step 9 passes, immediately open the reported `index.html?product=1` product-view URL for human review; do not wait for product repo/sandbox/PR setup unless you are switching to the separate `product-qa` workflow. A page that opens is still a candidate: Switch names in truth are extraction recognition only; unresolved relations stay inert; reused copy/status/asset fixtures do not prove the inventory/handoff chain ran. Direct Figma extract of SS5 `1:180` / `20:2205` (port 4201) is a `latest-Figma local extract baseline`, not an inventory/handoff baseline. `yisewebui` stops after Main static for human acceptance before Translation, Interaction, or Resize. After Resize is accepted, `node scripts/pack-demo.mjs --demo <dir>` packs the served folder to ≤15MB (`docs/pack-skill.md`). Pack is not a restore axis.
 
 Full asset export, full-page Chrome gates, pixel comparison, multilingual acceptance, and project/private demo checks remain explicit later phases. Asset export writes WebP delivery files (lossless for alpha) while keeping PNG sources; `index.html` itself is gated at 10MB — over that, `#qa-truth` becomes `data-src="truth.json"` instead of inlining the whole truth. The assets folder is allowed to be larger than the HTML file.
 Reusable Figma-to-Web UI verification Skill. The Etheria/伊瑟 page under `demos/yise-ss5-preview` is a verification example only; this repository is not an AppStore app.
 
 Architecture: the Main Skill owns Figma extraction, static structure, official
 behavior references, Demo接线, and final review. Translation, Interaction, and
-Resize are independent axes. Interaction is the rename of the former
+Resize are independent axes. Pack is the delivery step after Resize
+acceptance (15MB served folder), not a fourth restore Skill. Interaction is the rename of the former
 Motion Skill; file names stay, implementation waits for a later pass. Figma
 Prototype Truth is an optional read-only audit. Missing or empty prototype
 data keeps a prototype claim unverified but does not block the ordinary
-workflow. See `docs/resize-skill.md` and `docs/interaction-skill.md`.
+workflow. See `docs/resize-skill.md`, `docs/interaction-skill.md`, and
+`docs/pack-skill.md`.
 
 When Figma supplies a complete fixed directory and section inventory, Main Skill
 also wires the directory's click-to-section and scroll-following selected state;

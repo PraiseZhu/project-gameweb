@@ -11,7 +11,7 @@ node scripts/figma-inventory-check.mjs inventory-pc.json \
   --platform-scope platform-scope.json
 ```
 
-The manifest is the authorization; consumers must **not** edit the inventory JSON status. A green-draft remains non-ready in output. Determined relations may be wired; unknown relations stay rendered but inert.
+The manifest is the authorization; consumers must **not** edit the inventory JSON status. A green-draft remains non-ready in output. Determined relations may be wired; unknown relations stay rendered but inert. A determined modal still only opens from its `triggerFrom` source nodes. Same-name or same `@go` buttons that were never determined stay inert.
 
 The entry is fail-closed. A ready pack must have `schema: "handoff/v1"`, `kind: "ready"`, `ready: true`, and a non-empty `fingerprint`. A documented green-draft exception must have `kind: "green-draft"`, `ready: false`, and the matching inventory `fileKey` / `requestedNodeId` / `consume.<platform>.page.id`. Both paths must declare `rules.unknownNoInteraction: true` and `rules.unknownModalTriggerNoWire: true`. Missing, malformed, or mismatched manifests are rejected.
 

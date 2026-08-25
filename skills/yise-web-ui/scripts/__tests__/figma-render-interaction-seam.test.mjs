@@ -21,6 +21,24 @@ function payload() {
   ]));
 }
 
+test('renderer consumes @go modal names and fix/@from scroll-gated pin', () => {
+  assert.match(renderer, /data-go/);
+  assert.match(renderer, /data-fix-from/);
+  assert.match(renderer, /syncFixFromOverlays/);
+  assert.match(renderer, /modalKey/);
+  assert.match(renderer, /name-param:@go|data-go/);
+});
+
+test('named modal runtime only wires openers listed in triggerFrom', () => {
+  assert.match(renderer, /authorizedFrom/);
+  assert.match(renderer, /modal.triggerFrom/);
+  assert.match(renderer, /authorizedFrom\.has\(nodeId\)/);
+  assert.match(renderer, /entry\.openerEls\.includes\(goHit\)/);
+  assert.match(renderer, /entry\.openerEls\.includes\(openerHit\)/);
+  assert.doesNotMatch(renderer, /entry\.name === wanted/);
+  assert.doesNotMatch(renderer, /entry\.name === '视频弹窗' && name === '播放按钮'/);
+});
+
 test('renderer consumes pure direct-child interaction payload without raw switch classification', () => {
   assert.match(renderer, /ctx\.interactionPayload \|\| ctx\.renderInteractionPayload/);
   assert.match(renderer, /interactionPayload\.attributes/);
@@ -41,6 +59,18 @@ test('direct-child payload carries the runtime contract for initial state, click
   assert.match(renderer, /el\.hidden = !active/);
   assert.match(renderer, /el\.setAttribute\('aria-selected', active \? 'true' : 'false'\)/);
   assert.match(renderer, /const next = action === 'prev' \? active - 1 : action === 'next' \? active \+ 1 : current/);
+});
+
+test('left/right switch arrows are commands and do not wait on deferred assets', () => {
+  assert.match(renderer, /data-switch-action/);
+  assert.match(renderer, /const next = action === 'prev' \? active - 1 : action === 'next' \? active \+ 1 : current/);
+  assert.match(renderer, /never leave prev\/next inert/);
+  assert.match(renderer, /Owner index must/);
+  assert.match(renderer, /btn-component-set/);
+  assert.match(renderer, /getAttribute\('data-nav-item'\) !== 'true'/);
+  assert.doesNotMatch(renderer, /source-file-swap/);
+  assert.match(renderer, /多语言切换按钮/);
+  assert.doesNotMatch(renderer, /ready\.then\(\(\) => applySwitch\(sid, idx, true\)\)/);
 });
 
 test('unresolved model does not emit a direct-child runtime bridge', () => {

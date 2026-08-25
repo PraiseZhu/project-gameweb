@@ -172,6 +172,91 @@ test("supplied incomplete mobile platform scope is red and cannot be masked by P
   assert.ok(adapted.platformScope.failures.some((entry) => entry.platform === "mobile" && entry.candidateId === "mobile-popup"));
 });
 
+test("template-naming determines unique play and mobile overlay openers when prototype is empty", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:50", scope: "page", type: "FRAME", name: "btn/播放按钮", parentId: PAGE_ID, orderKey: "0.2", status: "determined", role: "btn", platform: "pc" },
+    { id: "100:51", scope: "page", type: "FRAME", name: "btn/导航按钮", parentId: PAGE_ID, orderKey: "0.3", status: "determined", role: "btn", platform: "mobile" },
+    { id: "100:52", scope: "page", type: "FRAME", name: "btn/多语言按钮", parentId: PAGE_ID, orderKey: "0.4", status: "determined", role: "btn", platform: "mobile" },
+  );
+  inv.attachments.modals = [
+    { id: "100:20", name: "modal/视频弹窗", platform: "pc", box: { x: 0, y: 0, w: 100, h: 100 }, nodes: [{ id: "100:20", name: "modal/视频弹窗" }, { id: "100:21", name: "btn/播放按钮", parentId: "100:20" }] },
+    { id: "100:60", name: "modal/顶部导航-1624尺寸", platform: "mobile", box: { x: 0, y: 0, w: 750, h: 1624 }, nodes: [{ id: "100:60", name: "modal/顶部导航-1624尺寸" }] },
+    { id: "100:61", name: "modal/多语言按钮弹窗", platform: "mobile", box: { x: 0, y: 0, w: 750, h: 1334 }, nodes: [{ id: "100:61", name: "modal/多语言按钮弹窗" }] },
+  ];
+  inv.relations = [
+    { kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link", from: null, to: { id: "100:20", scope: "modal:100:20" } },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const byId = new Map(adapted.modals.map((modal) => [modal.id, modal]));
+  assert.equal(byId.get("100:20").triggerStatus, "determined");
+  assert.deepEqual(byId.get("100:20").triggerFrom, ["100:50"]);
+  assert.equal(byId.get("100:20").triggerEvidence[0].kind, "template-naming");
+  assert.deepEqual(byId.get("100:60").triggerFrom, ["100:51"]);
+  assert.deepEqual(byId.get("100:61").triggerFrom, ["100:52"]);
+  assert.ok(!byId.get("100:20").triggerFrom.includes("100:21"), "in-modal play stays a player, not a second opener");
+});
+
+test("@go copies a unique modal layer name and can be shared by several openers", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:70", scope: "page", type: "FRAME", name: "btn/播放@go=modal/视频弹窗", parentId: PAGE_ID, orderKey: "0.5", status: "determined", role: "btn", params: { go: "modal/视频弹窗" }, platform: "pc" },
+    { id: "100:71", scope: "page", type: "FRAME", name: "fix/导航@from=2", parentId: PAGE_ID, orderKey: "0.6", status: "determined", role: "fix", params: { from: "2" } },
+    { id: "100:72", scope: "page", type: "FRAME", name: "btn/导航@go=modal/视频弹窗", parentId: "100:71", orderKey: "0.6.0", status: "determined", role: "btn", params: { go: "modal/视频弹窗" }, platform: "pc" },
+  );
+  inv.overlays.push({ id: "100:71", role: "fix", label: "导航", from: 2, pin: "viewport" });
+  inv.attachments.modals = [
+    { id: "100:80", name: "modal/视频弹窗", platform: "pc", box: { x: 0, y: 0, w: 100, h: 100 }, nodes: [{ id: "100:80", name: "modal/视频弹窗" }] },
+  ];
+  inv.relations = [
+    { kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link", from: null, to: { id: "100:80", scope: "modal:100:80" } },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const modal = adapted.modals.find((entry) => entry.id === "100:80");
+  assert.equal(modal.triggerStatus, "determined");
+  assert.deepEqual(modal.triggerFrom.sort(), ["100:70", "100:72"]);
+  assert.equal(modal.triggerEvidence[0].kind, "name-param:@go");
+  const overlay = adapted.fixedOverlays.nodes.find((entry) => entry.id === "100:71");
+  assert.equal(overlay.from, 2);
+});
+
+test("@go stays unwired when the modal name is missing or duplicated", () => {
+  const missing = fixture();
+  missing.nodes.push({ id: "100:70", scope: "page", type: "FRAME", name: "btn/播放@go=modal/没有这扇窗", parentId: PAGE_ID, status: "determined", role: "btn", params: { go: "modal/没有这扇窗" } });
+  const missingAdapted = adaptInventoryToTruthShape(missing, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.ok(missingAdapted.modals.every((modal) => !modal.triggerFrom.includes("100:70")));
+
+  const dup = fixture();
+  dup.nodes.push({ id: "100:70", scope: "page", type: "FRAME", name: "btn/播放@go=modal/视频弹窗", parentId: PAGE_ID, status: "determined", role: "btn", params: { go: "modal/视频弹窗" }, platform: "pc" });
+  dup.attachments.modals = [
+    { id: "100:80", name: "modal/视频弹窗", platform: "pc", nodes: [{ id: "100:80", name: "modal/视频弹窗" }] },
+    { id: "100:81", name: "modal/视频弹窗", platform: "pc", nodes: [{ id: "100:81", name: "modal/视频弹窗" }] },
+  ];
+  const dupAdapted = adaptInventoryToTruthShape(dup, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.ok(dupAdapted.modals.every((modal) => modal.triggerStatus === "unknown"));
+});
+
+test("template-naming stays unknown when two video modals share a platform", () => {
+  const inv = fixture();
+  inv.nodes.push({ id: "100:50", scope: "page", type: "FRAME", name: "btn/播放按钮", parentId: PAGE_ID, status: "determined", role: "btn", platform: "pc" });
+  inv.attachments.modals = [
+    { id: "100:20", name: "modal/视频弹窗", platform: "pc", nodes: [{ id: "100:20", name: "modal/视频弹窗" }] },
+    { id: "100:22", name: "modal/视频弹窗", platform: "pc", nodes: [{ id: "100:22", name: "modal/视频弹窗" }] },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.ok(adapted.modals.every((modal) => modal.triggerStatus === "unknown"));
+});
+
+test("adapted modal truth preserves platform for renderer isolation", () => {
+  const inv = fixture();
+  inv.attachments.modals = [
+    { id: "pc-video", name: "modal/视频弹窗", platform: "pc", nodes: [{ id: "pc-video", name: "modal/视频弹窗" }] },
+    { id: "mobile-video", name: "modal/视频弹窗", platform: "mobile", nodes: [{ id: "mobile-video", name: "modal/视频弹窗" }] },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(adapted.modals.find((modal) => modal.id === "pc-video").platform, "pc");
+  assert.equal(adapted.modals.find((modal) => modal.id === "mobile-video").platform, "mobile");
+});
 test("determined modal-trigger wires while unknown stays pending", () => {
   const inv = fixture();
   inv.relations = [

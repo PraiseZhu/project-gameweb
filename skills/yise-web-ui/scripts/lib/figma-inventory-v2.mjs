@@ -17,6 +17,11 @@
  *     variantTrees (full ordered variant trees, not a name guess).
  *  4. attachments.modals -> a separate hidden layer, default hidden, excluded
  *     from the page scroll flow. Only modal-trigger:determined may be wired.
+ *     Empty prototype is not enough to keep a uniquely named opener inert:
+ *     `classifyModalTriggers` may determine a relation from `params.go`
+ *     (`name-param:@go`, unique `modal/` layer name) or from the Skill
+ *     template-naming fallback. This still reads inventory `name` / `role` /
+ *     `params` records; it does not call parseLayerName / deriveRole / figma-fetch.
  *  5. page-state declarations are semantic-only. Static acceptance owns every
  *     state tree, geometry, asset, text, and baseline record. A determined
  *     state-transition is executable only after it resolves against accepted
@@ -215,7 +220,16 @@ function liveRecord(byId, entry) {
 }
 
 function classifyPageDirectChildren(inv, byId) {
-  const fixedOverlays = asArray(inv.overlays).map((entry) => liveRecord(byId, entry)).filter(Boolean);
+  const overlayFromById = new Map(asArray(inv.overlays).map((entry) => [entry.id, entry.from]));
+  const fixedOverlays = asArray(inv.overlays).map((entry) => {
+    const record = liveRecord(byId, entry);
+    if (!record) return null;
+    const from = Number.isFinite(entry.from) ? entry.from : fromParamOf(record);
+    return from != null ? { ...record, from } : record;
+  }).filter(Boolean);
+  for (const overlay of fixedOverlays) {
+    if (overlay.from == null && overlayFromById.get(overlay.id) != null) overlay.from = overlayFromById.get(overlay.id);
+  }
   const fixedIds = new Set(fixedOverlays.map((n) => n.id));
   const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
 
@@ -235,20 +249,210 @@ function classifyPageDirectChildren(inv, byId) {
   return { pageChrome, fixedOverlays };
 }
 
+function splitInventoryName(name) {
+  const raw = String(name || '');
+  const head = raw.split('@')[0];
+  const match = /^([A-Za-z]+)\s*[\/／]\s*(.*)$/.exec(head);
+  return match
+    ? { role: match[1].toLowerCase(), label: match[2].trim() }
+    : { role: null, label: head.trim() };
+}
+
+function modalNameKey(name) {
+  const parsed = splitInventoryName(name);
+  if (parsed.role === 'modal' && parsed.label) return `modal/${parsed.label}`;
+  const trimmed = String(name || '').trim();
+  return trimmed ? trimmed : '';
+}
+
+function groupModalsByName(modals) {
+  const byName = new Map();
+  for (const modal of asArray(modals)) {
+    const key = modalNameKey(modal?.name);
+    if (!key) continue;
+    const list = byName.get(key) || [];
+    list.push(modal);
+    byName.set(key, list);
+  }
+  return byName;
+}
+
+function modalsNamed(byName, raw) {
+  if (raw == null || raw === true || raw === '') return [];
+  const key = modalNameKey(raw) || String(raw);
+  return byName.get(key) || byName.get(`modal/${key}`) || [];
+}
+
+function positiveIntParam(value) {
+  if (value == null || value === true || value === '') return null;
+  if (!/^[1-9]\d*$/.test(String(value))) return null;
+  return Number(value);
+}
+
+function goParamOf(node) {
+  const params = node?.params || {};
+  return params.go ?? params['go'];
+}
+
+function fromParamOf(node) {
+  const params = node?.params || {};
+  return positiveIntParam(params.from ?? params['from']);
+}
+
+function isInsideModal(node, modalIds, byId) {
+  if (!node) return false;
+  if (modalIds.has(node.id)) return true;
+  for (const id of asArray(node.ownerPath)) {
+    if (modalIds.has(String(id))) return true;
+  }
+  for (const name of asArray(node.ancestorNames)) {
+    if (/^modal\s*[\/／]/i.test(String(name))) return true;
+  }
+  let current = node;
+  for (let guard = 0; guard < 16 && current; guard++) {
+    const parentId = current.parentId;
+    if (parentId == null) break;
+    if (modalIds.has(String(parentId))) return true;
+    current = byId.get(String(parentId));
+  }
+  return false;
+}
+
+/**
+ * Inventory-name contracts that may determine a modal opener when prototype
+ * is empty. Labels are Skill naming vocabulary, not page node ids.
+ *
+ * - page `btn/播放按钮` (not inside a modal) → unique `modal/视频弹窗`
+ * - `btn/导航按钮` → unique `modal/顶部导航-1624尺寸`
+ * - `btn/多语言按钮` → unique `modal/多语言按钮弹窗`
+ *
+ * Ambiguous matches (two video modals, no platform) stay unknown.
+ * A play button that already lives under a modal tree must not reopen it.
+ */
+const NAMING_MODAL_CONTRACTS = Object.freeze([
+  { openerLabel: '播放按钮', modalLabel: '视频弹窗' },
+  { openerLabel: '导航按钮', modalLabel: '顶部导航-1624尺寸' },
+  { openerLabel: '多语言按钮', modalLabel: '多语言按钮弹窗' },
+]);
+
+function platformOf(value) {
+  const raw = value && typeof value === 'object'
+    ? value.platform ?? value.sourcePlatform ?? value.meta?.platform
+    : value;
+  const normalized = String(raw || '').toLowerCase();
+  if (normalized === 'mobile' || normalized === 'phone') return 'mobile';
+  if (normalized === 'pc' || normalized === 'desktop') return 'pc';
+  if (normalized === 'pad' || normalized === 'tablet') return 'pad';
+  return null;
+}
+
+function namedGoModalTriggers(inv) {
+  const modals = asArray(inv.attachments?.modals).filter((modal) => modal && typeof modal.id === 'string');
+  const modalIds = new Set(modals.map((modal) => modal.id));
+  const byId = nodeMapOf(inv.nodes);
+  for (const modal of modals) {
+    visitNodeTree([modal], (node) => {
+      if (node && typeof node.id === 'string' && !byId.has(node.id)) byId.set(node.id, node);
+    });
+  }
+  const byName = groupModalsByName(modals);
+  const extra = [];
+  const openers = [];
+  visitNodeTree(inv.nodes, (node) => {
+    if (node && typeof node.id === 'string') openers.push(node);
+  });
+  for (const node of openers) {
+    const parsed = splitInventoryName(node.name);
+    if (parsed.role !== 'btn' && parsed.role !== 'hot') continue;
+    if (isInsideModal(node, modalIds, byId)) continue;
+    const go = goParamOf(node);
+    if (go == null || go === true || go === '') continue;
+    const openerPlatform = platformOf(node);
+    const hits = modalsNamed(byName, go).filter((modal) => {
+      const modalPlatform = platformOf(modal);
+      return openerPlatform && modalPlatform && openerPlatform === modalPlatform;
+    });
+    if (hits.length !== 1) continue;
+    extra.push({
+      toId: hits[0].id,
+      fromId: node.id,
+      evidence: { kind: 'name-param:@go', go: String(go) },
+    });
+  }
+  return extra;
+}
+
+function templateNamingModalTriggers(inv) {
+  const modals = asArray(inv.attachments?.modals).filter((modal) => modal && typeof modal.id === 'string');
+  const modalIds = new Set(modals.map((modal) => modal.id));
+  const byId = nodeMapOf(inv.nodes);
+  for (const modal of modals) {
+    visitNodeTree([modal], (node) => {
+      if (node && typeof node.id === 'string' && !byId.has(node.id)) byId.set(node.id, node);
+    });
+  }
+  const openers = asArray(inv.nodes).filter((node) => {
+    if (!node || typeof node.id !== 'string') return false;
+    const parsed = splitInventoryName(node.name);
+    if (parsed.role !== 'btn') return false;
+    if (goParamOf(node)) return false;
+    return !isInsideModal(node, modalIds, byId);
+  });
+  const extra = [];
+  for (const contract of NAMING_MODAL_CONTRACTS) {
+    const matchedOpeners = openers.filter((node) => splitInventoryName(node.name).label === contract.openerLabel);
+    const matchedModals = modals.filter((modal) => {
+      const parsed = splitInventoryName(modal.name);
+      return parsed.role === 'modal' && parsed.label === contract.modalLabel;
+    });
+    if (!matchedOpeners.length || !matchedModals.length) continue;
+    for (const opener of matchedOpeners) {
+      const openerPlatform = platformOf(opener);
+      const candidates = matchedModals.filter((modal) => {
+        const modalPlatform = platformOf(modal);
+        if (contract.openerLabel === '导航按钮' || contract.openerLabel === '多语言按钮') {
+          return openerPlatform === 'mobile' && modalPlatform === 'mobile';
+        }
+        return openerPlatform && modalPlatform && openerPlatform === modalPlatform;
+      });
+      if (candidates.length !== 1) continue;
+      extra.push({
+        toId: candidates[0].id,
+        fromId: opener.id,
+        evidence: { kind: 'template-naming', contract: `btn/${contract.openerLabel}→modal/${contract.modalLabel}` },
+      });
+    }
+  }
+  return extra;
+}
+
 /** modal-trigger relations keyed by modal id; only determined are actionable. */
 export function classifyModalTriggers(inv) {
   const triggers = new Map();
+  const push = (toId, entry) => {
+    const list = triggers.get(toId) || [];
+    if (entry.fromId && list.some((item) => item.fromId === entry.fromId && item.status === entry.status)) return;
+    list.push(entry);
+    triggers.set(toId, list);
+  };
   for (const relation of asArray(inv.relations)) {
     if (relation?.kind !== 'modal-trigger') continue;
     const toId = relation.to?.id;
     if (!toId) continue;
-    const entry = triggers.get(toId) || [];
-    entry.push({
+    push(toId, {
       status: relation.status === 'determined' ? 'determined' : 'unknown',
       fromId: relation.from?.id ?? null,
       evidence: relation.evidence ?? null,
     });
-    triggers.set(toId, entry);
+  }
+  for (const named of [...namedGoModalTriggers(inv), ...templateNamingModalTriggers(inv)]) {
+    const existing = triggers.get(named.toId) || [];
+    if (existing.some((entry) => entry.fromId === named.fromId && entry.status === 'determined')) continue;
+    push(named.toId, {
+      status: 'determined',
+      fromId: named.fromId,
+      evidence: named.evidence,
+    });
   }
   return triggers;
 }
@@ -478,6 +682,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
     return {
       id: modal.id,
       name: modal.name ?? '',
+      platform: modal.platform ?? modal.sourcePlatform ?? modal.meta?.platform ?? null,
       box: modal.box ?? null,
       hidden: true,
       excludedFromScroll: true,

@@ -64,6 +64,31 @@ test('static gate replay passes after Interaction when accepted initial geometry
   assert.equal(report.failures.length, 0);
 });
 
+test('duplicate replay kind:id records fail instead of being hidden by Map overwrite', () => {
+  const baseline = accepted('pc');
+  const records = replayRecords(baseline);
+  records.push({ ...records[0], chrome: { ...records[0].chrome } });
+  const report = replayStaticGateProtection({
+    acceptedStatic: baseline,
+    module: 'Interaction',
+    replay: { platform: 'pc', state: 'initial-static', records },
+  });
+  assert.equal(report.ok, false);
+  assert.ok(report.failures.some((item) => item.code === 'duplicate-static-gate-record'));
+});
+
+test('missing baseline state fails closed', () => {
+  const baseline = accepted('pc');
+  delete baseline.state;
+  const report = replayStaticGateProtection({
+    acceptedStatic: baseline,
+    module: 'Interaction',
+    replay: { platform: 'pc', state: 'initial-static', records: replayRecords(baseline) },
+  });
+  assert.equal(report.ok, false);
+  assert.ok(report.failures.some((item) => item.code === 'accepted-static-baseline-not-initial-state'));
+});
+
 test('static gate replay attributes owner geometry and asset/text mutations to later Resize module', () => {
   const baseline = accepted('mobile');
   const records = replayRecords(baseline);

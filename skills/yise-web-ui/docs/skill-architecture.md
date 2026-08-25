@@ -21,12 +21,11 @@ showcase. The only inventory consumer remains `figma:from-handoff`.
 ```mermaid
 flowchart LR
   S[Main Skill\nFigma extraction + static structure + demo review] --> T[Translation Skill\ncopy + typography]
-  S --> I[Interaction Skill\nclick / switch / scrollspy\nformerly Motion]
-  S --> R[Resize Skill\nstretch + composition + hero geometry]
+  T --> I[Interaction Skill\nclick / switch / scrollspy\nformerly Motion]
+  I --> R[Resize Skill\nstretch + composition + hero geometry]
+  R --> K[Pack delivery\n15MB served folder\nnot a restore axis]
   S -. optional audit .-> P[Figma Prototype Truth Audit\nread-only, fail-closed]
-  T --> O[Auditable demo + reports]
-  I --> O
-  R --> O
+  K --> O[Deployable demo]
   P --> A[Prototype audit result\nobserved / explicit-empty / field-absent / unavailable]
 ```
 
@@ -36,8 +35,9 @@ flowchart LR
 | --- | --- | --- | --- |
 | Main Skill | provenance-tracked content structure, geometry/modeling, demo scaffolding, deterministic A–F/X verification. Figma slice export delivers WebP (PNG kept for geometry). HTML volume gate is 10MB on `index.html` itself; over limit, `#qa-truth` points at `truth.json` instead of inlining. | locale decisions, stretch policy, timed effects, Figma writes, official-site compressor quality tables (wait for the builder file) | `spec.json`, `truth.json`, demo shell, verification reports |
 | Translation Skill | locale mapping, copy context, font/glyph/weight diagnostics and translation-specific browser checks | geometry truth, stretch, prototype claims | translation evidence and independent pass/unverified findings |
-| Interaction Skill (formerly Motion) | click, switch/tab, directory scrollspy, retained motion contracts; implementation waiting for a later pass | stretch policy, typography, Figma/token edits | interaction evidence; frozen file names until the later pass |
+| Interaction Skill (formerly Motion) | click, switch/tab, independent `btn/` normal/highlight, named modal openers, directory scrollspy, retained motion contracts | stretch policy, typography, Figma/token edits, static geometry | interaction evidence; renderer wiring waits if static still owns `figma-render.js` |
 | Resize Skill | viewport-to-platform map, composition base, light-drag vs full rebuild, preview 1:1 fit, background/UI/sea plane policies, hero lock/exit/release geometry while the window size changes | locale, click wiring, Figma fetch, page node IDs | `scripts/lib/resize/index.mjs` decisions and stretch evidence |
+| Pack (delivery) | 15MB served-folder budget after Resize acceptance: lossy WebP, font subset/woff2, SHA collapse, truth externalize, keep `figma-indicator-*` fallbacks | Figma fetch, static geometry, locale, click, stretch, inventing a fourth restore Skill | packed demo folder + pack report; PNG proof next to the demo |
 | Figma Prototype Truth Audit (optional) | read-only classification of explicit prototype fields and a requested `requireObserved` gate | inferring motion from Properties metadata, screenshots, names, variants, or missing data | audit status: `observed`, `explicit-empty`, `field-absent`, or `unavailable`; `unverified` when no observed evidence exists |
 
 Main Skill owns Figma extraction and the static page, including directory
@@ -47,6 +47,8 @@ stretch stays in Resize. Do not split the directory into a fourth Skill.
 `yisewebui` is a stop-layer workflow: finish Main static, stop for human
 acceptance, then Translation, then Interaction, then Resize. A later axis
 must not rewrite accepted static owners, fills, copy, or platform trees.
+After Resize is accepted, Pack compresses the served folder to ≤15MB. Pack
+is delivery, not a fourth Skill. Do not pack before those four acceptances.
 SS5 `1:180` / `20:2205` on port 4201 is a local extract candidate, not the
 repair site for later axes. Official-site evidence for Interaction and
 Resize is language-generic; do not label it as a Korean-only rule.

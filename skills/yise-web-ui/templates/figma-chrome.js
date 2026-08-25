@@ -1015,7 +1015,7 @@
         /* 窗口真不够宽：视图层缩放到窗口内。给 rail 让出 30px 舞台区（rail 在屏幕右缘外侧），
            不然 rail 会被顶到窗口右边缘外不可见 —— 这不是装饰留白，是 rail 的生存空间。 */
         var RAIL_ROOM = 44;   /* 把手容器 34px + 外侧间距 6px + 余量，整体在屏幕右缘外侧舞台区 */
-        scale = (box - padPx - RAIL_ROOM) / vp.w;
+        scale = Math.max(0, (box - padPx - RAIL_ROOM) / vp.w);
       }
       /* 高度方向同样要装下完整 screen。用 stage 的可见盒做同一口径，
          拖拽轻路径和松手完整 render 才不会因为 toolbar/layout 时机不同
@@ -1024,7 +1024,7 @@
       var VERTICAL_STAGE_ROOM = 24;
       var availH = stage.clientHeight;
       if (availH > 0) {
-        var scaleH = (availH - VERTICAL_STAGE_ROOM) / (vp.h + BEZEL0);   /* 留足 stage 呼吸空间，避免把手/屏幕贴边 */
+        var scaleH = Math.max(0, (availH - VERTICAL_STAGE_ROOM) / (vp.h + BEZEL0));   /* 留足 stage 呼吸空间，避免把手/屏幕贴边 */
         if (scaleH < scale) scale = scaleH;
       }
     }
@@ -1666,11 +1666,16 @@
     var marked = ((boxEl && boxEl.getAttribute('data-hero-entry-nav-kind')) || '')
       + ' ' + ((mediaEl && mediaEl.getAttribute('data-hero-entry-nav-kind')) || '');
     if (marked.indexOf('active-item-art') >= 0) return true;
-    var w = heroGateNumber(boxEl && boxEl.style && boxEl.style.width, boxEl && boxEl.offsetWidth || 0);
-    var h = heroGateNumber(boxEl && boxEl.style && boxEl.style.height, boxEl && boxEl.offsetHeight || 0);
-    if (!(w > 0) && mediaEl) w = heroGateNumber(mediaEl.style && mediaEl.style.width, mediaEl.offsetWidth || 0);
-    if (!(h > 0) && mediaEl) h = heroGateNumber(mediaEl.style && mediaEl.style.height, mediaEl.offsetHeight || 0);
-    return w > 120 && h > 50 && w / h > 1.6;
+    var host = (mediaEl && mediaEl.closest && mediaEl.closest('[data-btn-variant], [data-nav-item]'))
+      || (boxEl && boxEl.closest && boxEl.closest('[data-btn-variant], [data-nav-item]'))
+      || boxEl;
+    var btnState = host && host.getAttribute && (host.getAttribute('data-btn-variant-state')
+      || host.getAttribute('data-nav-variant') || '');
+    var layer = mediaEl && mediaEl.closest && mediaEl.closest('[data-btn-variant-layer], [data-btn-variant-state]');
+    var layerState = layer && layer.getAttribute && (layer.getAttribute('data-btn-variant-state') || '');
+    if (layerState === 'highlight' || btnState === 'highlight' || btnState === 'active') return true;
+    if (layerState === 'normal' || btnState === 'normal') return false;
+    return false;
   }
 
   function naturalMediaRatio(mediaEl, fallback) {
@@ -1861,6 +1866,15 @@
           var items = root.querySelectorAll('[data-nav-item]');
           var count = Math.max(1, items.length);
           var activeIndex = syncFrameNavActive(root, items);
+          var usesBtnNavSet = false;
+          for (var bi = 0; bi < items.length; bi++) {
+            if (items[bi].getAttribute('data-btn-variant') === 'true'
+              || items[bi].getAttribute('data-nav-variant-visual') === 'btn-component-set') {
+              usesBtnNavSet = true;
+              break;
+            }
+          }
+          if (usesBtnNavSet) continue;
           var sourceRowH = 224;
           var sourceCadence = 134;
           var sourceLabelX = 95;
@@ -1887,6 +1901,9 @@
             var mediaNodes = item.querySelectorAll('img,canvas,video,.fx-img');
             for (var im = 0; im < mediaNodes.length; im++) {
               var media = mediaNodes[im];
+              var mediaHidden = media.hidden
+                || (media.closest && media.closest('[hidden], [aria-hidden="true"]') && media.closest('[hidden], [aria-hidden="true"]') !== frame);
+              if (mediaHidden) continue;
               var mediaParent = media.parentElement && media.parentElement !== item ? media.parentElement : null;
               if (isActiveNavArtwork(mediaParent || media, media)) {
                 var activeTop = (activeIndex - i) * sourceCadence * sourceScaleY;
@@ -1908,8 +1925,12 @@
             var labels = item.querySelectorAll('.fx-t');
             for (var t = 0; t < labels.length; t++) {
               var label = labels[t];
+              var labelHidden = label.hidden
+                || (label.closest && label.closest('[hidden], [aria-hidden="true"]') && label.closest('[hidden], [aria-hidden="true"]') !== frame);
+              if (labelHidden) continue;
               saveHeroEntryStyle(label);
-              var isActiveRow = i === activeIndex || item.getAttribute('data-nav-variant') === 'active';
+              var isActiveRow = i === activeIndex || item.getAttribute('data-nav-variant') === 'active'
+                || item.getAttribute('data-btn-variant-state') === 'highlight';
               label.style.left = sourceLabelX + 'px';
               label.style.top = ((isActiveRow ? sourceActiveLabelY : sourceNormalLabelY) * sourceScaleY) + 'px';
               label.setAttribute('data-hero-entry-nav-transform', 'true');

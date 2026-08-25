@@ -22,7 +22,8 @@
     "responsive:official": "node scripts/official-responsive-regression.mjs",
     "figma:state-candidate-audit": "node scripts/figma-state-candidate-audit.mjs",
     "inventory:check": "node scripts/figma-inventory-check.mjs",
-    "figma:from-handoff": "node scripts/figma-from-handoff.mjs"
+    "figma:from-handoff": "node scripts/figma-from-handoff.mjs",
+    "pack:demo": "node scripts/pack-demo.mjs"
   },
   "dependencies": {
     "css-to-react-native": "^3.2.0",

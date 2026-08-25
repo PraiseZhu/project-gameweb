@@ -98,7 +98,11 @@ export function lightDragPathAllowed({
   nextCompositionKey = null,
 } = {}) {
   if (!dragActive || forceFullRender || grid) return false;
-  if (lastCompositionKey && nextCompositionKey && lastCompositionKey !== nextCompositionKey) return false;
+  // Unknown composition cannot prove that the light path is safe. Treat a
+  // missing endpoint as a full rebuild rather than allowing a speculative
+  // fast path to skip composition changes.
+  if (!lastCompositionKey || !nextCompositionKey) return false;
+  if (lastCompositionKey !== nextCompositionKey) return false;
   return true;
 }
 
@@ -148,7 +152,7 @@ export function viewFitScale({
     }
   }
   return {
-    scale,
+    scale: Math.max(0, scale),
     reason,
     paddingYielded,
     reported: scale !== 1,

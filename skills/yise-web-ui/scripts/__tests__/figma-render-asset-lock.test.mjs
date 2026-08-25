@@ -9,7 +9,12 @@ const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.
 test('asset locking is based on ownerPath when DOM parent stack is incomplete', () => {
   assert.match(renderer, /const bakedOwnerId = ownerPath\.slice\(0, -1\)/);
   assert.match(renderer, /find\(\(id\) => !!this\._assetRec\(id\)\)/);
-  assert.match(renderer, /\(parent && parent\.assetLock \|\| bakedOwnerId\) && !hasStructuralInteraction/);
+  assert.match(renderer, /parent && parent\.assetLock \|\| bakedOwnerId \|\| __calendarOwnerAssetLock/);
+});
+
+test('platform-prefixed asset records keep bare-id exportBox geometry', () => {
+  assert.match(renderer, /A platform-prefixed record can be a thin file\/imageRef pointer/);
+  assert.match(renderer, /return \{ \.\.\.bareRec, \.\.\.platformRec, file: platformRec\.file \|\| bareRec\.file \}/);
 });
 
 test('only explicit interaction descendants remain renderable under baked assets', () => {

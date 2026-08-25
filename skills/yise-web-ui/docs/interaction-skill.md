@@ -21,17 +21,154 @@ User-visible behavior after the static Figma page is already on screen:
 
 - directory click-to-section and scrollspy
 - switch / tab / component-set immediate replacement
+- independent `btn/` normal ↔ highlight instance replacement
+- programmatic button hover / pressdown (`scripts/lib/figma-button-press-contract.mjs`)
+- named modal openers: play → video, mobile nav / language overlays
 - horizontal scroll / carousel only when Main has a source-backed graph
 - later: calendar reveal, character switch, and other timed effects
 
+## Two interaction families
+
+| Family | How it moves | Do not treat as |
+| --- | --- | --- |
+| Left/right switch | `switch/` + arrows / `ind/` / swipe | a single button highlight |
+| Independent `btn/` | same INSTANCE `Property 1=normal` ↔ `Property 1=highlight` immediate replacement | switch paging, CSS outline, invented drawing |
+
+`disable` stays inert.
+
+### Left/right switch (operational)
+
+Arrows are commands, never extra pages. `prev` / `next` resolve to one
+source-backed `switch/` owner. The active index is the owner's
+`data-switch-index`, which must match the currently visible variant layer
+(the selected INSTANCE), not a later tab remap.
+
+Selecting a tab / indicator / page and pressing arrows must all go through
+the same `applySwitch` path. Replacement is mutually exclusive and
+immediate unless a separately evidenced transition exists.
+
+Clamp at the first and last valid source-backed state. Do not loop, invent
+a fade, invent a slide track, or fabricate a page when the graph is
+incomplete. Incomplete component-set trees or ambiguous owner mapping stay
+unresolved / inert.
+
+Hidden variant bitmaps may stay deferred until the click. `prepareSwitch`
+may start those assets, but it must not leave prev/next inert waiting on
+decode. Mobile swipe is allowed only when the same complete owner-local
+variant graph exists.
+
+### Programmatic hover / pressdown
+
+Hover brightness and press darkening are **not Figma states**. They are a
+global runtime feel for named interactive controls:
+
+```text
+hover  → filter: brightness(1.12)   only under @media (hover: hover)
+press  → filter: brightness(0.88)   :active, no transition
+```
+
+Owned by `scripts/lib/figma-button-press-contract.mjs`. The renderer injects
+that CSS once and marks `btn/`, tabs, indicators, nav items, copy controls,
+and switch arrows with `role="button"` + `data-btn-press="true"`. Disabled
+controls (`Property 1=disable`) get `data-btn-press="inert"` and no feel.
+
+Do not:
+
+- invent a second hover recipe inside a component
+- use brightness to fake `Property 1=highlight`
+- guess `@link=` / `@go=` URLs because a button now has a pointer
+- leave sticky `:hover` on touch screens
+
+A `btn/` without `@link=` / `@go=` / `@sec=` / switch command / copy / variant
+still receives feel, and is marked `data-btn-action="unresolved"`.
+
+### Independent `btn/` highlight
+
+If the button's COMPONENT_SET actually contains `normal` and `highlight`, a
+click selects highlight on that instance and returns siblings in the same
+parent group to normal. Replacement is in-place hide/show of already extracted
+variant trees. TEXT/HUG nodes need `display:none` plus the saved original
+display. Flattened `I{owner};…` descendants must not be reparented.
+
+PC `btn/多语言切换按钮` highlight is the large opener panel itself, not a
+`modal/`. The small language list-item set is a different component set and
+must not replace the homepage opener.
+
+Directory `btn/导航状态` is the same independent family. Selected row shows
+that instance's `Property 1=highlight` tree; siblings return to
+`Property 1=normal`. Keep each row's own TEXT override. Do not swap one
+row's baked image onto another row, and do not guess a Figma cutout.
+
+Buttons without those two states stay draw-only for **variant replacement**:
+download, recharge, official site, play, close, redeem-code, copy, more. They
+still receive programmatic hover/press. Do not invent highlight variants or
+links for them.
+
+`ind/进度条` is still a switch indicator: swap the two source-backed
+highlight/normal assets in place. It is not an independent `btn/`.
+
+### Named modal contracts
+
+`@go` copies the modal layer name, not a node id:
+
+```text
+btn/播放按钮@go=modal/视频弹窗
+btn/导航按钮@go=modal/顶部导航-1624尺寸
+btn/多语言按钮@go=modal/多语言按钮弹窗
+```
+
+These are generic Etheria button contracts and apply on every platform where
+the named source modal exists:
+
+1. `btn/播放按钮` opens the same-platform `modal/视频弹窗`.
+2. On mobile, `btn/导航按钮` opens `modal/顶部导航-1624尺寸`.
+3. On mobile, `btn/多语言按钮` opens `modal/多语言按钮弹窗`.
+
+The PC `btn/多语言切换按钮` is a separate opener component. It may open the
+language modal through its unique named source contract, but it must not be
+confused with the mobile `btn/多语言按钮` component-set variant.
+
+Several openers may share one unique `modal/`. Zero hits or two same-name
+modals stay unresolved. In-modal play/close must not write `@go`. A mounted
+modal only opens from nodes listed in `triggerFrom`; a same-name or same
+`@go` button that was never determined stays inert.
+
+Empty prototype does not keep a uniquely named opener inert. Inventory names are
+enough when the match is unique on that platform:
+
+- `params.go` unique `modal/` name (`name-param:@go`)
+- page `btn/播放按钮` (not inside a modal) → same-platform `modal/视频弹窗`
+- mobile `btn/导航按钮` → `modal/顶部导航-1624尺寸`
+- mobile `btn/多语言按钮` → `modal/多语言按钮弹窗`
+
+### `fix/@from`
+
+`fix/导航@from=2` stays hidden until the page has reached section 2, then pins
+to the viewport. Omit `@from` and it pins on entry. This is Interaction
+scroll-gated visibility, not Resize stretch. Do not put `@from` on `btn/`.
+
+A play control that already lives inside the video modal is the in-modal
+player, not a second opener. The two mobile overlays are mutually exclusive.
+`btn/关闭按钮` closes the modal that contains it. Runtime only toggles
+visibility of the extracted modal layer; it does not move modal nodes into
+the homepage tree or change Figma coordinates.
+
+Missing modal tree, missing unique opener, or a PC page with no mobile
+overlay stays fail-closed.
+
+Renderer wiring for left/right switch, named modal openers, independent
+`btn/` highlight, and directory scrollspy is live in
+`templates/figma-render.js`. It must not rewrite accepted static geometry
+or assets to make a click work. Incomplete graphs stay unresolved.
+
 ## What this Skill does not own yet
 
-This pass only renames the capability. It does not:
+This pass records the contracts above. It does not:
 
 - unfreeze the old Motion fallback
 - move files
-- change renderer wiring
 - claim that stretch, typography, or Figma fetch belong here
+- rewrite static geometry, assets, or copy in `figma-render.js`
 
 Hero lock/exit/release **geometry while the window size changes** is owned by
 Resize. Interaction may consume that state; it must not invent a second scroll
@@ -39,6 +176,8 @@ model.
 
 ## Status
 
-Waiting for a later modification pass. Until then, treat existing contracts as
-frozen references and keep fail-closed: missing source structure stays
-unresolved, never guessed.
+Contracts for left/right switch, independent button variants, programmatic
+hover/press, named modal openers, and directory scrollspy are in
+`figma-interaction-contract.mjs`, `figma-button-press-contract.mjs`, and
+`templates/figma-render.js`. Renderer consumption is live for those
+families. Missing source structure stays unresolved, never guessed.

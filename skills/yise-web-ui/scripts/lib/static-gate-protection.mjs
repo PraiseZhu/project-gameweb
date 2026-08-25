@@ -90,6 +90,7 @@ export function captureAcceptedStaticGate({
   if (accepted !== true) throw new Error('cannot capture static protection baseline before static acceptance');
   const seen = new Set();
   const normalised = (Array.isArray(records) ? records : []).map(normaliseRecord);
+  if (!normalised.length) throw new Error('static gate baseline requires at least one owner, asset, or text record');
   for (const record of normalised) {
     const key = recordKey(record);
     if (seen.has(key)) throw new Error(`duplicate static gate record ${key}`);
@@ -154,8 +155,36 @@ export function replayStaticGateProtection({
       })],
     };
   }
+  if (!Array.isArray(acceptedStatic.records) || acceptedStatic.records.length === 0) {
+    return {
+      ok: false,
+      schema: STATIC_GATE_PROTECTION_SCHEMA,
+      failures: [failure({
+        code: 'empty-accepted-static-baseline', module, platform: String(replay.platform || acceptedStatic.platform || 'default'), key: null,
+        message: 'accepted initial static baseline must contain at least one owner, asset, or text record', evidence: { acceptedStatic },
+      })],
+    };
+  }
+  if (!Array.isArray(replay.records) || replay.records.length === 0) {
+    return {
+      ok: false,
+      schema: STATIC_GATE_PROTECTION_SCHEMA,
+      failures: [failure({
+        code: 'empty-static-replay', module, platform: String(replay.platform || acceptedStatic.platform || 'default'), key: null,
+        message: 'static protection replay must contain at least one normalised record', evidence: { replay },
+      })],
+    };
+  }
   const platform = String(replay.platform ?? acceptedStatic.platform);
-  const state = replay.state ?? STATIC_GATE_INITIAL_STATE;
+  const baselineState = acceptedStatic.state;
+  const state = replay.state;
+  if (baselineState !== STATIC_GATE_INITIAL_STATE) {
+    failures.push(failure({
+      code: 'accepted-static-baseline-not-initial-state', module, platform, key: null,
+      message: `accepted static baseline must explicitly use ${STATIC_GATE_INITIAL_STATE}, got ${baselineState ?? 'missing'}`,
+      evidence: { expectedState: STATIC_GATE_INITIAL_STATE, baselineState },
+    }));
+  }
   if (platform !== acceptedStatic.platform) {
     failures.push(failure({
       code: 'static-platform-mismatch', module, platform, key: null,
@@ -170,9 +199,32 @@ export function replayStaticGateProtection({
       evidence: { expectedState: STATIC_GATE_INITIAL_STATE, replayState: state },
     }));
   }
-  const tolerance = Math.max(0, n(tolerancePx, acceptedStatic.tolerancePx));
-  const baseline = new Map(acceptedStatic.records.map((record) => [recordKey(record), record]));
-  const actual = new Map((Array.isArray(replay.records) ? replay.records : []).map(normaliseRecord).map((record) => [recordKey(record), record]));
+  const tolerance = Math.max(0, tolerancePx == null
+    ? n(acceptedStatic.tolerancePx, 2)
+    : n(tolerancePx, acceptedStatic.tolerancePx));
+  const baselineRecords = acceptedStatic.records.map(normaliseRecord);
+  const replayRecords = (Array.isArray(replay.records) ? replay.records : []).map(normaliseRecord);
+  const baselineKeys = baselineRecords.map(recordKey);
+  const replayKeys = replayRecords.map(recordKey);
+  const duplicateKeys = (keys) => [...new Set(keys.filter((key, index) => keys.indexOf(key) !== index))];
+  const duplicateBaseline = duplicateKeys(baselineKeys);
+  const duplicateReplay = duplicateKeys(replayKeys);
+  for (const key of duplicateBaseline) {
+    failures.push(failure({
+      code: 'duplicate-static-gate-record', module, platform, key,
+      message: `accepted static baseline contains duplicate record ${key}`,
+      evidence: { side: 'baseline', key },
+    }));
+  }
+  for (const key of duplicateReplay) {
+    failures.push(failure({
+      code: 'duplicate-static-gate-record', module, platform, key,
+      message: `static replay contains duplicate record ${key}`,
+      evidence: { side: 'replay', key },
+    }));
+  }
+  const baseline = new Map(baselineRecords.map((record) => [recordKey(record), record]));
+  const actual = new Map(replayRecords.map((record) => [recordKey(record), record]));
 
   for (const [key, before] of baseline) {
     const after = actual.get(key);

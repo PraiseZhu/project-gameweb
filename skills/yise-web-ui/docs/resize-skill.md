@@ -22,6 +22,7 @@ into Main, Translation, or Interaction.
    state; it does not invent click behavior.
 4. **Resize Skill** owns what happens when the simulated viewport or real
    window size changes.
+5. **Pack** is delivery after this axis is accepted. It does not own stretch.
 
 Mobile / tablet are **test samples in the same Main static pipeline**, not a
 separate rulebook. A phone-card failure caused by source width, HUG owner, text

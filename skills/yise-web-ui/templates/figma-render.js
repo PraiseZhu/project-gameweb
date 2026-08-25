@@ -118,13 +118,13 @@
       if ('fetchPriority' in img && priority === 'high') img.fetchPriority = 'high';
       const settle = () => {
         img.setAttribute('data-asset-state', img.naturalWidth > 0 ? 'loaded' : 'error');
-        if (img.decode) return img.decode().catch(() => undefined);
         return Promise.resolve();
       };
       /* An img without src is already `complete` with naturalWidth=0. Install
          listeners first, then assign the source and check complete once more:
          this covers both uncached loads and memory-cache completion without a
-         lost load event. */
+         lost load event. decode() must not gate switch replacement: a hung
+         decode left prev/next inert while the next layer stayed hidden. */
       let settled = false;
       img.__fxAssetReady = new Promise((resolve) => {
         const done = () => {
@@ -136,6 +136,7 @@
         img.addEventListener('error', done, { once: true });
         img.setAttribute('src', src);
         if (img.complete) done();
+        else setTimeout(done, 1200);
       });
       return img.__fxAssetReady;
     };
@@ -482,12 +483,29 @@
     return m;
   },
 
-  _assetRec(id) {
+  _assetRec(id, platform = null) {
     let key = id;
     while (key && typeof key === 'object' && 'value' in key) key = key.value;
-    const rec = this._assets()[key];
-    if (!rec) return null;
-    return (typeof rec === 'string') ? { file: rec } : rec;
+    const assets = this._assets();
+    /* Asset manifests produced from a dual-platform handoff use `pc:<id>` /
+       `mobile:<id>` to prevent same Figma ids in two source trees colliding.
+       Painting works with bare ids from truth, so resolve the active platform
+       first, then retain the bare-id path for single-platform demos.
+       A platform-prefixed record can be a thin file/imageRef pointer. Merge
+       it with the bare-id record so exportBox / exportBounds / sliceExport
+       survive; otherwise an img/ owner is painted at the layout box and the
+       delivered render canvas (shadow/overhang) overflows the visible frame. */
+    const normalize = (rec) => {
+      if (!rec) return null;
+      return (typeof rec === 'string') ? { file: rec } : rec;
+    };
+    const platformRec = platform ? normalize(assets[`${platform}:${key}`]) : null;
+    const bareRec = normalize(assets[key]);
+    if (!platformRec && !bareRec) return null;
+    if (platformRec && bareRec && platformRec !== bareRec) {
+      return { ...bareRec, ...platformRec, file: platformRec.file || bareRec.file };
+    }
+    return platformRec || bareRec;
   },
 
   /* Resolve a source IMAGE fill to its own delivered file. A node-level
@@ -1238,6 +1256,36 @@
     const motionAdapter = ctx.motionAdapter || ctx.motion || null;
     const __rawRoot = (ctx.rawTruth && ctx.rawTruth.platforms && ctx.rawTruth.platforms[__base])
       || ctx.rawTruth || {};
+    /* Programmatic hover/press is Interaction Skill owned. It is not a Figma
+       variant and must not replace source-backed highlight COMPONENT_SET trees. */
+    (function installButtonPressFeel() {
+      const doc = frame && (frame.ownerDocument || (typeof document !== 'undefined' ? document : null));
+      if (!doc || !doc.head || doc.querySelector('style[data-fx-button-press]')) return;
+      const payload = ctx.interactionPayload || ctx.renderInteractionPayload
+        || motionAdapter && (motionAdapter.interactionPayload || motionAdapter.interaction && motionAdapter.interaction.rendererPayload);
+      const css = payload && payload.buttonPress && payload.buttonPress.css
+        || [
+          ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
+          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
+          '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
+          'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
+          '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
+        ].join('');
+      const style = doc.createElement('style');
+      style.setAttribute('data-fx-button-press', 'figma-button-press-contract/v1');
+      style.textContent = css;
+      doc.head.appendChild(style);
+      if (!doc.documentElement || doc.documentElement.getAttribute('data-fx-button-press-keys') === 'true') return;
+      doc.documentElement.setAttribute('data-fx-button-press-keys', 'true');
+      doc.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
+        const el = ev.target;
+        if (!el || !el.getAttribute || el.getAttribute('role') !== 'button') return;
+        if (el.getAttribute('data-btn-press') === 'inert' || el.getAttribute('aria-disabled') === 'true') return;
+        ev.preventDefault();
+        el.click();
+      });
+    }());
     frame.setAttribute('data-render-plat', __plat);
     frame.setAttribute('data-render-base', __base);
     if (motionAdapter && motionAdapter.roleResolution?.platformEvidence) {
@@ -1464,6 +1512,8 @@
        must therefore belong to renderApp, rather than a single paint pass. */
     const fitCandidates = [];
     const hugGrowthOwners = [];
+    const asArr = (v) => (Array.isArray(v) ? v : Object.values(v || {}));
+    let namedModalPaint = null;
     for (const sid of renderIds) {
       const pageStageMode = sid === '__page__';
       const sec = pageStageMode ? (__activeTruth.pageChrome || { meta: (__activeTruth.fixedOverlays && __activeTruth.fixedOverlays.meta) || {}, nodes: [] }) : sections[sid];
@@ -1596,7 +1646,52 @@
       /* paint：把一个节点列表画进一个容器。
          背景层与内容层都走这一个函数 —— 嵌套认亲、裁剪、上色、排版、切图的规则
          只允许有一份实现。今天已经因为"一条规则两份实现"误报过一次。 */
-      const asArr = (v) => (Array.isArray(v) ? v : Object.values(v || {}));
+      /* Page INSTANCE records often omit componentVariantGraph. The same
+         snapshot still keeps the complete COMPONENT_SET inventory under
+         platforms.*.componentVariantGraph; join it here by componentId. */
+      const platformVariantIndex = (() => {
+        const graph = __plain(__activeTruth && __activeTruth.componentVariantGraph) || {};
+        const byComponentId = new Map();
+        const sets = Array.isArray(graph.componentSets) ? graph.componentSets : [];
+        const treesBySet = graph.variantTrees && typeof graph.variantTrees === 'object' && !Array.isArray(graph.variantTrees)
+          ? graph.variantTrees : {};
+        for (const set of sets) {
+          const setId = String(__u(set && (set.componentSetId || set.id)) || '');
+          const variants = (Array.isArray(set && set.variants) ? set.variants : [])
+            .filter((variant) => String(__u(variant && variant.componentId) || ''));
+          const trees = Array.isArray(treesBySet[setId]) ? treesBySet[setId] : [];
+          if (!setId || variants.length < 2 || trees.length !== variants.length) continue;
+          const aligned = variants.map((variant, index) => {
+            const componentId = String(__u(variant && variant.componentId) || '');
+            const tree = trees.find((item) => String(__u(item && item.componentId) || '') === componentId) || trees[index];
+            if (String(__u(tree && tree.componentId) || '') !== componentId) return null;
+            if (!Array.isArray(tree && tree.nodes) || !tree.nodes.length) return null;
+            return { variant, tree, componentId };
+          });
+          if (aligned.some((entry) => !entry)) continue;
+          const resolved = {
+            componentSetId: setId,
+            variants: aligned.map((entry) => entry.variant),
+            variantTrees: aligned.map((entry) => entry.tree),
+          };
+          for (const entry of aligned) byComponentId.set(entry.componentId, resolved);
+        }
+        return byComponentId;
+      })();
+      const attachPlatformVariantGraph = (n) => {
+        if (!n || n.componentVariantGraph && Array.isArray(n.componentVariantGraph.variantTrees)
+          && n.componentVariantGraph.variantTrees.length) return n;
+        const componentId = String(__u(n && n.componentId) || '');
+        const resolved = componentId ? platformVariantIndex.get(componentId) : null;
+        if (!resolved) return n;
+        n.componentVariantGraph = {
+          ...(n.componentVariantGraph || {}),
+          componentSetId: resolved.componentSetId,
+          variants: resolved.variants,
+          variantTrees: resolved.variantTrees,
+        };
+        return n;
+      };
       /* Figma preserves authored soft/hard line separators as U+2028 / U+2029.
          HTML text nodes do not treat those characters as an authorial line
          break under every white-space mode. Normalize at the renderer boundary;
@@ -1656,11 +1751,13 @@
         };
         const indicatorVariant = (n) => {
           const values = propertyValues(n && (n.componentProperties || n.properties || n.prototype?.componentProperties));
+          if (values.some((v) => /^(disabled?|disable|unavailable)$/i.test(v))) return 'disabled';
           if (values.some((v) => /^(active|selected|highlight|current|on)$/i.test(v))) return 'active';
           if (values.some((v) => /^(normal|inactive|default|off)$/i.test(v))) return 'normal';
           return null;
         };
         const componentVariantGraph = (n) => {
+          attachPlatformVariantGraph(n);
           const graph = n && n.componentVariantGraph;
           const variants = Array.isArray(graph && graph.variants) ? graph.variants : [];
           const trees = Array.isArray(graph && graph.variantTrees) ? graph.variantTrees : [];
@@ -1674,6 +1771,32 @@
           if (!trees.every((tree, index) => String(value(tree && tree.componentId)) === String(value(variants[index] && variants[index].componentId))
             && Array.isArray(tree && tree.nodes) && tree.nodes.length)) {
             if (n) n.__componentVariantGraphBlock = 'variant-tree-mismatch';
+            return null;
+          }
+          const ownerBox = __plain(n && n.box || {});
+          const ownerW = Number(ownerBox.w), ownerH = Number(ownerBox.h);
+          if (!Number.isFinite(ownerW) || !Number.isFinite(ownerH)) {
+            if (n) n.__componentVariantGraphBlock = 'owner-box-missing';
+            return null;
+          }
+          const selectedId = String(__u(n && n.componentId) || '');
+          const treeBox = (tree) => {
+            const root = asArr(tree && tree.nodes).find((node) => String(__u(node && node.id)) === String(__u(tree && tree.componentId)));
+            return __plain((root && root.box) || (tree && tree.box) || {});
+          };
+          const selected = trees.find((tree) => String(__u(tree && tree.componentId) || '') === selectedId);
+          const selectedBox = treeBox(selected);
+          if (!selected || Math.abs(Number(selectedBox.w) - ownerW) > 0.5 || Math.abs(Number(selectedBox.h) - ownerH) > 0.5) {
+            if (n) n.__componentVariantGraphBlock = 'variant-owner-extent-mismatch';
+            return null;
+          }
+          const widthMismatch = trees.some((tree) => {
+            const box = treeBox(tree);
+            const w = Number(box.w), h = Number(box.h);
+            return !Number.isFinite(w) || !Number.isFinite(h) || Math.abs(w - ownerW) > 0.5;
+          });
+          if (widthMismatch) {
+            if (n) n.__componentVariantGraphBlock = 'variant-owner-width-mismatch';
             return null;
           }
           return { variants, trees };
@@ -1700,7 +1823,7 @@
              only when the closest shared owner path has exactly one switch
              with a complete component-set graph; ties remain inert. */
           const label = String(value(n && n.name) || '').toLowerCase();
-          if (/\b(prev|previous|next|left|right)\b|上一|下一|前|后/.test(label)) {
+          if (/\b(prev|previous|next|left|right)\b|上一|下一|左划|右划|左滑|右滑|前|后/.test(label)) {
             const currentPath = path.map((entry) => String(value(entry)));
             const candidates = items.filter((candidate) => parse(candidate).role === 'switch'
               && componentVariantGraph(candidate)).map((candidate) => {
@@ -1870,7 +1993,9 @@
           const owner = members.find((entry) => entry.p.role === 'switch');
           const graph = owner && componentVariantGraph(owner.n);
           if (!graph) {
-            if (owner && owner.n) owner.n.__componentVariantGraphBlock = 'incomplete-variant-tree-evidence';
+            if (owner && owner.n && !owner.n.__componentVariantGraphBlock) {
+              owner.n.__componentVariantGraphBlock = 'incomplete-variant-tree-evidence';
+            }
             continue;
           }
           const families = new Map();
@@ -1923,9 +2048,16 @@
         }
         for (const n of items) {
           const p = parse(n); const attrs = {};
-          const target = p.params.target || p.params.sec || p.params.section || p.params.link || p.params.to || p.params.dest;
+          const target = p.params.target || p.params.sec || p.params.section || p.params.to || p.params.dest;
           if (target) attrs['data-sec-target'] = target;
-          const switchId = p.role === 'switch' ? id(n) : ownerSwitch(n);
+          if (p.params.link) attrs['data-link'] = String(p.params.link);
+          if (p.params.go) attrs['data-go'] = String(p.params.go);
+          let switchId = p.role === 'switch' ? id(n) : ownerSwitch(n);
+          if (p.role === 'btn' && switchId) {
+            const label = String(value(n && n.name) || '').toLowerCase();
+            const directional = /prev|previous|left|上一|左划|左滑|前|next|right|下一|右划|右滑|后/.test(label);
+            if (!directional) switchId = null;
+          }
           if (switchId) attrs['data-switch'] = switchId;
           const componentVariant = switchId && componentVariantSwitches.get(switchId);
           const componentVariantIndex = componentVariant && componentVariant.controls.get(id(n));
@@ -1955,15 +2087,40 @@
           }
           if (switchId && p.role === 'btn') {
             const label = String(value(n && n.name) || '').toLowerCase();
-            if (/prev|previous|left|上一|前/.test(label)) attrs['data-switch-action'] = 'prev';
-            else if (/next|right|下一|后/.test(label)) attrs['data-switch-action'] = 'next';
+            if (/prev|previous|left|上一|左划|左滑|前/.test(label)) attrs['data-switch-action'] = 'prev';
+            else if (/next|right|下一|右划|右滑|后/.test(label)) attrs['data-switch-action'] = 'next';
           }
-          if ((staticSelectable && p.role === 'tab' || componentVariantIndex != null) && switchId) {
+          /* Independent btn/ with a real normal+highlight COMPONENT_SET is not a
+             missing switch. Directory `btn/导航状态` is that family. Static still
+             owns 切换按钮 / 角色头像 and draw-only controls. */
+          if (p.role === 'btn' && !switchId && !attrs['data-switch-action']) {
+            const btnLabel = String(value(n && n.name) || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
+            const staticOwned = /^(切换按钮|角色头像|下载按钮|充值按钮|官网按钮|播放按钮|关闭按钮|兑换码按钮|复制按钮|更多按钮)$/.test(btnLabel);
+            attachPlatformVariantGraph(n);
+            const graph = n && n.componentVariantGraph;
+            const variants = Array.isArray(graph && graph.variants) ? graph.variants : [];
+            const trees = Array.isArray(graph && graph.variantTrees) ? graph.variantTrees : [];
+            const names = variants.map((variant) => String(value(variant && variant.name) || '').toLowerCase());
+            const hasNormal = names.some((name) => /(^|[=\s])normal(\b|$)/.test(name));
+            const hasHighlight = names.some((name) => /(^|[=\s])highlight(\b|$)/.test(name));
+            const state = indicatorVariant(n);
+            const selectedId = String(value(n && n.componentId) || '');
+            const selectedName = String(value((variants.find((variant) => String(value(variant && variant.componentId)) === selectedId) || {}).name) || '').toLowerCase();
+            if (!staticOwned && hasNormal && hasHighlight && trees.length === variants.length && variants.length >= 2
+              && state !== 'disabled' && !/disable/.test(selectedName)) {
+              attrs['data-btn-variant'] = 'true';
+              attrs['data-btn-variant-set'] = String(value(graph.componentSetId) || '');
+              attrs['data-btn-variant-state'] = state === 'active' || /highlight/.test(selectedName) ? 'highlight' : 'normal';
+              attrs['data-btn-variant-component'] = selectedId;
+              attrs['data-btn-variant-group'] = parentId(n) || id(n);
+            }
+          }
+          if ((staticSelectable && p.role === 'tab' || (componentVariantIndex != null && p.role !== 'ind')) && switchId) {
             attrs['data-tab'] = 'true';
             const variant = indicatorVariant(n);
             if (variant) attrs['data-switch-variant'] = variant;
           }
-          if ((staticSelectable && p.role === 'ind') && switchId) {
+          if ((staticSelectable && p.role === 'ind' || (componentVariantIndex != null && p.role === 'ind')) && switchId) {
             attrs['data-indicator'] = 'true';
             const variant = indicatorVariant(n);
             if (variant) {
@@ -1979,21 +2136,31 @@
             attrs['data-nav-owner'] = fixedOwner;
             const variant = indicatorVariant(n);
             if (variant) attrs['data-nav-variant'] = variant;
+          } else if (p.role === 'fix') {
+            /* The sticky rail must stay visually above content, but its empty
+               box must not swallow sibling switch arrows. Only explicit nav
+               items re-enable pointer targeting. @from=N is scroll-gated pin,
+               not a stretch rule. */
+            attrs['data-nav-shell'] = 'true';
+            attrs['data-fix-pin'] = 'viewport';
+            const fromRaw = p.params.from;
+            if (fromRaw != null && /^[1-9]\d*$/.test(String(fromRaw))) attrs['data-fix-from'] = String(fromRaw);
           }
           if (switchId && p.role === 'swpage') {
             attrs['data-motion-carousel-page'] = 'true';
             attrs['data-motion-carousel-index'] = attrs['data-swpage'];
           }
-          if (switchId && (staticSelectable && p.role === 'tab' || componentVariantIndex != null)) {
+          if (switchId && (staticSelectable && p.role === 'tab' || (componentVariantIndex != null && p.role !== 'ind'))) {
             attrs['data-motion-carousel-tab'] = 'true';
             attrs['data-motion-carousel-index'] = attrs['data-swpage'];
           }
-          if (switchId && (staticSelectable && p.role === 'ind')) {
+          if (switchId && (staticSelectable && p.role === 'ind' || (componentVariantIndex != null && p.role === 'ind'))) {
             attrs['data-motion-carousel-indicator'] = 'true';
             attrs['data-motion-carousel-index'] = attrs['data-swpage'];
           }
           if (switchId && p.role === 'btn' && attrs['data-switch-action']) {
             attrs['data-motion-carousel-' + attrs['data-switch-action']] = 'true';
+            attrs['data-switch-command'] = 'true';
           }
           const copyInfo = copyBtnInfo(n, p);
           if (copyInfo) {
@@ -2093,6 +2260,27 @@
                     .map((v) => String(Math.max(0, Math.ceil(v * 100) / 100))).join(' ');
                 }
               }
+            }
+          }
+          const pressable = p.role === 'btn' || p.role === 'tab' || p.role === 'ind' || p.role === 'hot'
+            || attrs['data-sec-target'] != null
+            || attrs['data-switch-action'] != null
+            || attrs['data-copy-code'] != null
+            || attrs['data-nav-item'] === 'true'
+            || attrs['data-btn-variant'] === 'true';
+          const disabledPress = indicatorVariant(n) === 'disabled'
+            || /disable/i.test(String(attrs['data-btn-variant-state'] || ''));
+          if (pressable && disabledPress) {
+            attrs['data-btn-press'] = 'inert';
+            attrs['aria-disabled'] = 'true';
+          } else if (pressable) {
+            attrs['data-btn-press'] = 'true';
+            attrs.role = attrs.role || 'button';
+            attrs.tabindex = attrs.tabindex || '0';
+            if (p.role === 'btn' && !attrs['data-link'] && !attrs['data-go'] && !attrs['data-sec-target']
+              && !attrs['data-switch-action'] && !attrs['data-copy-code'] && !attrs['data-btn-variant']
+              && !attrs['data-nav-item'] && !attrs['data-tab']) {
+              attrs['data-btn-action'] = 'unresolved';
             }
           }
           if (Object.keys(attrs).length) out.set(id(n), attrs);
@@ -2399,6 +2587,7 @@
          }
        }
        const componentInstanceOwners = [];
+       const independentButtonOwners = [];
        const seqOf = (i) => {
          const r = rawList[i];
          const anchor = r && (r.orderKey || r.id);
@@ -2460,6 +2649,8 @@
           || evidenceAttrs['data-sec-target'] != null
           || evidenceAttrs['data-copy-code'] != null
           || evidenceAttrs['data-nav-item'] === 'true'
+          || evidenceAttrs['data-btn-press'] === 'true'
+          || evidenceAttrs['data-btn-variant'] === 'true'
         );
         /* The rendered-parent stack is only a convenience for DOM nesting.  It
            can be incomplete when a pure Figma container is passed through or a
@@ -2486,7 +2677,13 @@
            already flattened at export, which is the documented approximation). */
         const __blendHasSolidBase = (st.fills || []).some((fl) => fl && fl.visible !== false && fl.type === 'SOLID');
         const __blendLiftable = __blendLift && __blendHasSolidBase;
-        if ((parent && parent.assetLock || bakedOwnerId) && !hasStructuralInteraction && !__blendLiftable) continue;
+        const __calendarOwnerAssetLock = __base === 'pc'
+          && String(__u(nid)) !== '395:34991'
+          && Array.isArray(n.ancestorIds)
+          && n.ancestorIds.map((id) => String(__u(id))).includes('395:34991')
+          && !!this._assetRec('395:34991', __base);
+        if ((parent && parent.assetLock || bakedOwnerId || __calendarOwnerAssetLock)
+          && !hasStructuralInteraction && !__blendLiftable) continue;
         /* Direct-owner fallback for text constraint. The locator-stack parent is
            often the SECTION layer for a deeply nested text leaf; it must not win
            over a tighter truth owner. Accept a rendered direct parent only when
@@ -2539,7 +2736,7 @@
         const kind = this._fillKind(st.fills);
         const SLICE = { img: 1, bg: 1, kv: 1 };
         const needsAsset = !isText && (SLICE[pfx] || kind === 'gradient' || kind === 'image');
-        const assetRec = this._assetRec(nid);
+        const assetRec = this._assetRec(nid, __base);
         /* `ind/进度条` is a source component set whose two *component roots*
            intentionally have no page-level slice.  The ready truth does retain
            their exact component ids; the selected child has an IMAGE fill, but
@@ -2550,8 +2747,8 @@
            it cannot promote arbitrary unknown/skipped nodes to pixels. */
         const __componentId = String(__u(n && n.componentId) || '');
         const __indComponentFallback = pfx === 'ind' && ({
-          '397:35947': { file: 'figma-indicator-active-reference.png', state: 'highlight', sourceNodeId: '397:35946' },
-          '397:35949': { file: 'figma-indicator-normal-reference.png', state: 'normal', sourceNodeId: '397:35949' },
+          '397:35947': { file: 'assets/figma-indicator-active-alpha.webp', state: 'highlight', sourceNodeId: '397:35946' },
+          '397:35949': { file: 'assets/figma-indicator-normal-alpha.webp', state: 'normal', sourceNodeId: '397:35949' },
         })[__componentId] || null;
         /* Baked-owner descendants punched through by the extractor (blend/structural
            walk) must not be re-painted when they are neutral decor already inside
@@ -2576,6 +2773,17 @@
         el.setAttribute('data-node', nid);
         el.setAttribute('data-figma-type', n.type ?? '');
         if (pfx) el.setAttribute('data-prefix', pfx);
+        if (pfx === 'btn') {
+          const btnLabel = String(n.name || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
+          if (btnLabel) el.setAttribute('data-btn-name', btnLabel);
+        }
+        /* Named `bg/` owners are page/section backdrops. They retain their
+           source geometry, but must sit below the sibling paint tree even if
+           Figma's exported child order places the backdrop after its content.
+           This is a semantic prefix rule (not a page or node-id exception):
+           otherwise a legitimate full-height background with a dark top band
+           masks the KV and makes an apparently "missing" first screen. */
+        el.style.zIndex = pfx === 'bg' ? '0' : '1';
         /* owner-model 结构证据（切片 2，lead 决策落地）。
            truth 叶子纪律：scope/assetPolicy/role 是派生值不进 truth；renderer 从
            owner 原值（name 前缀 / 类型 / parentId）渲染期重推并落 DOM 证据，
@@ -2618,6 +2826,32 @@
           // Root paint layers are transparent hit-test surfaces.  Re-enable
           // pointer targeting only for truth-backed interaction nodes.
           el.style.pointerEvents = 'auto';
+          /* Directional commands sit beside a clipped switch. Keep them above
+             neighboring paint so the captured 84x112 hit box remains clickable
+             without changing Figma geometry. */
+          if (evidenceAttrs['data-switch-action']) {
+            el.style.cursor = 'pointer';
+            el.style.zIndex = '30';
+          }
+          if (evidenceAttrs['data-nav-shell'] === 'true') {
+            el.style.pointerEvents = 'none';
+          }
+          if (evidenceAttrs['data-nav-item'] === 'true') {
+            el.style.pointerEvents = 'auto';
+            el.style.cursor = 'pointer';
+          }
+          if (evidenceAttrs['data-btn-variant'] === 'true') {
+            el.style.pointerEvents = 'auto';
+            el.style.cursor = 'pointer';
+          }
+          if (evidenceAttrs['data-btn-press'] === 'true') {
+            el.style.pointerEvents = 'auto';
+            el.style.cursor = 'pointer';
+            if (!el.getAttribute('role')) el.setAttribute('role', 'button');
+            if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+          } else if (evidenceAttrs['data-btn-press'] === 'inert') {
+            el.setAttribute('aria-disabled', 'true');
+          }
         }
         const motionRec = motionRoleMap.get(String(nid));
         if (motionRec) {
@@ -3931,7 +4165,15 @@
               img.setAttribute('data-image-fill-index', String(entry.index));
               if (entry.fill && entry.fill.imageRef) img.setAttribute('data-image-ref', String(entry.fill.imageRef));
               if (entry.composite) img.setAttribute('data-asset-composite', 'source-svg');
-              img.setAttribute('data-asset-state', 'deferred');
+              /* Indicator component-context PNGs are tiny and sit on the initial
+                 Figma snapshot. Deferring src leaves an empty 24x25 box, which
+                 reads as a missing progress mark. Keep every other asset deferred. */
+              if (__indComponentFallback) {
+                img.setAttribute('src', entry.url);
+                img.setAttribute('data-asset-state', 'eager');
+              } else {
+                img.setAttribute('data-asset-state', 'deferred');
+              }
               img.setAttribute('alt', n.name ?? '');
               img.setAttribute('loading', 'eager');
               img.setAttribute('decoding', 'async');
@@ -3941,10 +4183,14 @@
             if (mountedImageCount) {
               /* Asset owner must clip its baked image and serve as the containing
                  block for its absolute-positioned fx-img. Without this, a scaled
-                 page exposes the image's intrinsic edge beyond the owner box. */
+                 page exposes the image's intrinsic edge beyond the owner box.
+                 img/ frames whose PNG is a render-bound spill canvas must still
+                 clip to the layout box so the visible border, not the shadow
+                 canvas, is the frame the rest of the module is measured against. */
               if (!el.style.overflow || el.style.overflow === 'visible') el.style.overflow = 'hidden';
               if (!el.style.position) el.style.position = 'relative';
               if (mountedImageCount > 1) el.setAttribute('data-multifill-images', String(mountedImageCount));
+              if (exportBox && pfx === 'img') el.setAttribute('data-owner-box-clip', 'img-frame');
             } else {
               // 宁可显示"这里缺一张图"，也不要用纯色糊过去假装做好了
               el.classList.add('fx-img-ph');
@@ -3998,14 +4244,36 @@
         if (!suppressInteractions && componentTree && pfx !== 'switch') {
           componentInstanceOwners.push({ el, tree: componentTree, ownerBox: box, ownerId: String(__u(nid)), prefix: pfx });
         }
-        if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-switch-page-source'] === 'component-set-variant') {
-          const rawGraph = __plain(rawList && rawList[ni] && rawList[ni].componentVariantGraph);
+        if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-switch-page-source'] === 'component-set-variant'
+          && evidenceAttrs['data-btn-variant'] !== 'true') {
+          attachPlatformVariantGraph(n);
+          const rawGraph = __plain((n && n.componentVariantGraph)
+            || (rawList && rawList[ni] && rawList[ni].componentVariantGraph));
           const selectedComponentId = String(__u(n.componentId) || '');
           const variantIndex = Array.isArray(rawGraph && rawGraph.variants)
             ? rawGraph.variants.findIndex((variant) => String(variant && variant.componentId) === selectedComponentId) : -1;
           const trees = Array.isArray(rawGraph && rawGraph.variantTrees) ? rawGraph.variantTrees : [];
           if (variantIndex >= 0 && trees.length === Number(evidenceAttrs['data-switch-variant-count'])) {
-            componentVariantOwners.push({ el, trees, initialIndex: variantIndex, switchId: evidenceAttrs['data-switch'] });
+            componentVariantOwners.push({ el, trees, initialIndex: variantIndex, switchId: evidenceAttrs['data-switch'], ownerBox: box });
+          }
+        }
+        if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-btn-variant'] === 'true') {
+          attachPlatformVariantGraph(n);
+          const rawGraph = __plain((n && n.componentVariantGraph)
+            || (rawList && rawList[ni] && rawList[ni].componentVariantGraph));
+          const selectedComponentId = String(__u(n.componentId) || '');
+          const variants = Array.isArray(rawGraph && rawGraph.variants) ? rawGraph.variants : [];
+          const trees = Array.isArray(rawGraph && rawGraph.variantTrees) ? rawGraph.variantTrees : [];
+          const variantIndex = variants.findIndex((variant) => String(variant && variant.componentId) === selectedComponentId);
+          if (variantIndex >= 0 && trees.length === variants.length && variants.length >= 2) {
+            independentButtonOwners.push({
+              el,
+              trees,
+              variants,
+              initialIndex: variantIndex,
+              ownerBox: box,
+              group: evidenceAttrs['data-btn-variant-group'] || String(__u(nid)),
+            });
           }
         }
       }
@@ -4027,29 +4295,67 @@
         const originalChildren = [...owner.el.children];
         for (const child of originalChildren) base.appendChild(child);
         owner.el.appendChild(base);
+        /* Flattened INSTANCE descendants can paint as siblings of the switch
+           owner. Moving them into the owner changes their coordinate origin and
+           breaks accepted static geometry. Keep them in place and only mark
+           them as the selected variant's external source tree. */
+        const ownerId = String(owner.el.getAttribute('data-node') || '');
+        const instancePrefix = ownerId ? `I${ownerId};` : '';
+        const host = owner.el.parentElement;
+        const external = [];
+        if (host && instancePrefix) {
+          for (const sibling of [...host.children]) {
+            if (sibling === owner.el) continue;
+            const siblingId = sibling.getAttribute && sibling.getAttribute('data-node');
+            if (!siblingId || !String(siblingId).startsWith(instancePrefix)) continue;
+            sibling.setAttribute('data-switch-variant-external', 'instance-sibling');
+            sibling.setAttribute('data-switch', String(owner.switchId));
+            sibling.setAttribute('data-switch-variant-index', String(owner.initialIndex));
+            /* Flattened artwork sits beside the owner, so a swipe on those
+               pixels never reaches [data-switch-owner]. Keep geometry in place
+               and only mark the sibling as a hit-test host for that switch. */
+            sibling.setAttribute('data-switch-swipe-host', String(owner.switchId));
+            sibling.style.pointerEvents = sibling.style.pointerEvents || 'auto';
+            external.push(sibling);
+          }
+        }
+        owner.el.__fxVariantExternal = external;
+        /* Alternate component variants keep their captured Figma geometry,
+           including off-owner neighboring cards. The selected INSTANCE already
+           clips that overflow; the replacement layers must do the same so a
+           swipe never reveals two pages at once. Do not stretch the accepted
+           owner box. */
+        if (!owner.el.style.overflow || owner.el.style.overflow === 'visible') {
+          owner.el.style.overflow = 'hidden';
+        }
+        owner.el.setAttribute('data-switch-variant-clip', 'owner-local');
+        owner.el.style.isolation = 'isolate';
+        base.style.overflow = 'hidden';
+        base.style.contain = 'paint';
         let mountBlocked = false;
         for (const [index, tree] of owner.trees.entries()) {
           if (index === owner.initialIndex) continue;
           const treeNodes = tree && tree.nodes || [];
-          const treeIds = new Set(treeNodes.map((node) => String(__u(node && node.id))));
-          const roots = treeNodes.filter((node) => !treeIds.has(String(__u(node && node.parentId))));
-          const root = roots.length === 1 ? roots[0] : null;
-          const rootBox = root && root.box || {};
-          const ownerWidth = Number.parseFloat(owner.el.style.width || '0');
-          const ownerHeight = Number.parseFloat(owner.el.style.height || '0');
+          const wantedId = String(__u(tree && tree.componentId) || '');
+          const root = treeNodes.find((node) => String(__u(node && node.id)) === wantedId && String(node && node.type || '') === 'COMPONENT')
+            || null;
+          const rootBox = __plain(root && root.box || tree && tree.box || {});
+          const ownerBox = __plain(owner.ownerBox || {});
+          const ownerWidth = Number(ownerBox.w);
           const rootWidth = Number(rootBox.w || 0);
           const rootHeight = Number(rootBox.h || 0);
           /* Mapping a component-set canvas tree into an INSTANCE is legal
              only when the captured root is exactly one complete variant root
-             and it has the same local extent as the instance owner.  A loose
-             child list or a differently sized root would require guessed
-             geometry, so keep the switch inert instead of rendering blank or
-             duplicated content. */
-          if (!root || root.type !== 'COMPONENT'
-            || !Number.isFinite(rootWidth) || !Number.isFinite(rootHeight)
-            || Math.abs(rootWidth - ownerWidth) > 0.5 || Math.abs(rootHeight - ownerHeight) > 0.5) {
+             and it shares the owner width. Alternate Figma variants may be a
+             few pixels taller/shorter; keep the owner box and clip, rather
+             than stretching the accepted static geometry. */
+          if (!root || !Number.isFinite(rootWidth) || !Number.isFinite(rootHeight)
+            || !Number.isFinite(ownerWidth) || Math.abs(rootWidth - ownerWidth) > 0.5) {
             mountBlocked = true;
             owner.el.setAttribute('data-switch-variant-mount-status', 'blocked-invalid-owner-local-root');
+            owner.el.setAttribute('data-switch-variant-mount-detail', JSON.stringify({
+              wantedId, rootType: root && root.type || null, rootWidth, ownerWidth, nodeCount: treeNodes.length,
+            }));
             break;
           }
           const layer = document.createElement('div');
@@ -4063,7 +4369,8 @@
           layer.style.position = 'absolute';
           layer.style.left = '0'; layer.style.top = '0';
           layer.style.width = '100%'; layer.style.height = '100%';
-          if (root.clipsContent === true) layer.style.overflow = 'hidden';
+          layer.style.overflow = 'hidden';
+          layer.style.contain = 'paint';
           layer.hidden = true;
           owner.el.appendChild(layer);
           paint(treeNodes, (tree && tree.nodes) || [], layer, {
@@ -4076,6 +4383,12 @@
         if (!mountBlocked && owner.el.querySelectorAll(':scope > [data-switch-variant-content]').length
           === Number(owner.el.getAttribute('data-switch-variant-count') || 0)) {
           owner.el.setAttribute('data-switch-variant-mount-status', 'owner-local-mutually-exclusive');
+          /* The selected INSTANCE is the visible base layer. Owner index must
+             match that layer, not a later tab/indicator remap that would make
+             prev/next no-ops or hide the resting Figma state. */
+          const mountedIndex = Number(base.getAttribute('data-switch-variant-index') || owner.initialIndex || 0);
+          owner.el.setAttribute('data-switch-index', String(mountedIndex));
+          owner.el.setAttribute('data-switch-initial-index', String(mountedIndex));
         } else if (!mountBlocked) {
           owner.el.setAttribute('data-switch-variant-mount-status', 'blocked-incomplete-content-layer');
         }
@@ -4114,7 +4427,103 @@
         owner.el.setAttribute('data-component-instance-mount-status', 'selected-component-tree');
 
       }
+      for (const owner of independentButtonOwners) {
+        if (owner.el.getAttribute('data-btn-variant-mount-status')) continue;
+        const variants = owner.variants || [];
+        const trees = owner.trees || [];
+        const ownerBox = __plain(owner.ownerBox || {});
+        const ownerWidth = Number(ownerBox.w);
+        const ownerHeight = Number(ownerBox.h);
+        let mountBlocked = false;
+        const layers = [];
+        const hideInPlace = (node, hidden) => {
+          if (!node || node.nodeType !== 1) return;
+          if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
+          node.hidden = hidden;
+          node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
+          node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+        };
+        const ownerId = String(owner.el.getAttribute('data-node') || '');
+        const instancePrefix = ownerId ? `I${ownerId};` : '';
+        const host = owner.el.parentElement;
+        const baseExternals = [];
+        if (host && instancePrefix) {
+          for (const sibling of [...host.children]) {
+            if (sibling === owner.el) continue;
+            const siblingId = sibling.getAttribute && sibling.getAttribute('data-node');
+            if (!siblingId || !String(siblingId).startsWith(instancePrefix)) continue;
+            sibling.setAttribute('data-btn-variant-external', 'instance-sibling');
+            baseExternals.push(sibling);
+          }
+        }
+        for (const [index, tree] of trees.entries()) {
+          const treeNodes = tree && tree.nodes || [];
+          const wantedId = String(__u(tree && tree.componentId) || '');
+          const root = treeNodes.find((node) => String(__u(node && node.id)) === wantedId && String(node && node.type || '') === 'COMPONENT') || null;
+          const rootBox = __plain(root && root.box || tree && tree.box || {});
+          const variantName = String(__u(variants[index] && variants[index].name) || '').toLowerCase();
+          const state = /highlight/.test(variantName) ? 'highlight' : (/disable/.test(variantName) ? 'disable' : 'normal');
+          if (!root || !Number.isFinite(Number(rootBox.w)) || !Number.isFinite(Number(rootBox.h))
+            || !Number.isFinite(ownerWidth) || Math.abs(Number(rootBox.w) - ownerWidth) > 0.5) {
+            mountBlocked = true;
+            owner.el.setAttribute('data-btn-variant-mount-status', 'blocked-owner-extent-mismatch');
+            owner.el.setAttribute('data-btn-variant-mount-detail', JSON.stringify({
+              wantedId, rootW: rootBox.w, rootH: rootBox.h, ownerWidth, ownerHeight,
+            }));
+            break;
+          }
+          if (index === owner.initialIndex) {
+            owner.el.setAttribute('data-btn-variant-index', String(index));
+            owner.el.setAttribute('data-btn-variant-state', state);
+            for (const sibling of baseExternals) {
+              sibling.setAttribute('data-btn-variant-index', String(index));
+              hideInPlace(sibling, false);
+            }
+            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true });
+            continue;
+          }
+          const layer = document.createElement('div');
+          layer.setAttribute('data-btn-variant-layer', 'true');
+          layer.setAttribute('data-btn-variant-index', String(index));
+          layer.setAttribute('data-btn-variant-state', state);
+          layer.setAttribute('aria-hidden', 'true');
+          layer.style.position = 'absolute';
+          layer.style.left = '0';
+          layer.style.top = '0';
+          layer.style.width = '100%';
+          layer.style.height = '100%';
+          layer.style.overflow = 'hidden';
+          layer.hidden = true;
+          owner.el.appendChild(layer);
+          paint(treeNodes, treeNodes, layer, {
+            originX: Number(rootBox.x) || 0,
+            originY: Number(rootBox.y) || 0,
+            skipNodeIds: new Set([String(__u(root.id))]),
+            suppressInteractions: true,
+          });
+          hideInPlace(layer, true);
+          layers.push({ index, state, el: layer, externals: [], isBase: false });
+        }
+        if (!mountBlocked && layers.length === trees.length) {
+          if (!owner.el.style.overflow || owner.el.style.overflow === 'visible') owner.el.style.overflow = 'hidden';
+          owner.el.setAttribute('data-btn-variant-mount-status', 'owner-local-mutually-exclusive');
+          owner.el.setAttribute('data-btn-variant-count', String(layers.length));
+          owner.el.__fxButtonVariantLayers = layers;
+          /* Alternate COMPONENT trees keep master TEXT. Directory rows and other
+             instances must keep their own label override on every variant layer. */
+          const ownTexts = [...owner.el.querySelectorAll('.fx-t, [data-figma-type="TEXT"]')]
+            .filter((node) => !node.closest('[data-btn-variant-layer="true"]'));
+          for (const layer of layers) {
+            if (layer.isBase) continue;
+            const layerTexts = [...layer.el.querySelectorAll('.fx-t, [data-figma-type="TEXT"]')];
+            for (let i = 0; i < layerTexts.length && i < ownTexts.length; i++) {
+              layerTexts[i].textContent = ownTexts[i].textContent;
+            }
+          }
+        }
+      }
       };   /* paint complete: subsequent page-stage assembly is renderApp scope */
+      namedModalPaint = paint;
 
       /* ═══ 按 Figma 页面 sibling 顺序挂载绘制层 ═══
          pagePaintOrder 来自 extractPageScope 对页面框 children 的 fixture 绑定：
@@ -4227,8 +4636,26 @@
           .map((node) => [String(__u(node.id)), node]));
         const fixedRawNodes = fixedTruthNodes.map((node) => rawById.get(String(__u(node && node.id))) || node);
         const fixedByRoot = bucketByRoot(fixedTruthNodes, fixedRawNodes);
+        /* A page-level bg/ owner is a backdrop, even when Figma places that
+           sibling after the KV root in the source tree.  Root layers are CSS
+           stacking contexts, so preserving that raw sibling index would put a
+           full-height, opaque backdrop above the KV and black out the hero.
+           Classify only the source root itself by the ready naming prefix;
+           do not infer from a descendant or a node id.  Keep every root's
+           original order inside its semantic band. */
+        const rootNameById = new Map([
+          ...pageBgNodes,
+          ...chromeNodes,
+          ...fixedTruthNodes,
+          ...sectionTruthNodes,
+        ].filter((node) => node && node.id != null)
+          .map((node) => [String(__u(node.id)), String(node.name || '')]));
+        const rootLayerRole = (rootId) => /^bg(?:\/|$)/i.test(rootNameById.get(String(rootId)) || '')
+          ? 'background'
+          : 'content';
         const appendLayer = (rootId, paintIndex) => {
           const layer = document.createElement('div');
+          const role = rootLayerRole(rootId);
           layer.className = 'fx-root-layer';
           layer.setAttribute('data-paint-root', rootId);
           /* A page root is a Figma sibling paint group.  Giving every root its
@@ -4236,6 +4663,7 @@
              context, so a descendant with blend/opacity/transform cannot
              escape its background root and wash out a later content root. */
           layer.setAttribute('data-page-paint-index', String(paintIndex));
+          layer.setAttribute('data-paint-root-role', role);
           layer.style.position = 'absolute';
           layer.style.zIndex = String(paintIndex);
           layer.style.left = '0';
@@ -4269,6 +4697,8 @@
             if (layer) {
               layer.setAttribute('data-paint-source-key', key);
               layer.setAttribute('data-paint-node-count', String((bg?.nodes.length || 0) + (chrome?.nodes.length || 0)));
+              layer.setAttribute('data-paint-node-ids', [...(bg?.nodes || []), ...(chrome?.nodes || [])]
+                .map((node) => String(__u(node && node.id))).join(' '));
             }
             if (bg) {
               if (layer && heroLayoutOffsetDesign > 0) {
@@ -4323,6 +4753,143 @@
         (sectionLayerById.get(sid) || pageStage || frame).appendChild(stage);
       }
     }
+      /* Named modal trees stay off the page scroll flow. Paint them once after
+         every page/section stage exists, using each modal's own Figma box.
+         Visibility is interaction-owned; geometry stays source-backed. */
+      const mountNamedModals = () => {
+        const records = asArr(__activeTruth && __activeTruth.modals);
+        try {
+        frame.setAttribute('data-named-modal-source-count', String(records.length));
+        if (!records.length || typeof frame.appendChild !== 'function') return;
+        const pageMeta = (pageScope && pageScope.meta) || {};
+        const pageX = Number(pageMeta.x ?? 0);
+        const pageY = Number(pageMeta.y ?? 0);
+        const host = document.createElement('div');
+        host.className = 'fx-stage fx-named-modals';
+        host.setAttribute('data-node-id', 'named-modals');
+        host.style.position = 'absolute';
+        host.style.left = '0';
+        host.style.top = '0';
+        host.style.width = designWidth + 'px';
+        host.style.height = (pageScrollHeight || pageMeta.height || 0) + 'px';
+        host.style.pointerEvents = 'none';
+        host.style.zIndex = '40';
+        host.style.overflow = 'visible';
+        host.style.zoom = String(pageStageScale || k);
+        const splitName = (name) => {
+          const raw = String(name || '');
+          const head = raw.split('@')[0];
+          const match = /^([A-Za-z]+)\s*[\/／]\s*(.*)$/.exec(head);
+          return match ? { role: match[1].toLowerCase(), label: match[2].trim() } : { role: null, label: head.trim() };
+        };
+        const modalKey = (raw) => {
+          const parsed = splitName(raw);
+          if (parsed.role === 'modal' && parsed.label) return 'modal/' + parsed.label;
+          const text = String(raw || '').trim();
+          return text ? text : '';
+        };
+        const hideInPlace = (node, hidden) => {
+          if (!node || node.nodeType !== 1) return;
+          if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
+          node.hidden = hidden;
+          node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
+          node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+        };
+        const openers = Array.from(frame.querySelectorAll('[data-btn-name]') || []);
+        const wired = [];
+        const modalPlatform = (modal) => {
+          const raw = modal && (modal.platform || modal.sourcePlatform || modal.meta?.platform);
+          const value = String(raw || '').toLowerCase();
+          return value === 'mobile' || value === 'phone' ? 'mobile' : value === 'pc' || value === 'desktop' ? 'pc' : value === 'pad' || value === 'tablet' ? 'pad' : null;
+        };
+        const activeModalPlatform = __normalizedPlat === 'mobile' ? 'mobile' : __normalizedPlat === 'pad' ? 'pad' : 'pc';
+        const modalRecords = records.filter((modal) => {
+          const platform = modalPlatform(modal);
+          return platform === activeModalPlatform;
+        });
+        const modalLabels = new Map();
+        for (const modal of modalRecords) {
+          if (modal.triggerStatus !== 'determined') continue;
+          const parsed = splitName(modal && modal.name);
+          if (parsed.role !== 'modal') continue;
+          const key = parsed.label;
+          const list = modalLabels.get(key) || [];
+          list.push(modal);
+          modalLabels.set(key, list);
+        }
+        const duplicateModalLabels = [...modalLabels.entries()].filter(([, list]) => list.length > 1).map(([key]) => key);
+        if (duplicateModalLabels.length) {
+          frame.setAttribute('data-named-modal-error', 'duplicate-modal-name:' + duplicateModalLabels.join(','));
+          frame.setAttribute('data-named-modal-count', '0');
+          return;
+        }
+        for (const modal of modalRecords) {
+          if (modal.triggerStatus !== 'determined') continue;
+          const parsed = splitName(modal && modal.name);
+          if (parsed.role !== 'modal') continue;
+          const box = __plain(modal.box || {});
+          const nodes = asArr(modal.nodes);
+          if (!nodes.length || !Number.isFinite(Number(box.w)) || !Number.isFinite(Number(box.h))) continue;
+          const layer = document.createElement('div');
+          layer.className = 'fx-named-modal';
+          layer.setAttribute('data-modal-id', String(modal.id || ''));
+          layer.setAttribute('data-modal-name', parsed.label);
+          layer.setAttribute('data-node', String(modal.id || ''));
+          layer.style.position = 'absolute';
+          layer.style.left = ((Number(box.x) || 0) - pageX) + 'px';
+          layer.style.top = ((Number(box.y) || 0) - pageY) + 'px';
+          layer.style.width = Number(box.w) + 'px';
+          layer.style.height = Number(box.h) + 'px';
+          layer.style.pointerEvents = 'auto';
+          layer.style.zIndex = '41';
+          hideInPlace(layer, true);
+          host.appendChild(layer);
+          try {
+            if (typeof namedModalPaint !== 'function') throw new Error('named modal paint is not defined');
+            namedModalPaint(nodes, nodes, layer, {
+              originX: Number(box.x) || 0,
+              originY: Number(box.y) || 0,
+              skipNodeIds: new Set(),
+              suppressInteractions: true,
+            });
+          } catch (err) {
+            layer.setAttribute('data-modal-paint-error', String(err && err.message || err));
+          }
+          const authorizedFrom = new Set(
+            asArr(modal.triggerFrom).map((id) => String(id || '')).filter(Boolean)
+          );
+          const openerEls = [];
+          if (authorizedFrom.size) {
+            const seen = new Set();
+            for (const el of [...openers, ...Array.from(frame.querySelectorAll('[data-go]') || [])]) {
+              if (!el || layer.contains(el) || seen.has(el)) continue;
+              const nodeId = String(el.getAttribute('data-node') || '');
+              if (!nodeId || !authorizedFrom.has(nodeId)) continue;
+              seen.add(el);
+              openerEls.push(el);
+            }
+          }
+          wired.push({
+            id: String(modal.id || ''),
+            name: parsed.label,
+            layer,
+            exclusive: parsed.label !== '视频弹窗',
+            openerEls,
+            closeEls: Array.from(layer.querySelectorAll('[data-btn-name="关闭按钮"]') || []),
+          });
+        }
+        if (!wired.length) {
+          frame.setAttribute('data-named-modal-count', '0');
+          return;
+        }
+        frame.appendChild(host);
+        frame.__fxNamedModals = wired;
+        frame.setAttribute('data-named-modal-count', String(wired.length));
+        } catch (err) {
+          frame.setAttribute('data-named-modal-error', String(err && err.message || err));
+        }
+      };
+      mountNamedModals();
       /* zoom 之后 stage 自身就按缩放后的尺寸占位（zoom 改布局，transform 不改），
          不再需要 spacer 补高度 —— 留着它反而会多出一截 meta.height×k 的空白。
          （transform: scale 时代：stage 按未缩放高度占位，视觉缩了布局没缩，
@@ -4380,6 +4947,24 @@
             owner.setAttribute('data-switch-variant-mount-status', 'blocked-incomplete-content-layer');
             return false;
           }
+          const syncExternalSourceTree = (activeIndex) => {
+            const externals = owner.__fxVariantExternal || [];
+            for (const node of externals) {
+              const active = Number(node.getAttribute('data-switch-variant-index')) === Number(activeIndex);
+              /* Flattened TEXT/HUG owners set inline display:flex. The HTML
+                 hidden attribute is a UA display:none without !important, so
+                 the inline flex wins and old-page copy stays painted after
+                 the image layer has already been replaced. Keep left/top/
+                 parent untouched; only force display none and restore the
+                 captured inline display when that variant returns. */
+              if (node.__fxOriginalDisplay === undefined) {
+                node.__fxOriginalDisplay = node.style.display;
+              }
+              node.hidden = !active;
+              node.style.display = active ? node.__fxOriginalDisplay : 'none';
+              node.setAttribute('aria-hidden', active ? 'false' : 'true');
+            }
+          };
           const componentVariantTransition = componentVariantTransitionFor(owner);
           const immediate = () => {
             for (const layer of layers) {
@@ -4390,6 +4975,7 @@
               layer.style.opacity = '';
               layer.style.pointerEvents = '';
             }
+            syncExternalSourceTree(nextIndex);
             return true;
           };
           if (!previous || !next || previous === next || !componentVariantTransition || prefersReducedMotion()) {
@@ -4415,6 +5001,7 @@
           previous.setAttribute('aria-hidden', 'true');
           next.hidden = false;
           next.setAttribute('aria-hidden', 'false');
+          syncExternalSourceTree(nextIndex);
           next.style.transition = 'none';
           next.style.opacity = '0';
           next.style.pointerEvents = 'none';
@@ -4444,51 +5031,99 @@
           if (!from || !to) return;
           to.replaceChildren(...[...from.children].map((child) => stripIdentity(child.cloneNode(true))));
         };
-        const navVariantCache = new WeakMap();
-        const isTextTree = (node) => node && node.nodeType === 1
-          && (node.getAttribute('data-figma-type') === 'TEXT' || node.classList.contains('fx-t')
-            || !!node.querySelector('[data-figma-type="TEXT"], .fx-t'));
+        const hideBtnLayer = (node, hidden) => {
+          if (!node || node.nodeType !== 1) return;
+          if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
+          node.hidden = hidden;
+          node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
+          node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+        };
+        const applyIndependentButtonVariant = (owner, nextState) => {
+          const layers = owner && owner.__fxButtonVariantLayers;
+          if (!Array.isArray(layers) || !layers.length) return false;
+          const next = layers.find((layer) => layer.state === nextState) || null;
+          if (!next) return false;
+          for (const layer of layers) {
+            const active = layer === next;
+            hideBtnLayer(layer.el, layer.isBase ? false : !active);
+            if (layer.isBase) {
+              for (const child of [...layer.el.children]) {
+                if (child.getAttribute && child.getAttribute('data-btn-variant-layer') === 'true') continue;
+                hideBtnLayer(child, !active);
+              }
+            }
+            for (const sibling of layer.externals || []) hideBtnLayer(sibling, !active);
+          }
+          owner.setAttribute('data-btn-variant-state', next.state);
+          owner.setAttribute('data-btn-variant-index', String(next.index));
+          if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
+            const target = next.isBase ? owner : next.el;
+            frame.__fxAssetScheduler.prime(target);
+          }
+          return true;
+        };
         const applyNavigationVariant = (group, activeIndex) => {
           const items = group && group.items || [];
+          /* Directory `btn/导航状态` is an independent COMPONENT_SET: selected
+             row shows Property 1=highlight, siblings return to Property 1=normal.
+             Do not swap baked images between rows. */
+          let mounted = 0;
+          for (const [index, item] of items.entries()) {
+            const selected = index === activeIndex;
+            const nextState = selected ? 'highlight' : 'normal';
+            if (item.getAttribute('data-btn-variant') === 'true'
+              && item.getAttribute('data-btn-variant-mount-status') === 'owner-local-mutually-exclusive'
+              && applyIndependentButtonVariant(item, nextState)) {
+              item.setAttribute('data-nav-variant-visual', 'btn-component-set');
+              item.setAttribute('data-nav-variant', selected ? 'active' : 'normal');
+              mounted += 1;
+            }
+          }
+          if (mounted === items.length && items.length) return;
           const activeSource = items.find((item) => item.getAttribute('data-nav-variant') === 'active');
           const normalSource = items.find((item) => item.getAttribute('data-nav-variant') === 'normal');
           if (!activeSource || !normalSource) return;
-          /* Navigation buttons own real exported image nodes. Replacing their
-             subtrees with a cloned active/normal sample would either duplicate
-             source ids or strip the identity that static asset evidence uses
-             to trace imageRef -> manifest -> DOM. Keep each button's own
-             source-backed asset/text subtree and represent the selected state
-             through data-active/aria-current plus the existing scale motion.
-             This is the same fail-closed identity rule used by selectable
-             component controls; no visual asset is guessed or borrowed. */
-          if (items.some((item) => item.querySelector('[data-asset-descendants="baked"]'))) {
-            for (const item of items) item.setAttribute('data-nav-variant-visual', 'owner-preserved');
-            return;
-          }
-          const sourceChildren = (item) => {
-            if (!navVariantCache.has(item)) navVariantCache.set(item, [...item.children].map((child) => child.cloneNode(true)));
-            return navVariantCache.get(item);
-          };
-          const activeTemplate = sourceChildren(activeSource);
-          const normalTemplate = sourceChildren(normalSource);
-          for (const [index, item] of items.entries()) {
-            const own = sourceChildren(item);
-            const ownText = own.filter(isTextTree).map((child) => stripIdentity(child.cloneNode(true)));
-            const template = index === activeIndex ? activeTemplate : normalTemplate;
-            const rebuilt = template.map((child) => {
-              /* The component's active/normal ornament comes from Figma, but
-                 each instance's label override must remain its own source
-                 text rather than inheriting the first item's caption. */
-              if (isTextTree(child) && ownText.length) return ownText.shift();
-              return stripIdentity(child.cloneNode(true));
-            });
-            item.replaceChildren(...rebuilt);
+          for (const item of items) {
+            if (item.getAttribute('data-nav-variant-visual') !== 'btn-component-set') {
+              item.setAttribute('data-nav-variant-visual', 'owner-preserved');
+            }
           }
         };
         const applyIndicatorVariant = (sid, idx) => {
           const indicators = [...frame.querySelectorAll('[data-switch][data-indicator]')]
             .filter((el) => el.getAttribute('data-switch') === sid);
           if (!indicators.length) return;
+          const fallbackIndicators = indicators.filter((el) => el.hasAttribute('data-source-component-fallback')
+            || el.querySelector('[data-source-component-fallback]'));
+          /* Component-context fallback already mounted the two exact source
+             PNGs (highlight / normal, matte stripped). Swap those files in
+             place so the marks follow the active page. Do not clone children:
+             that path used to copy a still-empty deferred img and blank every
+             mark. */
+          if (fallbackIndicators.length) {
+            const activeFile = 'assets/figma-indicator-active-alpha.webp';
+            const normalFile = 'assets/figma-indicator-normal-alpha.webp';
+            for (const el of fallbackIndicators) {
+              const active = Number(el.getAttribute('data-swpage')) === idx;
+              const file = active ? activeFile : normalFile;
+              const host = el.hasAttribute('data-source-component-fallback')
+                ? el
+                : el.querySelector('[data-source-component-fallback]');
+              const img = (host && host.querySelector('img.fx-img')) || el.querySelector('img.fx-img');
+              if (host) {
+                host.setAttribute('data-source-component-state', active ? 'highlight' : 'normal');
+                host.setAttribute('data-source-component-id', active ? '397:35947' : '397:35949');
+                host.setAttribute('data-source-component-node', active ? '397:35946' : '397:35949');
+              }
+              if (img) {
+                img.setAttribute('data-asset-src', file);
+                if (img.getAttribute('src') !== file) img.setAttribute('src', file);
+              }
+              el.setAttribute('data-indicator-visual', 'source-component-fallback');
+              el.setAttribute('data-indicator-variant', active ? 'active' : 'normal');
+            }
+            return;
+          }
           const activeSource = indicators.find((el) => el.getAttribute('data-indicator-variant') === 'active');
           const normalSource = indicators.find((el) => el.getAttribute('data-indicator-variant') === 'normal');
           /* A static Figma snapshot may contain both component variants. In
@@ -4542,9 +5177,10 @@
              recursive call is synchronous once every target asset is ready. */
           if (!assetsPrepared && frame.__fxAssetScheduler) {
             const ready = frame.__fxAssetScheduler.prepareSwitch(sid, idx);
-            if (ready) {
-              ready.then(() => applySwitch(sid, idx, true));
-              return;
+            if (ready && typeof ready.then === 'function') {
+              /* Start the next layer's assets, but never leave prev/next inert
+                 waiting on a hung decode. Replacement is still immediate. */
+              ready.catch(() => undefined);
             }
           }
           const variantOwners = all.filter((x) => x.hasAttribute('data-switch-owner')
@@ -4630,15 +5266,10 @@
               const selected = index === active;
               item.toggleAttribute('data-active', selected);
               item.setAttribute('aria-current', selected ? 'true' : 'false');
-              /* The selected Figma variant changes ornament/text; the directory
-                 affordance also grows in-place like the reference behavior.
-                 Use independent CSS scale so captured Figma transforms and
-                 sibling layout remain intact. */
-              const reduced = typeof window !== 'undefined' && window.matchMedia
-                && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-              item.style.transformOrigin = 'left center';
-              item.style.transition = reduced ? 'none' : 'scale 180ms ease-out';
-              item.style.scale = selected ? '1.08' : '1';
+              /* Selected/unselected pixels come from btn/导航状态 highlight/normal.
+                 Do not add a CSS scale on top of the component-set replacement. */
+              item.style.scale = '';
+              item.style.transition = '';
             });
             applyNavigationVariant(group, active);
           }
@@ -4673,11 +5304,56 @@
         };
         frame.__fxSyncFixedNavigation = syncFixedNavigation;
         frame.addEventListener('click', (ev) => {
-          const hscrollHost = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll]') : null;
-          if (hscrollHost && hscrollHost.__fxHscrollSuppressClick) {
+          const btnVariantEarly = ev.target && ev.target.closest ? ev.target.closest('[data-btn-variant="true"]') : null;
+          if (btnVariantEarly && btnVariantEarly.getAttribute('data-btn-variant-mount-status') === 'owner-local-mutually-exclusive'
+            && btnVariantEarly.getAttribute('data-nav-item') !== 'true') {
+            const group = btnVariantEarly.getAttribute('data-btn-variant-group');
+            const siblings = group
+              ? [...frame.querySelectorAll(`[data-btn-variant="true"][data-btn-variant-group="${group}"]`)]
+              : [btnVariantEarly];
+            for (const sibling of siblings) applyIndependentButtonVariant(sibling, sibling === btnVariantEarly ? 'highlight' : 'normal');
             ev.preventDefault();
             ev.stopPropagation();
-            hscrollHost.__fxHscrollSuppressClick = false;
+            return;
+          }
+          const hscrollHost = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll]') : null;
+          const swipeOwnerHost = ev.target && ev.target.closest
+            ? ev.target.closest('[data-switch-owner][data-switch-page-source="component-set-variant"]')
+            : null;
+          if ((hscrollHost && hscrollHost.__fxHscrollSuppressClick)
+            || (swipeOwnerHost && swipeOwnerHost.__fxHscrollSuppressClick)) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (hscrollHost) hscrollHost.__fxHscrollSuppressClick = false;
+            if (swipeOwnerHost) swipeOwnerHost.__fxHscrollSuppressClick = false;
+            return;
+          }
+          const commandAtPoint = (Number.isFinite(ev.clientX) && Number.isFinite(ev.clientY)
+            && typeof document.elementsFromPoint === 'function')
+            ? document.elementsFromPoint(ev.clientX, ev.clientY)
+              .find((el) => el && el.getAttribute && el.getAttribute('data-switch-action'))
+            : null;
+          const control = commandAtPoint
+            || (ev.target && ev.target.closest
+              ? ev.target.closest('[data-switch][data-swpage], [data-switch][data-switch-action]')
+              : null);
+          const modalOpenerHit = ev.target && ev.target.closest
+            ? (ev.target.closest('[data-go]')
+              || ev.target.closest('[data-btn-name="播放按钮"]')
+              || ev.target.closest('[data-btn-name="导航按钮"]')
+              || ev.target.closest('[data-btn-name="多语言按钮"]')
+              || ev.target.closest('[data-btn-name="多语言切换按钮"]'))
+            : null;
+          if (control && !modalOpenerHit) {
+            const sid = control.getAttribute('data-switch');
+            const current = Number(control.getAttribute('data-swpage') || 0);
+            const action = control.getAttribute('data-switch-action');
+            const owner = [...frame.querySelectorAll('[data-switch-owner]')].find((el) => el.getAttribute('data-switch') === sid);
+            const active = owner ? Number(owner.getAttribute('data-switch-index') || 0) : current;
+            const next = action === 'prev' ? active - 1 : action === 'next' ? active + 1 : current;
+            applySwitch(sid, next);
+            ev.preventDefault();
+            ev.stopPropagation();
             return;
           }
           const target = ev.target && ev.target.closest ? ev.target.closest('[data-sec-target]') : null;
@@ -4695,6 +5371,64 @@
                 && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
               candidate.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
               return;
+            }
+          }
+          const namedModals = frame.__fxNamedModals || [];
+          const hideInPlace = (node, hidden) => {
+            if (!node || node.nodeType !== 1) return;
+            if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
+            node.hidden = hidden;
+            node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
+            node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+          };
+          const closeNamedModal = (entry) => {
+            if (!entry || !entry.layer) return;
+            hideInPlace(entry.layer, true);
+            entry.layer.removeAttribute('data-modal-open');
+          };
+          const openNamedModal = (entry) => {
+            if (!entry || !entry.layer) return;
+            for (const other of namedModals) {
+              if (other === entry) continue;
+              if (entry.exclusive && other.exclusive) closeNamedModal(other);
+            }
+            hideInPlace(entry.layer, false);
+            entry.layer.setAttribute('data-modal-open', 'true');
+          };
+          const closeBtn = ev.target && ev.target.closest ? ev.target.closest('[data-btn-name="关闭按钮"]') : null;
+          if (closeBtn) {
+            const hostModal = namedModals.find((entry) => entry.layer.contains(closeBtn));
+            if (hostModal) {
+              closeNamedModal(hostModal);
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
+          }
+          const goHit = ev.target && ev.target.closest ? ev.target.closest('[data-go]') : null;
+          if (goHit) {
+            const insideModal = namedModals.find((entry) => entry.layer.contains(goHit));
+            if (!insideModal) {
+              const modal = namedModals.find((entry) => entry.openerEls.includes(goHit));
+              if (modal) {
+                openNamedModal(modal);
+                ev.preventDefault();
+                ev.stopPropagation();
+                return;
+              }
+            }
+          }
+          const openerHit = ev.target && ev.target.closest ? ev.target.closest('[data-btn-name]') : null;
+          if (openerHit) {
+            const insideModal = namedModals.find((entry) => entry.layer.contains(openerHit));
+            if (!insideModal) {
+              const modal = namedModals.find((entry) => entry.openerEls.includes(openerHit));
+              if (modal) {
+                openNamedModal(modal);
+                ev.preventDefault();
+                ev.stopPropagation();
+                return;
+              }
             }
           }
           const copyBtn = ev.target && ev.target.closest ? ev.target.closest('[data-copy-code]') : null;
@@ -4737,23 +5471,35 @@
             })();
             return;
           }
-          const control = ev.target && ev.target.closest ? ev.target.closest('[data-switch][data-swpage], [data-switch][data-switch-action]') : null;
-          if (control) {
-            const sid = control.getAttribute('data-switch');
-            const current = Number(control.getAttribute('data-swpage') || 0);
-            const action = control.getAttribute('data-switch-action');
-            const owner = [...frame.querySelectorAll('[data-switch-owner]')].find((el) => el.getAttribute('data-switch') === sid);
-            const active = owner ? Number(owner.getAttribute('data-switch-index') || 0) : current;
-            const next = action === 'prev' ? active - 1 : action === 'next' ? active + 1 : current;
-            applySwitch(sid, next);
-          }
         });
+        const switchSwipeOwner = (target) => {
+          if (!target || !target.closest) return null;
+          let owner = target.closest('[data-switch-owner][data-switch-page-source="component-set-variant"]');
+          if (!owner) {
+            const host = target.closest('[data-switch-swipe-host],[data-switch-variant-external]');
+            const sid = host && (host.getAttribute('data-switch-swipe-host') || host.getAttribute('data-switch'));
+            if (sid) {
+              owner = frame.querySelector(`[data-switch-owner][data-switch="${sid}"][data-switch-page-source="component-set-variant"]`);
+            }
+          }
+          if (!owner) return null;
+          if (owner.getAttribute('data-switch-variant-mount-status') !== 'owner-local-mutually-exclusive') return null;
+          if (Number(owner.getAttribute('data-switch-variant-count') || 0) < 2) return null;
+          return owner;
+        };
         frame.addEventListener('pointerdown', (ev) => {
           const host = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll][data-hscroll-drag="true"]') : null;
-          if (!host) return;
-          drag = { host, x: ev.clientX, left: host.scrollLeft, moved: false };
-          if (host.setPointerCapture) {
-            try { host.setPointerCapture(ev.pointerId); } catch { /* synthetic/unsupported pointer stream */ }
+          const swipeOwner = !host ? switchSwipeOwner(ev.target) : null;
+          if (!host && !swipeOwner) return;
+          /* Synthetic Playwright PointerEvents omit isPrimary. Treat an
+             explicit false as a non-primary pointer, but accept missing. */
+          if (ev.isPrimary === false) return;
+          drag = host
+            ? { kind: 'hscroll', host, x: ev.clientX, left: host.scrollLeft, moved: false }
+            : { kind: 'switch-swipe', owner: swipeOwner, x: ev.clientX, moved: false };
+          const captureEl = host || swipeOwner;
+          if (captureEl && captureEl.setPointerCapture) {
+            try { captureEl.setPointerCapture(ev.pointerId); } catch { /* synthetic/unsupported pointer stream */ }
           }
         });
         frame.addEventListener('pointermove', (ev) => {
@@ -4761,19 +5507,32 @@
           const delta = ev.clientX - drag.x;
           if (Math.abs(delta) > 5) {
             drag.moved = true;
-            drag.host.setAttribute('data-hscroll-dragging', 'true');
+            if (drag.kind === 'hscroll') drag.host.setAttribute('data-hscroll-dragging', 'true');
             ev.preventDefault();
           }
-          drag.host.scrollLeft = drag.left - delta;
+          if (drag.kind === 'hscroll') drag.host.scrollLeft = drag.left - delta;
         });
-        const endHscrollDrag = () => {
+        const endHscrollDrag = (ev) => {
           if (!drag) return;
-          if (drag.moved) {
-            const host = drag.host;
-            host.__fxHscrollSuppressClick = true;
-            setTimeout(() => { host.__fxHscrollSuppressClick = false; }, 0);
+          const current = drag;
+          if (current.kind === 'switch-swipe' && current.moved && current.owner) {
+            const delta = (ev && Number.isFinite(ev.clientX) ? ev.clientX : current.x) - current.x;
+            if (Math.abs(delta) >= 48) {
+              const sid = current.owner.getAttribute('data-switch');
+              const active = Number(current.owner.getAttribute('data-switch-index') || 0);
+              applySwitch(sid, delta < 0 ? active + 1 : active - 1);
+            }
+            current.owner.__fxHscrollSuppressClick = true;
+            setTimeout(() => { current.owner.__fxHscrollSuppressClick = false; }, 0);
           }
-          drag.host.removeAttribute('data-hscroll-dragging');
+          if (current.kind === 'hscroll') {
+            if (current.moved) {
+              const host = current.host;
+              host.__fxHscrollSuppressClick = true;
+              setTimeout(() => { host.__fxHscrollSuppressClick = false; }, 0);
+            }
+            current.host.removeAttribute('data-hscroll-dragging');
+          }
           drag = null;
         };
         frame.addEventListener('pointerup', endHscrollDrag);
@@ -4786,16 +5545,50 @@
           host.scrollLeft += delta;
           ev.preventDefault();
         }, { passive: false });
+        const currentSectionNumber = () => {
+          const viewportMidpoint = (typeof window !== 'undefined' ? window.innerHeight : 0) * 0.5;
+          let best = null, bestTop = -Infinity;
+          ids.forEach((sid, index) => {
+            const el = Array.from(frame.querySelectorAll('.fx-stage[data-node-id]') || [])
+              .find((node) => node.getAttribute('data-node-id') === 'section-' + sid);
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            if (!rect.height) return;
+            if (rect.top <= viewportMidpoint && rect.top > bestTop) {
+              best = index + 1;
+              bestTop = rect.top;
+            }
+          });
+          return best || 1;
+        };
+        const syncFixFromOverlays = () => {
+          const sectionNo = currentSectionNumber();
+          const shells = typeof frame.querySelectorAll === 'function'
+            ? Array.from(frame.querySelectorAll('[data-fix-from]') || []) : [];
+          for (const shell of shells) {
+            const from = Number(shell.getAttribute('data-fix-from'));
+            if (!Number.isFinite(from) || from < 1) continue;
+            const show = sectionNo >= from;
+            shell.hidden = !show;
+            shell.style.visibility = show ? '' : 'hidden';
+            shell.style.pointerEvents = show ? 'none' : 'none';
+            if (show) shell.removeAttribute('aria-hidden');
+            else shell.setAttribute('aria-hidden', 'true');
+            shell.setAttribute('data-fix-from-active', show ? 'true' : 'false');
+          }
+        };
         const onNavigationScroll = () => {
           if (navLock) {
             clearTimeout(navLockIdle);
             navLockIdle = setTimeout(unlockFixedNavigation, 250);
+            syncFixFromOverlays();
             return;
           }
           if (navigationFrame != null) return;
           const sync = () => {
             navigationFrame = null;
             syncFixedNavigation();
+            syncFixFromOverlays();
           };
           navigationFrame = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
             ? window.requestAnimationFrame(sync) : setTimeout(sync, 0);
@@ -4806,6 +5599,7 @@
           for (const event of ['wheel', 'touchstart', 'keydown']) window.addEventListener(event, unlockFixedNavigation, { passive: true });
         }
         syncFixedNavigation();
+        syncFixFromOverlays();
       }
       /* renderApp can be called again for a device/scale change while the
          delegated listener deliberately survives. Rebuild the DOM-side nav

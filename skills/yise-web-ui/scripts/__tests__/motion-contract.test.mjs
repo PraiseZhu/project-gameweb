@@ -190,7 +190,7 @@ test('component-set variant mount keeps canvas roots out of the instance content
      rendered page already has the INSTANCE root, so adding both creates a
      second coordinate system and can duplicate/offset alternate content. */
   assert.match(render, /skipNodeIds/);
-  assert.match(render, /roots\.length === 1/);
+  assert.match(render, /roots\.length !== 1/);
   assert.match(render, /blocked-invalid-owner-local-root/);
   assert.match(render, /data-switch-variant-root-origin/);
   assert.match(render, /data-switch-variant-content/);

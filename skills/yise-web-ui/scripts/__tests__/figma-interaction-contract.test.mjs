@@ -17,9 +17,11 @@ test('derives section navigation and shared switch indexes from owner truth', ()
   assert.equal(model.stats.sectionTargets, 1);
   assert.equal(model.stats.switches, 1);
   assert.equal(model.stats.swpages, 6);
-  assert.deepEqual(model.attributes.find((x) => x.id === 'tab-1').attrs, {
-    'data-node': 'tab-1', 'data-switch': 'sw', 'data-swpage': '1', 'data-tab': 'true',
-  });
+  const tab1 = model.attributes.find((x) => x.id === 'tab-1').attrs;
+  assert.equal(tab1['data-switch'], 'sw');
+  assert.equal(tab1['data-swpage'], '1');
+  assert.equal(tab1['data-tab'], 'true');
+  assert.equal(tab1['data-btn-press'], 'true');
 });
 
 test('fails closed when controls lack switch owner or hscroll structure', () => {
@@ -27,7 +29,10 @@ test('fails closed when controls lack switch owner or hscroll structure', () => 
     { id: 'tab', type: 'FRAME', name: 'tab/orphan' },
     { id: 'scroll', type: 'FRAME', name: 'scroll/list', clipsContent: false },
   ]);
-  assert.equal(model.attributes.length, 0);
+  const byId = new Map(model.attributes.map((entry) => [entry.id, entry.attrs]));
+  assert.equal(byId.get('tab')?.['data-switch'], undefined);
+  assert.equal(byId.get('tab')?.['data-btn-press'], 'true');
+  assert.equal(byId.get('scroll'), undefined);
   assert.equal(model.unresolved.length, 2);
 });
 
@@ -176,6 +181,29 @@ test('fails closed when disabled or incomplete controls cannot cover component-s
   assert.equal(model.stats.componentVariantControls, 0);
 });
 
+test('independent btn with normal and highlight is not a missing switch owner', () => {
+  const graph = {
+    componentSetId: 'lang-set',
+    variants: [
+      { componentId: 'lang-normal', name: 'Property 1=normal', interactions: [] },
+      { componentId: 'lang-highlight', name: 'Property 1=highlight', interactions: [] },
+    ],
+  };
+  const model = deriveInteractionModel([
+    { id: 'chrome', type: 'FRAME', name: 'fix/nav' },
+    { id: 'lang', type: 'INSTANCE', name: 'btn/多语言切换按钮', parentId: 'chrome', ownerPath: ['chrome', 'lang'], componentProperties: { 'Property 1': { value: 'normal', type: 'VARIANT' } }, componentVariantGraph: graph },
+    { id: 'download', type: 'FRAME', name: 'btn/下载按钮', parentId: 'chrome' },
+  ]);
+  const lang = model.attributes.find((entry) => entry.id === 'lang')?.attrs;
+  assert.equal(lang['data-btn-variant'], 'true');
+  assert.equal(lang['data-btn-variant-state'], 'normal');
+  assert.equal(lang['data-switch'], undefined);
+  const download = model.attributes.find((entry) => entry.id === 'download')?.attrs;
+  assert.equal(download['data-btn-press'], 'true');
+  assert.equal(download['data-btn-variant'], undefined);
+  assert.ok(!model.unresolved.some((entry) => entry.id === 'lang'));
+});
+
 test('does not promote an unnamed component instance into a switch', () => {
   const model = deriveInteractionModel([
     { id: 'title', type: 'INSTANCE', name: '标题' },
@@ -194,6 +222,34 @@ test('maps adjacent directional arrows only to a unique source-backed variant gr
   ]);
   assert.equal(model.attributes.find((entry) => entry.id === 'next').attrs['data-switch'], 'switch');
   assert.equal(model.attributes.find((entry) => entry.id === 'next').attrs['data-switch-action'], 'next');
+});
+
+test('generic modal button names map to their named Etheria modal contracts', () => {
+  const model = deriveInteractionModel([
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+    { id: 'play', type: 'FRAME', name: 'btn/播放按钮@go=modal/视频弹窗', parentId: 'section' },
+    { id: 'nav', type: 'FRAME', name: 'btn/导航按钮@go=modal/顶部导航-1624尺寸', parentId: 'section' },
+    { id: 'lang', type: 'FRAME', name: 'btn/多语言按钮@go=modal/多语言按钮弹窗', parentId: 'section' },
+  ]);
+  const byId = new Map(model.attributes.map((entry) => [entry.id, entry.attrs]));
+  assert.equal(byId.get('play')['data-go'], 'modal/视频弹窗');
+  assert.equal(byId.get('nav')['data-go'], 'modal/顶部导航-1624尺寸');
+  assert.equal(byId.get('lang')['data-go'], 'modal/多语言按钮弹窗');
+});
+test('fix/@from emits a scroll-gated pin and @go copies the modal name', () => {
+  const model = deriveInteractionModel([
+    { id: 'sec-1', type: 'FRAME', name: 'sec/1-首屏' },
+    { id: 'sec-2', type: 'FRAME', name: 'sec/2-日历' },
+    { id: 'fix', type: 'FRAME', name: 'fix/导航@from=2', parentId: 'sec-1' },
+    { id: 'nav', type: 'FRAME', name: 'btn/导航@go=modal/顶部导航', parentId: 'fix' },
+    { id: 'play', type: 'FRAME', name: 'btn/播放@go=modal/视频弹窗', parentId: 'sec-1' },
+  ]);
+  const byId = new Map(model.attributes.map((entry) => [entry.id, entry.attrs]));
+  assert.equal(byId.get('fix')['data-fix-from'], '2');
+  assert.equal(byId.get('fix')['data-fix-pin'], 'viewport');
+  assert.equal(byId.get('nav')['data-go'], 'modal/顶部导航');
+  assert.equal(byId.get('play')['data-go'], 'modal/视频弹窗');
+  assert.equal(byId.get('play')['data-sec-target'], undefined);
 });
 
 test('maps directional commands beside a component graph without consuming variant indexes', () => {

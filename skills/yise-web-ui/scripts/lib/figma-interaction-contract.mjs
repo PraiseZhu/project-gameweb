@@ -6,8 +6,9 @@
  * ancestry, returning evidence attributes for a renderer to attach.
  */
 import { deriveRole, parseLayerName } from './figma-name-semantics.mjs';
+import { attachButtonPressAttrs } from './figma-button-press-contract.mjs';
 
-const STRUCTURAL = new Set(['sec', 'switch', 'swpage', 'switch-page', 'tab', 'ind', 'scroll', 'mix']);
+const STRUCTURAL = new Set(['sec', 'fix', 'switch', 'swpage', 'switch-page', 'tab', 'ind', 'scroll', 'mix']);
 const SWITCH_PAGE_CONTAINER_TYPES = new Set(['FRAME', 'GROUP', 'INSTANCE', 'COMPONENT', 'COMPONENT_SET']);
 const SWITCH_CONTROL_ROLES = new Set(['tab', 'ind', 'btn', 'hot']);
 const SWITCH_PAGE_ROLES = new Set(['switch-page', 'swpage']);
@@ -78,8 +79,8 @@ function explicitTarget(node, parsed) {
   const props = node?.componentProperties || node?.properties || {};
   const candidates = [
     parsed?.params?.target, parsed?.params?.sec, parsed?.params?.section,
-    parsed?.params?.link, parsed?.params?.to, parsed?.params?.dest,
-    props.target, props.sec, props.section, props.destination, props.link, props.to,
+    parsed?.params?.to, parsed?.params?.dest,
+    props.target, props.sec, props.section, props.destination, props.to,
   ];
   for (const value of candidates) {
     const v = typeof value === 'object' && value && 'value' in value ? value.value : value;
@@ -162,6 +163,16 @@ function variantControlFamily(node, entry, byId) {
     return tab ? `tab-button:${tab}` : null;
   }
   return null;
+}
+
+function standaloneButtonVariantGraph(node) {
+  const graph = variantGraph(node);
+  if (!graph) return null;
+  const names = graph.variants.map((variant) => String(variant.name || '').toLowerCase());
+  const hasNormal = names.some((name) => /(^|[=\s])normal(\b|$)/.test(name));
+  const hasHighlight = names.some((name) => /(^|[=\s])highlight(\b|$)/.test(name));
+  if (!hasNormal || !hasHighlight) return null;
+  return graph;
 }
 
 function directChildrenOf(owner, list) {
@@ -266,6 +277,13 @@ export function deriveInteractionModel(nodes = []) {
       const target = explicitTarget(node, parsed);
       if (target) entry.secTarget = target;
     }
+    if (role === 'fix') {
+      const fromRaw = parsed.params.from ?? node.from;
+      if (fromRaw != null && fromRaw !== '' && fromRaw !== true) {
+        if (/^[1-9]\d*$/.test(String(fromRaw))) entry.fixFrom = Number(fromRaw);
+        else unresolved.push({ id: String(id), role, reason: 'fix @from must be a positive integer section number' });
+      }
+    }
     if (role === 'scroll') {
       const children = list.filter((candidate) => String(asId(candidate.parentId)) === String(id));
       if (hasHorizontalOverflow(node, children)) {
@@ -283,13 +301,30 @@ export function deriveInteractionModel(nodes = []) {
         if (role === 'swpage') entry.evidence = 'truth:legacy-swpage-prefix';
         bySwitch.get(key).push({ node, entry });
         entry.switchId = key;
+      } else if (role === 'btn') {
+        /* Independent btn/ controls are not switch pages. A COMPONENT_SET that
+           actually contains Property 1=normal and Property 1=highlight is a
+           source-backed instance replacement. Missing those two states stays
+           draw-only; it is not a missing switch owner. disable remains inert. */
+        const stateGraph = standaloneButtonVariantGraph(node);
+        if (stateGraph && entry.controlState !== 'disabled') {
+          entry.buttonVariant = {
+            componentSetId: stateGraph.componentSetId,
+            group: String(asId(node.parentId) ?? id),
+            state: entry.controlState === 'active' ? 'highlight' : 'normal',
+            transition: 'immediate',
+          };
+        }
       } else if (role !== 'switch') {
         unresolved.push({ id: String(id), role, reason: 'missing switch ownerPath' });
       }
     }
     const target = explicitTarget(node, parsed);
     if (target && (role === 'tab' || role === 'btn' || role === 'hot' || role === 'sec')) entry.secTarget = target;
-    if ((STRUCTURAL.has(role) && !(role === 'scroll' && !entry.hscroll)) || (role === 'btn' && entry.switchId) || target) components.push(entry);
+    if ((STRUCTURAL.has(role) && !(role === 'scroll' && !entry.hscroll))
+      || role === 'btn'
+      || role === 'hot'
+      || target) components.push(entry);
   }
 
   for (const [switchId, members] of bySwitch) {
@@ -387,14 +422,33 @@ export function deriveInteractionModel(nodes = []) {
       attrs['data-hscroll-pointer'] = 'true';
       attrs['data-hscroll-drag'] = 'true';
     }
-    if ((entry.role === 'tab' || (entry.role === 'btn' && entry.variantIndex != null)) && entry.switchId) attrs['data-tab'] = 'true';
+    if ((entry.role === 'tab' || (entry.role === 'btn' && entry.variantIndex != null && entry.role !== 'ind')) && entry.switchId) attrs['data-tab'] = 'true';
     if (entry.role === 'ind' && entry.switchId) attrs['data-indicator'] = 'true';
     if (entry.role === 'btn' && entry.switchId) {
       const label = String(entry.name || '').toLowerCase();
       if (/prev|previous|left|上一|前/.test(label)) attrs['data-switch-action'] = 'prev';
       else if (/next|right|下一|后/.test(label)) attrs['data-switch-action'] = 'next';
     }
-    if (Object.keys(attrs).length > 1) attributes.push({ id: entry.id, attrs });
+    if (entry.buttonVariant) {
+      attrs['data-btn-variant'] = 'true';
+      attrs['data-btn-variant-state'] = entry.buttonVariant.state;
+      attrs['data-btn-variant-set'] = entry.buttonVariant.componentSetId;
+      attrs['data-btn-variant-group'] = entry.buttonVariant.group;
+    }
+    const parsed = parseLayerName(entry.name);
+    if (parsed.params.link) attrs['data-link'] = String(parsed.params.link);
+    if (parsed.params.go) attrs['data-go'] = String(parsed.params.go);
+    if (entry.role === 'fix') {
+      attrs['data-nav-shell'] = 'true';
+      attrs['data-fix-pin'] = 'viewport';
+      if (entry.fixFrom != null) attrs['data-fix-from'] = String(entry.fixFrom);
+    }
+    const withPress = attachButtonPressAttrs(attrs, {
+      role: entry.role,
+      controlState: entry.controlState,
+      parsed,
+    });
+    if (Object.keys(withPress).length > 1) attributes.push({ id: entry.id, attrs: withPress });
   }
   return {
     components,
