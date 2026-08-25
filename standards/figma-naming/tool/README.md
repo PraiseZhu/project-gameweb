@@ -2,7 +2,7 @@
 
 给一个 Figma 稿链接，可做两件事：把已规范命名稿编成做页前的 `inventory/v2` ready 清单，或对稿件出**图层命名体检报告**。做页前交接是当前主入口；命名体检是独立的既有工具。
 
-规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.12），20 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后由本机 `sync-local` 有变才重铺（密钥放本机，不进 GitHub）；不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
+规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.13），21 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后由本机 `sync-local` 有变才重铺（密钥放本机，不进 GitHub）；不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
 
 ## 判什么、不判什么
 

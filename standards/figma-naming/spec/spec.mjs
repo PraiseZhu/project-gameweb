@@ -7,12 +7,12 @@
  * 住在 spec/：人读正文和机器表同一层。tool/ 与 skills/ 都读这里，不必下到工具目录。
  * 本文件保持零 Node 依赖，以便 Figma 插件打包。
  */
-export const SPEC_VERSION = "v2.12 (2026-08-25)";
+export const SPEC_VERSION = "v2.13 (2026-08-25)";
 /** 相对 figma-naming/ 根的展示路径 */
 export const SPEC_DOC = "spec/naming-spec.md";
 
 /** 下游消费假定（判定后果的前提），见 spec/consumer-assumptions.md */
-export const ASSUMPTIONS_VERSION = "A-v1.10 (2026-08-25)";
+export const ASSUMPTIONS_VERSION = "A-v1.11 (2026-08-25)";
 export const ASSUMPTIONS_DOC = "spec/consumer-assumptions.md";
 
 /**
@@ -31,7 +31,7 @@ export const PREFIXES = {
     structural: true,
   },
   fix: {
-    group: "结构", desc: "视口固定悬浮层", params: [], structural: true,
+    group: "结构", desc: "视口固定悬浮层", params: ["from"], structural: true,
   },
   ref: {
     group: "结构", desc: "说明性参考稿（整个子树忽略）", params: [],
@@ -89,6 +89,7 @@ export const PARAMS = {
   link: { value: "required", on: ["btn", "hot"], desc: "跳转语义（URL 在配置里，不写死在稿里）" },
   go: { value: "required", on: ["btn", "hot"], desc: "点击触发状态转移" },
   sec: { value: "int", on: ["btn"], desc: "滚动跳转到分区 N" },
+  from: { value: "int", on: ["fix"], desc: "滚到分区 N 及以下才出现并钉视口" },
   parallax: { value: "ratio", on: ["kv"], desc: "视差系数 0–1" },
   x: { value: "none", on: ["scroll"], desc: "横滑（默认）" },
   y: { value: "none", on: ["scroll"], desc: "纵滑" },

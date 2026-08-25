@@ -145,6 +145,23 @@ test("@sec 指向不存在的分区", () => {
   assert.match(nav[0].detail, /@sec=99/);
 });
 
+test("@from 指向不存在的分区", () => {
+  const fix = byCode(lint(dirtyTree()), "N-FIX-FROM-MISSING");
+  assert.equal(fix.length, 1);
+  assert.match(fix[0].detail, /@from=99/);
+});
+
+test("fix/@from=2 对上 sec/2 不报", () => {
+  const tree = testRoot([
+    sec("s1", "sec/1-首屏"),
+    sec("s2", "sec/2-日历"),
+    testFrame("fix", "fix/导航@from=2", [testFrame("nav-btn", "btn/导航")]),
+  ]);
+  const r = lint(tree);
+  assert.equal(byCode(r, "N-FIX-FROM-MISSING").length, 0);
+  assert.equal(byCode(r, "N-PARAM-MISPLACED").length, 0);
+});
+
 test("11 个 sec/ 全在同一个纯布局包裹层内：不报 SEC 类 finding", () => {
   const wrapper = testFrame("layout", "页面模块",
     Array.from({ length: 11 }, (_, i) => sec(`s${i + 1}`, `sec/${i + 1}-页面${i + 1}`)));

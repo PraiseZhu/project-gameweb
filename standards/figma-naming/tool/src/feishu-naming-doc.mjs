@@ -27,13 +27,13 @@ export function decideLocalSync({ hasSecrets, currentSha, stampedSha }) {
 
 const PREFIX_TIPS = {
   sec: "必须带编号，如 sec/1-首屏。中间可隔无前缀容器，不要分区套分区",
-  fix: "侧边导航、回顶。不参与分区流",
+  fix: "侧边导航、回顶。不参与分区流。可选 @from=N：滚到第 N 屏及以下才出现",
   ref: "整棵子树忽略，里面怎么命名都不检查",
   img: "普通文字不要加这个",
   bg: "—",
   kv: "可加 @parallax=0–1。同一父层只有一层时，改用 img/",
-  btn: "@link=  @go=  @sec=N 都选填，不写也行",
-  hot: "@link=  @go= 选填",
+  btn: "@link=  @go=modal/名字  @sec=N 都选填。开弹窗抄弹窗图层名，不要写 id",
+  hot: "@link=  @go=modal/名字 选填",
   modal: "必须是独立 frame，不要叠在页面稿里",
   dyn: "只标容器，里面不用再标前缀",
   mix: "只标容器。里面的图由清单自动按 img/ 切，文字仍可改；scroll/ 写在里面继续滑动裁切",

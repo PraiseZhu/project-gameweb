@@ -19,8 +19,8 @@
 ```
 figma-naming/
 ├── spec/     规范层 —— 人读正文 + 机器表
-│   ├── naming-spec.md            前缀总表、@参数、判定边界（当前 v2.12）
-│   ├── consumer-assumptions.md   规则「不改会怎样」所依赖的下游假定（A-v1.10）
+│   ├── naming-spec.md            前缀总表、@参数、判定边界（当前 v2.13）
+│   ├── consumer-assumptions.md   规则「不改会怎样」所依赖的下游假定（A-v1.11）
 │   ├── spec.mjs                  机器可读镜像（插件 / 体检 / skill 都读这里）
 │   └── inventory.mjs             inventory/v2 取值表
 └── tool/     工具层 —— 按规范查稿、抽取 inventory/v2、人工核对

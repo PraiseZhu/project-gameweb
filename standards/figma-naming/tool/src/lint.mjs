@@ -27,6 +27,7 @@ export function lint(root) {
   const namedNodes = [];  // 全部带合法前缀的层，供 N-NAME-DUPLICATE 跨节点比对
   const parentSiblingCount = new Map();  // 父层 → 它下面有几个带前缀的子层
   const secRefs = [];   // @sec=N 引用
+  const fromRefs = [];  // fix/@from=N 引用
   const kvByParent = new Map();
   const indNodes = [];  // ind/ 与其作用域、祖先链信息（遍历结束后统一判定）
   const switchesByScope = new Map(); // 最近 sec/（无则体检根）作用域内的全部 switch/
@@ -217,8 +218,9 @@ export function lint(root) {
     }
     if (prefix) {
       for (const p of parsed.params) {
-        if (p.key === "sec" && p.hasEq && /^[1-9]\d*$/.test(p.value)) {
-          secRefs.push({ node: n, path, n: Number(p.value), instance: ctx.instance });
+        if ((p.key === "sec" || p.key === "from") && p.hasEq && /^[1-9]\d*$/.test(p.value)) {
+          const bucket = p.key === "sec" ? secRefs : fromRefs;
+          bucket.push({ node: n, path, n: Number(p.value), instance: ctx.instance });
         }
       }
     }
@@ -366,6 +368,15 @@ export function lint(root) {
     if (!byNum.has(r.n)) {
       push("N-NAV-TARGET-MISSING", r.node, r.path,
         `\`@sec=${r.n}\` 指向的分区不存在（现有分区：${nums.length ? nums.join("、") : "无"}）`,
+        undefined, r.instance);
+    }
+  }
+
+  /* ── 跨节点：fix/@from 指向的分区是否存在 ── */
+  for (const r of fromRefs) {
+    if (!byNum.has(r.n)) {
+      push("N-FIX-FROM-MISSING", r.node, r.path,
+        `\`@from=${r.n}\` 指向的分区不存在（现有分区：${nums.length ? nums.join("、") : "无"}）`,
         undefined, r.instance);
     }
   }

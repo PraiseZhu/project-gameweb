@@ -100,6 +100,7 @@ export function dirtyTree() {
     F("modal/领奖弹窗", []),                            // N-MODAL-INLINE
     F("scroll/空滑动", []),                             // N-SCROLL-NO-TRACK
     G("btn/nav-9@sec=99", []),                          // N-NAV-TARGET-MISSING
+    F("fix/导航@from=99", []),                          // N-FIX-FROM-MISSING
     F("sec/12-无轮播", [
       G("轮播", [R("ind/进度条"), R("ind/进度条")]),  // N-IND-NO-CAROUSEL ×2（作用域内无 switch/）
     ]),
