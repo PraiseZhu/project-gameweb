@@ -40,7 +40,7 @@ const PREFIX_TIPS = {
   scroll: "默认横滑；纵滑写 @y。第一个子层是轨道，轨道里的图仍要命名",
   switch: "—",
   tab: "—",
-  ind: "一组可以同名。同一分区里要能唯一对上一个 switch/",
+  ind: "一组可以同名。同一分区里要能唯一对上一个 switch/。组件集内部变体由清单切合成形，零件不用命名",
 };
 
 const PREFIX_WHEN = {

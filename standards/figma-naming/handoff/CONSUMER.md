@@ -43,7 +43,7 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 行为看清单里的 `role` + `params`，禁止 `parseLayerName` / `deriveRole` 再猜图层名。
 
 摆位置用 `pageBox`（相对这一页）和 `parentBox`（相对父层），不要拿画布 `box` 去摆。`fix/` 钉视口，坐标用 `viewportBox` / `pageBox`。  
-切图按节点 `sliceExport`：墨迹框、1 倍、png，文件名是完整 node id。导 `img/` `bg/` `kv/`（含 mix 自动拆的 `img/`），以及带 `sliceExport` 的 BOOLEAN `btn/`。`mix/` 容器本身不切。mix 里无前缀的裁切溢出框升 `scroll/`；设计师写成 `scroll/可滑动内容` 同样接滑动裁切。页上用到的组件集**每个变体**里的切图都要导，不能只导当前看见的那一张。做页按这份契约自己导出，包里没有现成 PNG，不要再走 `figma-assets` 的 `use_absolute_bounds` 按节点框重导，也不要去猜 `skipped` 子层。  
+切图按节点 `sliceExport`：墨迹框、1 倍、png，文件名是完整 node id。导 `img/` `bg/` `kv/`（含 mix 自动拆的 `img/`），带 `sliceExport` 的 BOOLEAN `btn/`，以及页上用到的 `ind/` 组件集每个变体根。`mix/` 容器本身不切。mix 里无前缀的裁切溢出框升 `scroll/`；设计师写成 `scroll/可滑动内容` 同样接滑动裁切。页上用到的组件集**每个变体**里的切图都要导，不能只导当前看见的那一张。做页按这份契约自己导出，包里没有现成 PNG，不要再走 `figma-assets` 的 `use_absolute_bounds` 按节点框重导，也不要去猜 `skipped` 子层。  
 TEXT 默认可改字；一旦 `role` 是 `img/` `bg/` `kv/` 就按切图，不排字。  
 有 `rotation` 必须按这个角度摆，不能当 0。`style.fills` 用全层，不能只吃第一层。  
 拉伸读 `layout.constraints`（钉左/钉右/居中/随页）。遮罩/裁切读 `isMask` `maskChildren` `clipsContent`，按父层裁，不让子层漏边。  

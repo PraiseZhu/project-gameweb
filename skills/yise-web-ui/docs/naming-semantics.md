@@ -1,4 +1,4 @@
-# Figma naming semantics v2.8 / A-v1.6
+# Figma naming semantics v2.12 / A-v1.10
 
 Naming is a role hint only. It never rewrites Figma owner tree, source child order, clipping, masks, opacity, blend mode, or page structure.
 
@@ -32,7 +32,7 @@ Unlabelled nodes must not be inferred as img or switch from node type, component
 
 `inventory/v2` may promote image-fill leaves under `mix/` to determined `img` (`via=structure`) with `sliceExport`. Page-building consumes that inventory role; it does not re-guess skipped art-fragments. `scroll/` nested in `mix/` keeps clip-and-slide behavior.
 
-`ind/` is a structural owner. Its unnamed SOLID RECTANGLE/VECTOR descendants remain paint nodes (progress fill). Do not infer `progress` from class names. PC and mobile keep separate geometry trees.
+`ind/` is a structural owner. Page-used `ind/` component-set variants carry `sliceExport` on the variant root; unnamed SOLID RECTANGLE/VECTOR descendants stay `slice-child` and are not inferred as `progress`. Do not invent CSS diamonds. PC and mobile keep separate geometry trees.
 
 ## Owner model
 

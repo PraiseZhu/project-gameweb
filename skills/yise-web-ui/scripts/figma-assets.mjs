@@ -25,7 +25,7 @@
  *
  * ═══ 切图判定（与渲染层同一套规则，不许两份实现）═══
  *   前缀 img/ bg/ kv/  →  切
- *   清单 sliceExport（含 BOOLEAN btn/）→ 切
+ *   清单 sliceExport（含 BOOLEAN btn/、ind/ 变体根）→ 切
  *   填充是渐变或 IMAGE →  切
  *   其余              →  不切（scroll/ 是容器；普通 btn/ 无 sliceExport 不切）
  *
@@ -122,6 +122,26 @@ function roundBox(b) {
 }
 
 /** 从 truth 里挑出需要切图的节点 */
+function nodesOf(value) {
+  return Array.isArray(value) ? value : Object.values(value || {});
+}
+
+function withChildNodes(item) {
+  return item ? [item, ...nodesOf(item.nodes)] : [];
+}
+
+/** Adapted componentVariantGraph plus captured variantTrees. Dedup happens in pickSliceNodes. */
+function collectVariantSliceNodes(graph) {
+  const fromSets = nodesOf(graph?.componentSets).flatMap((set) => [
+    ...nodesOf(set?.nodes),
+    ...nodesOf(set?.variants).flatMap(withChildNodes),
+  ]);
+  const fromComponents = nodesOf(graph?.components).flatMap(withChildNodes);
+  const fromTrees = Object.values(graph?.variantTrees || {}).flatMap((trees) =>
+    nodesOf(trees).flatMap(withChildNodes));
+  return [...fromSets, ...fromComponents, ...fromTrees];
+}
+
 export function pickSliceNodes(truth, { minDim = 24 } = {}) {
   /* 非矩形类型（轮廓不是矩形的节点）。渲染层对它们只能按外接矩形画填充，
      够大的方块化一眼可见（第 13 项实测：官网点阵与细三角轮廓成了实心方块）。 */
@@ -129,52 +149,56 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
   const out = [];
   const seenNodeIds = new Set();
   if (truth.platforms && Object.keys(truth.platforms).length) {
-    const arr0 = (v) => (Array.isArray(v) ? v : Object.values(v || {}));
     const merged = { ...truth, sections: { ...(truth.sections || {}) }, platforms: null };
+    const platformGraphs = [];
     for (const [platform, root] of Object.entries(truth.platforms || {})) {
+      if (root?.componentVariantGraph) platformGraphs.push(root.componentVariantGraph);
       let first = true;
       for (const [sid, sec] of Object.entries(root.sections || {})) {
         const nodes = first
           ? [
-            ...arr0(root.pageBackground && root.pageBackground.nodes),
-            ...arr0(root.pageChrome && root.pageChrome.nodes),
-            ...arr0(root.fixedOverlays && root.fixedOverlays.nodes),
-            ...arr0(sec.nodes),
+            ...nodesOf(root.pageBackground && root.pageBackground.nodes),
+            ...nodesOf(root.pageChrome && root.pageChrome.nodes),
+            ...nodesOf(root.fixedOverlays && root.fixedOverlays.nodes),
+            ...nodesOf(sec.nodes),
           ]
-          : arr0(sec.nodes);
+          : nodesOf(sec.nodes);
         merged.sections[`${platform}:${sid}`] = { ...sec, nodes };
         first = false;
       }
     }
+    if (!merged.componentVariantGraph && platformGraphs.length) {
+      merged.componentVariantGraph = {
+        componentSets: platformGraphs.flatMap((graph) => nodesOf(graph.componentSets)),
+        components: platformGraphs.flatMap((graph) => nodesOf(graph.components)),
+        variantTrees: Object.assign({}, ...platformGraphs.map((graph) => graph.variantTrees || {})),
+      };
+    }
     truth = merged;
   }
   let includedPageScopeAssets = false;
+  const variantSliceNodes = collectVariantSliceNodes(truth.componentVariantGraph);
   for (const [sid, sec] of Object.entries(truth.sections || {})) {
     // nodes 是数组（顺序即 DFS 先序）。节点 id 取 n.id ——
     // ⚠️ 不能用遍历下标当 nodeId：踩过一次，结果向 Figma 发了 ids=0,1,2…
     //    换来 "ID 1 is not a valid node_id"。
     // ⚠️ 背景层也要切：它是稿里另一棵树（页面框下的 bg/*），
     //    漏了它页面上就是一排"缺图"占位 —— 实测漏过 5 张。
-    const arr = (v) => (Array.isArray(v) ? v : Object.values(v || {}));
-    let list = arr(sec.nodes).concat(arr(sec.background && sec.background.nodes));
+    let list = nodesOf(sec.nodes).concat(nodesOf(sec.background && sec.background.nodes));
     if (!includedPageScopeAssets) {
       list = list.concat(
-        arr(truth.pageBackground && truth.pageBackground.nodes),
-        arr(truth.pageChrome && truth.pageChrome.nodes),
-        arr(truth.fixedOverlays && truth.fixedOverlays.nodes),
+        nodesOf(truth.pageBackground && truth.pageBackground.nodes),
+        nodesOf(truth.pageChrome && truth.pageChrome.nodes),
+        nodesOf(truth.fixedOverlays && truth.fixedOverlays.nodes),
+        variantSliceNodes,
       );
       includedPageScopeAssets = true;
     }
-    /* Alternate component states are rendered from the same truth snapshot.
-       Their image/gradient leaves must enter the exact same asset inventory as
-       the selected instance tree; otherwise a real state replacement degrades
-       into placeholders after click. This walks only captured variantTrees,
-       never guesses a component child or probes another file version. */
-    const alternateNodes = list.flatMap((node) => arr(node?.componentVariantGraph?.variantTrees)
-      .flatMap((tree) => arr(tree?.nodes)));
-    list = list.concat(alternateNodes);
+    /* Alternate component states on the selected instance tree. */
+    list = list.concat(list.flatMap((node) => nodesOf(node?.componentVariantGraph?.variantTrees)
+      .flatMap((tree) => nodesOf(tree?.nodes))));
     for (const n of list) {
-      const nid = n.id;
+      const nid = n.id || n.componentId;
       if (!nid) continue;
       if (seenNodeIds.has(nid)) continue;
       seenNodeIds.add(nid);

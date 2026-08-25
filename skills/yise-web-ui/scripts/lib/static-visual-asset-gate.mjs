@@ -34,7 +34,7 @@ function hasVisibleImageFill(node) {
 
 function declaredSliceExport(node) {
   const file = typeof node?.sliceExport?.file === 'string' ? node.sliceExport.file.trim() : '';
-  if (!file || node?.behavior !== 'slice' || node?.status === 'skipped') return null;
+  if (!file || node?.status === 'skipped') return null;
   return {
     file,
     bounds: typeof node?.sliceExport?.bounds === 'string' ? node.sliceExport.bounds : null,

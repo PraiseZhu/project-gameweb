@@ -810,3 +810,65 @@ test("mix/ 内裁切溢出框自动升 scroll，BOOLEAN btn 带切图", () => {
   const check = validateInventory(inv, page);
   assert.equal(check.ok, true, check.problems.join("\n"));
 });
+
+test("ind/ 组件集每个变体根带切图，零件 skipped，switch 变体不切", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 40, height: 40 },
+    ...extra,
+  });
+  const indSet = node("set", "COMPONENT_SET", "ind/进度条", [
+    node("397:35947", "COMPONENT", "Property 1=highlight", [
+      node("397:35946", "RECTANGLE", "选中 1", [], { fills: [{ type: "SOLID", visible: true }] }),
+    ], { componentProperties: { "Property 1": "highlight" } }),
+    node("397:35949", "COMPONENT", "Property 1=normal", [
+      node("397:35951", "RECTANGLE", "Rectangle 3468570", [], { fills: [{ type: "SOLID", visible: true }] }),
+    ], { componentProperties: { "Property 1": "normal" } }),
+  ], {
+    componentPropertyDefinitions: {
+      "Property 1": { type: "VARIANT", defaultValue: "highlight", variantOptions: ["highlight", "normal"] },
+    },
+  });
+  const switchSet = node("switch-set", "COMPONENT_SET", "switch/活动内容", [
+    node("sw-a", "COMPONENT", "Property 1=a", [
+      node("sw-copy", "TEXT", "标题", [], {
+        characters: "标题",
+        style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400 },
+      }),
+    ], { componentProperties: { "Property 1": "a" } }),
+  ], {
+    componentPropertyDefinitions: {
+      "Property 1": { type: "VARIANT", defaultValue: "a", variantOptions: ["a"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("switch", "FRAME", "switch/轮播", [
+        node("inst", "INSTANCE", "ind/进度条", [], { componentId: "397:35947" }),
+      ]),
+      node("sw-inst", "INSTANCE", "switch/活动内容", [], { componentId: "sw-a" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, indSet, switchSet]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const set = inv.attachments.componentSets.find((item) => item.id === "set");
+  const highlight = set.variants.find((item) => item.id === "397:35947");
+  const normal = set.variants.find((item) => item.id === "397:35949");
+  assert.equal(highlight.status, "determined");
+  assert.equal(highlight.type, "COMPONENT");
+  assert.equal(highlight.role, "ind");
+  assert.equal(highlight.behavior, "indicator");
+  assert.equal(highlight.via, "structure");
+  assert.deepEqual(highlight.sliceExport, { bounds: "render", scale: 1, format: "png", file: "397-35947.png" });
+  assert.equal(normal.status, "determined");
+  assert.deepEqual(normal.sliceExport, { bounds: "render", scale: 1, format: "png", file: "397-35949.png" });
+  const byId = Object.fromEntries(set.nodes.map((item) => [item.id, item]));
+  assert.equal(byId["397:35947"].behavior, "indicator");
+  assert.equal(byId["397:35946"].status, "skipped");
+  assert.equal(byId["397:35946"].why, "slice-child");
+  assert.equal(byId["397:35951"].status, "skipped");
+  const switchVariant = inv.attachments.componentSets.find((item) => item.id === "switch-set").variants[0];
+  assert.equal(switchVariant.sliceExport, undefined);
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});
