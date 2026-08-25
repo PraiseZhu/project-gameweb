@@ -52,3 +52,42 @@ test('BOOLEAN btn with sliceExport is sliced without an img/ prefix', () => {
   assert.deepEqual(picks.map((pick) => pick.nodeId), ['395:35371']);
   assert.match(picks[0].reason, /sliceExport/);
 });
+
+test('ind variant roots with sliceExport are sliced from componentVariantGraph', () => {
+  const picks = pickSliceNodes({
+    sections: { 'sec:1': { nodes: [] } },
+    componentVariantGraph: {
+      componentSets: [{
+        componentSetId: '397:35948',
+        variants: [
+          {
+            id: '397:35947',
+            componentId: '397:35947',
+            name: 'Property 1=highlight',
+            type: 'COMPONENT',
+            status: 'determined',
+            role: 'ind',
+            behavior: 'indicator',
+            sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '397-35947.png' },
+            nodes: [{ id: '397:35946', type: 'RECTANGLE', name: '选中 1', status: 'skipped', why: 'slice-child' }],
+          },
+          {
+            id: '397:35949',
+            componentId: '397:35949',
+            name: 'Property 1=normal',
+            type: 'COMPONENT',
+            status: 'determined',
+            role: 'ind',
+            behavior: 'indicator',
+            sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '397-35949.png' },
+            nodes: [{ id: '397:35951', type: 'RECTANGLE', name: 'Rectangle 3468570', status: 'skipped', why: 'art-fragment' }],
+          },
+        ],
+      }],
+      components: [],
+      variantTrees: {},
+    },
+  });
+  assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['397:35947', '397:35949']);
+  assert.match(picks[0].reason, /sliceExport/);
+});

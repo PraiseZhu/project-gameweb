@@ -50,8 +50,8 @@ function fixture(overrides = {}) {
           name: "btn/switch",
           componentPropertyDefinitions: { "Property 1": { type: "VARIANT", defaultValue: "a", variantOptions: ["a", "b"] } },
           variants: [
-            { id: "100:31", name: "Property 1=a", order: 0, box: { x: 0, y: 0, w: 10, h: 10 }, componentProperties: {}, nodes: [{ id: "100:31", name: "Property 1=a" }] },
-            { id: "100:32", name: "Property 1=b", order: 1, box: { x: 0, y: 0, w: 10, h: 10 }, componentProperties: {}, nodes: [{ id: "100:32", name: "Property 1=b" }] },
+            { id: "100:31", type: "COMPONENT", name: "Property 1=a", order: 0, box: { x: 0, y: 0, w: 10, h: 10 }, componentProperties: {}, nodes: [{ id: "100:31", name: "Property 1=a" }] },
+            { id: "100:32", type: "COMPONENT", name: "Property 1=b", order: 1, box: { x: 0, y: 0, w: 10, h: 10 }, componentProperties: {}, nodes: [{ id: "100:32", name: "Property 1=b" }] },
           ],
         },
       ],
@@ -137,6 +137,7 @@ test("componentSets become variantTrees with renderable geometry", () => {
   assert.equal(set.componentSetId, "100:30");
   assert.deepEqual(adapted.componentVariantGraph.variantTrees["100:30"].map((v) => v.componentId), ["100:31", "100:32"]);
   assert.ok(set.variants.every((v) => v.box));
+  assert.ok(set.variants.every((v) => v.type === "COMPONENT" && v.id === v.componentId));
 });
 
 test("modals own a hidden layer excluded from scroll", () => {

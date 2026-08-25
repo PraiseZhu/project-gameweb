@@ -64,13 +64,21 @@ export function sliceExportMatches(sliceExport) {
     && sliceExport?.format === SLICE_EXPORT.format;
 }
 
+/** BOOLEAN btn/ 与 ind/ 变体根也要带切图，但不改 click / indicator 行为。 */
+export function needsSliceExport(node) {
+  if (isSlicePrefix(node?.role)) return true;
+  if (node?.role === "btn" && node.type === "BOOLEAN_OPERATION") return true;
+  if (node?.role === "ind" && node.type === "COMPONENT") return true;
+  return false;
+}
+
 /** 已确定节点出门必写字段。label 方便交接包加端名前缀。 */
 export function determinedReadyFieldProblems(node, { label = "", source = null } = {}) {
   const problems = [];
   const prefix = label ? `${label} ${node.id}` : node.id;
   if (!isGeomBox(node.pageBox)) problems.push(`${prefix} 缺 pageBox`);
   if (!isGeomBox(node.parentBox)) problems.push(`${prefix} 缺 parentBox`);
-  if (isSlicePrefix(node.role) && !sliceExportMatches(node.sliceExport)) {
+  if (needsSliceExport(node) && !sliceExportMatches(node.sliceExport)) {
     problems.push(`${prefix} 切图必须按墨迹框 1 倍 png`);
   }
   if (node.role === "copy" && node.sliceExport) problems.push(`${prefix} 可改字不得带切图`);
@@ -97,7 +105,7 @@ export function stampReadyFields(node) {
   if (node.pageBox == null) node.pageBox = { ...box };
   if (node.parentBox == null) node.parentBox = { ...box };
   if (node.rotation == null) node.rotation = 0;
-  if (node.status === "determined" && ["img", "bg", "kv"].includes(node.role) && !node.sliceExport) {
+  if (node.status === "determined" && needsSliceExport(node) && !node.sliceExport) {
     node.sliceExport = { ...SLICE_EXPORT, file: `${String(node.id).replace(/[:;]/g, "-")}.png` };
   }
   if (node.status === "determined" && node.role === "fix") {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 按 handoff 覆盖率口径导出 img/bg/kv 切图，不是核对底图。
+ * 按 handoff 覆盖率口径导出清单 sliceExport 切图（img/bg/kv、BOOLEAN btn/、ind/ 变体根），不是核对底图。
  *
  *   node scripts/export-handoff-slices.mjs --inventory _tmp/inventory-392-24190.json --out _tmp/out/slices-pc
  *
@@ -62,7 +62,7 @@ if (inv.schema !== "inventory/v2" || inv.status !== "ready" || !inv.fileKey) {
 }
 const ids = sliceIdsOf(inv);
 if (!ids.length) {
-  console.error("没有需要导出的 img/bg/kv 切图");
+  console.error("没有需要导出的 sliceExport 切图");
   process.exit(1);
 }
 

@@ -4,7 +4,7 @@
  * 不写回 Figma；没有原型或命名证据的关系一律标 unknown。
  */
 import { createHash } from "node:crypto";
-import { PREFIXES, PARAMS, SPEC_VERSION, isSlicePrefix } from "../../spec/spec.mjs";
+import { PREFIXES, PARAMS, SPEC_VERSION } from "../../spec/spec.mjs";
 import {
   INVENTORY_SCHEMA,
   INVENTORY_ROLES,
@@ -15,6 +15,7 @@ import {
   SLICE_EXPORT,
   behaviorOf,
   determinedReadyFieldProblems,
+  needsSliceExport,
 } from "../../spec/inventory.mjs";
 import { parseName } from "./parse.mjs";
 import { hasImageFill, namePatternOf } from "./lint.mjs";
@@ -186,7 +187,7 @@ function sliceFileName(nodeId) {
 }
 
 function sliceExportOf(node, role) {
-  if (!isSlicePrefix(role) && !booleanBtnVisual(node, role)) return undefined;
+  if (!needsSliceExport({ type: node.type, role })) return undefined;
   return {
     ...SLICE_EXPORT,
     file: sliceFileName(node.id),
@@ -211,8 +212,8 @@ function mixScrollViewport(node, parent) {
   return Boolean(parentBox && boxOverflows(viewport, parentBox));
 }
 
-function booleanBtnVisual(node, role) {
-  return role === "btn" && node.type === "BOOLEAN_OPERATION";
+function indSetParent(parent) {
+  return parent?.type === "COMPONENT_SET" && parseName(parent.name).prefix === "ind";
 }
 
 function mixImageLeaf(node) {
@@ -401,6 +402,8 @@ function serializeTree(root, scope, counts, pageBox = null) {
       status = "determined"; role = "scroll"; via = "structure";
     } else if (ctx.underMix && !prefix && mixImageLeaf(node)) {
       status = "determined"; role = "img"; via = "structure";
+    } else if (indSetParent(parent) && node.type === "COMPONENT" && !prefix) {
+      status = "determined"; role = "ind"; via = "structure";
     } else if (!prefix && namePatternOf(node.name) === "figma-default" && node.type !== "TEXT") {
       status = "skipped"; why = "art-fragment";
     } else {
@@ -410,7 +413,7 @@ function serializeTree(root, scope, counts, pageBox = null) {
     const nextCtx = {
       underRef: ctx.underRef || prefix === "ref",
       underHidden: ctx.underHidden || node.visible === false,
-      underSlice: ctx.underSlice || isSlicePrefix(prefix) || (status === "determined" && (isSlicePrefix(role) || booleanBtnVisual(node, role))),
+      underSlice: ctx.underSlice || (status === "determined" && needsSliceExport({ type: node.type, role })),
       underMix: ctx.underMix || prefix === "mix",
       ancestors: [...ctx.ancestors, { id: node.id, name: node.name, type: node.type }],
     };
@@ -469,7 +472,7 @@ function serializeTree(root, scope, counts, pageBox = null) {
       entry.role = role;
       entry.label = parsed.body
         || (role === "copy" ? (text?.characters ?? "") : "")
-        || (via === "structure" && (role === "img" || role === "scroll") ? (node.name || node.id) : "");
+        || (via === "structure" && (role === "img" || role === "scroll" || role === "ind") ? (node.name || node.id) : "");
       entry.params = params;
       entry.behavior = behaviorOf(role, params);
       entry.via = via;
@@ -507,6 +510,9 @@ function componentSetRecord(set, nodes) {
       ...(classified?.status ? { status: classified.status } : {}),
       ...(classified?.why ? { why: classified.why } : {}),
       ...(classified?.role ? { role: classified.role } : {}),
+      ...(classified?.behavior ? { behavior: classified.behavior } : {}),
+      ...(classified?.via ? { via: classified.via } : {}),
+      ...(classified?.sliceExport ? { sliceExport: classified.sliceExport } : {}),
       componentProperties: variant.componentProperties ?? {},
       nodes: nodes.filter((node) => node.id === variant.id || node.ancestorIds?.includes(variant.id)),
     };

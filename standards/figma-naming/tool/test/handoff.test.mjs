@@ -830,6 +830,90 @@ test("sliceIdsOf：页上用到的组件集每个变体里的切图都要覆盖"
   assert.ok(ids.includes("img-off"), ids.join(","));
 });
 
+test("handoff：页上 ind/ 组件集每个变体根的 sliceExport 进入切图计划", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  pc.nodes.push(stampReadyFields({
+    id: "inst-ind",
+    type: "INSTANCE",
+    name: "ind/进度条",
+    status: "determined",
+    role: "ind",
+    label: "进度条",
+    behavior: "indicator",
+    via: "prefix",
+    componentId: "397:35947",
+    parentId: "1:1-switch",
+    box: { x: 10, y: 20, w: 40, h: 40 },
+  }));
+  pc.attachments.componentSets = [{
+    id: "397:35948",
+    name: "ind/进度条",
+    variants: [
+      {
+        id: "397:35947",
+        type: "COMPONENT",
+        name: "Property 1=highlight",
+        status: "determined",
+        role: "ind",
+        via: "structure",
+        behavior: "indicator",
+        sliceExport: { bounds: "render", scale: 1, format: "png", file: "397-35947.png" },
+        nodes: [
+          stampReadyFields({
+            id: "397:35947",
+            type: "COMPONENT",
+            name: "Property 1=highlight",
+            status: "determined",
+            role: "ind",
+            via: "structure",
+            behavior: "indicator",
+            sliceExport: { bounds: "render", scale: 1, format: "png", file: "397-35947.png" },
+          }),
+          { id: "397:35946", type: "RECTANGLE", name: "选中 1", status: "skipped", why: "slice-child" },
+        ],
+      },
+      {
+        id: "397:35949",
+        type: "COMPONENT",
+        name: "Property 1=normal",
+        status: "determined",
+        role: "ind",
+        via: "structure",
+        behavior: "indicator",
+        sliceExport: { bounds: "render", scale: 1, format: "png", file: "397-35949.png" },
+        nodes: [
+          stampReadyFields({
+            id: "397:35949",
+            type: "COMPONENT",
+            name: "Property 1=normal",
+            status: "determined",
+            role: "ind",
+            via: "structure",
+            behavior: "indicator",
+            sliceExport: { bounds: "render", scale: 1, format: "png", file: "397-35949.png" },
+          }),
+          { id: "397:35951", type: "RECTANGLE", name: "Rectangle 3468570", status: "skipped", why: "slice-child" },
+        ],
+      },
+    ],
+    nodes: [],
+  }];
+  pc.relations = [{
+    kind: "instance-uses-variant", status: "determined",
+    from: { id: "inst-ind", scope: "page" },
+    to: { id: "397:35947", componentSetId: "397:35948" },
+  }];
+  rebuildInventoryIndexes(pc);
+  fixtureJudgment(pc);
+  const result = validateHandoffPair(pc, mobile);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  const ids = sliceIdsOf(pc);
+  assert.ok(ids.includes("397:35947"), ids.join(","));
+  assert.ok(ids.includes("397:35949"), ids.join(","));
+  assert.equal(ids.includes("397:35946"), false);
+});
+
 test("导切图脚本锁死墨迹框 1 倍 png，拒绝改 scale", () => {
   const script = fileURLToPath(new URL("../scripts/export-handoff-slices.mjs", import.meta.url));
   const src = readFileSync(script, "utf8");

@@ -2,7 +2,7 @@
 
 给一个 Figma 稿链接，可做两件事：把已规范命名稿编成做页前的 `inventory/v2` ready 清单，或对稿件出**图层命名体检报告**。做页前交接是当前主入口；命名体检是独立的既有工具。
 
-规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.11），20 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后由本机 `sync-local` 有变才重铺（密钥放本机，不进 GitHub）；不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
+规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.12），20 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后由本机 `sync-local` 有变才重铺（密钥放本机，不进 GitHub）；不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
 
 ## 判什么、不判什么
 
@@ -61,7 +61,7 @@
    退出码 0，且 stdout 顶层 `ok/kind/ready` 为 true/`ready`/true；`consume.pc.unknownNotWired` 与 `consume.mobile.unknownNotWired` 都为 true。没有顶层 `unknownNotWired`。闸门绿才算交付。
 
 做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
-完整组件变体树和 modal 附件本体。摆位置用 `pageBox` / `parentBox`；`fix/` 钉视口；切图按 `sliceExport`（墨迹框、1 倍、png）由做页自导，交接包不带 PNG。`unknown` 节点只画样子，不赋交互；`unknown` 的
+完整组件变体树和 modal 附件本体。摆位置用 `pageBox` / `parentBox`；`fix/` 钉视口；切图按 `sliceExport`（墨迹框、1 倍、png；含 mix 自动拆 img/、BOOLEAN btn/、ind/ 变体根）由做页自导，交接包不带 PNG。`unknown` 节点只画样子，不赋交互；`unknown` 的
 `modal-trigger` 不自动接线。做页接入见 issue #5（指派 `zhanxinyi-lab`）。本工具不改
 `skills/yise-web-ui/**`，不写回 Figma。
 

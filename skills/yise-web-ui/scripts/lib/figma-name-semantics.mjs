@@ -1,7 +1,7 @@
 /**
  * Figma layer naming semantics.
  *
- * Implements standards/figma-naming v2.10 / A-v1.8 as a source-only role hint:
+ * Implements standards/figma-naming v2.12 / A-v1.10 as a source-only role hint:
  * - unprefixed TEXT is editable copy (copy role);
  * - TEXT named with img/, bg/, or kv/ is a visual asset/slice; name overrides node type;
  * - prefixes are case-insensitive and may contain spaces around ASCII or full-width slash;

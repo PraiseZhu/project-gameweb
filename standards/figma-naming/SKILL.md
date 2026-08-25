@@ -63,14 +63,14 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 - `_tmp/inventory-<page>.json` 与 `.txt` 落地
 - JSON 必须是 `schema: "inventory/v2"`、`status: "ready"`、`ok: true`
 - 覆盖页面本体、同货架 modal、页面实际引用的组件集及完整变体、实例关联
-- 节点带 `pageBox`/`parentBox`；`img/` `bg/` `kv/` 带 `sliceExport`（墨迹框、1 倍、png）；`fix/` 钉视口；文字带 `fontFamily`/`fontWeight`/`fontSize`
+- 节点带 `pageBox`/`parentBox`；`img/` `bg/` `kv/`、BOOLEAN `btn/`、页上 `ind/` 变体根带 `sliceExport`（墨迹框、1 倍、png）；`fix/` 钉视口；文字带 `fontFamily`/`fontWeight`/`fontSize`
 - 没有原型或 `@go` 证据的弹窗入口留在对应关系上的 `unknown`，不改变整份清单 ready
 
 ### 3. agent 核一遍
 
 脚本已经按规范前缀编好 ready。agent 只核：
 
-- determined 非 copy 的 `name` 以 `role/` 开头；`via=structure` 的 mix 自动拆 `img/` / `scroll/` 例外，看 `role` + `sliceExport`；BOOLEAN `btn/` 看 click + `sliceExport`
+- determined 非 copy 的 `name` 以 `role/` 开头；`via=structure` 的 mix 自动拆 `img/` / `scroll/` 与 `ind/` 变体根例外，看 `role` + `sliceExport`；BOOLEAN `btn/` 看 click + `sliceExport`
 - `sections` / `overlays` / `backgrounds` / `modules` 字段在；mobile 的 `overlays` 可以是空数组
 - unknown 保持 unknown，不猜交互
 - 两端 page id 不同、fileKey 相同

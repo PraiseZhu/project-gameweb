@@ -5,7 +5,7 @@
  * 规则检查已经由人工/看图确认的稳定形态，不对图层 id：
  * - 卡片语义资产（素材图、边框背景、立绘）不能保持 unknown；祖先已是 img/ 的内部零件除外（不抬二层 img/）；
  * - 划动/可划动那一层必须是 scroll/；同层「奖励列表」是 img/，不是 scroll/；
- * - determined 的消费身份必须同时写入 name 前缀；`via=structure` 的 mix 自动拆 img/ 例外，看 role + sliceExport；
+ * - determined 的消费身份必须同时写入 name 前缀；`via=structure` 的 mix 自动拆 img/ / scroll/ 与 ind/ 变体根例外，看 role + sliceExport；
  * - 索引必须与页面节点一致：sections/overlays/backgrounds/modules/pageCounts/counts 相对节点过期或残缺都红，不只扫空数组；
  * - 相对规范稿缺前缀类要红：CLI 按页宽推冻住的 PC/mobile 核心前缀类（不读 live 规范稿 JSON）。
  *   tab/ 不是每份稿都有：冻结表不含 tab；只有传入的参考稿里已有 determined tab/ 时，
@@ -34,7 +34,7 @@ function auditCardAndReward(doc) {
     if (node.status === "unknown" && CARD_ART_RE.test(rawName) && !hasImgAncestor(node, byId)) {
       problems.push(`${node.id}「${node.name}」是卡片视觉资产却仍为 unknown`);
     }
-    const structurePromoted = node.via === "structure" && (node.role === "img" || node.role === "scroll");
+    const structurePromoted = node.via === "structure" && (node.role === "img" || node.role === "scroll" || node.role === "ind");
     if (
       node.status === "determined"
       && node.role

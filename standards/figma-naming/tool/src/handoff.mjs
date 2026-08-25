@@ -8,8 +8,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { isSlicePrefix } from "../../spec/spec.mjs";
-import { INVENTORY_SCHEMA, INVENTORY_STATUSES, INVENTORY_ROLES, CROSS_END_MODULE_ROLES, SLICE_EXPORT, determinedReadyFieldProblems, sliceExportMatches } from "../../spec/inventory.mjs";
+import { INVENTORY_SCHEMA, INVENTORY_STATUSES, INVENTORY_ROLES, CROSS_END_MODULE_ROLES, SLICE_EXPORT, determinedReadyFieldProblems, sliceExportMatches, needsSliceExport } from "../../spec/inventory.mjs";
 import { auditLikeCli } from "../scripts/check-draft-asset-completeness.mjs";
 import { allNodesOf, auditDeclaredStructure } from "./inventory.mjs";
 
@@ -177,7 +176,7 @@ const PACKED_ASSETS_REDIRECT = "切图 PNG 不进交接包。清单只写 sliceE
 
 function isSliceNode(node) {
   if (node?.status !== "determined" || typeof node.id !== "string" || !node.id) return false;
-  return isSlicePrefix(node.role) || sliceExportMatches(node.sliceExport);
+  return needsSliceExport(node) || sliceExportMatches(node.sliceExport);
 }
 
 function pageSliceIds(doc) {
