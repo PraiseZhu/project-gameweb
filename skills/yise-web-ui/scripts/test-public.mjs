@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { probeSymlinkCapability, publicSkipPolicy } from './lib/runtime-capabilities.mjs';
+import { probePlaywrightCapability, probeSymlinkCapability, publicSkipPolicy } from './lib/runtime-capabilities.mjs';
 import { BROKEN_PUBLIC, DEMO_NAMED_TESTS } from './test-suites.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -13,10 +13,12 @@ const TEST_DIR = join(ROOT, 'scripts/__tests__');
 const LIST_ONLY = process.argv.includes('--list');
 const DEMO_SUITE = new Set(DEMO_NAMED_TESTS.map((rel) => basename(rel)));
 const symlinkCapability = probeSymlinkCapability();
+const playwrightCapability = probePlaywrightCapability(ROOT);
 const bundledFonts = existsSync(join(ROOT, 'fonts/registry.json'));
 const skipPolicy = publicSkipPolicy({
   symlinkAvailable: symlinkCapability.available,
   bundledFonts,
+  playwrightAvailable: playwrightCapability.available,
 });
 
 // 已知实现债从 nightly-exclusions.json 统一读取；修完后删掉该文件中的条目，

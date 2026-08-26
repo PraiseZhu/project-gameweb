@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { externalizeQaTruthIfOverLimit } from '../lib/html-volume.mjs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -211,4 +212,35 @@ test('figma:preview:first rejects one flat source region over a blank page', { t
   assert.ok(out.contractFailures.some((msg) => /meaningful source nodes|single flat source region/.test(msg)), out.contractFailures.join('\n'));
   assert.match(out.productView.url, /product=1/);
   assert.ok(existsSync(out.screenshot));
+});
+
+test('figma:preview:first serves external truth over HTTP and fails file:// (issue #61)', { timeout: 180000 }, (t) => {
+  if (!HAS_BROWSER_DEPS) {
+    t.skip('playwright/playwright-core is not installed in this public checkout; external-truth HTTP check runs when dependencies are present');
+    return;
+  }
+  const dir = tempDemo('external-truth-demo');
+  const init = run(INIT, ['--dir', dir, '--name', 'external-truth-demo', '--workflow', 'figma-showcase']);
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+  embedTruth(dir, minimalTruth());
+  const volume = externalizeQaTruthIfOverLimit(dir, { limitBytes: 40 });
+  assert.equal(volume.action, 'externalized');
+  assert.match(readFileSync(join(dir, 'index.html'), 'utf8'), /data-src="truth.json"/);
+
+  const httpRes = run(PREVIEW, ['--demo', dir], { timeout: 180000 });
+  assert.equal(httpRes.status, 0, httpRes.stderr || httpRes.stdout);
+  const httpOut = JSON.parse(httpRes.stdout);
+  assert.equal(httpOut.ok, true);
+  assert.equal(httpOut.protocol, 'http');
+  assert.equal(httpOut.externalTruth, true);
+  assert.match(httpOut.checkUrl, /^http:\/\/127\.0\.0\.1:\d+\/index\.html\?product=1/);
+  assert.match(httpOut.productView.url, /^file:/);
+  assert.match(httpOut.productView.url, /product=1/);
+
+  const fileRes = run(PREVIEW, ['--demo', dir, '--protocol', 'file'], { timeout: 180000 });
+  assert.equal(fileRes.status, 2, fileRes.stderr || fileRes.stdout);
+  const fileOut = JSON.parse(fileRes.stdout);
+  assert.equal(fileOut.ok, false);
+  assert.equal(fileOut.protocol, 'file');
+  assert.ok(fileOut.contractFailures.some((msg) => /file:\/\//.test(msg) || /data-src/.test(msg)), fileOut.contractFailures.join('\n'));
 });

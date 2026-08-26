@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchChromium } from './lib/resolve-playwright.mjs';
 import { sourcePlatformEvidence, unclaimedCapabilitiesFor } from './lib/workflows.mjs';
 import { internalCandidatePreview } from './lib/final-preview-gate.mjs';
+import { createSafeStaticServer } from './lib/safe-server.mjs';
+import { qaTruthIsExternal } from './lib/html-volume.mjs';
 
 const PREVIEW_THRESHOLDS = {
   minMeaningfulNodes: 2,
@@ -88,12 +90,108 @@ function explainMeaningfulContract(metrics, pageErrors = []) {
   return failures;
 }
 
+async function closeQuietly(resource) {
+  if (!resource) return;
+  try { await resource.close(); } catch {}
+}
+
+function structuralPreviewErrors(html) {
+  const errors = [];
+  if (!html.includes('id="qa-truth"')) errors.push('missing qa-truth');
+  if (!html.includes('id="qa-devices"')) errors.push('missing qa-devices');
+  if (!html.includes('FIGMA_RENDER_BEGIN') || !html.includes('FIGMA_CHROME_BEGIN')) errors.push('missing figma inline markers');
+  if (!html.includes('__figmaRender.renderApp')) errors.push('renderApp is not connected to __figmaRender');
+  return errors;
+}
+
+function collectPreviewMetrics(thresholds) {
+  const frame = document.querySelector('.frame') || document.body;
+  const frameRect = frame.getBoundingClientRect();
+  const frameArea = Math.max(1, frameRect.width * frameRect.height);
+  const clippedArea = (r) => {
+    const left = Math.max(r.left, frameRect.left);
+    const right = Math.min(r.right, frameRect.right);
+    const top = Math.max(r.top, frameRect.top);
+    const bottom = Math.min(r.bottom, frameRect.bottom);
+    return Math.max(0, right - left) * Math.max(0, bottom - top);
+  };
+  const all = Array.from(document.querySelectorAll('[data-node], [data-node-id]')).map((el) => {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const area = clippedArea(r);
+    return {
+      node: el.getAttribute('data-node') || null,
+      nodeId: el.getAttribute('data-node-id') || null,
+      figmaType: el.getAttribute('data-figma-type') || null,
+      ownerRole: el.getAttribute('data-owner-role') || null,
+      ownerScope: el.getAttribute('data-owner-scope') || null,
+      assetPolicy: el.getAttribute('data-owner-asset-policy') || null,
+      textLength: (el.textContent || '').trim().length,
+      width: r.width,
+      height: r.height,
+      area,
+      left: r.left,
+      top: r.top,
+      display: cs.display,
+      visibility: cs.visibility,
+      opacity: Number(cs.opacity),
+    };
+  });
+  const visible = all.filter((r) => r.width > 0 && r.height > 0 && r.area > 0 && r.display !== 'none' && r.visibility !== 'hidden' && r.opacity > 0);
+  const meaningful = visible.filter((r) => {
+    if (!r.node || /^(__fixed__|page-scope)$/.test(r.node)) return false;
+    if (r.nodeId && /^(section-|page-|no-sections)/.test(r.nodeId)) return false;
+    if (r.ownerScope === 'section-bg-root' && r.assetPolicy !== 'slice') return false;
+    if (r.area < 16) return false;
+    return true;
+  });
+  const meaningfulArea = meaningful.reduce((sum, r) => sum + r.area, 0);
+  const largestArea = meaningful.reduce((max, r) => Math.max(max, r.area), 0);
+  return {
+    title: document.title,
+    url: location.href,
+    frameChildren: frame ? frame.children.length : 0,
+    frameArea,
+    visibleSourceNodes: visible.length,
+    meaningfulSourceNodes: meaningful.length,
+    meaningfulCoverage: Math.min(meaningfulArea, frameArea) / frameArea,
+    largestNodeCoverage: largestArea / frameArea,
+    firstVisible: visible[0] || null,
+    meaningfulSamples: meaningful.slice(0, 8),
+    placeholder: /state=entry/.test(document.body && document.body.textContent || ''),
+    hasRenderer: !!(window.__figmaRender && typeof window.__figmaRender.renderApp === 'function'),
+    hasQa: !!window.__qa,
+    contract: thresholds,
+  };
+}
+
+function previewPayload({ demoDir, screenshot, result, session, spec, truth, indexPath, externalTruth }) {
+  const contractFailures = explainMeaningfulContract(result, session.pageErrors);
+  if (!session.useHttp && externalTruth) {
+    contractFailures.push('external truth data-src cannot be read over file://; serve over HTTP');
+  }
+  const ok = contractFailures.length === 0;
+  return {
+    ok,
+    demoDir,
+    screenshot,
+    pageErrors: session.pageErrors,
+    contractFailures,
+    result,
+    protocol: session.useHttp ? 'http' : 'file',
+    checkUrl: session.url,
+    externalTruth,
+    ...candidateCompletion({ ok, spec, truth, indexPath }),
+    nextHumanStep: ok ? 'Internal candidate evidence recorded. Do not open or present this product view to the user; run the final preview gate after static acceptance and final evidence.' : null,
+  };
+}
+
 function candidateCompletion({ ok, spec, truth, indexPath }) {
-  const productUrl = productViewUrl(indexPath);
+  const url = productViewUrl(indexPath);
   const evidence = sourcePlatformEvidence(spec, truth);
   const productView = {
-    url: productUrl,
-    command: openProductViewCommand(productUrl),
+    url,
+    command: openProductViewCommand(url),
   };
   return {
     legalCandidateCompletionPath: spec?.workflow?.id === 'figma-showcase' ? 'figma-showcase.preview-first.candidate' : 'preview-first.candidate',
@@ -105,7 +203,35 @@ function candidateCompletion({ ok, spec, truth, indexPath }) {
   };
 }
 
-async function runPreviewFirst({ demoDir, outDir }) {
+async function openPreviewSession({ demoDir, indexPath, protocol, externalTruth }) {
+  const useHttp = protocol !== 'file';
+  const launched = await launchChromium(demoDir, { headless: true });
+  const browser = launched.browser;
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
+  const pageErrors = [];
+  page.on('pageerror', (err) => pageErrors.push(String(err && err.message || err)));
+  let server = null;
+  let url;
+  if (useHttp) {
+    server = createSafeStaticServer(demoDir);
+    const base = await server.listen('127.0.0.1');
+    url = `${base}/index.html?${PRODUCT_QUERY}`;
+  } else {
+    url = productViewUrl(indexPath);
+  }
+  await page.goto(url, { waitUntil: 'load' });
+  if (externalTruth) {
+    try {
+      await page.waitForFunction(() => document.querySelectorAll('[data-node], [data-node-id]').length > 0, { timeout: 8000 });
+    } catch {
+      /* missing nodes stay a contract failure; do not skip preview-first */
+    }
+  }
+  await page.waitForTimeout(250);
+  return { browser, page, server, url, pageErrors, useHttp };
+}
+
+async function runPreviewFirst({ demoDir, outDir, protocol = 'http' }) {
   const indexPath = join(demoDir, 'index.html');
   const truthPath = join(demoDir, 'truth.json');
   const specPath = join(demoDir, 'spec.json');
@@ -115,110 +241,31 @@ async function runPreviewFirst({ demoDir, outDir }) {
   const spec = readJsonIfExists(specPath) || {};
   const truth = readJsonIfExists(truthPath) || {};
   const html = readFileSync(indexPath, 'utf8');
-  const structuralErrors = [];
-  if (!html.includes('id="qa-truth"')) structuralErrors.push('missing qa-truth');
-  if (!html.includes('id="qa-devices"')) structuralErrors.push('missing qa-devices');
-  if (!html.includes('FIGMA_RENDER_BEGIN') || !html.includes('FIGMA_CHROME_BEGIN')) structuralErrors.push('missing figma inline markers');
-  if (!html.includes('__figmaRender.renderApp')) structuralErrors.push('renderApp is not connected to __figmaRender');
+  const structuralErrors = structuralPreviewErrors(html);
   if (structuralErrors.length) fail('browser-ready preview shell contract failed', { structuralErrors });
 
+  const externalTruth = qaTruthIsExternal(html);
   mkdirSync(outDir, { recursive: true });
 
   let browser;
+  let server;
   try {
-    const launched = await launchChromium(demoDir, { headless: true });
-    browser = launched.browser;
-    const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
-    const pageErrors = [];
-    page.on('pageerror', (err) => pageErrors.push(String(err && err.message || err)));
-    const url = productViewUrl(indexPath);
-    await page.goto(url, { waitUntil: 'load' });
-    await page.waitForTimeout(250);
-    const result = await page.evaluate((thresholds) => {
-      const frame = document.querySelector('.frame') || document.body;
-      const frameRect = frame.getBoundingClientRect();
-      const frameArea = Math.max(1, frameRect.width * frameRect.height);
-      const clippedArea = (r) => {
-        const left = Math.max(r.left, frameRect.left);
-        const right = Math.min(r.right, frameRect.right);
-        const top = Math.max(r.top, frameRect.top);
-        const bottom = Math.min(r.bottom, frameRect.bottom);
-        return Math.max(0, right - left) * Math.max(0, bottom - top);
-      };
-      const all = Array.from(document.querySelectorAll('[data-node], [data-node-id]')).map((el) => {
-        const r = el.getBoundingClientRect();
-        const cs = getComputedStyle(el);
-        const area = clippedArea(r);
-        return {
-          node: el.getAttribute('data-node') || null,
-          nodeId: el.getAttribute('data-node-id') || null,
-          figmaType: el.getAttribute('data-figma-type') || null,
-          ownerRole: el.getAttribute('data-owner-role') || null,
-          ownerScope: el.getAttribute('data-owner-scope') || null,
-          assetPolicy: el.getAttribute('data-owner-asset-policy') || null,
-          textLength: (el.textContent || '').trim().length,
-          width: r.width,
-          height: r.height,
-          area,
-          left: r.left,
-          top: r.top,
-          display: cs.display,
-          visibility: cs.visibility,
-          opacity: Number(cs.opacity),
-        };
-      });
-      const visible = all.filter((r) => r.width > 0 && r.height > 0 && r.area > 0 && r.display !== 'none' && r.visibility !== 'hidden' && r.opacity > 0);
-      const meaningful = visible.filter((r) => {
-        if (!r.node || /^(__fixed__|page-scope)$/.test(r.node)) return false;
-        if (r.nodeId && /^(section-|page-|no-sections)/.test(r.nodeId)) return false;
-        if (r.ownerScope === 'section-bg-root' && r.assetPolicy !== 'slice') return false;
-        if (r.area < 16) return false;
-        return true;
-      });
-      const meaningfulArea = meaningful.reduce((sum, r) => sum + r.area, 0);
-      const largestArea = meaningful.reduce((max, r) => Math.max(max, r.area), 0);
-      return {
-        title: document.title,
-        url: location.href,
-        frameChildren: frame ? frame.children.length : 0,
-        frameArea,
-        visibleSourceNodes: visible.length,
-        meaningfulSourceNodes: meaningful.length,
-        meaningfulCoverage: Math.min(meaningfulArea, frameArea) / frameArea,
-        largestNodeCoverage: largestArea / frameArea,
-        firstVisible: visible[0] || null,
-        meaningfulSamples: meaningful.slice(0, 8),
-        placeholder: /state=entry/.test(document.body && document.body.textContent || ''),
-        hasRenderer: !!(window.__figmaRender && typeof window.__figmaRender.renderApp === 'function'),
-        hasQa: !!window.__qa,
-        contract: thresholds,
-      };
-    }, PREVIEW_THRESHOLDS);
+    const session = await openPreviewSession({ demoDir, indexPath, protocol, externalTruth });
+    browser = session.browser;
+    server = session.server;
+    const result = await session.page.evaluate(`(${collectPreviewMetrics.toString()})(${JSON.stringify(PREVIEW_THRESHOLDS)})`);
     const screenshot = join(outDir, 'preview-first-product.png');
-    await page.screenshot({ path: screenshot, fullPage: false });
+    await session.page.screenshot({ path: screenshot, fullPage: false });
     await browser.close();
     browser = null;
-
-    const contractFailures = explainMeaningfulContract(result, pageErrors);
-    const ok = contractFailures.length === 0;
-    const completion = candidateCompletion({ ok, spec, truth, indexPath });
-    const payload = {
-      ok,
-      demoDir,
-      screenshot,
-      pageErrors,
-      contractFailures,
-      result,
-      ...completion,
-      nextHumanStep: ok ? 'Internal candidate evidence recorded. Do not open or present this product view to the user; run the final preview gate after static acceptance and final evidence.' : null,
-    };
+    const payload = previewPayload({ demoDir, screenshot, result, session, spec, truth, indexPath, externalTruth });
     writeFileSync(join(outDir, 'preview-first.json'), JSON.stringify(payload, null, 2));
     console.log(JSON.stringify(payload, null, 2));
-    process.exit(ok ? 0 : 2);
+    await closeQuietly(server);
+    process.exit(payload.ok ? 0 : 2);
   } catch (err) {
-    if (browser) {
-      try { await browser.close(); } catch {}
-    }
+    await closeQuietly(browser);
+    await closeQuietly(server);
     fail('preview-first browser check failed', { message: err && err.message ? err.message : String(err) });
   }
 }
@@ -229,7 +276,8 @@ if (isCli) {
   const demoDir = argOf(args, '--demo') ? resolve(argOf(args, '--demo')) : null;
   if (!demoDir) fail('missing --demo <dir>');
   const outDir = resolve(argOf(args, '--out') || join(demoDir, 'artifacts', 'preview-first'));
-  await runPreviewFirst({ demoDir, outDir });
+  const protocol = argOf(args, '--protocol') === 'file' ? 'file' : 'http';
+  await runPreviewFirst({ demoDir, outDir, protocol });
 }
 
 export { PREVIEW_THRESHOLDS, explainMeaningfulContract, candidateCompletion, productViewUrl };

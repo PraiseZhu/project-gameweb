@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { explainMeaningfulContract, candidateCompletion, decodeJsonBytes } from '../preview-first.mjs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { explainMeaningfulContract, candidateCompletion, decodeJsonBytes, productViewUrl } from '../preview-first.mjs';
 import { validateSpec } from '../lib/schema.mjs';
+import { qaTruthIsExternal } from '../lib/html-volume.mjs';
+import { createSafeStaticServer } from '../lib/safe-server.mjs';
 
 test('preview-first decodes UTF-8, UTF-16LE, and UTF-16BE BOM JSON', () => {
   const value = { platform: 'mobile', label: '伊瑟' };
@@ -36,6 +42,44 @@ test('preview-first meaningful contract rejects one flat blank source region', (
   });
   assert.ok(failures.some((failure) => /meaningful source nodes/.test(failure)), failures.join('\n'));
   assert.ok(failures.some((failure) => /single flat source region/.test(failure)), failures.join('\n'));
+});
+
+test('qaTruthIsExternal detects data-src and ignores inlined truth', () => {
+  assert.equal(qaTruthIsExternal('<script id="qa-truth" type="application/json">{"ok":true}</script>'), false);
+  assert.equal(qaTruthIsExternal('<script id="qa-truth" type="application/json" data-src="truth.json" data-html-volume="external"></script>'), true);
+});
+
+test('preview-first candidate output always uses a durable file:// product URL', () => {
+  const spec = { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] } };
+  const indexPath = join(tmpdir(), 'demo', 'index.html');
+  const output = candidateCompletion({
+    ok: true,
+    spec,
+    truth: {},
+    indexPath,
+  });
+  assert.equal(output.productView.url, productViewUrl(indexPath));
+  assert.match(output.productView.url, /^file:/);
+  assert.match(output.productView.url, /product=1/);
+  assert.doesNotMatch(output.productView.url, /^http:/);
+});
+
+test('ephemeral HTTP check URL dies after the server closes; file:// product URL remains', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'preview-durable-url-'));
+  const indexPath = join(dir, 'index.html');
+  writeFileSync(indexPath, '<html><body>durable</body></html>');
+  const server = createSafeStaticServer(dir);
+  const base = await server.listen('127.0.0.1');
+  const checkUrl = `${base}/index.html?product=1`;
+  const live = await fetch(checkUrl);
+  assert.equal(live.status, 200);
+  await server.close();
+  await assert.rejects(() => fetch(checkUrl));
+  const output = candidateCompletion({ ok: true, spec: {}, truth: {}, indexPath });
+  assert.match(output.productView.url, /^file:/);
+  const filePath = fileURLToPath(output.productView.url.split('?')[0]);
+  assert.equal(existsSync(filePath), true);
+  assert.match(readFileSync(filePath, 'utf8'), /durable/);
 });
 
 test('preview-first candidate output carries product-view path and unclaimed capabilities', () => {

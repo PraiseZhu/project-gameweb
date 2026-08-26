@@ -16,7 +16,10 @@ human review. Opening the page does not mean gates, Switch clicks, Resize, or
 handoff passed. Direct Figma extract is labelled a local extract baseline, not
 an inventory/handoff baseline. `product-qa` is the later product-repo /
 sandbox / PR evidence workflow and must not be silently assumed by a Figma-only
-showcase. The only inventory consumer remains `figma:from-handoff`.
+showcase. `figma:from-handoff` remains consume-only. The official HTML command
+is `figma:html-from-handoff`. Completion standard: eat ready pack → write
+demo/`index.html` → `preview:first` must be green → then show `?product=1`.
+Stop at Main static.
 
 ```mermaid
 flowchart LR

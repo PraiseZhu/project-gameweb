@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BASE_PUBLIC_SKIP_LIMIT,
+  MISSING_PLAYWRIGHT_SKIP_ALLOWANCE,
   publicSkipPolicy,
   SYMLINK_UNAVAILABLE_SKIP_ALLOWANCE,
   UNBUNDLED_FONTS_SKIP_ALLOWANCE,
@@ -40,4 +41,12 @@ test('公开自测 skip 策略: 公开包不含 fonts/ 时额外放行 3 条 bun
   const unbundled = publicSkipPolicy({ platform: 'linux', symlinkAvailable: true, bundledFonts: false });
   assert.equal(unbundled.limit, BASE_PUBLIC_SKIP_LIMIT + UNBUNDLED_FONTS_SKIP_ALLOWANCE);
   assert.deepEqual(unbundled.allowances, [{ label: '公开包不含 fonts/ 二进制', count: UNBUNDLED_FONTS_SKIP_ALLOWANCE }]);
+});
+
+test('公开自测 skip 策略: 无 Playwright 时额外放行 3 条 preview-first 浏览器测', () => {
+  const missing = publicSkipPolicy({ platform: 'linux', symlinkAvailable: true, bundledFonts: true, playwrightAvailable: false });
+  assert.equal(missing.limit, BASE_PUBLIC_SKIP_LIMIT + MISSING_PLAYWRIGHT_SKIP_ALLOWANCE);
+  assert.deepEqual(missing.allowances, [{ label: '公开包不含 Playwright，preview-first 浏览器测 skip', count: MISSING_PLAYWRIGHT_SKIP_ALLOWANCE }]);
+  const present = publicSkipPolicy({ platform: 'linux', symlinkAvailable: true, bundledFonts: true, playwrightAvailable: true });
+  assert.equal(present.limit, BASE_PUBLIC_SKIP_LIMIT);
 });

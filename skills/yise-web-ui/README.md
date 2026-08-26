@@ -1,6 +1,14 @@
 # yise-web-ui
 
-触发词：`yisewebui`（也可说 `yise-web-ui` / `伊瑟网页还原`）。别人装好后直接打 `/yisewebui` 或说出触发词即可召回本 Skill。
+触发词：`yisewebui`（也可说 `yise-web-ui` / `伊瑟网页还原`）。召回机制与「出清单」相同：仓根 `CLAUDE.md` 触发表命中后立即执行 `skills/yise-web-ui/SKILL.md`。本包不装进 `.claude/skills/`（gitignore + 夜间健康检查会红）。没有触发表那一行，说 `yisewebui` 不会加载本 Skill。
+
+**完成标准（与 SKILL.md、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。
+
+| 情况 | 走哪条 |
+|---|---|
+| 已有 ready 交接包 | `cd skills/yise-web-ui && npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。`figma:from-handoff` 只验包、不写 HTML。 |
+| 只有 Figma 链接、没有包 | 停下来要包。用户明确说「先看稿、没有清单」才允许下面的 `figma-showcase` 九步，且必须标明 `latest-Figma local extract baseline`。 |
+| `preview:first` 红 | 不许给人打开 `?product=1`，不许开 Interaction / Resize。外置 truth 的内部检查必须走 HTTP；给人的地址是命令结束后仍可打开的 `file://...?product=1`。 |
 
 ## First visible Figma page
 

@@ -9,6 +9,12 @@ import { join } from 'node:path';
 export const DEFAULT_MAX_HTML_BYTES = 10 * 1024 * 1024;
 export const QA_TRUTH_RE = /<script([^>]*id=["']qa-truth["'][^>]*)>([\s\S]*?)<\/script>/i;
 
+/** True when #qa-truth points at an external file (file:// cannot fetch it). */
+export function qaTruthIsExternal(html) {
+  const m = String(html || '').match(QA_TRUTH_RE);
+  return Boolean(m && /\bdata-src\s*=/.test(m[1]));
+}
+
 export function htmlBytesOf(indexPath) {
   if (!existsSync(indexPath)) return 0;
   return readFileSync(indexPath).length;

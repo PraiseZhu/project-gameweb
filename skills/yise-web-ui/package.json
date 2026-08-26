@@ -1,6 +1,6 @@
 {
   "name": "yise-web-ui",
-  "description": "Figma 交接包只用 figma:from-handoff 消费；inventory:check 仅保留单份 ready inventory 诊断。",
+  "description": "Figma 交接包：figma:from-handoff 只验包；figma:html-from-handoff 写出 demo HTML 并必须过 preview-first。",
   "private": true,
   "type": "module",
   "scripts": {
@@ -23,6 +23,7 @@
     "figma:state-candidate-audit": "node scripts/figma-state-candidate-audit.mjs",
     "inventory:check": "node scripts/figma-inventory-check.mjs",
     "figma:from-handoff": "node scripts/figma-from-handoff.mjs",
+    "figma:html-from-handoff": "node scripts/figma-html-from-handoff.mjs",
     "pack:demo": "node scripts/pack-demo.mjs"
   },
   "dependencies": {
