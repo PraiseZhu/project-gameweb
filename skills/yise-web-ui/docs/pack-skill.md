@@ -41,13 +41,17 @@ export to pack quality so static review happens on crushed art.
    new bytes ≥ the **current** file. Slice-time lossless/q90 WebP is not
    a skip reason.
 2. Collapse SHA-identical images to one file; retarget `qa-assets`,
-   `truth.json`, `assets-manifest.json`, and hardcoded fallback paths.
+   `truth.json`, and hardcoded fallback paths. Drop extract-only
+   `lib/` / `scripts/` and the build-time `assets-manifest.json`.
 3. Subset fonts to page TEXT + ASCII + the other locales' copy, write woff2,
    rewrite `#qa-fonts`. Do not silently swap a missing family. Do not drop
-   JP/KR/HK fonts to pass the budget.
+   JP/KR/HK fonts to pass the budget. Compact `fonts-manifest.json` notes
+   and long missing-font copy, but keep `sha256`, `bytes`, `totalBytes`,
+   and `missing.family` so chrome font authenticity checks still work.
 4. Compact `truth.json` and always externalize `#qa-truth` for the packed
    demo (HTTP preview / XD Sites). file:// single-file is no longer the pack
-   target.
+   target. Compact `#qa-assets` JSON (drop default `exportBounds`, collapse
+   file-only records) but keep `assets/` paths and `exportBox`.
 5. Keep runtime fallback files (`figma-indicator-*.png` / `.webp`, calendar
    fallback slices). After rewrite, delete unreferenced image files. Move
    only audit/probe/screenshot trees out.

@@ -10,8 +10,8 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 export const DEFAULT_PACK_BUDGET_BYTES = 15 * 1024 * 1024;
 export const DEFAULT_PACK_WEBP_QUALITY = 70;
 export const PACK_KEEP_ROOT = new Set([
-  'index.html', 'truth.json', 'assets-manifest.json', 'fonts-manifest.json',
-  'calendar-figma-fallback-manifest.json', 'favicon.ico', 'spec.json',
+  'index.html', 'truth.json', 'fonts-manifest.json',
+  'calendar-figma-fallback-manifest.json', 'favicon.ico',
 ]);
 export const PACK_KEEP_DIRS = new Set(['assets', 'fixtures', 'fonts']);
 export const PACK_FALLBACK_RE = /figma-indicator[-.][\w.-]+\.(?:png|webp)/i;

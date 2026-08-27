@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, writeFileSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -75,6 +76,56 @@ test('reference rewriting leaves external URLs unchanged', () => {
   assert.match(html, /assets\/a\.webp/);
   assert.match(html, /https:\/\/cdn\.example\/a\.png/);
   assert.match(html, /\/\/cdn\.example\/a\.png/);
+});
+
+test('pack compacts qa-assets but keeps assets/ paths and exportBox', () => {
+  const dir = validDemo();
+  writeFileSync(join(dir, 'index.html'), [
+    '<script id="qa-truth" type="application/json">{}</script>',
+    '<script id="qa-assets" type="application/json">',
+    JSON.stringify({
+      '1:1': { file: 'assets/a.png', exportBounds: 'box', imageRefs: ['abc'] },
+      '1:2': { file: 'assets/a.png', exportBox: { x: 0, y: 0, w: 10, h: 10 }, imageRefs: ['a', 'b'] },
+    }),
+    '</script>',
+    '<img src="assets/a.png">',
+  ].join(''));
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  const block = html.match(/<script[^>]*id=["']qa-assets["'][^>]*>([\s\S]*?)<\/script>/i);
+  const assets = JSON.parse(block[1]);
+  assert.equal(assets['1:1'], 'assets/a.webp');
+  assert.equal(assets['1:2'].file, 'assets/a.webp');
+  assert.deepEqual(assets['1:2'].exportBox, { x: 0, y: 0, w: 10, h: 10 });
+  assert.deepEqual(assets['1:2'].imageRefs, ['a', 'b']);
+  assert.equal(assets['1:2'].exportBounds, undefined);
+});
+
+test('pack keeps font sha256 bytes and missing after subset', () => {
+  const src = readFileSync(join(ROOT, 'scripts/pack-demo.mjs'), 'utf8');
+  const slim = src.slice(src.indexOf('function slimFontsManifest'), src.indexOf('function compactQaAssetsHtml'));
+  assert.match(slim, /keepFontKeys = \['file', 'format', 'weight', 'sha256', 'bytes', 'subset'\]/);
+  assert.match(slim, /compact\.missing = parsed\.value\.missing\.map/);
+  assert.match(slim, /if \(item\.family\) slim\.family = item\.family/);
+  assert.match(slim, /if \(item\.affectedNodes != null\) slim\.affectedNodes = item\.affectedNodes/);
+  assert.doesNotMatch(slim, /keepFontKeys = \['file', 'format', 'weight'\]/);
+});
+
+test('pack drops extract-only lib and assets-manifest from the served folder', () => {
+  const dir = validDemo();
+  mkdirSync(join(dir, 'lib'));
+  writeFileSync(join(dir, 'lib/figma-geo.mjs'), 'export const x = 1;\n');
+  writeFileSync(join(dir, 'assets-manifest.json'), JSON.stringify({ assets: { a: { file: 'assets/a.png' } } }));
+  writeFileSync(join(dir, 'spec.json'), '{}');
+  writeFileSync(join(dir, '.env'), 'FIGMA_TOKEN=secret\n');
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(existsSync(join(dir, 'lib')), false);
+  assert.equal(existsSync(join(dir, 'assets-manifest.json')), false);
+  assert.equal(existsSync(join(dir, 'spec.json')), false);
+  assert.equal(existsSync(join(dir, '.env')), false);
+  assert.equal(existsSync(join(dir, 'index.html')), true);
 });
 
 test('real Pack rewrites references, moves PNG proof, and leaves source demo committed', () => {

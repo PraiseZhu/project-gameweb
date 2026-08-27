@@ -206,16 +206,143 @@ function removePackTarget(demoDir, name, { dir = false } = {}) {
 }
 
 function prunePackWorktree(demoDir) {
-  for (const name of ['artifacts', 'verify-artifacts', 'pixel-artifacts', 'fixtures']) {
+  for (const name of ['artifacts', 'verify-artifacts', 'pixel-artifacts', 'fixtures', 'lib', 'scripts']) {
     removePackTarget(demoDir, name, { dir: true });
   }
   for (const name of [
     'extract.mjs', 'extract-helpers.mjs', 'extract-report.json', 'report.json',
     'report-gate-a.json', 'report-assets.json', '_verify-four-fixes.mjs',
-    'resize-acceptance.json', 'truth.runtime.json',
+    'resize-acceptance.json', 'truth.runtime.json', 'assets-manifest.json',
+    'spec.json', '.env',
   ]) {
     removePackTarget(demoDir, name);
   }
+}
+
+function stripPackNotes(value) {
+  if (Array.isArray(value)) return value.map(stripPackNotes);
+  if (!value || typeof value !== 'object') return value;
+  const next = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === '_note' || key === '$comment' || key === '_comment') continue;
+    next[key] = stripPackNotes(child);
+  }
+  return next;
+}
+
+function compactJsonFile(demoDir, name) {
+  const file = join(demoDir, name);
+  if (!existsSync(file)) return { ok: true, skipped: true, file: name };
+  const inspected = assertSafePackPath(demoDir, file);
+  const parsed = readJsonOrError(inspected.path, `${name} is not valid JSON`);
+  if (!parsed.ok) return parsed;
+  const compact = JSON.stringify(stripPackNotes(parsed.value));
+  writeFileSync(inspected.path, compact);
+  return { ok: true, skipped: false, file: name, bytesBefore: inspected.stat.size, bytes: Buffer.byteLength(compact) };
+}
+
+function compactHtmlJsonScripts(demoDir) {
+  const indexPath = join(demoDir, 'index.html');
+  const html = readFileSync(indexPath, 'utf8');
+  let next = html;
+  let saved = 0;
+  next = next.replace(/<script([^>]*type=["']application\/json["'][^>]*)>([\s\S]*?)<\/script>/gi, (full, attrs, body) => {
+    const text = String(body || '').trim();
+    if (!text) return full;
+    try {
+      const compact = JSON.stringify(stripPackNotes(JSON.parse(text)));
+      saved += Buffer.byteLength(text) - Buffer.byteLength(compact);
+      return `<script${attrs}>${compact}</script>`;
+    } catch {
+      return full;
+    }
+  });
+  if (next !== html) writeFileSync(indexPath, next);
+  return { ok: true, bytesSaved: saved, bytes: Buffer.byteLength(next) };
+}
+
+const QA_DEVICES_RUNTIME_KEYS = new Set([
+  'deviceGroups', 'breakpoints', 'otherReference', 'regions', 'languages', 'states',
+]);
+
+function compactQaDevicesHtml(demoDir) {
+  const indexPath = join(demoDir, 'index.html');
+  const html = readFileSync(indexPath, 'utf8');
+  const match = html.match(/<script([^>]*id=["']qa-devices["'][^>]*)>([\s\S]*?)<\/script>/i);
+  if (!match || !match[2].trim()) return { ok: true, skipped: true, bytes: 0 };
+  let parsed;
+  try { parsed = JSON.parse(match[2]); }
+  catch { return { ok: false, error: 'qa-devices is not valid JSON' }; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: true, skipped: true, bytes: Buffer.byteLength(match[2]) };
+  }
+  const slim = {};
+  for (const key of QA_DEVICES_RUNTIME_KEYS) {
+    if (Object.hasOwn(parsed, key)) slim[key] = parsed[key];
+  }
+  const compacted = JSON.stringify(slim);
+  writeFileSync(indexPath, html.replace(match[0], `<script${match[1]}>${compacted}</script>`));
+  return { ok: true, skipped: false, bytesBefore: Buffer.byteLength(match[2]), bytes: Buffer.byteLength(compacted) };
+}
+
+function slimFontsManifest(demoDir) {
+  const file = join(demoDir, 'fonts-manifest.json');
+  if (!existsSync(file)) return { ok: true, skipped: true };
+  const inspected = assertSafePackPath(demoDir, file);
+  const parsed = readJsonOrError(inspected.path, 'fonts-manifest.json is not valid JSON');
+  if (!parsed.ok) return parsed;
+  const keepFontKeys = ['file', 'format', 'weight', 'sha256', 'bytes', 'subset'];
+  const fonts = {};
+  for (const [family, entry] of Object.entries(parsed.value?.fonts || {})) {
+    if (!entry || typeof entry !== 'object') continue;
+    const slim = {};
+    for (const key of keepFontKeys) {
+      if (entry[key] != null) slim[key] = entry[key];
+    }
+    fonts[family] = slim;
+  }
+  const compact = {
+    fonts,
+    totalBytes: Number(parsed.value?.totalBytes || Object.values(fonts).reduce((sum, item) => sum + Number(item?.bytes || 0), 0)),
+  };
+  if (Array.isArray(parsed.value?.missing) && parsed.value.missing.length) {
+    compact.missing = parsed.value.missing.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      const slim = {};
+      if (item.family) slim.family = item.family;
+      if (item.weights) slim.weights = item.weights;
+      if (item.affectedNodes != null) slim.affectedNodes = item.affectedNodes;
+      return slim;
+    });
+  }
+  const text = JSON.stringify(compact);
+  writeFileSync(inspected.path, text);
+  return { ok: true, skipped: false, bytesBefore: inspected.stat.size, bytes: Buffer.byteLength(text) };
+}
+
+function compactQaAssetsHtml(demoDir) {
+  const indexPath = join(demoDir, 'index.html');
+  const html = readFileSync(indexPath, 'utf8');
+  const match = html.match(/<script([^>]*id=["']qa-assets["'][^>]*)>([\s\S]*?)<\/script>/i);
+  if (!match || !match[2].trim()) return { ok: true, skipped: true, bytes: 0 };
+  let parsed;
+  try { parsed = JSON.parse(match[2]); }
+  catch { return { ok: false, error: 'qa-assets is not valid JSON' }; }
+  const slim = (value) => {
+    if (typeof value === 'string' || Array.isArray(value) || !value || typeof value !== 'object') return value;
+    const next = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'exportBounds' && child === 'box') continue;
+      if (key === 'imageRefs' && (!Array.isArray(child) || child.length <= 1)) continue;
+      next[key] = slim(child);
+    }
+    const keys = Object.keys(next);
+    if (keys.length === 1 && keys[0] === 'file' && typeof next.file === 'string') return next.file;
+    return next;
+  };
+  const compacted = JSON.stringify(slim(parsed));
+  writeFileSync(indexPath, html.replace(match[0], `<script${match[1]}>${compacted}</script>`));
+  return { ok: true, skipped: false, bytesBefore: Buffer.byteLength(match[2]), bytes: Buffer.byteLength(compacted) };
 }
 
 function compactRuntimeTruth(demoDir, proofDir) {
@@ -382,7 +509,7 @@ function subsetFonts(demoDir) {
       if (mapping) mappings.push(mapping);
     }
     manifest.totalBytes = Object.values(manifest.fonts || {}).reduce((sum, item) => sum + Number(item?.bytes || 0), 0);
-    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    writeFileSync(manifestPath, JSON.stringify(manifest));
     unlinkSync(charsFile);
     return { ok: true, skipped: false, mappings, glyphs: chars.size };
   } catch (error) {
@@ -462,6 +589,13 @@ function mutatePackedDemo(workDir, workProofDir, args, out, budgetBytes) {
   out.fonts = subsetFonts(workDir);
   if (!out.fonts.ok) throw new Error(out.fonts.error || 'font subset failed');
   out.rewriteFonts = rewritePackedRefs(workDir, out.fonts.mappings || []);
+  out.qaAssets = compactQaAssetsHtml(workDir);
+  if (!out.qaAssets.ok) throw new Error(out.qaAssets.error);
+  out.qaDevices = compactQaDevicesHtml(workDir);
+  if (!out.qaDevices.ok) throw new Error(out.qaDevices.error);
+  out.htmlJson = compactHtmlJsonScripts(workDir);
+  out.fontsManifest = slimFontsManifest(workDir);
+  if (!out.fontsManifest.ok) throw new Error(out.fontsManifest.error);
   const packedHtml = readFileSync(join(workDir, 'index.html'), 'utf8');
   out.unreferenced = removeUnreferencedPackedFiles(workDir, packedHtml);
   out.truthRecheck = packRuntimeReferencesOk(workDir, readFileSync(join(workDir, 'index.html'), 'utf8'));
