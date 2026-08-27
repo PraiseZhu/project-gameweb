@@ -1272,9 +1272,9 @@
         || [
           ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
           '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
-          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
-          '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
-          'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
+          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
+          '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
+          'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
           '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
         ].join('');
       const style = doc.createElement('style');
@@ -1768,8 +1768,8 @@
           && /今日日期|today\s*date|current\s*date/i.test(String(parsed.label || ''));
         const hscrollCommand = (node) => {
           const label = String(value(node && node.name) || '').toLowerCase();
-          if (/prev|previous|left|上一|左划|左滑|前/.test(label)) return 'prev';
-          if (/next|right|下一|右划|右滑|后/.test(label)) return 'next';
+          if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) return 'prev';
+          if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) return 'next';
           return null;
         };
         const nearestHscrollId = (node) => {
@@ -1869,7 +1869,7 @@
              only when the closest shared owner path has exactly one switch
              with a complete component-set graph; ties remain inert. */
           const label = String(value(n && n.name) || '').toLowerCase();
-          if (/\b(prev|previous|next|left|right)\b|上一|下一|左划|右划|左滑|右滑|前|后/.test(label)) {
+          if (/\b(prev(?:ious)?|next|left|right)\b|上一|下一|左划|右划|左滑|右滑|左滑动|右滑动/.test(label)) {
             const currentPath = path.map((entry) => String(value(entry)));
             const candidates = items.filter((candidate) => parse(candidate).role === 'switch'
               && componentVariantGraph(candidate)).map((candidate) => {
@@ -2101,7 +2101,7 @@
           let switchId = p.role === 'switch' ? id(n) : ownerSwitch(n);
           if (p.role === 'btn' && switchId) {
             const label = String(value(n && n.name) || '').toLowerCase();
-            const directional = /prev|previous|left|上一|左划|左滑|前|next|right|下一|右划|右滑|后/.test(label);
+            const directional = /\bprev(?:ious)?\b|\bleft\b|\bnext\b|\bright\b|上一|下一|左划|右划|左滑|右滑|左滑动|右滑动/.test(label);
             if (!directional) switchId = null;
           }
           if (switchId) attrs['data-switch'] = switchId;
@@ -2134,8 +2134,8 @@
           }
           if (switchId && p.role === 'btn') {
             const label = String(value(n && n.name) || '').toLowerCase();
-            if (/prev|previous|left|上一|左划|左滑|前/.test(label)) attrs['data-switch-action'] = 'prev';
-            else if (/next|right|下一|右划|右滑|后/.test(label)) attrs['data-switch-action'] = 'next';
+            if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) attrs['data-switch-action'] = 'prev';
+            else if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) attrs['data-switch-action'] = 'next';
           }
           if (p.role === 'btn' && !attrs['data-switch-action']) {
             const command = hscrollCommand(n);
@@ -2149,6 +2149,7 @@
             attrs['data-calendar-now'] = 'true';
             attrs['data-calendar-now-state'] = 'today';
             attrs['data-calendar-now-evidence'] = 'dyn-today-date-runtime-swap';
+            attrs['data-btn-press'] = 'inert';
           }
           /* Independent btn/ with a real normal+highlight COMPONENT_SET is not a
              missing switch. Directory `btn/导航状态` is that family. Static still
@@ -2339,10 +2340,12 @@
             || attrs['data-copy-code'] != null
             || attrs['data-nav-item'] === 'true'
             || attrs['data-btn-variant'] === 'true'
-            || attrs['data-calendar-now'] === 'true';
+            || attrs['data-calendar-now-state'] === 'return-today';
           const disabledPress = indicatorVariant(n) === 'disabled'
             || /disable/i.test(String(attrs['data-btn-variant-state'] || ''));
-          if (pressable && disabledPress) {
+          if (attrs['data-calendar-now'] === 'true' && attrs['data-calendar-now-state'] !== 'return-today') {
+            attrs['data-btn-press'] = 'inert';
+          } else if (pressable && disabledPress) {
             attrs['data-btn-press'] = 'inert';
             attrs['aria-disabled'] = 'true';
           } else if (pressable) {
@@ -2352,7 +2355,7 @@
             if (p.role === 'btn' && !attrs['data-link'] && !attrs['data-go'] && !attrs['data-sec-target']
               && !attrs['data-switch-action'] && !attrs['data-hscroll-action'] && !attrs['data-copy-code']
               && !attrs['data-btn-variant'] && !attrs['data-nav-item'] && !attrs['data-tab']
-              && !attrs['data-calendar-now']) {
+              && attrs['data-calendar-now-state'] !== 'return-today') {
               attrs['data-btn-action'] = 'unresolved';
             }
           }
@@ -5778,6 +5781,16 @@
           const next = state === 'return-today' ? 'return-today' : 'today';
           for (const control of calendarNowControlsFor(el)) {
             control.setAttribute('data-calendar-now-state', next);
+            if (next === 'return-today') {
+              control.setAttribute('data-btn-press', 'true');
+              control.setAttribute('role', 'button');
+              control.setAttribute('tabindex', '0');
+              control.removeAttribute('aria-disabled');
+            } else {
+              control.setAttribute('data-btn-press', 'inert');
+              control.removeAttribute('role');
+              control.removeAttribute('tabindex');
+            }
             const textHost = [...control.querySelectorAll('*')].find((node) => {
               const text = (node.textContent || '').trim();
               return node.childElementCount === 0 && (/^\d{1,2}\/\d{1,2}$/.test(text) || text === '返回');

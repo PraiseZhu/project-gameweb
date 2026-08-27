@@ -98,6 +98,21 @@ test('calendar mix clip-and-overflow emits hscroll without native overflow host'
   assert.equal(byId.get('track')['data-hscroll-overflow-child'], 'true');
   assert.equal(byId.get('next')['data-hscroll-action'], 'next');
   assert.equal(byId.get('today')['data-calendar-now'], 'true');
+  assert.equal(byId.get('today')['data-btn-press'], 'inert');
+});
+
+test('generic sibling buttons with 前/后 are not hscroll commands', () => {
+  const model = deriveInteractionModel([
+    { id: 'mix', type: 'FRAME', name: 'mix/calendar', parentId: 'cal', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: '可滑动内容', parentId: 'mix', box: { x: 0, y: 0, w: 240, h: 40 } },
+    { id: 'go', type: 'FRAME', name: 'btn/前往详情', parentId: 'cal' },
+    { id: 'later', type: 'FRAME', name: 'btn/后续说明', parentId: 'cal' },
+    { id: 'cal', type: 'FRAME', name: '日历', parentId: 'section' },
+    { id: 'section', type: 'FRAME', name: 'sec/2' },
+  ]);
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
+  assert.equal(byId.get('go')['data-hscroll-action'], undefined);
+  assert.equal(byId.get('later')['data-hscroll-action'], undefined);
 });
 
 test('named scroll inside a mix clip is the hscroll host', () => {

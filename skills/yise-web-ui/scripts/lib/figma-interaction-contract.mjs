@@ -281,8 +281,8 @@ function isTodayDateDyn(node, parsed = parseLayerName(node?.name)) {
 
 function isHscrollCommand(node) {
   const label = str(node?.name).toLowerCase();
-  if (/prev|previous|left|上一|左划|左滑|前/.test(label)) return 'prev';
-  if (/next|right|下一|右划|右滑|后/.test(label)) return 'next';
+  if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) return 'prev';
+  if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) return 'next';
   return null;
 }
 
@@ -525,13 +525,14 @@ export function deriveInteractionModel(nodes = []) {
       attrs['data-calendar-now'] = 'true';
       attrs['data-calendar-now-state'] = entry.calendarNow.initial;
       attrs['data-calendar-now-evidence'] = entry.calendarNow.evidence;
+      if (entry.calendarNow.initial !== 'return-today') attrs['data-btn-press'] = 'inert';
     }
     if ((entry.role === 'tab' || (entry.role === 'btn' && entry.variantIndex != null && entry.role !== 'ind')) && entry.switchId) attrs['data-tab'] = 'true';
     if (entry.role === 'ind' && entry.switchId) attrs['data-indicator'] = 'true';
     if (entry.role === 'btn' && entry.switchId) {
       const label = String(entry.name || '').toLowerCase();
-      if (/prev|previous|left|上一|前/.test(label)) attrs['data-switch-action'] = 'prev';
-      else if (/next|right|下一|后/.test(label)) attrs['data-switch-action'] = 'next';
+      if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) attrs['data-switch-action'] = 'prev';
+      else if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) attrs['data-switch-action'] = 'next';
     }
     if (entry.buttonVariant) {
       attrs['data-btn-variant'] = 'true';

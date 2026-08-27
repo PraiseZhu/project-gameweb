@@ -55,20 +55,23 @@ Incomplete component-set trees or ambiguous owner mapping stay unresolved /
 inert.
 
 Named `scroll/` plus `clipsContent` is the default hscroll host. A generic
-`mix/` clip stays draw-only even when a child overflows. The one calendar
-exception is `mix/calendar` / `mix/日历`: it may host hscroll when its
-direct child geometry overflows, but the host still stays
-`overflow:hidden` and only the overflowing child translates. Do not turn
-the mix window into native `overflow-x:auto`. The overflowing child is
-the translate surface so rest-state siblings do not pan. Calendar
-right/left arrows beside that viewport are hscroll commands
-(`data-hscroll-action`), not switch pages. `dyn/今日日期` is one source
-layer with two runtime states: entry shows today and no return control;
-scrolling or paging away shows `返回`; clicking `返回` restores the resting
-offset and today. This is state switching, not `activity-calendar-reveal`.
-Do not invent a second return bitmap when inventory only has
-`dyn/今日日期`. Mobile drag uses pointer capture and disables native image
-drag / text selection so a swipe does not highlight a bitmap.
+`mix/` clip stays draw-only even when a child overflows. PC calendar
+inventory has no `scroll/` inside `mix/calendar` / `mix/日历`; that exact
+label plus clips plus a direct overflowing child is the only mix
+exception, still `overflow:hidden` with a translating child. Do not turn
+the mix window into native `overflow-x:auto`, and do not treat a
+decorative mix that merely contains the word calendar as a host. The
+overflowing child is the translate surface so rest-state siblings do not
+pan. Calendar right/left arrows beside that viewport are hscroll
+commands (`data-hscroll-action`), not switch pages; match complete
+direction names such as `右滑动箭头`, never a lone `前` / `后`.
+`dyn/今日日期` is one source layer with two runtime states: entry shows
+today and stays inert; scrolling or paging away shows `返回` and only
+then is it a control; clicking `返回` restores the resting offset and
+today. This is state switching, not `activity-calendar-reveal`. Do not
+invent a second return bitmap when inventory only has `dyn/今日日期`.
+Mobile drag uses pointer capture and disables native image drag / text
+selection so a swipe does not highlight a bitmap.
 
 Hidden variant bitmaps may stay deferred until the click. `prepareSwitch`
 may start those assets, but it must not leave prev/next inert waiting on

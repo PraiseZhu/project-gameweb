@@ -81,7 +81,10 @@ test('renderer loops applySwitch and keeps calendar/hscroll commands off native 
   assert.match(renderer, /dyn-today-date-runtime-swap/);
   assert.match(renderer, /user-select:none/);
   assert.match(renderer, /overflowX = 'hidden'/);
+  assert.match(renderer, /data-calendar-now-state="return-today"/);
+  assert.match(renderer, /data-btn-press', 'inert'/);
   assert.doesNotMatch(renderer, /activity-calendar-reveal/);
+  assert.doesNotMatch(renderer, /左滑\|前/);
 });
 
 test('unresolved model does not emit a direct-child runtime bridge', () => {

@@ -141,6 +141,7 @@ test('browser calendar today/return swaps on hscroll and restores on click', asy
       const surface = document.querySelector('[data-hscroll-surface="true"], [data-hscroll-overflow-child="true"]');
       return {
         state: today?.getAttribute('data-calendar-now-state'),
+        press: today?.getAttribute('data-btn-press'),
         hscroll: host?.getAttribute('data-hscroll'),
         overflowX: host?.style.overflowX,
         action: next?.getAttribute('data-hscroll-action'),
@@ -150,6 +151,7 @@ test('browser calendar today/return swaps on hscroll and restores on click', asy
       };
     });
     assert.equal(start.state, 'today');
+    assert.equal(start.press, 'inert');
     assert.equal(start.hscroll, 'x');
     assert.equal(start.overflowX, 'hidden');
     assert.equal(start.action, 'next');
@@ -159,11 +161,13 @@ test('browser calendar today/return swaps on hscroll and restores on click', asy
       const surface = document.querySelector('[data-hscroll-surface="true"], [data-hscroll-overflow-child="true"]');
       return {
         state: today?.getAttribute('data-calendar-now-state'),
+        press: today?.getAttribute('data-btn-press'),
         text: (today?.textContent || '').trim(),
         offset: Number(surface?.getAttribute('data-hscroll-offset') || 0),
       };
     });
     assert.equal(away.state, 'return-today');
+    assert.equal(away.press, 'true');
     assert.equal(away.text, '返回');
     assert.ok((away.offset || 0) > 0);
     await click(page, 'today');
