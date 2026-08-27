@@ -504,6 +504,19 @@ function listPublicTests(packageDir) {
   return files;
 }
 
+function tapFailureNames(output, limit = 6) {
+  const names = [];
+  for (const line of String(output || '').split(/\r?\n/)) {
+    const m = line.match(/^not ok \d+\s+(.*)$/);
+    if (m) {
+      const name = m[1].replace(/\s*# SKIP.*$/i, '').trim();
+      if (name && !names.includes(name)) names.push(name);
+    }
+    if (names.length >= limit) break;
+  }
+  return names;
+}
+
 function runTrustedTests(label, packageDir) {
   const listed = listPublicTests(packageDir);
   if (listed && listed.error) return `${label}: ${listed.error}`;
@@ -527,7 +540,12 @@ function runTrustedTests(label, packageDir) {
   if (tap.tests == null) return `${label}: TAP 里看不到 # tests，不能当作有自测`;
   if (cases < 1) return `${label}: TAP 没有真实用例名，只算文件包装层，不能当作有自测`;
   if (tap.pass < 1) return `${label}: TAP 没有实际通过的用例，全 skip/todo 不能当作有自测`;
-  if (result.status !== 0 || tap.fail > 0) return `${label}: TAP 失败 ${tap.fail} / 退出码 ${result.status}`;
+  if (result.status !== 0 || tap.fail > 0) {
+    const names = tapFailureNames(output);
+    const detail = names.length ? `\n    挂的用例（前 ${names.length}）:\n${names.map((n) => `    - ${n}`).join('\n')}` : '';
+    console.error(detail);
+    return `${label}: TAP 失败 ${tap.fail} / 退出码 ${result.status}${names.length ? `（如: ${names[0]}…）` : ''}`;
+  }
   return null;
 }
 
