@@ -67,13 +67,24 @@ test('sc-open-not-done: opening the page is still a candidate', () => {
   assert.match(readme, /not-claimed|extraction recognition only/);
 });
 
-test('sc-yisewebui-layer-stop: static then Translation then Interaction then Resize', () => {
+test('sc-yisewebui-layer-stop: two human review stops, Translation not-claimed without a table', () => {
   const skill = read('SKILL.md');
   const arch = read('docs/skill-architecture.md');
-  assert.match(skill, /Main\s+static → Translation → Interaction → Resize/);
+  const readme = read('README.md');
+  assert.match(skill, /Main static → Translation/);
+  assert.match(skill, /humans see \*\*two\*\* review stops/);
+  assert.match(skill, /zh-CN\s+font load\s+is not a translation pass/s);
+  assert.match(skill, /Do not open or present the page while `preview:first` is red/);
+  assert.match(skill, /humanStopPreviewAllowed/);
+  const finalGate = read('docs/final-preview-gate.md');
+  assert.match(finalGate, /humanStopPreviewAllowed/);
+  assert.match(finalGate, /human review stop may open/);
   assert.match(arch, /stop-layer workflow/);
+  assert.match(arch, /two review stops/);
+  assert.match(arch, /zh-CN font\s+load is not a translation pass/s);
+  assert.match(readme, /two human review stops/);
+  assert.match(readme, /zh-CN font load is not a translation pass/);
   assert.match(arch, /Do not invent a fourth Skill|Do not split the directory into a fourth Skill/);
-  assert.match(skill, /Do not open the next axis until\n?the previous one is accepted/s);
 });
 
 test('sc-html-10mb-webp: HTML volume is 10MB on index.html, assets folder is free', () => {
@@ -82,8 +93,9 @@ test('sc-html-10mb-webp: HTML volume is 10MB on index.html, assets folder is fre
   const encoder = read('scripts/lib/encode-webp.py');
   assert.match(volume, /DEFAULT_MAX_HTML_BYTES = 10 \* 1024 \* 1024/);
   assert.match(volume, /index.html itself, not the assets folder/);
-  assert.match(encoder, /Alpha images use lossless WebP/);
-  assert.match(encoder, /lossy quality 90/);
+  assert.match(encoder, /alpha →\s*lossless WebP/);
+  assert.match(encoder, /opaque → lossy quality/);
+  assert.match(encoder, /Pack passes lossless=false/);
   assert.match(skill, /10MB/);
 });
 
@@ -92,8 +104,8 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   const arch = read('docs/skill-architecture.md');
   const pack = read('docs/pack-skill.md');
   const lib = read('scripts/lib/pack-demo.mjs');
-  assert.match(skill, /Main\s+static → Translation → Interaction → Resize/);
-  assert.match(skill, /After Resize is accepted, run the Pack delivery/);
+  assert.match(skill, /Main static → Translation/);
+  assert.match(skill, /After the second\n?human stop is accepted, run the Pack delivery/s);
   assert.match(skill, /Pack is not a restore axis/);
   assert.match(arch, /Pack delivery/);
   assert.match(arch, /not a restore axis/);

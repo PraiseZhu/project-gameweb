@@ -74,15 +74,27 @@ There are two explicit workflow declarations:
   and the later deterministic gates. It is separate from `figma-showcase`; do not
   block a Figma-only showcase candidate on product repo or PR prerequisites.
 
-`yisewebui` stops after each axis for human acceptance. Order is Main
-static → Translation → Interaction → Resize. Do not open the next axis until
-the previous one is accepted. Later axes must not mutate accepted static
-geometry, assets, or zh-CN copy. Directory static stays in Main; directory
-click/scrollspy stays in Interaction; directory stretch stays in Resize. Do
-not invent a fourth Skill. After Resize is accepted, run the Pack delivery
-step (`docs/pack-skill.md`, `node scripts/pack-demo.mjs --demo <dir>`): whole
-served folder ≤ 15MB. Pack is not a restore axis and must not run before
-static / Translation / Interaction / Resize acceptance.
+`yisewebui` is a stop-layer workflow. Axis order is Main static → Translation
+→ Interaction → Resize, but humans see **two** review stops, not four:
+
+1. After Main static (and Translation **only if a copy table is present**):
+   `preview:first` must be green, then open `?product=1` and stop. That is
+   the first human review stop, not confirmed-final delivery
+   (`userPreviewAllowed` stays false; `humanStopPreviewAllowed` is true).
+   Tell the user this axis is done. Do not start Interaction / Resize until
+   they say continue. No copy table → Translation stays `not-claimed`. zh-CN
+   font load is not a translation pass.
+2. After Interaction and Resize: open `?product=1` again and stop. Tell the
+   user this axis is done. Do not Pack until they say continue.
+
+Do not open or present the page while `preview:first` is red. Do not open
+the next human stop until the previous one is accepted. Later axes must not
+mutate accepted static geometry, assets, or zh-CN copy. Directory static
+stays in Main; directory click/scrollspy stays in Interaction; directory
+stretch stays in Resize. Do not invent a fourth Skill. After the second
+human stop is accepted, run the Pack delivery step (`docs/pack-skill.md`,
+`node scripts/pack-demo.mjs --demo <dir>`): whole served folder ≤ 15MB.
+Pack is not a restore axis.
 
 The default workflow is the **Main Skill**: extract Figma truth, structure
 content/geometry/components/states/interactions, record official behavior

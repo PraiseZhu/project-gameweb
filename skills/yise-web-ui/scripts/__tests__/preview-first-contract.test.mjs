@@ -1,13 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { explainMeaningfulContract, candidateCompletion, decodeJsonBytes, productViewUrl } from '../preview-first.mjs';
+import { explainMeaningfulContract, candidateCompletion, decodeJsonBytes, productViewUrl, externalTruthFileProtocolFailure, EXTERNAL_TRUTH_FILE_FAILURE } from '../preview-first.mjs';
+import { parsePreviewJson } from '../figma-html-from-handoff.mjs';
 import { validateSpec } from '../lib/schema.mjs';
 import { qaTruthIsExternal } from '../lib/html-volume.mjs';
 import { createSafeStaticServer } from '../lib/safe-server.mjs';
+
+const PREVIEW = fileURLToPath(new URL('../preview-first.mjs', import.meta.url));
+const SKILL_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
 test('preview-first decodes UTF-8, UTF-16LE, and UTF-16BE BOM JSON', () => {
   const value = { platform: 'mobile', label: '伊瑟' };
@@ -62,6 +67,12 @@ test('preview-first candidate output always uses a durable file:// product URL',
   assert.match(output.productView.url, /^file:/);
   assert.match(output.productView.url, /product=1/);
   assert.doesNotMatch(output.productView.url, /^http:/);
+  assert.equal(output.humanReview.presentPage, true);
+  assert.equal(output.humanReview.id, 'static-and-translation');
+  assert.equal(output.userPreviewAllowed, false);
+  assert.equal(output.humanStopPreviewAllowed, true);
+  assert.equal(output.previewDisposition, 'human-review-stop');
+  assert.ok(output.unclaimedCapabilities.includes('independentTranslation'));
 });
 
 test('ephemeral HTTP check URL dies after the server closes; file:// product URL remains', async () => {
@@ -128,4 +139,41 @@ test('figma-showcase schema accepts mobile only when workflow or figma sourcePla
 
   assert.ok(validateSpec(base).some((problem) => /mobile/.test(problem)));
   assert.deepEqual(validateSpec({ ...base, figma: { sourcePlatforms: ['mobile'] } }), []);
+});
+
+test('preview-first HTTP check is required for external truth; file:// is a contract failure without a browser', () => {
+  assert.equal(externalTruthFileProtocolFailure('file', true), EXTERNAL_TRUTH_FILE_FAILURE);
+  assert.equal(externalTruthFileProtocolFailure('http', true), null);
+  assert.equal(externalTruthFileProtocolFailure('file', false), null);
+  assert.equal(externalTruthFileProtocolFailure('http', false), null);
+});
+
+test('preview-first rejects file:// external truth before launching a browser', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'preview-file-external-'));
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] },
+  }));
+  writeFileSync(join(dir, 'truth.json'), JSON.stringify({ ok: true }));
+  writeFileSync(join(dir, 'index.html'), [
+    '<html><head></head><body>',
+    '<script id="qa-truth" type="application/json" data-src="truth.json" data-html-volume="external"></script>',
+    '<script id="qa-devices" type="application/json">{}</script>',
+    '<!-- FIGMA_RENDER_BEGIN -->',
+    '<script>window.__figmaRender.renderApp = function () {};</script>',
+    '<!-- FIGMA_RENDER_END -->',
+    '<!-- FIGMA_CHROME_BEGIN --><script></script><!-- FIGMA_CHROME_END -->',
+    '</body></html>',
+  ].join('\n'));
+  const res = spawnSync(process.execPath, [PREVIEW, '--demo', dir, '--protocol', 'file'], {
+    cwd: SKILL_ROOT,
+    encoding: 'utf8',
+    env: process.env,
+    timeout: 15000,
+  });
+  assert.equal(res.status, 2, res.stderr || res.stdout);
+  const out = parsePreviewJson(res.stdout) || parsePreviewJson(res.stderr);
+  assert.equal(out?.ok, false, res.stderr || res.stdout);
+  assert.equal(out.protocol, 'file');
+  assert.equal(out.externalTruth, true);
+  assert.deepEqual(out.contractFailures, [EXTERNAL_TRUTH_FILE_FAILURE]);
 });

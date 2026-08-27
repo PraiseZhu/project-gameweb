@@ -3,7 +3,7 @@ import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchChromium } from './lib/resolve-playwright.mjs';
-import { sourcePlatformEvidence, unclaimedCapabilitiesFor } from './lib/workflows.mjs';
+import { sourcePlatformEvidence, unclaimedCapabilitiesFor, humanReviewStopAfterPreviewFirst } from './lib/workflows.mjs';
 import { internalCandidatePreview } from './lib/final-preview-gate.mjs';
 import { createSafeStaticServer } from './lib/safe-server.mjs';
 import { qaTruthIsExternal } from './lib/html-volume.mjs';
@@ -165,11 +165,16 @@ function collectPreviewMetrics(thresholds) {
   };
 }
 
+export const EXTERNAL_TRUTH_FILE_FAILURE = 'external truth data-src cannot be read over file://; serve over HTTP';
+
+export function externalTruthFileProtocolFailure(protocol, externalTruth) {
+  return externalTruth && protocol === 'file' ? EXTERNAL_TRUTH_FILE_FAILURE : null;
+}
+
 function previewPayload({ demoDir, screenshot, result, session, spec, truth, indexPath, externalTruth }) {
   const contractFailures = explainMeaningfulContract(result, session.pageErrors);
-  if (!session.useHttp && externalTruth) {
-    contractFailures.push('external truth data-src cannot be read over file://; serve over HTTP');
-  }
+  const fileFailure = externalTruthFileProtocolFailure(session.useHttp ? 'http' : 'file', externalTruth);
+  if (fileFailure) contractFailures.push(fileFailure);
   const ok = contractFailures.length === 0;
   return {
     ok,
@@ -182,7 +187,7 @@ function previewPayload({ demoDir, screenshot, result, session, spec, truth, ind
     checkUrl: session.url,
     externalTruth,
     ...candidateCompletion({ ok, spec, truth, indexPath }),
-    nextHumanStep: ok ? 'Internal candidate evidence recorded. Do not open or present this product view to the user; run the final preview gate after static acceptance and final evidence.' : null,
+    nextHumanStep: humanReviewStopAfterPreviewFirst({ spec, truth, previewOk: ok }).nextHumanStep,
   };
 }
 
@@ -198,8 +203,9 @@ function candidateCompletion({ ok, spec, truth, indexPath }) {
     evidenceLevel: ok ? 'candidate' : 'none',
     sourcePlatformEvidence: evidence,
     productView,
-    ...internalCandidatePreview(productView),
+    ...internalCandidatePreview(productView, { presentPage: ok }),
     unclaimedCapabilities: unclaimedCapabilitiesFor(spec, truth),
+    humanReview: humanReviewStopAfterPreviewFirst({ spec, truth, previewOk: ok }),
   };
 }
 
@@ -222,12 +228,14 @@ async function openPreviewSession({ demoDir, indexPath, protocol, externalTruth 
   await page.goto(url, { waitUntil: 'load' });
   if (externalTruth) {
     try {
-      await page.waitForFunction(() => document.querySelectorAll('[data-node], [data-node-id]').length > 0, { timeout: 8000 });
+      await page.waitForFunction(() => document.querySelectorAll('[data-node], [data-node-id]').length > 0, {
+        timeout: useHttp ? 20000 : 8000,
+      });
     } catch {
       /* missing nodes stay a contract failure; do not skip preview-first */
     }
   }
-  await page.waitForTimeout(250);
+  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
   return { browser, page, server, url, pageErrors, useHttp };
 }
 
@@ -247,6 +255,23 @@ async function runPreviewFirst({ demoDir, outDir, protocol = 'http' }) {
   const externalTruth = qaTruthIsExternal(html);
   mkdirSync(outDir, { recursive: true });
 
+  const writePayload = (payload, code) => {
+    writeFileSync(join(outDir, 'preview-first.json'), JSON.stringify(payload, null, 2));
+    console.log(JSON.stringify(payload, null, 2));
+    process.exit(code);
+  };
+
+  const fileFailure = externalTruthFileProtocolFailure(protocol, externalTruth);
+  if (fileFailure) {
+    writePayload({
+      ok: false,
+      protocol,
+      externalTruth: true,
+      contractFailures: [fileFailure],
+      ...candidateCompletion({ ok: false, spec, truth, indexPath }),
+    }, 2);
+  }
+
   let browser;
   let server;
   try {
@@ -259,10 +284,8 @@ async function runPreviewFirst({ demoDir, outDir, protocol = 'http' }) {
     await browser.close();
     browser = null;
     const payload = previewPayload({ demoDir, screenshot, result, session, spec, truth, indexPath, externalTruth });
-    writeFileSync(join(outDir, 'preview-first.json'), JSON.stringify(payload, null, 2));
-    console.log(JSON.stringify(payload, null, 2));
     await closeQuietly(server);
-    process.exit(payload.ok ? 0 : 2);
+    writePayload(payload, payload.ok ? 0 : 2);
   } catch (err) {
     await closeQuietly(browser);
     await closeQuietly(server);

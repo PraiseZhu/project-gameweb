@@ -1688,59 +1688,60 @@
     return isFinite(ratio) && ratio > 0 ? ratio : 1;
   }
 
-  function directChildByNodeId(root, nodeId) {
-    if (!root || !nodeId) return null;
-    try {
-      for (var child = root.firstElementChild; child; child = child.nextElementSibling) {
-        if (child.getAttribute && (child.getAttribute('data-node') === nodeId || child.getAttribute('data-node-id') === nodeId)) return child;
-      }
-    } catch (e) { /* ignore */ }
+  function layerNameOf(el) {
+    if (!el || !el.getAttribute) return '';
+    return el.getAttribute('data-name')
+      || el.getAttribute('data-figma-name')
+      || el.getAttribute('data-btn-name')
+      || el.getAttribute('aria-label')
+      || '';
+  }
+
+  function firstDirectChildByName(root, pattern) {
+    if (!root || !pattern) return null;
+    var children = root.children || [];
+    for (var i = 0; i < children.length; i++) {
+      if (pattern.test(layerNameOf(children[i]))) return children[i];
+    }
     return null;
+  }
+
+  function firstDescendantByName(root, pattern) {
+    if (!root || !pattern) return null;
+    var nodes = root.querySelectorAll
+      ? root.querySelectorAll('[data-name], [data-figma-name], [data-btn-name], [aria-label]')
+      : [];
+    for (var i = 0; i < nodes.length; i++) {
+      if (pattern.test(layerNameOf(nodes[i]))) return nodes[i];
+    }
+    return firstDirectChildByName(root, pattern);
+  }
+
+  function stretchNamedChild(el, yScale, kind) {
+    if (!el) return null;
+    saveHeroEntryStyle(el);
+    var box = savedBox(el);
+    if (!(box.height > 0)) return null;
+    applyHeroEntryBox(el, box.left, box.top, box.width, box.height * yScale, kind);
+    return box;
   }
 
   function syncContinuousNavRailOwner(root, sourceScaleY) {
     if (!root) return null;
-    var railOwner = directChildByNodeId(root, 'I52:3263;17:53006');
-    if (!railOwner) {
-      var children = root.children || [];
-      for (var i = 0; i < children.length; i++) {
-        var name = (children[i].getAttribute && (children[i].getAttribute('data-figma-name') || children[i].getAttribute('data-name') || children[i].getAttribute('aria-label'))) || '';
-        if (/导航背景|nav|rail/i.test(name)) {
-          railOwner = children[i];
-          break;
-        }
-      }
-    }
+    var railOwner = firstDirectChildByName(root, /导航背景|nav.*(?:bg|background)|rail/i)
+      || firstDescendantByName(root, /导航背景|nav.*(?:bg|background)|rail/i);
     if (!railOwner) return null;
-
-    saveHeroEntryStyle(railOwner);
-    var sourceBoxWidth = 307;
-    var sourceBoxHeight = 1666;
-    var renderBoxWidth = 727;
-    var renderBoxHeight = 2376;
-    var renderOffsetX = -22.5;
-    var sourceLineTop = 310;
-    var sourceLineBottom = 1976;
-    var sourceLineCoverage = sourceLineBottom - sourceLineTop;
     if (!isFinite(sourceScaleY) || sourceScaleY <= 0) sourceScaleY = 1;
-    railOwner.style.position = 'absolute';
-    railOwner.style.left = '0px';
-    railOwner.style.top = '0px';
-    railOwner.style.width = sourceBoxWidth + 'px';
-    railOwner.style.height = (sourceBoxHeight * sourceScaleY) + 'px';
+    saveHeroEntryStyle(railOwner);
+    var source = savedBox(railOwner);
+    if (!(source.height > 0)) return null;
+    applyHeroEntryBox(railOwner, source.left, source.top, source.width, source.height * sourceScaleY, 'rail-owner');
     railOwner.style.overflow = 'visible';
     railOwner.style.transformOrigin = '0px 0px';
     railOwner.setAttribute('data-fixed-viewport-rail', 'true');
-    railOwner.setAttribute('data-hero-entry-nav-transform', 'true');
-    railOwner.setAttribute('data-hero-entry-nav-kind', 'rail-owner');
-    railOwner.setAttribute('data-figma-source-node-id', 'I52:3263;17:53006');
     railOwner.setAttribute('data-figma-source-owner', 'fix-left-navigation-background');
-    railOwner.setAttribute('data-figma-rail-source-width', String(sourceBoxWidth));
-    railOwner.setAttribute('data-figma-rail-source-height', String(sourceBoxHeight));
-    railOwner.setAttribute('data-figma-rail-render-width', String(renderBoxWidth));
-    railOwner.setAttribute('data-figma-rail-render-height', String(renderBoxHeight));
-    railOwner.setAttribute('data-figma-rail-render-offset-x', String(renderOffsetX));
-    railOwner.setAttribute('data-figma-rail-render-offset-y', String(-sourceLineTop));
+    railOwner.setAttribute('data-figma-rail-source-width', String(source.width));
+    railOwner.setAttribute('data-figma-rail-source-height', String(source.height));
     railOwner.setAttribute('data-figma-rail-source-scale-y', sourceScaleY.toFixed(6));
 
     var bakedAsset = null;
@@ -1751,193 +1752,139 @@
     }
     if (bakedAsset) {
       saveHeroEntryStyle(bakedAsset);
-      bakedAsset.style.position = 'absolute';
-      bakedAsset.style.left = renderOffsetX + 'px';
-      bakedAsset.style.top = (-sourceLineTop * sourceScaleY) + 'px';
-      bakedAsset.style.width = renderBoxWidth + 'px';
-      bakedAsset.style.height = (renderBoxHeight * sourceScaleY) + 'px';
+      var asset = savedBox(bakedAsset);
+      applyHeroEntryBox(
+        bakedAsset,
+        asset.left,
+        asset.top * sourceScaleY,
+        asset.width,
+        (asset.height > 0 ? asset.height : source.height) * sourceScaleY,
+        'rail-owner-asset',
+      );
       bakedAsset.style.objectFit = 'fill';
       bakedAsset.style.pointerEvents = 'none';
-      bakedAsset.setAttribute('data-hero-entry-nav-transform', 'true');
-      bakedAsset.setAttribute('data-hero-entry-nav-kind', 'rail-owner-asset');
-      bakedAsset.setAttribute('data-figma-source-node-id', 'I52:3263;17:53006');
       bakedAsset.setAttribute('data-figma-rail-source-scale-y', sourceScaleY.toFixed(6));
     }
 
-    var bg = directChildByNodeId(railOwner, 'I52:3263;17:53003');
-    if (bg) {
-      saveHeroEntryStyle(bg);
-      bg.style.position = 'absolute';
-      bg.style.left = '0px';
-      bg.style.top = '0px';
-      bg.style.width = sourceBoxWidth + 'px';
-      bg.style.height = (sourceBoxHeight * sourceScaleY) + 'px';
-      bg.style.objectFit = 'fill';
-      bg.setAttribute('data-hero-entry-nav-transform', 'true');
-      bg.setAttribute('data-hero-entry-nav-kind', 'rail-gradient');
-    }
+    var bg = firstDirectChildByName(railOwner, /导航背景|gradient|rail.*bg/i);
+    if (bg && bg !== railOwner) stretchNamedChild(bg, sourceScaleY, 'rail-gradient');
 
-    var lineA = directChildByNodeId(railOwner, 'I52:3263;12:47246');
-    var lineB = directChildByNodeId(railOwner, 'I52:3263;12:47247');
-    if (lineA) {
-      saveHeroEntryStyle(lineA);
-      lineA.style.position = 'absolute';
-      lineA.style.left = '22px';
-      lineA.style.top = '0px';
-      lineA.style.width = '43px';
-      lineA.style.height = (844 * sourceScaleY) + 'px';
-      lineA.setAttribute('data-hero-entry-nav-transform', 'true');
-      lineA.setAttribute('data-hero-entry-nav-kind', 'rail-line-source');
-      lineA.setAttribute('data-figma-source-node-id', 'I52:3263;12:47246');
+    var namedLines = [];
+    var railKids = railOwner.children || [];
+    for (var li = 0; li < railKids.length; li++) {
+      if (/导航长线|nav.*line|rail.*line/i.test(layerNameOf(railKids[li]))) namedLines.push(railKids[li]);
     }
-    if (lineB) {
-      saveHeroEntryStyle(lineB);
-      lineB.style.position = 'absolute';
-      lineB.style.left = '22px';
-      lineB.style.top = (684 * sourceScaleY) + 'px';
-      lineB.style.width = '43px';
-      lineB.style.height = (982 * sourceScaleY) + 'px';
-      lineB.setAttribute('data-hero-entry-nav-transform', 'true');
-      lineB.setAttribute('data-hero-entry-nav-kind', 'rail-line-source');
-      lineB.setAttribute('data-figma-source-node-id', 'I52:3263;12:47247');
+    for (var lineIndex = 0; lineIndex < namedLines.length; lineIndex++) {
+      stretchNamedChild(namedLines[lineIndex], sourceScaleY, 'rail-line-source');
     }
-    railOwner.setAttribute('data-figma-rail-source-top', String(sourceLineTop));
-    railOwner.setAttribute('data-figma-rail-source-bottom', String(sourceLineBottom));
-    railOwner.setAttribute('data-figma-rail-source-coverage', String(sourceLineCoverage));
-    railOwner.setAttribute('data-figma-rail-visible-coverage', (sourceLineCoverage * sourceScaleY).toFixed(3));
+    railOwner.setAttribute('data-figma-rail-source-top', String(source.top));
+    railOwner.setAttribute('data-figma-rail-source-coverage', String(source.height));
+    railOwner.setAttribute('data-figma-rail-visible-coverage', (source.height * sourceScaleY).toFixed(3));
     return railOwner;
+  }
+
+  function sourcePx(value, fallback) {
+    var n = parseFloat(value);
+    return isFinite(n) ? n : fallback;
+  }
+
+  function savedBox(el) {
+    var saved = el && el.__fxHeroEntryStyleBase;
+    return {
+      left: sourcePx(saved && saved.left, el.offsetLeft),
+      top: sourcePx(saved && saved.top, el.offsetTop),
+      width: sourcePx(saved && saved.width, el.offsetWidth),
+      height: sourcePx(saved && saved.height, el.offsetHeight),
+    };
+  }
+
+  function syncSourceNavRail(root, stageZoom, viewportH) {
+    if (!root) return false;
+    saveHeroEntryStyle(root);
+    var source = savedBox(root);
+    if (!(source.height > 0) || !(viewportH > 0) || !(stageZoom > 0)) return false;
+    var items = root.querySelectorAll('[data-nav-item]');
+    var railOwner = firstDirectChildByName(root, /导航背景|nav.*(?:bg|background)|rail/i)
+      || firstDescendantByName(root, /导航背景|nav.*(?:bg|background)|rail/i);
+    /* Buttons without the named rail are not a stretch success. Keep the
+       Figma rest geometry instead of reporting a finished directory. */
+    if (!railOwner) return false;
+    var designViewportH = viewportH / stageZoom;
+    var available = Math.max(source.height, designViewportH - source.top);
+    var yScale = available / source.height;
+    if (!isFinite(yScale) || yScale <= 0) yScale = 1;
+    applyHeroEntryBox(root, source.left, source.top, source.width, source.height * yScale, 'source-root');
+    root.style.minHeight = root.style.height;
+    root.style.overflow = 'visible';
+    root.setAttribute('data-hero-entry-nav-y-scale', yScale.toFixed(4));
+    root.setAttribute('data-nav-stretch-plane', 'viewport-height');
+
+    if (railOwner) syncContinuousNavRailOwner(root, yScale);
+
+    if (!items.length) return !!(railOwner && railOwner.getAttribute('data-fixed-viewport-rail') === 'true');
+    var firstTop = savedBox(items[0]).top;
+    var last = savedBox(items[items.length - 1]);
+    var sourceSpan = Math.max(1, (last.top + last.height) - firstTop);
+    var targetSpan = Math.max(sourceSpan, source.height * yScale - firstTop);
+    var itemScaleY = targetSpan / sourceSpan;
+    if (!isFinite(itemScaleY) || itemScaleY <= 0) itemScaleY = yScale;
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var box = savedBox(item);
+      applyHeroEntryBox(item, box.left, firstTop + (box.top - firstTop) * itemScaleY, box.width, box.height, 'source-item');
+    }
+    var rail = firstDescendantByName(root, /导航长线|nav.*line|rail.*line/i);
+    if (rail) {
+      var railBox = savedBox(rail);
+      applyHeroEntryBox(rail, railBox.left, railBox.top, railBox.width, railBox.height * itemScaleY, 'source-rail');
+    }
+    var buttonFrame = firstDirectChildByName(root, /导航按钮|nav.*(?:button|item)|btn\/导航/);
+    if (buttonFrame) {
+      var buttonBox = savedBox(buttonFrame);
+      applyHeroEntryBox(buttonFrame, buttonBox.left, buttonBox.top, buttonBox.width, buttonBox.height * yScale, 'button-frame');
+      buttonFrame.style.overflow = 'visible';
+    }
+    return true;
+  }
+
+  function collectDirectoryRoots() {
+    var roots = [];
+    var nodes = frame.querySelectorAll('[data-motion-role="navigationFooter"], [data-nav-shell="true"]');
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var nested = false;
+      for (var r = 0; r < roots.length; r++) {
+        if (roots[r].contains(node)) { nested = true; break; }
+      }
+      if (nested) continue;
+      for (var drop = roots.length - 1; drop >= 0; drop--) {
+        if (node.contains(roots[drop])) roots.splice(drop, 1);
+      }
+      roots.push(node);
+    }
+    return roots;
+  }
+
+  function stageZoomOf(el) {
+    var stage = el && el.closest && el.closest('.fx-stage, .fx-fixed-overlays');
+    var zoom = parseZoomValue(stage && stage.style ? stage.style.zoom : null);
+    return isFinite(zoom) && zoom > 0 ? zoom : 1;
   }
 
   function syncHeroEntryNavigation(vp, heroBaseHeight) {
     try {
       var viewportH = Number(vp && vp.h) || frame.clientHeight || 0;
       if (!(viewportH > 0)) return;
-      var baseH = heroGateNumber(heroBaseHeight, 2160);
-      if (!(baseH > 0)) baseH = 2160;
-      var yScale = Math.min(1, viewportH / baseH);
+      void heroBaseHeight;
       var stages = frame.querySelectorAll('.fx-fixed-overlays');
-      for (var s = 0; s < stages.length; s++) {
-        var stage = stages[s];
-        var stageZoom = parseZoomValue(stage.style ? stage.style.zoom : null);
-        if (!isFinite(stageZoom) || stageZoom <= 0) stageZoom = 1;
-        syncHeroEntryBrand(stage);
-        var navRoots = stage.querySelectorAll('[data-motion-role="navigationFooter"]');
-        for (var r = 0; r < navRoots.length; r++) {
-          var root = navRoots[r];
-          saveHeroEntryStyle(root);
-          var rootLeftSource = 20;
-          var rootTopSource = 310;
-          var rootWidthSource = 627;
-          var rootHeightSource = 1666;
-          var buttonTopSource = 27;
-          var buttonHeightSource = 1564;
-          var sourceScaleY = stageZoom > 0 ? (yScale / stageZoom) : 1;
-          if (!isFinite(sourceScaleY) || sourceScaleY <= 0) sourceScaleY = 1;
-          root.style.position = 'absolute';
-          root.style.left = rootLeftSource + 'px';
-          root.style.top = ((rootTopSource * yScale) / stageZoom) + 'px';
-          root.style.width = rootWidthSource + 'px';
-          root.style.height = (rootHeightSource * sourceScaleY) + 'px';
-          root.style.minHeight = root.style.height;
-          root.style.overflow = 'visible';
-          if (_suppressResizeChromeAnimation) {
-            root.style.animation = 'none';
-          }
-          root.setAttribute('data-hero-entry-nav-transform', 'true');
-          root.setAttribute('data-hero-entry-nav-kind', 'root');
-          root.setAttribute('data-hero-entry-nav-y-scale', yScale.toFixed(4));
-
-          syncContinuousNavRailOwner(root, sourceScaleY);
-
-          var buttonFrame = directChildByNodeId(root, 'I52:3263;12:47248');
-          if (buttonFrame) {
-            saveHeroEntryStyle(buttonFrame);
-            buttonFrame.style.position = 'absolute';
-            buttonFrame.style.left = '0px';
-            buttonFrame.style.top = (buttonTopSource * sourceScaleY) + 'px';
-            buttonFrame.style.width = rootWidthSource + 'px';
-            buttonFrame.style.height = (buttonHeightSource * sourceScaleY) + 'px';
-            buttonFrame.style.display = 'block';
-            buttonFrame.style.overflow = 'visible';
-            buttonFrame.setAttribute('data-hero-entry-nav-transform', 'true');
-            buttonFrame.setAttribute('data-hero-entry-nav-kind', 'button-frame');
-          }
-
-          var items = root.querySelectorAll('[data-nav-item]');
-          var count = Math.max(1, items.length);
-          var activeIndex = syncFrameNavActive(root, items);
-          var usesBtnNavSet = false;
-          for (var bi = 0; bi < items.length; bi++) {
-            if (items[bi].getAttribute('data-btn-variant') === 'true'
-              || items[bi].getAttribute('data-nav-variant-visual') === 'btn-component-set') {
-              usesBtnNavSet = true;
-              break;
-            }
-          }
-          if (usesBtnNavSet) continue;
-          var sourceRowH = 224;
-          var sourceCadence = 134;
-          var sourceLabelX = 95;
-          var sourceActiveLabelY = 92;
-          var sourceNormalLabelY = 93;
-          var sourceStarX = 29;
-          var sourceStarY = 108;
-          var sourceStarSize = 26;
-          var cadence = sourceCadence * sourceScaleY;
-          for (var i = 0; i < items.length; i++) {
-            var item = items[i];
-            saveHeroEntryStyle(item);
-            item.style.position = 'absolute';
-            item.style.left = '0px';
-            item.style.top = (sourceCadence * i * sourceScaleY) + 'px';
-            item.style.width = rootWidthSource + 'px';
-            item.style.height = (sourceRowH * sourceScaleY) + 'px';
-            item.style.scale = '1';
-            item.style.transition = 'none';
-            item.setAttribute('data-hero-entry-nav-transform', 'true');
-            item.setAttribute('data-hero-entry-nav-kind', 'item');
-            item.setAttribute('data-hero-entry-nav-cadence', cadence.toFixed(3));
-            item.setAttribute('data-hero-entry-nav-distribution', 'figma-source');
-            var mediaNodes = item.querySelectorAll('img,canvas,video,.fx-img');
-            for (var im = 0; im < mediaNodes.length; im++) {
-              var media = mediaNodes[im];
-              var mediaHidden = media.hidden
-                || (media.closest && media.closest('[hidden], [aria-hidden="true"]') && media.closest('[hidden], [aria-hidden="true"]') !== frame);
-              if (mediaHidden) continue;
-              var mediaParent = media.parentElement && media.parentElement !== item ? media.parentElement : null;
-              if (isActiveNavArtwork(mediaParent || media, media)) {
-                var activeTop = (activeIndex - i) * sourceCadence * sourceScaleY;
-                var activeW = rootWidthSource;
-                var activeH = sourceRowH * sourceScaleY;
-                applyHeroEntryBox(mediaParent || media, 0, activeTop, activeW, activeH, 'active-item-art');
-                if (mediaParent) applyHeroEntryBox(media, 0, 0, activeW, activeH, 'active-item-art-media');
-                media.style.objectFit = 'fill';
-              } else {
-                var iconRatio = naturalMediaRatio(media, 1);
-                var mediaW = sourceStarSize;
-                var mediaH = mediaW / iconRatio;
-                if (!isFinite(mediaH) || mediaH <= 0) mediaH = sourceStarSize;
-                applyHeroEntryBox(mediaParent || media, sourceStarX, sourceStarY * sourceScaleY, mediaW, mediaH, 'item-ornament-slot');
-                if (mediaParent) applyHeroEntryBox(media, 0, 0, mediaW, mediaH, 'item-ornament-media');
-                media.style.objectFit = 'contain';
-              }
-            }
-            var labels = item.querySelectorAll('.fx-t');
-            for (var t = 0; t < labels.length; t++) {
-              var label = labels[t];
-              var labelHidden = label.hidden
-                || (label.closest && label.closest('[hidden], [aria-hidden="true"]') && label.closest('[hidden], [aria-hidden="true"]') !== frame);
-              if (labelHidden) continue;
-              saveHeroEntryStyle(label);
-              var isActiveRow = i === activeIndex || item.getAttribute('data-nav-variant') === 'active'
-                || item.getAttribute('data-btn-variant-state') === 'highlight';
-              label.style.left = sourceLabelX + 'px';
-              label.style.top = ((isActiveRow ? sourceActiveLabelY : sourceNormalLabelY) * sourceScaleY) + 'px';
-              label.setAttribute('data-hero-entry-nav-transform', 'true');
-              label.setAttribute('data-hero-entry-nav-kind', 'label');
-            }
-          }
-        }
+      for (var s = 0; s < stages.length; s++) syncHeroEntryBrand(stages[s]);
+      var navRoots = collectDirectoryRoots();
+      for (var r = 0; r < navRoots.length; r++) {
+        var root = navRoots[r];
+        var stageZoom = stageZoomOf(root);
+        /* Named rail/items stretch from the source box. Missing names keep the
+           Figma rest geometry; never invent a season's 20/310/627/1666. */
+        syncSourceNavRail(root, stageZoom, viewportH);
       }
     } catch (e) { /* entry nav transform is preview-only */ }
   }

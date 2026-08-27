@@ -4,14 +4,14 @@
  * stays in Main. This module owns the 15MB served-folder budget.
  */
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, realpathSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, realpathSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
 
 export const DEFAULT_PACK_BUDGET_BYTES = 15 * 1024 * 1024;
 export const DEFAULT_PACK_WEBP_QUALITY = 70;
 export const PACK_KEEP_ROOT = new Set([
-  'index.html', 'truth.json', 'assets-manifest.json', 'fonts-manifest.json',
-  'calendar-figma-fallback-manifest.json', 'favicon.ico', 'spec.json',
+  'index.html', 'truth.json', 'fonts-manifest.json',
+  'calendar-figma-fallback-manifest.json', 'favicon.ico',
 ]);
 export const PACK_KEEP_DIRS = new Set(['assets', 'fixtures', 'fonts']);
 export const PACK_FALLBACK_RE = /figma-indicator[-.][\w.-]+\.(?:png|webp)/i;
@@ -22,32 +22,43 @@ export function packRoot(dir) {
   return resolve(dir);
 }
 
-export function withinPackRoot(root, candidate) {
-  const base = packRoot(root);
-  const value = resolve(candidate);
+function realpathish(p) {
+  try { return realpathSync(p); } catch { return resolve(p); }
+}
+
+function pathInside(base, value) {
   return value === base || value.startsWith(`${base}/`) || value.startsWith(`${base}\\`);
+}
+
+export function withinPackRoot(root, candidate) {
+  const lexical = resolve(candidate);
+  // 字面空间先比：demoDir 本身就在包根里的正常情况直接放行，
+  // macOS $TMPDIR(/var→/private/var) 或 Windows 8.3 短名不会在这道被误判。
+  if (pathInside(packRoot(root), lexical)) return true;
+  // 第二道在 real 空间比：包根先 realpath（跟系统软链），再和文件 realpath 比。
+  // 字面比不过但 real 同根 = 系统软链造成的表述差异，不是逃逸；real 也不同根才是真逃逸。
+  return pathInside(realpathish(packRoot(root)), realpathish(lexical));
+}
+
+function packPathFail(root, lexical, message, extra = {}) {
+  return { ok: false, path: lexical, ...extra, error: `${message}: ${relative(root, lexical) || lexical}` };
 }
 
 export function inspectPackPath(root, candidate) {
   const lexical = resolve(candidate);
-  if (!withinPackRoot(root, lexical)) {
-    return { ok: false, path: lexical, error: `path escapes pack root: ${relative(root, lexical) || lexical}` };
-  }
+  if (!withinPackRoot(root, lexical)) return packPathFail(root, lexical, 'path escapes pack root');
   let st;
   try { st = lstatSync(lexical); }
-  catch { return { ok: false, path: lexical, error: `missing path: ${relative(root, lexical) || lexical}` }; }
-  if (st.isSymbolicLink()) {
-    return { ok: false, path: lexical, error: `refusing symlink: ${relative(root, lexical) || lexical}` };
-  }
+  catch { return packPathFail(root, lexical, 'missing path'); }
+  if (st.isSymbolicLink()) return packPathFail(root, lexical, 'refusing symlink');
   let real;
   try { real = realpathSync(lexical); }
-  catch { return { ok: false, path: lexical, error: `unresolvable path: ${relative(root, lexical) || lexical}` }; }
-  if (!withinPackRoot(root, real)) {
-    return { ok: false, path: lexical, real, error: `realpath escapes pack root: ${relative(root, lexical) || lexical}` };
-  }
-  if (real !== lexical) {
-    return { ok: false, path: lexical, real, error: `refusing reparse/junction: ${relative(root, lexical) || lexical}` };
-  }
+  catch { return packPathFail(root, lexical, 'unresolvable path'); }
+  if (!withinPackRoot(root, real)) return packPathFail(root, lexical, 'realpath escapes pack root', { real });
+  // 只拒「包根内部」的分叉：real 必须等于「包根 real + 字面相对路径」。
+  // 系统前缀软链(macOS /var→/private/var)整段偏移不算；根内任何一段被换成软链才算 reparse/junction。
+  const expected = join(realpathish(packRoot(root)), relative(packRoot(root), lexical));
+  if (real !== expected) return packPathFail(root, lexical, 'refusing reparse/junction', { real });
   return { ok: true, path: lexical, real, stat: st };
 }
 
@@ -107,6 +118,26 @@ export function packBudgetOk(demoDir, { budgetBytes = DEFAULT_PACK_BUDGET_BYTES 
   return { ok: bytes <= budgetBytes, bytes, budgetBytes };
 }
 
+function budgetBucket(rel, ext) {
+  if (rel === 'truth.json' || rel.endsWith('/truth.json')) return 'truth';
+  if (ext === '.html' || ext === '.htm') return 'html';
+  if (/(^|\/)fonts\//.test(rel) || ext === '.woff' || ext === '.woff2' || ext === '.ttf' || ext === '.otf') return 'fonts';
+  if (ext === '.webp') return 'webp';
+  if (ext === '.png' || ext === '.jpg' || ext === '.jpeg') return 'png';
+  return 'other';
+}
+
+export function packBudgetBreakdown(demoDir) {
+  const root = packRoot(demoDir);
+  const buckets = { webp: 0, png: 0, truth: 0, fonts: 0, html: 0, other: 0 };
+  if (!existsSync(root)) return { bytes: 0, ...buckets };
+  for (const file of listPackFiles(root)) {
+    const rel = relative(root, file).replace(/\\/g, '/');
+    buckets[budgetBucket(rel, extname(file).toLowerCase())] += lstatSync(file).size;
+  }
+  return { bytes: Object.values(buckets).reduce((sum, value) => sum + value, 0), ...buckets };
+}
+
 function resolveRuntimeReference(root, base, ref) {
   const clean = String(ref || '').trim().replace(/\\/g, '/').split(/[?#]/, 1)[0];
   if (clean.startsWith('/')) return resolve(root, `.${clean}`);
@@ -137,10 +168,17 @@ function qaAssetReferences(text = '') {
   return refs;
 }
 
+function decodeLocalRef(value) {
+  const raw = String(value || '').trim().replace(/\\/g, '/').split(/[?#]/, 1)[0];
+  if (!raw) return '';
+  try { return decodeURIComponent(raw); }
+  catch { return raw; }
+}
+
 function localReferences(text = '') {
   const refs = new Set(qaAssetReferences(text));
   const add = (value) => {
-    const clean = decodeURIComponent(String(value || '').trim().replace(/\\/g, '/').split(/[?#]/, 1)[0]);
+    const clean = decodeLocalRef(value);
     if (!clean || isExternalReference(clean)) return;
     refs.add(clean);
   };
@@ -159,10 +197,11 @@ function localReferences(text = '') {
   return [...refs];
 }
 
-export function missingRuntimeReferences(demoDir, html = '') {
+function collectRuntimeReferenceState(demoDir, html = '') {
   const root = packRoot(demoDir);
   const queue = [{ base: root, text: String(html) }];
   const seenFiles = new Set();
+  const present = new Set();
   const missing = new Set();
   while (queue.length) {
     const { base, text } = queue.shift();
@@ -173,13 +212,18 @@ export function missingRuntimeReferences(demoDir, html = '') {
       const ext = extname(inspected.path).toLowerCase();
       if (!RUNTIME_EXTS.has(ext)) continue;
       if (!inspected.stat.isFile()) { missing.add(ref); continue; }
+      present.add(inspected.path);
       if (TEXT_EXTS.has(ext) && !seenFiles.has(inspected.path)) {
         seenFiles.add(inspected.path);
         queue.push({ base: dirname(inspected.path), text: readFileSync(inspected.path, 'utf8') });
       }
     }
   }
-  return [...missing];
+  return { present, missing: [...missing] };
+}
+
+export function missingRuntimeReferences(demoDir, html = '') {
+  return collectRuntimeReferenceState(demoDir, html).missing;
 }
 
 export function packRuntimeReferencesOk(demoDir, html = '') {
@@ -187,10 +231,62 @@ export function packRuntimeReferencesOk(demoDir, html = '') {
   return { ok: missing.length === 0, missing };
 }
 
+const UNREFERENCED_IMAGE_RE = /\.(?:webp|png|jpe?g|gif|svg)$/i;
+
+function isFallbackKeepPath(rel) {
+  const name = String(rel || '').split('/').pop() || '';
+  return PACK_FALLBACK_RE.test(name) || PACK_FALLBACK_RE.test(rel);
+}
+
+export function collectReferencedRuntimeFiles(demoDir, html = '') {
+  return collectRuntimeReferenceState(demoDir, html).present;
+}
+
+export function removeUnreferencedPackedFiles(demoDir, html = '') {
+  const root = packRoot(demoDir);
+  const referenced = collectReferencedRuntimeFiles(root, html);
+  const removed = [];
+  for (const file of listPackFiles(root)) {
+    const rel = relative(root, file).replace(/\\/g, '/');
+    const name = rel.split('/').pop() || '';
+    if (PACK_KEEP_ROOT.has(name) || isFallbackKeepPath(rel)) continue;
+    if (!UNREFERENCED_IMAGE_RE.test(rel)) continue;
+    if (referenced.has(file)) continue;
+    assertSafePackPath(root, file);
+    unlinkSync(file);
+    removed.push(rel);
+  }
+  return { ok: true, removed };
+}
+
 function packReferenceFiles(root) {
   return listPackFiles(root).filter((file) => TEXT_EXTS.has(extname(file).toLowerCase()));
 }
 function escapeRegExp(value) { return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+function replacementForVariant(variant, to) {
+  if (variant.startsWith('/')) return `/${to}`;
+  if (variant.startsWith('./')) return `./${to}`;
+  return to;
+}
+
+function rewritePathVariant(text, from, to) {
+  let after = text;
+  for (const variant of [from, `./${from}`, `/${from}`]) {
+    after = after.replace(new RegExp(`(^|["'\\s(])${escapeRegExp(variant)}(?=($|["'\\s),?#])|[?&#])`, 'g'), (match, prefix) => {
+      const full = `${prefix}${variant}`;
+      if (isExternalReference(full)) return full;
+      return `${prefix}${replacementForVariant(variant, to)}`;
+    });
+  }
+  after = after.replace(new RegExp(`(^|["'\\s(])((?:\\.\\./)+)${escapeRegExp(from)}(?=($|["'\\s),?#])|[?&#])`, 'g'), (match, prefix, hops) => `${prefix}${hops}${to}`);
+  const fromBase = from.split('/').pop();
+  const toBase = to.split('/').pop();
+  if (fromBase && toBase && fromBase !== from && fromBase !== toBase) {
+    after = after.replace(new RegExp(`(?<![\\w./-])${escapeRegExp(fromBase)}(?![\\w.-])`, 'g'), toBase);
+  }
+  return after;
+}
 
 /** Rewrite every packed consumer before source files are removed. */
 export function rewritePackedRefs(demoDir, mappings = []) {
@@ -203,24 +299,7 @@ export function rewritePackedRefs(demoDir, mappings = []) {
   for (const file of packReferenceFiles(resolve(demoDir))) {
     const before = readFileSync(file, 'utf8');
     let after = before;
-    for (const { from, to } of normalized) {
-      const fromBase = from.split('/').pop();
-      const toBase = to.split('/').pop();
-      for (const variant of [from, `./${from}`, `/${from}`]) {
-        after = after.replace(new RegExp(`(^|["'\\s(])${escapeRegExp(variant)}(?=($|["'\\s),?#])|[?&#])`, 'g'), (match, prefix) => {
-          const full = `${prefix}${variant}`;
-          if (isExternalReference(full)) return full;
-          // Preserve root-relative semantics when the source was root-relative.
-          const replacement = variant.startsWith('/') ? `/${to}` : variant.startsWith('./') ? `./${to}` : to;
-          return `${prefix}${replacement}`;
-        });
-      }
-      // CSS files commonly consume assets through one or more parent hops.
-      after = after.replace(new RegExp(`(^|["'\\s(])((?:\\.\\./)+)${escapeRegExp(from)}(?=($|["'\\s),?#])|[?&#])`, 'g'), (match, prefix, hops) => `${prefix}${hops}${to}`);
-      if (fromBase && toBase && fromBase !== from && fromBase !== toBase) {
-        after = after.replace(new RegExp(`(?<![\\w./-])${escapeRegExp(fromBase)}(?![\\w.-])`, 'g'), toBase);
-      }
-    }
+    for (const { from, to } of normalized) after = rewritePathVariant(after, from, to);
     if (after !== before) { writeFileSync(file, after); changed.push(file); }
   }
   return { ok: true, changed, mappings: normalized };

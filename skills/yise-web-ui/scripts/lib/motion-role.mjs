@@ -38,8 +38,8 @@ export function deriveMotionRoles(truth = {}) {
         add(roles, node, 'kv-background', 0, 'first-section + kv/background component label');
       } else if (sectionIndex === 0 && /^kv\/(?:foreground|前景|midground|middle|中景|character|角色)$/.test(own)) {
         add(roles, node, 'kv-foreground', 0, 'first-section + kv/depth component label');
-      } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)[-_ ]?logo$/.test(own)) {
-        add(roles, node, 'kvTitle', 0, 'first-section + title-logo component label');
+      } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)(?:-?logo)?$/.test(own)) {
+        add(roles, node, 'kvTitle', 0, 'first-section + title component label');
       } else if (sectionIndex === 0 && /^img\/logo$/.test(own)) {
         add(roles, node, 'kvBrand', 0, 'first-section + brand-logo component label');
       } else if (sectionIndex === 0 && isDirectChildOfAncestor(node, /^btn\/(?:download|\u4e0b\u8f7d)/)) {
@@ -57,6 +57,13 @@ export function deriveMotionRoles(truth = {}) {
         add(roles, node, 'headingContentCard', 1, 'content-card component structure');
       } else if (/^(?:img\/)?(?:scroll(?:-?indicator)?|arrow|下滑箭头)$/.test(own)) {
         add(roles, node, 'scrollIndicator', 0, 'scroll indicator component label');
+      } else if (/^fix\//.test(own)) {
+        /* A directory rail may live in the section tree (`data-nav-shell`)
+           instead of page-fixed overlays. Stretch still follows viewport
+           height; this is the same semantic owner, not a new motion pattern. */
+        add(roles, node, 'navigationFooter', 0, 'in-flow directory/nav component label');
+        const rec = roles.get(idOf(node));
+        if (rec) rec.navigation = true;
       }
     }
   }

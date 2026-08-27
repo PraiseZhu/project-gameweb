@@ -42,8 +42,20 @@ test('accepts a one-child Figma scroll track only when its source geometry overf
     { id: 'track', type: 'FRAME', name: 'content', parentId: 'scroll', box: { x: 0, y: 0, w: 240, h: 40 } },
   ]);
   const attrs = model.attributes.find((entry) => entry.id === 'scroll')?.attrs;
+  const track = model.attributes.find((entry) => entry.id === 'track')?.attrs;
   assert.equal(attrs['data-hscroll'], 'x');
+  assert.equal(track['data-hscroll-overflow-child'], 'true');
   assert.equal(model.unresolved.length, 0);
+});
+
+test('named scroll without clipsContent stays unresolved even if a child overflows', () => {
+  const model = deriveInteractionModel([
+    { id: 'scroll', type: 'FRAME', name: 'scroll/list', clipsContent: false, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'scroll', box: { x: 0, y: 0, w: 240, h: 40 } },
+  ]);
+  assert.equal(model.stats.hscroll, 0);
+  assert.equal(model.attributes.find((entry) => entry.id === 'scroll'), undefined);
+  assert.ok(model.unresolved.some((entry) => entry.id === 'scroll' && /clipsContent/.test(entry.reason)));
 });
 
 test('does not infer hscroll from a clipped container without source overflow', () => {
@@ -53,6 +65,60 @@ test('does not infer hscroll from a clipped container without source overflow', 
   ]);
   assert.equal(model.attributes.length, 0);
   assert.match(model.unresolved[0].reason, /geometry overflow/);
+});
+
+test('mix clip window stays draw-only even when a child overflows', () => {
+  const model = deriveInteractionModel([
+    { id: 'mix', type: 'FRAME', name: 'mix/calendar', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: '可滑动内容', parentId: 'mix', box: { x: 0, y: 0, w: 240, h: 40 } },
+  ]);
+  assert.equal(model.stats.hscroll, 0);
+  assert.equal(model.attributes.find((entry) => entry.id === 'mix'), undefined);
+});
+
+test('non-calendar mix overflow stays inert', () => {
+  const model = deriveInteractionModel([
+    { id: 'mix', type: 'FRAME', name: 'mix/decorative-mask', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'mix', box: { x: 0, y: 0, w: 240, h: 40 } },
+  ]);
+  assert.equal(model.stats.hscroll, 0);
+  assert.equal(model.attributes.find((entry) => entry.id === 'mix'), undefined);
+  assert.equal(model.unresolved.length, 0);
+});
+
+test('named scroll inside a mix clip is the hscroll host', () => {
+  const model = deriveInteractionModel([
+    { id: 'mix', type: 'FRAME', name: 'mix/calendar', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'scroll', type: 'FRAME', name: 'scroll/可滑动内容', parentId: 'mix', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'scroll', box: { x: 0, y: 0, w: 240, h: 40 } },
+  ]);
+  const attrs = model.attributes.find((entry) => entry.id === 'scroll')?.attrs;
+  const mix = model.attributes.find((entry) => entry.id === 'mix')?.attrs;
+  const track = model.attributes.find((entry) => entry.id === 'track')?.attrs;
+  assert.equal(attrs['data-hscroll'], 'x');
+  assert.equal(attrs['data-hscroll-drag'], 'true');
+  assert.equal(mix, undefined);
+  assert.equal(track['data-hscroll-overflow-child'], 'true');
+  assert.equal(model.stats.hscroll, 1);
+  assert.equal(model.unresolved.length, 0);
+});
+
+test('does not infer hscroll from a random clipsContent frame', () => {
+  const model = deriveInteractionModel([
+    { id: 'frame', type: 'FRAME', name: 'Group 1', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'frame', box: { x: 0, y: 0, w: 240, h: 40 } },
+  ]);
+  assert.equal(model.stats.hscroll, 0);
+  assert.equal(model.attributes.find((entry) => entry.id === 'frame'), undefined);
+});
+
+test('mix clip window without overflow stays draw-only', () => {
+  const model = deriveInteractionModel([
+    { id: 'mix', type: 'FRAME', name: 'mix/calendar', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'mix', box: { x: 0, y: 0, w: 80, h: 40 } },
+  ]);
+  assert.equal(model.stats.hscroll, 0);
+  assert.equal(model.attributes.find((entry) => entry.id === 'mix'), undefined);
 });
 
 test('resolves tab/indicator/button siblings to a switch owner', () => {
