@@ -206,7 +206,10 @@ test('figma:preview:first rejects one flat source region over a blank page', { t
   assert.equal(out?.ok, false, res.stderr || res.stdout);
   assert.equal(out.evidenceLevel, 'none');
   assert.ok(out.contractFailures.some((msg) => /meaningful source nodes|single flat source region/.test(msg)), out.contractFailures.join('\n'));
-  assert.match(out.productView.url, /product=1/);
+  /* 红路径不发货：URL 与命令都必须为 null（#66 契约），不能再断言 product=1 链接。 */
+  assert.equal(out.productView.url, null);
+  assert.equal(out.productView.command, null);
+  assert.equal(out.productView.blocked, true);
   assert.ok(existsSync(out.screenshot));
 });
 
