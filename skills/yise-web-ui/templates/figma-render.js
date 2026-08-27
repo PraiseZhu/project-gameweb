@@ -1271,9 +1271,10 @@
       const css = payload && payload.buttonPress && payload.buttonPress.css
         || [
           ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
-          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
-          '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
-          'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
+          '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
+          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
+          '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
+          'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
           '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
         ].join('');
       const style = doc.createElement('style');
@@ -1717,13 +1718,14 @@
         const id = (n) => String(value(n && n.id));
         const parse = (n) => {
           const raw = String(value(n && n.name) || '');
-          const m = /^([A-Za-z]+)\s*\/\s*([^@]*)(.*)$/.exec(raw);
+          const m = /^([A-Za-z]+)\s*[\/／]\s*([^@]*)(.*)$/.exec(raw);
           const role = m ? m[1].toLowerCase() : null;
+          const label = m ? String(m[2] || '').trim() : '';
           const params = {};
           if (m) for (const part of m[3].split('@').slice(1)) {
             const eq = part.indexOf('='); if (eq > 0) params[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
           }
-          return { role, params };
+          return { role, label, params };
         };
         const byId = new Map(items.map((n) => [id(n), n]));
         /* Fixed overlay roots are rendered in the page stage, while their
@@ -1749,17 +1751,41 @@
         };
         const hscrollAxis = (node, parsed) => {
           const namedScroll = parsed.role === 'scroll';
+          const calendarMix = parsed.role === 'mix' && /^(?:calendar|日历)$/i.test(String(parsed.label || ''));
           const clipHost = value(node && node.clipsContent) === true;
-          if (!namedScroll || !clipHost) return null;
+          if ((!namedScroll && !calendarMix) || !clipHost) return null;
           const host = boxXw(node);
           if (!host) return null;
           const overflows = items.some((candidate) => parentId(candidate) === id(node) && childOverflowsHost(candidate, host));
           if (!overflows) return null;
-          /* Named scroll/ is the explicit host only when Figma also clips.
-             A mix/ clip, including a calendar window, stays draw-only even
-             when a child overflows. A random clipsContent frame is not a
-             host either — use the Figma clip box, never the child's full width. */
+          /* Named scroll/ is the explicit host. Calendar mix is the one
+             product window whose overflowing child must translate without
+             turning the mix itself into native overflow-x. A random
+             clipsContent frame is not a host. */
           return parsed.params.axis || 'x';
+        };
+        const calendarNowLabel = (node, parsed) => parsed.role === 'dyn'
+          && /今日日期|today\s*date|current\s*date/i.test(String(parsed.label || ''));
+        const hscrollCommand = (node) => {
+          const label = String(value(node && node.name) || '').toLowerCase();
+          if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) return 'prev';
+          if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) return 'next';
+          return null;
+        };
+        const nearestHscrollId = (node) => {
+          let current = node;
+          for (let guard = 0; guard < 12 && current; guard++) {
+            const pid = parentId(current);
+            if (!pid) break;
+            const parentNode = byId.get(pid);
+            if (!parentNode) break;
+            if (hscrollAxis(parentNode, parse(parentNode))) return pid;
+            current = parentNode;
+          }
+          const pid = parentId(node);
+          if (!pid) return null;
+          const siblings = items.filter((candidate) => parentId(candidate) === pid && hscrollAxis(candidate, parse(candidate)));
+          return siblings.length === 1 ? id(siblings[0]) : null;
         };
         const propertyValues = (raw, out = []) => {
           const v = value(raw);
@@ -1843,7 +1869,7 @@
              only when the closest shared owner path has exactly one switch
              with a complete component-set graph; ties remain inert. */
           const label = String(value(n && n.name) || '').toLowerCase();
-          if (/\b(prev|previous|next|left|right)\b|上一|下一|左划|右划|左滑|右滑|前|后/.test(label)) {
+          if (/\b(prev(?:ious)?|next|left|right)\b|上一|下一|左划|右划|左滑|右滑|左滑动|右滑动/.test(label)) {
             const currentPath = path.map((entry) => String(value(entry)));
             const candidates = items.filter((candidate) => parse(candidate).role === 'switch'
               && componentVariantGraph(candidate)).map((candidate) => {
@@ -2075,7 +2101,7 @@
           let switchId = p.role === 'switch' ? id(n) : ownerSwitch(n);
           if (p.role === 'btn' && switchId) {
             const label = String(value(n && n.name) || '').toLowerCase();
-            const directional = /prev|previous|left|上一|左划|左滑|前|next|right|下一|右划|右滑|后/.test(label);
+            const directional = /\bprev(?:ious)?\b|\bleft\b|\bnext\b|\bright\b|上一|下一|左划|右划|左滑|右滑|左滑动|右滑动/.test(label);
             if (!directional) switchId = null;
           }
           if (switchId) attrs['data-switch'] = switchId;
@@ -2104,11 +2130,26 @@
               attrs['data-motion-carousel'] = 'true';
               attrs['data-motion-carousel-index'] = String(initial.index);
             }
+            attrs['data-switch-loop'] = 'true';
           }
           if (switchId && p.role === 'btn') {
             const label = String(value(n && n.name) || '').toLowerCase();
-            if (/prev|previous|left|上一|左划|左滑|前/.test(label)) attrs['data-switch-action'] = 'prev';
-            else if (/next|right|下一|右划|右滑|后/.test(label)) attrs['data-switch-action'] = 'next';
+            if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) attrs['data-switch-action'] = 'prev';
+            else if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) attrs['data-switch-action'] = 'next';
+          }
+          if (p.role === 'btn' && !attrs['data-switch-action']) {
+            const command = hscrollCommand(n);
+            const hostId = command ? nearestHscrollId(n) : null;
+            if (command && hostId) {
+              attrs['data-hscroll-host'] = hostId;
+              attrs['data-hscroll-action'] = command;
+            }
+          }
+          if (calendarNowLabel(n, p)) {
+            attrs['data-calendar-now'] = 'true';
+            attrs['data-calendar-now-state'] = 'today';
+            attrs['data-calendar-now-evidence'] = 'dyn-today-date-runtime-swap';
+            attrs['data-btn-press'] = 'inert';
           }
           /* Independent btn/ with a real normal+highlight COMPONENT_SET is not a
              missing switch. Directory `btn/导航状态` is that family. Static still
@@ -2295,12 +2336,16 @@
           const pressable = p.role === 'btn' || p.role === 'tab' || p.role === 'ind' || p.role === 'hot'
             || attrs['data-sec-target'] != null
             || attrs['data-switch-action'] != null
+            || attrs['data-hscroll-action'] != null
             || attrs['data-copy-code'] != null
             || attrs['data-nav-item'] === 'true'
-            || attrs['data-btn-variant'] === 'true';
+            || attrs['data-btn-variant'] === 'true'
+            || attrs['data-calendar-now-state'] === 'return-today';
           const disabledPress = indicatorVariant(n) === 'disabled'
             || /disable/i.test(String(attrs['data-btn-variant-state'] || ''));
-          if (pressable && disabledPress) {
+          if (attrs['data-calendar-now'] === 'true' && attrs['data-calendar-now-state'] !== 'return-today') {
+            attrs['data-btn-press'] = 'inert';
+          } else if (pressable && disabledPress) {
             attrs['data-btn-press'] = 'inert';
             attrs['aria-disabled'] = 'true';
           } else if (pressable) {
@@ -2308,8 +2353,9 @@
             attrs.role = attrs.role || 'button';
             attrs.tabindex = attrs.tabindex || '0';
             if (p.role === 'btn' && !attrs['data-link'] && !attrs['data-go'] && !attrs['data-sec-target']
-              && !attrs['data-switch-action'] && !attrs['data-copy-code'] && !attrs['data-btn-variant']
-              && !attrs['data-nav-item'] && !attrs['data-tab']) {
+              && !attrs['data-switch-action'] && !attrs['data-hscroll-action'] && !attrs['data-copy-code']
+              && !attrs['data-btn-variant'] && !attrs['data-nav-item'] && !attrs['data-tab']
+              && attrs['data-calendar-now-state'] !== 'return-today') {
               attrs['data-btn-action'] = 'unresolved';
             }
           }
@@ -2717,6 +2763,8 @@
           || evidenceAttrs['data-switch-action'] != null
           || evidenceAttrs['data-hscroll'] != null
           || evidenceAttrs['data-hscroll-overflow-child'] === 'true'
+          || evidenceAttrs['data-hscroll-action'] != null
+          || evidenceAttrs['data-calendar-now'] != null
           || evidenceAttrs['data-sec-target'] != null
           || evidenceAttrs['data-copy-code'] != null
           || evidenceAttrs['data-nav-item'] === 'true'
@@ -3321,6 +3369,9 @@
           el.style.overflowX = 'hidden';
           el.style.overflowY = 'hidden';
           el.style.touchAction = 'pan-x';
+          el.style.userSelect = 'none';
+          el.style.webkitUserSelect = 'none';
+          el.style.webkitTouchCallout = 'none';
           /* Absorb source-proven cross-axis shadow bleed into the host's own
              padding box, so overflow:hidden clips at the shadow's true outer
              edge instead of at the content bounds. Main-axis scroll viewport
@@ -5302,7 +5353,11 @@
           const selectable = all.filter((el) => el.hasAttribute('data-tab') || el.hasAttribute('data-indicator'));
           const max = Math.max(0, (pages.length || selectable.length) - 1);
           const current = Number.isFinite(Number(requested)) ? Number(requested) : 0;
-          const idx = max ? Math.max(0, Math.min(max, current)) : Math.max(0, current);
+          const count = max + 1;
+          const loop = all.some((el) => el.getAttribute('data-switch-loop') === 'true');
+          const idx = loop && count > 1
+            ? ((current % count) + count) % count
+            : (max ? Math.max(0, Math.min(max, current)) : Math.max(0, current));
           /* A hidden source-backed variant keeps its Figma geometry but its
              bitmap is intentionally deferred. Start/decode it before changing
              visibility so an interaction never reveals a blank card. The
@@ -5476,6 +5531,30 @@
               || ev.target.closest('[data-btn-name="多语言按钮"]')
               || ev.target.closest('[data-btn-name="多语言切换按钮"]'))
             : null;
+          const calendarReturn = ev.target && ev.target.closest
+            ? ev.target.closest('[data-calendar-now="true"][data-calendar-now-state="return-today"]')
+            : null;
+          if (calendarReturn) {
+            const host = calendarScrollHost(calendarReturn);
+            const surface = host && hscrollSurfaceOf(host);
+            if (surface) setHscrollOffset(surface, 0, host);
+            setCalendarNowState(calendarReturn, 'today');
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
+          const hscrollCommandEl = ev.target && ev.target.closest
+            ? ev.target.closest('[data-hscroll-action]')
+            : null;
+          if (hscrollCommandEl) {
+            const hostId = hscrollCommandEl.getAttribute('data-hscroll-host');
+            const scoped = (hostId && frame.querySelector(`[data-node="${hostId}"][data-hscroll]`))
+              || hscrollCommandEl.closest('[data-hscroll]');
+            if (scoped) stepHscroll(scoped, hscrollCommandEl.getAttribute('data-hscroll-action'));
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
           if (control && !modalOpenerHit) {
             const sid = control.getAttribute('data-switch');
             const current = Number(control.getAttribute('data-swpage') || 0);
@@ -5622,19 +5701,34 @@
         const hscrollSurfacesOf = (host) => {
           if (!host || !host.querySelectorAll) return [];
           const direct = [...host.querySelectorAll(':scope > [data-hscroll-surface="true"], :scope > [data-hscroll-overflow-child="true"]')];
-          return direct.length ? direct : [...host.querySelectorAll('[data-hscroll-surface="true"]')];
+          return direct.length ? direct : [...host.querySelectorAll('[data-hscroll-surface="true"], [data-hscroll-overflow-child="true"]')];
         };
         const hscrollSurfaceOf = (host) => hscrollSurfacesOf(host)[0] || null;
         const hscrollOffsetOf = (surface) => {
-          const rest = Number(surface && surface.getAttribute('data-hscroll-rest-left'));
           const left = Number.parseFloat(surface && surface.style.left || '0');
-          if (!Number.isFinite(rest) || !Number.isFinite(left)) return 0;
+          if (!Number.isFinite(left)) return 0;
+          const restAttr = Number(surface && surface.getAttribute('data-hscroll-rest-left'));
+          const rest = Number.isFinite(restAttr) ? restAttr : left;
           return rest - left;
         };
         const applyHscrollOffset = (surface, offset) => {
           if (!surface) return 0;
-          const rest = Number(surface.getAttribute('data-hscroll-rest-left'));
-          const max = Number(surface.getAttribute('data-hscroll-max'));
+          const currentLeft = Number.parseFloat(surface.style.left || '0');
+          let rest = Number(surface.getAttribute('data-hscroll-rest-left'));
+          if (!Number.isFinite(rest)) {
+            rest = Number.isFinite(currentLeft) ? currentLeft : 0;
+            surface.setAttribute('data-hscroll-rest-left', String(rest));
+          }
+          let max = Number(surface.getAttribute('data-hscroll-max'));
+          if (!Number.isFinite(max) || max <= 0) {
+            const host = surface.closest('[data-hscroll]') || surface.parentElement;
+            const hostW = Number(host && host.clientWidth);
+            const trackW = Number(surface.offsetWidth);
+            if (Number.isFinite(hostW) && Number.isFinite(trackW) && trackW > hostW + 0.5) {
+              max = trackW - hostW;
+              surface.setAttribute('data-hscroll-max', String(max));
+            }
+          }
           if (!Number.isFinite(rest) || !Number.isFinite(max) || max <= 0) return 0;
           const next = Math.max(0, Math.min(max, Number(offset) || 0));
           surface.style.left = (rest - next) + 'px';
@@ -5653,8 +5747,92 @@
           const surfaces = host ? hscrollSurfacesOf(host) : (surface ? [surface] : []);
           let next = 0;
           for (const track of surfaces) next = applyHscrollOffset(track, offset);
+          if (host) syncCalendarNowFromHost(host);
           return next;
         };
+        const pad2 = (value) => String(value).padStart(2, '0');
+        const calendarTodayStamp = () => {
+          const now = new Date();
+          return pad2(now.getMonth() + 1) + '/' + pad2(now.getDate());
+        };
+        const calendarScrollHost = (el) => {
+          if (!el) return null;
+          return el.closest('[data-hscroll="x"]')
+            || (el.parentElement && el.parentElement.querySelector('[data-hscroll="x"]'))
+            || null;
+        };
+        const calendarNowControlsFor = (el) => {
+          if (!el) return [];
+          if (el.getAttribute && el.getAttribute('data-calendar-now') === 'true') return [el];
+          const scopes = [
+            el.closest && el.closest('[data-hscroll]'),
+            el.parentElement,
+            el.closest && el.closest('.fx-stage'),
+            frame,
+          ].filter(Boolean);
+          for (const scope of scopes) {
+            if (!scope.querySelectorAll) continue;
+            const found = [...scope.querySelectorAll('[data-calendar-now="true"]')];
+            if (found.length) return found;
+          }
+          return [];
+        };
+        const setCalendarNowState = (el, state) => {
+          const next = state === 'return-today' ? 'return-today' : 'today';
+          for (const control of calendarNowControlsFor(el)) {
+            control.setAttribute('data-calendar-now-state', next);
+            if (next === 'return-today') {
+              control.setAttribute('data-btn-press', 'true');
+              control.setAttribute('role', 'button');
+              control.setAttribute('tabindex', '0');
+              control.removeAttribute('aria-disabled');
+            } else {
+              control.setAttribute('data-btn-press', 'inert');
+              control.removeAttribute('role');
+              control.removeAttribute('tabindex');
+            }
+            const textHost = [...control.querySelectorAll('*')].find((node) => {
+              const text = (node.textContent || '').trim();
+              return node.childElementCount === 0 && (/^\d{1,2}\/\d{1,2}$/.test(text) || text === '返回');
+            });
+            if (textHost) textHost.textContent = next === 'today' ? calendarTodayStamp() : '返回';
+          }
+        };
+        const hscrollOffsetValue = (host) => {
+          const surface = hscrollSurfaceOf(host);
+          const offset = Number(surface && surface.getAttribute('data-hscroll-offset'));
+          return Number.isFinite(offset) ? offset : 0;
+        };
+        const syncCalendarNowFromHost = (host) => {
+          if (!host) return;
+          setCalendarNowState(host, hscrollOffsetValue(host) > 1 ? 'return-today' : 'today');
+        };
+        const stepHscroll = (host, action) => {
+          if (!host) return;
+          const surface = hscrollSurfaceOf(host);
+          if (!surface) return;
+          const amount = Math.max(48, Math.round((host.clientWidth || 0) * 0.72));
+          setHscrollOffset(surface, hscrollOffsetValue(host) + (action === 'prev' ? -amount : amount), host);
+        };
+        const suppressNativeImageDrag = (el) => {
+          if (!el || !el.querySelectorAll) return;
+          el.style.userSelect = 'none';
+          el.style.webkitUserSelect = 'none';
+          el.style.webkitTouchCallout = 'none';
+          el.style.touchAction = el.getAttribute('data-hscroll') ? 'pan-x' : 'pan-y';
+          for (const img of el.querySelectorAll('img')) {
+            img.setAttribute('draggable', 'false');
+            img.style.userSelect = 'none';
+            img.style.webkitUserDrag = 'none';
+            img.style.pointerEvents = 'none';
+          }
+        };
+        for (const host of frame.querySelectorAll('[data-hscroll],[data-switch-owner],[data-switch-swipe-host]')) {
+          suppressNativeImageDrag(host);
+        }
+        for (const control of frame.querySelectorAll('[data-calendar-now="true"]')) {
+          setCalendarNowState(control, 'today');
+        }
         frame.addEventListener('pointerdown', (ev) => {
           const host = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll][data-hscroll-drag="true"]') : null;
           const swipeOwner = !host ? switchSwipeOwner(ev.target) : null;
@@ -5664,6 +5842,11 @@
           if (ev.isPrimary === false) return;
           const surface = host ? hscrollSurfaceOf(host) : null;
           if (host && !surface) return;
+          if (host) suppressNativeImageDrag(host);
+          if (swipeOwner) suppressNativeImageDrag(swipeOwner);
+          if (typeof window !== 'undefined' && window.getSelection) {
+            try { window.getSelection().removeAllRanges(); } catch { /* ignore */ }
+          }
           drag = host
             ? { kind: 'hscroll', host, surface, x: ev.clientX, left: hscrollOffsetOf(surface), moved: false }
             : { kind: 'switch-swipe', owner: swipeOwner, x: ev.clientX, moved: false };

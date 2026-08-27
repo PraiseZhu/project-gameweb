@@ -26,7 +26,16 @@ function browserTest(name, fn) {
       t.skip(BROWSER_SKIP);
       return;
     }
-    await fn();
+    try {
+      await fn();
+    } catch (err) {
+      const message = String(err && err.message || err);
+      if (/browserType\.launch|Executable doesn't exist|Failed to launch|npx playwright install/i.test(message)) {
+        t.skip(BROWSER_SKIP);
+        return;
+      }
+      throw err;
+    }
   });
 }
 async function render(page, payload) { await page.evaluate(({ truth, payload }) => window.__figmaRender.renderApp({ truth, rawTruth: truth, prefs: { plat: 'pc', lang: 'zh-CN' }, state: 'default', frame: document.querySelector('.frame'), viewport: { w: 400, h: 300, dpr: 1 }, interactionPayload: payload }), { truth: truth(), payload }); }
@@ -103,6 +112,99 @@ browserTest('browser same-name unauthorized opener stays inert', async () => {
     });
     assert.equal(afterOk.hidden, false);
     assert.equal(afterOk.open, 'true');
+  } finally {
+    await browser.close();
+  }
+});
+browserTest('browser left/right switch arrows loop from last back to first', async () => {
+  const { browser, page } = await setup();
+  try {
+    await render(page, buildRendererInteractionPayload(model('tab-d')));
+    let s = await state(page);
+    assert.equal(s.switch.index, '3');
+    await click(page, 'next');
+    s = await state(page);
+    assert.equal(s['page-a'].hidden, false);
+    assert.equal(s.switch.index, '0');
+  } finally {
+    await browser.close();
+  }
+});
+browserTest('browser calendar today/return swaps on hscroll and restores on click', async () => {
+  const { browser, page } = await setup();
+  try {
+    const calendarTruth = {
+      sections: {
+        section: {
+          meta: { x: 0, y: 0, width: 400, height: 240 },
+          nodes: [
+            node('mix', 'mix/calendar', 'section', 0, 0, 160, 80, { clipsContent: true }),
+            node('scroll', 'scroll/划动区域', 'mix', 0, 0, 160, 80, { clipsContent: true }),
+            node('track', 'img/日历可滑动内容', 'scroll', 0, 0, 400, 80),
+            node('today', 'dyn/今日日期', 'mix', 8, 8, 72, 28),
+            { id: 'stamp', name: '04/10', type: 'TEXT', parentId: 'today', ownerPath: ['section', 'today', 'stamp'], box: { x: 8, y: 8, w: 72, h: 28 }, renderBox: { x: 8, y: 8, w: 72, h: 28 }, characters: '04/10', style: { fills: [{ type: 'SOLID', color: { r: 1, g: 1, b: 1, a: 1 } }] } },
+            node('next', 'btn/右滑动箭头', 'mix', 170, 8, 24, 24),
+          ],
+        },
+      },
+    };
+    await page.evaluate((truth) => window.__figmaRender.renderApp({
+      truth,
+      rawTruth: truth,
+      prefs: { plat: 'pc', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 400, h: 300, dpr: 1 },
+    }), calendarTruth);
+    const start = await page.evaluate(() => {
+      const today = document.querySelector('[data-node="today"]');
+      const host = document.querySelector('[data-hscroll="x"]');
+      const next = document.querySelector('[data-node="next"]');
+      const surface = document.querySelector('[data-hscroll-surface="true"], [data-hscroll-overflow-child="true"]');
+      return {
+        state: today?.getAttribute('data-calendar-now-state'),
+        press: today?.getAttribute('data-btn-press'),
+        hscroll: host?.getAttribute('data-hscroll'),
+        overflowX: host?.style.overflowX,
+        action: next?.getAttribute('data-hscroll-action'),
+        hostId: host?.getAttribute('data-node'),
+        text: (today?.textContent || '').trim(),
+        offset: Number(surface?.getAttribute('data-hscroll-offset') || 0),
+      };
+    });
+    assert.equal(start.state, 'today');
+    assert.equal(start.press, 'inert');
+    assert.equal(start.hscroll, 'x');
+    assert.equal(start.overflowX, 'hidden');
+    assert.equal(start.action, 'next');
+    await click(page, 'next');
+    const away = await page.evaluate(() => {
+      const today = document.querySelector('[data-node="today"]');
+      const surface = document.querySelector('[data-hscroll-surface="true"], [data-hscroll-overflow-child="true"]');
+      return {
+        state: today?.getAttribute('data-calendar-now-state'),
+        press: today?.getAttribute('data-btn-press'),
+        text: (today?.textContent || '').trim(),
+        offset: Number(surface?.getAttribute('data-hscroll-offset') || 0),
+      };
+    });
+    assert.equal(away.state, 'return-today');
+    assert.equal(away.press, 'true');
+    assert.equal(away.text, '返回');
+    assert.ok((away.offset || 0) > 0);
+    await click(page, 'today');
+    const back = await page.evaluate(() => {
+      const today = document.querySelector('[data-node="today"]');
+      const surface = document.querySelector('[data-hscroll-surface="true"], [data-hscroll-overflow-child="true"]');
+      return {
+        state: today?.getAttribute('data-calendar-now-state'),
+        offset: Number(surface?.getAttribute('data-hscroll-offset') || 0),
+        text: (today?.textContent || '').trim(),
+      };
+    });
+    assert.equal(back.state, 'today');
+    assert.equal(back.offset, 0);
+    assert.match(back.text, /^\d{2}\/\d{2}$/);
   } finally {
     await browser.close();
   }

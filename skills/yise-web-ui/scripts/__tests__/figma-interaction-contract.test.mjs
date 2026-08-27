@@ -69,21 +69,50 @@ test('does not infer hscroll from a clipped container without source overflow', 
 
 test('mix clip window stays draw-only even when a child overflows', () => {
   const model = deriveInteractionModel([
-    { id: 'mix', type: 'FRAME', name: 'mix/calendar', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'mix', type: 'FRAME', name: 'mix/decorative-panel', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
     { id: 'track', type: 'FRAME', name: '可滑动内容', parentId: 'mix', box: { x: 0, y: 0, w: 240, h: 40 } },
   ]);
   assert.equal(model.stats.hscroll, 0);
   assert.equal(model.attributes.find((entry) => entry.id === 'mix'), undefined);
 });
 
-test('non-calendar mix overflow stays inert', () => {
+test('generic dyn layers stay out of the interaction model', () => {
   const model = deriveInteractionModel([
-    { id: 'mix', type: 'FRAME', name: 'mix/decorative-mask', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
-    { id: 'track', type: 'FRAME', name: 'content', parentId: 'mix', box: { x: 0, y: 0, w: 240, h: 40 } },
+    { id: 'dyn', type: 'TEXT', name: 'dyn/倒计时' },
   ]);
-  assert.equal(model.stats.hscroll, 0);
-  assert.equal(model.attributes.find((entry) => entry.id === 'mix'), undefined);
-  assert.equal(model.unresolved.length, 0);
+  assert.equal(model.stats.calendarNow, 0);
+  assert.equal(model.attributes.find((entry) => entry.id === 'dyn'), undefined);
+});
+
+test('calendar mix clip-and-overflow emits hscroll without native overflow host', () => {
+  const model = deriveInteractionModel([
+    { id: 'mix', type: 'FRAME', name: 'mix/calendar', parentId: 'cal', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: '可滑动内容', parentId: 'mix', box: { x: 0, y: 0, w: 240, h: 40 } },
+    { id: 'today', type: 'FRAME', name: 'dyn/今日日期', parentId: 'cal' },
+    { id: 'next', type: 'BOOLEAN_OPERATION', name: 'btn/右滑动箭头', parentId: 'cal' },
+    { id: 'cal', type: 'FRAME', name: '日历', parentId: 'section' },
+    { id: 'section', type: 'FRAME', name: 'sec/2' },
+  ]);
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
+  assert.equal(byId.get('mix')['data-hscroll'], 'x');
+  assert.equal(byId.get('track')['data-hscroll-overflow-child'], 'true');
+  assert.equal(byId.get('next')['data-hscroll-action'], 'next');
+  assert.equal(byId.get('today')['data-calendar-now'], 'true');
+  assert.equal(byId.get('today')['data-btn-press'], 'inert');
+});
+
+test('generic sibling buttons with 前/后 are not hscroll commands', () => {
+  const model = deriveInteractionModel([
+    { id: 'mix', type: 'FRAME', name: 'mix/calendar', parentId: 'cal', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: '可滑动内容', parentId: 'mix', box: { x: 0, y: 0, w: 240, h: 40 } },
+    { id: 'go', type: 'FRAME', name: 'btn/前往详情', parentId: 'cal' },
+    { id: 'later', type: 'FRAME', name: 'btn/后续说明', parentId: 'cal' },
+    { id: 'cal', type: 'FRAME', name: '日历', parentId: 'section' },
+    { id: 'section', type: 'FRAME', name: 'sec/2' },
+  ]);
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
+  assert.equal(byId.get('go')['data-hscroll-action'], undefined);
+  assert.equal(byId.get('later')['data-hscroll-action'], undefined);
 });
 
 test('named scroll inside a mix clip is the hscroll host', () => {
@@ -91,14 +120,20 @@ test('named scroll inside a mix clip is the hscroll host', () => {
     { id: 'mix', type: 'FRAME', name: 'mix/calendar', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
     { id: 'scroll', type: 'FRAME', name: 'scroll/可滑动内容', parentId: 'mix', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
     { id: 'track', type: 'FRAME', name: 'content', parentId: 'scroll', box: { x: 0, y: 0, w: 240, h: 40 } },
+    { id: 'today', type: 'FRAME', name: 'dyn/今日日期', parentId: 'mix' },
+    { id: 'next', type: 'BOOLEAN_OPERATION', name: 'btn/右滑动箭头', parentId: 'mix' },
   ]);
   const attrs = model.attributes.find((entry) => entry.id === 'scroll')?.attrs;
   const mix = model.attributes.find((entry) => entry.id === 'mix')?.attrs;
   const track = model.attributes.find((entry) => entry.id === 'track')?.attrs;
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
   assert.equal(attrs['data-hscroll'], 'x');
   assert.equal(attrs['data-hscroll-drag'], 'true');
   assert.equal(mix, undefined);
   assert.equal(track['data-hscroll-overflow-child'], 'true');
+  assert.equal(byId.get('next')['data-hscroll-action'], 'next');
+  assert.equal(byId.get('next')['data-hscroll-host'], 'scroll');
+  assert.equal(byId.get('today')['data-calendar-now'], 'true');
   assert.equal(model.stats.hscroll, 1);
   assert.equal(model.unresolved.length, 0);
 });

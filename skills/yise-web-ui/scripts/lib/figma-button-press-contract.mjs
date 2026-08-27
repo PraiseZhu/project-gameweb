@@ -35,6 +35,8 @@ const INTERACTIVE_ATTRS = [
   'data-go',
   'data-sec-target',
   'data-switch-action',
+  'data-hscroll-action',
+  'data-calendar-now-state',
   'data-tab',
   'data-indicator',
   'data-copy-code',
@@ -56,7 +58,8 @@ export function buttonPressCss({
   const sel = BUTTON_PRESS_SELECTOR;
   return [
     `:root{--fx-hover-brightness:${hover};--fx-press-brightness:${press}}`,
-    `${sel}{cursor:pointer}`,
+    '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
+    `${sel},[data-hscroll-action],[data-calendar-now-state="return-today"]{cursor:pointer}`,
     `@media (hover: hover){${withPseudo(sel, ':hover')}{filter:brightness(var(--fx-hover-brightness))}}`,
     `${withPseudo(sel, ':active')}{filter:brightness(var(--fx-press-brightness))}`,
     '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
@@ -90,8 +93,10 @@ export function attachButtonPressAttrs(attrs = {}, { role = null, controlState =
   const next = { ...attrs };
   const disabled = controlState === 'disabled'
     || next['data-btn-press'] === 'inert'
-    || /disable/.test(String(next['data-btn-variant-state'] || ''));
+    || /disable/.test(String(next['data-btn-variant-state'] || ''))
+    || (next['data-calendar-now'] === 'true' && next['data-calendar-now-state'] !== 'return-today');
   const actionable = INTERACTIVE_ATTRS.some((key) => next[key] != null && next[key] !== '')
+    || next['data-calendar-now'] === 'true'
     || role === 'btn'
     || role === 'tab'
     || role === 'ind'
@@ -106,7 +111,8 @@ export function attachButtonPressAttrs(attrs = {}, { role = null, controlState =
   next.role = next.role || 'button';
   if (next.tabindex == null) next.tabindex = '0';
   if (role === 'btn' && !hasNamedAction(parsed) && !next['data-link'] && !next['data-go']
-    && !next['data-sec-target'] && !next['data-switch-action'] && !next['data-copy-code']
+    && !next['data-sec-target'] && !next['data-switch-action'] && !next['data-hscroll-action']
+    && next['data-calendar-now-state'] !== 'return-today' && !next['data-copy-code']
     && !next['data-btn-variant'] && !next['data-nav-item'] && !next['data-tab']) {
     next['data-btn-action'] = 'unresolved';
   }
