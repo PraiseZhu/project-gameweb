@@ -9,20 +9,14 @@ import { fileURLToPath } from 'node:url';
 import { buildInputHashes, TOOL_VERSION } from '../lib/fs-utils.mjs';
 import { summarizeGate, validateReportIntegrity } from '../lib/report.mjs';
 import { workflowDeclaration } from '../lib/workflows.mjs';
+import { playwrightBrowserSkipMessage, probePlaywrightCapability } from '../lib/runtime-capabilities.mjs';
 import { templateExtractor } from './_extractor-template.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const VERIFY = join(ROOT, 'scripts/verify.mjs');
-
-const HAS_BROWSER_DEPS = (() => {
-  const res = spawnSync(process.execPath, ['-e', "import('./scripts/lib/resolve-playwright.mjs').then(m=>m.resolveModule('playwright', process.cwd())).catch(()=>import('./scripts/lib/resolve-playwright.mjs').then(m=>m.resolveModule('playwright-core', process.cwd()))).then(()=>process.exit(0),()=>process.exit(1))"], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    env: process.env,
-    timeout: 30000,
-  });
-  return res.status === 0;
-})();
+const PLAYWRIGHT_PROBE = probePlaywrightCapability(ROOT);
+const HAS_BROWSER_DEPS = PLAYWRIGHT_PROBE.available;
+const BROWSER_SKIP = playwrightBrowserSkipMessage(PLAYWRIGHT_PROBE);
 
 function hashFile(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
@@ -175,7 +169,7 @@ test('targeted verify --gate A ignores unrelated skipped gates for command succe
 
 test('verify reports limited and not-claimed gates instead of thin green pass', { timeout: 240000 }, (t) => {
   if (!HAS_BROWSER_DEPS) {
-    t.skip('playwright/playwright-core is not installed; verify status regression runs with browser deps');
+    t.skip(BROWSER_SKIP);
     return;
   }
   const { dir } = writeMinimalDemo('product-qa');
@@ -200,7 +194,7 @@ test('verify reports limited and not-claimed gates instead of thin green pass', 
 
 test('figma-showcase may be workflow-acceptable but is rejected as product PR evidence', { timeout: 240000 }, (t) => {
   if (!HAS_BROWSER_DEPS) {
-    t.skip('playwright/playwright-core is not installed; verify status regression runs with browser deps');
+    t.skip(BROWSER_SKIP);
     return;
   }
   const { dir, spec } = writeMinimalDemo('figma-showcase');

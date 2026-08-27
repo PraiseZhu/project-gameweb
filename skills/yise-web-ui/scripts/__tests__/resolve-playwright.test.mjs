@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getChromeCandidates, playwrightDependencyHint } from '../lib/resolve-playwright.mjs';
+import { findChromiumExecutable, getChromeCandidates, playwrightDependencyHint } from '../lib/resolve-playwright.mjs';
 
 test('Chrome resolver prefers explicit CHROME_PATH and discovers common Windows installs', () => {
   const drive = 'C:';
@@ -32,4 +32,18 @@ test('Playwright dependency hint names Windows and non-Git/Figma-only setup', ()
   assert.match(hint, /QA_HIFI_MODULE_ROOT/);
   assert.match(hint, /Windows PowerShell/);
   assert.match(hint, /CHROME_PATH/);
+});
+
+test('findChromiumExecutable is null when Playwright browser and Chrome paths are missing', () => {
+  const missing = findChromiumExecutable({
+    executablePath() { return '/definitely-missing-playwright-chromium'; },
+  }, {
+    CHROME_PATH: '/definitely-missing-chrome',
+    ProgramFiles: '/no-program-files',
+    'ProgramFiles(x86)': '/no-program-files-x86',
+    ProgramW6432: '/no-program-files',
+    LOCALAPPDATA: '/no-local',
+    APPDATA: '/no-roaming',
+  });
+  assert.equal(missing, null);
 });
