@@ -188,6 +188,35 @@ export function planeResizePolicies(layoutPlanes = null) {
       scaleMode: 'source-aspect-center-crop',
       reason: 'K1/sea plane keeps source aspect and crops from center; it is not stretched with UI',
     },
+    directory: {
+      scaleMode: 'viewport-height-follow',
+      reason: 'fixed directory keeps source width-scale and redistributes its source vertical span into the remaining viewport height',
+    },
+  };
+}
+
+export function heroCoverCrop({
+  viewportW,
+  viewportH,
+  designWidth,
+  heroDesignHeight,
+  pageScale,
+} = {}) {
+  const w = n(viewportW, NaN);
+  const h = n(viewportH, NaN);
+  const dw = n(designWidth, NaN);
+  const dh = n(heroDesignHeight, NaN);
+  const k = n(pageScale, NaN);
+  if (![w, h, dw, dh, k].every(Number.isFinite) || w <= 0 || h <= 0 || dw <= 0 || dh <= 0 || k <= 0) {
+    return { scale: k, cropLeft: 0, applied: false };
+  }
+  const cover = Math.max(k, h / dh);
+  return {
+    scale: cover,
+    cropLeft: (w / cover - dw) / 2,
+    applied: cover > k + 1e-6,
+    plane: 'kv-visual',
+    uiPlane: 'source-ui-scale',
   };
 }
 
@@ -245,6 +274,8 @@ export function resizeOwns() {
     'light-drag vs full rebuild',
     'preview 1:1 fit scale',
     'background cover-crop vs UI source-scale vs sea aspect-crop',
+    'KV cover-crop stays on the kv visual plane; homepage title/UI stay on width-scale',
+    'fixed directory follows remaining viewport height without inheriting KV cover scale',
     'hero lock / exit / release geometry while the window size changes',
   ];
 }

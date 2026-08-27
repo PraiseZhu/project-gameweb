@@ -55,6 +55,35 @@ test('does not infer hscroll from a clipped container without source overflow', 
   assert.match(model.unresolved[0].reason, /geometry overflow/);
 });
 
+test('mix clip window with overflowing child is an hscroll host', () => {
+  const model = deriveInteractionModel([
+    { id: 'mix', type: 'FRAME', name: 'mix/calendar', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: '可滑动内容', parentId: 'mix', box: { x: 0, y: 0, w: 240, h: 40 } },
+  ]);
+  const attrs = model.attributes.find((entry) => entry.id === 'mix')?.attrs;
+  assert.equal(attrs['data-hscroll'], 'x');
+  assert.equal(model.stats.hscroll, 1);
+  assert.equal(model.unresolved.length, 0);
+});
+
+test('does not infer hscroll from a random clipsContent frame', () => {
+  const model = deriveInteractionModel([
+    { id: 'frame', type: 'FRAME', name: 'Group 1', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'frame', box: { x: 0, y: 0, w: 240, h: 40 } },
+  ]);
+  assert.equal(model.stats.hscroll, 0);
+  assert.equal(model.attributes.find((entry) => entry.id === 'frame'), undefined);
+});
+
+test('mix clip window without overflow stays draw-only', () => {
+  const model = deriveInteractionModel([
+    { id: 'mix', type: 'FRAME', name: 'mix/calendar', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'mix', box: { x: 0, y: 0, w: 80, h: 40 } },
+  ]);
+  assert.equal(model.stats.hscroll, 0);
+  assert.equal(model.attributes.find((entry) => entry.id === 'mix'), undefined);
+});
+
 test('resolves tab/indicator/button siblings to a switch owner', () => {
   const nodes = [
     { id: 'switch', type: 'INSTANCE', name: 'switch/role', parentId: 'section' },

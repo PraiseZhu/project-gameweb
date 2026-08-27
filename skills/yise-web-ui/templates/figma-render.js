@@ -252,8 +252,8 @@
           add(node, 'kv-background', 0, 'first-section + kv/background component label');
         } else if (sectionIndex === 0 && /^kv\/(?:foreground|前景|midground|middle|中景|character|角色)$/.test(own)) {
           add(node, 'kv-foreground', 0, 'first-section + kv/depth component label');
-        } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)[-_ ]?logo$/.test(own)) {
-          add(node, 'kvTitle', 0, 'first-section + title-logo component label');
+        } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)/.test(own)) {
+          add(node, 'kvTitle', 0, 'first-section + title component label');
         } else if (sectionIndex === 0 && /^img\/logo$/.test(own)) {
           add(node, 'kvBrand', 0, 'first-section + brand-logo component label');
         } else if (sectionIndex === 0 && isDirectChildOfAncestor(node, /^btn\/(?:download|\u4e0b\u8f7d)/)) {
@@ -514,9 +514,14 @@
      file for a later fill. Prefer an exact filename/ref match, then a
      single-ref record. Missing refs remain missing and are rendered as a
      placeholder so the visual gate stays fail-closed. */
-  _assetFileForImageRef(imageRef) {
+  _assetFileForImageRef(imageRef, preferredRec = null) {
     const ref = String(imageRef || '');
     if (!ref) return null;
+    const preferred = preferredRec && typeof preferredRec === 'object' ? preferredRec : null;
+    if (preferred && preferred.file) {
+      const preferredRefs = Array.isArray(preferred.imageRefs) ? preferred.imageRefs.map(String) : [];
+      if (!preferredRefs.length || preferredRefs.includes(ref)) return String(preferred.file);
+    }
     const assets = this._assets();
     for (const value of Object.values(assets || {})) {
       const rec = typeof value === 'string' ? { file: value } : value;
@@ -1295,8 +1300,9 @@
     }
     frame.removeAttribute('data-plat-fallback');
     if (!__hasNative) frame.setAttribute('data-plat-fallback', __plat + '-uses-' + __base + '-tree');
-    const motionRoleMap = motionAdapter && motionAdapter.roleResolution?.strategy === 'truth-semantic-v1'
-      ? this._deriveMotionRoleMap(__activeTruth) : new Map();
+    /* Directory stretch and KV plane roles are Resize-owned structure, not an
+       optional motion-adapter extra. Always derive them from source labels. */
+    const motionRoleMap = this._deriveMotionRoleMap(__activeTruth);
     const designWidth = DW[__base] ?? DW[__plat] ?? 3840;
     this._designWidth = designWidth;
     /* 缩放系数的分母端：用**被模拟的设备视口宽**（壳经 ctx.viewport 传入），
@@ -1429,18 +1435,19 @@
         return sectionIds.some((id) => String(__u(id)) === String(sectionId));
       });
       if (!startsAtPageOrigin || !contentRoot) return null;
-      /* The KV is reframed by cover-style crop at narrow/tall viewports. This
-         is a hero visual plane, not the scale of the released document.
-         Keep the scroll-slot layout on platform scale so later sections start
-         after the full viewport height, while the hero alone uses slotScale. */
+      /* Cover-crop belongs to the KV visual plane (the page-chrome `kv` root),
+         not the hero section that holds title/download UI. Applying slotScale
+         to the section turns the title into a height-driven poster and leaves
+         the actual KV artwork on width-scale with later sections. */
       const slotScale = Math.max(k, viewportH / Number(first.height));
       if (Number.isFinite(slotScale) && slotScale > 0) {
         heroVisualScale = slotScale;
         heroVisualCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
       }
-      /* The page-flow slot is measured at platform scale. Its layout offset
-         reserves the viewport area that the independently cover-scaled hero
-         visually occupies. */
+      /* Cover-crop fills the viewport visually. Later sections stay on their
+         Figma y and only follow width-scale; do not push the document down to
+         reserve the leftover viewport, or the page background stays put and
+         the next block "runs away". */
       const following = ids.map((id) => ({ id, meta: sections[id] && sections[id].meta }))
         .filter((entry) => String(entry.id) !== String(sectionId) && Number(entry.meta && entry.meta.y) > Number(first.y))
         .sort((a, b) => Number(a.meta.y) - Number(b.meta.y));
@@ -1453,7 +1460,7 @@
         contentRootId: String(__u(contentRoot.id)),
       });
     })();
-    const heroLayoutOffsetDesign = heroSlot ? Number(heroSlot.layoutOffsetDesign || 0) : 0;
+    const heroLayoutOffsetDesign = 0;
     const shiftedSectionBottom = (id) => {
       const m = sections[id] && sections[id].meta;
       if (!m) return 0;
@@ -1566,8 +1573,11 @@
         stage.setAttribute('data-motion-role', 'kv');
         stage.setAttribute('data-motion-step', '0');
         stage.setAttribute('data-motion-evidence', 'truth-backed:first-section-page-origin');
+        /* Record the KV cover numbers on the hero section for inspect, but do
+           not apply them here. Title / download stay on width-scale. */
         stage.setAttribute('data-hero-visual-scale', String(heroVisualScale));
         stage.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
+        stage.setAttribute('data-hero-ui-plane', 'source-ui-scale');
       }
       stage.style.width = designWidth + 'px';
       /* 分区高度往上取整到【缩放后的整数 CSS px】。
@@ -1585,9 +1595,9 @@
       if (pageScope && !pageStageMode) {
         stage.style.position = 'absolute';
         const isHeroStage = heroSlot && String(sid) === heroSlot.sectionId;
-        /* `left` belongs to the unscaled page plane. The hero cover crop is
-           derived from the hero's own scale and must not shift later sections. */
-        stage.style.left = ((secX - pageX) + (isHeroStage ? heroVisualCropLeft : 0)) + 'px';
+        /* `left` belongs to the unscaled page plane. KV cover crop is applied
+           to the kv root, not this UI section, so later sections stay put. */
+        stage.style.left = (secX - pageX) + 'px';
         const afterHeroLayout = heroSlot && !isHeroStage && Number(secY) > pageY + 0.5;
         const responsiveSecTop = (secY - pageY) + (afterHeroLayout ? heroLayoutOffsetDesign : 0);
         stage.style.top = responsiveSecTop + 'px';
@@ -1608,9 +1618,10 @@
          zoom 让浏览器在**最终尺寸**下重新排版与光栅化，字形清晰一致。
          连带好处：zoom 改布局占位，stage 在文档流里就占缩放后的高度，
          transform 时代补占位的 .fx-spacer 就此退役（见本函数末尾）。 */
-      const heroVisualRatio = pageScope && heroSlot && String(sid) === String(heroSlot.sectionId)
-        && pageStageScale > 0 ? heroVisualScale / pageStageScale : 1;
-      stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? heroVisualRatio : k));
+      /* Nested section zoom is a ratio against the page-stage zoom. Keep the
+         hero UI on 1 so title/download follow width-scale with later sections.
+         KV cover-crop is applied to the kv paint root below. */
+      stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? 1 : k));
       if (pageStageMode && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes) {
         frame.style.position = frame.style.position || 'relative';
         fixedStage = document.createElement('div');
@@ -1728,7 +1739,10 @@
         const fixedById = new Map(fixedOverlayNodes.map((n) => [id(n), n]));
         const parentId = (n) => String(value(n && n.parentId) || '');
         const hscrollAxis = (node, parsed) => {
-          if (parsed.role !== 'scroll' || value(node && node.clipsContent) !== true) return null;
+          const namedScroll = parsed.role === 'scroll';
+          const namedMix = parsed.role === 'mix';
+          const clipHost = value(node && node.clipsContent) === true;
+          if (!namedScroll && !(namedMix && clipHost)) return null;
           const host = __plain(node && node.box || {});
           const left = Number(host.x), width = Number(host.w);
           if (!Number.isFinite(left) || !Number.isFinite(width) || width <= 0) return null;
@@ -1739,7 +1753,11 @@
             return Number.isFinite(x) && Number.isFinite(w) && w > 0
               && (x < left - 0.5 || x + w > right + 0.5);
           });
-          return overflows ? (parsed.params.axis || 'x') : null;
+          if (!overflows) return null;
+          /* Named scroll/ is the explicit host. A mix/ clip window with the
+             same overflowing child is also a host (calendar-style). A random
+             clipsContent frame is not — use the Figma clip box, never the child's full width. */
+          return namedScroll ? (parsed.params.axis || 'x') : 'x';
         };
         const propertyValues = (raw, out = []) => {
           const v = value(raw);
@@ -3100,18 +3118,30 @@
           && (Math.abs(rb.x - box.x) > 0.01 || Math.abs(rb.y - box.y) > 0.01
             || Math.abs(rb.w - box.w) > 0.01 || Math.abs(rb.h - box.h) > 0.01);
         /* A source scroll viewport is captured in its resting position. Its
-           direct overflowing track can therefore inherit a renderBox clipped
-           exactly at that viewport edge. Keeping that inner static clip makes
-           scrollLeft move the track while its later items remain unpainted.
-           Transfer only this provable parent-edge clip to the real scroll
+           overflowing track, and groups inside that track, can inherit a
+           renderBox clipped exactly at that viewport edge. Keeping those
+           inner static clips makes scrollLeft move the track while later
+           items stay unpainted, and also crops hugging descendants that
+           later paint wider than the captured rest-state ink.
+           Transfer only this provable host-edge clip to the real scroll
            host; unrelated renderBox clips remain intact. */
-        const hscrollParent = parent && parent.el && parent.el.getAttribute('data-hscroll') === 'x' ? parent : null;
-        const parentBox = hscrollParent && hscrollParent.box || null;
+        const hscrollHostEl = (() => {
+          let cursor = parent && parent.el;
+          for (let hops = 0; cursor && hops < 16; hops++) {
+            if (cursor.getAttribute && cursor.getAttribute('data-hscroll') === 'x') return cursor;
+            cursor = cursor.parentElement;
+          }
+          return null;
+        })();
+        const hscrollHostRecord = hscrollHostEl
+          ? (hscrollHostEl === (parent && parent.el) ? parent : renderedById.get(String(hscrollHostEl.getAttribute('data-node') || '')))
+          : null;
+        const parentBox = hscrollHostRecord && hscrollHostRecord.box || null;
         const hscrollTrackOverflow = parentBox
           && Number.isFinite(Number(parentBox.x)) && Number.isFinite(Number(parentBox.w))
           && Number.isFinite(Number(box.x)) && Number.isFinite(Number(box.w))
           && (box.x < parentBox.x - 0.5 || box.x + box.w > parentBox.x + parentBox.w + 0.5);
-        const hscrollTrackClipRelease = !!(hscrollParent && rbInside && hscrollTrackOverflow
+        const hscrollTrackClipRelease = !!(hscrollHostRecord && rbInside && hscrollTrackOverflow
           && (Math.abs(rb.x - parentBox.x) <= 0.75
             || Math.abs(rb.x + rb.w - (parentBox.x + parentBox.w)) <= 0.75));
         if (rbInside) {
@@ -3131,7 +3161,7 @@
                coordinate (host shifts up/left, track shifts down/right by
                the same amount) while overflow clips at the gutter's outer
                edge instead of the content edge. */
-            const hostGutter = String(parent.el.getAttribute('data-hscroll-shadow-gutter') || '').split(/\s+/).map(Number);
+            const hostGutter = String(hscrollHostEl.getAttribute('data-hscroll-shadow-gutter') || '').split(/\s+/).map(Number);
             if (hostGutter.length === 4 && hostGutter.some((v) => Number.isFinite(v) && v > 0)) {
               const gT = Number.isFinite(hostGutter[0]) ? Math.max(0, hostGutter[0]) : 0;
               const gL = Number.isFinite(hostGutter[3]) ? Math.max(0, hostGutter[3]) : 0;
@@ -3975,28 +4005,10 @@
              el.setAttribute('data-shape-polygon', 'triangle');
              el.removeAttribute('data-shape-approx');
            }
-           /* A ready package can legitimately keep the tiny directional button
-              as a BOOLEAN_OPERATION without a raster slice.  A rectangle is
-              not an acceptable approximation for this known semantic owner:
-              preserve its source box and fill colour, but render the actual
-              chevron geometry.  This is deliberately limited to declared
-              btn/left-or-right controls; generic boolean shapes remain tagged
-              as approximations and are never promoted to UI. */
-           const __buttonName = String(n.name || '');
-           const __rightChevron = !assetUrl && pfx === 'btn' && /右(?:滑动)?(?:按钮|箭头)|next/i.test(__buttonName);
-           const __leftChevron = !assetUrl && pfx === 'btn' && /左(?:滑动)?(?:按钮|箭头)|prev/i.test(__buttonName);
-           if (__rightChevron || __leftChevron) {
-             const __chevronColour = this._solidFill(st.fills) || '#fff';
-             const __chevronStroke = Math.max(2, Math.min(Number(box.w) || 0, Number(box.h) || 0) * 0.13);
-             el.style.background = 'transparent';
-             el.style.boxSizing = 'border-box';
-             el.style.borderRight = __chevronStroke + 'px solid ' + __chevronColour;
-             el.style.borderBottom = __chevronStroke + 'px solid ' + __chevronColour;
-             el.style.transform = 'rotate(' + (__rightChevron ? '-45deg' : '135deg') + ')';
-             el.style.transformOrigin = '50% 50%';
-             el.setAttribute('data-directional-chevron', __rightChevron ? 'right' : 'left');
-             el.removeAttribute('data-shape-approx');
-           }
+           /* BOOLEAN/VECTOR btn arrows are composite contours. Inventing CSS
+              chevrons or diamonds is forbidden. A missing slice stays a
+              missing-shape mark (`data-shape-approx`), never a white rectangle
+              pretending to be the Figma boolean. */
           /* Blend-overlay layer (extractor punched it through the asset lock). A baked
              export rasterizes this node on a transparent canvas, so the node-level
              SOFT_LIGHT loses its page backdrop and the PNG already bakes to a flat
@@ -4062,16 +4074,17 @@
                the same imageRef can legitimately appear in PC/mobile contexts
                with different crop/export ownership.  Resolving the fill first
                used the wrong (PC) EWS panorama in the mobile owner and then
-               stretched it into the mobile source box.  Only fall back to an
-               imageRef when this owner has no delivered composite slice. */
-            const hasDeliveredComposite = !!(assetRec && url
-              && (assetRec.sliceExport || assetRec.sha256 || assetRec.kind));
+               stretched it into the mobile source box.  Packed qa-assets may
+               omit sliceExport/sha256/kind and keep only `{file,imageRefs}`;
+               that thin record is still this owner's delivered composite.
+               Only fall back to a global imageRef when this owner has no file. */
+            const hasDeliveredComposite = !!(assetRec && url);
             const resolvedFillEntries = imageFills.map((entry) => ({
               fill: entry.fill,
               index: entry.index,
               url: hasDeliveredComposite
                 ? url
-                : (this._assetFileForImageRef(entry.fill && entry.fill.imageRef)
+                : (this._assetFileForImageRef(entry.fill && entry.fill.imageRef, assetRec)
                   || (imageFills.length === 1 ? url : null)),
             }));
             const imageEntries = String(assetRec?.kind || '').toUpperCase() === 'SVG' && url
@@ -4080,9 +4093,17 @@
             /* Figma paints multi-fill nodes bottom-to-top. An IMAGE fill does
                not replace a preceding SOLID fill: many calendar/card cells use
                a translucent texture over a colored base. Preserve the source
-               SOLID base on the host; SVG composite owners remain a single
-               source asset and must not receive an inferred CSS fill. */
-            if (String(assetRec?.kind || '').toUpperCase() !== 'SVG') {
+               SOLID base on the host only when this owner actually has IMAGE
+               fills that need that plate.
+
+               A delivered BOOLEAN/VECTOR slice already bakes the SOLID fill
+               into the contour. Painting that SOLID as CSS background turns
+               the owner box into a white rectangle under the chevron.
+               SVG composite owners stay a single source asset and must not
+               receive an inferred CSS fill either. */
+            const hostNeedsSolidPlate = imageFills.length > 0
+              && String(assetRec?.kind || '').toUpperCase() !== 'SVG';
+            if (hostNeedsSolidPlate) {
               const solidBase = (st.fills || []).find((fill) => fill && fill.visible !== false && fill.type === 'SOLID');
               if (solidBase) {
                 const solidCss = this._solidFill([solidBase]);
@@ -4222,10 +4243,6 @@
               // 画不出来也不许静默：留标记，让探针能抓到
               el.setAttribute('data-gradient-unrendered', '1');
             }
-          }
-          if (__rightChevron || __leftChevron) {
-            el.style.background = 'transparent';
-            el.style.backgroundImage = 'none';
           }
         }
 
@@ -4699,6 +4716,23 @@
               layer.setAttribute('data-paint-node-count', String((bg?.nodes.length || 0) + (chrome?.nodes.length || 0)));
               layer.setAttribute('data-paint-node-ids', [...(bg?.nodes || []), ...(chrome?.nodes || [])]
                 .map((node) => String(__u(node && node.id))).join(' '));
+              const rootName = rootNameById.get(String(rootId)) || '';
+              const isKvRoot = /^kv(?:\/|$)/i.test(rootName);
+              if (isKvRoot && heroSlot && pageStageScale > 0) {
+                const kvRatio = heroVisualScale / pageStageScale;
+                const firstMeta = sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta;
+                const kvClipH = Number(firstMeta && firstMeta.height) || Number(heroSlot.heroHeight) || 0;
+                layer.style.zoom = String(kvRatio);
+                layer.style.left = heroVisualCropLeft + 'px';
+                layer.style.top = '0';
+                layer.style.width = designWidth + 'px';
+                if (kvClipH > 0) layer.style.height = kvClipH + 'px';
+                layer.style.overflow = 'hidden';
+                layer.style.transformOrigin = '0 0';
+                layer.setAttribute('data-kv-cover-plane', 'cover-crop');
+                layer.setAttribute('data-hero-visual-scale', String(heroVisualScale));
+                layer.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
+              }
             }
             if (bg) {
               if (layer && heroLayoutOffsetDesign > 0) {

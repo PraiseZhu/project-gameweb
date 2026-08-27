@@ -51,13 +51,94 @@ function isSkipped(node) {
   return node?.status === 'skipped';
 }
 
+function visibleFillsOf(node) {
+  return asArray(node?.style?.fills).filter((fill) => fill && fill.visible !== false);
+}
+
+function firstGradientFill(node) {
+  return visibleFillsOf(node).find((fill) => String(fill.type || '').startsWith('GRADIENT')) || null;
+}
+
+function sameBox(a, b, epsilon = 0.75) {
+  if (!a || !b) return false;
+  return Math.abs(Number(a.x) - Number(b.x)) <= epsilon
+    && Math.abs(Number(a.y) - Number(b.y)) <= epsilon
+    && Math.abs(Number(a.w) - Number(b.w)) <= epsilon
+    && Math.abs(Number(a.h) - Number(b.h)) <= epsilon;
+}
+
+/**
+ * Restore visual material that inventory skipped as art-fragment / slice-child
+ * onto a legal owner. Never paint the skipped node itself.
+ */
+function liftOwnerComposite(owner, skippedChildren) {
+  if (!isPlainObject(owner) || isSkipped(owner)) return owner;
+  const next = { ...owner };
+  if (visibleFillsOf(next).length === 0) {
+    const matching = asArray(skippedChildren).find((child) =>
+      isPlainObject(child)
+      && firstGradientFill(child)
+      && sameBox(child.box, owner.box));
+    const gradient = matching && firstGradientFill(matching);
+    if (gradient) {
+      const style = isPlainObject(next.style) ? { ...next.style } : {};
+      style.fills = visibleFillsOf(matching);
+      next.style = style;
+      next.ownerComposite = {
+        via: matching.why || 'art-fragment',
+        sourceId: matching.id || null,
+        fillKind: gradient.type,
+      };
+    }
+  }
+  if (Array.isArray(owner.nodes)) next.nodes = omitSkippedNodes(owner.nodes);
+  return next;
+}
+
+function childrenOf(nodes, parentId) {
+  return asArray(nodes).filter((node) => node && node.parentId === parentId);
+}
+
+/** Flat inventory/v2 page nodes: lift owner composites without painting skipped ids. */
+export function restoreOwnerComposites(nodes) {
+  const list = asArray(nodes);
+  return list.flatMap((node) => {
+    if (!isPlainObject(node) || isSkipped(node)) return [];
+    return [liftOwnerComposite(node, childrenOf(list, node.id).filter(isSkipped))];
+  });
+}
+
+const TODAY_NAME = /^dyn\/今日日期/;
+const RETURN_TODAY_NAME = /返回(?:今天|今日|当日)|today[-_ ]?return|return[-_ ]?today/i;
+
+/**
+ * Calendar identity is two source layer sets: today (`dyn/今日日期`) and
+ * return-today. Missing return-today stays unread/skipped; never synthesize.
+ */
+export function calendarIdentityFromNodes(nodes) {
+  const today = [];
+  const returnToday = [];
+  const skippedReturnToday = [];
+  for (const node of asArray(nodes)) {
+    const name = String(node?.name || '');
+    if (TODAY_NAME.test(name) && !isSkipped(node) && node.id) today.push(node.id);
+    if (!RETURN_TODAY_NAME.test(name)) continue;
+    if (isSkipped(node)) skippedReturnToday.push({ id: node.id, why: node.why || 'skipped' });
+    else if (node.id) returnToday.push(node.id);
+  }
+  return {
+    today,
+    returnToday,
+    unreadReturnToday: today.length > 0 && returnToday.length === 0,
+    skippedReturnToday,
+  };
+}
+
 /** Drop skipped records from a paint tree. Keep determined and unknown. */
 function omitSkippedNodes(nodes) {
   return asArray(nodes).flatMap((node) => {
     if (!isPlainObject(node) || isSkipped(node)) return [];
-    const next = { ...node };
-    if (Array.isArray(node.nodes)) next.nodes = omitSkippedNodes(node.nodes);
-    return [next];
+    return [liftOwnerComposite(node, asArray(node.nodes).filter(isSkipped))];
   });
 }
 
@@ -734,6 +815,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
   const unknownModalTriggers = asArray(inv.relations)
     .filter((relation) => relation?.kind === 'modal-trigger' && relation.status !== 'determined')
     .map((relation) => ({ toId: relation.to?.id ?? null, evidence: relation.evidence ?? null }));
+  const calendarIdentity = calendarIdentityFromNodes(inv.nodes);
 
   return {
     ok: platformScope.complete,
@@ -753,6 +835,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
     pageChrome: { meta: { id: inv.page.id, name: inv.page.name }, nodes: pageChrome },
     fixedOverlays: { meta: { id: inv.page.id, name: inv.page.name }, nodes: fixedOverlays },
     pagePaintOrder: pagePaintOrderOf(inv),
+    calendarIdentity,
     componentVariantGraph: {
       componentSets,
       components,

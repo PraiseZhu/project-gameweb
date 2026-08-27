@@ -30,13 +30,15 @@ identity transform and full opacity; returning to the top restores both.
 - 按稿内 `meta.y` 排序后的第一 section 从 page origin 开始；
 - 第一 section 属于 `pagePaintOrder` 的真实内容 root。
 
-首 section 作为 hero，槽的设计高度为 `ctx.viewport.h / k`。后续 section 统一增加
-`max(0, slotDesignHeight - heroDesignHeight)` 的设计坐标偏移，因此它们在浏览器中从
-一个实际 viewport 高度之后开始。KV/page chrome 与 fixed overlay 仍按原 sibling 顺序绘制。
+首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 留在 Figma y，
+只跟平台 width-scale，不再被 `layoutOffsetDesign` 往下推。否则 page background 仍
+停在稿坐标，下一块会整段溜走，中间露出空带。KV/page chrome 与 fixed overlay 仍按
+原 sibling 顺序绘制。
 
-Hero 的 cover 缩放只作用在 `[data-hero-slot-role="hero"]`。页面根和后续 released
-区块继续用平台 scale；不能把 `slotScale` 写回整个 page stage，否则后面的自然流
-会被当成首屏再裁一次。
+Hero 的 cover 缩放只作用在 page-chrome 的 `kv` 视觉平面（`data-kv-cover-plane`）。
+首页标题、下载按钮和后续 released 区块继续用平台 width-scale；不能把
+`slotScale` 写到 `[data-hero-slot-role="hero"]` 或整个 page stage，否则标题会
+被当成 KV 海报放大，KV 背景却仍和其他板块一起等比压缩。
 
 渲染 DOM 会写入 `data-hero-scroll-slot="active"`、`data-hero-section`、
 `data-hero-content-root`，以及 section 的 `data-hero-slot-role`。结构证据不足时写入

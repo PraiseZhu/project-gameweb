@@ -226,7 +226,11 @@ function sourceBackedSwitchPages(switchNode, members, list) {
  * direct children alone therefore rejects valid structures such as a calendar
  * track or reward row. The authorization is still fail-closed: it needs the
  * source clip plus a direct child whose source geometry actually crosses the
- * horizontal viewport bounds. */
+ * horizontal viewport bounds.
+
+ Named `scroll/` is the explicit host. A `mix/` clip window with the same
+ source overflow (calendar-style) is also a host. A random clipsContent
+ frame is not. */
 function hasHorizontalOverflow(node, children) {
   if (node?.clipsContent !== true) return false;
   const viewport = plain(node?.box || node?.absoluteBoundingBox || {});
@@ -241,6 +245,14 @@ function hasHorizontalOverflow(node, children) {
     return Number.isFinite(x) && Number.isFinite(w) && w > 0
       && (x < left - 0.5 || x + w > right + 0.5);
   });
+}
+
+function hscrollHost(node, children, parsed) {
+  const namedScroll = parsed.role === 'scroll' || interactionRole(node) === 'scroll';
+  const namedMix = parsed.role === 'mix' || interactionRole(node) === 'mix';
+  if (!namedScroll && !namedMix) return null;
+  if (!hasHorizontalOverflow(node, children)) return null;
+  return { axis: parsed.params.axis || 'x', pointer: true, drag: true, evidence: 'source-clip-and-child-geometry-overflow' };
 }
 
 /**
@@ -284,11 +296,11 @@ export function deriveInteractionModel(nodes = []) {
         else unresolved.push({ id: String(id), role, reason: 'fix @from must be a positive integer section number' });
       }
     }
-    if (role === 'scroll') {
+    if (role === 'scroll' || role === 'mix') {
       const children = list.filter((candidate) => String(asId(candidate.parentId)) === String(id));
-      if (hasHorizontalOverflow(node, children)) {
-        entry.hscroll = { axis: parsed.params.axis || 'x', pointer: true, drag: true, evidence: 'source-clip-and-child-geometry-overflow' };
-      } else {
+      const host = hscrollHost(node, children, parsed);
+      if (host) entry.hscroll = host;
+      else if (role === 'scroll') {
         unresolved.push({ id: String(id), role, reason: 'hscroll requires source clipsContent and direct child geometry overflow' });
       }
     }
@@ -321,7 +333,7 @@ export function deriveInteractionModel(nodes = []) {
     }
     const target = explicitTarget(node, parsed);
     if (target && (role === 'tab' || role === 'btn' || role === 'hot' || role === 'sec')) entry.secTarget = target;
-    if ((STRUCTURAL.has(role) && !(role === 'scroll' && !entry.hscroll))
+    if ((STRUCTURAL.has(role) && !((role === 'scroll' || role === 'mix') && !entry.hscroll))
       || role === 'btn'
       || role === 'hot'
       || target) components.push(entry);

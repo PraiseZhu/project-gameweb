@@ -26,6 +26,7 @@
  * ═══ 切图判定（与渲染层同一套规则，不许两份实现）═══
  *   前缀 img/ bg/ kv/  →  切
  *   清单 sliceExport（含 BOOLEAN btn/、ind/ 变体根）→ 切
+ *   BOOLEAN/VECTOR 的 btn/ 左右箭头 → 切（轮廓 CSS 画不出，禁止发明 CSS 箭头）
  *   填充是渐变或 IMAGE →  切
  *   其余              →  不切（scroll/ 是容器；普通 btn/ 无 sliceExport 不切）
  *
@@ -44,6 +45,7 @@ import { deriveRole } from './lib/figma-name-semantics.mjs';
 
 const API = 'https://api.figma.com/v1';
 const SLICE_PREFIXES = new Set(['img', 'bg', 'kv']);
+const BTN_ARROW_NAME = /(?:左|右)(?:划动|滑动)?(?:按钮|箭头)|(?:prev|next)/i;
 const BATCH = 40;               // Figma images 接口一次给太多 id 会超时，分批
 
 function fail(msg) {
@@ -242,6 +244,12 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
        * 非矩形的轮廓 CSS 画不出 —— 实测漏过 2128×290 的 Union（OVERLAY 渐变），
        * 它就是"轮廓比渐变精确性更要紧"的反例。 */
       const bigNonRect = NONRECT.has(n.type) && Math.max(w, h) >= minDim;
+      /* BOOLEAN/VECTOR directional btn/ arrows are composite contours. CSS
+         chevrons/diamonds are forbidden; a missing slice must stay missing,
+         not become a white rectangle. Slice even when the inventory left
+         sliceExport unset — the name+type is the source identity. */
+      const booleanBtnArrow = NONRECT.has(n.type) && derived.role === 'btn'
+        && BTN_ARROW_NAME.test(String(n.name || ''));
       /* 多层填充且含位图（IMAGE）→ 整节点切图。Figma 叠层按各自 blendMode 混合
          （SOLID/NORMAL + IMAGE/SOFT_LIGHT 这类），CSS background-blend-mode 只能给
          一个元素里的多层背景统一一套模式，没法逐层指定 —— 硬画必错。整节点 PNG 把
@@ -256,9 +264,9 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
          alpha 与原始绘制顺序，拆成 CSS 节点会让局部纹理/背景跨出真实可见区。 */
       const hasMaskOwner = Array.isArray(n.maskChildren) && n.maskChildren.length > 0;
       const onlyGradient = fills.length === 1 && String(fills[0].type).startsWith('GRADIENT');
-      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !hasMaskOwner) continue;
+      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !booleanBtnArrow && !hasMaskOwner) continue;
 
-      if (!(listedSlice || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
+      if (!(listedSlice || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
       const effects = ((n.style || {}).effects || []).filter((e) => e && e.visible !== false);
       const descendantEffects = ((n.style || {}).descendantEffects || []).filter((e) => e && e.effectType);
       const allEffectTypes = [
@@ -285,7 +293,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
         .map((f) => String(f.imageRef)))];
       out.push({
         sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
-        reason: listedSlice ? '清单 sliceExport' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
+        reason: listedSlice ? '清单 sliceExport' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
         w, h, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
         imageRefs: imageRefs.length ? imageRefs : undefined,
         renderCropPolicy: exportBounds === 'render' && isBakedImageOwner ? 'top-left-render-canvas' : null,

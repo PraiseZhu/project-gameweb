@@ -38,7 +38,7 @@ logic.
 | Composition base | Native mobile/pad trees win when present. Pad without a pad tree is `pad-uses-pc-tree`. Never invent a third layout. |
 | Light drag | Continuous edge-drag / slider may skip content rebuild only on the same composition base. Language, device, window resize, and W/H box stay on the full path. |
 | Preview 1:1 | Default `scale=1`. Decorative padding yields before shrink. A truly smaller window may scale, and that scale must be reported. |
-| Three visual planes | Background = cover-crop, centered. UI = source-scale (PC seasonal width-scale). Sea / K1 = source aspect, center crop. Do not stretch all three with one transform. |
+| Three visual planes | Background / KV = cover-crop, centered. Homepage title and other UI = source-scale (PC seasonal width-scale). Sea / K1 = source aspect, center crop. Do not stretch all three with one transform. The left directory keeps width-scale and redistributes its source vertical span into the remaining viewport height. |
 | Hero while resizing | `HERO_LOCKED → HERO_EXITING → CONTENT_RELEASED` is geometry plus `scrollTop`. Released content must return to Figma positions, not stay collectively shifted. |
 
 ## What Resize does not own

@@ -1688,29 +1688,32 @@
     return isFinite(ratio) && ratio > 0 ? ratio : 1;
   }
 
-  function directChildByNodeId(root, nodeId) {
-    if (!root || !nodeId) return null;
-    try {
-      for (var child = root.firstElementChild; child; child = child.nextElementSibling) {
-        if (child.getAttribute && (child.getAttribute('data-node') === nodeId || child.getAttribute('data-node-id') === nodeId)) return child;
-      }
-    } catch (e) { /* ignore */ }
+  function layerNameOf(el) {
+    if (!el || !el.getAttribute) return '';
+    return el.getAttribute('data-figma-name') || el.getAttribute('data-name') || el.getAttribute('aria-label') || '';
+  }
+
+  function firstDirectChildByName(root, pattern) {
+    if (!root || !pattern) return null;
+    var children = root.children || [];
+    for (var i = 0; i < children.length; i++) {
+      if (pattern.test(layerNameOf(children[i]))) return children[i];
+    }
     return null;
+  }
+
+  function firstDescendantByName(root, pattern) {
+    if (!root || !pattern) return null;
+    var nodes = root.querySelectorAll ? root.querySelectorAll('[data-figma-name], [data-name], [aria-label]') : [];
+    for (var i = 0; i < nodes.length; i++) {
+      if (pattern.test(layerNameOf(nodes[i]))) return nodes[i];
+    }
+    return firstDirectChildByName(root, pattern);
   }
 
   function syncContinuousNavRailOwner(root, sourceScaleY) {
     if (!root) return null;
-    var railOwner = directChildByNodeId(root, 'I52:3263;17:53006');
-    if (!railOwner) {
-      var children = root.children || [];
-      for (var i = 0; i < children.length; i++) {
-        var name = (children[i].getAttribute && (children[i].getAttribute('data-figma-name') || children[i].getAttribute('data-name') || children[i].getAttribute('aria-label'))) || '';
-        if (/导航背景|nav|rail/i.test(name)) {
-          railOwner = children[i];
-          break;
-        }
-      }
-    }
+    var railOwner = firstDirectChildByName(root, /导航背景|nav.*(?:bg|background)|rail/i);
     if (!railOwner) return null;
 
     saveHeroEntryStyle(railOwner);
@@ -1733,7 +1736,7 @@
     railOwner.setAttribute('data-fixed-viewport-rail', 'true');
     railOwner.setAttribute('data-hero-entry-nav-transform', 'true');
     railOwner.setAttribute('data-hero-entry-nav-kind', 'rail-owner');
-    railOwner.setAttribute('data-figma-source-node-id', 'I52:3263;17:53006');
+    railOwner.setAttribute('data-figma-source-owner', 'fix-left-navigation-background');
     railOwner.setAttribute('data-figma-source-owner', 'fix-left-navigation-background');
     railOwner.setAttribute('data-figma-rail-source-width', String(sourceBoxWidth));
     railOwner.setAttribute('data-figma-rail-source-height', String(sourceBoxHeight));
@@ -1760,11 +1763,10 @@
       bakedAsset.style.pointerEvents = 'none';
       bakedAsset.setAttribute('data-hero-entry-nav-transform', 'true');
       bakedAsset.setAttribute('data-hero-entry-nav-kind', 'rail-owner-asset');
-      bakedAsset.setAttribute('data-figma-source-node-id', 'I52:3263;17:53006');
       bakedAsset.setAttribute('data-figma-rail-source-scale-y', sourceScaleY.toFixed(6));
     }
 
-    var bg = directChildByNodeId(railOwner, 'I52:3263;17:53003');
+    var bg = firstDirectChildByName(railOwner, /导航背景|gradient|rail.*bg/i);
     if (bg) {
       saveHeroEntryStyle(bg);
       bg.style.position = 'absolute';
@@ -1777,8 +1779,13 @@
       bg.setAttribute('data-hero-entry-nav-kind', 'rail-gradient');
     }
 
-    var lineA = directChildByNodeId(railOwner, 'I52:3263;12:47246');
-    var lineB = directChildByNodeId(railOwner, 'I52:3263;12:47247');
+    var namedLines = [];
+    var railKids = railOwner.children || [];
+    for (var li = 0; li < railKids.length; li++) {
+      if (/导航长线|nav.*line|rail.*line/i.test(layerNameOf(railKids[li]))) namedLines.push(railKids[li]);
+    }
+    var lineA = namedLines[0] || null;
+    var lineB = namedLines[1] || null;
     if (lineA) {
       saveHeroEntryStyle(lineA);
       lineA.style.position = 'absolute';
@@ -1788,7 +1795,6 @@
       lineA.style.height = (844 * sourceScaleY) + 'px';
       lineA.setAttribute('data-hero-entry-nav-transform', 'true');
       lineA.setAttribute('data-hero-entry-nav-kind', 'rail-line-source');
-      lineA.setAttribute('data-figma-source-node-id', 'I52:3263;12:47246');
     }
     if (lineB) {
       saveHeroEntryStyle(lineB);
@@ -1799,13 +1805,84 @@
       lineB.style.height = (982 * sourceScaleY) + 'px';
       lineB.setAttribute('data-hero-entry-nav-transform', 'true');
       lineB.setAttribute('data-hero-entry-nav-kind', 'rail-line-source');
-      lineB.setAttribute('data-figma-source-node-id', 'I52:3263;12:47247');
     }
     railOwner.setAttribute('data-figma-rail-source-top', String(sourceLineTop));
     railOwner.setAttribute('data-figma-rail-source-bottom', String(sourceLineBottom));
     railOwner.setAttribute('data-figma-rail-source-coverage', String(sourceLineCoverage));
     railOwner.setAttribute('data-figma-rail-visible-coverage', (sourceLineCoverage * sourceScaleY).toFixed(3));
     return railOwner;
+  }
+
+  function sourcePx(value, fallback) {
+    var n = parseFloat(value);
+    return isFinite(n) ? n : fallback;
+  }
+
+  function syncSourceNavRail(root, stageZoom, viewportH) {
+    if (!root) return false;
+    saveHeroEntryStyle(root);
+    var sourceLeft = sourcePx(root.__fxHeroEntryStyleBase && root.__fxHeroEntryStyleBase.left, root.offsetLeft);
+    var sourceTop = sourcePx(root.__fxHeroEntryStyleBase && root.__fxHeroEntryStyleBase.top, root.offsetTop);
+    var sourceWidth = sourcePx(root.__fxHeroEntryStyleBase && root.__fxHeroEntryStyleBase.width, root.offsetWidth);
+    var sourceHeight = sourcePx(root.__fxHeroEntryStyleBase && root.__fxHeroEntryStyleBase.height, root.offsetHeight);
+    if (!(sourceHeight > 0) || !(viewportH > 0) || !(stageZoom > 0)) return false;
+    var designViewportH = viewportH / stageZoom;
+    var available = Math.max(sourceHeight, designViewportH - sourceTop);
+    var yScale = available / sourceHeight;
+    if (!isFinite(yScale) || yScale <= 0) yScale = 1;
+    root.style.position = 'absolute';
+    root.style.left = sourceLeft + 'px';
+    root.style.top = sourceTop + 'px';
+    root.style.width = sourceWidth + 'px';
+    root.style.height = (sourceHeight * yScale) + 'px';
+    root.style.minHeight = root.style.height;
+    root.style.overflow = 'visible';
+    root.setAttribute('data-hero-entry-nav-transform', 'true');
+    root.setAttribute('data-hero-entry-nav-kind', 'source-root');
+    root.setAttribute('data-hero-entry-nav-y-scale', yScale.toFixed(4));
+    root.setAttribute('data-nav-stretch-plane', 'viewport-height');
+
+    var items = root.querySelectorAll('[data-nav-item]');
+    if (!items.length) return true;
+    var firstTop = sourcePx(items[0].__fxHeroEntryStyleBase && items[0].__fxHeroEntryStyleBase.top, items[0].offsetTop);
+    var last = items[items.length - 1];
+    var lastTop = sourcePx(last.__fxHeroEntryStyleBase && last.__fxHeroEntryStyleBase.top, last.offsetTop);
+    var lastHeight = sourcePx(last.__fxHeroEntryStyleBase && last.__fxHeroEntryStyleBase.height, last.offsetHeight);
+    var sourceSpan = Math.max(1, (lastTop + lastHeight) - firstTop);
+    var targetSpan = Math.max(sourceSpan, sourceHeight * yScale - firstTop);
+    var itemScaleY = targetSpan / sourceSpan;
+    if (!isFinite(itemScaleY) || itemScaleY <= 0) itemScaleY = yScale;
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      saveHeroEntryStyle(item);
+      var itemLeft = sourcePx(item.__fxHeroEntryStyleBase && item.__fxHeroEntryStyleBase.left, item.offsetLeft);
+      var itemTop = sourcePx(item.__fxHeroEntryStyleBase && item.__fxHeroEntryStyleBase.top, item.offsetTop);
+      var itemWidth = sourcePx(item.__fxHeroEntryStyleBase && item.__fxHeroEntryStyleBase.width, item.offsetWidth);
+      var itemHeight = sourcePx(item.__fxHeroEntryStyleBase && item.__fxHeroEntryStyleBase.height, item.offsetHeight);
+      item.style.position = 'absolute';
+      item.style.left = itemLeft + 'px';
+      item.style.top = (firstTop + (itemTop - firstTop) * itemScaleY) + 'px';
+      item.style.width = itemWidth + 'px';
+      item.style.height = itemHeight + 'px';
+      item.setAttribute('data-hero-entry-nav-transform', 'true');
+      item.setAttribute('data-hero-entry-nav-kind', 'source-item');
+    }
+    var rail = firstDescendantByName(root, /导航长线|nav.*line|rail.*line/i);
+    if (rail) {
+      saveHeroEntryStyle(rail);
+      var railLeft = sourcePx(rail.__fxHeroEntryStyleBase && rail.__fxHeroEntryStyleBase.left, rail.offsetLeft);
+      var railTop = sourcePx(rail.__fxHeroEntryStyleBase && rail.__fxHeroEntryStyleBase.top, rail.offsetTop);
+      var railWidth = sourcePx(rail.__fxHeroEntryStyleBase && rail.__fxHeroEntryStyleBase.width, rail.offsetWidth);
+      var railHeight = sourcePx(rail.__fxHeroEntryStyleBase && rail.__fxHeroEntryStyleBase.height, rail.offsetHeight);
+      rail.style.position = 'absolute';
+      rail.style.left = railLeft + 'px';
+      rail.style.top = railTop + 'px';
+      rail.style.width = railWidth + 'px';
+      rail.style.height = (railHeight * itemScaleY) + 'px';
+      rail.setAttribute('data-hero-entry-nav-transform', 'true');
+      rail.setAttribute('data-hero-entry-nav-kind', 'source-rail');
+    }
+    return true;
   }
 
   function syncHeroEntryNavigation(vp, heroBaseHeight) {
@@ -1824,6 +1901,7 @@
         var navRoots = stage.querySelectorAll('[data-motion-role="navigationFooter"]');
         for (var r = 0; r < navRoots.length; r++) {
           var root = navRoots[r];
+          if (syncSourceNavRail(root, stageZoom, viewportH)) continue;
           saveHeroEntryStyle(root);
           var rootLeftSource = 20;
           var rootTopSource = 310;
@@ -1849,7 +1927,7 @@
 
           syncContinuousNavRailOwner(root, sourceScaleY);
 
-          var buttonFrame = directChildByNodeId(root, 'I52:3263;12:47248');
+          var buttonFrame = firstDirectChildByName(root, /导航按钮|nav.*(?:button|item)|btn\/导航/);
           if (buttonFrame) {
             saveHeroEntryStyle(buttonFrame);
             buttonFrame.style.position = 'absolute';
@@ -1976,16 +2054,11 @@
         });
       }
       sections.sort(function (a, b) { return a.top - b.top; });
-      var heroState = frame.getAttribute('data-hero-scroll-state') || '';
-      var heroActive = frame.getAttribute('data-hero-scroll-slot') === 'active'
-        && heroState === 'HERO_LOCKED'
-        && sections.length > 1
-        && rootZoom > 0;
       return {
         vp: { w: (vp && vp.w) || frame.clientWidth || 0, h: (vp && vp.h) || frame.clientHeight || 0 },
         sections: sections,
-        viewportLockedHero: heroActive,
-        heroBoundaryLocal: heroActive ? sections[1].top : 0,
+        viewportLockedHero: false,
+        heroBoundaryLocal: 0,
       };
     } catch (e) {
       return null;

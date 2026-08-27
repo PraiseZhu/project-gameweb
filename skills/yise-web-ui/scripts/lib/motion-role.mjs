@@ -38,8 +38,8 @@ export function deriveMotionRoles(truth = {}) {
         add(roles, node, 'kv-background', 0, 'first-section + kv/background component label');
       } else if (sectionIndex === 0 && /^kv\/(?:foreground|前景|midground|middle|中景|character|角色)$/.test(own)) {
         add(roles, node, 'kv-foreground', 0, 'first-section + kv/depth component label');
-      } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)[-_ ]?logo$/.test(own)) {
-        add(roles, node, 'kvTitle', 0, 'first-section + title-logo component label');
+      } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)/.test(own)) {
+        add(roles, node, 'kvTitle', 0, 'first-section + title component label');
       } else if (sectionIndex === 0 && /^img\/logo$/.test(own)) {
         add(roles, node, 'kvBrand', 0, 'first-section + brand-logo component label');
       } else if (sectionIndex === 0 && isDirectChildOfAncestor(node, /^btn\/(?:download|\u4e0b\u8f7d)/)) {
