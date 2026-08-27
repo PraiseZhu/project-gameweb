@@ -92,4 +92,17 @@ test('公开自测 skip 策略: 模块在但没有可启动 Chrome 时探测为 
   });
   assert.equal(skip.limit, BASE_PUBLIC_SKIP_LIMIT + MISSING_PLAYWRIGHT_SKIP_ALLOWANCE);
   assert.deepEqual(skip.allowances, [{ label: PLAYWRIGHT_SKIP_LABEL, count: MISSING_PLAYWRIGHT_SKIP_ALLOWANCE }]);
+  // live 探测跟随真实机器：有 Chrome 的 runner 上 available=true，上限回基准；
+  // 无 Chrome 的 runner 上走 allowance。只断言两种口径都自洽，不写死方向。
+  const liveSkip = publicSkipPolicy({
+    platform: 'linux',
+    symlinkAvailable: true,
+    bundledFonts: true,
+    playwrightAvailable: live.available,
+  });
+  assert.equal(liveSkip.limit, BASE_PUBLIC_SKIP_LIMIT + (live.available ? 0 : MISSING_PLAYWRIGHT_SKIP_ALLOWANCE));
+  assert.deepEqual(
+    liveSkip.allowances,
+    live.available ? [] : [{ label: PLAYWRIGHT_SKIP_LABEL, count: MISSING_PLAYWRIGHT_SKIP_ALLOWANCE }],
+  );
 });
