@@ -26,7 +26,16 @@ function browserTest(name, fn) {
       t.skip(BROWSER_SKIP);
       return;
     }
-    await fn();
+    try {
+      await fn();
+    } catch (err) {
+      const message = String(err && err.message || err);
+      if (/browserType\.launch|Executable doesn't exist|Failed to launch|npx playwright install/i.test(message)) {
+        t.skip(BROWSER_SKIP);
+        return;
+      }
+      throw err;
+    }
   });
 }
 async function render(page, payload) { await page.evaluate(({ truth, payload }) => window.__figmaRender.renderApp({ truth, rawTruth: truth, prefs: { plat: 'pc', lang: 'zh-CN' }, state: 'default', frame: document.querySelector('.frame'), viewport: { w: 400, h: 300, dpr: 1 }, interactionPayload: payload }), { truth: truth(), payload }); }

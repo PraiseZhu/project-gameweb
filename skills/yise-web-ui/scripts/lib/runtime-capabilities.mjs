@@ -38,14 +38,45 @@ export function interpretPlaywrightProbeStatus(status) {
   };
 }
 
+const PROBE_SCRIPT = [
+  "import { loadPlaywrightApi, findChromiumExecutable } from './scripts/lib/resolve-playwright.mjs';",
+  'try {',
+  '  const { api } = await loadPlaywrightApi(process.cwd());',
+  '  const executablePath = findChromiumExecutable(api.chromium);',
+  '  if (!executablePath) process.exit(1);',
+  "  const ciArgs = (process.env.CI || process.env.GITHUB_ACTIONS) ? ['--no-sandbox', '--disable-dev-shm-usage'] : [];",
+  '  try {',
+  '    const browser = await api.chromium.launch({ executablePath, headless: true, args: ciArgs });',
+  '    await browser.close();',
+  '    process.exit(0);',
+  '  } catch { process.exit(1); }',
+  '} catch { process.exit(2); }',
+].join(' ');
+
+const probeCache = new Map();
+
 export function probePlaywrightCapability(cwd = SKILL_ROOT, env = process.env) {
-  const res = spawnSync(process.execPath, ['-e', "import { loadPlaywrightApi, findChromiumExecutable } from './scripts/lib/resolve-playwright.mjs'; try { const { api } = await loadPlaywrightApi(process.cwd()); process.exit(findChromiumExecutable(api.chromium) ? 0 : 1); } catch { process.exit(2); }"], {
+  const key = [
+    cwd,
+    env.CHROME_PATH || '',
+    env.QA_HIFI_MODULE_ROOT || '',
+    env.PLAYWRIGHT_MODULE_ROOT || '',
+    env.CI || '',
+    env.GITHUB_ACTIONS || '',
+  ].join('\0');
+  if (probeCache.has(key)) return probeCache.get(key);
+  /* File existence is not enough: ubuntu-latest ships Google Chrome, but
+     playwright-core cannot launch a newer system Chrome. Only a real launch
+     counts as available; otherwise public tests must skip. */
+  const res = spawnSync(process.execPath, ['-e', PROBE_SCRIPT], {
     cwd,
     encoding: 'utf8',
     env,
     timeout: 30000,
   });
-  return interpretPlaywrightProbeStatus(res.status);
+  const probe = interpretPlaywrightProbeStatus(res.status);
+  probeCache.set(key, probe);
+  return probe;
 }
 
 export function playwrightBrowserSkipMessage(probe) {

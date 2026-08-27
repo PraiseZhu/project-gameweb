@@ -61,6 +61,11 @@ test('公开自测 skip 策略: 无 Playwright 时额外放行浏览器测', () 
   assert.equal(present.limit, BASE_PUBLIC_SKIP_LIMIT);
 });
 
+test('公开自测 skip 策略: 探测失败码 1 视为不能启动，而不是模块缺失', () => {
+  assert.deepEqual(interpretPlaywrightProbeStatus(1), { available: false, reason: 'no-executable' });
+  assert.match(playwrightBrowserSkipMessage(interpretPlaywrightProbeStatus(1)), /is installed but no Chromium\/Chrome is launchable/);
+});
+
 test('公开自测 skip 策略: 模块在但没有可启动 Chrome 时探测为 false 并走 Playwright skip allowance', () => {
   const missingPath = {
     CHROME_PATH: '/definitely-missing-chrome',
