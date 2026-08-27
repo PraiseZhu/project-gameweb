@@ -92,14 +92,17 @@ test('公开自测 skip 策略: 模块在但没有可启动 Chrome 时探测为 
   assert.equal(typeof live.available, 'boolean');
   if (live.available) assert.equal(live.reason, undefined);
   else assert.ok(live.reason === 'no-executable' || live.reason === 'unresolved');
+  // 策略纯函数直接喂「无 Chrome」假输入，与真机探测解耦（runner 预装 Chrome 时
+  // probe.available 为 true，喂进策略会走基准口径，不能拿来断言 allowance）。
   const skip = publicSkipPolicy({
     platform: 'linux',
     symlinkAvailable: true,
     bundledFonts: true,
-    playwrightAvailable: probe.available,
+    playwrightAvailable: false,
   });
   assert.equal(skip.limit, BASE_PUBLIC_SKIP_LIMIT + MISSING_PLAYWRIGHT_SKIP_ALLOWANCE);
   assert.deepEqual(skip.allowances, [{ label: PLAYWRIGHT_SKIP_LABEL, count: MISSING_PLAYWRIGHT_SKIP_ALLOWANCE }]);
+  void probe;
   // live 探测跟随真实机器：有 Chrome 的 runner 上 available=true，上限回基准；
   // 无 Chrome 的 runner 上走 allowance。只断言两种口径都自洽，不写死方向。
   const liveSkip = publicSkipPolicy({
