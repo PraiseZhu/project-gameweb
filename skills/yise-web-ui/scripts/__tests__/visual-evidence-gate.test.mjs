@@ -71,8 +71,8 @@ function writeDemo({ name, baselines = null } = {}) {
   return { dir, spec, truth };
 }
 
-/* 手写一份能过 validateReportIntegrity 的 report.json —— 本测试测的是视觉证据硬门,
-   不是防伪层(防伪层已有 comp-fix-r5/r6/r7 覆盖)。 */
+/* 手写一份全绿 report.json。本测试主测视觉证据硬门；Gate F 在无 spec.adaptive
+   时标绿会被新防伪闸多报一条，断言要同时认这两条。 */
 function writeForgedReport(dir, spec) {
   const gate = { status: 'passed', pass: true, failures: [], passed: 1, total: 1 };
   writeFileSync(join(dir, 'report.json'), JSON.stringify({
@@ -141,17 +141,20 @@ test('verify 顶层 evidenceLevel: 声明了 baseline → unverified(门 E 结�
 
 /* ==================== ③ pr-block 硬阻断(无 playwright 真跑:拦截发生在任何 spawn 之前) ==================== */
 
-test('pr-block 硬阻断: spec.baselines 为空 → exit 2,且唯一的 problem 就是视觉证据门(不 skip)', () => {
+test('pr-block 硬阻断: spec.baselines 为空 → exit 2,视觉门与无 spec 的 Gate F 造假一并报出(不 skip)', () => {
   const { dir, spec } = writeDemo({ name: 'prblock-candidate' });
   writeForgedReport(dir, spec);
   const pr = run(PRBLOCK, ['--demo', dir], { env: env() });
   assert.equal(pr.status, 2, `零视觉证据的 demo 居然出了块:${pr.stdout}${pr.stderr}`);
   const out = JSON.parse(pr.stdout);
-  assert.equal(out.problems.length, 1, '除视觉证据门外不该有其它 problem(说明拦截发生在可信 spawn 之前,且 fixture 其余全绿)');
-  assert.match(out.problems[0], /spec\.baselines 为空/);
-  assert.match(out.problems[0], /evidenceLevel=candidate/);
-  assert.match(out.problems[0], /capture-baseline/, '修法必须点名采集真实基准的入口');
-  assert.match(out.problems[0], /adjudications/, '修法必须点名 WARN 人工裁决路径');
+  const visual = out.problems.find((p) => /spec\.baselines 为空/.test(p));
+  const forgedAdaptive = out.problems.find((p) => /adaptive-claimed-without-spec/.test(p));
+  assert.ok(visual, out.problems.join('\n'));
+  assert.ok(forgedAdaptive, out.problems.join('\n'));
+  assert.equal(out.problems.length, 2, `期望视觉空基准 + Gate F 无 spec 造假，实际:\n${out.problems.join('\n')}`);
+  assert.match(visual, /evidenceLevel=candidate/);
+  assert.match(visual, /capture-baseline/, '修法必须点名采集真实基准的入口');
+  assert.match(visual, /adjudications/, '修法必须点名 WARN 人工裁决路径');
 });
 
 /* ==================== ④ 阳性路径:confirmed-final 证据正常放行(需真 playwright,CI 真跑) ==================== */

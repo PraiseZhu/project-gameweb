@@ -203,7 +203,7 @@ function candidateCompletion({ ok, spec, truth, indexPath }) {
     evidenceLevel: ok ? 'candidate' : 'none',
     sourcePlatformEvidence: evidence,
     productView,
-    ...internalCandidatePreview(productView),
+    ...internalCandidatePreview(productView, { presentPage: ok }),
     unclaimedCapabilities: unclaimedCapabilitiesFor(spec, truth),
     humanReview: humanReviewStopAfterPreviewFirst({ spec, truth, previewOk: ok }),
   };

@@ -73,8 +73,12 @@ test('sc-yisewebui-layer-stop: two human review stops, Translation not-claimed w
   const readme = read('README.md');
   assert.match(skill, /Main static → Translation/);
   assert.match(skill, /humans see \*\*two\*\* review stops/);
-  assert.match(skill, /zh-CN font load\s+is not a translation pass/s);
+  assert.match(skill, /zh-CN\s+font load\s+is not a translation pass/s);
   assert.match(skill, /Do not open or present the page while `preview:first` is red/);
+  assert.match(skill, /humanStopPreviewAllowed/);
+  const finalGate = read('docs/final-preview-gate.md');
+  assert.match(finalGate, /humanStopPreviewAllowed/);
+  assert.match(finalGate, /human review stop may open/);
   assert.match(arch, /stop-layer workflow/);
   assert.match(arch, /two review stops/);
   assert.match(arch, /zh-CN font\s+load is not a translation pass/s);

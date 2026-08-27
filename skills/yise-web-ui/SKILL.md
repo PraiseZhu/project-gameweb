@@ -78,10 +78,12 @@ There are two explicit workflow declarations:
 → Interaction → Resize, but humans see **two** review stops, not four:
 
 1. After Main static (and Translation **only if a copy table is present**):
-   `preview:first` must be green, then open `?product=1` and stop. Tell the
-   user this axis is done. Do not start Interaction / Resize until they say
-   continue. No copy table → Translation stays `not-claimed`. zh-CN font load
-   is not a translation pass.
+   `preview:first` must be green, then open `?product=1` and stop. That is
+   the first human review stop, not confirmed-final delivery
+   (`userPreviewAllowed` stays false; `humanStopPreviewAllowed` is true).
+   Tell the user this axis is done. Do not start Interaction / Resize until
+   they say continue. No copy table → Translation stays `not-claimed`. zh-CN
+   font load is not a translation pass.
 2. After Interaction and Resize: open `?product=1` again and stop. Tell the
    user this axis is done. Do not Pack until they say continue.
 

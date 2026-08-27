@@ -172,6 +172,13 @@ test('translation axis stays not-claimed without a copy table even if zh-CN font
   assert.equal(none.reason, 'no-translation-table');
   assert.match(none.note, /中文字体加载不等于翻译通过/);
 
+  const pointerOnly = translationAxisClaim({
+    spec: { matrix: { langs: ['zh-CN', 'en'] }, lark: { path: 'fixtures/lark-copy.json' } },
+    truth: { copy: { byNode: {} } },
+  });
+  assert.equal(pointerOnly.status, 'not-claimed');
+  assert.equal(pointerOnly.reason, 'no-translation-table');
+
   const zhOnly = translationAxisClaim({
     spec: { matrix: { langs: ['zh-CN'] }, copyTable: [{ id: 'row-1' }] },
     fontLoaded: true,

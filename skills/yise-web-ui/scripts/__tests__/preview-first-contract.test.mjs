@@ -69,6 +69,9 @@ test('preview-first candidate output always uses a durable file:// product URL',
   assert.doesNotMatch(output.productView.url, /^http:/);
   assert.equal(output.humanReview.presentPage, true);
   assert.equal(output.humanReview.id, 'static-and-translation');
+  assert.equal(output.userPreviewAllowed, false);
+  assert.equal(output.humanStopPreviewAllowed, true);
+  assert.equal(output.previewDisposition, 'human-review-stop');
   assert.ok(output.unclaimedCapabilities.includes('independentTranslation'));
 });
 

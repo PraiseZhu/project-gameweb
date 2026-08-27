@@ -43,5 +43,18 @@ export function evaluateFinalPreviewGate({ staticAcceptance = null, visualAssetA
   return { userPreviewAllowed: true, previewDisposition: 'final-ready', evidenceLevel: FINAL_EVIDENCE_LEVEL, staticAcceptanceId: staticAcceptance.staticAcceptanceId ?? null, staticTruthRef: staticAcceptance.staticTruthRef ?? null };
 }
 
-export function internalCandidatePreview(productView) { return { userPreviewAllowed: false, previewDisposition: 'internal-candidate-only', productView }; }
+/**
+ * preview-first is never confirmed-final delivery (`userPreviewAllowed` stays
+ * false). After it is green, the first human review stop may open `?product=1`
+ * (`humanStopPreviewAllowed` / `previewDisposition: 'human-review-stop'`).
+ */
+export function internalCandidatePreview(productView, { presentPage = false } = {}) {
+  const humanStop = presentPage === true;
+  return {
+    userPreviewAllowed: false,
+    humanStopPreviewAllowed: humanStop,
+    previewDisposition: humanStop ? 'human-review-stop' : 'internal-candidate-only',
+    productView,
+  };
+}
 export { FINAL_EVIDENCE_LEVEL };

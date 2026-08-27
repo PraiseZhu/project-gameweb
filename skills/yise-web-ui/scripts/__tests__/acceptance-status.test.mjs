@@ -241,6 +241,12 @@ test('page capability declaration refuses forged translation and adaptive greens
     report: { gateD: { status: 'passed', pass: true } },
   });
   assert.ok(forgedBinding.forged.includes('bindings-claimed-without-spec'));
+
+  const { dir, spec } = writeMinimalDemo('product-qa');
+  const forgedReport = syntheticReport(dir, spec, 'product-qa');
+  forgedReport.gateF = { status: 'passed', pass: true, total: 1, passed: 1, failures: [] };
+  const forgedAdaptiveIntegrity = validateReportIntegrity(dir, spec, forgedReport);
+  assert.ok(forgedAdaptiveIntegrity.some((p) => /adaptive-claimed-without-spec/.test(p)), forgedAdaptiveIntegrity.join('\n'));
 });
 
 test('preview-first red never presents a page; green is the first human stop', () => {

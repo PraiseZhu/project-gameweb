@@ -141,6 +141,16 @@ export function validateReportIntegrity(demoDir, spec, report) {
   }
   if (!Array.isArray(report.coverage?.cases) || report.coverage.cases.length === 0) problems.push('report 缺实际执行 coverage.cases');
   if (report.ok !== true) problems.push('report.ok 不是 true');
+  let truth = {};
+  const truthPath = join(demoDir, 'truth.json');
+  if (existsSync(truthPath)) {
+    try { truth = JSON.parse(readFileSync(truthPath, 'utf8')); }
+    catch { truth = {}; }
+  }
+  const capabilities = declarePageCapabilities({ spec, truth, report });
+  if (!capabilities.ok) {
+    problems.push(`验收声明造假:${capabilities.forged.join(',')}`);
+  }
   return problems;
 }
 

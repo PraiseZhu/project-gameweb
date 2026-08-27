@@ -10,15 +10,34 @@ export const DEFAULT_TRANSLATION_LANGUAGES = Object.freeze(['zh-CN', 'en', 'ja',
 function isPresentTable(value) {
   if (!value) return false;
   if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === 'object') return Object.keys(value).length > 0;
-  return false;
+  if (typeof value !== 'object') return false;
+  if (Array.isArray(value.rows) && value.rows.length > 0) return true;
+  if (value.rows && typeof value.rows === 'object' && Object.keys(value.rows).length > 0) return true;
+  if (Array.isArray(value.entries) && value.entries.length > 0) return true;
+  const keys = Object.keys(value).filter((key) => !key.startsWith('_')
+    && key !== 'meta' && key !== 'path' && key !== 'file' && key !== 'source');
+  return keys.some((key) => {
+    const child = value[key];
+    if (Array.isArray(child)) return child.length > 0;
+    return !!(child && typeof child === 'object' && Object.keys(child).length > 0);
+  });
 }
 
 export function hasTranslationTable(spec = {}, truth = {}) {
   return [
-    spec.copyTable, spec.translationTable, spec.lark, spec.copy?.table, spec.translation?.table,
-    truth.copyTable, truth.translationTable, truth.lark, truth.copy?.table, truth.translations,
+    spec.copyTable, spec.translationTable, spec.copy?.table, spec.translation?.table,
+    truth.copyTable, truth.translationTable, truth.copy?.table, truth.translations,
+    isLarkSnapshot(spec.lark) ? spec.lark : null,
+    isLarkSnapshot(truth.lark) ? truth.lark : null,
   ].some(isPresentTable);
+}
+
+function isLarkSnapshot(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (typeof value.path === 'string' || typeof value.file === 'string' || typeof value.source === 'string') {
+    return isPresentTable(value.rows) || isPresentTable(value.entries);
+  }
+  return isPresentTable(value);
 }
 
 /**
