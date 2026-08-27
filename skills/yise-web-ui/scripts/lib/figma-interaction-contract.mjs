@@ -227,32 +227,43 @@ function sourceBackedSwitchPages(switchNode, members, list) {
  * track or reward row. The authorization is still fail-closed: it needs the
  * source clip plus a direct child whose source geometry actually crosses the
  * horizontal viewport bounds.
+ *
+ * Named `scroll/` is the explicit host. A `mix/` clip, including
+ * `mix/calendar`, stays draw-only even when a child overflows; product
+ * names are not interaction evidence. A random clipsContent frame is not
+ * a host either. */
+function overflowBox(node) {
+  const box = plain(node?.box || node?.absoluteBoundingBox || {});
+  const x = Number(box?.x);
+  const w = Number(box?.w ?? box?.width);
+  if (!Number.isFinite(x) || !Number.isFinite(w) || w <= 0) return null;
+  return { x, w, right: x + w };
+}
 
- Named `scroll/` is the explicit host. A `mix/` clip window with the same
- source overflow (calendar-style) is also a host. A random clipsContent
- frame is not. */
-function hasHorizontalOverflow(node, children) {
-  if (node?.clipsContent !== true) return false;
-  const viewport = plain(node?.box || node?.absoluteBoundingBox || {});
-  const left = Number(viewport?.x);
-  const width = Number(viewport?.w ?? viewport?.width);
-  if (!Number.isFinite(left) || !Number.isFinite(width) || width <= 0) return false;
-  const right = left + width;
-  return children.some((child) => {
-    const box = plain(child?.box || child?.absoluteBoundingBox || {});
-    const x = Number(box?.x);
-    const w = Number(box?.w ?? box?.width);
-    return Number.isFinite(x) && Number.isFinite(w) && w > 0
-      && (x < left - 0.5 || x + w > right + 0.5);
-  });
+function childCrossesViewport(child, viewport) {
+  const box = overflowBox(child);
+  return !!(box && (box.x < viewport.x - 0.5 || box.right > viewport.right + 0.5));
+}
+
+function overflowingDirectChildren(node, children) {
+  if (node?.clipsContent !== true) return [];
+  const viewport = overflowBox(node);
+  if (!viewport) return [];
+  return children.filter((child) => childCrossesViewport(child, viewport));
 }
 
 function hscrollHost(node, children, parsed) {
   const namedScroll = parsed.role === 'scroll' || interactionRole(node) === 'scroll';
-  const namedMix = parsed.role === 'mix' || interactionRole(node) === 'mix';
-  if (!namedScroll && !namedMix) return null;
-  if (!hasHorizontalOverflow(node, children)) return null;
-  return { axis: parsed.params.axis || 'x', pointer: true, drag: true, evidence: 'source-clip-and-child-geometry-overflow' };
+  if (!namedScroll) return null;
+  const overflowing = overflowingDirectChildren(node, children);
+  if (!overflowing.length) return null;
+  return {
+    axis: parsed.params.axis || 'x',
+    pointer: true,
+    drag: true,
+    evidence: 'source-clip-and-child-geometry-overflow',
+    overflowing,
+  };
 }
 
 /**
@@ -296,11 +307,14 @@ export function deriveInteractionModel(nodes = []) {
         else unresolved.push({ id: String(id), role, reason: 'fix @from must be a positive integer section number' });
       }
     }
-    if (role === 'scroll' || role === 'mix') {
+    if (role === 'scroll') {
       const children = list.filter((candidate) => String(asId(candidate.parentId)) === String(id));
       const host = hscrollHost(node, children, parsed);
-      if (host) entry.hscroll = host;
-      else if (role === 'scroll') {
+      if (host) {
+        const { overflowing, ...hscroll } = host;
+        entry.hscroll = hscroll;
+        entry.hscrollSurfaceIds = overflowing.map((child) => String(idOf(child))).filter(Boolean);
+      } else {
         unresolved.push({ id: String(id), role, reason: 'hscroll requires source clipsContent and direct child geometry overflow' });
       }
     }
@@ -333,7 +347,7 @@ export function deriveInteractionModel(nodes = []) {
     }
     const target = explicitTarget(node, parsed);
     if (target && (role === 'tab' || role === 'btn' || role === 'hot' || role === 'sec')) entry.secTarget = target;
-    if ((STRUCTURAL.has(role) && !((role === 'scroll' || role === 'mix') && !entry.hscroll))
+    if ((STRUCTURAL.has(role) && !(role === 'scroll' && !entry.hscroll))
       || role === 'btn'
       || role === 'hot'
       || target) components.push(entry);
@@ -420,9 +434,15 @@ export function deriveInteractionModel(nodes = []) {
     }
   }
 
+  const overflowChildIds = new Set(
+    components.flatMap((entry) => Array.isArray(entry.hscrollSurfaceIds) ? entry.hscrollSurfaceIds : []),
+  );
   const attributes = [];
   for (const entry of components) {
     const attrs = { 'data-node': entry.id };
+    if (overflowChildIds.has(String(entry.id)) && !entry.hscroll) {
+      attrs['data-hscroll-overflow-child'] = 'true';
+    }
     if (entry.secTarget) attrs['data-sec-target'] = entry.secTarget;
     if (entry.switchId) attrs['data-switch'] = entry.switchId;
     if (entry.swpage != null) attrs['data-swpage'] = String(entry.swpage);
@@ -461,6 +481,16 @@ export function deriveInteractionModel(nodes = []) {
       parsed,
     });
     if (Object.keys(withPress).length > 1) attributes.push({ id: entry.id, attrs: withPress });
+  }
+  for (const childId of overflowChildIds) {
+    if (attributes.some((entry) => entry.id === childId)) continue;
+    attributes.push({
+      id: childId,
+      attrs: {
+        'data-node': childId,
+        'data-hscroll-overflow-child': 'true',
+      },
+    });
   }
   return {
     components,

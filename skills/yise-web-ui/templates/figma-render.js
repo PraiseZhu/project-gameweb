@@ -252,7 +252,7 @@
           add(node, 'kv-background', 0, 'first-section + kv/background component label');
         } else if (sectionIndex === 0 && /^kv\/(?:foreground|前景|midground|middle|中景|character|角色)$/.test(own)) {
           add(node, 'kv-foreground', 0, 'first-section + kv/depth component label');
-        } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)/.test(own)) {
+        } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)(?:-?logo)?$/.test(own)) {
           add(node, 'kvTitle', 0, 'first-section + title component label');
         } else if (sectionIndex === 0 && /^img\/logo$/.test(own)) {
           add(node, 'kvBrand', 0, 'first-section + brand-logo component label');
@@ -1738,26 +1738,28 @@
           : Object.values(__activeTruth.fixedOverlays?.nodes || {});
         const fixedById = new Map(fixedOverlayNodes.map((n) => [id(n), n]));
         const parentId = (n) => String(value(n && n.parentId) || '');
+        const boxXw = (raw) => {
+          const box = __plain(raw && raw.box || {});
+          const x = Number(box.x), w = Number(box.w);
+          return Number.isFinite(x) && Number.isFinite(w) && w > 0 ? { x, w, right: x + w } : null;
+        };
+        const childOverflowsHost = (child, host) => {
+          const box = boxXw(child);
+          return !!(box && (box.x < host.x - 0.5 || box.right > host.right + 0.5));
+        };
         const hscrollAxis = (node, parsed) => {
           const namedScroll = parsed.role === 'scroll';
-          const namedMix = parsed.role === 'mix';
           const clipHost = value(node && node.clipsContent) === true;
-          if (!namedScroll && !(namedMix && clipHost)) return null;
-          const host = __plain(node && node.box || {});
-          const left = Number(host.x), width = Number(host.w);
-          if (!Number.isFinite(left) || !Number.isFinite(width) || width <= 0) return null;
-          const right = left + width;
-          const overflows = items.filter((candidate) => parentId(candidate) === id(node)).some((candidate) => {
-            const box = __plain(candidate && candidate.box || {});
-            const x = Number(box.x), w = Number(box.w);
-            return Number.isFinite(x) && Number.isFinite(w) && w > 0
-              && (x < left - 0.5 || x + w > right + 0.5);
-          });
+          if (!namedScroll || !clipHost) return null;
+          const host = boxXw(node);
+          if (!host) return null;
+          const overflows = items.some((candidate) => parentId(candidate) === id(node) && childOverflowsHost(candidate, host));
           if (!overflows) return null;
-          /* Named scroll/ is the explicit host. A mix/ clip window with the
-             same overflowing child is also a host (calendar-style). A random
-             clipsContent frame is not — use the Figma clip box, never the child's full width. */
-          return namedScroll ? (parsed.params.axis || 'x') : 'x';
+          /* Named scroll/ is the explicit host only when Figma also clips.
+             A mix/ clip, including a calendar window, stays draw-only even
+             when a child overflows. A random clipsContent frame is not a
+             host either — use the Figma clip box, never the child's full width. */
+          return parsed.params.axis || 'x';
         };
         const propertyValues = (raw, out = []) => {
           const v = value(raw);
@@ -2208,6 +2210,16 @@
             attrs['data-hscroll-pointer'] = 'true';
             attrs['data-hscroll-drag'] = 'true';
             attrs['data-hscroll-evidence'] = 'source-clip-and-child-geometry-overflow';
+            const hostBox = boxXw(n);
+            if (hostBox) {
+              for (const child of items.filter((candidate) => parentId(candidate) === id(n))) {
+                if (!childOverflowsHost(child, hostBox)) continue;
+                const childId = id(child);
+                const childAttrs = out.get(childId) || {};
+                childAttrs['data-hscroll-overflow-child'] = 'true';
+                out.set(childId, childAttrs);
+              }
+            }
             if (axis === 'x') {
               const hostBox = __plain(n && n.box || {});
               const hx = Number(hostBox.x), hy = Number(hostBox.y);
@@ -2583,6 +2595,46 @@
        for (const [id, attrs] of adapterAttrs) {
          interactionAttrs.set(id, { ...(interactionAttrs.get(id) || {}), ...attrs });
        }
+       /* A designer-export composite on a clip/mix ancestor is the rest-state
+          snapshot of the whole subtree, including the first page of a nested
+          scroll/. Once that descendant is a live hscroll host, the bake would
+          stay pinned under the moving tracks. Release only the clip/mix window
+          that covers the host; a random img/ ancestor stays baked. Named by
+          structure, not by a product node id. */
+       const liveHscrollBakeRelease = new Set();
+       const paintNodeById = (id) => {
+         if (!id) return null;
+         if (truthNodeById.has(id)) return truthNodeById.get(id);
+         for (const it of (rawList || list)) {
+           if (String(__u(it && it.id) || '') === id) return it;
+         }
+         return null;
+       };
+       if (!suppressInteractions) {
+         for (const item of (rawList || list)) {
+           const itemId = String(__u(item && item.id) || '');
+           const hostAttrs = interactionAttrs.get(itemId);
+           if (!itemId || !hostAttrs || hostAttrs['data-hscroll'] == null) continue;
+           const seen = new Set([itemId]);
+           const climb = [];
+           if (Array.isArray(item.ownerPath)) climb.push(...item.ownerPath);
+           if (Array.isArray(item.ancestorIds)) climb.push(...item.ancestorIds);
+           climb.push(item.parentId);
+           for (const rawId of climb) {
+             const ancestorId = String(__u(rawId) || '');
+             if (!ancestorId || seen.has(ancestorId)) continue;
+             seen.add(ancestorId);
+             if (!this._assetRec(ancestorId, __base)) continue;
+             const ancestor = paintNodeById(ancestorId);
+             const ancestorName = String(__u(ancestor && ancestor.name) || '');
+             const ancestorPfx = ((/^([a-z]+)\//.exec(ancestorName) || [])[1] || '');
+             const ancestorClips = ancestor && ancestor.clipsContent === true;
+             if (ancestorPfx === 'mix' || ancestorPfx === 'scroll' || ancestorClips) {
+               liveHscrollBakeRelease.add(ancestorId);
+             }
+           }
+         }
+       }
        const componentVariantOwners = [];
        /* A ready package may reference a small component instance directly
           (indicator, tab/icon button) while the page node intentionally has
@@ -2664,6 +2716,7 @@
           || evidenceAttrs['data-swpage'] != null
           || evidenceAttrs['data-switch-action'] != null
           || evidenceAttrs['data-hscroll'] != null
+          || evidenceAttrs['data-hscroll-overflow-child'] === 'true'
           || evidenceAttrs['data-sec-target'] != null
           || evidenceAttrs['data-copy-code'] != null
           || evidenceAttrs['data-nav-item'] === 'true'
@@ -2695,13 +2748,12 @@
            already flattened at export, which is the documented approximation). */
         const __blendHasSolidBase = (st.fills || []).some((fl) => fl && fl.visible !== false && fl.type === 'SOLID');
         const __blendLiftable = __blendLift && __blendHasSolidBase;
-        const __calendarOwnerAssetLock = __base === 'pc'
-          && String(__u(nid)) !== '395:34991'
-          && Array.isArray(n.ancestorIds)
-          && n.ancestorIds.map((id) => String(__u(id))).includes('395:34991')
-          && !!this._assetRec('395:34991', __base);
-        if ((parent && parent.assetLock || bakedOwnerId || __calendarOwnerAssetLock)
-          && !hasStructuralInteraction && !__blendLiftable) continue;
+        const bakedOwnerReleased = !!(bakedOwnerId && liveHscrollBakeRelease.has(String(bakedOwnerId)));
+        const underHscrollSurface = !!(parent && parent.hscrollSurface)
+          || evidenceAttrs?.['data-hscroll-overflow-child'] === 'true'
+          || (parent && parent.el && parent.el.closest && parent.el.closest('[data-hscroll-surface="true"]'));
+        if ((parent && parent.assetLock || (bakedOwnerId && !bakedOwnerReleased))
+          && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable) continue;
         /* Direct-owner fallback for text constraint. The locator-stack parent is
            often the SECTION layer for a deeply nested text leaf; it must not win
            over a tighter truth owner. Accept a rendered direct parent only when
@@ -2755,6 +2807,7 @@
         const SLICE = { img: 1, bg: 1, kv: 1 };
         const needsAsset = !isText && (SLICE[pfx] || kind === 'gradient' || kind === 'image');
         const assetRec = this._assetRec(nid, __base);
+        const bakeReleasedForLiveHscroll = liveHscrollBakeRelease.has(String(__u(nid)));
         /* `ind/进度条` is a source component set whose two *component roots*
            intentionally have no page-level slice.  The ready truth does retain
            their exact component ids; the selected child has an IMAGE fill, but
@@ -2774,8 +2827,8 @@
            or a genuinely CSS-rebuildable blend layer may remain above baked pixels;
            every other baked-subtree paint node is skipped to avoid double-draw. */
         const __inBakedSubtree = !!(bakedOwnerId) && !assetRec;
-        if (__inBakedSubtree && !hasStructuralInteraction && !__blendLiftable) continue;
-        const assetUrl = assetRec
+        if (__inBakedSubtree && !bakedOwnerReleased && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable) continue;
+        const assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
           : (__indComponentFallback && __indComponentFallback.file);
         const NONRECT_SHAPE = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, ELLIPSE: 1, LINE: 1 };
@@ -2790,7 +2843,13 @@
         el.className = 'fx-n';
         el.setAttribute('data-node', nid);
         el.setAttribute('data-figma-type', n.type ?? '');
+        /* Resize locates directory rail parts by the authored Figma name
+           (`导航背景` / `导航长线` / `导航按钮`). Stamp it on every painted
+           owner; chrome must not guess from node ids. */
+        const layerName = String(n.name ?? '').trim();
+        if (layerName) el.setAttribute('data-name', layerName);
         if (pfx) el.setAttribute('data-prefix', pfx);
+        if (bakeReleasedForLiveHscroll) el.setAttribute('data-asset-lock-released', 'live-hscroll-descendant');
         if (pfx === 'btn') {
           const btnLabel = String(n.name || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
           if (btnLabel) el.setAttribute('data-btn-name', btnLabel);
@@ -3152,6 +3211,35 @@
           if (hscrollTrackClipRelease) {
             el.setAttribute('data-hscroll-track', 'true');
             el.setAttribute('data-hscroll-track-clip-released', 'parent-viewport-renderbox-edge');
+            /* Direct overflowing child of the clip host is the scroll surface.
+               Nested groups only release their rest-state clip; they do not
+               become a second scroller. */
+            if (hscrollHostEl && parent && parent.el === hscrollHostEl) {
+              el.setAttribute('data-hscroll-surface', 'true');
+              el.style.overflow = 'visible';
+              el.style.overflowX = 'visible';
+              el.style.overflowY = 'visible';
+              const restLeft = Number.parseFloat(el.style.left || '0');
+              if (Number.isFinite(restLeft)) el.setAttribute('data-hscroll-rest-left', String(restLeft));
+              const hostW = Number(hscrollHostRecord && hscrollHostRecord.box && hscrollHostRecord.box.w);
+              const trackW = Number(box.w);
+              const restX = Number(box.x);
+              const hostX = Number(hscrollHostRecord && hscrollHostRecord.box && hscrollHostRecord.box.x);
+              if ([hostW, trackW, restX, hostX].every(Number.isFinite) && (restX + trackW > hostX + hostW + 0.5 || restX < hostX - 0.5)) {
+                el.setAttribute('data-hscroll-max', String(Math.max(0, (restX + trackW) - (hostX + hostW))));
+              }
+              /* Host overflow cannot clip this track without also clipping the
+                 rest-state left labels that sit as siblings. Clip the track
+                 at its own rest left edge so translated dates never paint
+                 left of that column into the labels. Rest clip is 0: the
+                 track box already starts to the right of the labels. */
+              if (Number.isFinite(restLeft)) {
+                /* inset(0) still clips hugging descendants that paint past the
+                   track box. Rest state keeps clip none so 06.11 stays whole. */
+                el.style.clipPath = 'none';
+                el.setAttribute('data-hscroll-host-clip', '0');
+              }
+            }
             /* The host keeps its Figma box and expresses shadow gutter as
                border-box padding. .fx-n children are position:absolute, so
                they anchor to the host's padding box and the padding alone
@@ -3225,14 +3313,14 @@
           }
         }
         if (evidenceAttrs && evidenceAttrs['data-hscroll'] === 'x') {
-          /* This same Figma node is the clipped viewport. Its nested source
-             content remains the real track; do not duplicate or synthesize a
-             wrapper just to make one-child tracks scrollable. */
-          el.style.overflowX = 'auto';
+          /* This same Figma node is the clipped viewport. Native overflow-x
+             on the host would also pan siblings that stay inside the rest
+             box (calendar left labels). Keep the host as clip-only; the
+             overflowing track is the scroll surface. */
+          el.style.overflow = 'hidden';
+          el.style.overflowX = 'hidden';
           el.style.overflowY = 'hidden';
-          el.style.scrollbarWidth = 'none';
-          el.style.msOverflowStyle = 'none';
-          el.style.touchAction = 'pan-y';
+          el.style.touchAction = 'pan-x';
           /* Absorb source-proven cross-axis shadow bleed into the host's own
              padding box, so overflow:hidden clips at the shadow's true outer
              edge instead of at the content bounds. Main-axis scroll viewport
@@ -4248,7 +4336,17 @@
 
         // 挂到父节点下（没有父节点才挂 stage）。DFS 先序 → 同级 append 顺序即绘制顺序。
         (parent ? parent.el : container).appendChild(el);
-        const record = { seq, el, box, assetLock: !!assetRec, nid: String(__u(nid)), layout: n.layout || null };
+        const record = {
+          seq,
+          el,
+          box,
+          assetLock: !!assetRec && !bakeReleasedForLiveHscroll && evidenceAttrs?.['data-hscroll'] == null,
+          nid: String(__u(nid)),
+          layout: n.layout || null,
+          hscrollSurface: el.getAttribute('data-hscroll-surface') === 'true'
+            || evidenceAttrs?.['data-hscroll-overflow-child'] === 'true'
+            || !!(parent && parent.hscrollSurface),
+        };
         renderedById.set(String(__u(nid)), record);
         stack.push(record);
         /* Direct component instances normally include their descendants in
@@ -5521,6 +5619,42 @@
           if (Number(owner.getAttribute('data-switch-variant-count') || 0) < 2) return null;
           return owner;
         };
+        const hscrollSurfacesOf = (host) => {
+          if (!host || !host.querySelectorAll) return [];
+          const direct = [...host.querySelectorAll(':scope > [data-hscroll-surface="true"], :scope > [data-hscroll-overflow-child="true"]')];
+          return direct.length ? direct : [...host.querySelectorAll('[data-hscroll-surface="true"]')];
+        };
+        const hscrollSurfaceOf = (host) => hscrollSurfacesOf(host)[0] || null;
+        const hscrollOffsetOf = (surface) => {
+          const rest = Number(surface && surface.getAttribute('data-hscroll-rest-left'));
+          const left = Number.parseFloat(surface && surface.style.left || '0');
+          if (!Number.isFinite(rest) || !Number.isFinite(left)) return 0;
+          return rest - left;
+        };
+        const applyHscrollOffset = (surface, offset) => {
+          if (!surface) return 0;
+          const rest = Number(surface.getAttribute('data-hscroll-rest-left'));
+          const max = Number(surface.getAttribute('data-hscroll-max'));
+          if (!Number.isFinite(rest) || !Number.isFinite(max) || max <= 0) return 0;
+          const next = Math.max(0, Math.min(max, Number(offset) || 0));
+          surface.style.left = (rest - next) + 'px';
+          surface.setAttribute('data-hscroll-offset', String(next));
+          /* Keep the host-edge clip pinned to the viewport while the track
+             translates, otherwise dates paint over the rest-state left labels. */
+          const hostClip = Number(surface.getAttribute('data-hscroll-host-clip'));
+          if (Number.isFinite(hostClip)) {
+            surface.style.clipPath = next > 0
+              ? 'inset(0px 0px 0px ' + (hostClip + next) + 'px)'
+              : 'none';
+          }
+          return next;
+        };
+        const setHscrollOffset = (surface, offset, host) => {
+          const surfaces = host ? hscrollSurfacesOf(host) : (surface ? [surface] : []);
+          let next = 0;
+          for (const track of surfaces) next = applyHscrollOffset(track, offset);
+          return next;
+        };
         frame.addEventListener('pointerdown', (ev) => {
           const host = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll][data-hscroll-drag="true"]') : null;
           const swipeOwner = !host ? switchSwipeOwner(ev.target) : null;
@@ -5528,8 +5662,10 @@
           /* Synthetic Playwright PointerEvents omit isPrimary. Treat an
              explicit false as a non-primary pointer, but accept missing. */
           if (ev.isPrimary === false) return;
+          const surface = host ? hscrollSurfaceOf(host) : null;
+          if (host && !surface) return;
           drag = host
-            ? { kind: 'hscroll', host, x: ev.clientX, left: host.scrollLeft, moved: false }
+            ? { kind: 'hscroll', host, surface, x: ev.clientX, left: hscrollOffsetOf(surface), moved: false }
             : { kind: 'switch-swipe', owner: swipeOwner, x: ev.clientX, moved: false };
           const captureEl = host || swipeOwner;
           if (captureEl && captureEl.setPointerCapture) {
@@ -5544,7 +5680,7 @@
             if (drag.kind === 'hscroll') drag.host.setAttribute('data-hscroll-dragging', 'true');
             ev.preventDefault();
           }
-          if (drag.kind === 'hscroll') drag.host.scrollLeft = drag.left - delta;
+          if (drag.kind === 'hscroll') setHscrollOffset(drag.surface, drag.left - delta, drag.host);
         });
         const endHscrollDrag = (ev) => {
           if (!drag) return;
@@ -5573,10 +5709,14 @@
         frame.addEventListener('pointercancel', endHscrollDrag);
         frame.addEventListener('wheel', (ev) => {
           const host = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll="x"]') : null;
-          if (!host || host.scrollWidth <= host.clientWidth + 0.5) return;
+          if (!host) return;
+          const surface = hscrollSurfaceOf(host);
+          if (!surface) return;
+          const max = Number(surface.getAttribute('data-hscroll-max'));
+          if (!Number.isFinite(max) || max <= 0) return;
           const delta = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
           if (!delta) return;
-          host.scrollLeft += delta;
+          setHscrollOffset(surface, hscrollOffsetOf(surface) + delta, host);
           ev.preventDefault();
         }, { passive: false });
         const currentSectionNumber = () => {

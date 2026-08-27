@@ -34,14 +34,13 @@ export function detectWebpEncoder() {
 
 /**
  * @param {Array<{ src: string, dest: string, lossless?: boolean }>} jobs
+ *   Omit lossless for slice-time default (alpha lossless, opaque lossy).
+ *   Pass lossless:false to keep Pack lossy, including alpha sources.
  * @param {{ quality?: number }} [opts]
  */
-export function encodeWebpBatch(jobs, { quality = WEBP_QUALITY } = {}) {
-  const encoder = detectWebpEncoder();
-  if (!encoder.ok) {
-    return { ok: false, skipped: true, why: encoder.why, results: [], errors: jobs.map((j) => ({ src: j.src, dest: j.dest, error: encoder.why })) };
-  }
-  if (!jobs.length) return { ok: true, skipped: false, results: [], errors: [] };
+const ENCODE_BATCH = 80;
+
+function runEncodeJobs(encoder, jobs, quality) {
   const dir = mkdtempSync(join(tmpdir(), 'yise-webp-'));
   const jobsPath = join(dir, 'jobs.json');
   writeFileSync(jobsPath, JSON.stringify({ quality, jobs }, null, 0));
@@ -65,4 +64,24 @@ export function encodeWebpBatch(jobs, { quality = WEBP_QUALITY } = {}) {
     results: parsed.results || [],
     errors: parsed.errors || [],
   };
+}
+
+export function encodeWebpBatch(jobs, { quality = WEBP_QUALITY } = {}) {
+  const encoder = detectWebpEncoder();
+  if (!encoder.ok) {
+    return { ok: false, skipped: true, why: encoder.why, results: [], errors: jobs.map((j) => ({ src: j.src, dest: j.dest, error: encoder.why })) };
+  }
+  if (!jobs.length) return { ok: true, skipped: false, results: [], errors: [] };
+  const results = [];
+  const errors = [];
+  for (let i = 0; i < jobs.length; i += ENCODE_BATCH) {
+    const chunk = jobs.slice(i, i + ENCODE_BATCH);
+    const encoded = runEncodeJobs(encoder, chunk, quality);
+    results.push(...encoded.results);
+    errors.push(...encoded.errors);
+    if (!encoded.ok) {
+      return { ok: false, skipped: false, why: encoded.why, results, errors };
+    }
+  }
+  return { ok: true, skipped: false, why: null, results, errors };
 }

@@ -18,6 +18,7 @@ import {
 } from '../lib/resize/index.mjs';
 
 const chromeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/figma-chrome.js'), 'utf8');
+const navRailCheckSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/figma-nav-rail-browser-check.mjs'), 'utf8');
 
 test('width maps to plat without page IDs', () => {
   assert.equal(platOfWidth(390), 'mobile');
@@ -167,8 +168,32 @@ test('directory stretch locates rail parts by name, not a season node id', () =>
   assert.match(chromeSrc, /firstDirectChildByName\(root, \/导航背景/);
   assert.match(chromeSrc, /导航长线\|nav\.\*line/);
   assert.match(chromeSrc, /firstDirectChildByName\(root, \/导航按钮/);
+  assert.match(chromeSrc, /collectDirectoryRoots/);
+  assert.match(chromeSrc, /data-nav-shell="true"/);
+  assert.match(chromeSrc, /if \(!railOwner\) return false/);
+  assert.doesNotMatch(chromeSrc, /if \(!items\.length && !railOwner\) return false/);
+  assert.match(chromeSrc, /viewportLockedHero: heroActive/);
   assert.doesNotMatch(chromeSrc, /I52:3263/);
   assert.doesNotMatch(chromeSrc, /data-node\$="25633"/);
   assert.doesNotMatch(chromeSrc, /directChildByNodeId\(/);
+  assert.doesNotMatch(chromeSrc, /sourceBoxWidth = 307/);
+  assert.doesNotMatch(chromeSrc, /rootLeftSource = 20/);
+  assert.doesNotMatch(chromeSrc, /rootHeightSource = 1666/);
+  assert.doesNotMatch(chromeSrc, /sourceRowH = 224/);
   assert.ok(resizeDoesNotOwn().some((item) => /page-specific node IDs/.test(item)));
+});
+
+test('directory browser check locates the rail by name and source box, not a season node id', () => {
+  assert.match(navRailCheckSrc, /isDirectoryRoot/);
+  assert.match(navRailCheckSrc, /导航背景\|nav\.\*\(\?:bg\|background\)\|rail/);
+  assert.match(navRailCheckSrc, /reason: 'missing-rail-background'/);
+  assert.match(navRailCheckSrc, /reason: 'missing-rail-line'/);
+  assert.match(navRailCheckSrc, /assetFileForNode/);
+  assert.doesNotMatch(navRailCheckSrc, /background = byId\(source\.backgroundGroupId\) \|\| root/);
+  assert.doesNotMatch(navRailCheckSrc, /lineBox = source\.lineBox \|\| sourceBox/);
+  assert.doesNotMatch(navRailCheckSrc, /52:3263/);
+  assert.doesNotMatch(navRailCheckSrc, /I52:3263/);
+  assert.doesNotMatch(navRailCheckSrc, /I52-3263-17-53006/);
+  assert.doesNotMatch(navRailCheckSrc, /targetRect\.width \/ 727/);
+  assert.doesNotMatch(navRailCheckSrc, /targetRect\.height \/ 2376/);
 });

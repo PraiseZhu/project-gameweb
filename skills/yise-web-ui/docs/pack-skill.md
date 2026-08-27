@@ -33,19 +33,30 @@ export to pack quality so static review happens on crushed art.
 
 ## What Pack owns
 
-1. Re-encode unique PNG proof (or current WebP) as lossy WebP, keep alpha.
-   Default pack quality **70**. Skip a file if WebP ≥ source bytes.
+1. Re-encode unique PNG proof **and current WebP** as lossy WebP, keep alpha.
+   Default pack quality **70**. Pack must pass `lossless: false` so the
+   shared encoder does not keep the slice-time “alpha → lossless” default.
+   Encode only images still referenced after runtime rewrite; leftover
+   PNG/WebP is deleted by the unreferenced pass. Skip a file only if the
+   new bytes ≥ the **current** file. Slice-time lossless/q90 WebP is not
+   a skip reason.
 2. Collapse SHA-identical images to one file; retarget `qa-assets`,
    `truth.json`, `assets-manifest.json`, and hardcoded fallback paths.
 3. Subset fonts to page TEXT + ASCII + the other locales' copy, write woff2,
-   rewrite `#qa-fonts`. Do not silently swap a missing family.
+   rewrite `#qa-fonts`. Do not silently swap a missing family. Do not drop
+   JP/KR/HK fonts to pass the budget.
 4. Compact `truth.json` and always externalize `#qa-truth` for the packed
    demo (HTTP preview / XD Sites). file:// single-file is no longer the pack
    target.
 5. Keep runtime fallback files (`figma-indicator-*.png` / `.webp`, calendar
-   fallback slices). Move only audit/probe/screenshot trees out.
-6. Fail if the served folder (after dropping proof PNG) exceeds 15MB, or if
-   any `qa-assets` / fallback path 404s.
+   fallback slices). After rewrite, delete unreferenced image files. Move
+   only audit/probe/screenshot trees out.
+6. Fail if the served folder **after mutation** exceeds 15MB, or if any
+   `qa-assets` / fallback path 404s. `--dry-run` reports current bytes and
+   planned actions; it must not fail because the working folder is still
+   over 15MB before compression. Over-budget live failures print a
+   webp/png/truth/fonts/html/other breakdown. Lower quality only via
+   explicit `--quality`.
 7. Refuse symlink / junction / reparse-point inputs before any recursive
    read, rewrite, convert, or unlink. Realpath of every file must stay inside
    the pack worktree.
@@ -78,11 +89,16 @@ already exists). Packed bytes stay in the demo folder that XD Sites uploads.
 
 A pack claim needs:
 
-- served-folder bytes ≤ budget
-- unique image count / SHA collapse count
-- font subset glyph count and woff2 bytes
+- `bytesBefore` / `bytesAfter`, with `bytesAfter` ≤ budget
+- `images.reencodedWebp` (existing WebP re-encoded at pack quality)
+- `images.convertedPng` and `images.duplicates`
+- `fonts.glyphs` / `fonts.bytesAfter`
+- `truth.bytesAfter`
+- `unreferenced.removed`
 - every `qa-assets` path and every `figma-indicator-*` fallback exists
 - a Chrome open of the packed `index.html` (progress marks must not show the
   layer name `ind/进度条` as visible text)
+
+A claim without `images.reencodedWebp` did not re-encode existing WebP.
 
 A green Main HTML-10MB gate is not a pack pass.

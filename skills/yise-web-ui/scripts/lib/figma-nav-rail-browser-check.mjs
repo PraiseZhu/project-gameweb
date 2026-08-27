@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { PNG } from 'pngjs';
 
@@ -18,33 +18,97 @@ const asPlainId = (node) => {
 
 const ownerIncludes = (node, id) => Array.isArray(node?.ownerPath) && node.ownerPath.some((entry) => String(entry) === String(id));
 
-const isFixedRailRoot = (node) => String(node?.id || '') === '52:3263'
-  || (node?.type === 'INSTANCE' && ownerIncludes(node, '1:180') && /导航|directory|nav/i.test(String(node?.name || '')) && Number(node?.box?.w || 0) >= 500 && Number(node?.box?.h || 0) >= 1000);
+const nameOf = (node) => String(node?.name || '');
+const ownedBy = (node, ownerId) => !ownerId || asPlainId(node) === ownerId || ownerIncludes(node, ownerId);
+const boxOf = (node) => {
+  const box = node?.box || {};
+  const x = Number(box.x);
+  const y = Number(box.y);
+  const w = Number(box.w ?? box.width);
+  const h = Number(box.h ?? box.height);
+  if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return null;
+  return { x, y, w, h };
+};
+
+const collectTruthNodes = (truth) => {
+  const nodes = [];
+  const pushList = (value) => {
+    for (const node of list(value)) if (node && typeof node === 'object') nodes.push(node);
+  };
+  const pushScope = (scope) => {
+    if (!scope || typeof scope !== 'object') return;
+    pushList(scope.fixedOverlays?.nodes);
+    pushList(scope.pageChrome?.nodes);
+    pushList(scope.pageBackground?.nodes);
+    for (const section of list(scope.sections)) pushList(section?.nodes);
+  };
+  pushScope(truth);
+  for (const platform of Object.values(truth.platforms || {})) pushScope(platform);
+  return nodes;
+};
+
+const isDirectoryRoot = (node) => {
+  const name = nameOf(node);
+  return /^(?:fix|nav|navigation|footer)\//.test(name) && /导航|directory|nav/i.test(name);
+};
+
+const assetFileForNode = (demoDir, node) => {
+  const recFile = node?.asset?.file || node?.file || node?.src;
+  if (typeof recFile === 'string' && recFile) {
+    const relative = recFile.replace(/^[.][/\\]/, '');
+    const path = /[/\\]/.test(relative) || relative.startsWith('assets')
+      ? join(demoDir, relative)
+      : join(demoDir, 'assets', relative);
+    if (existsSync(path)) return path;
+  }
+  const id = asPlainId(node);
+  if (!id) return null;
+  const stem = id.replace(/[:;]/g, '-');
+  for (const ext of ['png', 'webp', 'jpg', 'jpeg']) {
+    const path = join(demoDir, 'assets', `${stem}.${ext}`);
+    if (existsSync(path)) return path;
+  }
+  return null;
+};
+
+const unionBoxes = (nodes) => nodes.reduce((acc, node) => {
+  const box = boxOf(node);
+  if (!box) return acc;
+  if (!acc) return { ...box };
+  const left = Math.min(acc.x, box.x);
+  const top = Math.min(acc.y, box.y);
+  const right = Math.max(acc.x + acc.w, box.x + box.w);
+  const bottom = Math.max(acc.y + acc.h, box.y + box.h);
+  return { x: left, y: top, w: right - left, h: bottom - top };
+}, null);
 
 export function loadNavRailTruth(demoDir) {
   const resolvedDemoDir = resolve(demoDir);
   const truth = unwrap(JSON.parse(readFileSync(join(resolvedDemoDir, 'truth.json'), 'utf8')));
-  const fixedNodes = list(truth.fixedOverlays?.nodes);
+  const nodes = collectTruthNodes(truth);
   const pageBackgroundNodes = list(truth.pageBackground?.nodes);
   const pagePaintOrder = Array.isArray(truth.pagePaintOrder) ? truth.pagePaintOrder.map(unwrap).map(String) : [];
 
-  const fixedRoot = fixedNodes.find(isFixedRailRoot) || null;
+  const directoryRoots = nodes.filter(isDirectoryRoot)
+    .sort((a, b) => Number(b?.box?.h || 0) - Number(a?.box?.h || 0));
+  const fixedRoot = directoryRoots[0] || null;
   const fixedRootId = asPlainId(fixedRoot);
-  const backgroundGroup = fixedNodes.find((node) => String(node?.id || '') === 'I52:3263;17:53006')
-    || fixedNodes.find((node) => String(node?.name || '') === 'img/导航背景' && ownerIncludes(node, fixedRootId))
-    || fixedNodes.find((node) => String(node?.name || '') === 'img/导航背景')
+  const findNamed = (re) => nodes.find((node) => re.test(nameOf(node)) && ownedBy(node, fixedRootId))
+    || nodes.find((node) => re.test(nameOf(node)))
     || null;
-  const buttonFrame = fixedNodes.find((node) => String(node?.id || '') === 'I52:3263;12:47248')
-    || fixedNodes.find((node) => node?.type === 'FRAME'
+  const backgroundGroup = findNamed(/导航背景|nav.*(?:bg|background)|rail/i);
+  const buttonFrame = findNamed(/导航按钮|nav.*(?:button|item)|btn\/导航/)
+    || nodes.find((node) => node?.type === 'FRAME'
       && String(node?.layout?.layoutMode || '').toUpperCase() === 'VERTICAL'
-      && ownerIncludes(node, fixedRootId))
+      && ownedBy(node, fixedRootId))
     || null;
-  const buttons = fixedNodes.filter((node) => String(node?.name || '') === 'btn/导航按钮'
-    && (ownerIncludes(node, fixedRootId) || ownerIncludes(node, asPlainId(buttonFrame))));
-  const selectedItem = fixedNodes.find((node) => node?.name && /active|selected|current/i.test(String(node.name))
-    && (ownerIncludes(node, fixedRootId) || ownerIncludes(node, asPlainId(buttonFrame)))) || null;
-  const pageBackgroundRoot = pageBackgroundNodes.find((node) => String(node?.id || '') === '9:31452')
-    || pageBackgroundNodes.find((node) => String(node?.name || '') === 'bg/pc')
+  const buttons = nodes.filter((node) => /btn\/导航|导航按钮/.test(nameOf(node))
+    && (ownedBy(node, fixedRootId) || ownedBy(node, asPlainId(buttonFrame))));
+  const selectedItem = nodes.find((node) => /active|selected|current/i.test(nameOf(node))
+    && (ownedBy(node, fixedRootId) || ownedBy(node, asPlainId(buttonFrame)))) || null;
+  const lineNodes = nodes.filter((node) => /导航长线|nav.*line|rail.*line/i.test(nameOf(node)) && ownedBy(node, fixedRootId));
+  const pageBackgroundRoot = pageBackgroundNodes.find((node) => /^bg\/(?:pc|desktop)$/i.test(nameOf(node)))
+    || pageBackgroundNodes.find((node) => /^bg\//.test(nameOf(node)))
     || null;
 
   return {
@@ -58,13 +122,16 @@ export function loadNavRailTruth(demoDir) {
     selectedItem,
     source: {
       demoDir: resolvedDemoDir,
-      railAssetFile: join(resolvedDemoDir, 'assets/I52-3263-17-53006.png'),
+      railAssetFile: assetFileForNode(resolvedDemoDir, backgroundGroup),
       pageBackgroundRootId: asPlainId(pageBackgroundRoot),
       fixedRootId,
       backgroundGroupId: asPlainId(backgroundGroup),
       buttonFrameId: asPlainId(buttonFrame),
       buttonIds: buttons.map(asPlainId).filter(Boolean),
       selectedItemId: asPlainId(selectedItem),
+      rootBox: boxOf(fixedRoot),
+      backgroundBox: boxOf(backgroundGroup),
+      lineBox: unionBoxes(lineNodes),
     },
   };
 }
@@ -109,16 +176,32 @@ export async function probeNavRailContinuity(page, source, { sampleCount = 18 } 
       };
     };
     const root = byId(source.fixedRootId);
-    const background = byId(source.backgroundGroupId) || root;
+    const background = byId(source.backgroundGroupId);
     const asset = background?.querySelector?.('img.fx-img, img[data-asset-src]') || null;
     const buttonFrame = byId(source.buttonFrameId);
-    const target = asset || background || buttonFrame || root;
+    const target = asset || background;
     const targetRect = rect(target);
     const backgroundRect = rect(background);
     const rootRect = rect(root);
     const frame = document.querySelector('.frame');
     const frameRect = rect(frame);
-    if (!targetRect || !rootRect || !frame) {
+    if (!source.backgroundGroupId || !source.backgroundBox || !background || !targetRect) {
+      return {
+        ok: false,
+        reason: 'missing-rail-background',
+        source,
+        dom: { root: !!root, background: !!background, buttonFrame: !!buttonFrame, target: !!target },
+      };
+    }
+    if (!source.lineBox) {
+      return {
+        ok: false,
+        reason: 'missing-rail-line',
+        source,
+        dom: { root: !!root, background: !!background, buttonFrame: !!buttonFrame, target: !!target },
+      };
+    }
+    if (!rootRect || !frame) {
       return {
         ok: false,
         reason: 'missing-rail-dom',
@@ -131,13 +214,15 @@ export async function probeNavRailContinuity(page, source, { sampleCount = 18 } 
         },
       };
     }
-    const railScaleX = targetRect.width / 727;
-    const railScaleY = targetRect.height / 2376;
-    const lineTop = targetRect.top + 310 * railScaleY;
-    const lineBottom = targetRect.top + 1976 * railScaleY;
-    const lineLeft = targetRect.left + 42 * railScaleX;
-    const lineRight = targetRect.left + 90 * railScaleX;
-    const sourceColumns = [42, 50, 60, 70, 80, 90];
+    const sourceBox = source.backgroundBox;
+    const lineBox = source.lineBox;
+    const railScaleX = sourceBox.w > 0 ? targetRect.width / sourceBox.w : 1;
+    const railScaleY = sourceBox.h > 0 ? targetRect.height / sourceBox.h : 1;
+    const lineTop = targetRect.top + (lineBox.y - sourceBox.y) * railScaleY;
+    const lineBottom = targetRect.top + (lineBox.y - sourceBox.y + lineBox.h) * railScaleY;
+    const lineLeft = targetRect.left + (lineBox.x - sourceBox.x) * railScaleX;
+    const lineRight = targetRect.left + (lineBox.x - sourceBox.x + lineBox.w) * railScaleX;
+    const sourceColumns = [0.15, 0.25, 0.4, 0.55, 0.7, 0.85].map((t) => lineBox.x - sourceBox.x + lineBox.w * t);
     const columns = sourceColumns.map((x) => targetRect.left + x * railScaleX);
     const top = Math.max(lineTop + 4, rootRect.top + 4);
     const bottom = Math.min(lineBottom - 4, rootRect.bottom - 4);
@@ -241,10 +326,10 @@ export async function probeNavRailContinuity(page, source, { sampleCount = 18 } 
   const dpr = geometry.dom.dpr || 1;
   const line = geometry.dom.railLine;
   const target = geometry.dom.target;
-  const sourceColumns = geometry.dom.sourceColumns || [42, 50, 60, 70, 80, 90];
+  const sourceColumns = geometry.dom.sourceColumns || [];
   const sourceYFor = (y) => {
     const f = (y - line.top) / Math.max(1, line.bottom - line.top);
-    return Math.max(0, Math.min(railPng.height - 1, 310 + f * (1976 - 310)));
+    return Math.max(0, Math.min(railPng.height - 1, f * (railPng.height - 1)));
   };
   const rows = (geometry.dom.rowCenters || []).map((center, i) => {
     const rowTop = i === 0 ? null : null;
@@ -260,7 +345,7 @@ export async function probeNavRailContinuity(page, source, { sampleCount = 18 } 
     const y = sample.y;
     const srcY = sourceYFor(y);
     const columns = sourceColumns.map((srcX) => {
-      const x = target.left + srcX * (target.width / 727);
+      const x = target.left + srcX * (target.width / Math.max(1, source.backgroundBox?.w || target.width));
       const actual = pixelAt(screenshot, x * dpr, y * dpr);
       const expected = pixelAt(railPng, srcX, srcY);
       return {
@@ -281,7 +366,7 @@ export async function probeNavRailContinuity(page, source, { sampleCount = 18 } 
     return {
       ...sample,
       pass: sample.pass && pass,
-      hitNode: sourcePaintHit ? String(source.backgroundGroupId || 'I52:3263;17:53006')
+      hitNode: sourcePaintHit ? String(source.backgroundGroupId || source.fixedRootId || 'rail')
         : (occludedByNavRow ? 'nav-row-over-rail' : null),
       sourcePaintHit,
       occludedByNavRow,

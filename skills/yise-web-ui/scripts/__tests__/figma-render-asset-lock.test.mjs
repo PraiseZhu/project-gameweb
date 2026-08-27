@@ -9,7 +9,7 @@ const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.
 test('asset locking is based on ownerPath when DOM parent stack is incomplete', () => {
   assert.match(renderer, /const bakedOwnerId = ownerPath\.slice\(0, -1\)/);
   assert.match(renderer, /find\(\(id\) => !!this\._assetRec\(id\)\)/);
-  assert.match(renderer, /parent && parent\.assetLock \|\| bakedOwnerId \|\| __calendarOwnerAssetLock/);
+  assert.match(renderer, /parent && parent\.assetLock \|\| \(bakedOwnerId && !bakedOwnerReleased\)/);
 });
 
 test('platform-prefixed asset records keep bare-id exportBox geometry', () => {
@@ -21,7 +21,36 @@ test('only explicit interaction descendants remain renderable under baked assets
   assert.match(renderer, /const evidenceAttrs = interactionAttrs\.get\(String\(nid\)\)/);
   assert.match(renderer, /const hasStructuralInteraction = !!evidenceAttrs/);
   assert.match(renderer, /evidenceAttrs\['data-switch-action'\] != null/);
+  assert.match(renderer, /data-hscroll-overflow-child/);
+  assert.match(renderer, /underHscrollSurface/);
   assert.match(renderer, /node itself is actionable/);
+});
+
+test('live nested hscroll releases an ancestor designer-export bake instead of stacking rest pixels', () => {
+  /* mix/ (or any named ancestor) may ship a designer-export composite of the
+     rest-state first page. Nested named scroll/ is the live host. Painting both
+     leaves the first page pinned under the moving tracks. Release is structural:
+     any ancestor with an asset record under a live data-hscroll host, never a
+     product node id. */
+  assert.match(renderer, /liveHscrollBakeRelease/);
+  assert.match(renderer, /data-asset-lock-released', 'live-hscroll-descendant'/);
+  assert.match(renderer, /const bakeReleasedForLiveHscroll = liveHscrollBakeRelease\.has\(String\(__u\(nid\)\)\)/);
+  assert.match(renderer, /assetRec && !bakeReleasedForLiveHscroll/);
+  assert.match(renderer, /ancestorPfx === 'mix' \|\| ancestorPfx === 'scroll' \|\| ancestorClips/);
+  assert.doesNotMatch(renderer, /__calendarOwnerAssetLock/);
+  assert.doesNotMatch(renderer, /395:34991/);
+});
+
+test('renderer stamps the authored Figma layer name for resize name lookup', () => {
+  assert.match(renderer, /el\.setAttribute\('data-name', layerName\)/);
+  assert.match(renderer, /const layerName = String\(n\.name \?\? ''\)\.trim\(\)/);
+});
+
+test('hscroll browser check drives every overflow surface, not the first track only', () => {
+  const check = readFileSync(new URL('../lib/figma-hscroll-browser-check.mjs', import.meta.url), 'utf8');
+  assert.match(check, /const surfaces = \[\.\.\.host\.querySelectorAll/);
+  assert.match(check, /surfaces\.every\(\(surface\) =>/);
+  assert.match(check, /Math\.max\(0, \.\.\.surfaces\.map/);
 });
 
 test('exported assets do not receive source opacity a second time', () => {
@@ -54,10 +83,30 @@ test('BOOLEAN delivered composite does not get a CSS solid plate under the slice
   assert.match(renderer, /if \(hostNeedsSolidPlate\)/);
 });
 
-test('clipsContent mix window with overflowing child is an hscroll host using the clip box', () => {
+test('only named scroll/ with overflowing child is an hscroll host using the clip box', () => {
   assert.match(renderer, /Named scroll\/ is the explicit host/);
   assert.match(renderer, /use the Figma clip box, never the child's full width/);
-  assert.match(renderer, /if \(!namedScroll && !\(namedMix && clipHost\)\) return null/);
+  assert.match(renderer, /if \(!namedScroll \|\| !clipHost\) return null/);
+  assert.doesNotMatch(renderer, /namedMix && clipHost/);
+  assert.match(renderer, /childAttrs\['data-hscroll-overflow-child'\] = 'true'/);
+});
+
+test('hscroll host drag uses pointer capture and converts vertical wheel to scrollLeft', () => {
+  assert.match(renderer, /closest\('\[data-hscroll\]\[data-hscroll-drag="true"\]'\)/);
+  assert.match(renderer, /data-hscroll-surface/);
+  assert.match(renderer, /data-hscroll-overflow-child="true"/);
+  assert.match(renderer, /data-hscroll-rest-left/);
+  assert.match(renderer, /data-hscroll-max/);
+  assert.match(renderer, /data-hscroll-host-clip/);
+  assert.match(renderer, /hostClip \+ next/);
+  assert.match(renderer, /Rest state keeps clip none/);
+  assert.match(renderer, /hscrollSurfacesOf/);
+  assert.match(renderer, /hscrollSurfaceOf/);
+  assert.match(renderer, /setHscrollOffset\(drag\.surface, drag\.left - delta, drag\.host\)/);
+  assert.match(renderer, /setHscrollOffset\(surface, hscrollOffsetOf\(surface\) \+ delta, host\)/);
+  assert.match(renderer, /el\.style\.touchAction = 'pan-x'/);
+  assert.doesNotMatch(renderer, /el\.style\.touchAction = 'pan-y'/);
+  assert.match(renderer, /Native overflow-x[\s\S]*calendar left labels/s);
 });
 
 test('hscroll cross-axis shadow gutter is derived from source effects and applied to host + track', () => {

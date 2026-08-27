@@ -82,8 +82,9 @@ test('sc-html-10mb-webp: HTML volume is 10MB on index.html, assets folder is fre
   const encoder = read('scripts/lib/encode-webp.py');
   assert.match(volume, /DEFAULT_MAX_HTML_BYTES = 10 \* 1024 \* 1024/);
   assert.match(volume, /index.html itself, not the assets folder/);
-  assert.match(encoder, /Alpha images use lossless WebP/);
-  assert.match(encoder, /lossy quality 90/);
+  assert.match(encoder, /alpha →\s*lossless WebP/);
+  assert.match(encoder, /opaque → lossy quality/);
+  assert.match(encoder, /Pack passes lossless=false/);
   assert.match(skill, /10MB/);
 });
 
