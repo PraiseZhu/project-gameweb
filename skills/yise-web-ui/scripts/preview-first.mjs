@@ -194,10 +194,9 @@ function previewPayload({ demoDir, screenshot, result, session, spec, truth, ind
 function candidateCompletion({ ok, spec, truth, indexPath }) {
   const url = productViewUrl(indexPath);
   const evidence = sourcePlatformEvidence(spec, truth);
-  const productView = {
-    url,
-    command: openProductViewCommand(url),
-  };
+  const productView = ok
+    ? { url, command: openProductViewCommand(url) }
+    : { url: null, command: null, blocked: true, reason: 'preview:first red; do not open product view' };
   return {
     legalCandidateCompletionPath: spec?.workflow?.id === 'figma-showcase' ? 'figma-showcase.preview-first.candidate' : 'preview-first.candidate',
     evidenceLevel: ok ? 'candidate' : 'none',
@@ -263,12 +262,14 @@ async function runPreviewFirst({ demoDir, outDir, protocol = 'http' }) {
 
   const fileFailure = externalTruthFileProtocolFailure(protocol, externalTruth);
   if (fileFailure) {
+    const blocked = candidateCompletion({ ok: false, spec, truth, indexPath });
     writePayload({
       ok: false,
       protocol,
       externalTruth: true,
       contractFailures: [fileFailure],
-      ...candidateCompletion({ ok: false, spec, truth, indexPath }),
+      ...blocked,
+      nextHumanStep: blocked.humanReview.nextHumanStep,
     }, 2);
   }
 

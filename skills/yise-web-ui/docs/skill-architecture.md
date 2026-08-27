@@ -51,11 +51,16 @@ stretch stays in Resize. Do not split the directory into a fourth Skill.
 Translation → Interaction → Resize. Humans get two review stops: (1) Main
 static, plus Translation only when a copy table exists; (2) Interaction and
 Resize together. `preview:first` must be green before stop 1 presents
-`?product=1`. No copy table keeps Translation `not-claimed`; zh-CN font
-load is not a translation pass. A later axis must not rewrite accepted
-static owners, fills, copy, or platform trees. After stop 2 is accepted,
-Pack compresses the served folder to ≤15MB. Pack is delivery, not a fourth
-Skill. Do not pack before those two human stops.
+`?product=1`. A red payload must not include `productView.command`. No copy
+table keeps Translation `not-claimed`; zh-CN font
+load is not a translation pass. The script gate is
+`scripts/human-review.mjs` / `human-review.json`:
+stop 1 unaccepted blocks Interaction / Resize; stop 2 unaccepted blocks
+Pack. A later axis must not rewrite accepted static owners, fills, copy, or
+platform trees. After stop 2 is accepted, Pack compresses the served folder
+to ≤15MB. Pack is delivery, not a fourth Skill. Do not pack before those
+two human stops. Recall is the repo-root `CLAUDE.md` trigger table
+(`scripts/recall-yisewebui.mjs`), not `.claude/skills/`.
 SS5 `1:180` / `20:2205` on port 4201 is a local extract candidate, not the
 repair site for later axes. Official-site evidence for Interaction and
 Resize is language-generic; do not label it as a Korean-only rule.

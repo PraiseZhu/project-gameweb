@@ -6,18 +6,22 @@
 
 ## 已自动落地(工具/文档缺口修复,不放宽口径)
 
-- `translation-not-claimed-without-table` **没有翻译表不得宣称翻译通过** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: open
+- `translation-not-claimed-without-table` **没有翻译表不得宣称翻译通过** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: landed
   - 现象:中文字体加载被当成翻译过。
   - 提案:translationAxisClaim 没表或仅 zh-CN 返回 not-claimed；字体加载不能升级该状态。
-- `two-human-review-stops` **给人看页只有两次停：静态±翻译，交互+拉伸** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: open
+  - 备注:[decided:2026-08-27] 没翻译表 not-claimed；中文字体加载不能升级翻译通过。
+- `two-human-review-stops` **给人看页只有两次停：静态±翻译，交互+拉伸** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: landed
   - 现象:轴顺序四段被当成四次展示，preview 红了还可能开页。
   - 提案:HUMAN_REVIEW_STOPS；preview:first 红 presentPage=false；绿才第一次给人看。
-- `hscroll-named-scroll-only` **横滑只认 named scroll 加 clipsContent** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: open
+  - 备注:[decided:2026-08-27] 两次给人看写成 human-review.json 闸；preview 红 command=null；绿才第一次给人看。交互拉伸仍等人说继续。
+- `hscroll-named-scroll-only` **横滑只认 named scroll 加 clipsContent** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: landed
   - 现象:mix clip+overflow 被当成 hscroll host。
   - 提案:host 必须 role=scroll 且 clipsContent；mix 即使溢出也只画。
-- `missing-rail-background-false-pass` **目录缺导航背景仍报拉伸成功** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: open
+  - 备注:[decided:2026-08-27] 横滑只认 named scroll + clipsContent；mix 只画。
+- `missing-rail-background-false-pass` **目录缺导航背景仍报拉伸成功** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: landed
   - 现象:按钮还在时 Resize 返回成功，页面可以少一块导航素材。
   - 提案:syncSourceNavRail：没有 named 导航背景 return false。浏览器验收 missing-rail-background / missing-rail-line fail-closed。
+  - 备注:[decided:2026-08-27] 没有 named 导航背景 Resize fail-closed。
 - `qa-harness-kit-device-presets-identical` **QA 设备预设用 kit 的 PC / iPhone / Android 子集** — 出现 1 次,首见 2026-08-25,最近 2026-08-25,status: landed
   - 现象:新赛季 QA 实际只测 1920 和 390 两档，与 SS5 精简集相同，没有以 figma-harness-kit 为主。Skill 默认 default-devices.json 被裁成 2 组，device-presets-check 对这份裁过的表而不是 kit 原文，导致验收壳看起来像 kit、档位却不是 kit。
   - 提案:QA 默认 templates/default-devices.json 用 kit 的 PC / iPhone / Android 子集：3 组 13 台，PC 默认台式 1080p，不含折叠屏和 iPad。完整 kit 原文另存 templates/figma-harness-kit-device-presets.json，只作对照。检查脚本未配置时对随包 QA 子集。不收 CSS 假机型，不把 iPad 尺寸发明成第三套布局。

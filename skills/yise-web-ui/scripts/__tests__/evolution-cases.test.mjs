@@ -122,6 +122,17 @@ test('case 层与根因层隔离:case 不写 ledger、不触发公开仓同步',
   assert.equal(existsSync(join(root, 'EVOLUTION.md')), false, 'case 不该触发公开视图再生成');
 });
 
+test('read-open 只列出 status=open 的根因,动手前必须先读', () => {
+  const { run } = sandbox();
+  assert.equal(run(['add', '--fingerprint', 'open-item', '--tier', 'auto', '--title', '还开着']).status, 0);
+  assert.equal(run(['add', '--fingerprint', 'landed-item', '--tier', 'auto', '--title', '已落地', '--commit', 'abc1234']).status, 0);
+  const r = run(['read-open']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.json.count, 1);
+  assert.equal(r.json.entries[0].fingerprint, 'open-item');
+  assert.match(r.json.note, /动手前先读/);
+});
+
 test('多条 case 顺序累加,不去重(同一问题被指出两次要都留着)', () => {
   const { run, caseFile } = sandbox();
   run(['case', '--session', 's1', ...FOUR]);

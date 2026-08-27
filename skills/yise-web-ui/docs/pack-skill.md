@@ -2,7 +2,9 @@
 
 This is a **delivery step**, not a fourth restore axis. Main static,
 Translation, Interaction, and Resize still stop for human acceptance on
-source-fidelity assets. Pack runs only after Resize is accepted.
+source-fidelity assets. Pack runs only after Resize is accepted **and** the
+second human review stop (`interaction-and-resize` in `human-review.json`)
+is accepted. Missing either fails before mutation.
 
 SS6 4173 / `yise-ss6-web` is a fixture consumer. No rule here may depend on
 Etheria node IDs. Indicator fallback files are a generic runtime contract:

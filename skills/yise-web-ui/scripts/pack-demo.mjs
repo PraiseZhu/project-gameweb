@@ -41,6 +41,7 @@ import {
   sha256File,
   withinPackRoot,
 } from './lib/pack-demo.mjs';
+import { packAllowedAfterSecondStop } from './lib/human-review.mjs';
 
 function fail(error) {
   console.error(JSON.stringify({ ok: false, error }, null, 2));
@@ -212,7 +213,7 @@ function prunePackWorktree(demoDir) {
   for (const name of [
     'extract.mjs', 'extract-helpers.mjs', 'extract-report.json', 'report.json',
     'report-gate-a.json', 'report-assets.json', '_verify-four-fixes.mjs',
-    'resize-acceptance.json', 'truth.runtime.json', 'assets-manifest.json',
+    'resize-acceptance.json', 'human-review.json', 'truth.runtime.json', 'assets-manifest.json',
     'spec.json', '.env',
   ]) {
     removePackTarget(demoDir, name);
@@ -528,12 +529,13 @@ function main() {
   catch (error) { fail(error.message); }
   const html = readFileSync(indexInfo.path, 'utf8');
   const resizeAccepted = validResizeMarker(demoDir);
+  const secondStop = packAllowedAfterSecondStop(demoDir);
   const fallbackRefs = collectFallbackRefs(html);
   const missingFallbacks = missingFallbackFiles(demoDir, html);
   const runtimeRefs = packRuntimeReferencesOk(demoDir, html);
   const budgetBytes = Math.round(args.budgetMb * 1024 * 1024) || DEFAULT_PACK_BUDGET_BYTES;
   const out = {
-    ok: resizeAccepted && missingFallbacks.length === 0 && runtimeRefs.ok,
+    ok: resizeAccepted && secondStop.ok && missingFallbacks.length === 0 && runtimeRefs.ok,
     dryRun: !!args.dryRun,
     demo: demoDir,
     quality: args.quality,
@@ -542,6 +544,7 @@ function main() {
     fallbacks: fallbackRefs,
     missingFallbacks,
     resizeAccepted,
+    secondStop,
     runtimeRefs,
     pillow: !!pythonHas('PIL'),
     fontTools: !!pythonHas('fontTools'),
@@ -555,6 +558,7 @@ function main() {
     note: 'Pack uses an isolated work tree and commits only after reference and budget gates pass. Dry-run reports current bytes and planned actions; the 15MB gate is live-after-mutation only.',
   };
   if (!resizeAccepted) out.error = 'missing valid accepted Resize marker';
+  if (!secondStop.ok) out.error = secondStop.error || 'second human review stop not accepted; do not Pack';
   if (missingFallbacks.length) out.error = `missing runtime fallback files: ${missingFallbacks.join(', ')}`;
   if (!runtimeRefs.ok) out.error = `missing runtime references: ${runtimeRefs.missing.join(', ')}`;
   out.budgetBefore = packBudgetBreakdown(demoDir);

@@ -8,7 +8,9 @@
 |---|---|
 | 已有 ready 交接包 | `cd skills/yise-web-ui && npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。`figma:from-handoff` 只验包、不写 HTML。 |
 | 只有 Figma 链接、没有包 | 停下来要包。用户明确说「先看稿、没有清单」才允许下面的 `figma-showcase` 九步，且必须标明 `latest-Figma local extract baseline`。 |
-| `preview:first` 红 | 不许给人打开 `?product=1`，不许开 Interaction / Resize。外置 truth 的内部检查必须走 HTTP；给人的地址是命令结束后仍可打开的 `file://...?product=1`。 |
+| `preview:first` 红 | 不许给人打开 `?product=1`，不许开 Interaction / Resize。红 payload 的 `productView.command` 必须是 `null`。外置 truth 的内部检查必须走 HTTP；给人的地址是命令结束后仍可打开的 `file://...?product=1`。 |
+| 两次给人看 | ①静态±翻译 ②交互+拉伸。脚本闸：`node scripts/human-review.mjs present/accept/can-start/pack-allowed --demo <dir>`。第一次没接受不许开后轴；第二次没接受 Pack 失败。 |
+| 拉仓后说 `yisewebui` | `node scripts/recall-yisewebui.mjs`：靠仓根 `CLAUDE.md` 触发表，不装进 `.claude/skills/`。 |
 
 ## First visible Figma page
 
