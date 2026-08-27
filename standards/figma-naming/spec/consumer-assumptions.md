@@ -1,7 +1,7 @@
 # 下游消费假定
 
-> 版本 **A-v1.11**（2026-08-25）。与 `spec/naming-spec.md` 同步升版，`test/spec-drift.test.mjs` 锁住版本号与条目集合。
-> A-v1.11：A2 增补 `fix/@from=N` 从第 N 屏起钉视口。A-v1.10：A8 增补页上 `ind/` 组件集每个变体根带 `sliceExport`。A-v1.9：A8 增补 mix 内裁切溢出自动 `scroll/`；BOOLEAN `btn/` 带 `sliceExport`。A-v1.8：A8 `mix/` 子树带图像填充的叶子由清单自动拆成 `img/` 切图；`scroll/` 写在 `mix/` 内仍按 A5 滑动裁切。A-v1.7：A0 全角斜杠 `／` 与半角 `/` 同义。A-v1.6：A0 前缀语法改大小写不敏感、半角斜杠两侧允许空格；A6 明确视觉前缀挂在 TEXT 上时按切图消费（名字压过类型）。
+> 版本 **A-v1.12**（2026-08-27）。与 `spec/naming-spec.md` 同步升版，`test/spec-drift.test.mjs` 锁住版本号与条目集合。
+> A-v1.12：A8 增补页上用到的 `img/` + `lang` 组件集每个变体根带 `sliceExport`。A-v1.11：A2 增补 `fix/@from=N` 从第 N 屏起钉视口。A-v1.10：A8 增补页上 `ind/` 组件集每个变体根带 `sliceExport`。A-v1.9：A8 增补 mix 内裁切溢出自动 `scroll/`；BOOLEAN `btn/` 带 `sliceExport`。A-v1.8：A8 `mix/` 子树带图像填充的叶子由清单自动拆成 `img/` 切图；`scroll/` 写在 `mix/` 内仍按 A5 滑动裁切。A-v1.7：A0 全角斜杠 `／` 与半角 `/` 同义。A-v1.6：A0 前缀语法改大小写不敏感、半角斜杠两侧允许空格；A6 明确视觉前缀挂在 TEXT 上时按切图消费（名字压过类型）。
 
 ## 这份文件为什么存在
 
@@ -117,6 +117,7 @@ TEXT 节点**默认**即可配置文案，不需要前缀声明——无前缀�
 5. `mix/` 子树里无自己前缀、打开了裁切、且子层或自身相对父层横向溢出的 FRAME/GROUP，升为 `determined` `scroll/`（`via=structure`）。这是滑动视口，不是整块切图。
 6. `BOOLEAN_OPERATION` 的 `btn/` 保持 click，同时写 `sliceExport`；子层是 `slice-child`。导按钮合成形，不要给 Subtract 零件加 `img/`。
 7. 页上用到的 `ind/` 组件集，每个变体 `COMPONENT` 根保持 indicator，同时写 `sliceExport`；零件是 `slice-child`。导变体合成形，不要给小钻石加 `img/`，不要用 CSS 菱形。做页按实例 `componentId` 消费对应变体 PNG。
+8. 页上用到的 `img/` 组件集，仅当变体属性名是 `lang`、且至少有两个不同的精确小写 `cn` / `tw` / `en` / `jp` / `kr` 变体时，这些合法变体 `COMPONENT` 根保持 slice，同时写 `sliceExport`；零件是 `slice-child`。导的是该语言合成形。没有 `lang` 轴、只有一个变体、`CN` / `xx` 这类非精确小写五码、`Property 1=cn` 旧写法当普通图，不跟页面语言。未画的语言不做出清单失败条件；做页切到缺变体时 fail-visible，不回落 `cn` 图。页面语言 key 仍是 `zh-CN` / `zh-TW` / `en` / `ja` / `ko`，映射到上述五码；`region=cn` 是国服。
 
 ---
 

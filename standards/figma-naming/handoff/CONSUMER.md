@@ -43,7 +43,7 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 行为看清单里的 `role` + `params`，禁止 `parseLayerName` / `deriveRole` 再猜图层名。
 
 摆位置用 `pageBox`（相对这一页）和 `parentBox`（相对父层），不要拿画布 `box` 去摆。`fix/` 钉视口，坐标用 `viewportBox` / `pageBox`。写了 `params.from` / `overlays.from` 的，滚到该 `sec/N` 及以下才出现；不写则进页就钉。`@from` 只在 `fix/` 上，不要当成 `btn/@sec`。  
-切图按节点 `sliceExport`：墨迹框、1 倍、png，文件名是完整 node id。导 `img/` `bg/` `kv/`（含 mix 自动拆的 `img/`），带 `sliceExport` 的 BOOLEAN `btn/`，以及页上用到的 `ind/` 组件集每个变体根。`mix/` 容器本身不切。mix 里无前缀的裁切溢出框升 `scroll/`；设计师写成 `scroll/可滑动内容` 同样接滑动裁切。页上用到的组件集**每个变体**里的切图都要导，不能只导当前看见的那一张。做页按这份契约自己导出，包里没有现成 PNG，不要再走 `figma-assets` 的 `use_absolute_bounds` 按节点框重导，也不要去猜 `skipped` 子层。  
+切图按节点 `sliceExport`：墨迹框、1 倍、png，文件名是完整 node id。导 `img/` `bg/` `kv/`（含 mix 自动拆的 `img/`），带 `sliceExport` 的 BOOLEAN `btn/`，页上用到的 `ind/` 组件集每个变体根，以及页上用到的 `img/` 组件集里属性名为 `lang`、且至少有两个不同的精确小写 `cn` / `tw` / `en` / `jp` / `kr` 的合法变体根。没有 `lang` 轴、只有一个变体、`CN` / `xx` 这类非精确小写五码、以及 `Property 1=cn` 的 logo 当普通图，不跟页面语言。切页面语言时同步切这类合法变体：`zh-CN→cn`、`zh-TW→tw`、`en→en`、`ja→jp`、`ko→kr`。整页语言 key 仍是 `zh-CN`；`region=cn` 是国服。缺的语言变体 fail-visible，不回落默认中文图。`mix/` 容器本身不切。mix 里无前缀的裁切溢出框升 `scroll/`；设计师写成 `scroll/可滑动内容` 同样接滑动裁切。页上用到的组件集**每个变体**里的切图都要导，不能只导当前看见的那一张。做页按这份契约自己导出，包里没有现成 PNG，不要再走 `figma-assets` 的 `use_absolute_bounds` 按节点框重导，也不要去猜 `skipped` 子层。  
 TEXT 默认可改字；一旦 `role` 是 `img/` `bg/` `kv/` 就按切图，不排字。  
 有 `rotation` 必须按这个角度摆，不能当 0。`style.fills` 用全层，不能只吃第一层。  
 拉伸读 `layout.constraints`（钉左/钉右/居中/随页）。遮罩/裁切读 `isMask` `maskChildren` `clipsContent`，按父层裁，不让子层漏边。  
