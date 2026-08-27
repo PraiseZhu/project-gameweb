@@ -1042,11 +1042,46 @@ test("img/ lang 多轴只认 lang", () => {
       node("inst", "INSTANCE", "img/标题", [], { componentId: "cn-n" }),
     ]),
   ]);
-  const inv = buildInventory(node("shelf", "FRAME", "cn_pc", [page, multi]), { requestedNodeId: "page" });
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, multi]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
   const variant = inv.attachments.componentSets[0].variants[0];
   assert.equal(variant.role, "img");
   assert.equal(variant.via, "structure");
   assert.ok(variant.sliceExport);
+  // 多轴时各轴选项之和 ≠ 变体组合数；validateInventory 必须按逐轴校验放行合法形状。
+  const ready = validateInventory(inv, shelf);
+  assert.equal(ready.ok, true, ready.problems.join("\n"));
+});
+
+test("img/ lang 多轴 validateInventory 拒绝不在声明选项里的变体值", () => {
+  const node = inventoryNode;
+  // lang 轴只声明 cn/tw，但存在 lang=fr 的变体 → 新逐轴校验必须报出，不许静默放行。
+  const bad = node("bad-set", "COMPONENT_SET", "img/标题", [
+    node("cn-n", "COMPONENT", "lang=cn, State=normal", [
+      node("art-cn", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("fr-n", "COMPONENT", "lang=fr, State=normal", [
+      node("art-fr", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+      State: { type: "VARIANT", defaultValue: "normal", variantOptions: ["normal"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("inst", "INSTANCE", "img/标题", [], { componentId: "cn-n" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, bad]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const ready = validateInventory(inv, shelf);
+  assert.equal(ready.ok, false);
+  assert.ok(
+    ready.problems.some((problem) => problem.includes("lang=fr") && problem.includes("不在声明选项里")),
+    `应报「不在声明选项里」，实际 problems:\n${ready.problems.join("\n")}`,
+  );
 });
 
 test("img/ lang=cn 加 State 两变体仍只有一个语言值，不跟语言", () => {
