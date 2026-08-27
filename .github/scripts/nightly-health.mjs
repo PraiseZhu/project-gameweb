@@ -544,7 +544,7 @@ function runTrustedTests(label, packageDir) {
     const names = tapFailureNames(output);
     const detail = names.length ? `\n    挂的用例（前 ${names.length}）:\n${names.map((n) => `    - ${n}`).join('\n')}` : '';
     console.error(detail);
-    return `${label}: TAP 失败 ${tap.fail} / 退出码 ${result.status}${names.length ? `（如: ${names[0]}…）` : ''}`;
+    return `${label}: TAP 失败 ${tap.fail} / 退出码 ${result.status}${names.length ? `（如: ${names.slice(0, 3).join('；')}）` : ''}`;
   }
   return null;
 }

@@ -71,20 +71,22 @@ test('公开自测 skip 策略: 模块在但没有可启动 Chrome 时探测为 
     LOCALAPPDATA: '/no-local',
     APPDATA: '/no-roaming',
   };
-  // 候选全部指向不存在的路径再比对：函数会探测真实文件系统
-  // (/usr/bin/google-chrome 等固定候选)，runner 预装 Chrome 时 must not 命中真实机器。
-  const candidates = getChromeCandidates(missingPath).filter((p) => !existsSync(p));
-  assert.ok(candidates.length >= 1, 'missing env 下至少应构造出不存在的候选');
+  // 候选顺序契约：CHROME_PATH 永远排第一（纯函数，不碰文件系统）。
+  const candidates = getChromeCandidates(missingPath);
+  assert.equal(candidates[0], '/definitely-missing-chrome');
+  // findChromiumExecutable 会探测真实文件系统（/usr/bin/google-chrome 等固定候选，
+  // runner 预装 Chrome 时必然命中），所以断言跟随真机：有候选存在就必须找得到，
+  // 找不到就必须返回 null——两种机器都自洽。
+  const machineHasListedChrome = candidates.some((p) => existsSync(p));
   const executable = findChromiumExecutable({
     executablePath() { return '/definitely-missing-playwright-chromium'; },
-  }, { ...missingPath, CHROME_PATH: candidates[0] });
-  assert.equal(executable, null, `不应命中真实机器上的 Chrome: ${executable}`);
-  void missingPath;
+  }, missingPath);
+  assert.equal(executable !== null, machineHasListedChrome, `探测结果与真机候选不一致: ${executable}`);
   const probe = interpretPlaywrightProbeStatus(executable ? 0 : 1);
-  assert.deepEqual(probe, { available: false, reason: 'no-executable' });
+  assert.equal(probe.available, machineHasListedChrome);
   assert.deepEqual(interpretPlaywrightProbeStatus(0), { available: true });
   assert.deepEqual(interpretPlaywrightProbeStatus(2), { available: false, reason: 'unresolved' });
-  assert.match(playwrightBrowserSkipMessage(probe), /is installed but no Chromium\/Chrome is launchable/);
+  assert.match(playwrightBrowserSkipMessage({ available: false, reason: 'no-executable' }), /is installed but no Chromium\/Chrome is launchable/);
   assert.match(playwrightBrowserSkipMessage(interpretPlaywrightProbeStatus(2)), /is not installed/);
   const live = probePlaywrightCapability(SKILL_ROOT);
   assert.equal(typeof live.available, 'boolean');
