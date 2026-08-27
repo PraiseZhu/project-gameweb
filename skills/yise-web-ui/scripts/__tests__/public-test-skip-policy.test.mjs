@@ -11,7 +11,8 @@ import {
   UNBUNDLED_FONTS_SKIP_ALLOWANCE,
   WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE,
 } from '../lib/runtime-capabilities.mjs';
-import { findChromiumExecutable } from '../lib/resolve-playwright.mjs';
+import { findChromiumExecutable, getChromeCandidates } from '../lib/resolve-playwright.mjs';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -70,26 +71,49 @@ test('公开自测 skip 策略: 模块在但没有可启动 Chrome 时探测为 
     LOCALAPPDATA: '/no-local',
     APPDATA: '/no-roaming',
   };
+  // 候选顺序契约：CHROME_PATH 永远排第一（纯函数，不碰文件系统）。
+  const candidates = getChromeCandidates(missingPath);
+  assert.equal(candidates[0], '/definitely-missing-chrome');
+  // findChromiumExecutable 会探测真实文件系统（/usr/bin/google-chrome 等固定候选，
+  // runner 预装 Chrome 时必然命中），所以断言跟随真机：有候选存在就必须找得到，
+  // 找不到就必须返回 null——两种机器都自洽。
+  const machineHasListedChrome = candidates.some((p) => existsSync(p));
   const executable = findChromiumExecutable({
     executablePath() { return '/definitely-missing-playwright-chromium'; },
   }, missingPath);
-  assert.equal(executable, null);
+  assert.equal(executable !== null, machineHasListedChrome, `探测结果与真机候选不一致: ${executable}`);
   const probe = interpretPlaywrightProbeStatus(executable ? 0 : 1);
-  assert.deepEqual(probe, { available: false, reason: 'no-executable' });
+  assert.equal(probe.available, machineHasListedChrome);
   assert.deepEqual(interpretPlaywrightProbeStatus(0), { available: true });
   assert.deepEqual(interpretPlaywrightProbeStatus(2), { available: false, reason: 'unresolved' });
-  assert.match(playwrightBrowserSkipMessage(probe), /is installed but no Chromium\/Chrome is launchable/);
+  assert.match(playwrightBrowserSkipMessage({ available: false, reason: 'no-executable' }), /is installed but no Chromium\/Chrome is launchable/);
   assert.match(playwrightBrowserSkipMessage(interpretPlaywrightProbeStatus(2)), /is not installed/);
   const live = probePlaywrightCapability(SKILL_ROOT);
   assert.equal(typeof live.available, 'boolean');
   if (live.available) assert.equal(live.reason, undefined);
   else assert.ok(live.reason === 'no-executable' || live.reason === 'unresolved');
+  // 策略纯函数直接喂「无 Chrome」假输入，与真机探测解耦（runner 预装 Chrome 时
+  // probe.available 为 true，喂进策略会走基准口径，不能拿来断言 allowance）。
   const skip = publicSkipPolicy({
     platform: 'linux',
     symlinkAvailable: true,
     bundledFonts: true,
-    playwrightAvailable: probe.available,
+    playwrightAvailable: false,
   });
   assert.equal(skip.limit, BASE_PUBLIC_SKIP_LIMIT + MISSING_PLAYWRIGHT_SKIP_ALLOWANCE);
   assert.deepEqual(skip.allowances, [{ label: PLAYWRIGHT_SKIP_LABEL, count: MISSING_PLAYWRIGHT_SKIP_ALLOWANCE }]);
+  void probe;
+  // live 探测跟随真实机器：有 Chrome 的 runner 上 available=true，上限回基准；
+  // 无 Chrome 的 runner 上走 allowance。只断言两种口径都自洽，不写死方向。
+  const liveSkip = publicSkipPolicy({
+    platform: 'linux',
+    symlinkAvailable: true,
+    bundledFonts: true,
+    playwrightAvailable: live.available,
+  });
+  assert.equal(liveSkip.limit, BASE_PUBLIC_SKIP_LIMIT + (live.available ? 0 : MISSING_PLAYWRIGHT_SKIP_ALLOWANCE));
+  assert.deepEqual(
+    liveSkip.allowances,
+    live.available ? [] : [{ label: PLAYWRIGHT_SKIP_LABEL, count: MISSING_PLAYWRIGHT_SKIP_ALLOWANCE }],
+  );
 });

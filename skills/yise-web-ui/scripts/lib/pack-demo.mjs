@@ -22,10 +22,22 @@ export function packRoot(dir) {
   return resolve(dir);
 }
 
-export function withinPackRoot(root, candidate) {
-  const base = packRoot(root);
-  const value = resolve(candidate);
+function realpathish(p) {
+  try { return realpathSync(p); } catch { return resolve(p); }
+}
+
+function pathInside(base, value) {
   return value === base || value.startsWith(`${base}/`) || value.startsWith(`${base}\\`);
+}
+
+export function withinPackRoot(root, candidate) {
+  const lexical = resolve(candidate);
+  // 字面空间先比：demoDir 本身就在包根里的正常情况直接放行，
+  // macOS $TMPDIR(/var→/private/var) 或 Windows 8.3 短名不会在这道被误判。
+  if (pathInside(packRoot(root), lexical)) return true;
+  // 第二道在 real 空间比：包根先 realpath（跟系统软链），再和文件 realpath 比。
+  // 字面比不过但 real 同根 = 系统软链造成的表述差异，不是逃逸；real 也不同根才是真逃逸。
+  return pathInside(realpathish(packRoot(root)), realpathish(lexical));
 }
 
 function packPathFail(root, lexical, message, extra = {}) {
@@ -43,7 +55,10 @@ export function inspectPackPath(root, candidate) {
   try { real = realpathSync(lexical); }
   catch { return packPathFail(root, lexical, 'unresolvable path'); }
   if (!withinPackRoot(root, real)) return packPathFail(root, lexical, 'realpath escapes pack root', { real });
-  if (real !== lexical) return packPathFail(root, lexical, 'refusing reparse/junction', { real });
+  // 只拒「包根内部」的分叉：real 必须等于「包根 real + 字面相对路径」。
+  // 系统前缀软链(macOS /var→/private/var)整段偏移不算；根内任何一段被换成软链才算 reparse/junction。
+  const expected = join(realpathish(packRoot(root)), relative(packRoot(root), lexical));
+  if (real !== expected) return packPathFail(root, lexical, 'refusing reparse/junction', { real });
   return { ok: true, path: lexical, real, stat: st };
 }
 

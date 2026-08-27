@@ -29,6 +29,9 @@ jobs:
             standards/*/package-lock.json
             standards/*/tool/package-lock.json
 
+      - name: Install Pack encoders (Pillow + fontTools)
+        run: python3 -m pip install --quiet pillow fonttools
+
       - name: Guard nightly discovery
         run: node --test .github/scripts/nightly-health.test.mjs
 
