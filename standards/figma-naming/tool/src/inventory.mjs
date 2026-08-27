@@ -1071,19 +1071,34 @@ export function validateInventory(inv, document) {
   const definitionIds = new Set();
   for (const set of inv.attachments?.componentSets || []) {
     if (!byId.has(set.id)) problems.push(`组件集 ${set.id} 不在快照里`);
-    const declared = Object.values(set.componentPropertyDefinitions || {}).flatMap((definition) => definition.variantOptions || []);
+    // 多轴组件集（如 lang×State）的各轴选项之和 ≠ 变体组合数，不能做总数比较；
+    // 一致性改为逐轴校验：每个变体取值必须落在该轴声明的 variantOptions 里。
+    const declaredOptions = new Map();
+    for (const [key, definition] of Object.entries(set.componentPropertyDefinitions || {})) {
+      const axis = variantPropertyName(key);
+      const options = Array.isArray(definition?.variantOptions) ? definition.variantOptions.map(String) : [];
+      if (axis && options.length) declaredOptions.set(axis, options);
+    }
     const values = set.variants.map((variant) => {
       if (!byId.has(variant.id)) problems.push(`变体 ${variant.id} 不在快照里`);
       definitionIds.add(variant.id);
       const nodes = variant.nodes || [];
       if (!nodes.some((node) => node.id === variant.id)) problems.push(`变体 ${variant.id} 缺完整树根`);
       const props = variant.componentProperties || {};
-      const entries = Object.entries(props);
+      let entries = Object.entries(props);
+      if (!entries.length) entries = variantPropertyPairs(variant.name).map(({ key, value }) => [key, value]);
+      entries = entries.map(([key, value]) => [key, String(variantPropertyRaw(value) ?? "")]);
+      for (const [key, value] of entries) {
+        const axis = variantPropertyName(key);
+        const options = declaredOptions.get(axis);
+        if (options && !options.includes(String(value))) {
+          problems.push(`组件集 ${set.id} 变体 ${variant.id} 属性 ${axis}=${value} 不在声明选项里`);
+        }
+      }
       return entries.length ? entries.map(([key, value]) => `${key}=${value}`).join("|") : null;
     });
     const explicitValues = values.filter(Boolean);
     if (new Set(explicitValues).size !== explicitValues.length) problems.push(`组件集 ${set.id} 变体属性值重复`);
-    if (declared.length && declared.length !== set.variants.length) problems.push(`组件集 ${set.id} 声明选项与变体数量不一致`);
   }
   for (const component of inv.attachments?.components || []) definitionIds.add(component.id);
 
