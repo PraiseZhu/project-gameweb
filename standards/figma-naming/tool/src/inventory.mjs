@@ -216,6 +216,75 @@ function indSetParent(parent) {
   return parent?.type === "COMPONENT_SET" && parseName(parent.name).prefix === "ind";
 }
 
+const IMG_LANG_VALUES = new Set(["cn", "tw", "en", "jp", "kr"]);
+
+function variantPropertyName(key) {
+  return String(key || "").replace(/#[^#]+$/, "").trim().toLowerCase();
+}
+
+function variantPropertyPairs(name) {
+  return String(name || "").split(",").flatMap((part) => {
+    const index = part.indexOf("=");
+    if (index < 0) return [];
+    const key = variantPropertyName(part.slice(0, index));
+    if (!key) return [];
+    return [{ key, value: part.slice(index + 1) }];
+  });
+}
+
+function variantPropertyRaw(raw) {
+  if (raw && typeof raw === "object") return raw.value ?? raw.defaultValue ?? "";
+  return raw;
+}
+
+function langValueOfVariant(node) {
+  const props = node?.componentProperties;
+  if (props && typeof props === "object") {
+    for (const [key, raw] of Object.entries(props)) {
+      if (variantPropertyName(key) !== "lang") continue;
+      return String(variantPropertyRaw(raw) ?? "");
+    }
+  }
+  const fromName = variantPropertyPairs(node?.name).find((pair) => pair.key === "lang");
+  return fromName ? fromName.value : "";
+}
+
+function hasLangVariantDefinition(node) {
+  const defs = node?.componentPropertyDefinitions;
+  if (!defs || typeof defs !== "object") return false;
+  return Object.entries(defs).some(([key, definition]) => {
+    if (variantPropertyName(key) !== "lang") return false;
+    return definition?.type === "VARIANT";
+  });
+}
+
+function legalLangValuesOfSet(node) {
+  const values = new Set();
+  for (const child of node?.children || []) {
+    if (child?.type !== "COMPONENT") continue;
+    const value = langValueOfVariant(child);
+    if (IMG_LANG_VALUES.has(value)) values.add(value);
+  }
+  return values;
+}
+
+function hasLangVariantAxis(node) {
+  return hasLangVariantDefinition(node) && legalLangValuesOfSet(node).size >= 2;
+}
+
+function imgLangSetParent(parent) {
+  return parent?.type === "COMPONENT_SET"
+    && parseName(parent.name).prefix === "img"
+    && hasLangVariantAxis(parent);
+}
+
+function promotedSetVariantRole(parent, node) {
+  if (node?.type !== "COMPONENT") return null;
+  if (indSetParent(parent)) return "ind";
+  if (imgLangSetParent(parent) && IMG_LANG_VALUES.has(langValueOfVariant(node))) return "img";
+  return null;
+}
+
 function mixImageLeaf(node) {
   return hasImageFill(node) && !(node.children || []).length;
 }
@@ -387,6 +456,7 @@ function serializeTree(root, scope, counts, pageBox = null) {
   const walk = (node, parent, orderKey, ctx) => {
     const parsed = parseName(node.name);
     const prefix = parsed.prefix;
+    const setVariantRole = prefix ? null : promotedSetVariantRole(parent, node);
 
     let status;
     let role = null;
@@ -397,7 +467,7 @@ function serializeTree(root, scope, counts, pageBox = null) {
       status = "skipped"; why = "ref"; if (prefix === "ref") role = "ref";
     } else if (ctx.underHidden || node.visible === false) {
       status = "skipped"; why = "invisible";
-    } else if (ctx.underSlice && !prefix) {
+    } else if (ctx.underSlice && !prefix && !setVariantRole) {
       status = "skipped"; why = "slice-child";
     } else if (prefix && PREFIXES[prefix]) {
       status = "determined"; role = prefix; via = "prefix"; params = paramsOf(parsed);
@@ -407,8 +477,8 @@ function serializeTree(root, scope, counts, pageBox = null) {
       status = "determined"; role = "scroll"; via = "structure";
     } else if (ctx.underMix && !prefix && mixImageLeaf(node)) {
       status = "determined"; role = "img"; via = "structure";
-    } else if (indSetParent(parent) && node.type === "COMPONENT" && !prefix) {
-      status = "determined"; role = "ind"; via = "structure";
+    } else if (setVariantRole) {
+      status = "determined"; role = setVariantRole; via = "structure";
     } else if (!prefix && namePatternOf(node.name) === "figma-default" && node.type !== "TEXT") {
       status = "skipped"; why = "art-fragment";
     } else {

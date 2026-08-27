@@ -7,12 +7,12 @@
  * 住在 spec/：人读正文和机器表同一层。tool/ 与 skills/ 都读这里，不必下到工具目录。
  * 本文件保持零 Node 依赖，以便 Figma 插件打包。
  */
-export const SPEC_VERSION = "v2.13 (2026-08-25)";
+export const SPEC_VERSION = "v2.14 (2026-08-27)";
 /** 相对 figma-naming/ 根的展示路径 */
 export const SPEC_DOC = "spec/naming-spec.md";
 
 /** 下游消费假定（判定后果的前提），见 spec/consumer-assumptions.md */
-export const ASSUMPTIONS_VERSION = "A-v1.11 (2026-08-25)";
+export const ASSUMPTIONS_VERSION = "A-v1.12 (2026-08-27)";
 export const ASSUMPTIONS_DOC = "spec/consumer-assumptions.md";
 
 /**
@@ -38,7 +38,7 @@ export const PREFIXES = {
     exemptSubtree: "ALL",
   },
   img: {
-    group: "视觉", desc: "静态装饰图、美术字标题", params: [], slice: true,
+    group: "视觉", desc: "静态装饰图、美术字标题；语言切图走组件集变体属性 lang，不挂 @ 参数", params: [], slice: true,
   },
   bg: {
     group: "视觉", desc: "大面积底图", params: [], slice: true,

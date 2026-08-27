@@ -56,6 +56,20 @@ test("draft asset completeness：via=structure 的 mix 自动 scroll 不要求 n
   assert.equal(result.problems.filter((p) => p.includes("name 未写入")).length, 0, result.problems.join("\n"));
 });
 
+test("draft asset completeness：via=structure 的 img lang 变体根不要求 name 写 img/", () => {
+  const doc = rebuildInventoryIndexes({ nodes: [
+    node("v-cn", "COMPONENT", "lang=cn", {
+      role: "img",
+      label: "lang=cn",
+      behavior: "slice",
+      via: "structure",
+      sliceExport: { bounds: "render", scale: 1, format: "png", file: "v-cn.png" },
+    }),
+  ] });
+  const result = auditDraftAssetCompleteness(doc);
+  assert.equal(result.problems.filter((p) => p.includes("name 未写入")).length, 0, result.problems.join("\n"));
+});
+
 test("draft asset completeness：via=structure 的 ind 变体根不要求 name 写 ind/", () => {
   const doc = rebuildInventoryIndexes({ nodes: [
     node("397:35947", "COMPONENT", "Property 1=highlight", {
