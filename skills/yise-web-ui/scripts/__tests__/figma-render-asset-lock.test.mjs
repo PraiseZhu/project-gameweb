@@ -84,9 +84,12 @@ test('BOOLEAN delivered composite does not get a CSS solid plate under the slice
 });
 
 test('only named scroll/ with overflowing child is an hscroll host using the clip box', () => {
+  /* #63 拍板保留日历 mix 例外：PC 日历稿没有 scroll/，mix/calendar 是唯一
+     允许平移越界子层的非 scroll 宿主。断言对齐该口径，不再要求日历被排除。 */
   assert.match(renderer, /Named scroll\/ is the explicit host/);
-  assert.match(renderer, /use the Figma clip box, never the child's full width/);
-  assert.match(renderer, /if \(!namedScroll \|\| !clipHost\) return null/);
+  assert.match(renderer, /Named scroll\/ is the explicit host\. Calendar mix is the one/);
+  assert.match(renderer, /A random\s+clipsContent frame is not a host\./);
+  assert.match(renderer, /if \(\(!namedScroll && !calendarMix\) \|\| !clipHost\) return null/);
   assert.doesNotMatch(renderer, /namedMix && clipHost/);
   assert.match(renderer, /childAttrs\['data-hscroll-overflow-child'\] = 'true'/);
 });

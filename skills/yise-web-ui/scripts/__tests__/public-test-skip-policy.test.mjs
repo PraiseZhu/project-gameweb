@@ -52,10 +52,10 @@ test('公开自测 skip 策略: 公开包不含 fonts/ 时额外放行 3 条 bun
   assert.deepEqual(unbundled.allowances, [{ label: '公开包不含 fonts/ 二进制', count: UNBUNDLED_FONTS_SKIP_ALLOWANCE }]);
 });
 
-test('公开自测 skip 策略: 无 Playwright 时额外放行浏览器测', () => {
+test('公开自测 skip 策略: 无 Playwright 时额外放行 22 条浏览器测', () => {
   const missing = publicSkipPolicy({ platform: 'linux', symlinkAvailable: true, bundledFonts: true, playwrightAvailable: false });
   assert.equal(missing.limit, BASE_PUBLIC_SKIP_LIMIT + MISSING_PLAYWRIGHT_SKIP_ALLOWANCE);
-  assert.equal(MISSING_PLAYWRIGHT_SKIP_ALLOWANCE, 10);
+  assert.equal(MISSING_PLAYWRIGHT_SKIP_ALLOWANCE, 22);
   assert.deepEqual(missing.allowances, [{ label: PLAYWRIGHT_SKIP_LABEL, count: MISSING_PLAYWRIGHT_SKIP_ALLOWANCE }]);
   const present = publicSkipPolicy({ platform: 'linux', symlinkAvailable: true, bundledFonts: true, playwrightAvailable: true });
   assert.equal(present.limit, BASE_PUBLIC_SKIP_LIMIT);
