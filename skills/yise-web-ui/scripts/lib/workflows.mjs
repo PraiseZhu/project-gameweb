@@ -1,4 +1,22 @@
+import { translationAxisClaim } from './translation/locale-policy.mjs';
+
 export const WORKFLOW_IDS = ['figma-showcase', 'product-qa'];
+
+/** Two human-facing review stops. Axis order stays Main → Translation → Interaction → Resize. */
+export const HUMAN_REVIEW_STOPS = Object.freeze([
+  {
+    id: 'static-and-translation',
+    after: Object.freeze(['Main static', 'Translation']),
+    presentPage: true,
+    prompt: '静态（有翻译表才带翻译）完成。打开产品视图给人看。没问题再说继续，才做交互和拉伸。',
+  },
+  {
+    id: 'interaction-and-resize',
+    after: Object.freeze(['Interaction', 'Resize']),
+    presentPage: true,
+    prompt: '交互和自适应完成。再次打开产品视图给人看。没问题再说继续，才 Pack。',
+  },
+]);
 
 export const WORKFLOW_DECLARATIONS = {
   'figma-showcase': {
@@ -104,5 +122,29 @@ export function unclaimedCapabilitiesFor(spec, truth) {
       if (!unclaimed.includes(cap)) unclaimed.push(cap);
     }
   }
+  const translation = translationAxisClaim({ spec, truth });
+  if (!translation.claimed && !unclaimed.includes('independentTranslation')) {
+    unclaimed.push('independentTranslation');
+  }
   return unclaimed;
+}
+
+export function humanReviewStopAfterPreviewFirst({ spec = {}, truth = {}, previewOk = false } = {}) {
+  if (!previewOk) {
+    return {
+      id: null,
+      presentPage: false,
+      nextHumanStep: 'preview:first 红了不许给人打开 ?product=1，也不许开 Interaction / Resize。',
+    };
+  }
+  const translation = translationAxisClaim({ spec, truth });
+  const stop = HUMAN_REVIEW_STOPS[0];
+  return {
+    id: stop.id,
+    presentPage: true,
+    translation,
+    nextHumanStep: translation.claimed
+      ? 'preview:first 已绿。第一次给人看：Main 静态 + 翻译。等人说继续，才做交互和拉伸。'
+      : `preview:first 已绿。第一次给人看：Main 静态。${translation.note} 等人说继续，才做交互和拉伸。`,
+  };
 }

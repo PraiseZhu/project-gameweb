@@ -47,4 +47,7 @@ coverage/
 # === Local one-off artifacts ===
 _tmp/
 
+# === Skill private case ledger (root-cause layer stays public) ===
+skills/*/evolution/cases/
+
 # === Tip: 大数据目录建议加 .nosync 后缀 ===

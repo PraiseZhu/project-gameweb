@@ -67,6 +67,9 @@ test('preview-first candidate output always uses a durable file:// product URL',
   assert.match(output.productView.url, /^file:/);
   assert.match(output.productView.url, /product=1/);
   assert.doesNotMatch(output.productView.url, /^http:/);
+  assert.equal(output.humanReview.presentPage, true);
+  assert.equal(output.humanReview.id, 'static-and-translation');
+  assert.ok(output.unclaimedCapabilities.includes('independentTranslation'));
 });
 
 test('ephemeral HTTP check URL dies after the server closes; file:// product URL remains', async () => {

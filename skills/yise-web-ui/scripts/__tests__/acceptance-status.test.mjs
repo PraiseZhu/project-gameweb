@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildInputHashes, TOOL_VERSION } from '../lib/fs-utils.mjs';
-import { summarizeGate, validateReportIntegrity } from '../lib/report.mjs';
-import { workflowDeclaration } from '../lib/workflows.mjs';
+import { summarizeGate, validateReportIntegrity, declarePageCapabilities } from '../lib/report.mjs';
+import { workflowDeclaration, HUMAN_REVIEW_STOPS, humanReviewStopAfterPreviewFirst } from '../lib/workflows.mjs';
 import { playwrightBrowserSkipMessage, probePlaywrightCapability } from '../lib/runtime-capabilities.mjs';
 import { templateExtractor } from './_extractor-template.mjs';
 
@@ -209,4 +209,49 @@ test('figma-showcase may be workflow-acceptable but is rejected as product PR ev
   const problems = validateReportIntegrity(dir, spec, report);
   assert.ok(problems.some((p) => /figma-showcase.*不得作为产品 PR/.test(p)), problems.join('\n'));
   assert.ok(problems.some((p) => /gateD.*not-claimed/.test(p)), problems.join('\n'));
+});
+
+test('page capability declaration refuses forged translation and adaptive greens', () => {
+  const honest = declarePageCapabilities({
+    spec: { matrix: { langs: ['zh-CN'] }, bindings: [] },
+    truth: {},
+    fontLoaded: true,
+    report: {
+      gateB: { status: 'limited', pass: false },
+      gateC: { status: 'limited', pass: false },
+      gateD: { status: 'not-claimed', pass: false },
+      gateF: { status: 'not-claimed', pass: false },
+      gateX: { status: 'not-claimed', pass: false },
+    },
+  });
+  assert.equal(honest.translation.status, 'not-claimed');
+  assert.equal(honest.translation.fontLoaded, true);
+  assert.equal(honest.gates.gateF.status, 'not-claimed');
+  assert.equal(honest.ok, true);
+
+  const forgedAdaptive = declarePageCapabilities({
+    spec: { matrix: { langs: ['zh-CN'] } },
+    report: { gateF: { status: 'passed', pass: true } },
+  });
+  assert.ok(forgedAdaptive.forged.includes('adaptive-claimed-without-spec'));
+  assert.equal(forgedAdaptive.ok, false);
+
+  const forgedBinding = declarePageCapabilities({
+    spec: { bindings: [] },
+    report: { gateD: { status: 'passed', pass: true } },
+  });
+  assert.ok(forgedBinding.forged.includes('bindings-claimed-without-spec'));
+});
+
+test('preview-first red never presents a page; green is the first human stop', () => {
+  assert.equal(HUMAN_REVIEW_STOPS.length, 2);
+  assert.deepEqual(HUMAN_REVIEW_STOPS.map((stop) => stop.id), ['static-and-translation', 'interaction-and-resize']);
+  const red = humanReviewStopAfterPreviewFirst({ spec: {}, truth: {}, previewOk: false });
+  assert.equal(red.presentPage, false);
+  assert.match(red.nextHumanStep, /preview:first 红了不许给人打开/);
+  const green = humanReviewStopAfterPreviewFirst({ spec: { matrix: { langs: ['zh-CN'] } }, truth: {}, previewOk: true });
+  assert.equal(green.presentPage, true);
+  assert.equal(green.id, 'static-and-translation');
+  assert.equal(green.translation.status, 'not-claimed');
+  assert.match(green.nextHumanStep, /第一次给人看/);
 });

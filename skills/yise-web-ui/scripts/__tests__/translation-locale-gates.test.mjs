@@ -11,6 +11,7 @@ import {
   validateTypographyEvidence,
   classifyUnresolvedCopy,
   groupUnresolvedCopy,
+  translationAxisClaim,
 } from '../lib/translation/index.mjs';
 
 const leaf = (value, row, lang) => ({ value, provenance: {
@@ -162,4 +163,25 @@ test('Chrome evidence schema keeps screenshots optional and visual claims unveri
     schema: 'translation-typography-evidence/v1', language: 'ja', classification: { rangeStatus: 'fit' },
     source: { style: {} }, browser: { rect: null },
   }).ok, true);
+});
+
+test('translation axis stays not-claimed without a copy table even if zh-CN fonts loaded', () => {
+  const none = translationAxisClaim({ spec: { matrix: { langs: ['zh-CN'] } }, truth: {}, fontLoaded: true });
+  assert.equal(none.status, 'not-claimed');
+  assert.equal(none.claimed, false);
+  assert.equal(none.reason, 'no-translation-table');
+  assert.match(none.note, /中文字体加载不等于翻译通过/);
+
+  const zhOnly = translationAxisClaim({
+    spec: { matrix: { langs: ['zh-CN'] }, copyTable: [{ id: 'row-1' }] },
+    fontLoaded: true,
+  });
+  assert.equal(zhOnly.status, 'not-claimed');
+  assert.equal(zhOnly.reason, 'zh-CN-only-matrix');
+
+  const claimed = translationAxisClaim({
+    spec: { matrix: { langs: ['zh-CN', 'en'] }, translationTable: { en: { a: 'A' } } },
+  });
+  assert.equal(claimed.status, 'claimed');
+  assert.equal(claimed.claimed, true);
 });

@@ -84,6 +84,12 @@ gate can assert that no fitted group ends with divergent sibling scales.
    unresolved translation row must stay unresolved and cannot be hidden by a
    typography result.
 
+5. **Independent Translation is not claimed without a copy table.** A zh-CN
+   font/glyph check is Main static evidence. `translationAxisClaim()` returns
+   `not-claimed` when there is no table, or when the matrix is zh-CN only.
+   Do not report Translation passed because fonts loaded. With a table, the
+   independent gate needs a non-zh-CN matrix.
+
 ## Public interface
 
 Import `scripts/lib/translation/index.mjs` for the reusable interface:

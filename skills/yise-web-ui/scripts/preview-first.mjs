@@ -3,7 +3,7 @@ import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchChromium } from './lib/resolve-playwright.mjs';
-import { sourcePlatformEvidence, unclaimedCapabilitiesFor } from './lib/workflows.mjs';
+import { sourcePlatformEvidence, unclaimedCapabilitiesFor, humanReviewStopAfterPreviewFirst } from './lib/workflows.mjs';
 import { internalCandidatePreview } from './lib/final-preview-gate.mjs';
 import { createSafeStaticServer } from './lib/safe-server.mjs';
 import { qaTruthIsExternal } from './lib/html-volume.mjs';
@@ -187,7 +187,7 @@ function previewPayload({ demoDir, screenshot, result, session, spec, truth, ind
     checkUrl: session.url,
     externalTruth,
     ...candidateCompletion({ ok, spec, truth, indexPath }),
-    nextHumanStep: ok ? 'Internal candidate evidence recorded. Do not open or present this product view to the user; run the final preview gate after static acceptance and final evidence.' : null,
+    nextHumanStep: humanReviewStopAfterPreviewFirst({ spec, truth, previewOk: ok }).nextHumanStep,
   };
 }
 
@@ -205,6 +205,7 @@ function candidateCompletion({ ok, spec, truth, indexPath }) {
     productView,
     ...internalCandidatePreview(productView),
     unclaimedCapabilities: unclaimedCapabilitiesFor(spec, truth),
+    humanReview: humanReviewStopAfterPreviewFirst({ spec, truth, previewOk: ok }),
   };
 }
 
