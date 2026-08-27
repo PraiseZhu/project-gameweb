@@ -11,7 +11,8 @@ import {
   UNBUNDLED_FONTS_SKIP_ALLOWANCE,
   WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE,
 } from '../lib/runtime-capabilities.mjs';
-import { findChromiumExecutable } from '../lib/resolve-playwright.mjs';
+import { findChromiumExecutable, getChromeCandidates } from '../lib/resolve-playwright.mjs';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -70,10 +71,15 @@ test('公开自测 skip 策略: 模块在但没有可启动 Chrome 时探测为 
     LOCALAPPDATA: '/no-local',
     APPDATA: '/no-roaming',
   };
+  // 候选全部指向不存在的路径再比对：函数会探测真实文件系统
+  // (/usr/bin/google-chrome 等固定候选)，runner 预装 Chrome 时 must not 命中真实机器。
+  const candidates = getChromeCandidates(missingPath).filter((p) => !existsSync(p));
+  assert.ok(candidates.length >= 1, 'missing env 下至少应构造出不存在的候选');
   const executable = findChromiumExecutable({
     executablePath() { return '/definitely-missing-playwright-chromium'; },
-  }, missingPath);
-  assert.equal(executable, null);
+  }, { ...missingPath, CHROME_PATH: candidates[0] });
+  assert.equal(executable, null, `不应命中真实机器上的 Chrome: ${executable}`);
+  void missingPath;
   const probe = interpretPlaywrightProbeStatus(executable ? 0 : 1);
   assert.deepEqual(probe, { available: false, reason: 'no-executable' });
   assert.deepEqual(interpretPlaywrightProbeStatus(0), { available: true });
