@@ -15,8 +15,12 @@ import {
   parseArgs,
   renderMarkdownReport,
 } from '../lib/asset-delivery-audit.mjs';
+import { playwrightBrowserSkipMessage, probePlaywrightCapability } from '../lib/runtime-capabilities.mjs';
 
 const ROOT = process.cwd();
+const PLAYWRIGHT_PROBE = probePlaywrightCapability(ROOT);
+const HAS_BROWSER_DEPS = PLAYWRIGHT_PROBE.available;
+const BROWSER_SKIP = playwrightBrowserSkipMessage(PLAYWRIGHT_PROBE);
 
 const tinyPng = Buffer.from(
   '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6360000002000100ffff03000006000557bfabd40000000049454e44ae426082',
@@ -130,7 +134,11 @@ test('published asset:audit command accepts the canonical docs flag end to end',
   }
 });
 
-test('measureRenderedAssets does not wait the full page timeout for optional __qa on static fixtures', async () => {
+test('measureRenderedAssets does not wait the full page timeout for optional __qa on static fixtures', async (t) => {
+  if (!HAS_BROWSER_DEPS) {
+    t.skip(BROWSER_SKIP);
+    return;
+  }
   const demoDir = mkdtempSync(join(tmpdir(), 'asset-audit-static-'));
   try {
     mkdirSync(join(demoDir, 'assets'), { recursive: true });

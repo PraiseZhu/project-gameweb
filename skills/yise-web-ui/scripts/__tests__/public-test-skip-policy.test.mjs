@@ -52,16 +52,16 @@ test('公开自测 skip 策略: 公开包不含 fonts/ 时额外放行 3 条 bun
   assert.deepEqual(unbundled.allowances, [{ label: '公开包不含 fonts/ 二进制', count: UNBUNDLED_FONTS_SKIP_ALLOWANCE }]);
 });
 
-test('公开自测 skip 策略: 无 Playwright 时额外放行 5 条浏览器测', () => {
+test('公开自测 skip 策略: 无 Playwright 时额外放行 10 条浏览器测', () => {
   const missing = publicSkipPolicy({ platform: 'linux', symlinkAvailable: true, bundledFonts: true, playwrightAvailable: false });
   assert.equal(missing.limit, BASE_PUBLIC_SKIP_LIMIT + MISSING_PLAYWRIGHT_SKIP_ALLOWANCE);
-  assert.equal(MISSING_PLAYWRIGHT_SKIP_ALLOWANCE, 5);
+  assert.equal(MISSING_PLAYWRIGHT_SKIP_ALLOWANCE, 10);
   assert.deepEqual(missing.allowances, [{ label: PLAYWRIGHT_SKIP_LABEL, count: MISSING_PLAYWRIGHT_SKIP_ALLOWANCE }]);
   const present = publicSkipPolicy({ platform: 'linux', symlinkAvailable: true, bundledFonts: true, playwrightAvailable: true });
   assert.equal(present.limit, BASE_PUBLIC_SKIP_LIMIT);
 });
 
-test('公开自测 skip 策略: 模块在但没有可启动 Chrome 时探测为 false 并走 +5', () => {
+test('公开自测 skip 策略: 模块在但没有可启动 Chrome 时探测为 false 并走 Playwright skip allowance', () => {
   const missingPath = {
     CHROME_PATH: '/definitely-missing-chrome',
     ProgramFiles: '/no-program-files',
