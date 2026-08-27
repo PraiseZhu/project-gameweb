@@ -54,6 +54,22 @@ test('qaTruthIsExternal detects data-src and ignores inlined truth', () => {
   assert.equal(qaTruthIsExternal('<script id="qa-truth" type="application/json" data-src="truth.json" data-html-volume="external"></script>'), true);
 });
 
+test('preview-first red never ships an open command', () => {
+  const output = candidateCompletion({
+    ok: false,
+    spec: { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] } },
+    truth: {},
+    indexPath: join(tmpdir(), 'demo', 'index.html'),
+  });
+  assert.equal(output.userPreviewAllowed, false);
+  assert.equal(output.humanStopPreviewAllowed, false);
+  assert.equal(output.previewDisposition, 'internal-candidate-only');
+  assert.equal(output.productView.command, null);
+  assert.equal(output.productView.url, null);
+  assert.equal(output.humanReview.presentPage, false);
+  assert.match(output.humanReview.nextHumanStep, /preview:first 红了不许给人打开/);
+});
+
 test('preview-first candidate output always uses a durable file:// product URL', () => {
   const spec = { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] } };
   const indexPath = join(tmpdir(), 'demo', 'index.html');

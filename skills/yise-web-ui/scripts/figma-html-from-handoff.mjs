@@ -192,6 +192,8 @@ export function buildHtmlFromHandoff({
     payload.ok = false;
     payload.previewFirst = { skipped: true, ok: false };
     payload.productViewAllowed = false;
+    payload.humanStopPreviewAllowed = false;
+    payload.productView = { url: null, command: null, blocked: true, reason: 'preview-first skipped; product view not allowed' };
     payload.problems = ['preview-first skipped; product view not allowed'];
     return payload;
   }
@@ -211,7 +213,18 @@ function attachPreviewFirst(payload, demoDir) {
   payload.previewFirst = previewJson || { ok: false, status: preview.status, stderr: preview.stderr };
   payload.ok = preview.status === 0 && previewJson?.ok === true;
   payload.productViewAllowed = payload.ok === true;
-  payload.productView = previewJson?.productView ?? null;
+  payload.humanStopPreviewAllowed = payload.ok === true;
+  payload.productView = payload.ok ? (previewJson?.productView ?? null) : {
+    url: null,
+    command: null,
+    blocked: true,
+    reason: 'preview-first red; do not open product view, do not start Interaction / Resize',
+  };
+  payload.humanReview = previewJson?.humanReview ?? null;
+  payload.nextHumanStep = previewJson?.nextHumanStep
+    || (payload.ok
+      ? 'preview:first 已绿。第一次给人看：Main 静态。等人说继续，才做交互和拉伸。'
+      : 'preview:first 红了不许给人打开 ?product=1，也不许开 Interaction / Resize。');
   if (!payload.ok) {
     payload.problems = [
       'preview-first red; do not open product view, do not start Interaction / Resize',

@@ -24,6 +24,8 @@
     "inventory:check": "node scripts/figma-inventory-check.mjs",
     "figma:from-handoff": "node scripts/figma-from-handoff.mjs",
     "figma:html-from-handoff": "node scripts/figma-html-from-handoff.mjs",
+    "human:review": "node scripts/human-review.mjs",
+    "recall:yisewebui": "node scripts/recall-yisewebui.mjs",
     "pack:demo": "node scripts/pack-demo.mjs"
   },
   "dependencies": {

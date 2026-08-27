@@ -76,15 +76,22 @@ test('sc-yisewebui-layer-stop: two human review stops, Translation not-claimed w
   assert.match(skill, /zh-CN\s+font load\s+is not a translation pass/s);
   assert.match(skill, /Do not open or present the page while `preview:first` is red/);
   assert.match(skill, /humanStopPreviewAllowed/);
+  assert.match(skill, /productView\.command/);
+  assert.match(skill, /human-review\.json/);
+  assert.match(skill, /recall-yisewebui/);
   const finalGate = read('docs/final-preview-gate.md');
   assert.match(finalGate, /humanStopPreviewAllowed/);
   assert.match(finalGate, /human review stop may open/);
+  assert.match(finalGate, /productView\.command/);
   assert.match(arch, /stop-layer workflow/);
   assert.match(arch, /two review stops/);
   assert.match(arch, /zh-CN font\s+load is not a translation pass/s);
   assert.match(readme, /two human review stops/);
   assert.match(readme, /zh-CN font load is not a translation pass/);
   assert.match(arch, /Do not invent a fourth Skill|Do not split the directory into a fourth Skill/);
+  assert.match(arch, /human-review\.json/);
+  assert.match(readme, /human-review\.mjs/);
+  assert.match(readme, /recall-yisewebui/);
 });
 
 test('sc-html-10mb-webp: HTML volume is 10MB on index.html, assets folder is free', () => {

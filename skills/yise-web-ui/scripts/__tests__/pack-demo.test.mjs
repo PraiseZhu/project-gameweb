@@ -22,10 +22,21 @@ const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const CLI = join(ROOT, 'scripts/pack-demo.mjs');
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
+function acceptedStops() {
+  return {
+    schema: 'yise-human-review/v1',
+    stops: {
+      'static-and-translation': { presented: true, previewOk: true, accepted: true, acceptedAt: '2026-08-27T00:00:00.000Z' },
+      'interaction-and-resize': { presented: true, previewOk: true, accepted: true, acceptedAt: '2026-08-27T00:00:00.000Z' },
+    },
+  };
+}
+
 function validDemo() {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-cli-'));
   mkdirSync(join(dir, 'assets'));
   writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
+  writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/a.png">');
   writeFileSync(join(dir, 'assets/a.png'), PNG);
   return dir;
@@ -33,6 +44,19 @@ function validDemo() {
 
 test('pack budget is 15MB on the served folder', () => {
   assert.equal(DEFAULT_PACK_BUDGET_BYTES, 15 * 1024 * 1024);
+});
+
+test('pack refuses before mutation when the second human stop is not accepted', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-no-stop-'));
+  mkdirSync(join(dir, 'assets'));
+  writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
+  writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/a.png">');
+  writeFileSync(join(dir, 'assets/a.png'), PNG);
+  const before = readFileSync(join(dir, 'index.html'), 'utf8');
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /second human review stop not accepted/);
+  assert.equal(readFileSync(join(dir, 'index.html'), 'utf8'), before);
 });
 
 test('indicator fallback files are keep-list, audit json is not', () => {
@@ -186,6 +210,7 @@ test('font manifest path traversal fails before mutation', () => {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-font-escape-'));
   mkdirSync(join(dir, 'fonts'));
   writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
+  writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script>');
   writeFileSync(join(dir, 'fonts-manifest.json'), JSON.stringify({ fonts: { Evil: { file: '../outside.woff2' } } }));
   const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
@@ -248,6 +273,7 @@ test('symlink image, CSS, and font targets fail closed before mutation', (t) => 
   mkdirSync(join(dir, 'assets'), { recursive: true });
   mkdirSync(join(dir, 'fonts'), { recursive: true });
   writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
+  writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><link href="assets/main.css"><img src="assets/a.png">');
   writeFileSync(join(dir, 'assets/a.png'), PNG);
   symlinkSync(join(outside, 'sentinel.png'), join(dir, 'assets/linked.png'));
@@ -292,6 +318,7 @@ test('PNG that does not shrink keeps the original path instead of a missing webp
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-png-skip-'));
   mkdirSync(join(dir, 'assets'));
   writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
+  writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'assets/keep.png'), readFileSync(source));
   writeFileSync(join(dir, 'assets/keep-copy.png'), readFileSync(source));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/keep.png"><img src="assets/keep-copy.png">');
@@ -357,6 +384,7 @@ test('large alpha art is packed lossy instead of staying slice-time lossless', (
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-alpha-lossy-'));
   mkdirSync(join(dir, 'assets'));
   writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
+  writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'assets/hero.webp'), readFileSync(source));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/hero.webp">');
   const before = readFileSync(join(dir, 'assets/hero.webp')).length;
@@ -390,6 +418,7 @@ test('existing WebP is re-encoded at pack quality and HTML still points at it', 
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-webp-reencode-'));
   mkdirSync(join(dir, 'assets'));
   writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
+  writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'assets/b.webp'), readFileSync(noisy));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/b.webp">');
   const before = readFileSync(join(dir, 'assets/b.webp')).length;
@@ -407,6 +436,7 @@ test('unreferenced images are not encoded and are deleted after rewrite', () => 
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-unref-skip-'));
   mkdirSync(join(dir, 'assets'));
   writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
+  writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'assets/used.png'), PNG);
   writeFileSync(join(dir, 'assets/orphan.png'), PNG);
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/used.png">');

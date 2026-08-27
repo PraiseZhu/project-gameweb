@@ -18,10 +18,13 @@ test('preview-first candidate remains internal', () => {
   assert.equal(blocked.userPreviewAllowed, false);
   assert.equal(blocked.humanStopPreviewAllowed, false);
   assert.equal(blocked.previewDisposition, 'internal-candidate-only');
+  assert.equal(blocked.productView.command, null);
+  assert.equal(blocked.productView.blocked, true);
   const stop = internalCandidatePreview({ url: 'file:///candidate/index.html', command: 'open' }, { presentPage: true });
   assert.equal(stop.userPreviewAllowed, false);
   assert.equal(stop.humanStopPreviewAllowed, true);
   assert.equal(stop.previewDisposition, 'human-review-stop');
+  assert.equal(stop.productView.command, 'open');
 });
 test('final preview blocks incomplete inputs', () => { assert.equal(evaluateFinalPreviewGate({ finalEvidence }).reason, 'static-acceptance-incomplete'); const partial = evaluateFinalPreviewGate({ staticAcceptance: { ...staticAcceptance, partial: true }, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence, ...finalChain }); assert.equal(partial.reason, 'partial-output-not-final'); const missingAssets = evaluateFinalPreviewGate({ staticAcceptance, finalEvidence }); assert.equal(missingAssets.reason, 'static-visual-assets-incomplete'); const candidate = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence: { accepted: true, evidenceLevel: 'candidate' }, ...finalChain }); assert.equal(candidate.reason, 'final-evidence-not-confirmed'); const unverified = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, report: { ok: true, partial: false, evidenceLevel: 'unverified' }, ...finalChain }); assert.equal(unverified.reason, 'final-evidence-not-confirmed'); });
 test('final-ready preview requires complete evidence', () => { const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence, ...finalChain }); assert.equal(result.userPreviewAllowed, true); });

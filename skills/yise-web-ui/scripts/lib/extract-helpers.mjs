@@ -259,7 +259,11 @@ export function validateFixtureValueBinding(value, fixtureAbs, locator) {
   if (!segs) return [`locator 必须是可机械解析的${FIXTURE_LOCATOR_SYNTAX};自由文本不接受(当前 ${JSON.stringify(locator)})`];
   let json;
   try {
-    const mtime = statSync(fixtureAbs).mtimeMs;
+    const st = statSync(fixtureAbs);
+    /* mtimeMs 在 Windows 上粒度粗(≈10–16ms)，同一 tick 内的重写会被缓存当成
+       未变化而吐旧 JSON(值绑定因此漏报)。size 一起进键：内容变了 size 几乎必变，
+       两者都撞上才算命中。 */
+    const mtime = `${st.mtimeMs}:${st.size}`;
     const cached = _fixtureJsonCache.get(fixtureAbs);
     if (cached && cached.mtime === mtime) json = cached.json;
     else {

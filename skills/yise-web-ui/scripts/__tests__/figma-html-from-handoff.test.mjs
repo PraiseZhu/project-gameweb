@@ -96,6 +96,8 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
   assert.equal(result.ok, false);
   assert.equal(result.productViewAllowed, false);
+  assert.equal(result.humanStopPreviewAllowed, false);
+  assert.equal(result.productView.command, null);
   assert.match((result.problems || []).join('\n'), /preview-first skipped/);
   assert.equal(existsSync(join(demoDir, 'index.html')), true);
   assert.equal(existsSync(join(demoDir, 'truth.json')), true);

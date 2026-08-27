@@ -83,18 +83,28 @@ There are two explicit workflow declarations:
    (`userPreviewAllowed` stays false; `humanStopPreviewAllowed` is true).
    Tell the user this axis is done. Do not start Interaction / Resize until
    they say continue. No copy table → Translation stays `not-claimed`. zh-CN
-   font load is not a translation pass.
+   font load is not a translation pass. Script gate:
+   `node scripts/human-review.mjs present --demo <dir> --stop static-and-translation --preview-ok`,
+   then after the user says continue
+   `node scripts/human-review.mjs accept --demo <dir> --stop static-and-translation`.
+   `can-start` must be green before Interaction / Resize.
 2. After Interaction and Resize: open `?product=1` again and stop. Tell the
    user this axis is done. Do not Pack until they say continue.
+   `node scripts/human-review.mjs present --demo <dir> --stop interaction-and-resize --preview-ok`,
+   then `accept`. `pack-allowed` / Pack itself fail-close without that accept.
 
-Do not open or present the page while `preview:first` is red. Do not open
-the next human stop until the previous one is accepted. Later axes must not
-mutate accepted static geometry, assets, or zh-CN copy. Directory static
-stays in Main; directory click/scrollspy stays in Interaction; directory
-stretch stays in Resize. Do not invent a fourth Skill. After the second
+Do not open or present the page while `preview:first` is red. A red payload
+must set `productView.command` to null and must not include an open command.
+Do not open the next human stop until the previous one is accepted
+(`human-review.json`). Later axes must not mutate accepted static geometry,
+assets, or zh-CN copy. Directory static stays in Main; directory
+click/scrollspy stays in Interaction; directory stretch stays in Resize. Do
+not invent a fourth Skill. After the second
 human stop is accepted, run the Pack delivery step (`docs/pack-skill.md`,
 `node scripts/pack-demo.mjs --demo <dir>`): whole served folder ≤ 15MB.
-Pack is not a restore axis.
+Pack is not a restore axis. A clean clone recalls this Skill from the repo
+root `CLAUDE.md` trigger table (`node scripts/recall-yisewebui.mjs`); it is
+not installed into `.claude/skills/`.
 
 The default workflow is the **Main Skill**: extract Figma truth, structure
 content/geometry/components/states/interactions, record official behavior
@@ -1131,6 +1141,14 @@ demo 是产品代码的**镜像视图**，改动的 source of truth 永远是产
    四类的应对完全不同，混成自由文本就无法迭代。
 4. **修法 + 是否已验证**（未验证不许当完成）
 
+**动手前先读台账（不靠自觉）**：改 Skill 之前必须跑
+
+```bash
+node "<SKILL_ROOT>/scripts/evolution-note.mjs" read-open
+```
+
+列出全部 `status=open` 根因。改完告诉用户改了哪几条。`isNew=false` 的条目只计数，不必重分析。
+
 **交付前硬门（不靠自觉，靠闸门）**：出块／收尾摘要之前必须跑
 
 ```bash
@@ -1162,6 +1180,9 @@ node "<SKILL_ROOT>/scripts/evolution-note.mjs" case --session <id> \
   --quote "<用户原话>" --did "<agent 当时的做法>" \
   --why "<为什么第一次没做对>" --why-class <info-gap|misjudged|spec-unread|tool-limit> \
   --fix "<修法>" [--verified] [--fingerprint <slug>：已能归到根因时才填]
+
+# 动手前先读 open 根因
+node "<SKILL_ROOT>/scripts/evolution-note.mjs" read-open
 
 # 根因层——收尾把 case 归纳成可复用根因（入公开仓）
 node "<SKILL_ROOT>/scripts/evolution-note.mjs" add \

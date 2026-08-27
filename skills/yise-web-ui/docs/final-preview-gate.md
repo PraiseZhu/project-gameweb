@@ -42,7 +42,9 @@ exits blocked with `userPreviewAllowed:false`. The gate only evaluates metadata
 and opaque references; it never reads, derives, or carries seasonal geometry,
 assets, source trees, or Figma node identifiers. A green `preview-first` may
 present `?product=1` as the first human stop; that is not confirmed-final
-delivery. A red `preview-first` must not present the page.
+delivery. A red `preview-first` must not present the page, and its
+`productView.command` must be null. The two human stops are recorded in
+`human-review.json` (`scripts/human-review.mjs`).
 
 Run:
 

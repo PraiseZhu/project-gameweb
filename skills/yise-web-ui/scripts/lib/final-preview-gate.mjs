@@ -50,11 +50,17 @@ export function evaluateFinalPreviewGate({ staticAcceptance = null, visualAssetA
  */
 export function internalCandidatePreview(productView, { presentPage = false } = {}) {
   const humanStop = presentPage === true;
+  const view = productView && typeof productView === 'object' ? { ...productView } : productView;
+  if (!humanStop && view && typeof view === 'object') {
+    view.command = null;
+    view.blocked = true;
+    view.reason = view.reason || 'preview:first red; do not open product view';
+  }
   return {
     userPreviewAllowed: false,
     humanStopPreviewAllowed: humanStop,
     previewDisposition: humanStop ? 'human-review-stop' : 'internal-candidate-only',
-    productView,
+    productView: view,
   };
 }
 export { FINAL_EVIDENCE_LEVEL };

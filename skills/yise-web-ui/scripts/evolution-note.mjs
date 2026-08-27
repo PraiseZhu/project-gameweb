@@ -33,6 +33,7 @@
 //   gate       --session <id> [--declare-none --reason "…"]
 //              交付前硬门:该 session 若无 case 记录且无「本轮无 case」的显式声明 → ok:false。
 //              agent 不能沉默跳过——要么记 case,要么显式声明(声明本身也留痕)。
+//   read-open 动手前必跑:列出 status=open 的根因。改 Skill 前必须先读这些条目。
 //   list
 //
 // why-class 四分类是「迭代方向」的关键,四类的应对完全不同:
@@ -179,6 +180,24 @@ try {
 
   if (cmd === 'list') {
     print({ ok: true, ledgerFile: LEDGER_FILE, mdFile: MD_FILE, count: ledger.entries.length, entries: ledger.entries });
+    process.exit(0);
+  }
+
+  if (cmd === 'read-open' || cmd === 'read') {
+    const open = ledger.entries.filter((e) => e.status === 'open');
+    print({
+      ok: true,
+      command: 'read-open',
+      count: open.length,
+      entries: open.map((e) => ({
+        fingerprint: e.fingerprint,
+        title: e.title,
+        status: e.status,
+        proposal: e.proposal,
+        detail: e.detail,
+      })),
+      note: '动手前先读这些 open 条目。改完告诉用户改了哪几条。',
+    });
     process.exit(0);
   }
 
@@ -347,7 +366,7 @@ try {
     process.exit(0);
   }
 
-  throw new Error('用法:evolution-note.mjs <add|set-status|case|gate|list> …(见文件头注释)');
+  throw new Error('用法:evolution-note.mjs <add|set-status|case|gate|list|read-open> …(见文件头注释)');
 } catch (e) {
   fail(e);
 }
