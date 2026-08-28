@@ -98,14 +98,31 @@ async function measureLocal(sample) {
       const frame = document.querySelector('.frame');
       const rail = document.querySelector('[data-fixed-viewport-rail="true"]');
       const root = document.documentElement;
+      const hero = frame?.querySelector('[data-hero-slot-role="hero"]');
+      const later = [...(frame?.querySelectorAll('[data-hero-slot-role="after-hero"]') || [])];
+      const fr = frame ? frame.getBoundingClientRect() : null;
+      const heroRect = hero ? hero.getBoundingClientRect() : null;
+      const laterTop = later.length && fr
+        ? Math.min(...later.map((el) => el.getBoundingClientRect().top - fr.top))
+        : null;
       return {
         frameFound: !!frame,
         renderPlat: frame?.getAttribute('data-render-plat') || null,
         renderBase: frame?.getAttribute('data-render-base') || null,
         fallback: frame?.getAttribute('data-plat-fallback') || null,
+        heroSlot: frame?.getAttribute('data-hero-scroll-slot') || null,
+        heroHeight: heroRect ? Math.round(heroRect.height) : null,
+        laterTop,
+        viewportHeight: window.innerHeight,
+        overflowX: frame ? getComputedStyle(frame).overflowX : null,
+        k: frame && window.__figmaRender && typeof window.__figmaRender.scale === 'function'
+          ? window.__figmaRender.scale()
+          : null,
         fixedRailCount: rail ? 1 : 0,
         rootScrollWidth: root.scrollWidth,
         rootClientWidth: root.clientWidth,
+        frameScrollWidth: frame ? frame.scrollWidth : null,
+        frameClientWidth: frame ? frame.clientWidth : null,
       };
     });
     await page.screenshot({ path: resolve(artifactDir, `local-product-${sample.w}x${sample.h}.png`), animations: 'disabled' });
@@ -132,6 +149,16 @@ try {
       `plat=${local.renderPlat} base=${local.renderBase} rail=${local.fixedRailCount} fallback=${local.fallback || 'none'}`);
     rec(`official ${sample.w}px has no page-level horizontal overflow`, official.rootScrollWidth <= official.rootClientWidth + 1,
       `scroll=${official.rootScrollWidth}/${official.rootClientWidth}`);
+    rec(`local product ${sample.w}px clips page X`,
+      local.overflowX === 'hidden' && Number(local.frameScrollWidth) <= Number(local.frameClientWidth) + 1,
+      `overflowX=${local.overflowX} scroll=${local.frameScrollWidth}/${local.frameClientWidth}`);
+    if (isMobile) {
+      rec(`local product ${sample.w}px first screen fills viewport`,
+        local.heroSlot === 'active'
+          && Number(local.heroHeight) >= Number(local.viewportHeight) - 1
+          && (local.laterTop == null || Number(local.laterTop) >= Number(local.viewportHeight) - 1),
+        `heroSlot=${local.heroSlot} heroH=${local.heroHeight} laterTop=${local.laterTop} vh=${local.viewportHeight}`);
+    }
     results.samples.push({ sample, official, local, passed: officialStructure && localStructure });
   }
   results.checks = checks;

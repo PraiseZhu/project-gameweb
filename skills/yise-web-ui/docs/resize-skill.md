@@ -36,6 +36,9 @@ logic.
 |---|---|
 | Platform from width | `0–750` mobile, `751–1023` pad, `≥1024` pc. QA device groups are the kit PC / iPhone / Android subset; fold and iPad groups are omitted. Matrix `desktop` / `tablet` / `phone` map to truth `pc` / `pad` / `mobile`. |
 | Composition base | Native mobile/pad trees win when present. Pad without a pad tree is `pad-uses-pc-tree`. Never invent a third layout. |
+| Width ruler | `k = viewportW / designWidth` (phone 750, PC 3840). Same number as official `html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`. Device names are samples, not extra layouts. |
+| First-screen height | Hero slot fills the current viewport height (official `100vh` / `--vh`). At `scrollTop=0` the next section stays outside the frame. A long `bg/*` sheet stays one inventory image; Resize cover-crops KV + that sheet into the first-screen window instead of slicing the asset. Hero UI size stays on width-scale `k`; blocks whose Figma bottom is in the lower hero half anchor their bottom fraction of the 100vh slot, so a hero title does not ride `y×k` into the top half. The left directory is a separate overlay that stretches to the current viewport height from its own source box. |
+| Product overflow | Product view clips page-level X (`overflow-x: hidden`), matching official `.adaptive-width`. QA keeps X auto for no-clip probes. Inner carousels stay legal. |
 | Light drag | Continuous edge-drag / slider may skip content rebuild only on the same composition base. Language, device, window resize, and W/H box stay on the full path. |
 | Preview 1:1 | Default `scale=1`. Decorative padding yields before shrink. A truly smaller window may scale, and that scale must be reported. |
 | Three visual planes | Background = cover-crop, centered. UI = source-scale (PC seasonal width-scale). Sea / K1 = source aspect, center crop. Do not stretch all three with one transform. |
@@ -46,7 +49,11 @@ logic.
 - Locale / copy / typography
 - Click / switch / tab / directory wiring
 - Figma fetch, truth extraction, or asset export
-- One-off official-site CSS or page node IDs
+- One-off official-site CSS or page node IDs. Official CSS is a behaviour
+  reference (`10vw` / `100vh` / clip X); Resize owns the numbers, not the
+  poster stylesheet.
+- Per-device special-case layouts. Sample 360 / 375 / 390 / 412 / 414 / 430
+  wide and 667 / 844 / 932 tall; do not invent a layout between those widths.
 
 ## Evidence
 

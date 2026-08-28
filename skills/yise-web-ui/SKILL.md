@@ -83,9 +83,11 @@ complemented by independent reusable capabilities and one optional audit:
   may land in `templates/figma-render.js` without changing accepted static
   geometry. Arrows are commands on one source-backed owner; incomplete
   graphs stay unresolved. See `docs/interaction-skill.md`.
-- **Resize Skill** — viewport stretch, composition base, preview 1:1 fit,
-  background/UI/sea plane policies, and hero lock/exit/release geometry while
-  the window size changes (`scripts/lib/resize/index.mjs`; see
+- **Resize Skill** — viewport stretch, composition base, continuous
+  `k = viewportW / designWidth` (official `10vw` ruler), first-screen fill of
+  current viewport height (official `100vh`), product-view page X clip,
+  preview 1:1 fit, background/UI/sea plane policies, and hero lock/exit/release
+  geometry while the window size changes (`scripts/lib/resize/index.mjs`; see
   `docs/resize-skill.md`). Directory stretch stays here with the rest of Resize.
 - **Pack (delivery, not a Skill axis)** — after Resize acceptance only.
   Lossy WebP, font subset/woff2, SHA collapse, truth externalize, 15MB
