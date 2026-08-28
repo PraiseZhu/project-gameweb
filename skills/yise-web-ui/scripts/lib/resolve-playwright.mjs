@@ -207,16 +207,24 @@ export async function loadPlaywrightApi(startDir = null) {
   return { api, modulePath: modPath };
 }
 
+/**
+ * Resolve a launchable Chromium/Chrome path.
+ * Prefers Playwright's bundled browser when that file exists, then CHROME_PATH
+ * and the platform list from getChromeCandidates. Returns null when none exist.
+ */
+export function findChromiumExecutable(chromium = null, env = process.env) {
+  try {
+    const candidate = chromium?.executablePath?.();
+    if (candidate && existsSync(candidate)) return candidate;
+  } catch {}
+  return getChromeCandidates(env).find((path) => existsSync(path)) ?? null;
+}
+
 export async function loadChromium(startDir = null) {
   const { api, modulePath: modPath } = await loadPlaywrightApi(startDir);
   const chromium = api.chromium;
   if (!chromium) throw new Error(`模块 ${modPath} 未导出 chromium`);
-  let executablePath = null;
-  try {
-    const candidate = chromium.executablePath?.();
-    if (candidate && existsSync(candidate)) executablePath = candidate;
-  } catch {}
-  if (!executablePath) executablePath = getChromeCandidates().find((p) => existsSync(p)) ?? null;
+  const executablePath = findChromiumExecutable(chromium);
   if (!executablePath) {
     throw new Error(
       '找不到可用 Chromium/Chrome。请安装 Playwright 浏览器(npx playwright install chromium),或设置 CHROME_PATH 指向本机 Chrome。'
@@ -228,6 +236,10 @@ export async function loadChromium(startDir = null) {
 
 export async function launchChromium(startDir, options = {}) {
   const { chromium, executablePath, modulePath } = await loadChromium(startDir);
-  const browser = await chromium.launch({ executablePath, ...options });
+  const ciArgs = (process.env.CI || process.env.GITHUB_ACTIONS)
+    ? ['--no-sandbox', '--disable-dev-shm-usage']
+    : [];
+  const args = [...ciArgs, ...(options.args || [])];
+  const browser = await chromium.launch({ executablePath, ...options, args });
   return { browser, executablePath, modulePath };
 }

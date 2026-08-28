@@ -1,6 +1,16 @@
 # yise-web-ui
 
-触发词：`yisewebui`（也可说 `yise-web-ui` / `伊瑟网页还原`）。别人装好后直接打 `/yisewebui` 或说出触发词即可召回本 Skill。
+触发词：`yisewebui`（也可说 `yise-web-ui` / `伊瑟网页还原`）。召回机制与「出清单」相同：仓根 `CLAUDE.md` 触发表命中后立即执行 `skills/yise-web-ui/SKILL.md`。本包不装进 `.claude/skills/`（gitignore + 夜间健康检查会红）。没有触发表那一行，说 `yisewebui` 不会加载本 Skill。
+
+**完成标准（与 SKILL.md、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。
+
+| 情况 | 走哪条 |
+|---|---|
+| 已有 ready 交接包 | `cd skills/yise-web-ui && npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。`figma:from-handoff` 只验包、不写 HTML。 |
+| 只有 Figma 链接、没有包 | 停下来要包。用户明确说「先看稿、没有清单」才允许下面的 `figma-showcase` 九步，且必须标明 `latest-Figma local extract baseline`。 |
+| `preview:first` 红 | 不许给人打开 `?product=1`，不许开 Interaction / Resize。红 payload 的 `productView.command` 必须是 `null`。外置 truth 的内部检查必须走 HTTP；给人的地址是命令结束后仍可打开的 `file://...?product=1`。 |
+| 两次给人看 | ①静态±翻译 ②交互+拉伸。脚本闸：`node scripts/human-review.mjs present/accept/can-start/pack-allowed --demo <dir>`。第一次没接受不许开后轴；第二次没接受 Pack 失败。 |
+| 拉仓后说 `yisewebui` | `node scripts/recall-yisewebui.mjs`：靠仓根 `CLAUDE.md` 触发表，不装进 `.claude/skills/`。 |
 
 ## First visible Figma page
 
@@ -18,7 +28,7 @@ Commands (each step must succeed; `truth.mjs` refuses to emit an empty `{}` shel
 8. `node scripts/figma-inline.mjs --demo <demo-dir> --check` — syncs the renderer + chrome into the page.
 9. `npm run figma:preview:first -- --demo <demo-dir>` — opens `index.html?product=1` in headless Chrome and fails unless meaningful Figma-derived content covers enough of the product frame (not a placeholder, QA-only shell, or one flat source image over a blank page). The JSON output includes `evidenceLevel:"candidate"`, screenshot path, product-view URL/command, source-platform evidence, and unclaimed capabilities.
 
-Steps 4-8 can also run as one command: `node scripts/figma-build.mjs --demo <demo-dir> --fetch` (build only, never acceptance; run step 9 after it). As soon as step 9 passes, immediately open the reported `index.html?product=1` product-view URL for human review; do not wait for product repo/sandbox/PR setup unless you are switching to the separate `product-qa` workflow. A page that opens is still a candidate: Switch names in truth are extraction recognition only; unresolved relations stay inert; reused copy/status/asset fixtures do not prove the inventory/handoff chain ran. Direct Figma extract of SS5 `1:180` / `20:2205` (port 4201) is a `latest-Figma local extract baseline`, not an inventory/handoff baseline. `yisewebui` stops after Main static for human acceptance before Translation, Interaction, or Resize. After Resize is accepted, `node scripts/pack-demo.mjs --demo <dir>` packs the served folder to ≤15MB (`docs/pack-skill.md`). Pack is not a restore axis.
+Steps 4-8 can also run as one command: `node scripts/figma-build.mjs --demo <demo-dir> --fetch` (build only, never acceptance; run step 9 after it). As soon as step 9 passes, immediately open the reported `index.html?product=1` product-view URL for human review; do not wait for product repo/sandbox/PR setup unless you are switching to the separate `product-qa` workflow. A page that opens is still a candidate: Switch names in truth are extraction recognition only; unresolved relations stay inert; reused copy/status/asset fixtures do not prove the inventory/handoff chain ran. Direct Figma extract of SS5 `1:180` / `20:2205` (port 4201) is a `latest-Figma local extract baseline`, not an inventory/handoff baseline. `yisewebui` has two human review stops: (1) Main static, plus Translation only when a copy table exists; (2) Interaction and Resize. `preview:first` must be green before stop 1 presents `?product=1`. No copy table → Translation stays `not-claimed`; zh-CN font load is not a translation pass. After stop 2 is accepted, `node scripts/pack-demo.mjs --demo <dir>` packs the served folder to ≤15MB (`docs/pack-skill.md`). Pack is not a restore axis.
 
 Full asset export, full-page Chrome gates, pixel comparison, multilingual acceptance, and project/private demo checks remain explicit later phases. Asset export writes WebP delivery files (lossless for alpha) while keeping PNG sources; `index.html` itself is gated at 10MB — over that, `#qa-truth` becomes `data-src="truth.json"` instead of inlining the whole truth. The assets folder is allowed to be larger than the HTML file.
 Reusable Figma-to-Web UI verification Skill. The Etheria/伊瑟 page under `demos/yise-ss5-preview` is a verification example only; this repository is not an AppStore app.

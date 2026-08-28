@@ -7,6 +7,88 @@ import { normalizeLanguage, scriptsForText } from './typography-policy.mjs';
 
 export const DEFAULT_TRANSLATION_LANGUAGES = Object.freeze(['zh-CN', 'en', 'ja', 'ko', 'zh-TW']);
 
+function isPresentTable(value) {
+  if (!value) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value !== 'object') return false;
+  if (Array.isArray(value.rows) && value.rows.length > 0) return true;
+  if (value.rows && typeof value.rows === 'object' && Object.keys(value.rows).length > 0) return true;
+  if (Array.isArray(value.entries) && value.entries.length > 0) return true;
+  const keys = Object.keys(value).filter((key) => !key.startsWith('_')
+    && key !== 'meta' && key !== 'path' && key !== 'file' && key !== 'source');
+  return keys.some((key) => {
+    const child = value[key];
+    if (Array.isArray(child)) return child.length > 0;
+    return !!(child && typeof child === 'object' && Object.keys(child).length > 0);
+  });
+}
+
+export function hasTranslationTable(spec = {}, truth = {}) {
+  return [
+    spec.copyTable, spec.translationTable, spec.copy?.table, spec.translation?.table,
+    truth.copyTable, truth.translationTable, truth.copy?.table, truth.translations,
+    isLarkSnapshot(spec.lark) ? spec.lark : null,
+    isLarkSnapshot(truth.lark) ? truth.lark : null,
+  ].some(isPresentTable);
+}
+
+function isLarkSnapshot(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (typeof value.path === 'string' || typeof value.file === 'string' || typeof value.source === 'string') {
+    return isPresentTable(value.rows) || isPresentTable(value.entries);
+  }
+  return isPresentTable(value);
+}
+
+/**
+ * Independent Translation is a separate axis. zh-CN font load / glyph coverage
+ * is Main static evidence and must never become a translation pass.
+ */
+export function translationAxisClaim({
+  spec = {},
+  truth = {},
+  copyTable = null,
+  languages = null,
+  fontLoaded = false,
+} = {}) {
+  const langs = [...new Set(
+    (languages || spec?.matrix?.langs || spec?.langs || [])
+      .map(normalizeLanguage)
+      .filter(Boolean),
+  )];
+  const table = copyTable != null ? copyTable : (hasTranslationTable(spec, truth) ? true : null);
+  const hasTable = isPresentTable(table) || table === true;
+  const nonZh = langs.filter((language) => language !== 'zh-CN');
+  if (!hasTable) {
+    return {
+      status: 'not-claimed',
+      claimed: false,
+      reason: 'no-translation-table',
+      note: '中文静态已过基础字体/文本检查；独立翻译未完成。中文字体加载不等于翻译通过。',
+      languages: langs,
+      fontLoaded: !!fontLoaded,
+    };
+  }
+  if (!nonZh.length) {
+    return {
+      status: 'not-claimed',
+      claimed: false,
+      reason: 'zh-CN-only-matrix',
+      note: '有翻译表但矩阵只有 zh-CN；独立翻译门未宣称。',
+      languages: langs,
+      fontLoaded: !!fontLoaded,
+    };
+  }
+  return {
+    status: 'claimed',
+    claimed: true,
+    reason: 'translation-table-present',
+    note: '独立翻译门：非仅 zh-CN 矩阵。',
+    languages: langs,
+    fontLoaded: !!fontLoaded,
+  };
+}
+
 const ALLOWED_SCRIPTS = Object.freeze({
   'zh-CN': new Set(['zh', 'latin', 'other']),
   'zh-TW': new Set(['zh', 'latin', 'other']),

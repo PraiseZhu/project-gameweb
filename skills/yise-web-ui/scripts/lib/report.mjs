@@ -11,6 +11,38 @@ import {
   TOOL_VERSION,
 } from './fs-utils.mjs';
 import { workflowDeclaration } from './workflows.mjs';
+import { translationAxisClaim } from './translation/locale-policy.mjs';
+
+/**
+ * Showcase / product-qa reports must name the real page, not invent a green
+ * Translation or adaptive claim. Font load never upgrades Translation.
+ */
+export function declarePageCapabilities({ spec = {}, truth = {}, report = null, fontLoaded = false } = {}) {
+  const translation = translationAxisClaim({ spec, truth, fontLoaded });
+  const gates = {};
+  for (const key of ['gateB', 'gateC', 'gateD', 'gateF', 'gateX']) {
+    const gate = report?.[key];
+    const status = gate?.status ?? 'not-claimed';
+    gates[key] = {
+      status,
+      pass: gate?.pass === true && status === 'passed',
+      detail: gate?.detail ?? null,
+    };
+  }
+  const forged = [];
+  if (gates.gateF.status === 'passed' && !spec?.adaptive) {
+    forged.push('adaptive-claimed-without-spec');
+  }
+  if (gates.gateD.status === 'passed' && !(Array.isArray(spec?.bindings) && spec.bindings.length)) {
+    forged.push('bindings-claimed-without-spec');
+  }
+  return {
+    translation,
+    gates,
+    forged,
+    ok: forged.length === 0,
+  };
+}
 
 export function summarizeGate(gate) {
   if (!gate || typeof gate !== 'object') return { ok: false, reason: 'missing gate' };
@@ -109,6 +141,16 @@ export function validateReportIntegrity(demoDir, spec, report) {
   }
   if (!Array.isArray(report.coverage?.cases) || report.coverage.cases.length === 0) problems.push('report 缺实际执行 coverage.cases');
   if (report.ok !== true) problems.push('report.ok 不是 true');
+  let truth = {};
+  const truthPath = join(demoDir, 'truth.json');
+  if (existsSync(truthPath)) {
+    try { truth = JSON.parse(readFileSync(truthPath, 'utf8')); }
+    catch { truth = {}; }
+  }
+  const capabilities = declarePageCapabilities({ spec, truth, report });
+  if (!capabilities.ok) {
+    problems.push(`验收声明造假:${capabilities.forged.join(',')}`);
+  }
   return problems;
 }
 

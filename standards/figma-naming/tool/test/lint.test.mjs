@@ -862,6 +862,15 @@ test("已取消的 @ellipsis 现在报未知参数", () => {
   assert.equal(byCode(lint(tree), "N-PARAM-UNKNOWN").length, 1);
 });
 
+test("img/ 上写 @lang 报未知参数，不能当语言声明", () => {
+  const box = { x: 0, y: 0, width: 10, height: 10 };
+  const tree = {
+    id: "1:1", name: "pc", type: "FRAME", absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 },
+    children: [{ id: "1:2", name: "img/标题@lang=cn", type: "RECTANGLE", absoluteBoundingBox: box }],
+  };
+  assert.equal(byCode(lint(tree), "N-PARAM-UNKNOWN").length, 1);
+});
+
 test("拼错前缀给出最近建议", () => {
   assert.equal(nearestPrefix("imge"), "img");
   assert.equal(nearestPrefix("image"), "img");

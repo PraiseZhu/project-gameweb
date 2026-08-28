@@ -41,7 +41,7 @@ logic.
 | Product overflow | Product view clips page-level X (`overflow-x: hidden`), matching official `.adaptive-width`. QA keeps X auto for no-clip probes. Inner carousels stay legal. |
 | Light drag | Continuous edge-drag / slider may skip content rebuild only on the same composition base. Language, device, window resize, and W/H box stay on the full path. |
 | Preview 1:1 | Default `scale=1`. Decorative padding yields before shrink. A truly smaller window may scale, and that scale must be reported. |
-| Three visual planes | Background = cover-crop, centered. UI = source-scale (PC seasonal width-scale). Sea / K1 = source aspect, center crop. Do not stretch all three with one transform. |
+| Three visual planes | Background / KV = cover-crop, centered. Homepage title and other UI = source-scale (PC seasonal width-scale). Sea / K1 = source aspect, center crop. Do not stretch all three with one transform. The left directory keeps width-scale and redistributes its source vertical span into the remaining viewport height. Locate the rail by the authored names `导航背景` / `导航长线` / `导航按钮` on `[data-motion-role="navigationFooter"]` or `[data-nav-shell="true"]`, including an in-flow `fix/` rail. Stretch from the saved source box; do not invent a season's pixel geometry. Missing `导航背景` fails closed: buttons alone are not a finished stretch. |
 | Hero while resizing | `HERO_LOCKED → HERO_EXITING → CONTENT_RELEASED` is geometry plus `scrollTop`. Released content must return to Figma positions, not stay collectively shifted. |
 
 ## What Resize does not own

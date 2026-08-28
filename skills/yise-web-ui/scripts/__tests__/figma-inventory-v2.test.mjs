@@ -10,6 +10,8 @@ import {
   inventoryAcceptanceReport,
   inventoryBacklinkReport,
   collectSkippedNodeIds,
+  restoreOwnerComposites,
+  calendarIdentityFromNodes,
 } from "../lib/figma-inventory-v2.mjs";
 
 const FILE_KEY = "synthetic-file-key";
@@ -491,5 +493,61 @@ test("adaptInventoryToTruthShape omits skipped attachment and page nodes from pa
   assert.deepEqual(adapted.modals[0].nodes.map((node) => node.id), ["100:20"]);
   assert.deepEqual(adapted.componentVariantGraph.componentSets[0].variants[0].nodes.map((node) => node.id), ["100:31"]);
   assert.deepEqual(adapted.componentVariantGraph.components[0].nodes.map((node) => node.id), ["100:40"]);
+});
+
+test("restoreOwnerComposites lifts skipped gradient onto the determined btn owner without painting skipped ids", () => {
+  const nodes = [
+    {
+      id: "btn-copy",
+      type: "GROUP",
+      name: "btn/兑换码按钮",
+      status: "determined",
+      role: "btn",
+      box: { x: 0, y: 0, w: 187, h: 80 },
+      style: { fills: [] },
+    },
+    {
+      id: "btn-copy-grad",
+      type: "VECTOR",
+      name: "Rectangle 40",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "btn-copy",
+      box: { x: 0, y: 0, w: 187, h: 80 },
+      style: { fills: [{ type: "GRADIENT_LINEAR", visible: true, gradientStops: [{ color: { r: 1, g: 1, b: 1, a: 1 }, position: 0 }] }] },
+    },
+    {
+      id: "btn-copy-text",
+      type: "TEXT",
+      name: "复制",
+      status: "determined",
+      parentId: "btn-copy",
+      box: { x: 60, y: 18, w: 68, h: 40 },
+    },
+  ];
+  const restored = restoreOwnerComposites(nodes);
+  assert.equal(restored.some((node) => node.id === "btn-copy-grad"), false);
+  const owner = restored.find((node) => node.id === "btn-copy");
+  assert.equal(owner.style.fills[0].type, "GRADIENT_LINEAR");
+  assert.equal(owner.ownerComposite.sourceId, "btn-copy-grad");
+  assert.equal(restored.find((node) => node.id === "btn-copy-text").status, "determined");
+});
+
+test("calendar identity keeps today and marks missing return-today unread instead of synthesizing", () => {
+  const identity = calendarIdentityFromNodes([
+    { id: "today", name: "dyn/今日日期", status: "determined", role: "dyn" },
+    { id: "today-copy", name: "04/10", status: "determined", parentId: "today" },
+  ]);
+  assert.deepEqual(identity.today, ["today"]);
+  assert.deepEqual(identity.returnToday, []);
+  assert.equal(identity.unreadReturnToday, true);
+  const adapted = adaptInventoryToTruthShape(fixture({
+    nodes: [
+      ...fixture().nodes,
+      { id: "today", scope: "page", type: "FRAME", name: "dyn/今日日期", parentId: PAGE_ID, orderKey: "0.8", status: "determined", role: "dyn" },
+    ],
+  }), { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(adapted.calendarIdentity.unreadReturnToday, true);
+  assert.deepEqual(adapted.calendarIdentity.today, ["today"]);
 });
 

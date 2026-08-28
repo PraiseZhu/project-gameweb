@@ -13,7 +13,19 @@ const finalChain = {
   comparison: { complete: true, status: 'PASS', platform: 'pc', viewport: '1920x1080', figmaImage: 'figma.png', localImage: 'local.png', intendedSections: ['hero'], regions: [{ key: 'hero', intendedSectionId: 'hero', platform: 'pc', viewport: '1920x1080', figmaCrop: 'figma-hero.png', localCrop: 'local-hero.png', ownerEvidence: { sourceBacked: true, measured: true, ownerRef: 'figma-owner', paintOrderRef: 'figma-paint' }, pixel: { measured: true, diffRatio: 0, maxDiffRatio: 0.005 } }] },
 };
 
-test('preview-first candidate remains internal', () => { const candidate = internalCandidatePreview({ url: 'file:///candidate/index.html', command: 'internal-only' }); assert.equal(candidate.userPreviewAllowed, false); assert.equal(candidate.previewDisposition, 'internal-candidate-only'); });
+test('preview-first candidate remains internal', () => {
+  const blocked = internalCandidatePreview({ url: 'file:///candidate/index.html', command: 'internal-only' });
+  assert.equal(blocked.userPreviewAllowed, false);
+  assert.equal(blocked.humanStopPreviewAllowed, false);
+  assert.equal(blocked.previewDisposition, 'internal-candidate-only');
+  assert.equal(blocked.productView.command, null);
+  assert.equal(blocked.productView.blocked, true);
+  const stop = internalCandidatePreview({ url: 'file:///candidate/index.html', command: 'open' }, { presentPage: true });
+  assert.equal(stop.userPreviewAllowed, false);
+  assert.equal(stop.humanStopPreviewAllowed, true);
+  assert.equal(stop.previewDisposition, 'human-review-stop');
+  assert.equal(stop.productView.command, 'open');
+});
 test('final preview blocks incomplete inputs', () => { assert.equal(evaluateFinalPreviewGate({ finalEvidence }).reason, 'static-acceptance-incomplete'); const partial = evaluateFinalPreviewGate({ staticAcceptance: { ...staticAcceptance, partial: true }, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence, ...finalChain }); assert.equal(partial.reason, 'partial-output-not-final'); const missingAssets = evaluateFinalPreviewGate({ staticAcceptance, finalEvidence }); assert.equal(missingAssets.reason, 'static-visual-assets-incomplete'); const candidate = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence: { accepted: true, evidenceLevel: 'candidate' }, ...finalChain }); assert.equal(candidate.reason, 'final-evidence-not-confirmed'); const unverified = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, report: { ok: true, partial: false, evidenceLevel: 'unverified' }, ...finalChain }); assert.equal(unverified.reason, 'final-evidence-not-confirmed'); });
 test('final-ready preview requires complete evidence', () => { const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence, ...finalChain }); assert.equal(result.userPreviewAllowed, true); });
 test('final preview blocks missing vector evidence', () => { const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, finalEvidence, vectorEvidence: { complete: false, failures: [{ reason: 'vector-shape-missing' }] }, compositionEvidence, runtimeEvidence, ...finalChain }); assert.equal(result.reason, 'vector-shape-missing'); });

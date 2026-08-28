@@ -4,7 +4,6 @@
  * All mutations happen in an isolated work tree and commit only after the
  * rewritten runtime reference and served-folder gates pass.
  */
-import { createHash } from 'node:crypto';
 import {
   copyFileSync,
   cpSync,
@@ -25,18 +24,24 @@ import { encodeWebpBatch } from './lib/encode-webp.mjs';
 import {
   DEFAULT_PACK_BUDGET_BYTES,
   DEFAULT_PACK_WEBP_QUALITY,
+  PACK_FALLBACK_RE,
   assertSafePackPath,
   collectFallbackRefs,
   dirBytes,
   inspectPackPath,
   listPackFiles,
   missingFallbackFiles,
+  packBudgetBreakdown,
   packBudgetOk,
   packRoot,
   packRuntimeReferencesOk,
+  collectReferencedRuntimeFiles,
+  removeUnreferencedPackedFiles,
   rewritePackedRefs,
+  sha256File,
   withinPackRoot,
 } from './lib/pack-demo.mjs';
+import { packAllowedAfterSecondStop } from './lib/human-review.mjs';
 
 function fail(error) {
   console.error(JSON.stringify({ ok: false, error }, null, 2));
@@ -85,69 +90,282 @@ function validResizeMarker(demoDir) {
 }
 
 function collectImageFiles(root) {
-  return listPackFiles(root).filter((file) => /\.(?:png|jpe?g)$/i.test(file));
+  return listPackFiles(root).filter((file) => /\.(?:png|jpe?g|webp)$/i.test(file));
 }
 
 function rel(root, file) {
   return relative(root, file).replace(/\\/g, '/');
 }
 
-function packImages(demoDir, quality, proofDir) {
-  const fallbackNames = new Set(collectFallbackRefs(readFileSync(join(demoDir, 'index.html'), 'utf8')).map((ref) => resolve(demoDir, ref)));
-  const images = collectImageFiles(demoDir).filter((file) => !fallbackNames.has(resolve(file)));
-  for (const src of images) assertSafePackPath(demoDir, src);
+function isWebpPath(file) {
+  return /\.webp$/i.test(file);
+}
+
+function packedDestFor(src) {
+  return isWebpPath(src) ? src : src.replace(/\.(?:png|jpe?g)$/i, '.webp');
+}
+
+function collectEncodableImages(demoDir) {
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  const fallbackNames = new Set(collectFallbackRefs(html).map((ref) => resolve(demoDir, ref)));
+  const referenced = collectReferencedRuntimeFiles(demoDir, html);
+  return collectImageFiles(demoDir).filter((file) => {
+    const name = rel(demoDir, file).split('/').pop() || '';
+    if (fallbackNames.has(resolve(file)) || PACK_FALLBACK_RE.test(name)) return false;
+    return referenced.has(file);
+  });
+}
+
+function groupImagesByHash(demoDir, images) {
   const groups = new Map();
   const hashes = new Map();
   for (const src of images) {
-    const hash = createHash('sha256').update(readFileSync(src)).digest('hex');
+    const hash = sha256File(src);
     hashes.set(src, hash);
     const existing = groups.get(hash);
     if (!existing || rel(demoDir, src).length < rel(demoDir, existing).length) groups.set(hash, src);
   }
-  const canonical = [...groups.values()];
-  const jobs = canonical.map((src) => ({ src, dest: `${src}.pack.webp`, lossless: false }));
+  return { groups, hashes, canonical: [...groups.values()] };
+}
+
+function offloadSourceToProof(demoDir, proofDir, src, { copy = true } = {}) {
+  const proof = join(proofDir, rel(demoDir, src));
+  mkdirSync(dirname(proof), { recursive: true });
+  if (copy && !existsSync(proof)) copyFileSync(src, proof);
+  unlinkSync(src);
+}
+
+function installPackedImage(demoDir, proofDir, result) {
+  const sourceBytes = assertSafePackPath(demoDir, result.src).stat.size;
+  if (result.bytes >= sourceBytes) {
+    unlinkSync(result.dest);
+    return null;
+  }
+  const dest = packedDestFor(result.src);
+  copyFileSync(result.dest, dest);
+  unlinkSync(result.dest);
+  if (dest !== result.src) {
+    offloadSourceToProof(demoDir, proofDir, result.src);
+    return 'png';
+  }
+  return 'webp';
+}
+
+function packImages(demoDir, quality, proofDir) {
+  const images = collectEncodableImages(demoDir);
+  for (const src of images) assertSafePackPath(demoDir, src);
+  const { groups, hashes, canonical } = groupImagesByHash(demoDir, images);
+  /* Tiny alpha glyphs/markers often grow when encoded lossy; keep those
+     lossless so the conversion still reduces bytes. Larger art is deliberately
+     lossy even with alpha for the Pack-only 15MB delivery target. Existing
+     slice-time WebP (lossless / q90) is re-encoded at pack quality; "already
+     webp" is not a skip reason. */
+  const jobs = canonical.map((src) => ({
+    src,
+    dest: `${src}.pack.webp`,
+    lossless: assertSafePackPath(demoDir, src).stat.size <= 1024,
+  }));
   const encoded = encodeWebpBatch(jobs, { quality });
-  if (!encoded.ok) return { attempted: jobs.length, converted: 0, duplicates: images.length - canonical.length, aliases: [], encoder: encoded };
+  const summary = {
+    attempted: jobs.length,
+    convertedPng: 0,
+    reencodedWebp: 0,
+    converted: 0,
+    duplicates: images.length - canonical.length,
+    aliases: [],
+    encoder: encoded,
+  };
+  if (!encoded.ok) return summary;
 
   const finalBySource = new Map(canonical.map((src) => [src, rel(demoDir, src)]));
-  let converted = 0;
   for (const result of encoded.results) {
-    const sourceBytes = assertSafePackPath(demoDir, result.src).stat.size;
-    if (result.bytes >= sourceBytes) {
-      unlinkSync(result.dest);
-      continue;
-    }
-    const dest = result.src.replace(/\.(?:png|jpe?g)$/i, '.webp');
-    assertSafePackPath(demoDir, result.src);
-    copyFileSync(result.dest, dest);
-    unlinkSync(result.dest);
-    const proof = join(proofDir, rel(demoDir, result.src));
-    mkdirSync(dirname(proof), { recursive: true });
-    if (!existsSync(proof)) copyFileSync(result.src, proof);
-    unlinkSync(result.src);
-    finalBySource.set(result.src, rel(demoDir, dest));
-    converted += 1;
+    const kind = installPackedImage(demoDir, proofDir, result);
+    if (kind === 'png') summary.convertedPng += 1;
+    else if (kind === 'webp') summary.reencodedWebp += 1;
+    if (kind) finalBySource.set(result.src, rel(demoDir, packedDestFor(result.src)));
   }
-  const aliases = [];
+  summary.converted = summary.convertedPng + summary.reencodedWebp;
   for (const src of images) {
-    const hash = hashes.get(src);
-    const owner = groups.get(hash);
-    const to = finalBySource.get(owner);
-    if (to && rel(demoDir, src) !== to) aliases.push({ from: rel(demoDir, src), to });
+    const to = finalBySource.get(groups.get(hashes.get(src)));
+    if (to && rel(demoDir, src) !== to) summary.aliases.push({ from: rel(demoDir, src), to });
   }
   for (const src of images) {
     if (!existsSync(src)) continue;
-    const hash = hashes.get(src);
-    const owner = groups.get(hash);
-    if (owner !== src) {
-      assertSafePackPath(demoDir, src);
-      const proof = join(proofDir, rel(demoDir, src));
-      mkdirSync(dirname(proof), { recursive: true });
-      if (!existsSync(proof)) copyFileSync(src, proof);
-      unlinkSync(src);
-    }
+    if (groups.get(hashes.get(src)) === src) continue;
+    assertSafePackPath(demoDir, src);
+    offloadSourceToProof(demoDir, proofDir, src, { copy: !isWebpPath(src) });
   }
-  return { attempted: jobs.length, converted, duplicates: images.length - canonical.length, aliases, encoder: encoded };
+  return summary;
+}
+
+function removePackTarget(demoDir, name, { dir = false } = {}) {
+  const target = join(demoDir, name);
+  if (!existsSync(target)) return;
+  assertSafePackPath(demoDir, target);
+  if (dir) rmSync(target, { recursive: true, force: true });
+  else unlinkSync(target);
+}
+
+function prunePackWorktree(demoDir) {
+  for (const name of ['artifacts', 'verify-artifacts', 'pixel-artifacts', 'fixtures', 'lib', 'scripts']) {
+    removePackTarget(demoDir, name, { dir: true });
+  }
+  for (const name of [
+    'extract.mjs', 'extract-helpers.mjs', 'extract-report.json', 'report.json',
+    'report-gate-a.json', 'report-assets.json', '_verify-four-fixes.mjs',
+    'resize-acceptance.json', 'human-review.json', 'truth.runtime.json', 'assets-manifest.json',
+    'spec.json', '.env',
+  ]) {
+    removePackTarget(demoDir, name);
+  }
+}
+
+function stripPackNotes(value) {
+  if (Array.isArray(value)) return value.map(stripPackNotes);
+  if (!value || typeof value !== 'object') return value;
+  const next = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === '_note' || key === '$comment' || key === '_comment') continue;
+    next[key] = stripPackNotes(child);
+  }
+  return next;
+}
+
+function compactJsonFile(demoDir, name) {
+  const file = join(demoDir, name);
+  if (!existsSync(file)) return { ok: true, skipped: true, file: name };
+  const inspected = assertSafePackPath(demoDir, file);
+  const parsed = readJsonOrError(inspected.path, `${name} is not valid JSON`);
+  if (!parsed.ok) return parsed;
+  const compact = JSON.stringify(stripPackNotes(parsed.value));
+  writeFileSync(inspected.path, compact);
+  return { ok: true, skipped: false, file: name, bytesBefore: inspected.stat.size, bytes: Buffer.byteLength(compact) };
+}
+
+function compactHtmlJsonScripts(demoDir) {
+  const indexPath = join(demoDir, 'index.html');
+  const html = readFileSync(indexPath, 'utf8');
+  let next = html;
+  let saved = 0;
+  next = next.replace(/<script([^>]*type=["']application\/json["'][^>]*)>([\s\S]*?)<\/script>/gi, (full, attrs, body) => {
+    const text = String(body || '').trim();
+    if (!text) return full;
+    try {
+      const compact = JSON.stringify(stripPackNotes(JSON.parse(text)));
+      saved += Buffer.byteLength(text) - Buffer.byteLength(compact);
+      return `<script${attrs}>${compact}</script>`;
+    } catch {
+      return full;
+    }
+  });
+  if (next !== html) writeFileSync(indexPath, next);
+  return { ok: true, bytesSaved: saved, bytes: Buffer.byteLength(next) };
+}
+
+const QA_DEVICES_RUNTIME_KEYS = new Set([
+  'deviceGroups', 'breakpoints', 'otherReference', 'regions', 'languages', 'states',
+]);
+
+function compactQaDevicesHtml(demoDir) {
+  const indexPath = join(demoDir, 'index.html');
+  const html = readFileSync(indexPath, 'utf8');
+  const match = html.match(/<script([^>]*id=["']qa-devices["'][^>]*)>([\s\S]*?)<\/script>/i);
+  if (!match || !match[2].trim()) return { ok: true, skipped: true, bytes: 0 };
+  let parsed;
+  try { parsed = JSON.parse(match[2]); }
+  catch { return { ok: false, error: 'qa-devices is not valid JSON' }; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: true, skipped: true, bytes: Buffer.byteLength(match[2]) };
+  }
+  const slim = {};
+  for (const key of QA_DEVICES_RUNTIME_KEYS) {
+    if (Object.hasOwn(parsed, key)) slim[key] = parsed[key];
+  }
+  const compacted = JSON.stringify(slim);
+  writeFileSync(indexPath, html.replace(match[0], `<script${match[1]}>${compacted}</script>`));
+  return { ok: true, skipped: false, bytesBefore: Buffer.byteLength(match[2]), bytes: Buffer.byteLength(compacted) };
+}
+
+function slimFontsManifest(demoDir) {
+  const file = join(demoDir, 'fonts-manifest.json');
+  if (!existsSync(file)) return { ok: true, skipped: true };
+  const inspected = assertSafePackPath(demoDir, file);
+  const parsed = readJsonOrError(inspected.path, 'fonts-manifest.json is not valid JSON');
+  if (!parsed.ok) return parsed;
+  const keepFontKeys = ['file', 'format', 'weight', 'sha256', 'bytes', 'subset'];
+  const fonts = {};
+  for (const [family, entry] of Object.entries(parsed.value?.fonts || {})) {
+    if (!entry || typeof entry !== 'object') continue;
+    const slim = {};
+    for (const key of keepFontKeys) {
+      if (entry[key] != null) slim[key] = entry[key];
+    }
+    fonts[family] = slim;
+  }
+  const compact = {
+    fonts,
+    totalBytes: Number(parsed.value?.totalBytes || Object.values(fonts).reduce((sum, item) => sum + Number(item?.bytes || 0), 0)),
+  };
+  if (Array.isArray(parsed.value?.missing) && parsed.value.missing.length) {
+    compact.missing = parsed.value.missing.map((item) => {
+      if (!item || typeof item !== 'object') return item;
+      const slim = {};
+      if (item.family) slim.family = item.family;
+      if (item.weights) slim.weights = item.weights;
+      if (item.affectedNodes != null) slim.affectedNodes = item.affectedNodes;
+      return slim;
+    });
+  }
+  const text = JSON.stringify(compact);
+  writeFileSync(inspected.path, text);
+  return { ok: true, skipped: false, bytesBefore: inspected.stat.size, bytes: Buffer.byteLength(text) };
+}
+
+function compactQaAssetsHtml(demoDir) {
+  const indexPath = join(demoDir, 'index.html');
+  const html = readFileSync(indexPath, 'utf8');
+  const match = html.match(/<script([^>]*id=["']qa-assets["'][^>]*)>([\s\S]*?)<\/script>/i);
+  if (!match || !match[2].trim()) return { ok: true, skipped: true, bytes: 0 };
+  let parsed;
+  try { parsed = JSON.parse(match[2]); }
+  catch { return { ok: false, error: 'qa-assets is not valid JSON' }; }
+  const slim = (value) => {
+    if (typeof value === 'string' || Array.isArray(value) || !value || typeof value !== 'object') return value;
+    const next = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'exportBounds' && child === 'box') continue;
+      if (key === 'imageRefs' && (!Array.isArray(child) || child.length <= 1)) continue;
+      next[key] = slim(child);
+    }
+    const keys = Object.keys(next);
+    if (keys.length === 1 && keys[0] === 'file' && typeof next.file === 'string') return next.file;
+    return next;
+  };
+  const compacted = JSON.stringify(slim(parsed));
+  writeFileSync(indexPath, html.replace(match[0], `<script${match[1]}>${compacted}</script>`));
+  return { ok: true, skipped: false, bytesBefore: Buffer.byteLength(match[2]), bytes: Buffer.byteLength(compacted) };
+}
+
+function compactRuntimeTruth(demoDir, proofDir) {
+  const truthPath = join(demoDir, 'truth.json');
+  const truthInfo = assertSafePackPath(demoDir, truthPath);
+  const parsed = readJsonOrError(truthInfo.path, 'truth.json is not valid JSON');
+  if (!parsed.ok) return parsed;
+  const raw = parsed.value;
+  const unwrap = (value) => {
+    if (Array.isArray(value)) return value.map(unwrap);
+    if (value && typeof value === 'object') {
+      if (Object.hasOwn(value, 'value') && Object.hasOwn(value, 'provenance')) return unwrap(value.value);
+      return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, unwrap(child)]));
+    }
+    return value;
+  };
+  const proofPath = join(proofDir, 'truth.json');
+  mkdirSync(dirname(proofPath), { recursive: true });
+  copyFileSync(truthInfo.path, proofPath);
+  const compact = JSON.stringify(unwrap(raw));
+  writeFileSync(truthInfo.path, compact);
+  return { ok: true, beforeBytes: truthInfo.stat.size, bytes: Buffer.byteLength(compact), proof: proofPath };
 }
 
 function workDirFor(demoDir) {
@@ -215,6 +433,49 @@ function collectText(value, out = []) {
   return out;
 }
 
+function readJsonOrError(path, error) {
+  try { return { ok: true, value: JSON.parse(readFileSync(path, 'utf8')) }; }
+  catch { return { ok: false, error }; }
+}
+
+function requireSafePackFile(demoDir, rel, label) {
+  const path = resolve(demoDir, rel);
+  if (!withinPackRoot(demoDir, path)) throw new Error(`${label} escapes pack root: ${rel}`);
+  const existing = inspectPackPath(demoDir, path);
+  if (existsSync(path) && !existing.ok) throw new Error(existing.error);
+  return path;
+}
+
+function subsetOneFont(demoDir, family, entry, { bin, charsFile, chars }) {
+  const oldRel = String(entry?.file || '').replace(/\\/g, '/');
+  if (!oldRel) return null;
+  const oldInfo = assertSafePackPath(demoDir, resolve(demoDir, oldRel));
+  if (!oldInfo.stat.isFile()) throw new Error(`font file missing: ${oldRel}`);
+  const packedRel = oldRel.replace(/\.(?:ttf|otf|woff|woff2)$/i, '.pack.woff2');
+  const packedPath = requireSafePackFile(demoDir, packedRel, 'font subset target');
+  const result = spawnSync(bin, ['-m', 'fontTools.subset', oldInfo.path, `--output-file=${packedPath}`, `--text-file=${charsFile}`, '--flavor=woff2'], { encoding: 'utf8', timeout: 600000, windowsHide: true });
+  if (result.status !== 0 || !existsSync(packedPath)) {
+    throw new Error(`font subset failed for ${family}: ${(result.stderr || result.stdout || '').slice(0, 300)}`);
+  }
+  const packedInfo = assertSafePackPath(demoDir, packedPath);
+  const finalRel = oldRel.replace(/\.(?:ttf|otf|woff|woff2)$/i, '.woff2');
+  const finalPath = requireSafePackFile(demoDir, finalRel, 'font output');
+  copyFileSync(packedInfo.path, finalPath);
+  unlinkSync(packedInfo.path);
+  if (oldInfo.path !== finalPath && existsSync(oldInfo.path)) unlinkSync(oldInfo.path);
+  const finalInfo = assertSafePackPath(demoDir, finalPath);
+  Object.assign(entry, {
+    file: finalRel,
+    format: 'woff2',
+    bytes: finalInfo.stat.size,
+    totalBytes: finalInfo.stat.size,
+    sha256: sha256File(finalInfo.path),
+    subset: true,
+    subsetCharacters: chars.size,
+  });
+  return { from: oldRel, to: finalRel };
+}
+
 function subsetFonts(demoDir) {
   const manifestPath = join(demoDir, 'fonts-manifest.json');
   const inspectedManifest = inspectPackPath(demoDir, manifestPath);
@@ -222,14 +483,18 @@ function subsetFonts(demoDir) {
     if (!existsSync(manifestPath)) return { ok: true, skipped: true, reason: 'fonts-manifest-missing' };
     return { ok: false, error: inspectedManifest.error };
   }
-  if (!pythonHas('fontTools')) return { ok: false, error: 'Pack requires Python fontTools for font subsetting' };
-  let manifest;
-  try { manifest = JSON.parse(readFileSync(inspectedManifest.path, 'utf8')); } catch { return { ok: false, error: 'fonts-manifest.json is not valid JSON' }; }
+  const bin = pythonHas('fontTools');
+  if (!bin) return { ok: false, error: 'Pack requires Python fontTools for font subsetting' };
+  const parsedManifest = readJsonOrError(inspectedManifest.path, 'fonts-manifest.json is not valid JSON');
+  if (!parsedManifest.ok) return parsedManifest;
+  const manifest = parsedManifest.value;
   const truthPath = join(demoDir, 'truth.json');
-  let truth = {};
   const inspectedTruth = inspectPackPath(demoDir, truthPath);
+  let truth = {};
   if (inspectedTruth.ok && inspectedTruth.stat.isFile()) {
-    try { truth = JSON.parse(readFileSync(inspectedTruth.path, 'utf8')); } catch { return { ok: false, error: 'truth.json is not valid JSON' }; }
+    const parsedTruth = readJsonOrError(inspectedTruth.path, 'truth.json is not valid JSON');
+    if (!parsedTruth.ok) return parsedTruth;
+    truth = parsedTruth.value;
   } else if (existsSync(truthPath)) {
     return { ok: false, error: inspectedTruth.error || 'truth.json is not a safe pack file' };
   }
@@ -237,48 +502,15 @@ function subsetFonts(demoDir) {
   for (const text of collectText(truth)) for (const ch of text) chars.add(ch);
   const charsFile = join(demoDir, '.pack-font-characters.txt');
   writeFileSync(charsFile, [...chars].join(''));
-  const bin = pythonHas('fontTools');
   const mappings = [];
   const fonts = manifest.fonts && typeof manifest.fonts === 'object' ? manifest.fonts : {};
   try {
     for (const [family, entry] of Object.entries(fonts)) {
-      const oldRel = String(entry?.file || '').replace(/\\/g, '/');
-      if (!oldRel) continue;
-      const oldPath = resolve(demoDir, oldRel);
-      const oldInfo = assertSafePackPath(demoDir, oldPath);
-      if (!oldInfo.stat.isFile()) throw new Error(`font file missing: ${oldRel}`);
-      const ext = oldRel.toLowerCase().endsWith('.woff2') ? '.woff2' : '.woff2';
-      const newRel = oldRel.replace(/\.(?:ttf|otf|woff|woff2)$/i, `.pack${ext}`);
-      const newPath = resolve(demoDir, newRel);
-      if (!withinPackRoot(demoDir, newPath)) throw new Error(`font subset target escapes pack root: ${newRel}`);
-      const existingPacked = inspectPackPath(demoDir, newPath);
-      if (existsSync(newPath) && !existingPacked.ok) throw new Error(existingPacked.error);
-      const result = spawnSync(bin, ['-m', 'fontTools.subset', oldInfo.path, `--output-file=${newPath}`, `--text-file=${charsFile}`, '--flavor=woff2'], { encoding: 'utf8', timeout: 600000, windowsHide: true });
-      if (result.status !== 0 || !existsSync(newPath)) throw new Error(`font subset failed for ${family}: ${(result.stderr || result.stdout || '').slice(0, 300)}`);
-      const packedInfo = assertSafePackPath(demoDir, newPath);
-      const finalRel = oldRel.replace(/\.(?:ttf|otf|woff|woff2)$/i, '.woff2');
-      const finalPath = resolve(demoDir, finalRel);
-      if (!withinPackRoot(demoDir, finalPath)) throw new Error(`font output escapes pack root: ${finalRel}`);
-      const existingFinal = inspectPackPath(demoDir, finalPath);
-      if (existsSync(finalPath) && !existingFinal.ok) throw new Error(existingFinal.error);
-      copyFileSync(packedInfo.path, finalPath);
-      unlinkSync(packedInfo.path);
-      if (oldInfo.path !== finalPath && existsSync(oldInfo.path)) unlinkSync(oldInfo.path);
-      const finalInfo = assertSafePackPath(demoDir, finalPath);
-      const bytes = finalInfo.stat.size;
-      const sha256 = createHash('sha256').update(readFileSync(finalInfo.path)).digest('hex');
-      entry.file = finalRel;
-      entry.format = 'woff2';
-      entry.bytes = bytes;
-      entry.totalBytes = bytes;
-      entry.sha256 = sha256;
-      entry.subset = true;
-      entry.subsetCharacters = chars.size;
-      mappings.push({ from: oldRel, to: finalRel });
+      const mapping = subsetOneFont(demoDir, family, entry, { bin, charsFile, chars });
+      if (mapping) mappings.push(mapping);
     }
-    const totalBytes = Object.values(manifest.fonts || {}).reduce((sum, item) => sum + Number(item?.bytes || 0), 0);
-    manifest.totalBytes = totalBytes;
-    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+    manifest.totalBytes = Object.values(manifest.fonts || {}).reduce((sum, item) => sum + Number(item?.bytes || 0), 0);
+    writeFileSync(manifestPath, JSON.stringify(manifest));
     unlinkSync(charsFile);
     return { ok: true, skipped: false, mappings, glyphs: chars.size };
   } catch (error) {
@@ -297,12 +529,13 @@ function main() {
   catch (error) { fail(error.message); }
   const html = readFileSync(indexInfo.path, 'utf8');
   const resizeAccepted = validResizeMarker(demoDir);
+  const secondStop = packAllowedAfterSecondStop(demoDir);
   const fallbackRefs = collectFallbackRefs(html);
   const missingFallbacks = missingFallbackFiles(demoDir, html);
   const runtimeRefs = packRuntimeReferencesOk(demoDir, html);
   const budgetBytes = Math.round(args.budgetMb * 1024 * 1024) || DEFAULT_PACK_BUDGET_BYTES;
   const out = {
-    ok: resizeAccepted && missingFallbacks.length === 0 && runtimeRefs.ok,
+    ok: resizeAccepted && secondStop.ok && missingFallbacks.length === 0 && runtimeRefs.ok,
     dryRun: !!args.dryRun,
     demo: demoDir,
     quality: args.quality,
@@ -311,43 +544,84 @@ function main() {
     fallbacks: fallbackRefs,
     missingFallbacks,
     resizeAccepted,
+    secondStop,
     runtimeRefs,
     pillow: !!pythonHas('PIL'),
     fontTools: !!pythonHas('fontTools'),
-    note: 'Pack uses an isolated work tree and commits only after reference and budget gates pass.',
+    planned: {
+      reencodeExistingWebp: true,
+      convertPng: true,
+      subsetFonts: true,
+      removeUnreferenced: true,
+      budgetAfterMutationOnly: true,
+    },
+    note: 'Pack uses an isolated work tree and commits only after reference and budget gates pass. Dry-run reports current bytes and planned actions; the 15MB gate is live-after-mutation only.',
   };
   if (!resizeAccepted) out.error = 'missing valid accepted Resize marker';
+  if (!secondStop.ok) out.error = secondStop.error || 'second human review stop not accepted; do not Pack';
   if (missingFallbacks.length) out.error = `missing runtime fallback files: ${missingFallbacks.join(', ')}`;
   if (!runtimeRefs.ok) out.error = `missing runtime references: ${runtimeRefs.missing.join(', ')}`;
+  out.budgetBefore = packBudgetBreakdown(demoDir);
   if (args.dryRun || !out.ok) {
-    out.budget = packBudgetOk(demoDir, { budgetBytes });
-    out.ok = out.ok && out.budget.ok;
-    if (!out.budget.ok) out.error = `served folder ${out.budget.bytes} exceeds pack budget ${budgetBytes}`;
+    out.budget = { ok: true, bytes: out.budgetBefore.bytes, budgetBytes, enforced: false, reason: 'dry-run reports current bytes; 15MB is measured after mutation' };
     console.log(JSON.stringify(out, null, 2));
     process.exit(out.ok ? 0 : 1);
   }
   if (!out.pillow) fail('Pack requires Python Pillow; refusing to mutate the demo');
+  runLivePack(demoDir, args, out, budgetBytes);
+}
 
+function assertTruthExternalized(workDir, truth) {
+  const allowed = new Set(['no-qa-truth', 'externalized', 'existing', 'extracted']);
+  if (truth.action === 'externalized' && !existsSync(join(workDir, truth.src || 'truth.json'))) {
+    throw new Error('truth externalization failed');
+  }
+  if (!truth.ok && !allowed.has(truth.action)) throw new Error('truth externalization failed');
+}
+
+function mutatePackedDemo(workDir, workProofDir, args, out, budgetBytes) {
+  prunePackWorktree(workDir);
+  const truthReady = ensureTruthFile(workDir);
+  if (!truthReady.ok) throw new Error(truthReady.error);
+  out.truthCompact = compactRuntimeTruth(workDir, workProofDir);
+  if (!out.truthCompact.ok) throw new Error(out.truthCompact.error);
+  out.truth = externalizeQaTruthIfOverLimit(workDir, { limitBytes: 1 });
+  assertTruthExternalized(workDir, out.truth);
+  out.images = packImages(workDir, args.quality, workProofDir);
+  if (!out.images.encoder.ok) throw new Error(out.images.encoder.why || 'WebP encoder failed');
+  out.rewrite = rewritePackedRefs(workDir, out.images.aliases);
+  out.fonts = subsetFonts(workDir);
+  if (!out.fonts.ok) throw new Error(out.fonts.error || 'font subset failed');
+  out.rewriteFonts = rewritePackedRefs(workDir, out.fonts.mappings || []);
+  out.qaAssets = compactQaAssetsHtml(workDir);
+  if (!out.qaAssets.ok) throw new Error(out.qaAssets.error);
+  out.qaDevices = compactQaDevicesHtml(workDir);
+  if (!out.qaDevices.ok) throw new Error(out.qaDevices.error);
+  out.htmlJson = compactHtmlJsonScripts(workDir);
+  out.fontsManifest = slimFontsManifest(workDir);
+  if (!out.fontsManifest.ok) throw new Error(out.fontsManifest.error);
+  const packedHtml = readFileSync(join(workDir, 'index.html'), 'utf8');
+  out.unreferenced = removeUnreferencedPackedFiles(workDir, packedHtml);
+  out.truthRecheck = packRuntimeReferencesOk(workDir, readFileSync(join(workDir, 'index.html'), 'utf8'));
+  if (!out.truthRecheck.ok) throw new Error(`missing runtime references after mutation: ${out.truthRecheck.missing.join(', ')}`);
+  out.budgetBreakdown = packBudgetBreakdown(workDir);
+  out.budget = packBudgetOk(workDir, { budgetBytes });
+  out.bytesAfter = out.budget.bytes;
+  out.fonts.bytesAfter = out.budgetBreakdown.fonts;
+  out.truth.bytesAfter = out.truthCompact?.bytes ?? out.budgetBreakdown.truth;
+  if (out.budget.ok) return;
+  const parts = out.budgetBreakdown;
+  const error = new Error(`served folder ${out.bytesAfter} exceeds pack budget ${budgetBytes} (webp=${parts.webp}, png=${parts.png}, truth=${parts.truth}, fonts=${parts.fonts}, html=${parts.html}, other=${parts.other})`);
+  error.budgetBreakdown = parts;
+  throw error;
+}
+
+function runLivePack(demoDir, args, out, budgetBytes) {
   const workDir = workDirFor(demoDir);
   const workProofDir = `${workDir}-png-proof`;
   mkdirSync(workProofDir, { recursive: true });
   try {
-    const truthReady = ensureTruthFile(workDir);
-    if (!truthReady.ok) throw new Error(truthReady.error);
-    out.truth = externalizeQaTruthIfOverLimit(workDir, { limitBytes: 1 });
-    if (out.truth.action === 'externalized' && !existsSync(join(workDir, out.truth.src || 'truth.json'))) throw new Error('truth externalization failed');
-    if (!out.truth.ok && out.truth.action !== 'no-qa-truth' && out.truth.action !== 'externalized' && out.truth.action !== 'existing' && out.truth.action !== 'extracted') throw new Error('truth externalization failed');
-    out.images = packImages(workDir, args.quality, workProofDir);
-    if (!out.images.encoder.ok) throw new Error(out.images.encoder.why || 'WebP encoder failed');
-    out.rewrite = rewritePackedRefs(workDir, out.images.aliases);
-    out.fonts = subsetFonts(workDir);
-    if (!out.fonts.ok) throw new Error(out.fonts.error || 'font subset failed');
-    out.rewriteFonts = rewritePackedRefs(workDir, out.fonts.mappings || []);
-    out.truthRecheck = packRuntimeReferencesOk(workDir, readFileSync(join(workDir, 'index.html'), 'utf8'));
-    if (!out.truthRecheck.ok) throw new Error(`missing runtime references after mutation: ${out.truthRecheck.missing.join(', ')}`);
-    out.budget = packBudgetOk(workDir, { budgetBytes });
-    out.bytesAfter = out.budget.bytes;
-    if (!out.budget.ok) throw new Error(`served folder ${out.bytesAfter} exceeds pack budget ${budgetBytes}`);
+    mutatePackedDemo(workDir, workProofDir, args, out, budgetBytes);
     commitWorkTree(demoDir, workDir, workProofDir);
     out.pngProofDir = `${demoDir}-png-proof`;
     out.ok = true;
@@ -355,6 +629,7 @@ function main() {
   } catch (error) {
     out.ok = false;
     out.error = error.message;
+    if (error.budgetBreakdown) out.budgetBreakdown = error.budgetBreakdown;
     rmSync(workDir, { recursive: true, force: true });
     rmSync(workProofDir, { recursive: true, force: true });
     console.log(JSON.stringify(out, null, 2));

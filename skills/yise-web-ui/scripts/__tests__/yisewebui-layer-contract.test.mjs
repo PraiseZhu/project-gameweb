@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
+const REPO_ROOT = join(ROOT, '../..');
 const read = (rel) => readFileSync(join(ROOT, rel), 'utf8');
 
 test('sc-probe-ss5-identity: 4201 is SS5 1:180 / 20:2205 local extract, not SS6', () => {
@@ -16,6 +17,37 @@ test('sc-probe-ss5-identity: 4201 is SS5 1:180 / 20:2205 local extract, not SS6'
   assert.match(readme, /latest-Figma local extract baseline/);
   assert.match(readme, /not an inventory\/handoff baseline/);
   assert.match(skill, /yisewebui/);
+});
+
+function readClaude() {
+  return readFileSync(join(REPO_ROOT, 'CLAUDE.md'), 'utf8');
+}
+
+test('sc-61-recall: CLAUDE.md trigger table loads yise-web-ui SKILL.md', () => {
+  const claude = readClaude();
+  const skill = read('SKILL.md');
+  const readme = read('README.md');
+  assert.match(claude, /yisewebui \/ 伊瑟网页还原/);
+  assert.match(claude, /立即执行 `skills\/yise-web-ui\/SKILL.md`/);
+  assert.match(skill, /<command-name>yisewebui<\/command-name>/);
+  assert.match(readme, /仓根 `CLAUDE\.md` 触发表/);
+  assert.doesNotMatch(readme, /别人装好后直接打 `\/yisewebui`/);
+});
+
+test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence', () => {
+  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 才给人 `\?product=1`/;
+  const skill = read('SKILL.md');
+  const readme = read('README.md');
+  const claude = readClaude();
+  const entry = read('docs/page-making-inventory-entry.md');
+  assert.match(skill, sentence);
+  assert.match(readme, sentence);
+  assert.match(claude, sentence);
+  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → then show `\?product=1`/);
+  assert.match(skill, /figma:html-from-handoff/);
+  assert.match(readme, /figma:html-from-handoff/);
+  assert.match(skill, /停下来要包/);
+  assert.match(readme, /停下来要包/);
 });
 
 test('sc-label-direct-figma: live extract is not inventory/handoff', () => {
@@ -35,13 +67,31 @@ test('sc-open-not-done: opening the page is still a candidate', () => {
   assert.match(readme, /not-claimed|extraction recognition only/);
 });
 
-test('sc-yisewebui-layer-stop: static then Translation then Interaction then Resize', () => {
+test('sc-yisewebui-layer-stop: two human review stops, Translation not-claimed without a table', () => {
   const skill = read('SKILL.md');
   const arch = read('docs/skill-architecture.md');
-  assert.match(skill, /Main\s+static → Translation → Interaction → Resize/);
+  const readme = read('README.md');
+  assert.match(skill, /Main static → Translation/);
+  assert.match(skill, /humans see \*\*two\*\* review stops/);
+  assert.match(skill, /zh-CN\s+font load\s+is not a translation pass/s);
+  assert.match(skill, /Do not open or present the page while `preview:first` is red/);
+  assert.match(skill, /humanStopPreviewAllowed/);
+  assert.match(skill, /productView\.command/);
+  assert.match(skill, /human-review\.json/);
+  assert.match(skill, /recall-yisewebui/);
+  const finalGate = read('docs/final-preview-gate.md');
+  assert.match(finalGate, /humanStopPreviewAllowed/);
+  assert.match(finalGate, /human review stop may open/);
+  assert.match(finalGate, /productView\.command/);
   assert.match(arch, /stop-layer workflow/);
+  assert.match(arch, /two review stops/);
+  assert.match(arch, /zh-CN font\s+load is not a translation pass/s);
+  assert.match(readme, /two human review stops/);
+  assert.match(readme, /zh-CN font load is not a translation pass/);
   assert.match(arch, /Do not invent a fourth Skill|Do not split the directory into a fourth Skill/);
-  assert.match(skill, /Do not open the next axis until\n?the previous one is accepted/s);
+  assert.match(arch, /human-review\.json/);
+  assert.match(readme, /human-review\.mjs/);
+  assert.match(readme, /recall-yisewebui/);
 });
 
 test('sc-html-10mb-webp: HTML volume is 10MB on index.html, assets folder is free', () => {
@@ -50,8 +100,9 @@ test('sc-html-10mb-webp: HTML volume is 10MB on index.html, assets folder is fre
   const encoder = read('scripts/lib/encode-webp.py');
   assert.match(volume, /DEFAULT_MAX_HTML_BYTES = 10 \* 1024 \* 1024/);
   assert.match(volume, /index.html itself, not the assets folder/);
-  assert.match(encoder, /Alpha images use lossless WebP/);
-  assert.match(encoder, /lossy quality 90/);
+  assert.match(encoder, /alpha →\s*lossless WebP/);
+  assert.match(encoder, /opaque → lossy quality/);
+  assert.match(encoder, /Pack passes lossless=false/);
   assert.match(skill, /10MB/);
 });
 
@@ -70,9 +121,9 @@ test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not po
   assert.match(render, /heroVisualPlane/);
   assert.match(render, /pageScope \? 1 : k/);
   assert.match(render, /data-hero-ui-y-ratio/);
-  assert.match(render, /data-node-name/);
+  assert.match(render, /data-name/);
   assert.match(chrome, /data-hero-source-height/);
-  assert.match(chrome, /data-node-name/);
+  assert.match(chrome, /data-name/);
   assert.doesNotMatch(chrome, /data-prefix'\) === 'img'\|\|/);
   assert.doesNotMatch(chrome, /sourceBoxWidth = parseFloat\(root\.style\.width\) \|\| 601/);
   assert.match(chrome, /source-y-scale/);
@@ -90,8 +141,8 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   const arch = read('docs/skill-architecture.md');
   const pack = read('docs/pack-skill.md');
   const lib = read('scripts/lib/pack-demo.mjs');
-  assert.match(skill, /Main\s+static → Translation → Interaction → Resize/);
-  assert.match(skill, /After Resize is accepted, run the Pack delivery/);
+  assert.match(skill, /Main static → Translation/);
+  assert.match(skill, /After the second\n?human stop is accepted, run the Pack delivery/s);
   assert.match(skill, /Pack is not a restore axis/);
   assert.match(arch, /Pack delivery/);
   assert.match(arch, /not a restore axis/);

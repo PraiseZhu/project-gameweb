@@ -1716,52 +1716,67 @@
     return isFinite(ratio) && ratio > 0 ? ratio : 1;
   }
 
-  function directChildByNodeId(root, nodeId) {
-    if (!root || !nodeId) return null;
-    try {
-      for (var child = root.firstElementChild; child; child = child.nextElementSibling) {
-        if (child.getAttribute && (child.getAttribute('data-node') === nodeId || child.getAttribute('data-node-id') === nodeId)) return child;
-      }
-    } catch (e) { /* ignore */ }
+  function layerNameOf(el) {
+    if (!el || !el.getAttribute) return '';
+    return el.getAttribute('data-name')
+      || el.getAttribute('data-figma-name')
+      || el.getAttribute('data-btn-name')
+      || el.getAttribute('aria-label')
+      || '';
+  }
+
+  function firstDirectChildByName(root, pattern) {
+    if (!root || !pattern) return null;
+    var children = root.children || [];
+    for (var i = 0; i < children.length; i++) {
+      if (pattern.test(layerNameOf(children[i]))) return children[i];
+    }
     return null;
+  }
+
+  function firstDescendantByName(root, pattern) {
+    if (!root || !pattern) return null;
+    var nodes = root.querySelectorAll
+      ? root.querySelectorAll('[data-name], [data-figma-name], [data-btn-name], [aria-label]')
+      : [];
+    for (var i = 0; i < nodes.length; i++) {
+      if (pattern.test(layerNameOf(nodes[i]))) return nodes[i];
+    }
+    return firstDirectChildByName(root, pattern);
+  }
+
+  function stretchNamedChild(el, yScale, kind) {
+    if (!el) return null;
+    saveHeroEntryStyle(el);
+    var box = savedBox(el);
+    if (!(box.height > 0)) return null;
+    applyHeroEntryBox(el, box.left, box.top, box.width, box.height * yScale, kind);
+    return box;
   }
 
   function syncContinuousNavRailOwner(root, sourceScaleY) {
     if (!root) return null;
     /* Rail ownership is semantic, not geometric-guesswork: accept only a
-       direct child whose Figma layer name (data-node-name, generic renderer
+       child whose authored Figma layer name (data-name, generic renderer
        output) marks it as navigation background/long-line or rail. A stray
        img/ or bg/ decoration is never stretched into a rail; a fix/ root
        without a named rail fails closed. */
-    var railOwner = null;
-    var children = root.children || [];
-    for (var i = 0; i < children.length; i++) {
-      var name = (children[i].getAttribute && (children[i].getAttribute('data-node-name') || children[i].getAttribute('aria-label'))) || '';
-      if (/导航背景|导航长线|nav|rail/i.test(name)) {
-        railOwner = children[i];
-        break;
-      }
-    }
+    var railOwner = firstDirectChildByName(root, /导航背景|导航长线|nav|rail/i)
+      || firstDescendantByName(root, /导航背景|导航长线|nav|rail/i);
     if (!railOwner) return null;
-
+    if (!isFinite(sourceScaleY) || sourceScaleY <= 0) sourceScaleY = 1;
     saveHeroEntryStyle(railOwner);
     /* Missing rail geometry fails closed: do not substitute a guessed size. */
-    var sourceBoxWidth = parseFloat((railOwner.__fxHeroEntryStyleBase && railOwner.__fxHeroEntryStyleBase.width) || railOwner.style.width);
-    var sourceBoxHeight = parseFloat((railOwner.__fxHeroEntryStyleBase && railOwner.__fxHeroEntryStyleBase.height) || railOwner.style.height);
-    if (!isFinite(sourceBoxWidth) || sourceBoxWidth <= 0 || !isFinite(sourceBoxHeight) || sourceBoxHeight <= 0) return null;
-    if (!isFinite(sourceScaleY) || sourceScaleY <= 0) sourceScaleY = 1;
-    railOwner.style.position = 'absolute';
-    railOwner.style.left = (parseFloat((railOwner.__fxHeroEntryStyleBase && railOwner.__fxHeroEntryStyleBase.left) || '0') || 0) + 'px';
-    railOwner.style.top = (parseFloat((railOwner.__fxHeroEntryStyleBase && railOwner.__fxHeroEntryStyleBase.top) || '0') || 0) + 'px';
-    railOwner.style.width = sourceBoxWidth + 'px';
-    railOwner.style.height = (sourceBoxHeight * sourceScaleY) + 'px';
+    var source = savedBox(railOwner);
+    if (!(source.width > 0) || !(source.height > 0)) return null;
+    applyHeroEntryBox(railOwner, source.left, source.top, source.width, source.height * sourceScaleY, 'rail-owner');
     railOwner.style.overflow = 'visible';
     railOwner.style.transformOrigin = '0px 0px';
     railOwner.setAttribute('data-fixed-viewport-rail', 'true');
     railOwner.setAttribute('data-hero-entry-nav-transform', 'true');
     railOwner.setAttribute('data-hero-entry-nav-kind', 'rail-owner');
-    railOwner.setAttribute('data-figma-rail-source-width', String(sourceBoxWidth));
-    railOwner.setAttribute('data-figma-rail-source-height', String(sourceBoxHeight));
+    railOwner.setAttribute('data-figma-rail-source-width', String(source.width));
+    railOwner.setAttribute('data-figma-rail-source-height', String(source.height));
     railOwner.setAttribute('data-figma-rail-source-scale-y', sourceScaleY.toFixed(6));
 
     var bakedAsset = null;
@@ -1786,20 +1801,108 @@
     return railOwner;
   }
 
+  function sourcePx(value, fallback) {
+    var n = parseFloat(value);
+    return isFinite(n) ? n : fallback;
+  }
+
+  function savedBox(el) {
+    var saved = el && el.__fxHeroEntryStyleBase;
+    return {
+      left: sourcePx(saved && saved.left, el.offsetLeft),
+      top: sourcePx(saved && saved.top, el.offsetTop),
+      width: sourcePx(saved && saved.width, el.offsetWidth),
+      height: sourcePx(saved && saved.height, el.offsetHeight),
+    };
+  }
+
+  function syncSourceNavRail(root, stageZoom, viewportH) {
+    if (!root) return false;
+    saveHeroEntryStyle(root);
+    var source = savedBox(root);
+    if (!(source.height > 0) || !(viewportH > 0) || !(stageZoom > 0)) return false;
+    var items = root.querySelectorAll('[data-nav-item]');
+    var railOwner = firstDirectChildByName(root, /导航背景|nav.*(?:bg|background)|rail/i)
+      || firstDescendantByName(root, /导航背景|nav.*(?:bg|background)|rail/i);
+    /* Buttons without the named rail are not a stretch success. Keep the
+       Figma rest geometry instead of reporting a finished directory. */
+    if (!railOwner) return false;
+    var designViewportH = viewportH / stageZoom;
+    var available = Math.max(source.height, designViewportH - source.top);
+    var yScale = available / source.height;
+    if (!isFinite(yScale) || yScale <= 0) yScale = 1;
+    applyHeroEntryBox(root, source.left, source.top, source.width, source.height * yScale, 'source-root');
+    root.style.minHeight = root.style.height;
+    root.style.overflow = 'visible';
+    root.setAttribute('data-hero-entry-nav-y-scale', yScale.toFixed(4));
+    root.setAttribute('data-nav-stretch-plane', 'viewport-height');
+
+    if (railOwner) syncContinuousNavRailOwner(root, yScale);
+
+    if (!items.length) return !!(railOwner && railOwner.getAttribute('data-fixed-viewport-rail') === 'true');
+    var firstTop = savedBox(items[0]).top;
+    var last = savedBox(items[items.length - 1]);
+    var sourceSpan = Math.max(1, (last.top + last.height) - firstTop);
+    var targetSpan = Math.max(sourceSpan, source.height * yScale - firstTop);
+    var itemScaleY = targetSpan / sourceSpan;
+    if (!isFinite(itemScaleY) || itemScaleY <= 0) itemScaleY = yScale;
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var box = savedBox(item);
+      applyHeroEntryBox(item, box.left, firstTop + (box.top - firstTop) * itemScaleY, box.width, box.height, 'source-item');
+    }
+    var rail = firstDescendantByName(root, /导航长线|nav.*line|rail.*line/i);
+    if (rail) {
+      var railBox = savedBox(rail);
+      applyHeroEntryBox(rail, railBox.left, railBox.top, railBox.width, railBox.height * itemScaleY, 'source-rail');
+    }
+    var buttonFrame = firstDirectChildByName(root, /导航按钮|nav.*(?:button|item)|btn\/导航/);
+    if (buttonFrame) {
+      var buttonBox = savedBox(buttonFrame);
+      applyHeroEntryBox(buttonFrame, buttonBox.left, buttonBox.top, buttonBox.width, buttonBox.height * yScale, 'button-frame');
+      buttonFrame.style.overflow = 'visible';
+    }
+    return true;
+  }
+
+  function collectDirectoryRoots() {
+    var roots = [];
+    var nodes = frame.querySelectorAll('[data-motion-role="navigationFooter"], [data-nav-shell="true"]');
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var nested = false;
+      for (var r = 0; r < roots.length; r++) {
+        if (roots[r].contains(node)) { nested = true; break; }
+      }
+      if (nested) continue;
+      for (var drop = roots.length - 1; drop >= 0; drop--) {
+        if (node.contains(roots[drop])) roots.splice(drop, 1);
+      }
+      roots.push(node);
+    }
+    return roots;
+  }
+
+  function stageZoomOf(el) {
+    var stage = el && el.closest && el.closest('.fx-stage, .fx-fixed-overlays');
+    var zoom = parseZoomValue(stage && stage.style ? stage.style.zoom : null);
+    return isFinite(zoom) && zoom > 0 ? zoom : 1;
+  }
+
   function syncHeroEntryNavigation(vp, heroBaseHeight) {
     try {
       var viewportH = Number(vp && vp.h) || frame.clientHeight || 0;
       if (!(viewportH > 0)) return;
-      var baseH = heroGateNumber(heroBaseHeight, 2160);
-      if (!(baseH > 0)) baseH = 2160;
-      var yScale = Math.min(1, viewportH / baseH);
+      void heroBaseHeight;
       var stages = frame.querySelectorAll('.fx-fixed-overlays');
       for (var s = 0; s < stages.length; s++) {
         var stage = stages[s];
         var stageZoom = parseZoomValue(stage.style ? stage.style.zoom : null);
         if (!isFinite(stageZoom) || stageZoom <= 0) stageZoom = 1;
         syncHeroEntryBrand(stage);
-        var navRoots = stage.querySelectorAll('[data-motion-role="navigationFooter"], [data-prefix="fix"]');
+        var navRoots = typeof collectDirectoryRoots === 'function'
+          ? collectDirectoryRoots(stage)
+          : stage.querySelectorAll('[data-motion-role="navigationFooter"], [data-prefix="fix"]');
         for (var r = 0; r < navRoots.length; r++) {
           var root = navRoots[r];
           saveHeroEntryStyle(root);

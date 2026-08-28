@@ -12,14 +12,34 @@ description: >-
 
 This is the reusable public Skill identity. `demos/yise-ss5-preview` is an Etheria/伊瑟 verification example only, not the Skill identity and not an AppStore application.
 
+**Recall:** 仓根 `CLAUDE.md` 触发表命中 `yisewebui` / `伊瑟网页还原` 后立即执行本文件，不要先问。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
+
+**完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。
+
+| 情况 | 走哪条 |
+|---|---|
+| 人说 `yisewebui` **且已有 ready 交接包** | 官方：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。吃包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。 |
+| 人说 `yisewebui` **只有 Figma 链接、没有包** | **停下来要包**。不要默默走 live showcase。若用户明确说「先看稿、没有清单」，才允许 `figma-showcase` 九步，且必须标明 `latest-Figma local extract baseline`。 |
+| `figma:from-handoff` 单独跑 | 只验包、打印消费计划，**不写 HTML**。触发词 `yisewebui` 不能再暗示「说了就会出 HTML」，除非后面接了 `figma:html-from-handoff`。 |
+
+Commands from repo root; each step `cd`s itself:
+
+```bash
+cd skills/yise-web-ui
+npm run figma:html-from-handoff -- --handoff <handoff-dir> --demo <demo-dir>
+```
+
+Do not open the product view, and do not start Interaction / Resize, while `preview:first` is red. `preview:first` uses HTTP only for the internal check; the URL given to humans is the durable `file://...?product=1` path, which must still open after the command exits. Do not hand-edit inventory `status`. Do not treat a local adapter page as Skill acceptance.
+
 ## Handoff package entry
 
-The only page-builder entry for a naming handoff package is
-`npm run figma:from-handoff -- <handoff-dir>`. A `green-draft` package remains
-`ready=false`: consume only `determined` records and never wire `unknown`.
-`inventory:check` is deprecated as a package entry; it only retains the
-five-item audit for a single `ready` inventory JSON. Never change draft status
-to `ready` to make a consumer pass.
+`npm run figma:from-handoff -- <handoff-dir>` remains the consume-only gate: it
+emits a consume plan and does **not** write HTML. The official HTML command is
+`npm run figma:html-from-handoff -- --handoff <handoff-dir> --demo <demo-dir>`.
+A `green-draft` package remains `ready=false`: consume only `determined`
+records and never wire `unknown`. `inventory:check` is deprecated as a package
+entry; it only retains the five-item audit for a single `ready` inventory JSON.
+Never change draft status to `ready` to make a consumer pass.
 
 **Direct Figma extract is not a handoff.** Fetching live Figma nodes (`1:180` /
 `20:2205` and the like) and running local `extract` / `truth` / `index.html` is
@@ -54,15 +74,37 @@ There are two explicit workflow declarations:
   and the later deterministic gates. It is separate from `figma-showcase`; do not
   block a Figma-only showcase candidate on product repo or PR prerequisites.
 
-`yisewebui` stops after each axis for human acceptance. Order is Main
-static → Translation → Interaction → Resize. Do not open the next axis until
-the previous one is accepted. Later axes must not mutate accepted static
-geometry, assets, or zh-CN copy. Directory static stays in Main; directory
+`yisewebui` is a stop-layer workflow. Axis order is Main static → Translation
+→ Interaction → Resize, but humans see **two** review stops, not four:
+
+1. After Main static (and Translation **only if a copy table is present**):
+   `preview:first` must be green, then open `?product=1` and stop. That is
+   the first human review stop, not confirmed-final delivery
+   (`userPreviewAllowed` stays false; `humanStopPreviewAllowed` is true).
+   Tell the user this axis is done. Do not start Interaction / Resize until
+   they say continue. No copy table → Translation stays `not-claimed`. zh-CN
+   font load is not a translation pass. Script gate:
+   `node scripts/human-review.mjs present --demo <dir> --stop static-and-translation --preview-ok`,
+   then after the user says continue
+   `node scripts/human-review.mjs accept --demo <dir> --stop static-and-translation`.
+   `can-start` must be green before Interaction / Resize.
+2. After Interaction and Resize: open `?product=1` again and stop. Tell the
+   user this axis is done. Do not Pack until they say continue.
+   `node scripts/human-review.mjs present --demo <dir> --stop interaction-and-resize --preview-ok`,
+   then `accept`. `pack-allowed` / Pack itself fail-close without that accept.
+
+Do not open or present the page while `preview:first` is red. A red payload
+must set `productView.command` to null and must not include an open command.
+Do not open the next human stop until the previous one is accepted
+(`human-review.json`). Later axes must not mutate accepted static geometry,
+assets, or zh-CN copy. Directory static stays in Main; directory
 click/scrollspy stays in Interaction; directory stretch stays in Resize. Do
-not invent a fourth Skill. After Resize is accepted, run the Pack delivery
-step (`docs/pack-skill.md`, `node scripts/pack-demo.mjs --demo <dir>`): whole
-served folder ≤ 15MB. Pack is not a restore axis and must not run before
-static / Translation / Interaction / Resize acceptance.
+not invent a fourth Skill. After the second
+human stop is accepted, run the Pack delivery step (`docs/pack-skill.md`,
+`node scripts/pack-demo.mjs --demo <dir>`): whole served folder ≤ 15MB.
+Pack is not a restore axis. A clean clone recalls this Skill from the repo
+root `CLAUDE.md` trigger table (`node scripts/recall-yisewebui.mjs`); it is
+not installed into `.claude/skills/`.
 
 The default workflow is the **Main Skill**: extract Figma truth, structure
 content/geometry/components/states/interactions, record official behavior
@@ -1101,6 +1143,14 @@ demo 是产品代码的**镜像视图**，改动的 source of truth 永远是产
    四类的应对完全不同，混成自由文本就无法迭代。
 4. **修法 + 是否已验证**（未验证不许当完成）
 
+**动手前先读台账（不靠自觉）**：改 Skill 之前必须跑
+
+```bash
+node "<SKILL_ROOT>/scripts/evolution-note.mjs" read-open
+```
+
+列出全部 `status=open` 根因。改完告诉用户改了哪几条。`isNew=false` 的条目只计数，不必重分析。
+
 **交付前硬门（不靠自觉，靠闸门）**：出块／收尾摘要之前必须跑
 
 ```bash
@@ -1132,6 +1182,9 @@ node "<SKILL_ROOT>/scripts/evolution-note.mjs" case --session <id> \
   --quote "<用户原话>" --did "<agent 当时的做法>" \
   --why "<为什么第一次没做对>" --why-class <info-gap|misjudged|spec-unread|tool-limit> \
   --fix "<修法>" [--verified] [--fingerprint <slug>：已能归到根因时才填]
+
+# 动手前先读 open 根因
+node "<SKILL_ROOT>/scripts/evolution-note.mjs" read-open
 
 # 根因层——收尾把 case 归纳成可复用根因（入公开仓）
 node "<SKILL_ROOT>/scripts/evolution-note.mjs" add \

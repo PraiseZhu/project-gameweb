@@ -224,6 +224,7 @@ test('truth semantic motion roles avoid section titles, ordinals, and node IDs',
           { id: 'fg', name: 'kv/中景', type: 'RECTANGLE' },
           { id: 'brand', name: 'img/logo', type: 'FRAME' },
           { id: 'title-logo', name: 'img/title-logo', type: 'FRAME' },
+          { id: 'title-deco', name: 'img/title-deco', type: 'FRAME' },
           { id: 'download-fill', name: 'img/button-background', type: 'RECTANGLE', ownerPath: ['hero', 'download', 'download-fill'], ancestorNames: ['sec/hero', 'btn/download'] },
           { id: 'download-label-host', name: 'Frame', type: 'FRAME', ownerPath: ['hero', 'download', 'download-label-host'], ancestorNames: ['sec/hero', 'btn/download'] },
           { id: 'download-label', name: 'download', type: 'TEXT', ownerPath: ['hero', 'download', 'download-label-host', 'download-label'], ancestorNames: ['sec/hero', 'btn/download', 'Frame'] },
@@ -243,6 +244,7 @@ test('truth semantic motion roles avoid section titles, ordinals, and node IDs',
   assert.equal(roles.get('fg').role, 'kv-foreground');
   assert.equal(roles.get('brand').role, 'kvBrand');
   assert.equal(roles.get('title-logo').role, 'kvTitle');
+  assert.equal(roles.has('title-deco'), false);
   assert.equal(roles.get('download-fill').role, 'kvPrimaryAction');
   assert.equal(roles.get('download-label-host').role, 'kvPrimaryAction');
   assert.equal(roles.has('download-label'), false);
@@ -253,6 +255,16 @@ test('truth semantic motion roles avoid section titles, ordinals, and node IDs',
   assert.equal(roles.get('card').role, 'headingContentCard');
   assert.equal(roles.get('nav').role, 'navigationFooter');
   assert.equal(roles.get('nav').navigation, true);
+  const inFlow = deriveMotionRoles({
+    sections: {
+      first: {
+        meta: { y: 0 },
+        nodes: [{ id: 'section-nav', name: 'fix/左侧导航', type: 'INSTANCE' }],
+      },
+    },
+  });
+  assert.equal(inFlow.get('section-nav').role, 'navigationFooter');
+  assert.equal(inFlow.get('section-nav').navigation, true);
   const indicator = deriveMotionRoles({ pageChrome: { nodes: [{ id: 'arrow', name: 'img/下滑箭头', type: 'BOOLEAN_OPERATION' }] } }).get('arrow');
   assert.equal(indicator.role, 'scrollIndicator');
   assert.equal(deriveSectionMotionRole({ sectionIndex: 0, section: truth.sections.first }).role, 'kv');

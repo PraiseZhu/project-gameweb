@@ -6,14 +6,30 @@
 
 ## 已自动落地(工具/文档缺口修复,不放宽口径)
 
+- `translation-not-claimed-without-table` **没有翻译表不得宣称翻译通过** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: landed
+  - 现象:中文字体加载被当成翻译过。
+  - 提案:translationAxisClaim 没表或仅 zh-CN 返回 not-claimed；字体加载不能升级该状态。
+  - 备注:[decided:2026-08-27] 没翻译表 not-claimed；中文字体加载不能升级翻译通过。
+- `two-human-review-stops` **给人看页只有两次停：静态±翻译，交互+拉伸** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: landed
+  - 现象:轴顺序四段被当成四次展示，preview 红了还可能开页。
+  - 提案:HUMAN_REVIEW_STOPS；preview:first 红 presentPage=false；绿才第一次给人看。
+  - 备注:[decided:2026-08-27] 两次给人看写成 human-review.json 闸；preview 红 command=null；绿才第一次给人看。交互拉伸仍等人说继续。
+- `hscroll-named-scroll-only` **横滑只认 named scroll 加 clipsContent** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: landed
+  - 现象:mix clip+overflow 被当成 hscroll host。
+  - 提案:host 必须 role=scroll 且 clipsContent；mix 即使溢出也只画。
+  - 备注:[decided:2026-08-27] 横滑只认 named scroll + clipsContent；mix 只画。
+- `missing-rail-background-false-pass` **目录缺导航背景仍报拉伸成功** — 出现 1 次,首见 2026-08-27,最近 2026-08-27,status: landed
+  - 现象:按钮还在时 Resize 返回成功，页面可以少一块导航素材。
+  - 提案:syncSourceNavRail：没有 named 导航背景 return false。浏览器验收 missing-rail-background / missing-rail-line fail-closed。
+  - 备注:[decided:2026-08-27] 没有 named 导航背景 Resize fail-closed。
 - `qa-harness-kit-device-presets-identical` **QA 设备预设用 kit 的 PC / iPhone / Android 子集** — 出现 1 次,首见 2026-08-25,最近 2026-08-25,status: landed
   - 现象:新赛季 QA 实际只测 1920 和 390 两档，与 SS5 精简集相同，没有以 figma-harness-kit 为主。Skill 默认 default-devices.json 被裁成 2 组，device-presets-check 对这份裁过的表而不是 kit 原文，导致验收壳看起来像 kit、档位却不是 kit。
   - 提案:QA 默认 templates/default-devices.json 用 kit 的 PC / iPhone / Android 子集：3 组 13 台，PC 默认台式 1080p，不含折叠屏和 iPad。完整 kit 原文另存 templates/figma-harness-kit-device-presets.json，只作对照。检查脚本未配置时对随包 QA 子集。不收 CSS 假机型，不把 iPad 尺寸发明成第三套布局。
   - 备注:[decided:2026-08-25] 用户先要求与 kit 一模一样，随后改口去掉 iPad 和折叠屏，QA 默认只留 PC / iPhone / Android。
-- `ready-handoff-consume-owner-mapping` **ready 包消费：skipped 不进 paint，真实素材走 owner/sliceExport** — 出现 1 次,首见 2026-08-25,最近 2026-08-25,status: landed
+- `ready-handoff-consume-owner-mapping` **ready 包消费：skipped 不进 paint，真实素材走 owner/sliceExport** — 出现 1 次,首见 2026-08-25,最近 2026-08-25,status: landed,commit `2511621`
   - 现象:规范金样 ready 包消费时出现 skippedPainted 红闸、首屏黑底、bg/pc 与边框漏画。根因是消费层把 skipped 结构碎片和真实 slice owner 混在一起：要么全滤掉导致背景丢失，要么旧素材门只认 IMAGE fill 漏掉无填充的 sliceExport。page-root 只认 provenance locator，KV/bg 挂不到页面根；Main 静态门误审 modal/variant；render-bound 切图被塞进 owner 盒；完整 PNG 画布被按可见窗压成窄条；节点合成图被全局 imageRef 覆盖；网格文字吃父级宽；跨赛季 half-leading 下移；U+2028 换行丢失；fixed overlay 后代留在 section 表。
-  - 提案:已落地通用契约：paint 树 omit skipped；sliceExport owner 进静态素材门；page-root 用 paintRootId/source id/ancestorIds；Main --scope 只审当前页；renderBox 消费 render-bound 切图；PNG 宽高比识别完整 owner 画布；节点 ready composite 优先于全局 imageRef；坐标格文字锁自身 box；去掉 half-leading translateY；Figma 行分隔符归一；fixed 后代画在 fixedStage。明确不收：CSS 假箭头、指示器菱形、Inter-SemiBold 冒充 700、导航中文名兜底、临时 Figma 分层补图。
-  - 备注:[decided:2026-08-25] 用户确认把昨天 ready 包消费契约收进 Skill；CSS 假箭头、SemiBold 冒充 700、导航名兜底、临时 Figma 补图不收。续：空 INSTANCE 挂选中变体树、zh-CN 不压字距、desktop↔pc 映射写入文档/测试；仍不收 CSS 箭头、手补参考图、审阅文案、Frame 名 2×2。
+  - 提案:已落地通用契约：paint 树 omit skipped；sliceExport owner 进静态素材门；page-root 用 paintRootId/source id/ancestorIds；Main --scope 只审当前页；renderBox 消费 render-bound 切图；PNG 宽高比识别完整 owner 画布；节点 ready composite 优先于全局 imageRef；空 INSTANCE 可挂选中变体树；坐标格文字锁自身 box；zh-CN 不压字距；desktop↔pc 映射；去掉 half-leading translateY；Figma 行分隔符归一；fixed 后代画在 fixedStage。明确不收：CSS 假箭头、指示器菱形、Inter-SemiBold 冒充 700、导航中文名兜底、临时 Figma 分层补图、手补参考 PNG、审阅文案、Frame 名 2×2。
+  - 备注:[decided:2026-08-25] 用户确认把昨天 ready 包消费契约收进 Skill；CSS 假箭头、SemiBold 冒充 700、导航名兜底、临时 Figma 补图不收。续：空 INSTANCE 挂选中变体树、zh-CN 不压字距、desktop↔pc 映射写入文档/测试。
 - `replay-pref-fallback-and-pixel-reportonly-exit` **偏好切换 DOM 优先回退链 + pixel reportOnly 退出码分级** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: open
   - 现象:GPT-5.4 独立 review 发现三处脚本层健壮性缺陷:①applyCase 的 os/mode 无条件走 __qa.setPref,页面未实现即抛错,不回退可见真实按钮;②clickPref 的 lang 优先 select,页面同时存在隐藏 select 与可见按钮时卡死在隐藏 select;③pixel-compare 的 reportOnly 使 MISSING/ERROR 硬故障与纯差异超阈值同为 exit 0,单独跑脚本只看退出码的用法(README 第 3 步)无法区分'没跑成'与'跑成了但差异大'。
   - 提案:已落地:replay.mjs 抽出 tryPrefViaDom(按钮候选→可见 select,统一 isRenderable 校验),clickPref 走按钮优先+select 回退,applyCase os/mode 走 DOM 优先→setPref 回退→都没有才报错;pixel-compare 退出码改为 ok || (reportOnly && comparedComplete),MISSING/ERROR/manifest 漂移无条件 exit 2。测试:replay-pref-resolution.test.mjs + pixel-reportonly-exit.test.mjs(源码契约不 skip,行为用例 playwright-gated)。

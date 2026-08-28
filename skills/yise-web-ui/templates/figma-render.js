@@ -252,8 +252,8 @@
           add(node, 'kv-background', 0, 'first-section + kv/background component label');
         } else if (sectionIndex === 0 && /^kv\/(?:foreground|前景|midground|middle|中景|character|角色)$/.test(own)) {
           add(node, 'kv-foreground', 0, 'first-section + kv/depth component label');
-        } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)[-_ ]?logo$/.test(own)) {
-          add(node, 'kvTitle', 0, 'first-section + title-logo component label');
+        } else if (sectionIndex === 0 && /^img\/(?:title|\u6807\u9898)(?:-?logo)?$/.test(own)) {
+          add(node, 'kvTitle', 0, 'first-section + title component label');
         } else if (sectionIndex === 0 && /^img\/logo$/.test(own)) {
           add(node, 'kvBrand', 0, 'first-section + brand-logo component label');
         } else if (sectionIndex === 0 && isDirectChildOfAncestor(node, /^btn\/(?:download|\u4e0b\u8f7d)/)) {
@@ -514,9 +514,14 @@
      file for a later fill. Prefer an exact filename/ref match, then a
      single-ref record. Missing refs remain missing and are rendered as a
      placeholder so the visual gate stays fail-closed. */
-  _assetFileForImageRef(imageRef) {
+  _assetFileForImageRef(imageRef, preferredRec = null) {
     const ref = String(imageRef || '');
     if (!ref) return null;
+    const preferred = preferredRec && typeof preferredRec === 'object' ? preferredRec : null;
+    if (preferred && preferred.file) {
+      const preferredRefs = Array.isArray(preferred.imageRefs) ? preferred.imageRefs.map(String) : [];
+      if (!preferredRefs.length || preferredRefs.includes(ref)) return String(preferred.file);
+    }
     const assets = this._assets();
     for (const value of Object.values(assets || {})) {
       const rec = typeof value === 'string' ? { file: value } : value;
@@ -1266,9 +1271,10 @@
       const css = payload && payload.buttonPress && payload.buttonPress.css
         || [
           ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
-          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
-          '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
-          'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
+          '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
+          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
+          '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
+          'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
           '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
         ].join('');
       const style = doc.createElement('style');
@@ -1295,8 +1301,9 @@
     }
     frame.removeAttribute('data-plat-fallback');
     if (!__hasNative) frame.setAttribute('data-plat-fallback', __plat + '-uses-' + __base + '-tree');
-    const motionRoleMap = motionAdapter && motionAdapter.roleResolution?.strategy === 'truth-semantic-v1'
-      ? this._deriveMotionRoleMap(__activeTruth) : new Map();
+    /* Directory stretch and KV plane roles are Resize-owned structure, not an
+       optional motion-adapter extra. Always derive them from source labels. */
+    const motionRoleMap = this._deriveMotionRoleMap(__activeTruth);
     const designWidth = DW[__base] ?? DW[__plat] ?? 3840;
     this._designWidth = designWidth;
     /* 缩放系数的分母端：用**被模拟的设备视口宽**（壳经 ctx.viewport 传入），
@@ -1434,19 +1441,20 @@
          page origin (SS6 mobile). Do not invent a layout; do not skip the slot. */
       const contentRoot = listedRoot || (pagePaintOrder.length === 1 ? pagePaintOrder[0] : null);
       if (!startsAtPageOrigin || !contentRoot) return null;
-      /* The KV is reframed by cover-style crop at narrow/tall viewports. This
-         is a hero visual plane, not the scale of the released document.
-         Keep the scroll-slot layout on platform scale so later sections start
-         after the full viewport height, while the hero alone uses slotScale. */
+      /* Cover-crop belongs to the KV visual plane (the page-chrome `kv` root),
+         not the hero section that holds title/download UI. Applying slotScale
+         to the section turns the title into a height-driven poster and leaves
+         the actual KV artwork on width-scale with later sections. */
       const slotScale = Math.max(k, viewportH / Number(first.height));
       if (Number.isFinite(slotScale) && slotScale > 0) {
         heroVisualScale = slotScale;
         heroVisualCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
         heroCropWindowDesign = viewportH / slotScale;
       }
-      /* The page-flow slot is measured at platform scale. Its layout offset
-         reserves the viewport area that the independently cover-scaled hero
-         visually occupies. */
+      /* Cover-crop fills the viewport visually. Later sections stay on their
+         Figma y and only follow width-scale; do not push the document down to
+         reserve the leftover viewport, or the page background stays put and
+         the next block "runs away". */
       const following = ids.map((id) => ({ id, meta: sections[id] && sections[id].meta }))
         .filter((entry) => String(entry.id) !== String(sectionId) && Number(entry.meta && entry.meta.y) > Number(first.y))
         .sort((a, b) => Number(a.meta.y) - Number(b.meta.y));
@@ -1579,9 +1587,12 @@
         stage.setAttribute('data-motion-role', 'kv');
         stage.setAttribute('data-motion-step', '0');
         stage.setAttribute('data-motion-evidence', 'truth-backed:first-section-page-origin');
+        /* Record the KV cover numbers on the hero section for inspect, but do
+           not apply them here. Title / download stay on width-scale. */
         stage.setAttribute('data-hero-visual-scale', String(heroVisualScale));
         stage.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
         stage.setAttribute('data-hero-ui-scale', 'width-k');
+        stage.setAttribute('data-hero-ui-plane', 'source-ui-scale');
         stage.setAttribute('data-hero-ui-y-ratio', String(heroUiYRatio));
       }
       stage.style.width = designWidth + 'px';
@@ -1611,8 +1622,9 @@
       }
       if (pageScope && !pageStageMode) {
         stage.style.position = 'absolute';
-        /* `left` belongs to the unscaled page plane. Cover-crop offset stays on
-           the KV/bg visual nodes, not the hero UI section. */
+        /* `left` belongs to the unscaled page plane. KV cover crop is applied
+           to the KV/bg visual nodes, not this UI section, so later sections
+           stay put. */
         stage.style.left = (secX - pageX) + 'px';
         const afterHeroLayout = heroSlot && !isHeroStage && Number(secY) > pageY + 0.5;
         const responsiveSecTop = (secY - pageY) + (afterHeroLayout ? heroLayoutOffsetDesign : 0);
@@ -1635,8 +1647,8 @@
          连带好处：zoom 改布局占位，stage 在文档流里就占缩放后的高度，
          transform 时代补占位的 .fx-spacer 就此退役（见本函数末尾）。 */
       /* Hero UI size stays on platform width-scale k. Vertical place uses
-         Figma y as a fraction of the 100vh slot, not y×k. Cover-crop stays
-         on the KV + long bg/* visual plane. */
+         Figma y as a fraction of the 100vh slot, not y×k. KV cover-crop is
+         applied to the kv/bg visual plane, not this UI section. */
       stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? 1 : k));
       if (pageStageMode && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes) {
         frame.style.position = frame.style.position || 'relative';
@@ -1733,13 +1745,14 @@
         const id = (n) => String(value(n && n.id));
         const parse = (n) => {
           const raw = String(value(n && n.name) || '');
-          const m = /^([A-Za-z]+)\s*\/\s*([^@]*)(.*)$/.exec(raw);
+          const m = /^([A-Za-z]+)\s*[\/／]\s*([^@]*)(.*)$/.exec(raw);
           const role = m ? m[1].toLowerCase() : null;
+          const label = m ? String(m[2] || '').trim() : '';
           const params = {};
           if (m) for (const part of m[3].split('@').slice(1)) {
             const eq = part.indexOf('='); if (eq > 0) params[part.slice(0, eq).trim()] = part.slice(eq + 1).trim();
           }
-          return { role, params };
+          return { role, label, params };
         };
         const byId = new Map(items.map((n) => [id(n), n]));
         /* Fixed overlay roots are rendered in the page stage, while their
@@ -1754,19 +1767,52 @@
           : Object.values(__activeTruth.fixedOverlays?.nodes || {});
         const fixedById = new Map(fixedOverlayNodes.map((n) => [id(n), n]));
         const parentId = (n) => String(value(n && n.parentId) || '');
+        const boxXw = (raw) => {
+          const box = __plain(raw && raw.box || {});
+          const x = Number(box.x), w = Number(box.w);
+          return Number.isFinite(x) && Number.isFinite(w) && w > 0 ? { x, w, right: x + w } : null;
+        };
+        const childOverflowsHost = (child, host) => {
+          const box = boxXw(child);
+          return !!(box && (box.x < host.x - 0.5 || box.right > host.right + 0.5));
+        };
         const hscrollAxis = (node, parsed) => {
-          if (parsed.role !== 'scroll' || value(node && node.clipsContent) !== true) return null;
-          const host = __plain(node && node.box || {});
-          const left = Number(host.x), width = Number(host.w);
-          if (!Number.isFinite(left) || !Number.isFinite(width) || width <= 0) return null;
-          const right = left + width;
-          const overflows = items.filter((candidate) => parentId(candidate) === id(node)).some((candidate) => {
-            const box = __plain(candidate && candidate.box || {});
-            const x = Number(box.x), w = Number(box.w);
-            return Number.isFinite(x) && Number.isFinite(w) && w > 0
-              && (x < left - 0.5 || x + w > right + 0.5);
-          });
-          return overflows ? (parsed.params.axis || 'x') : null;
+          const namedScroll = parsed.role === 'scroll';
+          const calendarMix = parsed.role === 'mix' && /^(?:calendar|日历)$/i.test(String(parsed.label || ''));
+          const clipHost = value(node && node.clipsContent) === true;
+          if ((!namedScroll && !calendarMix) || !clipHost) return null;
+          const host = boxXw(node);
+          if (!host) return null;
+          const overflows = items.some((candidate) => parentId(candidate) === id(node) && childOverflowsHost(candidate, host));
+          if (!overflows) return null;
+          /* Named scroll/ is the explicit host. Calendar mix is the one
+             product window whose overflowing child must translate without
+             turning the mix itself into native overflow-x. A random
+             clipsContent frame is not a host. */
+          return parsed.params.axis || 'x';
+        };
+        const calendarNowLabel = (node, parsed) => parsed.role === 'dyn'
+          && /今日日期|today\s*date|current\s*date/i.test(String(parsed.label || ''));
+        const hscrollCommand = (node) => {
+          const label = String(value(node && node.name) || '').toLowerCase();
+          if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) return 'prev';
+          if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) return 'next';
+          return null;
+        };
+        const nearestHscrollId = (node) => {
+          let current = node;
+          for (let guard = 0; guard < 12 && current; guard++) {
+            const pid = parentId(current);
+            if (!pid) break;
+            const parentNode = byId.get(pid);
+            if (!parentNode) break;
+            if (hscrollAxis(parentNode, parse(parentNode))) return pid;
+            current = parentNode;
+          }
+          const pid = parentId(node);
+          if (!pid) return null;
+          const siblings = items.filter((candidate) => parentId(candidate) === pid && hscrollAxis(candidate, parse(candidate)));
+          return siblings.length === 1 ? id(siblings[0]) : null;
         };
         const propertyValues = (raw, out = []) => {
           const v = value(raw);
@@ -1850,7 +1896,7 @@
              only when the closest shared owner path has exactly one switch
              with a complete component-set graph; ties remain inert. */
           const label = String(value(n && n.name) || '').toLowerCase();
-          if (/\b(prev|previous|next|left|right)\b|上一|下一|左划|右划|左滑|右滑|前|后/.test(label)) {
+          if (/\b(prev(?:ious)?|next|left|right)\b|上一|下一|左划|右划|左滑|右滑|左滑动|右滑动/.test(label)) {
             const currentPath = path.map((entry) => String(value(entry)));
             const candidates = items.filter((candidate) => parse(candidate).role === 'switch'
               && componentVariantGraph(candidate)).map((candidate) => {
@@ -2082,7 +2128,7 @@
           let switchId = p.role === 'switch' ? id(n) : ownerSwitch(n);
           if (p.role === 'btn' && switchId) {
             const label = String(value(n && n.name) || '').toLowerCase();
-            const directional = /prev|previous|left|上一|左划|左滑|前|next|right|下一|右划|右滑|后/.test(label);
+            const directional = /\bprev(?:ious)?\b|\bleft\b|\bnext\b|\bright\b|上一|下一|左划|右划|左滑|右滑|左滑动|右滑动/.test(label);
             if (!directional) switchId = null;
           }
           if (switchId) attrs['data-switch'] = switchId;
@@ -2111,11 +2157,26 @@
               attrs['data-motion-carousel'] = 'true';
               attrs['data-motion-carousel-index'] = String(initial.index);
             }
+            attrs['data-switch-loop'] = 'true';
           }
           if (switchId && p.role === 'btn') {
             const label = String(value(n && n.name) || '').toLowerCase();
-            if (/prev|previous|left|上一|左划|左滑|前/.test(label)) attrs['data-switch-action'] = 'prev';
-            else if (/next|right|下一|右划|右滑|后/.test(label)) attrs['data-switch-action'] = 'next';
+            if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) attrs['data-switch-action'] = 'prev';
+            else if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) attrs['data-switch-action'] = 'next';
+          }
+          if (p.role === 'btn' && !attrs['data-switch-action']) {
+            const command = hscrollCommand(n);
+            const hostId = command ? nearestHscrollId(n) : null;
+            if (command && hostId) {
+              attrs['data-hscroll-host'] = hostId;
+              attrs['data-hscroll-action'] = command;
+            }
+          }
+          if (calendarNowLabel(n, p)) {
+            attrs['data-calendar-now'] = 'true';
+            attrs['data-calendar-now-state'] = 'today';
+            attrs['data-calendar-now-evidence'] = 'dyn-today-date-runtime-swap';
+            attrs['data-btn-press'] = 'inert';
           }
           /* Independent btn/ with a real normal+highlight COMPONENT_SET is not a
              missing switch. Directory `btn/导航状态` is that family. Static still
@@ -2217,6 +2278,16 @@
             attrs['data-hscroll-pointer'] = 'true';
             attrs['data-hscroll-drag'] = 'true';
             attrs['data-hscroll-evidence'] = 'source-clip-and-child-geometry-overflow';
+            const hostBox = boxXw(n);
+            if (hostBox) {
+              for (const child of items.filter((candidate) => parentId(candidate) === id(n))) {
+                if (!childOverflowsHost(child, hostBox)) continue;
+                const childId = id(child);
+                const childAttrs = out.get(childId) || {};
+                childAttrs['data-hscroll-overflow-child'] = 'true';
+                out.set(childId, childAttrs);
+              }
+            }
             if (axis === 'x') {
               const hostBox = __plain(n && n.box || {});
               const hx = Number(hostBox.x), hy = Number(hostBox.y);
@@ -2292,12 +2363,16 @@
           const pressable = p.role === 'btn' || p.role === 'tab' || p.role === 'ind' || p.role === 'hot'
             || attrs['data-sec-target'] != null
             || attrs['data-switch-action'] != null
+            || attrs['data-hscroll-action'] != null
             || attrs['data-copy-code'] != null
             || attrs['data-nav-item'] === 'true'
-            || attrs['data-btn-variant'] === 'true';
+            || attrs['data-btn-variant'] === 'true'
+            || attrs['data-calendar-now-state'] === 'return-today';
           const disabledPress = indicatorVariant(n) === 'disabled'
             || /disable/i.test(String(attrs['data-btn-variant-state'] || ''));
-          if (pressable && disabledPress) {
+          if (attrs['data-calendar-now'] === 'true' && attrs['data-calendar-now-state'] !== 'return-today') {
+            attrs['data-btn-press'] = 'inert';
+          } else if (pressable && disabledPress) {
             attrs['data-btn-press'] = 'inert';
             attrs['aria-disabled'] = 'true';
           } else if (pressable) {
@@ -2305,8 +2380,9 @@
             attrs.role = attrs.role || 'button';
             attrs.tabindex = attrs.tabindex || '0';
             if (p.role === 'btn' && !attrs['data-link'] && !attrs['data-go'] && !attrs['data-sec-target']
-              && !attrs['data-switch-action'] && !attrs['data-copy-code'] && !attrs['data-btn-variant']
-              && !attrs['data-nav-item'] && !attrs['data-tab']) {
+              && !attrs['data-switch-action'] && !attrs['data-hscroll-action'] && !attrs['data-copy-code']
+              && !attrs['data-btn-variant'] && !attrs['data-nav-item'] && !attrs['data-tab']
+              && attrs['data-calendar-now-state'] !== 'return-today') {
               attrs['data-btn-action'] = 'unresolved';
             }
           }
@@ -2610,6 +2686,46 @@
        for (const [id, attrs] of adapterAttrs) {
          interactionAttrs.set(id, { ...(interactionAttrs.get(id) || {}), ...attrs });
        }
+       /* A designer-export composite on a clip/mix ancestor is the rest-state
+          snapshot of the whole subtree, including the first page of a nested
+          scroll/. Once that descendant is a live hscroll host, the bake would
+          stay pinned under the moving tracks. Release only the clip/mix window
+          that covers the host; a random img/ ancestor stays baked. Named by
+          structure, not by a product node id. */
+       const liveHscrollBakeRelease = new Set();
+       const paintNodeById = (id) => {
+         if (!id) return null;
+         if (truthNodeById.has(id)) return truthNodeById.get(id);
+         for (const it of (rawList || list)) {
+           if (String(__u(it && it.id) || '') === id) return it;
+         }
+         return null;
+       };
+       if (!suppressInteractions) {
+         for (const item of (rawList || list)) {
+           const itemId = String(__u(item && item.id) || '');
+           const hostAttrs = interactionAttrs.get(itemId);
+           if (!itemId || !hostAttrs || hostAttrs['data-hscroll'] == null) continue;
+           const seen = new Set([itemId]);
+           const climb = [];
+           if (Array.isArray(item.ownerPath)) climb.push(...item.ownerPath);
+           if (Array.isArray(item.ancestorIds)) climb.push(...item.ancestorIds);
+           climb.push(item.parentId);
+           for (const rawId of climb) {
+             const ancestorId = String(__u(rawId) || '');
+             if (!ancestorId || seen.has(ancestorId)) continue;
+             seen.add(ancestorId);
+             if (!this._assetRec(ancestorId, __base)) continue;
+             const ancestor = paintNodeById(ancestorId);
+             const ancestorName = String(__u(ancestor && ancestor.name) || '');
+             const ancestorPfx = ((/^([a-z]+)\//.exec(ancestorName) || [])[1] || '');
+             const ancestorClips = ancestor && ancestor.clipsContent === true;
+             if (ancestorPfx === 'mix' || ancestorPfx === 'scroll' || ancestorClips) {
+               liveHscrollBakeRelease.add(ancestorId);
+             }
+           }
+         }
+       }
        const componentVariantOwners = [];
        /* A ready package may reference a small component instance directly
           (indicator, tab/icon button) while the page node intentionally has
@@ -2691,6 +2807,9 @@
           || evidenceAttrs['data-swpage'] != null
           || evidenceAttrs['data-switch-action'] != null
           || evidenceAttrs['data-hscroll'] != null
+          || evidenceAttrs['data-hscroll-overflow-child'] === 'true'
+          || evidenceAttrs['data-hscroll-action'] != null
+          || evidenceAttrs['data-calendar-now'] != null
           || evidenceAttrs['data-sec-target'] != null
           || evidenceAttrs['data-copy-code'] != null
           || evidenceAttrs['data-nav-item'] === 'true'
@@ -2722,13 +2841,12 @@
            already flattened at export, which is the documented approximation). */
         const __blendHasSolidBase = (st.fills || []).some((fl) => fl && fl.visible !== false && fl.type === 'SOLID');
         const __blendLiftable = __blendLift && __blendHasSolidBase;
-        const __calendarOwnerAssetLock = __base === 'pc'
-          && String(__u(nid)) !== '395:34991'
-          && Array.isArray(n.ancestorIds)
-          && n.ancestorIds.map((id) => String(__u(id))).includes('395:34991')
-          && !!this._assetRec('395:34991', __base);
-        if ((parent && parent.assetLock || bakedOwnerId || __calendarOwnerAssetLock)
-          && !hasStructuralInteraction && !__blendLiftable) continue;
+        const bakedOwnerReleased = !!(bakedOwnerId && liveHscrollBakeRelease.has(String(bakedOwnerId)));
+        const underHscrollSurface = !!(parent && parent.hscrollSurface)
+          || evidenceAttrs?.['data-hscroll-overflow-child'] === 'true'
+          || (parent && parent.el && parent.el.closest && parent.el.closest('[data-hscroll-surface="true"]'));
+        if ((parent && parent.assetLock || (bakedOwnerId && !bakedOwnerReleased))
+          && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable) continue;
         /* Direct-owner fallback for text constraint. The locator-stack parent is
            often the SECTION layer for a deeply nested text leaf; it must not win
            over a tighter truth owner. Accept a rendered direct parent only when
@@ -2782,6 +2900,7 @@
         const SLICE = { img: 1, bg: 1, kv: 1 };
         const needsAsset = !isText && (SLICE[pfx] || kind === 'gradient' || kind === 'image');
         const assetRec = this._assetRec(nid, __base);
+        const bakeReleasedForLiveHscroll = liveHscrollBakeRelease.has(String(__u(nid)));
         /* `ind/进度条` is a source component set whose two *component roots*
            intentionally have no page-level slice.  The ready truth does retain
            their exact component ids; the selected child has an IMAGE fill, but
@@ -2801,8 +2920,8 @@
            or a genuinely CSS-rebuildable blend layer may remain above baked pixels;
            every other baked-subtree paint node is skipped to avoid double-draw. */
         const __inBakedSubtree = !!(bakedOwnerId) && !assetRec;
-        if (__inBakedSubtree && !hasStructuralInteraction && !__blendLiftable) continue;
-        const assetUrl = assetRec
+        if (__inBakedSubtree && !bakedOwnerReleased && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable) continue;
+        const assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
           : (__indComponentFallback && __indComponentFallback.file);
         const NONRECT_SHAPE = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, ELLIPSE: 1, LINE: 1 };
@@ -2817,8 +2936,16 @@
         el.className = 'fx-n';
         el.setAttribute('data-node', nid);
         el.setAttribute('data-figma-type', n.type ?? '');
-        if (n.name != null && String(n.name) !== '') el.setAttribute('data-node-name', String(n.name));
+        /* Stamp the authored Figma layer name (`导航背景` / `导航长线` / …)
+           for generic consumers; chrome must not guess from node ids. Both
+           attribute spellings stay for main-side and branch-side readers. */
+        const layerName = String(n.name ?? '').trim();
+        if (layerName) {
+          el.setAttribute('data-name', layerName);
+          el.setAttribute('data-node-name', layerName);
+        }
         if (pfx) el.setAttribute('data-prefix', pfx);
+        if (bakeReleasedForLiveHscroll) el.setAttribute('data-asset-lock-released', 'live-hscroll-descendant');
         if (pfx === 'btn') {
           const btnLabel = String(n.name || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
           if (btnLabel) el.setAttribute('data-btn-name', btnLabel);
@@ -3225,18 +3352,30 @@
           && (Math.abs(rb.x - box.x) > 0.01 || Math.abs(rb.y - box.y) > 0.01
             || Math.abs(rb.w - box.w) > 0.01 || Math.abs(rb.h - box.h) > 0.01);
         /* A source scroll viewport is captured in its resting position. Its
-           direct overflowing track can therefore inherit a renderBox clipped
-           exactly at that viewport edge. Keeping that inner static clip makes
-           scrollLeft move the track while its later items remain unpainted.
-           Transfer only this provable parent-edge clip to the real scroll
+           overflowing track, and groups inside that track, can inherit a
+           renderBox clipped exactly at that viewport edge. Keeping those
+           inner static clips makes scrollLeft move the track while later
+           items stay unpainted, and also crops hugging descendants that
+           later paint wider than the captured rest-state ink.
+           Transfer only this provable host-edge clip to the real scroll
            host; unrelated renderBox clips remain intact. */
-        const hscrollParent = parent && parent.el && parent.el.getAttribute('data-hscroll') === 'x' ? parent : null;
-        const parentBox = hscrollParent && hscrollParent.box || null;
+        const hscrollHostEl = (() => {
+          let cursor = parent && parent.el;
+          for (let hops = 0; cursor && hops < 16; hops++) {
+            if (cursor.getAttribute && cursor.getAttribute('data-hscroll') === 'x') return cursor;
+            cursor = cursor.parentElement;
+          }
+          return null;
+        })();
+        const hscrollHostRecord = hscrollHostEl
+          ? (hscrollHostEl === (parent && parent.el) ? parent : renderedById.get(String(hscrollHostEl.getAttribute('data-node') || '')))
+          : null;
+        const parentBox = hscrollHostRecord && hscrollHostRecord.box || null;
         const hscrollTrackOverflow = parentBox
           && Number.isFinite(Number(parentBox.x)) && Number.isFinite(Number(parentBox.w))
           && Number.isFinite(Number(box.x)) && Number.isFinite(Number(box.w))
           && (box.x < parentBox.x - 0.5 || box.x + box.w > parentBox.x + parentBox.w + 0.5);
-        const hscrollTrackClipRelease = !!(hscrollParent && rbInside && hscrollTrackOverflow
+        const hscrollTrackClipRelease = !!(hscrollHostRecord && rbInside && hscrollTrackOverflow
           && (Math.abs(rb.x - parentBox.x) <= 0.75
             || Math.abs(rb.x + rb.w - (parentBox.x + parentBox.w)) <= 0.75));
         if (rbInside) {
@@ -3247,6 +3386,35 @@
           if (hscrollTrackClipRelease) {
             el.setAttribute('data-hscroll-track', 'true');
             el.setAttribute('data-hscroll-track-clip-released', 'parent-viewport-renderbox-edge');
+            /* Direct overflowing child of the clip host is the scroll surface.
+               Nested groups only release their rest-state clip; they do not
+               become a second scroller. */
+            if (hscrollHostEl && parent && parent.el === hscrollHostEl) {
+              el.setAttribute('data-hscroll-surface', 'true');
+              el.style.overflow = 'visible';
+              el.style.overflowX = 'visible';
+              el.style.overflowY = 'visible';
+              const restLeft = Number.parseFloat(el.style.left || '0');
+              if (Number.isFinite(restLeft)) el.setAttribute('data-hscroll-rest-left', String(restLeft));
+              const hostW = Number(hscrollHostRecord && hscrollHostRecord.box && hscrollHostRecord.box.w);
+              const trackW = Number(box.w);
+              const restX = Number(box.x);
+              const hostX = Number(hscrollHostRecord && hscrollHostRecord.box && hscrollHostRecord.box.x);
+              if ([hostW, trackW, restX, hostX].every(Number.isFinite) && (restX + trackW > hostX + hostW + 0.5 || restX < hostX - 0.5)) {
+                el.setAttribute('data-hscroll-max', String(Math.max(0, (restX + trackW) - (hostX + hostW))));
+              }
+              /* Host overflow cannot clip this track without also clipping the
+                 rest-state left labels that sit as siblings. Clip the track
+                 at its own rest left edge so translated dates never paint
+                 left of that column into the labels. Rest clip is 0: the
+                 track box already starts to the right of the labels. */
+              if (Number.isFinite(restLeft)) {
+                /* inset(0) still clips hugging descendants that paint past the
+                   track box. Rest state keeps clip none so 06.11 stays whole. */
+                el.style.clipPath = 'none';
+                el.setAttribute('data-hscroll-host-clip', '0');
+              }
+            }
             /* The host keeps its Figma box and expresses shadow gutter as
                border-box padding. .fx-n children are position:absolute, so
                they anchor to the host's padding box and the padding alone
@@ -3256,7 +3424,7 @@
                coordinate (host shifts up/left, track shifts down/right by
                the same amount) while overflow clips at the gutter's outer
                edge instead of the content edge. */
-            const hostGutter = String(parent.el.getAttribute('data-hscroll-shadow-gutter') || '').split(/\s+/).map(Number);
+            const hostGutter = String(hscrollHostEl.getAttribute('data-hscroll-shadow-gutter') || '').split(/\s+/).map(Number);
             if (hostGutter.length === 4 && hostGutter.some((v) => Number.isFinite(v) && v > 0)) {
               const gT = Number.isFinite(hostGutter[0]) ? Math.max(0, hostGutter[0]) : 0;
               const gL = Number.isFinite(hostGutter[3]) ? Math.max(0, hostGutter[3]) : 0;
@@ -3320,14 +3488,17 @@
           }
         }
         if (evidenceAttrs && evidenceAttrs['data-hscroll'] === 'x') {
-          /* This same Figma node is the clipped viewport. Its nested source
-             content remains the real track; do not duplicate or synthesize a
-             wrapper just to make one-child tracks scrollable. */
-          el.style.overflowX = 'auto';
+          /* This same Figma node is the clipped viewport. Native overflow-x
+             on the host would also pan siblings that stay inside the rest
+             box (calendar left labels). Keep the host as clip-only; the
+             overflowing track is the scroll surface. */
+          el.style.overflow = 'hidden';
+          el.style.overflowX = 'hidden';
           el.style.overflowY = 'hidden';
-          el.style.scrollbarWidth = 'none';
-          el.style.msOverflowStyle = 'none';
-          el.style.touchAction = 'pan-y';
+          el.style.touchAction = 'pan-x';
+          el.style.userSelect = 'none';
+          el.style.webkitUserSelect = 'none';
+          el.style.webkitTouchCallout = 'none';
           /* Absorb source-proven cross-axis shadow bleed into the host's own
              padding box, so overflow:hidden clips at the shadow's true outer
              edge instead of at the content bounds. Main-axis scroll viewport
@@ -4100,28 +4271,10 @@
              el.setAttribute('data-shape-polygon', 'triangle');
              el.removeAttribute('data-shape-approx');
            }
-           /* A ready package can legitimately keep the tiny directional button
-              as a BOOLEAN_OPERATION without a raster slice.  A rectangle is
-              not an acceptable approximation for this known semantic owner:
-              preserve its source box and fill colour, but render the actual
-              chevron geometry.  This is deliberately limited to declared
-              btn/left-or-right controls; generic boolean shapes remain tagged
-              as approximations and are never promoted to UI. */
-           const __buttonName = String(n.name || '');
-           const __rightChevron = !assetUrl && pfx === 'btn' && /右(?:滑动)?(?:按钮|箭头)|next/i.test(__buttonName);
-           const __leftChevron = !assetUrl && pfx === 'btn' && /左(?:滑动)?(?:按钮|箭头)|prev/i.test(__buttonName);
-           if (__rightChevron || __leftChevron) {
-             const __chevronColour = this._solidFill(st.fills) || '#fff';
-             const __chevronStroke = Math.max(2, Math.min(Number(box.w) || 0, Number(box.h) || 0) * 0.13);
-             el.style.background = 'transparent';
-             el.style.boxSizing = 'border-box';
-             el.style.borderRight = __chevronStroke + 'px solid ' + __chevronColour;
-             el.style.borderBottom = __chevronStroke + 'px solid ' + __chevronColour;
-             el.style.transform = 'rotate(' + (__rightChevron ? '-45deg' : '135deg') + ')';
-             el.style.transformOrigin = '50% 50%';
-             el.setAttribute('data-directional-chevron', __rightChevron ? 'right' : 'left');
-             el.removeAttribute('data-shape-approx');
-           }
+           /* BOOLEAN/VECTOR btn arrows are composite contours. Inventing CSS
+              chevrons or diamonds is forbidden. A missing slice stays a
+              missing-shape mark (`data-shape-approx`), never a white rectangle
+              pretending to be the Figma boolean. */
           /* Blend-overlay layer (extractor punched it through the asset lock). A baked
              export rasterizes this node on a transparent canvas, so the node-level
              SOFT_LIGHT loses its page backdrop and the PNG already bakes to a flat
@@ -4187,16 +4340,17 @@
                the same imageRef can legitimately appear in PC/mobile contexts
                with different crop/export ownership.  Resolving the fill first
                used the wrong (PC) EWS panorama in the mobile owner and then
-               stretched it into the mobile source box.  Only fall back to an
-               imageRef when this owner has no delivered composite slice. */
-            const hasDeliveredComposite = !!(assetRec && url
-              && (assetRec.sliceExport || assetRec.sha256 || assetRec.kind));
+               stretched it into the mobile source box.  Packed qa-assets may
+               omit sliceExport/sha256/kind and keep only `{file,imageRefs}`;
+               that thin record is still this owner's delivered composite.
+               Only fall back to a global imageRef when this owner has no file. */
+            const hasDeliveredComposite = !!(assetRec && url);
             const resolvedFillEntries = imageFills.map((entry) => ({
               fill: entry.fill,
               index: entry.index,
               url: hasDeliveredComposite
                 ? url
-                : (this._assetFileForImageRef(entry.fill && entry.fill.imageRef)
+                : (this._assetFileForImageRef(entry.fill && entry.fill.imageRef, assetRec)
                   || (imageFills.length === 1 ? url : null)),
             }));
             const imageEntries = String(assetRec?.kind || '').toUpperCase() === 'SVG' && url
@@ -4205,9 +4359,17 @@
             /* Figma paints multi-fill nodes bottom-to-top. An IMAGE fill does
                not replace a preceding SOLID fill: many calendar/card cells use
                a translucent texture over a colored base. Preserve the source
-               SOLID base on the host; SVG composite owners remain a single
-               source asset and must not receive an inferred CSS fill. */
-            if (String(assetRec?.kind || '').toUpperCase() !== 'SVG') {
+               SOLID base on the host only when this owner actually has IMAGE
+               fills that need that plate.
+
+               A delivered BOOLEAN/VECTOR slice already bakes the SOLID fill
+               into the contour. Painting that SOLID as CSS background turns
+               the owner box into a white rectangle under the chevron.
+               SVG composite owners stay a single source asset and must not
+               receive an inferred CSS fill either. */
+            const hostNeedsSolidPlate = imageFills.length > 0
+              && String(assetRec?.kind || '').toUpperCase() !== 'SVG';
+            if (hostNeedsSolidPlate) {
               const solidBase = (st.fills || []).find((fill) => fill && fill.visible !== false && fill.type === 'SOLID');
               if (solidBase) {
                 const solidCss = this._solidFill([solidBase]);
@@ -4348,10 +4510,6 @@
               el.setAttribute('data-gradient-unrendered', '1');
             }
           }
-          if (__rightChevron || __leftChevron) {
-            el.style.background = 'transparent';
-            el.style.backgroundImage = 'none';
-          }
         }
 
         // 挂到父节点下（没有父节点才挂 stage）。DFS 先序 → 同级 append 顺序即绘制顺序。
@@ -4373,7 +4531,17 @@
             container.appendChild(tail);
           }
         }
-        const record = { seq, el, box, assetLock: !!assetRec, nid: String(__u(nid)), layout: n.layout || null };
+        const record = {
+          seq,
+          el,
+          box,
+          assetLock: !!assetRec && !bakeReleasedForLiveHscroll && evidenceAttrs?.['data-hscroll'] == null,
+          nid: String(__u(nid)),
+          layout: n.layout || null,
+          hscrollSurface: el.getAttribute('data-hscroll-surface') === 'true'
+            || evidenceAttrs?.['data-hscroll-overflow-child'] === 'true'
+            || !!(parent && parent.hscrollSurface),
+        };
         renderedById.set(String(__u(nid)), record);
         stack.push(record);
         /* Direct component instances normally include their descendants in
@@ -4855,6 +5023,23 @@
               layer.setAttribute('data-paint-node-count', String((bg?.nodes.length || 0) + (chrome?.nodes.length || 0)));
               layer.setAttribute('data-paint-node-ids', [...(bg?.nodes || []), ...(chrome?.nodes || [])]
                 .map((node) => String(__u(node && node.id))).join(' '));
+              const rootName = rootNameById.get(String(rootId)) || '';
+              const isKvRoot = /^kv(?:\/|$)/i.test(rootName);
+              if (isKvRoot && heroSlot && pageStageScale > 0) {
+                const kvRatio = heroVisualScale / pageStageScale;
+                const firstMeta = sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta;
+                const kvClipH = Number(firstMeta && firstMeta.height) || Number(heroSlot.heroHeight) || 0;
+                layer.style.zoom = String(kvRatio);
+                layer.style.left = heroVisualCropLeft + 'px';
+                layer.style.top = '0';
+                layer.style.width = designWidth + 'px';
+                if (kvClipH > 0) layer.style.height = kvClipH + 'px';
+                layer.style.overflow = 'hidden';
+                layer.style.transformOrigin = '0 0';
+                layer.setAttribute('data-kv-cover-plane', 'cover-crop');
+                layer.setAttribute('data-hero-visual-scale', String(heroVisualScale));
+                layer.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
+              }
             }
             if (bg) {
               if (layer && heroLayoutOffsetDesign > 0) {
@@ -5334,7 +5519,11 @@
           const selectable = all.filter((el) => el.hasAttribute('data-tab') || el.hasAttribute('data-indicator'));
           const max = Math.max(0, (pages.length || selectable.length) - 1);
           const current = Number.isFinite(Number(requested)) ? Number(requested) : 0;
-          const idx = max ? Math.max(0, Math.min(max, current)) : Math.max(0, current);
+          const count = max + 1;
+          const loop = all.some((el) => el.getAttribute('data-switch-loop') === 'true');
+          const idx = loop && count > 1
+            ? ((current % count) + count) % count
+            : (max ? Math.max(0, Math.min(max, current)) : Math.max(0, current));
           /* A hidden source-backed variant keeps its Figma geometry but its
              bitmap is intentionally deferred. Start/decode it before changing
              visibility so an interaction never reveals a blank card. The
@@ -5508,6 +5697,30 @@
               || ev.target.closest('[data-btn-name="多语言按钮"]')
               || ev.target.closest('[data-btn-name="多语言切换按钮"]'))
             : null;
+          const calendarReturn = ev.target && ev.target.closest
+            ? ev.target.closest('[data-calendar-now="true"][data-calendar-now-state="return-today"]')
+            : null;
+          if (calendarReturn) {
+            const host = calendarScrollHost(calendarReturn);
+            const surface = host && hscrollSurfaceOf(host);
+            if (surface) setHscrollOffset(surface, 0, host);
+            setCalendarNowState(calendarReturn, 'today');
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
+          const hscrollCommandEl = ev.target && ev.target.closest
+            ? ev.target.closest('[data-hscroll-action]')
+            : null;
+          if (hscrollCommandEl) {
+            const hostId = hscrollCommandEl.getAttribute('data-hscroll-host');
+            const scoped = (hostId && frame.querySelector(`[data-node="${hostId}"][data-hscroll]`))
+              || hscrollCommandEl.closest('[data-hscroll]');
+            if (scoped) stepHscroll(scoped, hscrollCommandEl.getAttribute('data-hscroll-action'));
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
           if (control && !modalOpenerHit) {
             const sid = control.getAttribute('data-switch');
             const current = Number(control.getAttribute('data-swpage') || 0);
@@ -5651,6 +5864,141 @@
           if (Number(owner.getAttribute('data-switch-variant-count') || 0) < 2) return null;
           return owner;
         };
+        const hscrollSurfacesOf = (host) => {
+          if (!host || !host.querySelectorAll) return [];
+          const direct = [...host.querySelectorAll(':scope > [data-hscroll-surface="true"], :scope > [data-hscroll-overflow-child="true"]')];
+          return direct.length ? direct : [...host.querySelectorAll('[data-hscroll-surface="true"], [data-hscroll-overflow-child="true"]')];
+        };
+        const hscrollSurfaceOf = (host) => hscrollSurfacesOf(host)[0] || null;
+        const hscrollOffsetOf = (surface) => {
+          const left = Number.parseFloat(surface && surface.style.left || '0');
+          if (!Number.isFinite(left)) return 0;
+          const restAttr = Number(surface && surface.getAttribute('data-hscroll-rest-left'));
+          const rest = Number.isFinite(restAttr) ? restAttr : left;
+          return rest - left;
+        };
+        const applyHscrollOffset = (surface, offset) => {
+          if (!surface) return 0;
+          const currentLeft = Number.parseFloat(surface.style.left || '0');
+          let rest = Number(surface.getAttribute('data-hscroll-rest-left'));
+          if (!Number.isFinite(rest)) {
+            rest = Number.isFinite(currentLeft) ? currentLeft : 0;
+            surface.setAttribute('data-hscroll-rest-left', String(rest));
+          }
+          let max = Number(surface.getAttribute('data-hscroll-max'));
+          if (!Number.isFinite(max) || max <= 0) {
+            const host = surface.closest('[data-hscroll]') || surface.parentElement;
+            const hostW = Number(host && host.clientWidth);
+            const trackW = Number(surface.offsetWidth);
+            if (Number.isFinite(hostW) && Number.isFinite(trackW) && trackW > hostW + 0.5) {
+              max = trackW - hostW;
+              surface.setAttribute('data-hscroll-max', String(max));
+            }
+          }
+          if (!Number.isFinite(rest) || !Number.isFinite(max) || max <= 0) return 0;
+          const next = Math.max(0, Math.min(max, Number(offset) || 0));
+          surface.style.left = (rest - next) + 'px';
+          surface.setAttribute('data-hscroll-offset', String(next));
+          /* Keep the host-edge clip pinned to the viewport while the track
+             translates, otherwise dates paint over the rest-state left labels. */
+          const hostClip = Number(surface.getAttribute('data-hscroll-host-clip'));
+          if (Number.isFinite(hostClip)) {
+            surface.style.clipPath = next > 0
+              ? 'inset(0px 0px 0px ' + (hostClip + next) + 'px)'
+              : 'none';
+          }
+          return next;
+        };
+        const setHscrollOffset = (surface, offset, host) => {
+          const surfaces = host ? hscrollSurfacesOf(host) : (surface ? [surface] : []);
+          let next = 0;
+          for (const track of surfaces) next = applyHscrollOffset(track, offset);
+          if (host) syncCalendarNowFromHost(host);
+          return next;
+        };
+        const pad2 = (value) => String(value).padStart(2, '0');
+        const calendarTodayStamp = () => {
+          const now = new Date();
+          return pad2(now.getMonth() + 1) + '/' + pad2(now.getDate());
+        };
+        const calendarScrollHost = (el) => {
+          if (!el) return null;
+          return el.closest('[data-hscroll="x"]')
+            || (el.parentElement && el.parentElement.querySelector('[data-hscroll="x"]'))
+            || null;
+        };
+        const calendarNowControlsFor = (el) => {
+          if (!el) return [];
+          if (el.getAttribute && el.getAttribute('data-calendar-now') === 'true') return [el];
+          const scopes = [
+            el.closest && el.closest('[data-hscroll]'),
+            el.parentElement,
+            el.closest && el.closest('.fx-stage'),
+            frame,
+          ].filter(Boolean);
+          for (const scope of scopes) {
+            if (!scope.querySelectorAll) continue;
+            const found = [...scope.querySelectorAll('[data-calendar-now="true"]')];
+            if (found.length) return found;
+          }
+          return [];
+        };
+        const setCalendarNowState = (el, state) => {
+          const next = state === 'return-today' ? 'return-today' : 'today';
+          for (const control of calendarNowControlsFor(el)) {
+            control.setAttribute('data-calendar-now-state', next);
+            if (next === 'return-today') {
+              control.setAttribute('data-btn-press', 'true');
+              control.setAttribute('role', 'button');
+              control.setAttribute('tabindex', '0');
+              control.removeAttribute('aria-disabled');
+            } else {
+              control.setAttribute('data-btn-press', 'inert');
+              control.removeAttribute('role');
+              control.removeAttribute('tabindex');
+            }
+            const textHost = [...control.querySelectorAll('*')].find((node) => {
+              const text = (node.textContent || '').trim();
+              return node.childElementCount === 0 && (/^\d{1,2}\/\d{1,2}$/.test(text) || text === '返回');
+            });
+            if (textHost) textHost.textContent = next === 'today' ? calendarTodayStamp() : '返回';
+          }
+        };
+        const hscrollOffsetValue = (host) => {
+          const surface = hscrollSurfaceOf(host);
+          const offset = Number(surface && surface.getAttribute('data-hscroll-offset'));
+          return Number.isFinite(offset) ? offset : 0;
+        };
+        const syncCalendarNowFromHost = (host) => {
+          if (!host) return;
+          setCalendarNowState(host, hscrollOffsetValue(host) > 1 ? 'return-today' : 'today');
+        };
+        const stepHscroll = (host, action) => {
+          if (!host) return;
+          const surface = hscrollSurfaceOf(host);
+          if (!surface) return;
+          const amount = Math.max(48, Math.round((host.clientWidth || 0) * 0.72));
+          setHscrollOffset(surface, hscrollOffsetValue(host) + (action === 'prev' ? -amount : amount), host);
+        };
+        const suppressNativeImageDrag = (el) => {
+          if (!el || !el.querySelectorAll) return;
+          el.style.userSelect = 'none';
+          el.style.webkitUserSelect = 'none';
+          el.style.webkitTouchCallout = 'none';
+          el.style.touchAction = el.getAttribute('data-hscroll') ? 'pan-x' : 'pan-y';
+          for (const img of el.querySelectorAll('img')) {
+            img.setAttribute('draggable', 'false');
+            img.style.userSelect = 'none';
+            img.style.webkitUserDrag = 'none';
+            img.style.pointerEvents = 'none';
+          }
+        };
+        for (const host of frame.querySelectorAll('[data-hscroll],[data-switch-owner],[data-switch-swipe-host]')) {
+          suppressNativeImageDrag(host);
+        }
+        for (const control of frame.querySelectorAll('[data-calendar-now="true"]')) {
+          setCalendarNowState(control, 'today');
+        }
         frame.addEventListener('pointerdown', (ev) => {
           const host = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll][data-hscroll-drag="true"]') : null;
           const swipeOwner = !host ? switchSwipeOwner(ev.target) : null;
@@ -5658,8 +6006,15 @@
           /* Synthetic Playwright PointerEvents omit isPrimary. Treat an
              explicit false as a non-primary pointer, but accept missing. */
           if (ev.isPrimary === false) return;
+          const surface = host ? hscrollSurfaceOf(host) : null;
+          if (host && !surface) return;
+          if (host) suppressNativeImageDrag(host);
+          if (swipeOwner) suppressNativeImageDrag(swipeOwner);
+          if (typeof window !== 'undefined' && window.getSelection) {
+            try { window.getSelection().removeAllRanges(); } catch { /* ignore */ }
+          }
           drag = host
-            ? { kind: 'hscroll', host, x: ev.clientX, left: host.scrollLeft, moved: false }
+            ? { kind: 'hscroll', host, surface, x: ev.clientX, left: hscrollOffsetOf(surface), moved: false }
             : { kind: 'switch-swipe', owner: swipeOwner, x: ev.clientX, moved: false };
           const captureEl = host || swipeOwner;
           if (captureEl && captureEl.setPointerCapture) {
@@ -5674,7 +6029,7 @@
             if (drag.kind === 'hscroll') drag.host.setAttribute('data-hscroll-dragging', 'true');
             ev.preventDefault();
           }
-          if (drag.kind === 'hscroll') drag.host.scrollLeft = drag.left - delta;
+          if (drag.kind === 'hscroll') setHscrollOffset(drag.surface, drag.left - delta, drag.host);
         });
         const endHscrollDrag = (ev) => {
           if (!drag) return;
@@ -5703,10 +6058,14 @@
         frame.addEventListener('pointercancel', endHscrollDrag);
         frame.addEventListener('wheel', (ev) => {
           const host = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll="x"]') : null;
-          if (!host || host.scrollWidth <= host.clientWidth + 0.5) return;
+          if (!host) return;
+          const surface = hscrollSurfaceOf(host);
+          if (!surface) return;
+          const max = Number(surface.getAttribute('data-hscroll-max'));
+          if (!Number.isFinite(max) || max <= 0) return;
           const delta = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
           if (!delta) return;
-          host.scrollLeft += delta;
+          setHscrollOffset(surface, hscrollOffsetOf(surface) + delta, host);
           ev.preventDefault();
         }, { passive: false });
         const currentSectionNumber = () => {

@@ -16,7 +16,10 @@ human review. Opening the page does not mean gates, Switch clicks, Resize, or
 handoff passed. Direct Figma extract is labelled a local extract baseline, not
 an inventory/handoff baseline. `product-qa` is the later product-repo /
 sandbox / PR evidence workflow and must not be silently assumed by a Figma-only
-showcase. The only inventory consumer remains `figma:from-handoff`.
+showcase. `figma:from-handoff` remains consume-only. The official HTML command
+is `figma:html-from-handoff`. Completion standard: eat ready pack → write
+demo/`index.html` → `preview:first` must be green → then show `?product=1`.
+Stop at Main static.
 
 ```mermaid
 flowchart LR
@@ -44,11 +47,20 @@ Main Skill owns Figma extraction and the static page, including directory
 static restore. Directory click/scrollspy stays in Interaction; directory
 stretch stays in Resize. Do not split the directory into a fourth Skill.
 
-`yisewebui` is a stop-layer workflow: finish Main static, stop for human
-acceptance, then Translation, then Interaction, then Resize. A later axis
-must not rewrite accepted static owners, fills, copy, or platform trees.
-After Resize is accepted, Pack compresses the served folder to ≤15MB. Pack
-is delivery, not a fourth Skill. Do not pack before those four acceptances.
+`yisewebui` is a stop-layer workflow. Axis order stays Main static →
+Translation → Interaction → Resize. Humans get two review stops: (1) Main
+static, plus Translation only when a copy table exists; (2) Interaction and
+Resize together. `preview:first` must be green before stop 1 presents
+`?product=1`. A red payload must not include `productView.command`. No copy
+table keeps Translation `not-claimed`; zh-CN font
+load is not a translation pass. The script gate is
+`scripts/human-review.mjs` / `human-review.json`:
+stop 1 unaccepted blocks Interaction / Resize; stop 2 unaccepted blocks
+Pack. A later axis must not rewrite accepted static owners, fills, copy, or
+platform trees. After stop 2 is accepted, Pack compresses the served folder
+to ≤15MB. Pack is delivery, not a fourth Skill. Do not pack before those
+two human stops. Recall is the repo-root `CLAUDE.md` trigger table
+(`scripts/recall-yisewebui.mjs`), not `.claude/skills/`.
 SS5 `1:180` / `20:2205` on port 4201 is a local extract candidate, not the
 repair site for later axes. Official-site evidence for Interaction and
 Resize is language-generic; do not label it as a Korean-only rule.

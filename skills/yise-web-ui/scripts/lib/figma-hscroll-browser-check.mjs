@@ -30,7 +30,16 @@ async function selectDevice(page, width, height) {
 async function dragHostToEnd(page, index) {
   const selector = `[data-hscroll="x"][data-hscroll-drag="true"]`;
   await page.locator(selector).nth(index).evaluate((host) => {
-    host.scrollLeft = 0;
+    const surfaces = [...host.querySelectorAll(':scope > [data-hscroll-surface="true"], :scope > [data-hscroll-overflow-child="true"]')];
+    if (surfaces.length) {
+      for (const surface of surfaces) {
+        const rest = Number(surface.getAttribute('data-hscroll-rest-left'));
+        if (Number.isFinite(rest)) surface.style.left = rest + 'px';
+        surface.setAttribute('data-hscroll-offset', '0');
+      }
+    } else {
+      host.scrollLeft = 0;
+    }
     host.scrollIntoView({ block: 'center', inline: 'nearest' });
   });
   await waitFrames(page);
@@ -47,9 +56,20 @@ async function dragHostToEnd(page, index) {
      failure. */
   if (!hitTestable) return { skipped: true, reason: 'not-hit-testable-current-state' };
   const wheelLeft = await page.locator(selector).nth(index).evaluate((host) => {
+    const surfaces = [...host.querySelectorAll(':scope > [data-hscroll-surface="true"], :scope > [data-hscroll-overflow-child="true"]')];
     host.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 120 }));
-    const left = host.scrollLeft;
-    host.scrollLeft = 0;
+    const left = surfaces.length
+      ? Math.max(0, ...surfaces.map((surface) => Number(surface.getAttribute('data-hscroll-offset') || 0)))
+      : host.scrollLeft;
+    if (surfaces.length) {
+      for (const surface of surfaces) {
+        const rest = Number(surface.getAttribute('data-hscroll-rest-left'));
+        if (Number.isFinite(rest)) surface.style.left = rest + 'px';
+        surface.setAttribute('data-hscroll-offset', '0');
+      }
+    } else {
+      host.scrollLeft = 0;
+    }
     return left;
   });
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -57,11 +77,28 @@ async function dragHostToEnd(page, index) {
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.05, box.y + box.height * 0.5, { steps: 6 });
     await page.mouse.up();
-    const reached = await page.locator(selector).nth(index).evaluate((host) => host.scrollLeft >= host.scrollWidth - host.clientWidth - 1);
+    const reached = await page.locator(selector).nth(index).evaluate((host) => {
+      const surfaces = [...host.querySelectorAll(':scope > [data-hscroll-surface="true"], :scope > [data-hscroll-overflow-child="true"]')];
+      if (surfaces.length) {
+        return surfaces.every((surface) => {
+          const max = Number(surface.getAttribute('data-hscroll-max') || 0);
+          const offset = Number(surface.getAttribute('data-hscroll-offset') || 0);
+          return max > 0 && offset >= max - 1;
+        });
+      }
+      return host.scrollLeft >= host.scrollWidth - host.clientWidth - 1;
+    });
     if (reached) break;
   }
   return page.locator(selector).nth(index).evaluate((host, wheelLeft) => {
-    const max = Math.max(0, host.scrollWidth - host.clientWidth);
+    const surfaces = [...host.querySelectorAll(':scope > [data-hscroll-surface="true"], :scope > [data-hscroll-overflow-child="true"]')];
+    const surface = surfaces[0] || null;
+    const max = surfaces.length
+      ? Math.max(0, ...surfaces.map((track) => Number(track.getAttribute('data-hscroll-max') || 0)))
+      : Math.max(0, host.scrollWidth - host.clientWidth);
+    const offset = surfaces.length
+      ? Math.max(0, ...surfaces.map((track) => Number(track.getAttribute('data-hscroll-offset') || 0)))
+      : host.scrollLeft;
     const directChildren = [...host.children];
     const hostRect = host.getBoundingClientRect();
     /* `scrollLeft === max` is not enough. A direct child can be a wide
@@ -102,11 +139,11 @@ async function dragHostToEnd(page, index) {
     return {
       node: host.getAttribute('data-node'),
       evidence: host.getAttribute('data-hscroll-evidence'),
-      clientWidth: host.clientWidth,
-      scrollWidth: host.scrollWidth,
-      scrollLeft: host.scrollLeft,
+      clientWidth: (surface || host).clientWidth,
+      scrollWidth: surface ? Number(surface.getAttribute('data-hscroll-max') || 0) + host.clientWidth : host.scrollWidth,
+      scrollLeft: offset,
       max,
-      reachedEnd: host.scrollLeft >= max - 2.5,
+      reachedEnd: offset >= max - 2.5,
       wheelMoved: wheelLeft > 0,
       releasedTrackCount: tracks.length,
       rightmostSourceNode: rightmost?.getAttribute('data-node') || null,

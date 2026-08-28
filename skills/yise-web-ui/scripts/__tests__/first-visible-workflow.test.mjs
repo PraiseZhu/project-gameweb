@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { externalizeQaTruthIfOverLimit } from '../lib/html-volume.mjs';
+import { playwrightBrowserSkipMessage, probePlaywrightCapability } from '../lib/runtime-capabilities.mjs';
+import { parsePreviewJson } from '../figma-html-from-handoff.mjs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,15 +13,9 @@ const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const INIT = join(ROOT, 'scripts/init.mjs');
 const ONBOARD = join(ROOT, 'scripts/onboard.mjs');
 const PREVIEW = join(ROOT, 'scripts/preview-first.mjs');
-const HAS_BROWSER_DEPS = (() => {
-  const res = spawnSync(process.execPath, ['-e', "import('./scripts/lib/resolve-playwright.mjs').then(m=>m.resolveModule('playwright', process.cwd())).catch(()=>import('./scripts/lib/resolve-playwright.mjs').then(m=>m.resolveModule('playwright-core', process.cwd()))).then(()=>process.exit(0),()=>process.exit(1))"], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    env: process.env,
-    timeout: 30000,
-  });
-  return res.status === 0;
-})();
+const PLAYWRIGHT_PROBE = probePlaywrightCapability(ROOT);
+const HAS_BROWSER_DEPS = PLAYWRIGHT_PROBE.available;
+const BROWSER_SKIP = playwrightBrowserSkipMessage(PLAYWRIGHT_PROBE);
 
 function run(script, args, opts = {}) {
   return spawnSync(process.execPath, [script, ...args], {
@@ -172,7 +169,7 @@ test('figma-showcase workflow is explicit, Figma-only, and does not claim mobile
 
 test('figma:preview:first proves a visible Figma-derived source node when browser deps are installed', { timeout: 180000 }, (t) => {
   if (!HAS_BROWSER_DEPS) {
-    t.skip('playwright/playwright-core is not installed in this public checkout; figma:preview:first remains the real browser command when dependencies are present');
+    t.skip(BROWSER_SKIP);
     return;
   }
   const dir = tempDemo();
@@ -181,8 +178,8 @@ test('figma:preview:first proves a visible Figma-derived source node when browse
   embedTruth(dir, minimalTruth());
   const res = run(PREVIEW, ['--demo', dir], { timeout: 180000 });
   assert.equal(res.status, 0, res.stderr || res.stdout);
-  const out = JSON.parse(res.stdout);
-  assert.equal(out.ok, true);
+  const out = parsePreviewJson(res.stdout);
+  assert.equal(out?.ok, true, res.stderr || res.stdout);
   assert.ok(out.result.visibleSourceNodes > 0);
   assert.ok(out.result.meaningfulSourceNodes >= 2);
   assert.ok(out.result.meaningfulCoverage >= 0.02);
@@ -196,7 +193,7 @@ test('figma:preview:first proves a visible Figma-derived source node when browse
 
 test('figma:preview:first rejects one flat source region over a blank page', { timeout: 180000 }, (t) => {
   if (!HAS_BROWSER_DEPS) {
-    t.skip('playwright/playwright-core is not installed in this public checkout; blank-page browser regression runs when dependencies are present');
+    t.skip(BROWSER_SKIP);
     return;
   }
   const dir = tempDemo('blank-page-demo');
@@ -205,10 +202,45 @@ test('figma:preview:first rejects one flat source region over a blank page', { t
   embedTruth(dir, blankFlatTruth());
   const res = run(PREVIEW, ['--demo', dir], { timeout: 180000 });
   assert.equal(res.status, 2, res.stderr || res.stdout);
-  const out = JSON.parse(res.stdout);
-  assert.equal(out.ok, false);
+  const out = parsePreviewJson(res.stdout) || parsePreviewJson(res.stderr);
+  assert.equal(out?.ok, false, res.stderr || res.stdout);
   assert.equal(out.evidenceLevel, 'none');
   assert.ok(out.contractFailures.some((msg) => /meaningful source nodes|single flat source region/.test(msg)), out.contractFailures.join('\n'));
-  assert.match(out.productView.url, /product=1/);
+  /* 红路径不发货：URL 与命令都必须为 null（#66 契约），不能再断言 product=1 链接。 */
+  assert.equal(out.productView.url, null);
+  assert.equal(out.productView.command, null);
+  assert.equal(out.productView.blocked, true);
   assert.ok(existsSync(out.screenshot));
+});
+
+test('figma:preview:first serves external truth over HTTP and fails file:// (issue #61)', { timeout: 180000 }, (t) => {
+  if (!HAS_BROWSER_DEPS) {
+    t.skip(BROWSER_SKIP);
+    return;
+  }
+  const dir = tempDemo('external-truth-demo');
+  const init = run(INIT, ['--dir', dir, '--name', 'external-truth-demo', '--workflow', 'figma-showcase']);
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+  embedTruth(dir, minimalTruth());
+  const volume = externalizeQaTruthIfOverLimit(dir, { limitBytes: 40 });
+  assert.equal(volume.action, 'externalized');
+  assert.match(readFileSync(join(dir, 'index.html'), 'utf8'), /data-src="truth.json"/);
+
+  const httpRes = run(PREVIEW, ['--demo', dir], { timeout: 180000 });
+  assert.equal(httpRes.status, 0, httpRes.stderr || httpRes.stdout);
+  const httpOut = parsePreviewJson(httpRes.stdout);
+  assert.equal(httpOut?.ok, true, httpRes.stderr || httpRes.stdout);
+  assert.equal(httpOut.protocol, 'http');
+  assert.equal(httpOut.externalTruth, true);
+  assert.match(httpOut.checkUrl, /^http:\/\/127\.0\.0\.1:\d+\/index\.html\?product=1/);
+  assert.match(httpOut.productView.url, /^file:/);
+  assert.match(httpOut.productView.url, /product=1/);
+
+  const fileRes = run(PREVIEW, ['--demo', dir, '--protocol', 'file'], { timeout: 180000 });
+  assert.equal(fileRes.status, 2, fileRes.stderr || fileRes.stdout);
+  const fileOut = parsePreviewJson(fileRes.stdout) || parsePreviewJson(fileRes.stderr);
+  assert.equal(fileOut?.ok, false, fileRes.stderr || fileRes.stdout);
+  assert.equal(fileOut.protocol, 'file');
+  assert.ok((fileOut.contractFailures || []).some((msg) => /file:\/\//.test(msg) || /data-src/.test(msg)), (fileOut.contractFailures || []).join('\n'));
+  assert.equal(fileOut.checkUrl, undefined, 'file:// external truth must fail before launching a browser');
 });

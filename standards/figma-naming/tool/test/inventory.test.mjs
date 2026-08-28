@@ -906,12 +906,17 @@ test("mix/ 内裁切溢出框自动升 scroll，BOOLEAN btn 带切图", () => {
   assert.equal(check.ok, true, check.problems.join("\n"));
 });
 
-test("ind/ 组件集每个变体根带切图，零件 skipped，switch 变体不切", () => {
-  const node = (id, type, name, children = [], extra = {}) => ({
+function inventoryNode(id, type, name, children = [], extra = {}) {
+  const { box, width = 40, height = 40, ...rest } = extra;
+  return {
     id, type, name, children,
-    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 40, height: 40 },
-    ...extra,
-  });
+    absoluteBoundingBox: box || { x: 0, y: 0, width, height },
+    ...rest,
+  };
+}
+
+test("ind/ 组件集每个变体根带切图，零件 skipped，switch 变体不切", () => {
+  const node = inventoryNode;
   const indSet = node("set", "COMPONENT_SET", "ind/进度条", [
     node("397:35947", "COMPONENT", "Property 1=highlight", [
       node("397:35946", "RECTANGLE", "选中 1", [], { fills: [{ type: "SOLID", visible: true }] }),
@@ -966,4 +971,241 @@ test("ind/ 组件集每个变体根带切图，零件 skipped，switch 变体不
   assert.equal(switchVariant.sliceExport, undefined);
   const check = validateInventory(inv, shelf);
   assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
+test("img/ lang 变体根带切图；Property 1=cn 的 logo 不跟语言", () => {
+  const node = inventoryNode;
+  const langSet = node("lang-set", "COMPONENT_SET", "img/模块2可替换素材", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("art-cn", "RECTANGLE", "图片", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("art-tw", "RECTANGLE", "图片", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+    },
+  });
+  const logoSet = node("logo-set", "COMPONENT_SET", "img/logo", [
+    node("logo-cn", "COMPONENT", "Property 1=cn", [
+      node("logo-art", "RECTANGLE", "标", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      "Property 1": { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("hero", "INSTANCE", "img/模块2可替换素材", [], { componentId: "v-cn" }),
+      node("logo", "INSTANCE", "img/logo", [], { componentId: "logo-cn" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, langSet, logoSet]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const set = inv.attachments.componentSets.find((item) => item.id === "lang-set");
+  const cn = set.variants.find((item) => item.id === "v-cn");
+  const tw = set.variants.find((item) => item.id === "v-tw");
+  assert.equal(cn.status, "determined");
+  assert.equal(cn.role, "img");
+  assert.equal(cn.via, "structure");
+  assert.deepEqual(cn.sliceExport, { bounds: "render", scale: 1, format: "png", file: "v-cn.png" });
+  assert.equal(tw.status, "determined");
+  assert.deepEqual(tw.sliceExport, { bounds: "render", scale: 1, format: "png", file: "v-tw.png" });
+  const byId = Object.fromEntries(set.nodes.map((item) => [item.id, item]));
+  assert.equal(byId["art-cn"].status, "skipped");
+  assert.equal(byId["art-cn"].why, "slice-child");
+  const logo = inv.attachments.componentSets.find((item) => item.id === "logo-set").variants[0];
+  assert.notEqual(logo.via, "structure");
+  const ready = validateInventory(inv, shelf);
+  assert.equal(ready.ok, true, ready.problems.join("\n"));
+});
+
+test("img/ lang 多轴只认 lang", () => {
+  const node = inventoryNode;
+  const multi = node("multi-set", "COMPONENT_SET", "img/标题", [
+    node("cn-n", "COMPONENT", "lang=cn, State=normal", [
+      node("art-cn", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("tw-n", "COMPONENT", "lang=tw, State=normal", [
+      node("art-tw", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+      State: { type: "VARIANT", defaultValue: "normal", variantOptions: ["normal"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("inst", "INSTANCE", "img/标题", [], { componentId: "cn-n" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, multi]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const variant = inv.attachments.componentSets[0].variants[0];
+  assert.equal(variant.role, "img");
+  assert.equal(variant.via, "structure");
+  assert.ok(variant.sliceExport);
+  // 多轴时各轴选项之和 ≠ 变体组合数；validateInventory 必须按逐轴校验放行合法形状。
+  const ready = validateInventory(inv, shelf);
+  assert.equal(ready.ok, true, ready.problems.join("\n"));
+});
+
+test("img/ lang 多轴 validateInventory 拒绝不在声明选项里的变体值", () => {
+  const node = inventoryNode;
+  // lang 轴只声明 cn/tw，但存在 lang=fr 的变体 → 新逐轴校验必须报出，不许静默放行。
+  const bad = node("bad-set", "COMPONENT_SET", "img/标题", [
+    node("cn-n", "COMPONENT", "lang=cn, State=normal", [
+      node("art-cn", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("fr-n", "COMPONENT", "lang=fr, State=normal", [
+      node("art-fr", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+      State: { type: "VARIANT", defaultValue: "normal", variantOptions: ["normal"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("inst", "INSTANCE", "img/标题", [], { componentId: "cn-n" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, bad]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const ready = validateInventory(inv, shelf);
+  assert.equal(ready.ok, false);
+  assert.ok(
+    ready.problems.some((problem) => problem.includes("lang=fr") && problem.includes("不在声明选项里")),
+    `应报「不在声明选项里」，实际 problems:\n${ready.problems.join("\n")}`,
+  );
+});
+
+test("img/ lang=cn 加 State 两变体仍只有一个语言值，不跟语言", () => {
+  const node = inventoryNode;
+  const dual = node("dual-set", "COMPONENT_SET", "img/标题", [
+    node("cn-n", "COMPONENT", "lang=cn, State=normal", [
+      node("art-n", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("cn-h", "COMPONENT", "lang=cn, State=hover", [
+      node("art-h", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn"] },
+      State: { type: "VARIANT", defaultValue: "normal", variantOptions: ["normal", "hover"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("inst", "INSTANCE", "img/标题", [], { componentId: "cn-n" }),
+    ]),
+  ]);
+  const inv = buildInventory(node("shelf", "FRAME", "cn_pc", [page, dual]), { requestedNodeId: "page" });
+  for (const variant of inv.attachments.componentSets[0].variants) {
+    assert.notEqual(variant.via, "structure", variant.id);
+    assert.equal(variant.sliceExport, undefined, variant.id);
+  }
+});
+
+test("img/ 单变体 lang=cn 不跟语言", () => {
+  const node = inventoryNode;
+  const single = node("single-set", "COMPONENT_SET", "img/标题", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("art", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("inst", "INSTANCE", "img/标题", [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const inv = buildInventory(node("shelf", "FRAME", "cn_pc", [page, single]), { requestedNodeId: "page" });
+  const variant = inv.attachments.componentSets[0].variants[0];
+  assert.notEqual(variant.via, "structure");
+  assert.equal(variant.sliceExport, undefined);
+});
+
+test("img/ lang 只认精确小写五码，CN 与非法值不升切图", () => {
+  const node = inventoryNode;
+  const mixed = node("mixed-set", "COMPONENT_SET", "img/标题", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("art-cn", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("art-tw", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("v-CN", "COMPONENT", "lang=CN", [
+      node("art-CN", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("v-xx", "COMPONENT", "lang=xx", [
+      node("art-xx", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw", "CN", "xx"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("inst", "INSTANCE", "img/标题", [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const inv = buildInventory(node("shelf", "FRAME", "cn_pc", [page, mixed]), { requestedNodeId: "page" });
+  const byId = Object.fromEntries(inv.attachments.componentSets[0].variants.map((item) => [item.id, item]));
+  assert.equal(byId["v-cn"].via, "structure");
+  assert.ok(byId["v-cn"].sliceExport);
+  assert.equal(byId["v-tw"].via, "structure");
+  assert.ok(byId["v-tw"].sliceExport);
+  assert.notEqual(byId["v-CN"].via, "structure");
+  assert.equal(byId["v-CN"].sliceExport, undefined);
+  assert.notEqual(byId["v-xx"].via, "structure");
+  assert.equal(byId["v-xx"].sliceExport, undefined);
+});
+
+test("img/ lang 定义缺 VARIANT 类型或值带空格都不跟语言", () => {
+  const node = inventoryNode;
+  const badType = node("bad-type", "COMPONENT_SET", "img/标题", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("art-cn", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("art-tw", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { defaultValue: "cn", variantOptions: ["cn", "tw"] },
+    },
+  });
+  const spaced = node("spaced", "COMPONENT_SET", "img/标题", [
+    node("v-cn", "COMPONENT", "lang=cn ", [
+      node("art-cn", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("art-tw", "RECTANGLE", "图", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn ", "tw"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("inst", "INSTANCE", "img/标题", [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const badInv = buildInventory(node("shelf-a", "FRAME", "cn_pc", [page, badType]), { requestedNodeId: "page" });
+  assert.notEqual(badInv.attachments.componentSets[0].variants[0].via, "structure");
+  const spacedInv = buildInventory(node("shelf-b", "FRAME", "cn_pc", [page, spaced]), { requestedNodeId: "page" });
+  for (const variant of spacedInv.attachments.componentSets[0].variants) {
+    assert.notEqual(variant.via, "structure", variant.id);
+    assert.equal(variant.sliceExport, undefined, variant.id);
+  }
 });

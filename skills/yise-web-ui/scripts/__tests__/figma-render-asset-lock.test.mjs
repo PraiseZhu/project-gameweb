@@ -9,7 +9,7 @@ const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.
 test('asset locking is based on ownerPath when DOM parent stack is incomplete', () => {
   assert.match(renderer, /const bakedOwnerId = ownerPath\.slice\(0, -1\)/);
   assert.match(renderer, /find\(\(id\) => !!this\._assetRec\(id\)\)/);
-  assert.match(renderer, /parent && parent\.assetLock \|\| bakedOwnerId \|\| __calendarOwnerAssetLock/);
+  assert.match(renderer, /parent && parent\.assetLock \|\| \(bakedOwnerId && !bakedOwnerReleased\)/);
 });
 
 test('platform-prefixed asset records keep bare-id exportBox geometry', () => {
@@ -21,7 +21,36 @@ test('only explicit interaction descendants remain renderable under baked assets
   assert.match(renderer, /const evidenceAttrs = interactionAttrs\.get\(String\(nid\)\)/);
   assert.match(renderer, /const hasStructuralInteraction = !!evidenceAttrs/);
   assert.match(renderer, /evidenceAttrs\['data-switch-action'\] != null/);
+  assert.match(renderer, /data-hscroll-overflow-child/);
+  assert.match(renderer, /underHscrollSurface/);
   assert.match(renderer, /node itself is actionable/);
+});
+
+test('live nested hscroll releases an ancestor designer-export bake instead of stacking rest pixels', () => {
+  /* mix/ (or any named ancestor) may ship a designer-export composite of the
+     rest-state first page. Nested named scroll/ is the live host. Painting both
+     leaves the first page pinned under the moving tracks. Release is structural:
+     any ancestor with an asset record under a live data-hscroll host, never a
+     product node id. */
+  assert.match(renderer, /liveHscrollBakeRelease/);
+  assert.match(renderer, /data-asset-lock-released', 'live-hscroll-descendant'/);
+  assert.match(renderer, /const bakeReleasedForLiveHscroll = liveHscrollBakeRelease\.has\(String\(__u\(nid\)\)\)/);
+  assert.match(renderer, /assetRec && !bakeReleasedForLiveHscroll/);
+  assert.match(renderer, /ancestorPfx === 'mix' \|\| ancestorPfx === 'scroll' \|\| ancestorClips/);
+  assert.doesNotMatch(renderer, /__calendarOwnerAssetLock/);
+  assert.doesNotMatch(renderer, /395:34991/);
+});
+
+test('renderer stamps the authored Figma layer name for resize name lookup', () => {
+  assert.match(renderer, /el\.setAttribute\('data-name', layerName\)/);
+  assert.match(renderer, /const layerName = String\(n\.name \?\? ''\)\.trim\(\)/);
+});
+
+test('hscroll browser check drives every overflow surface, not the first track only', () => {
+  const check = readFileSync(new URL('../lib/figma-hscroll-browser-check.mjs', import.meta.url), 'utf8');
+  assert.match(check, /const surfaces = \[\.\.\.host\.querySelectorAll/);
+  assert.match(check, /surfaces\.every\(\(surface\) =>/);
+  assert.match(check, /Math\.max\(0, \.\.\.surfaces\.map/);
 });
 
 test('exported assets do not receive source opacity a second time', () => {
@@ -38,6 +67,49 @@ test('hscroll track releases only a parent viewport renderBox clip', () => {
   assert.match(renderer, /parent-viewport-renderbox-edge/);
   assert.match(renderer, /hscrollTrackOverflow/);
   assert.match(renderer, /n\.clipsContent === true && !hscrollTrackClipRelease/);
+  assert.match(renderer, /hscrollHostEl/);
+  assert.match(renderer, /groups inside that track, can inherit a/);
+});
+
+test('renderer never invents CSS chevrons for BOOLEAN btn arrows', () => {
+  assert.doesNotMatch(renderer, /data-directional-chevron/);
+  assert.doesNotMatch(renderer, /__rightChevron/);
+  assert.match(renderer, /Inventing CSS\s+chevrons or diamonds is forbidden/);
+});
+
+test('BOOLEAN delivered composite does not get a CSS solid plate under the slice', () => {
+  assert.match(renderer, /A delivered BOOLEAN\/VECTOR slice already bakes the SOLID fill/);
+  assert.match(renderer, /const hostNeedsSolidPlate = imageFills\.length > 0/);
+  assert.match(renderer, /if \(hostNeedsSolidPlate\)/);
+});
+
+test('only named scroll/ with overflowing child is an hscroll host using the clip box', () => {
+  /* #63 拍板保留日历 mix 例外：PC 日历稿没有 scroll/，mix/calendar 是唯一
+     允许平移越界子层的非 scroll 宿主。断言对齐该口径，不再要求日历被排除。 */
+  assert.match(renderer, /Named scroll\/ is the explicit host/);
+  assert.match(renderer, /Named scroll\/ is the explicit host\. Calendar mix is the one/);
+  assert.match(renderer, /A random\s+clipsContent frame is not a host\./);
+  assert.match(renderer, /if \(\(!namedScroll && !calendarMix\) \|\| !clipHost\) return null/);
+  assert.doesNotMatch(renderer, /namedMix && clipHost/);
+  assert.match(renderer, /childAttrs\['data-hscroll-overflow-child'\] = 'true'/);
+});
+
+test('hscroll host drag uses pointer capture and converts vertical wheel to scrollLeft', () => {
+  assert.match(renderer, /closest\('\[data-hscroll\]\[data-hscroll-drag="true"\]'\)/);
+  assert.match(renderer, /data-hscroll-surface/);
+  assert.match(renderer, /data-hscroll-overflow-child="true"/);
+  assert.match(renderer, /data-hscroll-rest-left/);
+  assert.match(renderer, /data-hscroll-max/);
+  assert.match(renderer, /data-hscroll-host-clip/);
+  assert.match(renderer, /hostClip \+ next/);
+  assert.match(renderer, /Rest state keeps clip none/);
+  assert.match(renderer, /hscrollSurfacesOf/);
+  assert.match(renderer, /hscrollSurfaceOf/);
+  assert.match(renderer, /setHscrollOffset\(drag\.surface, drag\.left - delta, drag\.host\)/);
+  assert.match(renderer, /setHscrollOffset\(surface, hscrollOffsetOf\(surface\) \+ delta, host\)/);
+  assert.match(renderer, /el\.style\.touchAction = 'pan-x'/);
+  assert.doesNotMatch(renderer, /el\.style\.touchAction = 'pan-y'/);
+  assert.match(renderer, /Native overflow-x[\s\S]*calendar left labels/s);
 });
 
 test('hscroll cross-axis shadow gutter is derived from source effects and applied to host + track', () => {
@@ -52,7 +124,7 @@ test('hscroll cross-axis shadow gutter is derived from source effects and applie
   assert.match(renderer, /el\.style\.boxSizing = 'border-box'/);
   assert.match(renderer, /data-hscroll-shadow-gutter-applied/);
   assert.match(renderer, /data-hscroll-track-gutter/);
-  assert.match(renderer, /parent\.el\.getAttribute\('data-hscroll-shadow-gutter'\)/);
+  assert.match(renderer, /hscrollHostEl\.getAttribute\('data-hscroll-shadow-gutter'\)/);
 });
 test('owner-model scope/assetPolicy/role evidence is derived in the renderer, not trusted from truth', () => {
   /* truth 叶子纪律：scope/assetPolicy/role 是派生值，不许进 truth；
@@ -85,13 +157,23 @@ test('page background is never also painted through pageChrome', () => {
 });
 
 test('multi-image fills resolve each imageRef instead of reusing the first file', () => {
-  assert.match(renderer, /_assetFileForImageRef\(imageRef\)/);
+  assert.match(renderer, /_assetFileForImageRef\(imageRef, preferredRec = null\)/);
   assert.match(renderer, /never reuse that first\s+file for a later fill/);
   assert.match(renderer, /data-image-ref/);
   assert.match(renderer, /data-image-fill-index/);
   assert.match(renderer, /data-solid-base-fill/);
   assert.match(assetPipeline, /imageRefs: imageRefs\.length \? imageRefs : undefined/);
   assert.match(assetPipeline, /Array\.isArray\(m\.imageRefs\) && m\.imageRefs\.length \? \{ imageRefs: m\.imageRefs \}/);
+});
+
+test('owner-delivered composite wins over a shared imageRef lookup', () => {
+  /* Packed qa-assets may keep only `{file,imageRefs}`. That thin record is still
+     this owner's delivered slice; a global imageRef walk would pick a shorter
+     sibling crop and stretch it into a taller card. */
+  assert.match(renderer, /Packed qa-assets may/);
+  assert.match(renderer, /const hasDeliveredComposite = !!\(assetRec && url\);/);
+  assert.match(renderer, /_assetFileForImageRef\(entry\.fill && entry\.fill\.imageRef, assetRec\)/);
+  assert.match(renderer, /if \(!preferredRefs\.length \|\| preferredRefs\.includes\(ref\)\) return String\(preferred\.file\);/);
 });
 
 test('authored multiline text keeps source metrics instead of height step-fit', () => {
@@ -106,6 +188,9 @@ test('hero cover scale stays on the hero slot, not the released page stage', () 
   assert.match(renderer, /data-hero-visual-scale/);
   assert.match(renderer, /heroVisualScale \/ pageStageScale/);
   assert.doesNotMatch(renderer, /pageStageScale = slotScale/);
+  assert.match(renderer, /data-kv-cover-plane/);
+  assert.match(renderer, /data-hero-ui-plane/);
+  assert.match(renderer, /stage\.style\.zoom = String\(pageStageMode \? pageStageScale : \(pageScope \? 1 : k\)\)/);
 });
 
 test('page paint roots follow recorded pagePaintOrder locators on canvas-rooted snapshots', () => {

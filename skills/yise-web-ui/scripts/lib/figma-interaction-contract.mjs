@@ -226,21 +226,85 @@ function sourceBackedSwitchPages(switchNode, members, list) {
  * direct children alone therefore rejects valid structures such as a calendar
  * track or reward row. The authorization is still fail-closed: it needs the
  * source clip plus a direct child whose source geometry actually crosses the
- * horizontal viewport bounds. */
-function hasHorizontalOverflow(node, children) {
-  if (node?.clipsContent !== true) return false;
-  const viewport = plain(node?.box || node?.absoluteBoundingBox || {});
-  const left = Number(viewport?.x);
-  const width = Number(viewport?.w ?? viewport?.width);
-  if (!Number.isFinite(left) || !Number.isFinite(width) || width <= 0) return false;
-  const right = left + width;
-  return children.some((child) => {
-    const box = plain(child?.box || child?.absoluteBoundingBox || {});
-    const x = Number(box?.x);
-    const w = Number(box?.w ?? box?.width);
-    return Number.isFinite(x) && Number.isFinite(w) && w > 0
-      && (x < left - 0.5 || x + w > right + 0.5);
+ * horizontal viewport bounds.
+ *
+ * Named `scroll/` is the explicit host. A `mix/` clip, including
+ * `mix/calendar`, stays draw-only even when a child overflows; product
+ * names are not interaction evidence. A random clipsContent frame is not
+ * a host either. */
+function overflowBox(node) {
+  const box = plain(node?.box || node?.absoluteBoundingBox || {});
+  const x = Number(box?.x);
+  const w = Number(box?.w ?? box?.width);
+  if (!Number.isFinite(x) || !Number.isFinite(w) || w <= 0) return null;
+  return { x, w, right: x + w };
+}
+
+function childCrossesViewport(child, viewport) {
+  const box = overflowBox(child);
+  return !!(box && (box.x < viewport.x - 0.5 || box.right > viewport.right + 0.5));
+}
+
+function overflowingDirectChildren(node, children) {
+  if (node?.clipsContent !== true) return [];
+  const viewport = overflowBox(node);
+  if (!viewport) return [];
+  return children.filter((child) => childCrossesViewport(child, viewport));
+}
+
+function isCalendarMix(node, parsed = parseLayerName(node?.name)) {
+  if (parsed?.role !== 'mix') return false;
+  return /^(?:calendar|日历)$/i.test(str(parsed.label || ''));
+}
+
+function hscrollHost(node, children, parsed) {
+  const namedScroll = parsed.role === 'scroll' || interactionRole(node) === 'scroll';
+  const calendarMix = isCalendarMix(node, parsed);
+  if (!namedScroll && !calendarMix) return null;
+  const overflowing = overflowingDirectChildren(node, children);
+  if (!overflowing.length) return null;
+  return {
+    axis: parsed.params.axis || 'x',
+    pointer: true,
+    drag: true,
+    evidence: namedScroll
+      ? 'source-clip-and-child-geometry-overflow'
+      : 'calendar-mix-clip-and-child-geometry-overflow',
+    overflowing,
+  };
+}
+
+function isTodayDateDyn(node, parsed = parseLayerName(node?.name)) {
+  if (parsed?.role !== 'dyn') return false;
+  return /今日日期|today\s*date|current\s*date/i.test(str(parsed.label || node?.name || ''));
+}
+
+function isHscrollCommand(node) {
+  const label = str(node?.name).toLowerCase();
+  if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) return 'prev';
+  if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) return 'next';
+  return null;
+}
+
+function nearestHscrollAncestor(node, hostsById, byId) {
+  let current = node;
+  for (let guard = 0; guard < 12 && current; guard++) {
+    current = byId.get(String(asId(current.parentId)));
+    if (!current) break;
+    const host = hostsById.get(String(idOf(current)));
+    if (host) return host;
+  }
+  return null;
+}
+
+function siblingHscrollHost(node, hostsById, byId) {
+  const parentId = asId(node?.parentId);
+  if (parentId == null) return null;
+  const siblings = [...hostsById.values()].filter((host) => {
+    const hostNode = byId.get(String(host.id));
+    return hostNode && String(asId(hostNode.parentId)) === String(parentId);
   });
+  return siblings.length === 1 ? siblings[0] : null;
 }
 
 /**
@@ -284,13 +348,23 @@ export function deriveInteractionModel(nodes = []) {
         else unresolved.push({ id: String(id), role, reason: 'fix @from must be a positive integer section number' });
       }
     }
-    if (role === 'scroll') {
+    if (role === 'scroll' || isCalendarMix(node, parsed)) {
       const children = list.filter((candidate) => String(asId(candidate.parentId)) === String(id));
-      if (hasHorizontalOverflow(node, children)) {
-        entry.hscroll = { axis: parsed.params.axis || 'x', pointer: true, drag: true, evidence: 'source-clip-and-child-geometry-overflow' };
-      } else {
+      const host = hscrollHost(node, children, parsed);
+      if (host) {
+        const { overflowing, ...hscroll } = host;
+        entry.hscroll = hscroll;
+        entry.hscrollSurfaceIds = overflowing.map((child) => String(idOf(child))).filter(Boolean);
+      } else if (role === 'scroll') {
         unresolved.push({ id: String(id), role, reason: 'hscroll requires source clipsContent and direct child geometry overflow' });
       }
+    }
+    if (isTodayDateDyn(node, parsed)) {
+      entry.calendarNow = {
+        states: ['today', 'return-today'],
+        initial: 'today',
+        evidence: 'dyn-today-date-runtime-swap',
+      };
     }
     if (role === 'switch' || role === 'swpage' || role === 'tab' || role === 'ind' || role === 'btn') {
       const owner = role === 'switch' ? node : ownerSwitch(node, byId);
@@ -321,10 +395,25 @@ export function deriveInteractionModel(nodes = []) {
     }
     const target = explicitTarget(node, parsed);
     if (target && (role === 'tab' || role === 'btn' || role === 'hot' || role === 'sec')) entry.secTarget = target;
-    if ((STRUCTURAL.has(role) && !(role === 'scroll' && !entry.hscroll))
+    if ((STRUCTURAL.has(role) && !(role === 'scroll' && !entry.hscroll) && !(role === 'mix' && !entry.hscroll))
       || role === 'btn'
       || role === 'hot'
+      || entry.calendarNow
       || target) components.push(entry);
+  }
+
+  const hostsById = new Map(components.filter((entry) => entry.hscroll).map((entry) => [entry.id, entry]));
+  for (const entry of components) {
+    if (entry.role !== 'btn' || entry.switchId) continue;
+    const node = byId.get(entry.id);
+    if (!node) continue;
+    const command = isHscrollCommand(node);
+    if (!command) continue;
+    const host = nearestHscrollAncestor(node, hostsById, byId) || siblingHscrollHost(node, hostsById, byId);
+    if (!host) continue;
+    entry.hscrollHostId = String(host.id);
+    entry.hscrollAction = command;
+    entry.evidence = 'truth:hscroll-command-beside-clipped-overflow';
   }
 
   for (const [switchId, members] of bySwitch) {
@@ -408,9 +497,15 @@ export function deriveInteractionModel(nodes = []) {
     }
   }
 
+  const overflowChildIds = new Set(
+    components.flatMap((entry) => Array.isArray(entry.hscrollSurfaceIds) ? entry.hscrollSurfaceIds : []),
+  );
   const attributes = [];
   for (const entry of components) {
     const attrs = { 'data-node': entry.id };
+    if (overflowChildIds.has(String(entry.id)) && !entry.hscroll) {
+      attrs['data-hscroll-overflow-child'] = 'true';
+    }
     if (entry.secTarget) attrs['data-sec-target'] = entry.secTarget;
     if (entry.switchId) attrs['data-switch'] = entry.switchId;
     if (entry.swpage != null) attrs['data-swpage'] = String(entry.swpage);
@@ -422,12 +517,22 @@ export function deriveInteractionModel(nodes = []) {
       attrs['data-hscroll-pointer'] = 'true';
       attrs['data-hscroll-drag'] = 'true';
     }
+    if (entry.hscrollHostId && entry.hscrollAction) {
+      attrs['data-hscroll-host'] = entry.hscrollHostId;
+      attrs['data-hscroll-action'] = entry.hscrollAction;
+    }
+    if (entry.calendarNow) {
+      attrs['data-calendar-now'] = 'true';
+      attrs['data-calendar-now-state'] = entry.calendarNow.initial;
+      attrs['data-calendar-now-evidence'] = entry.calendarNow.evidence;
+      if (entry.calendarNow.initial !== 'return-today') attrs['data-btn-press'] = 'inert';
+    }
     if ((entry.role === 'tab' || (entry.role === 'btn' && entry.variantIndex != null && entry.role !== 'ind')) && entry.switchId) attrs['data-tab'] = 'true';
     if (entry.role === 'ind' && entry.switchId) attrs['data-indicator'] = 'true';
     if (entry.role === 'btn' && entry.switchId) {
       const label = String(entry.name || '').toLowerCase();
-      if (/prev|previous|left|上一|前/.test(label)) attrs['data-switch-action'] = 'prev';
-      else if (/next|right|下一|后/.test(label)) attrs['data-switch-action'] = 'next';
+      if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) attrs['data-switch-action'] = 'prev';
+      else if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) attrs['data-switch-action'] = 'next';
     }
     if (entry.buttonVariant) {
       attrs['data-btn-variant'] = 'true';
@@ -450,6 +555,16 @@ export function deriveInteractionModel(nodes = []) {
     });
     if (Object.keys(withPress).length > 1) attributes.push({ id: entry.id, attrs: withPress });
   }
+  for (const childId of overflowChildIds) {
+    if (attributes.some((entry) => entry.id === childId)) continue;
+    attributes.push({
+      id: childId,
+      attrs: {
+        'data-node': childId,
+        'data-hscroll-overflow-child': 'true',
+      },
+    });
+  }
   return {
     components,
     unresolved,
@@ -464,6 +579,7 @@ export function deriveInteractionModel(nodes = []) {
       componentVariantPages: components.reduce((count, x) => count + (x.variantGraph?.variants || 0), 0),
       componentVariantControls: components.filter((x) => x.variantIndex != null).length,
       hscroll: components.filter((x) => x.hscroll).length,
+      calendarNow: components.filter((x) => x.calendarNow).length,
       unresolved: unresolved.length,
     },
   };

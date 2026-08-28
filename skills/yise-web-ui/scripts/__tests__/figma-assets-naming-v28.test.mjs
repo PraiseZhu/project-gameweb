@@ -53,6 +53,34 @@ test('BOOLEAN btn with sliceExport is sliced without an img/ prefix', () => {
   assert.match(picks[0].reason, /sliceExport/);
 });
 
+test('BOOLEAN btn arrows are sliced even when inventory left sliceExport unset', () => {
+  const picks = pickSliceNodes(truthWith([
+    {
+      id: '395:35371',
+      type: 'BOOLEAN_OPERATION',
+      name: 'btn/右滑动箭头',
+      box: { x: 0, y: 0, w: 52, h: 54 },
+      style: { fills: [{ type: 'SOLID', visible: true }] },
+    },
+    {
+      id: '392:24682',
+      type: 'BOOLEAN_OPERATION',
+      name: 'btn/左划动箭头',
+      box: { x: 80, y: 0, w: 16, h: 16 },
+      style: { fills: [{ type: 'GRADIENT_LINEAR', visible: true }] },
+    },
+    {
+      id: 'plain-btn',
+      type: 'FRAME',
+      name: 'btn/播放',
+      box: { x: 160, y: 0, w: 80, h: 32 },
+      style: { fills: [{ type: 'SOLID', visible: true }] },
+    },
+  ]));
+  assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['392:24682', '395:35371']);
+  assert.match(picks.find((pick) => pick.nodeId === '392:24682').reason, /btn 箭头轮廓/);
+});
+
 test('ind variant roots with sliceExport are sliced from componentVariantGraph', () => {
   const picks = pickSliceNodes({
     sections: { 'sec:1': { nodes: [] } },
