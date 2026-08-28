@@ -1893,7 +1893,9 @@
     try {
       var viewportH = Number(vp && vp.h) || frame.clientHeight || 0;
       if (!(viewportH > 0)) return;
-      void heroBaseHeight;
+      var baseH = heroGateNumber(heroBaseHeight, 2160);
+      if (!(baseH > 0)) baseH = 2160;
+      var yScale = Math.min(1, viewportH / baseH);
       var stages = frame.querySelectorAll('.fx-fixed-overlays');
       for (var s = 0; s < stages.length; s++) {
         var stage = stages[s];
