@@ -4,10 +4,32 @@
 // decisions in templates/figma-chrome.js and templates/figma-render.js.
 
 import { detectLayoutPlanes, LAYOUT_PLANES_SCHEMA } from '../figma-layout-planes.mjs';
-import { buildHeroScrollSlot, assertHeroScrollSlotState, HERO_SCROLL_STATES } from '../hero-scroll-slot.mjs';
+import {
+  buildHeroScrollSlot,
+  assertHeroScrollSlotState,
+  resolveHeroContentRoot,
+  HERO_SCROLL_STATES,
+} from '../hero-scroll-slot.mjs';
 
 export const RESIZE_SKILL_SCHEMA = 'yise-resize-skill/v1';
-export { detectLayoutPlanes, LAYOUT_PLANES_SCHEMA, buildHeroScrollSlot, assertHeroScrollSlotState, HERO_SCROLL_STATES };
+export {
+  detectLayoutPlanes,
+  LAYOUT_PLANES_SCHEMA,
+  buildHeroScrollSlot,
+  assertHeroScrollSlotState,
+  resolveHeroContentRoot,
+  HERO_SCROLL_STATES,
+};
+
+export const DESIGN_WIDTHS = Object.freeze({
+  mobile: 750,
+  pad: 3840,
+  pc: 3840,
+});
+
+/* Official poster uses `html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`
+   so 10rem = 100vw. Resize owns the same ruler as a number, not that CSS. */
+export const OFFICIAL_ROOT_FONT_VW = 10;
 
 const DEFAULT_BREAKPOINTS = Object.freeze([
   { key: 'mobile', min: 0, max: 750 },
@@ -159,6 +181,88 @@ export function viewFitScale({
   };
 }
 
+/**
+ * Width ruler shared by QA zoom and product rem. Same number as official
+ * `10vw`: k = viewportW / designWidth. Phone samples are 360/375/390/412/414/430;
+ * they do not invent extra layouts.
+ */
+export function widthScale({
+  viewportW,
+  designWidth,
+  compositionKey = null,
+} = {}) {
+  const width = n(viewportW, NaN);
+  const dw = n(designWidth, NaN);
+  const fallbackDw = DESIGN_WIDTHS[compositionKey] || DESIGN_WIDTHS.pc;
+  const used = Number.isFinite(dw) && dw > 0 ? dw : fallbackDw;
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(used) || used <= 0) {
+    return { k: null, designWidth: used, officialRootFontPx: null };
+  }
+  const k = width / used;
+  return {
+    k,
+    designWidth: used,
+    officialRootFontPx: width * (OFFICIAL_ROOT_FONT_VW / 100),
+  };
+}
+
+/**
+ * First screen must fill the current viewport height (official hero ≈ 100vh /
+ * --vh). Later sections start at or below that edge. Cover-crop may enlarge the
+ * hero visual plane; page flow stays on width-scale k.
+ */
+export function heroViewportFill({
+  viewportH,
+  widthScaleK,
+  heroDesignHeight,
+} = {}) {
+  const vh = n(viewportH, NaN);
+  const k = n(widthScaleK, NaN);
+  const heroH = n(heroDesignHeight, NaN);
+  if (![vh, k, heroH].every((value) => Number.isFinite(value) && value > 0)) {
+    return {
+      slotScale: null,
+      fillsViewport: false,
+      layoutOffsetDesign: 0,
+      uiYRatio: 1,
+    };
+  }
+  const slotScale = Math.max(k, vh / heroH);
+  const designHeight = vh / k;
+  const layoutOffsetDesign = Math.max(0, designHeight - heroH);
+  const cropWindowDesign = vh / slotScale;
+  /* Size stays on k. When the 100vh slot is taller than k×hero, hero UI
+     blocks anchor their BOTTOM fraction of the slot so a lower-hero title
+     keeps its Figma distance above the first-screen bottom edge instead of
+     riding y×k upward or floating in the middle. Never compress below
+     source Y. */
+  const uiYRatio = Math.max(1, designHeight / heroH);
+  return {
+    slotScale,
+    fillsViewport: true,
+    layoutOffsetDesign,
+    designHeight,
+    cropWindowDesign,
+    uiYRatio,
+  };
+}
+
+/**
+ * Official `.adaptive-width` clips the page, not inner carousels. Product view
+ * therefore hides page-level X overflow. QA keeps X auto so no-clip probes can
+ * still see a legal scroll surface.
+ */
+export function pageOverflowPolicy({ productView = false } = {}) {
+  return {
+    overflowX: productView ? 'hidden' : 'auto',
+    overflowY: 'auto',
+    clipsPageX: !!productView,
+    reason: productView
+      ? 'product-view-matches-official-adaptive-width-clip'
+      : 'qa-keeps-x-auto-for-no-clip-probe',
+  };
+}
+
 export function planeResizePolicies(layoutPlanes = null) {
   if (!layoutPlanes || layoutPlanes.status !== 'verified-two-plane' || !layoutPlanes.planes) {
     return {
@@ -236,12 +340,28 @@ export function classifyResizeIntent({
   stageClientH,
   padPx = 0,
   layoutPlanes = null,
+  designWidth = null,
+  heroDesignHeight = null,
+  productView = false,
 } = {}) {
   const composition = compositionKeyForViewport({ width, platforms, breakpoints, compositionBreakpoints });
+  const vpW = viewportW ?? width;
+  const ruler = widthScale({
+    viewportW: vpW,
+    designWidth,
+    compositionKey: composition.key,
+  });
   return {
     schema: RESIZE_SKILL_SCHEMA,
     plat: composition.requested,
     composition,
+    widthScale: ruler,
+    heroFill: heroViewportFill({
+      viewportH,
+      widthScaleK: ruler.k,
+      heroDesignHeight,
+    }),
+    overflow: pageOverflowPolicy({ productView }),
     lightDrag: lightDragPathAllowed({
       dragActive,
       forceFullRender,
@@ -251,7 +371,7 @@ export function classifyResizeIntent({
     }),
     viewFit: viewFitScale({
       fit,
-      viewportW: viewportW ?? width,
+      viewportW: vpW,
       viewportH,
       stageClientW,
       stageClientH,
@@ -271,6 +391,11 @@ export function resizeOwns() {
   return [
     'viewport-to-platform mapping',
     'composition base (pc / mobile / pad-uses-pc-tree)',
+    'continuous width scale k = viewportW / designWidth (official 10vw ruler)',
+    'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; inventory stays one sheet)',
+    'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
+    'left directory rail stretches to the current viewport height without SS5 node IDs',
+    'product-view page overflow-x clip (official adaptive-width)',
     'light-drag vs full rebuild',
     'preview 1:1 fit scale',
     'background cover-crop vs UI source-scale vs sea aspect-crop',
@@ -286,6 +411,7 @@ export function resizeDoesNotOwn() {
     'click / switch / tab / scrollspy wiring (Interaction Skill)',
     'Figma fetch, truth extraction, or asset export (Main Skill)',
     'page-specific node IDs or official-site one-off CSS',
+    'per-device special-case layouts',
   ];
 }
 

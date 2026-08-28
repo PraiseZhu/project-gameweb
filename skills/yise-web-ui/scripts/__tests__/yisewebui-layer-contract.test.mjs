@@ -106,6 +106,36 @@ test('sc-html-10mb-webp: HTML volume is 10MB on index.html, assets folder is fre
   assert.match(skill, /10MB/);
 });
 
+test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not poster CSS', () => {
+  const resize = read('docs/resize-skill.md');
+  const lib = read('scripts/lib/resize/index.mjs');
+  const render = read('templates/figma-render.js');
+  const chrome = read('templates/figma-chrome.js');
+  assert.match(resize, /k = viewportW \/ designWidth/);
+  assert.match(resize, /10vw/);
+  assert.match(resize, /100vh/);
+  assert.match(lib, /OFFICIAL_ROOT_FONT_VW = 10/);
+  assert.match(lib, /pageOverflowPolicy/);
+  assert.match(render, /pagePaintOrder.length === 1/);
+  assert.match(render, /data-hero-crop-window/);
+  assert.match(render, /heroVisualPlane/);
+  assert.match(render, /pageScope \? 1 : k/);
+  assert.match(render, /data-hero-ui-y-ratio/);
+  assert.match(render, /data-name/);
+  assert.match(chrome, /data-hero-source-height/);
+  assert.match(chrome, /data-name/);
+  assert.doesNotMatch(chrome, /data-prefix'\) === 'img'\|\|/);
+  assert.doesNotMatch(chrome, /sourceBoxWidth = parseFloat\(root\.style\.width\) \|\| 601/);
+  assert.match(chrome, /source-y-scale/);
+  assert.doesNotMatch(chrome, /I52:3263;17:53006/);
+  assert.match(chrome, /PRODUCT_VIEW \? 'hidden' : 'auto'/);
+  assert.match(chrome, /10vw \* var\(--fx-root-scale, 1\)/);
+  assert.match(chrome, /html\[data-product-view="1"\]\{font-size:16px\}/);
+  assert.match(chrome, /BEZEL = PRODUCT_VIEW \? 0 : 22/);
+  assert.match(chrome, /fit: !PRODUCT_VIEW/);
+  assert.doesNotMatch(chrome, /poster\.xdcdn/);
+});
+
 test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', () => {
   const skill = read('SKILL.md');
   const arch = read('docs/skill-architecture.md');

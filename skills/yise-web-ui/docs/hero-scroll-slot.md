@@ -28,17 +28,26 @@ identity transform and full opacity; returning to the top restores both.
 
 - page scope 存在；
 - 按稿内 `meta.y` 排序后的第一 section 从 page origin 开始；
-- 第一 section 属于 `pagePaintOrder` 的真实内容 root。
+- 第一 section 属于 `pagePaintOrder` 的真实内容 root。若 `pagePaintOrder`
+  只有一个 sibling 且未重复列出 `sectionIds`（SS6 手机稿常见），该 sibling
+  仍是内容 root，不得因此关掉 100vh 槽。
 
-首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 留在 Figma y，
-只跟平台 width-scale，不再被 `layoutOffsetDesign` 往下推。否则 page background 仍
-停在稿坐标，下一块会整段溜走，中间露出空带。KV/page chrome 与 fixed overlay 仍按
+首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 统一增加
+`max(0, slotDesignHeight - heroDesignHeight)` 的设计坐标偏移（`layoutOffsetDesign`），
+因此它们从实际 viewport 高度之后开始；长 `bg/*` 被裁掉的尾巴以 `bg-tail` 续画在
+偏移之后，页面背景跟着走，不会露出空带。KV/page chrome 与 fixed overlay 仍按
 原 sibling 顺序绘制。
 
-Hero 的 cover 缩放只作用在 page-chrome 的 `kv` 视觉平面（`data-kv-cover-plane`）。
-首页标题、下载按钮和后续 released 区块继续用平台 width-scale；不能把
-`slotScale` 写到 `[data-hero-slot-role="hero"]` 或整个 page stage，否则标题会
-被当成 KV 海报放大，KV 背景却仍和其他板块一起等比压缩。
+Hero 的 cover 缩放只作用在 `bg/*` / `kv` 视觉层。长 `bg/*` 仍是清单里的一整张图，
+不切开；首屏只是把它裁进 100vh 窗口。首页 UI 的大小继续用平台宽度尺子 `k`，不跟着 cover 放大。
+上下位置通用分界（不写节点名）：稿里底边落在首屏上半部的块（顶栏按钮）按顶边比例钉住；
+底边落在下半部的块（首屏大标题、下载 CTA）按**底边**比例钉住——与首屏底边的距离和稿一致（正下方），
+不会被 `y×k` 抬到上半屏，也不会浮在中间。
+被穿透容器的文字叶子不独立拉伸：按所在按钮块拉伸后的顶边 + 原本地位移锚定（`data-hero-ui-anchor="owner-block"`），
+否则顶栏按钮文字会漂出自己的按钮框。
+页面根和后续 released 区块继续用平台 scale；不能把 `slotScale` 写回
+`[data-hero-slot-role="hero"]` 或整个 page stage，否则标题会被当成 KV 海报放大，
+后面的自然流会被当成首屏再裁一次。
 
 渲染 DOM 会写入 `data-hero-scroll-slot="active"`、`data-hero-section`、
 `data-hero-content-root`，以及 section 的 `data-hero-slot-role`。结构证据不足时写入

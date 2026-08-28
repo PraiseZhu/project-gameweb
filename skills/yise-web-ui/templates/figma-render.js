@@ -1410,6 +1410,7 @@
     let pageStageCropLeft = 0;
     let heroVisualScale = k;
     let heroVisualCropLeft = 0;
+    let heroCropWindowDesign = 0;
 
     /* ═══ 首屏 scroll-slot ═══
        Figma 的静态首屏分区高度不一定等于被模拟设备的可视高度：同一 3840 稿在
@@ -1431,10 +1432,14 @@
       if (!first || !Number.isFinite(Number(first.y)) || !Number.isFinite(Number(first.height)) || Number(first.height) <= 0
         || !Number.isFinite(viewportH) || viewportH <= 0) return null;
       const startsAtPageOrigin = Math.abs(Number(first.y) - pageOriginY) <= 0.5;
-      const contentRoot = pagePaintOrder.find((entry) => {
+      const listedRoot = pagePaintOrder.find((entry) => {
         const sectionIds = Array.isArray(entry && entry.sectionIds) ? entry.sectionIds : [];
         return sectionIds.some((id) => String(__u(id)) === String(sectionId));
       });
+      /* Official first screen is 100vh. A lone page-paint sibling without
+         sectionIds is still the content root when the first section starts at
+         page origin (SS6 mobile). Do not invent a layout; do not skip the slot. */
+      const contentRoot = listedRoot || (pagePaintOrder.length === 1 ? pagePaintOrder[0] : null);
       if (!startsAtPageOrigin || !contentRoot) return null;
       /* Cover-crop belongs to the KV visual plane (the page-chrome `kv` root),
          not the hero section that holds title/download UI. Applying slotScale
@@ -1444,6 +1449,7 @@
       if (Number.isFinite(slotScale) && slotScale > 0) {
         heroVisualScale = slotScale;
         heroVisualCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
+        heroCropWindowDesign = viewportH / slotScale;
       }
       /* Cover-crop fills the viewport visually. Later sections stay on their
          Figma y and only follow width-scale; do not push the document down to
@@ -1461,7 +1467,10 @@
         contentRootId: String(__u(contentRoot.id)),
       });
     })();
-    const heroLayoutOffsetDesign = 0;
+    const heroLayoutOffsetDesign = heroSlot ? Number(heroSlot.layoutOffsetDesign || 0) : 0;
+    const heroUiYRatio = heroSlot && Number(heroSlot.heroHeight) > 0
+      ? Math.max(1, Number(heroSlot.designHeight) / Number(heroSlot.heroHeight))
+      : 1;
     const shiftedSectionBottom = (id) => {
       const m = sections[id] && sections[id].meta;
       if (!m) return 0;
@@ -1496,6 +1505,8 @@
       frame.setAttribute('data-hero-page-crop-left', String(pageStageCropLeft));
       frame.setAttribute('data-hero-visual-scale', String(heroVisualScale));
       frame.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
+      frame.setAttribute('data-hero-crop-window-design', String(heroCropWindowDesign));
+      frame.setAttribute('data-hero-ui-y-ratio', String(heroUiYRatio));
     } else {
       frame.removeAttribute('data-hero-section');
       frame.removeAttribute('data-hero-content-root');
@@ -1505,6 +1516,8 @@
       frame.removeAttribute('data-hero-page-crop-left');
       frame.removeAttribute('data-hero-visual-scale');
       frame.removeAttribute('data-hero-visual-crop-left');
+      frame.removeAttribute('data-hero-crop-window-design');
+      frame.removeAttribute('data-hero-ui-y-ratio');
     }
     const sectionLayerById = new Map();
 
@@ -1578,7 +1591,9 @@
            not apply them here. Title / download stay on width-scale. */
         stage.setAttribute('data-hero-visual-scale', String(heroVisualScale));
         stage.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
+        stage.setAttribute('data-hero-ui-scale', 'width-k');
         stage.setAttribute('data-hero-ui-plane', 'source-ui-scale');
+        stage.setAttribute('data-hero-ui-y-ratio', String(heroUiYRatio));
       }
       stage.style.width = designWidth + 'px';
       /* 分区高度往上取整到【缩放后的整数 CSS px】。
@@ -1591,13 +1606,25 @@
          而分区之间在稿里本来就是首尾相接的，抬高 0.5px 不会露出缝
          —— 背景是整页一张、跨分区连续的，缝隙不可见。 */
       const _rawH = meta.height ?? 0;
+      const isHeroStage = !pageStageMode && heroSlot && String(sid) === heroSlot.sectionId;
       const _snapH = k > 0 ? Math.ceil(_rawH * k) / k : _rawH;
-      stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : _snapH) + 'px';
+      /* Official first screen is a 100vh crop window. Keep the Figma hero
+         height on the visual plane. The UI stage itself must be tall enough
+         for source Y × uiYRatio (vh/k), or a lower-hero UI title stays in
+         the top half. */
+      const heroUiHeight = isHeroStage && heroSlot && Number(heroSlot.designHeight) > 0
+        ? Number(heroSlot.designHeight)
+        : _snapH;
+      stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : heroUiHeight) + 'px';
+      if (isHeroStage) {
+        stage.style.overflow = 'hidden';
+        stage.setAttribute('data-hero-source-height', String(_rawH));
+      }
       if (pageScope && !pageStageMode) {
         stage.style.position = 'absolute';
-        const isHeroStage = heroSlot && String(sid) === heroSlot.sectionId;
         /* `left` belongs to the unscaled page plane. KV cover crop is applied
-           to the kv root, not this UI section, so later sections stay put. */
+           to the KV/bg visual nodes, not this UI section, so later sections
+           stay put. */
         stage.style.left = (secX - pageX) + 'px';
         const afterHeroLayout = heroSlot && !isHeroStage && Number(secY) > pageY + 0.5;
         const responsiveSecTop = (secY - pageY) + (afterHeroLayout ? heroLayoutOffsetDesign : 0);
@@ -1619,9 +1646,9 @@
          zoom 让浏览器在**最终尺寸**下重新排版与光栅化，字形清晰一致。
          连带好处：zoom 改布局占位，stage 在文档流里就占缩放后的高度，
          transform 时代补占位的 .fx-spacer 就此退役（见本函数末尾）。 */
-      /* Nested section zoom is a ratio against the page-stage zoom. Keep the
-         hero UI on 1 so title/download follow width-scale with later sections.
-         KV cover-crop is applied to the kv paint root below. */
+      /* Hero UI size stays on platform width-scale k. Vertical place uses
+         Figma y as a fraction of the 100vh slot, not y×k. KV cover-crop is
+         applied to the kv/bg visual plane, not this UI section. */
       stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? 1 : k));
       if (pageStageMode && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes) {
         frame.style.position = frame.style.position || 'relative';
@@ -2599,6 +2626,7 @@
        const paintOriginX = options.originX ?? secX;
        const paintOriginY = options.originY ?? secY;
        const backgroundHeroShift = options.backgroundHeroShift === true;
+       const heroVisualPlane = options.heroVisualPlane === true;
        const suppressInteractions = options.suppressInteractions === true;
        /* A component-set tree includes its canvas COMPONENT root.  When that
           tree is mounted inside an already-rendered INSTANCE, the root is a
@@ -2608,6 +2636,23 @@
           nested 3840/1177px box and made alternate state geometry depend on
           component-set canvas coordinates. */
        const skipNodeIds = options.skipNodeIds instanceof Set ? options.skipNodeIds : new Set();
+       /* Hero UI vertical mapping bookkeeping: top-level blocks take the
+          100vh-slot Y ratio; flat text leaves must ride their containing
+          block's stretched top instead of being stretched themselves, or a
+          top-bar button label drifts out of its button frame. heroUiHalf is
+          the generic top/bottom-chrome split at half the Figma hero height. */
+       const heroUiBlocks = isHeroStage && heroUiYRatio > 1.001 ? [] : null;
+       const heroUiHalf = heroUiBlocks && heroSlot ? Number(heroSlot.heroHeight || 0) / 2 : Infinity;
+       const heroUiOwnerBlock = (blocks, centerX, centerY) => {
+         let best = null;
+         for (const blk of blocks) {
+           if (blk.w <= 0 || blk.h <= 0) continue;
+           if (centerX < blk.x || centerX > blk.x + blk.w) continue;
+           if (centerY < blk.y || centerY > blk.y + blk.h) continue;
+           if (!best || blk.area < best.area) best = blk;
+         }
+         return best;
+       };
        const renderedById = new Map();
        /* truth node index: a text leaf direct Figma parent is often a pure
           container (passed through by the extractor, absent from the render
@@ -2891,11 +2936,14 @@
         el.className = 'fx-n';
         el.setAttribute('data-node', nid);
         el.setAttribute('data-figma-type', n.type ?? '');
-        /* Resize locates directory rail parts by the authored Figma name
-           (`导航背景` / `导航长线` / `导航按钮`). Stamp it on every painted
-           owner; chrome must not guess from node ids. */
+        /* Stamp the authored Figma layer name (`导航背景` / `导航长线` / …)
+           for generic consumers; chrome must not guess from node ids. Both
+           attribute spellings stay for main-side and branch-side readers. */
         const layerName = String(n.name ?? '').trim();
-        if (layerName) el.setAttribute('data-name', layerName);
+        if (layerName) {
+          el.setAttribute('data-name', layerName);
+          el.setAttribute('data-node-name', layerName);
+        }
         if (pfx) el.setAttribute('data-prefix', pfx);
         if (bakeReleasedForLiveHscroll) el.setAttribute('data-asset-lock-released', 'live-hscroll-descendant');
         if (pfx === 'btn') {
@@ -2985,6 +3033,13 @@
           el.setAttribute('data-motion-evidence', String(motionRec.evidenceStatus || 'unverified') + ':' + String(motionRec.evidence || ''));
           if (motionRec.navigation) el.setAttribute('data-motion-navigation', 'true');
         } else if (n.motionRole != null) el.setAttribute('data-motion-role', String(n.motionRole));
+        /* Directory stretch does not require a motion adapter. A fix/ overlay
+           owner is the left rail; chrome reads this role to map source y onto
+           the current viewport height. */
+        if (pfx === 'fix' && !el.getAttribute('data-motion-role')) {
+          el.setAttribute('data-motion-role', 'navigationFooter');
+          el.setAttribute('data-motion-navigation', 'true');
+        }
 
         /* 相对偏移 = 节点绝对坐标 − **父级**绝对坐标（没有父级时减分区坐标）。
            两个操作数都是 truth 里的原值，纯减法；门 D 用同一份原值对账。
@@ -3194,7 +3249,79 @@
              stack vertically. Only a proven Auto Layout child may flow. */
           el.style.position = 'absolute';
           el.style.left = ((box.x ?? 0) - originX) + 'px';
-          el.style.top = ((box.y ?? 0) - originY) + 'px';
+          const sourceTop = ((box.y ?? 0) - originY);
+          /* Size stays on k. When the first-screen slot is taller than the
+             Figma hero, top-level blocks anchor their BOTTOM fraction of the
+             slot so a lower-hero title stays at the first-screen bottom. A
+             flat text leaf (its Figma owner was pass-through) rides the
+             containing block's stretched top and keeps its local offset —
+             stretching the leaf itself would push button labels out of
+             their button frames. */
+          let heroUiTop = sourceTop;
+          let heroUiAnchored = false;
+          if (heroUiBlocks && !parent && Number.isFinite(sourceTop)) {
+            const localX = (box.x ?? 0) - originX;
+            const sourceH = Number(box.h ?? 0);
+            const sourceBottom = sourceTop + sourceH;
+            /* Generic split, no node names: blocks whose Figma bottom sits in
+               the upper half of the hero are top chrome and keep their top
+               fraction; blocks ending in the lower half (a hero title, a
+               download CTA) anchor their BOTTOM fraction so they keep the
+               Figma distance above the first-screen bottom edge — pinned to
+               the lower first screen at every viewport instead of drifting
+               to the middle. */
+            heroUiTop = sourceBottom > heroUiHalf
+              ? sourceBottom * heroUiYRatio - sourceH
+              : sourceTop * heroUiYRatio;
+            const best = heroUiOwnerBlock(heroUiBlocks, localX + (box.w ?? 0) / 2, sourceTop + sourceH / 2);
+            if (best) {
+              heroUiTop = best.stretchedTop + (sourceTop - best.y);
+              heroUiAnchored = true;
+            }
+            heroUiBlocks.push({
+              x: localX,
+              y: sourceTop,
+              w: Number(box.w ?? 0),
+              h: sourceH,
+              stretchedTop: heroUiTop,
+              area: Math.max(1, (box.w ?? 0) * sourceH),
+            });
+          }
+          el.style.top = heroUiTop + 'px';
+          if (heroUiTop !== sourceTop) {
+            el.setAttribute('data-hero-ui-y', String(heroUiYRatio));
+            el.setAttribute('data-hero-ui-anchor', heroUiAnchored ? 'owner-block' : 'slot-ratio');
+          }
+        }
+        /* Cover-crop the first-screen visual plane (KV + long bg/*) to 100vh.
+           Inventory still owns one bg/* sheet; this only scales the locked
+           first-screen view. Later sections stay on platform scale k. Do not
+           shrink the owner box: that would squash the long sheet and keep the
+           next-screen seam inside the first screen. */
+        if (heroVisualPlane && heroSlot && heroVisualScale > 0 && pageStageScale > 0
+          && !parent && Number.isFinite(Number(box.h)) && Number(box.h) > 0) {
+          const planeRatio = heroVisualScale / pageStageScale;
+          const nodeY = Number(box.y);
+          const isFirstScreenVisual = !Number.isFinite(nodeY) || nodeY <= heroSectionBottomY + 0.5;
+          const layerName = String(n.name || '');
+          const isBg = /^bg(?:\/|$)/i.test(layerName);
+          const isKv = /^kv(?:\/|$)/i.test(layerName);
+          if (isFirstScreenVisual && (isBg || isKv)) {
+            if (planeRatio > 1.001) {
+              const planeLeft = Number.parseFloat(el.style.left || '0') || 0;
+              el.style.left = (planeLeft + heroVisualCropLeft) + 'px';
+              el.style.transformOrigin = '0 0';
+              el.style.transform = ((el.style.transform ? el.style.transform + ' ' : '') + 'scale(' + planeRatio + ')').trim();
+              el.setAttribute('data-hero-visual-plane-scale', String(planeRatio));
+            }
+            const sourceH = Number(box.h);
+            const clipH = heroCropWindowDesign > 0 ? Math.min(sourceH, heroCropWindowDesign) : sourceH;
+            if (isBg && heroLayoutOffsetDesign > 0 && clipH > 0 && clipH < sourceH - 0.5) {
+              el.style.clipPath = 'inset(0 0 ' + (sourceH - clipH) + 'px 0)';
+              el.setAttribute('data-hero-visual-clip', String(clipH));
+            }
+            el.setAttribute('data-hero-visual-plane', isBg ? 'bg' : 'kv');
+          }
         }
         el.style.width = (box.w ?? 0) + 'px';
         /* absoluteRenderBounds 是 Figma 已经算完 mask/clip/effect 后的可见范围。
@@ -4387,6 +4514,23 @@
 
         // 挂到父节点下（没有父节点才挂 stage）。DFS 先序 → 同级 append 顺序即绘制顺序。
         (parent ? parent.el : container).appendChild(el);
+        /* One inventory bg/* sheet, two views: the clipped first-screen crop
+           and the unscaled tail that continues behind later sections. */
+        if (!parent && el.getAttribute('data-hero-visual-plane') === 'bg'
+          && heroLayoutOffsetDesign > 0 && heroCropWindowDesign > 0) {
+          const sourceH = Number(box.h);
+          const clipH = Number(el.getAttribute('data-hero-visual-clip') || 0);
+          if (sourceH > clipH + 0.5 && clipH > 0) {
+            const tail = el.cloneNode(true);
+            tail.style.transform = '';
+            tail.style.left = ((box.x ?? 0) - originX) + 'px';
+            tail.style.clipPath = 'inset(' + clipH + 'px 0 0 0)';
+            tail.style.top = ((Number.parseFloat(el.style.top) || 0) + heroLayoutOffsetDesign) + 'px';
+            tail.removeAttribute('data-hero-visual-plane-scale');
+            tail.setAttribute('data-hero-visual-plane', 'bg-tail');
+            container.appendChild(tail);
+          }
+        }
         const record = {
           seq,
           el,
@@ -4837,6 +4981,20 @@
           layer.style.width = designWidth + 'px';
           layer.style.height = (pageScrollHeight || meta.height || 0) + 'px';
           layer.style.pointerEvents = 'none';
+          /* KV is first-screen art only. Clip that sibling to the viewport in
+             page-stage coordinates (designHeight = vh / k), not the raw Figma
+             hero box: cover-scale lives on the node, so a 2160 clip would cut
+             the enlarged portraits. A long bg/* sheet keeps full page height. */
+          const layerName = rootNameById.get(String(rootId)) || '';
+          if (heroSlot && Number(heroSlot.designHeight) > 0 && /^kv(?:\/|$)/i.test(layerName)) {
+            layer.style.height = Number(heroSlot.designHeight) + 'px';
+            layer.style.overflow = 'hidden';
+            layer.setAttribute('data-hero-crop-window', 'visual-root');
+            layer.setAttribute('data-hero-crop-window-design', String(heroSlot.designHeight));
+          } else if (heroSlot && heroCropWindowDesign > 0 && /^bg(?:\/|$)/i.test(layerName)) {
+            layer.setAttribute('data-hero-crop-window', 'visual-root');
+            layer.setAttribute('data-hero-crop-window-design', String(heroCropWindowDesign));
+          }
           stage.appendChild(layer);
           return layer;
         };
@@ -4888,9 +5046,17 @@
                 layer.setAttribute('data-hero-bg-follow', 'after-hero-slices');
                 layer.setAttribute('data-hero-bg-shift-design', String(heroLayoutOffsetDesign));
               }
-              paint(bg.nodes, bg.raw, layer || fixedStage, { originX: pageX, originY: pageY, backgroundHeroShift: true });
+              paint(bg.nodes, bg.raw, layer || fixedStage, {
+                originX: pageX,
+                originY: pageY,
+                backgroundHeroShift: true,
+                heroVisualPlane: true,
+              });
             }
-            if (chrome) paint(chrome.nodes, chrome.raw, layer || fixedStage);
+            if (chrome) {
+              const chromeIsHeroPlane = layer && layer.getAttribute('data-hero-crop-window') === 'visual-root';
+              paint(chrome.nodes, chrome.raw, layer || fixedStage, chromeIsHeroPlane ? { heroVisualPlane: true } : {});
+            }
             const orderedSections = asArr(entry.sectionIds);
             for (const sectionId of orderedSections) sectionLayerById.set(__u(sectionId), layer);
             if (fixed && fixedStage) {

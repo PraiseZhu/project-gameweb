@@ -11,6 +11,10 @@ import {
   viewFitScale,
   classifyResizeIntent,
   heroSlotAtScroll,
+  widthScale,
+  heroViewportFill,
+  pageOverflowPolicy,
+  resolveHeroContentRoot,
   resizeOwns,
   resizeDoesNotOwn,
   heroCoverCrop,
@@ -115,6 +119,52 @@ test('hero lock/exit/release stays a resize geometry contract', () => {
   }, 0).slot, null);
 });
 
+test('width scale is one formula, same ruler as official 10vw', () => {
+  assert.equal(widthScale({ viewportW: 390, designWidth: 750 }).k, 390 / 750);
+  assert.equal(widthScale({ viewportW: 1920, compositionKey: 'pc' }).k, 0.5);
+  assert.equal(widthScale({ viewportW: 1249, designWidth: 3840 }).officialRootFontPx, 124.9);
+  assert.equal(widthScale({ viewportW: 360, designWidth: 750 }).k, 360 / 750);
+  assert.equal(widthScale({ viewportW: 430, designWidth: 750 }).k, 430 / 750);
+});
+
+test('hero fill uses max(k, viewportH / heroDesignHeight) so later sections leave the first screen', () => {
+  const fill = heroViewportFill({ viewportH: 844, widthScaleK: 390 / 750, heroDesignHeight: 1334 });
+  assert.equal(fill.slotScale, 844 / 1334);
+  assert.ok(fill.slotScale > 390 / 750);
+  assert.equal(fill.layoutOffsetDesign, 844 / (390 / 750) - 1334);
+  assert.equal(fill.fillsViewport, true);
+  assert.equal(fill.cropWindowDesign, 1334);
+  const pcFill = heroViewportFill({ viewportH: 1080, widthScaleK: 830 / 3840, heroDesignHeight: 2160 });
+  assert.equal(pcFill.slotScale, 1080 / 2160);
+  assert.equal(pcFill.cropWindowDesign, 2160);
+  assert.ok(pcFill.slotScale > 830 / 3840);
+  assert.equal(pcFill.uiYRatio, (1080 / (830 / 3840)) / 2160);
+  const tabletFill = heroViewportFill({ viewportH: 1080, widthScaleK: 886 / 3840, heroDesignHeight: 2160 });
+  assert.ok(tabletFill.uiYRatio > 2);
+  const fullWidth = heroViewportFill({ viewportH: 1080, widthScaleK: 1920 / 3840, heroDesignHeight: 2160 });
+  assert.equal(fullWidth.uiYRatio, 1);
+});
+
+test('product view clips page X; QA keeps X auto for no-clip probes', () => {
+  assert.equal(pageOverflowPolicy({ productView: true }).overflowX, 'hidden');
+  assert.equal(pageOverflowPolicy({ productView: false }).overflowX, 'auto');
+});
+
+test('a lone page-paint sibling without sectionIds can still own the hero slot', () => {
+  assert.equal(resolveHeroContentRoot({
+    pagePaintOrder: [{ id: 'visual-root' }],
+    firstSectionId: 'hero',
+  }), 'visual-root');
+  assert.equal(resolveHeroContentRoot({
+    pagePaintOrder: [{ id: 'kv' }, { id: 'content', sectionIds: ['hero'] }],
+    firstSectionId: 'hero',
+  }), 'content');
+  assert.equal(resolveHeroContentRoot({
+    pagePaintOrder: [{ id: 'kv' }, { id: 'bg' }],
+    firstSectionId: 'hero',
+  }), null);
+});
+
 test('resize skill names its own axis and refuses translation/interaction ownership', () => {
   const intent = classifyResizeIntent({
     width: 1846,
@@ -132,9 +182,16 @@ test('resize skill names its own axis and refuses translation/interaction owners
   assert.equal(intent.composition.key, 'pc');
   assert.equal(intent.lightDrag, true);
   assert.ok(resizeOwns().some((item) => item.includes('cover-crop')));
+  assert.ok(resizeOwns().some((item) => item.includes('10vw')));
+  assert.ok(resizeOwns().some((item) => item.includes('100vh')));
+  assert.ok(resizeOwns().some((item) => /hero UI/i.test(item)));
+  assert.ok(resizeOwns().some((item) => /directory rail/i.test(item)));
+  assert.ok(resizeOwns().some((item) => /overflow-x/i.test(item)));
+  assert.equal(intent.widthScale.k, 1846 / 3840);
+  assert.equal(intent.overflow.overflowX, 'auto');
   assert.ok(resizeDoesNotOwn().some((item) => /Translation/i.test(item)));
   assert.ok(resizeDoesNotOwn().some((item) => /Interaction/i.test(item)));
-  assert.ok(resizeOwns().some((item) => /KV cover-crop stays on the kv visual plane/.test(item)));
+  assert.ok(resizeDoesNotOwn().some((item) => /per-device/i.test(item)));
 });
 
 test('PC cover crop belongs to the KV plane, not homepage UI width-scale', () => {

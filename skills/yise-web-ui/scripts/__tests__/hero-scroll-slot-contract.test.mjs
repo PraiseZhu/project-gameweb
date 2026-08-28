@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { buildHeroScrollSlot, assertHeroScrollSlotState } from '../lib/hero-scroll-slot.mjs';
+import { buildHeroScrollSlot, assertHeroScrollSlotState, resolveHeroContentRoot } from '../lib/hero-scroll-slot.mjs';
 
 test('generic hero scroll-slot state machine locks, exits progressively, then releases', () => {
   const slot = buildHeroScrollSlot({
@@ -35,6 +35,17 @@ test('insufficient page structure does not guess a hero', () => {
 }), null);
 });
 
+test('lone page-paint sibling without sectionIds still resolves a content root', () => {
+  assert.equal(resolveHeroContentRoot({
+    pagePaintOrder: [{ id: '399:42189' }],
+    firstSectionId: '392:25889',
+  }), '399:42189');
+  assert.equal(resolveHeroContentRoot({
+    pagePaintOrder: [{ id: 'kv' }, { id: 'bg' }],
+    firstSectionId: 'hero',
+  }), null);
+});
+
 test('renderer exposes the generic state contract and does not use a visual cover', () => {
   const render = readFileSync(resolve('templates/figma-render.js'), 'utf8');
   assert.match(render, /_buildHeroScrollSlot/);
@@ -44,6 +55,20 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /HERO_EXITING/);
   assert.match(render, /CONTENT_RELEASED/);
   assert.match(render, /data-hero-slot-role=\"hero\"/);
+  assert.match(render, /Official first screen is a 100vh crop window/);
+  assert.match(render, /data-hero-crop-window/);
+  assert.match(render, /heroVisualPlane/);
+  assert.match(render, /bg-tail/);
+  assert.match(render, /data-hero-visual-clip/);
+  assert.match(render, /Hero UI size stays on platform width-scale k/);
+  assert.match(render, /pageScope \? 1 : k/);
+  assert.match(render, /data-hero-ui-scale/);
+  assert.match(render, /data-hero-ui-y-ratio/);
+  assert.match(render, /heroUiYRatio/);
+  assert.match(render, /data-hero-ui-anchor/);
+  assert.match(render, /owner-block/);
+  assert.match(render, /pfx === 'fix'/);
+  assert.doesNotMatch(render, /heroVisualRatio/);
   assert.match(render, /data-hero-slot-reveal/);
   assert.match(render, /revealDistance/);
   assert.doesNotMatch(render, /slotOffset/);
