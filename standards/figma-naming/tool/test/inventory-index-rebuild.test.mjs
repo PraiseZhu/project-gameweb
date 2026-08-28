@@ -94,7 +94,7 @@ test("completeness：modules 空但有 switch\/scroll 要红", () => {
 });
 
 test("规范稿对照只核前缀类，不抄图层 id", () => {
-  // 冻结自 392:24190 规范稿页面 determined 核心前缀类；不读 live inventory JSON。tab/ 不进核心表。
+  // 冻结跨页底座；不读 live inventory JSON。模块前缀不进核心表。
   const goldPc = GOLD_PC_PREFIX_CLASSES;
   const named = {
     nodes: goldPc.map((role, index) => ({
@@ -106,7 +106,7 @@ test("规范稿对照只核前缀类，不抄图层 id", () => {
     })),
   };
   const unnamed = {
-    nodes: goldPc.filter((role) => role !== "hot").map((role, index) => ({
+    nodes: goldPc.filter((role) => role !== "fix").map((role, index) => ({
       id: `u${index}`,
       type: "FRAME",
       name: `${role}/y`,
@@ -114,7 +114,7 @@ test("规范稿对照只核前缀类，不抄图层 id", () => {
       role,
     })),
   };
-  assert.deepEqual(missingPrefixClasses(unnamed, named), ["hot"]);
+  assert.deepEqual(missingPrefixClasses(unnamed, named), ["fix"]);
   assert.deepEqual(missingPrefixClasses(named, named), []);
 });
 
@@ -180,10 +180,10 @@ function goldClassDoc(roles, pageWidth) {
 }
 
 test("completeness：相对规范稿缺前缀类要红（冻住 PC 前缀类，不读 live JSON）", () => {
-  const doc = goldClassDoc(GOLD_PC_PREFIX_CLASSES.filter((role) => role !== "hot"), 3840);
+  const doc = goldClassDoc(GOLD_PC_PREFIX_CLASSES.filter((role) => role !== "fix"), 3840);
   const result = auditDraftAssetCompleteness(doc, [], { expectedPrefixClasses: GOLD_PC_PREFIX_CLASSES });
   assert.equal(result.ok, false);
-  assert.match(result.problems.join("\n"), /相对规范稿缺前缀类：hot/);
+  assert.match(result.problems.join("\n"), /相对规范稿缺前缀类：fix/);
   assert.doesNotMatch(result.problems.join("\n"), /392:24190|491:6935/);
 });
 
@@ -222,14 +222,19 @@ test("goldPrefixClassesFor：参考稿有 determined tab/ 才并进必检", () =
   assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: withoutTab }), GOLD_PC_PREFIX_CLASSES);
   assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: unknownTab }), GOLD_PC_PREFIX_CLASSES);
   assert.equal(OPTIONAL_GOLD_PREFIX_CLASSES.includes("tab"), true);
+  for (const role of ["dyn", "hot", "ind", "kv", "mix", "modal", "scroll", "switch"]) {
+    assert.equal(OPTIONAL_GOLD_PREFIX_CLASSES.includes(role), true);
+    assert.equal(GOLD_PC_PREFIX_CLASSES.includes(role), false);
+    assert.equal(GOLD_MOBILE_PREFIX_CLASSES.includes(role), false);
+  }
 });
 
-test("requiredIndexPresenceFor：PC 要分区/悬浮/底图/模块，mobile 不要 overlays", () => {
+test("requiredIndexPresenceFor：PC 要分区/悬浮/底图，mobile 不要 overlays；modules 不强制", () => {
   assert.deepEqual(requiredIndexPresenceFor({ page: { box: { w: 3840 } } }), {
-    sections: true, overlays: true, backgrounds: true, modules: true,
+    sections: true, overlays: true, backgrounds: true, modules: false,
   });
   assert.deepEqual(requiredIndexPresenceFor({ page: { box: { w: 750 } } }), {
-    sections: true, overlays: false, backgrounds: true, modules: true,
+    sections: true, overlays: false, backgrounds: true, modules: false,
   });
   assert.equal(requiredIndexPresenceFor({ page: { box: {} } }), null);
 });
@@ -260,8 +265,8 @@ test("auditLikeCli：冻住前缀类和结构索引都齐则绿", () => {
 });
 
 test("issue #38：SS6 无 tab/ 但有 btn/ + switch/ 时 completeness 绿", () => {
-  const pcRoles = GOLD_PC_PREFIX_CLASSES.filter((role) => role !== "tab");
-  const mobileRoles = GOLD_MOBILE_PREFIX_CLASSES.filter((role) => role !== "tab");
+  const pcRoles = [...GOLD_PC_PREFIX_CLASSES, "switch"];
+  const mobileRoles = [...GOLD_MOBILE_PREFIX_CLASSES, "switch"];
   assert.equal(pcRoles.includes("btn") && pcRoles.includes("switch"), true);
   assert.equal(pcRoles.includes("tab"), false);
   const pc = goldClassDoc(pcRoles, 3840);
@@ -313,4 +318,101 @@ test("issue #38：禁止用 unknown 或改 status 伪造 tab/ 过闸", () => {
   const skippedResult = auditLikeCli(skippedTab, [], { referenceDoc: reference });
   assert.equal(skippedResult.ok, false);
   assert.match(skippedResult.problems.join("\n"), /相对规范稿缺前缀类：tab/);
+});
+
+const TORCH_PC_ROLES = ["bg", "btn", "fix", "hot", "img", "ind", "sec", "switch"];
+const TORCH_MOBILE_ROLES = ["bg", "btn", "hot", "img", "ind", "sec", "switch"];
+const GOLD_SAMPLE_PC_ROLES = ["bg", "btn", "dyn", "fix", "hot", "img", "ind", "kv", "mix", "scroll", "sec", "switch"];
+const GOLD_SAMPLE_MOBILE_ROLES = ["bg", "btn", "dyn", "img", "ind", "scroll", "sec", "switch"];
+
+test("issue #69：无 dyn/kv/mix/scroll 的合法稿 completeness 绿，不发明模块", () => {
+  const pc = goldClassDoc(TORCH_PC_ROLES, 3840);
+  const mobile = goldClassDoc(TORCH_MOBILE_ROLES, 750);
+  const pcResult = auditLikeCli(pc);
+  const mobileResult = auditLikeCli(mobile);
+  assert.equal(pcResult.ok, true, pcResult.problems.join("\n"));
+  assert.equal(mobileResult.ok, true, mobileResult.problems.join("\n"));
+  assert.doesNotMatch(pcResult.problems.join("\n"), /缺前缀类：.*(dyn|kv|mix|scroll)/);
+  assert.doesNotMatch(mobileResult.problems.join("\n"), /缺前缀类：.*(dyn|scroll)/);
+  assert.equal(TORCH_PC_ROLES.includes("dyn") || TORCH_PC_ROLES.includes("kv") || TORCH_PC_ROLES.includes("mix") || TORCH_PC_ROLES.includes("scroll"), false);
+});
+
+test("issue #69：参考稿有 determined dyn/kv/mix/scroll 时仍要求这些类", () => {
+  const doc = goldClassDoc(TORCH_PC_ROLES, 3840);
+  const reference = goldClassDoc(GOLD_SAMPLE_PC_ROLES, 3840);
+  const result = auditLikeCli(doc, [], { referenceDoc: reference });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /相对规范稿缺前缀类：dyn kv mix scroll/);
+  const present = goldClassDoc(GOLD_SAMPLE_PC_ROLES, 3840);
+  const presentResult = auditLikeCli(present, [], { referenceDoc: reference });
+  assert.equal(presentResult.ok, true, presentResult.problems.join("\n"));
+});
+
+test("issue #69：无斜杠的 kv unknown 不算 determined kv/，不拿来过闸", () => {
+  const reference = goldClassDoc(GOLD_SAMPLE_PC_ROLES, 3840);
+  const fakeKv = goldClassDoc(TORCH_PC_ROLES, 3840);
+  fakeKv.nodes.push({
+    id: "bare-kv",
+    type: "FRAME",
+    name: "kv",
+    status: "unknown",
+    role: null,
+    box: { x: 0, y: 800, w: 80, h: 32 },
+  });
+  const result = auditLikeCli(fakeKv, [], { referenceDoc: reference });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /相对规范稿缺前缀类：.*\bkv\b/);
+});
+
+test("issue #69：参考稿 mobile 有 dyn/scroll 时仍要求，金样有这些类继续红", () => {
+  const doc = goldClassDoc(TORCH_MOBILE_ROLES, 750);
+  const reference = goldClassDoc(GOLD_SAMPLE_MOBILE_ROLES, 750);
+  const result = auditLikeCli(doc, [], { referenceDoc: reference });
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /相对规范稿缺前缀类：dyn scroll/);
+  const present = goldClassDoc(GOLD_SAMPLE_MOBILE_ROLES, 750);
+  const presentResult = auditLikeCli(present, [], { referenceDoc: reference });
+  assert.equal(presentResult.ok, true, presentResult.problems.join("\n"));
+});
+
+function withAttachmentModal(doc, id) {
+  doc.attachments = doc.attachments || { modals: [], componentSets: [], components: [] };
+  doc.attachments.modals = [
+    ...(doc.attachments.modals || []),
+    {
+      id,
+      type: "FRAME",
+      name: "modal/视频弹窗",
+      status: "determined",
+      role: "modal",
+      nodes: [{
+        id,
+        type: "FRAME",
+        name: "modal/视频弹窗",
+        status: "determined",
+        role: "modal",
+        box: { x: 0, y: 0, w: 80, h: 32 },
+      }],
+    },
+  ];
+  return rebuildInventoryIndexes(doc);
+}
+
+test("issue #69：参考稿附件 determined modal/ 才并进必检，页上没有不算有", () => {
+  const pc = { page: { box: { w: 3840 } } };
+  const pageOnly = goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840);
+  const withModal = withAttachmentModal(goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840), "ref-modal");
+  assert.equal(determinedPagePrefixClasses(pageOnly).includes("modal"), false);
+  assert.equal(determinedPagePrefixClasses(withModal).includes("modal"), true);
+  assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: pageOnly }), GOLD_PC_PREFIX_CLASSES);
+  assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: withModal }), [...GOLD_PC_PREFIX_CLASSES, "modal"]);
+
+  const missing = goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840);
+  const missingResult = auditLikeCli(missing, [], { referenceDoc: withModal });
+  assert.equal(missingResult.ok, false);
+  assert.match(missingResult.problems.join("\n"), /相对规范稿缺前缀类：modal/);
+
+  const present = withAttachmentModal(goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840), "pc-modal");
+  const presentResult = auditLikeCli(present, [], { referenceDoc: withModal });
+  assert.equal(presentResult.ok, true, presentResult.problems.join("\n"));
 });
