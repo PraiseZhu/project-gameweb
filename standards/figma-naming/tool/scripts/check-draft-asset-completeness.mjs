@@ -8,9 +8,11 @@
  * - determined 的消费身份必须同时写入 name 前缀；`via=structure` 的 mix 自动拆 img/ / scroll/ 与 ind/ 变体根例外，看 role + sliceExport；
  * - 索引必须与页面节点一致：sections/overlays/backgrounds/modules/pageCounts/counts 相对节点过期或残缺都红，不只扫空数组；
  * - 相对规范稿缺前缀类要红：CLI 按页宽推冻住的 PC/mobile 核心前缀类（不读 live 规范稿 JSON）。
- *   tab/ 不是每份稿都有：冻结表不含 tab；只有传入的参考稿里已有 determined tab/ 时，
- *   auditLikeCli 才把 tab 并进必检。禁止把 btn/ 改成 tab/，禁止手补 inventory。
- * - 结构存在性：PC 的 sections/overlays/backgrounds/modules、mobile 的 sections/backgrounds/modules 为空也红（即使本稿还没有 determined 对应节点）。不对照条数、不对图层 id；
+ *   核心只留跨页结构/视觉底座（sec/bg/img/btn，PC 另要 fix）。
+ *   dyn/kv/mix/scroll/hot/switch/ind/modal/tab 不是每份稿都有：冻结表不含这些；
+ *   只有传入的参考稿里已有 determined 该类时，auditLikeCli 才并进必检。
+ *   禁止为过闸发明不存在的 mix/dyn/scroll，禁止手补 inventory。
+ * - 结构存在性：PC 的 sections/overlays/backgrounds、mobile 的 sections/backgrounds 为空也红（即使本稿还没有 determined 对应节点）。modules 随模块前缀，有节点才核索引一致性，不要求每页都有模块。不对照条数、不对图层 id；
  * - 另见 src/gold-morphology.mjs：任意组件集实例跟随、I…;母版Id 子件跟随、无 img 祖先切图、有文字分组不得 img/、两端同类同步、划动裁切层、弹窗、跨货架导航。
  *
  * 用法：node scripts/check-draft-asset-completeness.mjs [--reference <参考稿.json>] <inventory.json> [...]
@@ -86,6 +88,10 @@ export function determinedPagePrefixClasses(doc) {
       for (const node of variant.nodes || []) collectPrefix(found, node);
     }
   }
+  for (const modal of doc.attachments?.modals || []) {
+    collectPrefix(found, modal);
+    for (const node of modal.nodes || []) collectPrefix(found, node);
+  }
   return [...found].sort();
 }
 
@@ -95,25 +101,23 @@ export function missingPrefixClasses(actualDoc, baselineDoc) {
 }
 
 /**
- * 冻住自 392:24190 规范稿页面 determined 核心前缀类；单测禁止读 live inventory JSON。
- * tab/ 是页签条，只在参考稿确实存在时才成为必需项，不进冻结核心表。
+ * 冻住跨页结构/视觉底座；单测禁止读 live inventory JSON。
+ * 金样页（392:24190 / 392:25877）上出现过的模块前缀不是每份稿都有，不进核心表。
  */
-export const GOLD_PC_PREFIX_CLASSES = ["bg", "btn", "dyn", "fix", "hot", "img", "ind", "kv", "mix", "scroll", "sec", "switch"];
-/** 冻住自 392:25877 规范稿页面 determined 核心前缀类。tab/ 同上，不进冻结核心表。 */
-export const GOLD_MOBILE_PREFIX_CLASSES = ["bg", "btn", "dyn", "img", "ind", "scroll", "sec", "switch"];
-/** 参考稿有才检查的前缀类。冻结核心表不含这些，避免无 tab 的合法稿被闸门红掉。 */
-export const OPTIONAL_GOLD_PREFIX_CLASSES = ["tab"];
+export const GOLD_PC_PREFIX_CLASSES = ["bg", "btn", "fix", "img", "sec"];
+/** 冻住跨页结构/视觉底座。mobile 无 fix。 */
+export const GOLD_MOBILE_PREFIX_CLASSES = ["bg", "btn", "img", "sec"];
+/** 参考稿有 determined 才检查的模块前缀。冻结核心表不含这些，避免无倒计时/KV/混排/滑动区的合法稿被闸门红掉。 */
+export const OPTIONAL_GOLD_PREFIX_CLASSES = ["dyn", "hot", "ind", "kv", "mix", "modal", "scroll", "switch", "tab"];
 const GOLD_PC_MIN_WIDTH = 1200;
 
 export function goldPrefixClassesFor(doc, options = {}) {
   const width = Number(doc?.page?.box?.w);
   if (!Number.isFinite(width) || width <= 0) return null;
   const core = width >= GOLD_PC_MIN_WIDTH ? GOLD_PC_PREFIX_CLASSES : GOLD_MOBILE_PREFIX_CLASSES;
-  const referenceDoc = options.referenceDoc;
-  if (!referenceDoc) return [...core];
-  const present = new Set(determinedPagePrefixClasses(referenceDoc));
-  const extra = OPTIONAL_GOLD_PREFIX_CLASSES.filter((role) => present.has(role));
-  return extra.length ? [...core, ...extra] : [...core];
+  if (!options.referenceDoc) return [...core];
+  const present = new Set(determinedPagePrefixClasses(options.referenceDoc));
+  return [...core, ...OPTIONAL_GOLD_PREFIX_CLASSES.filter((role) => present.has(role))];
 }
 
 export function auditGoldPrefixClasses(doc, expectedClasses) {
@@ -136,14 +140,16 @@ const REQUIRED_INDEX_LABELS = {
   modules: "模块索引",
 };
 
-/** 冻住自规范稿消费面：PC 要分区/悬浮/底图/模块；mobile 无 fix，不要求 overlays。 */
+/** 冻住自规范稿消费面：PC 要分区/悬浮/底图；mobile 无 fix，不要求 overlays。modules 不要求每页都有。 */
 export function requiredIndexPresenceFor(doc) {
   const width = Number(doc?.page?.box?.w);
   if (!Number.isFinite(width) || width <= 0) return null;
-  if (width >= GOLD_PC_MIN_WIDTH) {
-    return { sections: true, overlays: true, backgrounds: true, modules: true };
-  }
-  return { sections: true, overlays: false, backgrounds: true, modules: true };
+  return {
+    sections: true,
+    overlays: width >= GOLD_PC_MIN_WIDTH,
+    backgrounds: true,
+    modules: false,
+  };
 }
 
 export function auditRequiredIndexPresence(doc, required) {

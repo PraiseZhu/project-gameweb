@@ -758,37 +758,118 @@ test("issue #38：无 tab/ 的合法 ready 稿可打包，不改 unknown / #34 �
   const mobile = sample("2:2");
   assert.equal(pc.nodes.some((node) => node.role === "tab"), false);
   assert.equal(pc.nodes.some((node) => node.role === "btn"), true);
-  assert.equal(pc.nodes.some((node) => node.role === "switch"), true);
   const pack = validateHandoffPair(pc, mobile);
   assert.equal(pack.ok, true, pack.problems.join("\n"));
   assert.equal(pack.kind, "ready");
 });
 
-function withDeterminedTab(doc, id) {
+function withDeterminedPrefix(doc, id, role) {
   doc.nodes.push(stampReadyFields({
     id,
     type: "FRAME",
-    name: "tab/页签条",
+    name: `${role}/${role}`,
     status: "determined",
-    role: "tab",
-    behavior: "none",
+    role,
+    behavior: behaviorOf(role),
     via: "prefix",
     box: { x: 0, y: 900, w: 80, h: 32 },
   }));
+  if (role === "scroll") {
+    doc.nodes.push({
+      id: `${id}-track`,
+      type: "FRAME",
+      name: "轨道",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: id,
+      box: { x: 0, y: 0, w: 80, h: 32 },
+    });
+  }
   return rebuildInventoryIndexes(doc);
 }
 
 test("issue #38：参考稿有 determined tab/ 时 handoff 仍要求 tab/", () => {
   const pc = sample("1:1");
   const mobile = sample("2:2");
-  const reference = withDeterminedTab(sample("3:3"), "ref-tab");
+  const reference = withDeterminedPrefix(sample("3:3"), "ref-tab", "tab");
   const missing = validateHandoffPair(pc, mobile, { referenceDoc: reference });
   assert.equal(missing.ok, false);
   assert.match(missing.problems.join("\n"), /相对规范稿缺前缀类：tab/);
 
   const present = validateHandoffPair(
-    withDeterminedTab(sample("4:4"), "pc-tab"),
-    withDeterminedTab(sample("5:5"), "mo-tab"),
+    withDeterminedPrefix(sample("4:4"), "pc-tab", "tab"),
+    withDeterminedPrefix(sample("5:5"), "mo-tab", "tab"),
+    { referenceDoc: reference },
+  );
+  assert.equal(present.ok, true, present.problems.join("\n"));
+  assert.equal(present.kind, "ready");
+});
+
+test("issue #69：无 dyn/kv/mix/scroll 的 ready 稿可打包，不发明模块", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  for (const role of ["dyn", "kv", "mix", "scroll"]) {
+    assert.equal(pc.nodes.some((node) => node.role === role), false);
+    assert.equal(mobile.nodes.some((node) => node.role === role), false);
+  }
+  const pack = validateHandoffPair(pc, mobile);
+  assert.equal(pack.ok, true, pack.problems.join("\n"));
+  assert.equal(pack.kind, "ready");
+});
+
+test("issue #69：参考稿有 determined dyn/kv/mix/scroll 时 handoff 仍要求", () => {
+  const reference = sample("3:3");
+  for (const role of ["dyn", "kv", "mix", "scroll"]) {
+    withDeterminedPrefix(reference, `ref-${role}`, role);
+  }
+  const missing = validateHandoffPair(sample("1:1"), sample("2:2"), { referenceDoc: reference });
+  assert.equal(missing.ok, false);
+  assert.match(missing.problems.join("\n"), /相对规范稿缺前缀类：dyn kv mix scroll/);
+
+  const presentPc = sample("4:4");
+  const presentMo = sample("5:5");
+  for (const role of ["dyn", "kv", "mix", "scroll"]) {
+    withDeterminedPrefix(presentPc, `pc-${role}`, role);
+    withDeterminedPrefix(presentMo, `mo-${role}`, role);
+  }
+  const present = validateHandoffPair(presentPc, presentMo, { referenceDoc: reference });
+  assert.equal(present.ok, true, present.problems.join("\n"));
+  assert.equal(present.kind, "ready");
+});
+
+function withAttachmentModal(doc, id) {
+  doc.attachments = {
+    ...(doc.attachments || { componentSets: [], modals: [] }),
+    modals: [{
+      id,
+      type: "FRAME",
+      name: "modal/视频弹窗",
+      status: "determined",
+      role: "modal",
+      nodes: [stampReadyFields({
+        id,
+        type: "FRAME",
+        name: "modal/视频弹窗",
+        status: "determined",
+        role: "modal",
+        behavior: behaviorOf("modal"),
+        via: "prefix",
+        box: { x: 0, y: 0, w: 80, h: 32 },
+      })],
+    }],
+  };
+  return rebuildInventoryIndexes(doc);
+}
+
+test("issue #69：参考稿附件有 determined modal/ 时 handoff 仍要求 modal/", () => {
+  const reference = withAttachmentModal(sample("3:3"), "ref-modal");
+  const missing = validateHandoffPair(sample("1:1"), sample("2:2"), { referenceDoc: reference });
+  assert.equal(missing.ok, false);
+  assert.match(missing.problems.join("\n"), /相对规范稿缺前缀类：modal/);
+
+  const present = validateHandoffPair(
+    withAttachmentModal(sample("4:4"), "pc-modal"),
+    withAttachmentModal(sample("5:5"), "mo-modal"),
     { referenceDoc: reference },
   );
   assert.equal(present.ok, true, present.problems.join("\n"));
@@ -854,6 +935,17 @@ test("sliceIdsOf：页上用到的组件集每个变体里的切图都要覆盖"
 test("handoff：页上 ind/ 组件集每个变体根的 sliceExport 进入切图计划", () => {
   const pc = sample("1:1");
   const mobile = sample("2:2");
+  pc.nodes.push(stampReadyFields({
+    id: "1:1-switch",
+    type: "FRAME",
+    name: "switch/庆典",
+    status: "determined",
+    role: "switch",
+    label: "庆典",
+    behavior: "switch",
+    via: "prefix",
+    box: { x: 0, y: 800, w: 80, h: 32 },
+  }));
   pc.nodes.push(stampReadyFields({
     id: "inst-ind",
     type: "INSTANCE",
