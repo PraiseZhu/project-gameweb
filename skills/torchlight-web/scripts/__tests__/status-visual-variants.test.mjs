@@ -1,0 +1,5 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { statusVisualBindingFor, statusVisualVariantFor, validateStatusVisualVariants } from '../lib/translation/status-visual-variants.mjs';
+const registry={schema:'status-visual-variants/v1',bindings:[{status:'awakened',match:{sourceText:'Awakened',semanticRole:'character-skill-label'}}],variants:{awakened:{en:{assetKey:'demo',file:'assets/demo.png',sha256:'a'.repeat(64),intrinsic:{width:10,height:5},backgroundIncluded:true,provenance:{evidenceStatus:'verified'}}}}};
+test('selects a verified locale status visual by semantic status, not demo node identity',()=>{ const b=statusVisualBindingFor({registry,sourceText:'Awakened',semanticRole:'character-skill-label'}); assert.equal(b.status,'awakened'); assert.equal(statusVisualVariantFor({registry,status:b.status,language:'en'}).assetKey,'demo'); assert.equal(statusVisualVariantFor({registry,status:b.status,language:'ja'}),null); });
+test('rejects unpinned visual assets',()=>assert.throws(()=>validateStatusVisualVariants({registry:{...registry,variants:{awakened:{en:{...registry.variants.awakened.en,sha256:'bad'}}}}}),/sha256/));

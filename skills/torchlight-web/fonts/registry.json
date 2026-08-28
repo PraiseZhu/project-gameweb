@@ -1,0 +1,96 @@
+{
+  "_note": "字体登记册：Figma 里的 fontFamily → 本地字体文件。由 scripts/figma-fonts.mjs 读取。",
+  "_why": "稿里的字体本机没有时，浏览器会静默换成苹方/雅黑，字宽随之改变、折行位置全变，而页面不报任何错。装上真字体是唯一能让『文案会不会挤爆』这个判断成立的办法。",
+  "_discipline": "登记册只登记『我们真的有文件的字体』。稿里出现而这里没有的，由 figma-fonts.mjs 列进缺字体清单——绝不许悄悄拿别的字体顶上冒充做好了。",
+  "families": {
+    "Alimama ShuHeiTi": {
+      "file": "AlimamaShuHeiTi-Bold.woff2",
+      "postScriptName": "AlimamaShuHeiTi",
+      "weight": 700,
+      "style": "normal",
+      "format": "woff2",
+      "source": "npm @fontpkg/alimama-shu-hei-ti@1.0.5",
+      "license": "阿里妈妈免费商用授权",
+      "usedBy": "标题类文字（稿内 fontWeight 700，与本文件 weight 一致）",
+      "sha256": "736cfeb978bbdccd0404f0e56a561174cbff078133214254908e29655a9505e6",
+      "bytes": 594404,
+      "licenseReview": "宣称阿里妈妈免费商用授权，但 npm @fontpkg 包未随附正式 license 文本；再分发/捆绑进 Skill 的条款需人工向权利方确认后移除本标记。不虚构为已确认安全。"
+    },
+    "FontquanXinYiGuanHeiTi": {
+      "file": "FontquanXinYiGuanHeiTi-Regular.ttf",
+      "postScriptName": "FontquanXinYiGuanHeiTi-Regular",
+      "weight": 400,
+      "style": "normal",
+      "format": "truetype",
+      "source": "npm @fontpkg/fontquan-xin-yi-guan-hei-ti@1.0.0",
+      "license": "字体圈欣意冠黑体，免费商用",
+      "usedBy": "正文描述类文字",
+      "sizeWarning": "6.2MB，且上游只提供 TTF、没有 woff2。转 woff2 大约能减半、按稿内字符子集化能压到几百 KB，但两者都需要装 fonttools。目前原样发货，体积计入报告，不静默。",
+      "sha256": "d63ac7f02fe6b15689e5338248c0df338904669fccd045bfcfa4b3cc29775c5f",
+      "bytes": 6493032,
+      "licenseReview": "宣称免费商用，但 npm @fontpkg 包未随附正式 license 文本；再分发/捆绑进 Skill 的条款需人工向权利方确认后移除本标记。不虚构为已确认安全。"
+    },
+    "Bebas Neue": {
+      "file": "BebasNeue-Regular.woff2",
+      "postScriptName": "BebasNeue-Regular",
+      "weight": 400,
+      "style": "normal",
+      "format": "woff2",
+      "source": "npm @fontsource/bebas-neue@5.3.0（latin 子集）",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "礼包码 ETHERIASS4",
+      "subsetWarning": "只含 latin 子集。礼包码是纯 ASCII，够用；若以后有别的字符用这个字体，需补 latin-ext。",
+      "sha256": "a7c90c89240c134f7fdd33d40c000ec90b79d675ea53e8cc5a6d423c073de412",
+      "bytes": 13768
+    },
+    "Noto Sans": {
+      "file": "NotoSans-Variable-latin.woff2",
+      "postScriptName": "NotoSans",
+      "weight": "100 900",
+      "style": "normal",
+      "format": "woff2",
+      "source": "Google Fonts CSS used by Etheria official SS5 en_US page: https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap（latin normal subset）",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "en 正文（Figma 真源映射）",
+      "sha256": "51ca196f49a33e79e7870ff88ebd2829a3f627a51e7d690986618f0e7ad2b52d",
+      "bytes": 35820
+    },
+    "Noto Sans JP": {
+      "file": "NotoSansJP-VariableFont_wght.ttf",
+      "postScriptName": "NotoSansJP",
+      "weight": "100 900",
+      "style": "normal",
+      "format": "truetype",
+      "source": "Etheria official SS5 ja_JP page CDN: https://website.xdcdn.net/poster/236629/SS3_preview/tw/NotoSansJP-VariableFont_wght.ttf",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "ja 全部（Figma 真源映射）",
+      "sha256": "04b2ac921347b12c63bc35adda5722dd2b1860d900f668dc5050a44202464fa5",
+      "bytes": 9135128
+    },
+    "Noto Sans KR": {
+      "file": "NotoSansKR-VF.ttf",
+      "postScriptName": "NotoSansKR",
+      "weight": "100 900",
+      "style": "normal",
+      "format": "truetype",
+      "source": "Noto CJK project variable subset font: https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/Subset/NotoSansKR-VF.ttf",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "ko 全部（Figma 真源映射）",
+      "sha256": "9e1d729e7e2b36f9ef439da102f8c134c10aabe46f1c843bf0aca5c043b86f76",
+      "bytes": 10415420
+    },
+    "Noto Sans HK": {
+      "file": "NotoSansHK-VariableFont_wght.ttf",
+      "postScriptName": "NotoSansHK",
+      "weight": "100 900",
+      "style": "normal",
+      "format": "truetype",
+      "source": "Etheria official SS5 zh_TW page CDN: https://website.xdcdn.net/poster/236629/SS3_preview/tw/NotoSansHK-VariableFont_wght.ttf",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "zh-TW 全部（Figma 真源映射）；variable font 覆盖官网实测 400/500/700 字重",
+      "sha256": "73e6d9035f4ff34ea2ce5af1d022698f63ce0dd8aa2e05e07e3328fe1f7669b0",
+      "bytes": 11887164
+    }
+  },
+  "_languageRouting": "语言+角色字体路由表见 scripts/lib/translation/font-routing.mjs（FONT_SOURCE_ROUTING）。本册只登记字体文件；路由由渲染层按 lang+角色现算。"
+}

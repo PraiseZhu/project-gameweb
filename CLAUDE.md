@@ -26,7 +26,8 @@ Project Gameweb/
 ├── README.md           # 用户向项目说明
 ├── .gitignore          # Git 忽略规则
 ├── skills/             # 按项目切：一个游戏宣发页一个 skill
-│   └── yise-web-ui/    # 伊瑟宣发页 UI skill
+│   ├── yise-web-ui/       # 伊瑟宣发页 UI skill
+│   └── torchlight-web/    # 火炬之光宣发页 UI skill
 └── standards/          # 横切复用：被多个 skill 共同引用的规范与工具链
     └── figma-naming/   # 图层命名规范 + 已规范稿 inventory/v2 ready 抽取
 ```
@@ -43,13 +44,14 @@ Project Gameweb/
 |------|-----------|------|
 | 已规范稿出清单 | 出清单 | 立即执行 `standards/figma-naming/SKILL.md`，不要先问要不要跑 |
 | 伊瑟做页 | yisewebui / 伊瑟网页还原 | 立即执行 `skills/yise-web-ui/SKILL.md`，不要先问要不要跑 |
+| 火炬做页 | torchlightweb / 火炬网页还原 | 立即执行 `skills/torchlight-web/SKILL.md`，不要先问要不要跑 |
 
 用户丢带 `node-id` 的已规范货架链接、且要交给做页时，同样直接跑该 skill。未规范链接不停在本仓硬编，指向 `projects/project-unnamed-inventory`。
 
 ## 协作约定
 
 - **本仓链路**：已规范设计稿 → 脚本抓 inventory/v2 ready → agent 按 skill 核前缀/结构并打 ready 交接包。做页完成标准：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。`figma:from-handoff` 只验包、不写 HTML；出页用 `figma:html-from-handoff`。
-- **Figma 命名稿交接**：命中 `出清单` 后，执行 `standards/figma-naming/SKILL.md`。默认 `npm run inventory` 出 `status: ready`。agent 核一遍后 `handoff:pack` 打 ready 包。核前缀时：页上用到的 `img/` 组件集若变体属性是 `lang`、且至少有两个不同的精确小写 `cn/tw/en/jp/kr`，这些合法变体根必须带切图；没有 `lang` 轴、只有一个变体、或值不是精确小写五码的 `img/` 不跟语言。对人只交交接包路径，不要把两份 inventory JSON 或核对页链接当交付物。不写回 Figma，不用插件交接。命中 `yisewebui` 后，执行 `skills/yise-web-ui/SKILL.md`：有 ready 包走出页命令；没有包就停下来要包。
+- **Figma 命名稿交接**：命中 `出清单` 后，执行 `standards/figma-naming/SKILL.md`。默认 `npm run inventory` 出 `status: ready`。agent 核一遍后 `handoff:pack` 打 ready 包。核前缀时：页上用到的 `img/` 组件集若变体属性是 `lang`、且至少有两个不同的精确小写 `cn/tw/en/jp/kr`，这些合法变体根必须带切图；没有 `lang` 轴、只有一个变体、或值不是精确小写五码的 `img/` 不跟语言。对人只交交接包路径，不要把两份 inventory JSON 或核对页链接当交付物。不写回 Figma，不用插件交接。命中 `yisewebui` 后，执行 `skills/yise-web-ui/SKILL.md`：有 ready 包走出页命令；没有包就停下来要包。命中 `torchlightweb` 后，执行 `skills/torchlight-web/SKILL.md`：有 ready 包走出页命令；没有包就停下来要包。
 - **做页消费边界**：做页只吃 ready。unknown 只画不赋交互。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
 - **未规范稿**：丢未规范链接时停，去 `projects/project-unnamed-inventory`。本仓 CLI 拒绝 `--status draft` / `inventory-unnamed-*` / `--allow-green-draft`。
 - **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
@@ -73,11 +75,11 @@ Project Gameweb/
 
 ## 测试与守卫
 
-进仓契约：新内容只能放 `skills/<name>/` 或 `standards/<name>/`，必须能被夜间和 PR 扫到。标准位置有 `package.json`（只有规范工具可放在 `tool/package.json`），且必须有可核验的 `npm test`（`echo` / `true` / `exit 0` 及其组合不算）。有 `release:audit` / `fonts:check` 会一并跑。没有自测、或把包丢在仓库根 / 分组根 / 隐藏目录 / 嵌套包 / 仓内其他目录里 → 红，不静默跳过。伊瑟公开测试里依赖当前页的走 `test:demo`；实现已脱节的文件会在夜间日志里点名，不算已验证。
+进仓契约：新内容只能放 `skills/<name>/` 或 `standards/<name>/`，必须能被夜间和 PR 扫到。标准位置有 `package.json`（只有规范工具可放在 `tool/package.json`），且必须有可核验的 `npm test`（`echo` / `true` / `exit 0` 及其组合不算）。有 `release:audit` / `fonts:check` 会一并跑。没有自测、或把包丢在仓库根 / 分组根 / 隐藏目录 / 嵌套包 / 仓内其他目录里 → 红，不静默跳过。伊瑟 / 火炬公开测试里依赖当前页的走 `test:demo`；实现已脱节的文件会在夜间日志里点名，不算已验证。
 
 - PR：`.github/workflows/pr-gate.yml` 在 `pull_request` 上跑同一把 `.github/scripts/nightly-health.mjs`。挂了看 Job Summary（错误 / 问题 / 导致）。红叉不锁 Merge。翻译层单测入口：`node --test .github/scripts/pr-gate-summary.test.mjs`。闸没跑（例如 fork 未授权 Actions）不等于通过。
 - 夜间：`.github/workflows/nightly-health.yml` 每天北京 0 点跑 `.github/scripts/nightly-health.mjs`，也可手点；触发器仍只有 schedule 与手动，不加 `pull_request`。挂了看 Actions 红点和 GitHub 失败邮件。
-- 伊瑟公开测试由 `scripts/test-public.mjs` 自动收 `scripts/__tests__/*.test.mjs`。`_*.test.mjs` 和依赖当前页的文件走 `test:demo`，不进夜间。实现已和断言脱节的文件暂列在该脚本的 `BROKEN_PUBLIC`，修完删掉即自动进夜间。
+- 伊瑟 / 火炬公开测试由各自 skill 的 `scripts/test-public.mjs` 自动收 `scripts/__tests__/*.test.mjs`。`_*.test.mjs` 和依赖当前页的文件走 `test:demo`，不进夜间。实现已和断言脱节的文件暂列在该脚本的 `BROKEN_PUBLIC`，修完删掉即自动进夜间。
 - 这是仓内健康检查，不是页面 e2e。完整 e2e 要这个项目**当前那一页**（demo：能打开的 HTML 目录，含 `index.html` / `spec.json` / `truth.json`）。没有页，浏览器验不了今天的产出；skill 单测用的是假目录，代替不了。
 
 ## 版本管理

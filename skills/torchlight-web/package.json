@@ -1,0 +1,43 @@
+{
+  "name": "torchlight-web",
+  "description": "火炬之光宣发页：figma:from-handoff 只验包；figma:html-from-handoff 写出 demo HTML 并必须过 preview-first。",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/test-public.mjs",
+    "test:public": "node scripts/test-public.mjs",
+    "test:demo": "node scripts/test-demo.mjs",
+    "figma:onboard": "node scripts/onboard.mjs",
+    "figma:preview:first": "node scripts/preview-first.mjs",
+    "component:preflight": "node scripts/component-preflight.mjs",
+    "release:audit": "node scripts/public-release-audit.mjs",
+    "prototype:truth": "node scripts/figma-prototype-truth.mjs",
+    "prototype:audit": "node scripts/figma-prototype-truth.mjs --require-observed",
+    "asset:audit": "node scripts/asset-delivery-audit.mjs",
+    "preview:final": "node scripts/final-preview.mjs",
+    "visual:evidence": "node scripts/lib/visual-evidence-collector.mjs",
+    "static:browser-evidence": "node scripts/static-browser-evidence.mjs",
+    "static:visual-assets": "node scripts/static-visual-assets.mjs",
+    "static:golden-regression": "node scripts/static-golden-regression.mjs",
+    "responsive:official": "node scripts/official-responsive-regression.mjs",
+    "figma:state-candidate-audit": "node scripts/figma-state-candidate-audit.mjs",
+    "inventory:check": "node scripts/figma-inventory-check.mjs",
+    "figma:from-handoff": "node scripts/figma-from-handoff.mjs",
+    "figma:html-from-handoff": "node scripts/figma-html-from-handoff.mjs",
+    "human:review": "node scripts/human-review.mjs",
+    "recall:torchlightweb": "node scripts/recall-torchlightweb.mjs",
+    "pack:demo": "node scripts/pack-demo.mjs"
+  },
+  "dependencies": {
+    "css-to-react-native": "^3.2.0",
+    "odiff-bin": "^4.5.0",
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0",
+    "postcss": "^8.5.6"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.62.1",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9"
+  }
+}
