@@ -1235,6 +1235,7 @@
     if (typeof frame.__heroScrollSlotCleanup === 'function') frame.__heroScrollSlotCleanup();
     if (typeof frame.__motionAdapterCleanup === 'function') frame.__motionAdapterCleanup();
     if (typeof frame.__fxAssetSchedulerCleanup === 'function') frame.__fxAssetSchedulerCleanup();
+    if (typeof frame.__fxDropmenuCleanup === 'function') frame.__fxDropmenuCleanup();
     frame.innerHTML = '';
 
     // 当前端对应的设计稿宽度。规范只有 mobile(750) 与 pc(3840) 两套稿；
@@ -1276,6 +1277,8 @@
           '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
           'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
           '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
+          '[data-dropmenu="true"]:hover,[data-dropmenu="true"]:active{filter:none}',
+          '[data-dropmenu-state="on"] [data-prefix="img"]{filter:none}',
         ].join('');
       const style = doc.createElement('style');
       style.setAttribute('data-fx-button-press', 'figma-button-press-contract/v1');
@@ -1534,6 +1537,14 @@
     const fitCandidates = [];
     const hugGrowthOwners = [];
     const asArr = (v) => (Array.isArray(v) ? v : Object.values(v || {}));
+    const hideInPlace = (node, hidden) => {
+      if (!node || node.nodeType !== 1) return;
+      if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
+      node.hidden = hidden;
+      node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
+      node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+    };
+    const closestIn = (target, selector) => (target && target.closest ? target.closest(selector) : null);
     let namedModalPaint = null;
     for (const sid of renderIds) {
       const pageStageMode = sid === '__page__';
@@ -1738,6 +1749,87 @@
       const normalizeFigmaLineBreaks = (value) => String(value ?? '')
         .replace(/\r\n?|\u2028|\u2029/g, '\n');
       const nodeParentId = (n) => String(__u(n && n.parentId) || '');
+      /* dropmenu open/close is exact lowercase on/off only. Do not reuse
+         indicatorVariant's i-flag: On/OFF/true must fail-visible, not open.
+         Axis name is unlocked. Multi-axis variants keep Lang=en; only the
+         unique {on,off} axis counts. Variant names are comma-separated k=v.
+         These helpers live next to paint, not inside interactionBridge:
+         paint mounts dropmenu owners and would ReferenceError otherwise. */
+      const dropmenuParsePairs = (name) => {
+        const pairs = {};
+        for (const part of String(name || '').split(',')) {
+          const cut = part.indexOf('=');
+          if (cut <= 0) continue;
+          const key = part.slice(0, cut).trim();
+          const val = part.slice(cut + 1).trim();
+          if (key) pairs[key] = val;
+        }
+        return pairs;
+      };
+      const dropmenuPropertyMap = (n) => {
+        const raw = n && (n.componentProperties || n.properties || n.prototype?.componentProperties) || {};
+        const props = __plain(raw) || {};
+        const out = {};
+        for (const [key, item] of Object.entries(props)) {
+          const current = __u(item && typeof item === 'object' && item && 'value' in item ? item.value : item);
+          if (typeof current === 'string') out[key] = current;
+        }
+        return out;
+      };
+      const dropmenuAxisName = (variants, nameOf) => {
+        const byAxis = new Map();
+        for (const variant of variants || []) {
+          const pairs = dropmenuParsePairs(nameOf(variant));
+          for (const [key, val] of Object.entries(pairs)) {
+            if (!byAxis.has(key)) byAxis.set(key, new Set());
+            byAxis.get(key).add(val);
+          }
+        }
+        const matches = [];
+        for (const [key, values] of byAxis) {
+          if (values.size === 2 && values.has('on') && values.has('off')) matches.push(key);
+        }
+        if (matches.length === 1) return matches[0];
+        if (matches.length > 1) return null;
+        const tokens = (variants || []).map((variant) => {
+          const raw = String(nameOf(variant) || '').trim();
+          const values = Object.values(dropmenuParsePairs(raw));
+          if (values.length === 1) return values[0];
+          if (raw === 'on' || raw === 'off') return raw;
+          return null;
+        });
+        const unique = [...new Set(tokens)];
+        return unique.length === 2 && unique.includes('on') && unique.includes('off') && !unique.includes(null)
+          ? '*'
+          : null;
+      };
+      const dropmenuExactState = (n) => {
+        attachPlatformVariantGraph(n);
+        const graph = n && n.componentVariantGraph;
+        const variants = Array.isArray(graph && graph.variants) ? graph.variants : [];
+        const axis = dropmenuAxisName(variants, (variant) => __u(variant && variant.name));
+        if (!axis) return 'invalid';
+        const props = dropmenuPropertyMap(n);
+        if (axis !== '*' && Object.prototype.hasOwnProperty.call(props, axis)) {
+          const current = props[axis];
+          return current === 'on' || current === 'off' ? current : 'invalid';
+        }
+        if (axis === '*') {
+          const onOff = Object.entries(props).filter(([, current]) => current === 'on' || current === 'off');
+          if (onOff.length === 1) return onOff[0][1];
+        }
+        return 'invalid';
+      };
+      const dropmenuOnOffTokens = (variants, nameOf) => Boolean(dropmenuAxisName(variants, nameOf));
+      const dropmenuVariantToken = (name, axis) => {
+        const raw = String(name || '').trim();
+        const pairs = dropmenuParsePairs(raw);
+        if (axis && axis !== '*' && Object.prototype.hasOwnProperty.call(pairs, axis)) return pairs[axis];
+        const values = Object.values(pairs);
+        if (values.length === 1) return values[0];
+        if (raw === 'on' || raw === 'off') return raw;
+        return '';
+      };
       /* Main Skill interaction bridge: derive evidence attributes from the
          source-backed owner path/name contract. No page IDs or selectors. */
       const interactionBridge = (items) => {
@@ -2181,6 +2273,23 @@
           /* Independent btn/ with a real normal+highlight COMPONENT_SET is not a
              missing switch. Directory `btn/导航状态` is that family. Static still
              owns 切换按钮 / 角色头像 and draw-only controls. */
+          if (p.role === 'dropmenu') {
+            const menuState = dropmenuExactState(n);
+            attrs['data-dropmenu'] = 'true';
+            attrs['data-dropmenu-state'] = menuState;
+            if (menuState === 'invalid') {
+              attrs['data-dropmenu-invalid'] = 'true';
+              attrs['data-btn-press'] = 'inert';
+              attrs['aria-disabled'] = 'true';
+            } else {
+              attachPlatformVariantGraph(n);
+              const graph = n && n.componentVariantGraph;
+              const variants = Array.isArray(graph && graph.variants) ? graph.variants : [];
+              if (dropmenuOnOffTokens(variants, (variant) => value(variant && variant.name))) {
+                attrs['data-dropmenu-set'] = String(value(graph.componentSetId) || '');
+              }
+            }
+          }
           if (p.role === 'btn' && !switchId && !attrs['data-switch-action']) {
             const btnLabel = String(value(n && n.name) || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
             const staticOwned = /^(切换按钮|角色头像|下载按钮|充值按钮|官网按钮|播放按钮|关闭按钮|兑换码按钮|复制按钮|更多按钮)$/.test(btnLabel);
@@ -2361,6 +2470,7 @@
             }
           }
           const pressable = p.role === 'btn' || p.role === 'tab' || p.role === 'ind' || p.role === 'hot'
+            || p.role === 'dropmenu'
             || attrs['data-sec-target'] != null
             || attrs['data-switch-action'] != null
             || attrs['data-hscroll-action'] != null
@@ -2368,7 +2478,9 @@
             || attrs['data-nav-item'] === 'true'
             || attrs['data-btn-variant'] === 'true'
             || attrs['data-calendar-now-state'] === 'return-today';
-          const disabledPress = indicatorVariant(n) === 'disabled'
+          const disabledPress = (p.role === 'dropmenu'
+            ? attrs['data-dropmenu-state'] === 'invalid'
+            : indicatorVariant(n) === 'disabled')
             || /disable/i.test(String(attrs['data-btn-variant-state'] || ''));
           if (attrs['data-calendar-now'] === 'true' && attrs['data-calendar-now-state'] !== 'return-today') {
             attrs['data-btn-press'] = 'inert';
@@ -2749,6 +2861,7 @@
        }
        const componentInstanceOwners = [];
        const independentButtonOwners = [];
+       const dropmenuOwners = [];
        const seqOf = (i) => {
          const r = rawList[i];
          const anchor = r && (r.orderKey || r.id);
@@ -2815,6 +2928,7 @@
           || evidenceAttrs['data-nav-item'] === 'true'
           || evidenceAttrs['data-btn-press'] === 'true'
           || evidenceAttrs['data-btn-variant'] === 'true'
+          || evidenceAttrs['data-dropmenu'] === 'true'
         );
         /* The rendered-parent stack is only a convenience for DOM nesting.  It
            can be incomplete when a pure Figma container is passed through or a
@@ -2950,6 +3064,10 @@
           const btnLabel = String(n.name || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
           if (btnLabel) el.setAttribute('data-btn-name', btnLabel);
         }
+        if (pfx === 'dropmenu') {
+          const menuLabel = String(n.name || '').replace(/^dropmenu\s*[\/／]\s*/i, '').split('@')[0].trim();
+          if (menuLabel) el.setAttribute('data-dropmenu-name', menuLabel);
+        }
         /* Named `bg/` owners are page/section backdrops. They retain their
            source geometry, but must sit below the sibling paint tree even if
            Figma's exported child order places the backdrop after its content.
@@ -3013,7 +3131,7 @@
             el.style.pointerEvents = 'auto';
             el.style.cursor = 'pointer';
           }
-          if (evidenceAttrs['data-btn-variant'] === 'true') {
+          if (evidenceAttrs['data-btn-variant'] === 'true' || evidenceAttrs['data-dropmenu'] === 'true') {
             el.style.pointerEvents = 'auto';
             el.style.cursor = 'pointer';
           }
@@ -4567,6 +4685,26 @@
             componentVariantOwners.push({ el, trees, initialIndex: variantIndex, switchId: evidenceAttrs['data-switch'], ownerBox: box });
           }
         }
+        if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-dropmenu'] === 'true'
+          && evidenceAttrs['data-dropmenu-state'] !== 'invalid') {
+          attachPlatformVariantGraph(n);
+          const rawGraph = __plain((n && n.componentVariantGraph)
+            || (rawList && rawList[ni] && rawList[ni].componentVariantGraph));
+          const selectedComponentId = String(__u(n.componentId) || '');
+          const variants = Array.isArray(rawGraph && rawGraph.variants) ? rawGraph.variants : [];
+          const trees = Array.isArray(rawGraph && rawGraph.variantTrees) ? rawGraph.variantTrees : [];
+          const variantIndex = variants.findIndex((variant) => String(variant && variant.componentId) === selectedComponentId);
+          if (variantIndex >= 0 && trees.length === variants.length
+            && dropmenuOnOffTokens(variants, (variant) => __u(variant && variant.name))) {
+            dropmenuOwners.push({
+              el,
+              trees,
+              variants,
+              initialIndex: variantIndex,
+              ownerBox: box,
+            });
+          }
+        }
         if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-btn-variant'] === 'true') {
           attachPlatformVariantGraph(n);
           const rawGraph = __plain((n && n.componentVariantGraph)
@@ -4746,13 +4884,6 @@
         const ownerHeight = Number(ownerBox.h);
         let mountBlocked = false;
         const layers = [];
-        const hideInPlace = (node, hidden) => {
-          if (!node || node.nodeType !== 1) return;
-          if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
-          node.hidden = hidden;
-          node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
-          node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
-        };
         const ownerId = String(owner.el.getAttribute('data-node') || '');
         const instancePrefix = ownerId ? `I${ownerId};` : '';
         const host = owner.el.parentElement;
@@ -4830,6 +4961,86 @@
               layerTexts[i].textContent = ownTexts[i].textContent;
             }
           }
+        }
+      }
+      for (const owner of dropmenuOwners) {
+        if (owner.el.getAttribute('data-dropmenu-mount-status')) continue;
+        const variants = owner.variants || [];
+        const trees = owner.trees || [];
+        const ownerBox = __plain(owner.ownerBox || {});
+        const ownerWidth = Number(ownerBox.w);
+        const ownerHeight = Number(ownerBox.h);
+        let mountBlocked = false;
+        const layers = [];
+        const ownerId = String(owner.el.getAttribute('data-node') || '');
+        const instancePrefix = ownerId ? `I${ownerId};` : '';
+        const host = owner.el.parentElement;
+        const baseExternals = [];
+        if (host && instancePrefix) {
+          for (const sibling of [...host.children]) {
+            if (sibling === owner.el) continue;
+            const siblingId = sibling.getAttribute && sibling.getAttribute('data-node');
+            if (!siblingId || !String(siblingId).startsWith(instancePrefix)) continue;
+            sibling.setAttribute('data-dropmenu-external', 'instance-sibling');
+            baseExternals.push(sibling);
+          }
+        }
+        for (const [index, tree] of trees.entries()) {
+          const treeNodes = tree && tree.nodes || [];
+          const wantedId = String(__u(tree && tree.componentId) || '');
+          const root = treeNodes.find((node) => String(__u(node && node.id)) === wantedId && String(node && node.type || '') === 'COMPONENT') || null;
+          const rootBox = __plain(root && root.box || tree && tree.box || {});
+          const axis = dropmenuAxisName(variants, (variant) => __u(variant && variant.name));
+          const token = dropmenuVariantToken(__u(variants[index] && variants[index].name), axis);
+          const state = token === 'on' || token === 'off' ? token : 'invalid';
+          if (state === 'invalid' || !root || !Number.isFinite(Number(rootBox.w)) || !Number.isFinite(Number(rootBox.h))
+            || !Number.isFinite(ownerWidth) || Math.abs(Number(rootBox.w) - ownerWidth) > 0.5) {
+            mountBlocked = true;
+            owner.el.setAttribute('data-dropmenu-mount-status', 'blocked-owner-extent-or-axis');
+            owner.el.setAttribute('data-dropmenu-state', 'invalid');
+            owner.el.setAttribute('data-dropmenu-mount-detail', JSON.stringify({
+              wantedId, token, rootW: rootBox.w, rootH: rootBox.h, ownerWidth, ownerHeight,
+            }));
+            break;
+          }
+          if (index === owner.initialIndex) {
+            owner.el.setAttribute('data-dropmenu-index', String(index));
+            owner.el.setAttribute('data-dropmenu-state', state);
+            owner.el.__fxDropmenuOwnerH = ownerHeight;
+            for (const sibling of baseExternals) {
+              sibling.setAttribute('data-dropmenu-index', String(index));
+              hideInPlace(sibling, false);
+            }
+            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true, rootH: Number(rootBox.h) });
+            continue;
+          }
+          const layer = document.createElement('div');
+          layer.setAttribute('data-dropmenu-layer', 'true');
+          layer.setAttribute('data-dropmenu-index', String(index));
+          layer.setAttribute('data-dropmenu-state', state);
+          layer.setAttribute('aria-hidden', 'true');
+          layer.style.position = 'absolute';
+          layer.style.left = '0';
+          layer.style.top = '0';
+          layer.style.width = '100%';
+          layer.style.height = Number(rootBox.h) + 'px';
+          layer.style.overflow = 'visible';
+          layer.hidden = true;
+          owner.el.appendChild(layer);
+          paint(treeNodes, treeNodes, layer, {
+            originX: Number(rootBox.x) || 0,
+            originY: Number(rootBox.y) || 0,
+            skipNodeIds: new Set([String(__u(root.id))]),
+            suppressInteractions: true,
+          });
+          hideInPlace(layer, true);
+          layers.push({ index, state, el: layer, externals: [], isBase: false, rootH: Number(rootBox.h) });
+        }
+        if (!mountBlocked && layers.length === trees.length) {
+          owner.el.style.overflow = 'visible';
+          owner.el.setAttribute('data-dropmenu-mount-status', 'owner-local-mutually-exclusive');
+          owner.el.setAttribute('data-dropmenu-count', String(layers.length));
+          owner.el.__fxDropmenuLayers = layers;
         }
       }
       };   /* paint complete: subsequent page-stage assembly is renderApp scope */
@@ -5137,13 +5348,6 @@
           const text = String(raw || '').trim();
           return text ? text : '';
         };
-        const hideInPlace = (node, hidden) => {
-          if (!node || node.nodeType !== 1) return;
-          if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
-          node.hidden = hidden;
-          node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
-          node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
-        };
         const openers = Array.from(frame.querySelectorAll('[data-btn-name]') || []);
         const wired = [];
         const modalPlatform = (modal) => {
@@ -5380,13 +5584,7 @@
           if (!from || !to) return;
           to.replaceChildren(...[...from.children].map((child) => stripIdentity(child.cloneNode(true))));
         };
-        const hideBtnLayer = (node, hidden) => {
-          if (!node || node.nodeType !== 1) return;
-          if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
-          node.hidden = hidden;
-          node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
-          node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
-        };
+        const hideBtnLayer = hideInPlace;
         const applyIndependentButtonVariant = (owner, nextState) => {
           const layers = owner && owner.__fxButtonVariantLayers;
           if (!Array.isArray(layers) || !layers.length) return false;
@@ -5411,6 +5609,104 @@
           }
           return true;
         };
+        /* dropmenu open/close is exact lowercase on/off only. Do not reuse
+           indicatorVariant i-flag: On/OFF/true must fail-visible, not open. */
+        const DROPMENU_SELF_LABELS = Object.freeze({
+          '简体中文': 'zh-CN',
+          '繁體中文': 'zh-TW',
+          'English': 'en',
+          '日本語': 'ja',
+          '한국어': 'ko',
+        });
+        const normalizeDropmenuSelfLabel = (raw) => String(raw || '').replace(/\s+/g, '').toLowerCase();
+        const dropmenuLangFromSelfLabel = (raw) => {
+          const key = normalizeDropmenuSelfLabel(raw);
+          if (!key) return null;
+          for (const [label, lang] of Object.entries(DROPMENU_SELF_LABELS)) {
+            if (normalizeDropmenuSelfLabel(label) === key) return lang;
+          }
+          return null;
+        };
+        const markDropmenuInvalid = (owner, extra = {}) => {
+          owner.setAttribute('data-dropmenu-state', extra.state || owner.getAttribute('data-dropmenu-state') || 'invalid');
+          owner.setAttribute('data-dropmenu-invalid', 'true');
+          if (extra.selfLabel) owner.setAttribute('data-dropmenu-self-label', extra.selfLabel);
+          if (extra.inert) {
+            owner.setAttribute('data-btn-press', 'inert');
+            owner.setAttribute('aria-disabled', 'true');
+          }
+        };
+        const applyDropmenuLang = (lang) => {
+          if (!lang) return false;
+          const qa = typeof window !== 'undefined' ? window.__qa : null;
+          const setPref = typeof ctx.setPref === 'function'
+            ? ctx.setPref
+            : (qa && typeof qa.setPref === 'function' ? qa.setPref.bind(qa) : null);
+          /* Product view has no window.__qa. Mutating ctx.prefs only edits
+             chrome's cp(S.prefs) snapshot and does not persist or re-render. */
+          if (typeof setPref !== 'function') return false;
+          setPref('lang', lang);
+          return true;
+        };
+        const dropmenuGlobeName = (el) => String((el && (el.getAttribute('data-name') || el.getAttribute('data-node-name'))) || '');
+        const isDropmenuGlobeImg = (el) => {
+          if (!el || el.getAttribute('data-prefix') !== 'img') return false;
+          const name = dropmenuGlobeName(el);
+          return /(?:^|[\/／])(?:地球|globe|多语言icon)(?:$|[\/／@\s])/i.test(name);
+        };
+        const dropmenuGlobeImgs = (owner) => [...owner.querySelectorAll('[data-prefix="img"]')].filter(isDropmenuGlobeImg);
+        const syncDropmenuGlobeHover = (owner) => {
+          if (!owner || owner.nodeType !== 1) return;
+          const state = owner.getAttribute('data-dropmenu-state');
+          for (const globe of dropmenuGlobeImgs(owner)) {
+            if (state === 'off') globe.setAttribute('data-dropmenu-globe-hover', 'programmatic');
+            else globe.removeAttribute('data-dropmenu-globe-hover');
+            globe.style.filter = '';
+          }
+        };
+        const applyDropmenuVariant = (owner, nextState) => {
+          if (!owner || owner.getAttribute('data-dropmenu-mount-status') !== 'owner-local-mutually-exclusive') return false;
+          if (nextState !== 'on' && nextState !== 'off') {
+            markDropmenuInvalid(owner, { state: 'invalid', inert: true });
+            return false;
+          }
+          const layers = owner.__fxDropmenuLayers;
+          if (!Array.isArray(layers) || !layers.length) return false;
+          const next = layers.find((layer) => layer.state === nextState) || null;
+          if (!next) {
+            markDropmenuInvalid(owner, { state: 'invalid' });
+            return false;
+          }
+          for (const layer of layers) {
+            const active = layer === next;
+            hideBtnLayer(layer.el, layer.isBase ? false : !active);
+            if (layer.isBase) {
+              for (const child of [...layer.el.children]) {
+                if (child.getAttribute && child.getAttribute('data-dropmenu-layer') === 'true') continue;
+                hideBtnLayer(child, !active);
+              }
+            }
+            for (const sibling of layer.externals || []) hideBtnLayer(sibling, !active);
+          }
+          owner.setAttribute('data-dropmenu-state', next.state);
+          owner.setAttribute('data-dropmenu-index', String(next.index));
+          owner.removeAttribute('data-dropmenu-invalid');
+          const nextH = Number(next.rootH);
+          if (Number.isFinite(nextH) && nextH > 0) owner.style.height = nextH + 'px';
+          syncDropmenuGlobeHover(owner);
+          if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
+            const target = next.isBase ? owner : next.el;
+            frame.__fxAssetScheduler.prime(target);
+          }
+          return true;
+        };
+        const toggleDropmenu = (owner) => {
+          if (!owner) return false;
+          const current = owner.getAttribute('data-dropmenu-state');
+          if (current !== 'on' && current !== 'off') return false;
+          return applyDropmenuVariant(owner, current === 'on' ? 'off' : 'on');
+        };
+        for (const owner of [...frame.querySelectorAll('[data-dropmenu="true"]')]) syncDropmenuGlobeHover(owner);
         const applyNavigationVariant = (group, activeIndex) => {
           const items = group && group.items || [];
           /* Directory `btn/导航状态` is an independent COMPONENT_SET: selected
@@ -5657,6 +5953,44 @@
         };
         frame.__fxSyncFixedNavigation = syncFixedNavigation;
         frame.addEventListener('click', (ev) => {
+          const innerBtn = closestIn(ev.target, '[data-prefix="btn"], [data-btn-name]');
+          const dropmenuOwner = closestIn(ev.target, '[data-dropmenu="true"]');
+          if (innerBtn && dropmenuOwner && dropmenuOwner.contains(innerBtn)
+            && dropmenuOwner.getAttribute('data-dropmenu-state') === 'on') {
+            const label = String(innerBtn.getAttribute('data-btn-name')
+              || innerBtn.textContent
+              || '').trim();
+            const lang = dropmenuLangFromSelfLabel(label);
+            if (!lang) {
+              markDropmenuInvalid(dropmenuOwner, { selfLabel: 'unresolved' });
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
+            if (!applyDropmenuLang(lang)) {
+              markDropmenuInvalid(dropmenuOwner, { selfLabel: 'no-pref-handle' });
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
+            /* setPref → chrome syncAll → renderApp clears frame.innerHTML.
+               dropmenuOwner is detached. Close menus on the rebuilt tree so a
+               source-on instance still lands off after the language change. */
+            for (const owner of [...frame.querySelectorAll('[data-dropmenu="true"][data-dropmenu-mount-status="owner-local-mutually-exclusive"]')]) {
+              owner.removeAttribute('data-dropmenu-self-label');
+              owner.removeAttribute('data-dropmenu-invalid');
+              applyDropmenuVariant(owner, 'off');
+            }
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
+          if (dropmenuOwner && dropmenuOwner.getAttribute('data-dropmenu-mount-status') === 'owner-local-mutually-exclusive') {
+            toggleDropmenu(dropmenuOwner);
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
           const btnVariantEarly = ev.target && ev.target.closest ? ev.target.closest('[data-btn-variant="true"]') : null;
           if (btnVariantEarly && btnVariantEarly.getAttribute('data-btn-variant-mount-status') === 'owner-local-mutually-exclusive'
             && btnVariantEarly.getAttribute('data-nav-item') !== 'true') {
@@ -5694,8 +6028,7 @@
             ? (ev.target.closest('[data-go]')
               || ev.target.closest('[data-btn-name="播放按钮"]')
               || ev.target.closest('[data-btn-name="导航按钮"]')
-              || ev.target.closest('[data-btn-name="多语言按钮"]')
-              || ev.target.closest('[data-btn-name="多语言切换按钮"]'))
+              || ev.target.closest('[data-btn-name="多语言按钮"]'))
             : null;
           const calendarReturn = ev.target && ev.target.closest
             ? ev.target.closest('[data-calendar-now="true"][data-calendar-now-state="return-today"]')
@@ -5751,13 +6084,6 @@
             }
           }
           const namedModals = frame.__fxNamedModals || [];
-          const hideInPlace = (node, hidden) => {
-            if (!node || node.nodeType !== 1) return;
-            if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
-            node.hidden = hidden;
-            node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
-            node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
-          };
           const closeNamedModal = (entry) => {
             if (!entry || !entry.layer) return;
             hideInPlace(entry.layer, true);
@@ -5849,6 +6175,38 @@
             return;
           }
         });
+        const closeDropmenuOutside = (ev) => {
+          const hit = closestIn(ev && ev.target, '[data-dropmenu="true"]');
+          if (hit && frame.contains(hit)) return;
+          for (const owner of [...frame.querySelectorAll('[data-dropmenu="true"][data-dropmenu-state="on"]')]) {
+            applyDropmenuVariant(owner, 'off');
+          }
+        };
+        const onDropmenuGlobeEnter = (ev) => {
+          const globe = closestIn(ev.target, '[data-prefix="img"]');
+          if (!globe || !frame.contains(globe) || !isDropmenuGlobeImg(globe)) return;
+          const owner = globe.closest('[data-dropmenu="true"]');
+          if (!owner || owner.getAttribute('data-dropmenu-state') !== 'off') return;
+          if (globe.getAttribute('data-dropmenu-globe-hover') !== 'programmatic') return;
+          globe.style.filter = 'brightness(var(--fx-hover-brightness, 1.12))';
+        };
+        const onDropmenuGlobeLeave = (ev) => {
+          const globe = closestIn(ev.target, '[data-prefix="img"]');
+          if (!globe || !frame.contains(globe) || !isDropmenuGlobeImg(globe)) return;
+          globe.style.filter = '';
+        };
+        const dropmenuDoc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
+        if (dropmenuDoc) {
+          dropmenuDoc.addEventListener('click', closeDropmenuOutside);
+          dropmenuDoc.addEventListener('pointerover', onDropmenuGlobeEnter);
+          dropmenuDoc.addEventListener('pointerout', onDropmenuGlobeLeave);
+          frame.__fxDropmenuCleanup = () => {
+            dropmenuDoc.removeEventListener('click', closeDropmenuOutside);
+            dropmenuDoc.removeEventListener('pointerover', onDropmenuGlobeEnter);
+            dropmenuDoc.removeEventListener('pointerout', onDropmenuGlobeLeave);
+            frame.__fxDropmenuCleanup = null;
+          };
+        }
         const switchSwipeOwner = (target) => {
           if (!target || !target.closest) return null;
           let owner = target.closest('[data-switch-owner][data-switch-page-source="component-set-variant"]');

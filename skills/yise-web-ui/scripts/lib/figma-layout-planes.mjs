@@ -39,7 +39,7 @@ function visualStats(root, descendants) {
     const type = String(node.type || '').toUpperCase();
     const role = deriveRole(node).role;
     if (type === 'TEXT' || role === 'copy') textCount++;
-    if (['btn', 'hot', 'switch', 'tab', 'ind'].includes(role)) interactiveCount++;
+    if (['btn', 'hot', 'switch', 'tab', 'ind', 'dropmenu'].includes(role)) interactiveCount++;
     if (['btn', 'hot'].includes(role)) ctaCount++;
     if (['fix', 'scroll', 'tab', 'ind'].includes(role)) navCount++;
     if (['INSTANCE', 'COMPONENT', 'COMPONENT_SET'].includes(type)) componentCount++;

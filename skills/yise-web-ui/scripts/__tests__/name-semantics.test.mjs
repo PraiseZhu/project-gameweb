@@ -13,6 +13,7 @@ F('IMG/ 大小写等价', parseLayerName('IMG/标题logo').role === 'img');
 F('Sec/ 大小写等价', parseLayerName('Sec/1').role === 'sec');
 F('img / spaced slash 等价', (() => { const p = parseLayerName('img / label'); return p.role === 'img' && p.label === 'label'; })());
 F('switch/角色', parseLayerName('switch/角色').role === 'switch');
+F('dropmenu/语言', parseLayerName('dropmenu/语言').role === 'dropmenu');
 F('txt/ 是 legacy warning 而非标准', (() => { const p = parseLayerName('txt/title'); return p.role === null && p.legacyRole === 'txt' && p.warnings.some((w) => w.code === 'legacy-prefix'); })());
 F('swpage/ 是 legacy warning 而非标准', (() => { const p = parseLayerName('swpage/one'); return p.role === null && p.legacyRole === 'swpage' && p.warnings.some((w) => w.code === 'legacy-prefix'); })());
 F('全角斜杠与半角等价', (() => { const p = parseLayerName('img／bad'); return p.role === 'img' && p.label === 'bad' && p.errors.length === 0; })());
@@ -21,7 +22,7 @@ F('@参数解析 key=value', (() => { const p = parseLayerName('btn/下载@state
 F('无前缀不算 role', parseLayerName('随便一个名字').role === null);
 F('未知前缀不算 role', parseLayerName('zzz/什么').role === null);
 F('v2.8:copy/ 不在前缀总表,不解析成角色', parseLayerName('copy/标题').role === null);
-F('标准角色词表不含 txt/swpage', ['sec','fix','ref','img','bg','kv','btn','hot','modal','dyn','mix','scroll','switch','tab','ind'].every(r => KNOWN_ROLES.includes(r)) && !KNOWN_ROLES.includes('txt') && !KNOWN_ROLES.includes('swpage'));
+F('标准角色词表不含 txt/swpage', ['sec','fix','ref','img','bg','kv','btn','hot','modal','dropmenu','dyn','mix','scroll','switch','tab','ind'].every(r => KNOWN_ROLES.includes(r)) && !KNOWN_ROLES.includes('txt') && !KNOWN_ROLES.includes('swpage'));
 F('legacy 角色词表含 txt/swpage', ['txt','swpage'].every(r => LEGACY_COMPATIBILITY_ROLES.includes(r)));
 
 console.log('— deriveRole 优先级 —');

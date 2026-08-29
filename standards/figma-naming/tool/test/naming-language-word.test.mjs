@@ -18,12 +18,25 @@ import assert from "node:assert/strict";
 
 import { functionWordPattern } from "../src/naming/structure.mjs";
 
-const node = (name) => ({
-  name, type: "INSTANCE", children: [],
+const node = (name, type = "INSTANCE") => ({
+  name, type, children: [],
   absoluteBoundingBox: { x: 0, y: 0, width: 200, height: 80 },
 });
 
-test("「多语言」直接给 btn/，不再空手落档", () => {
+test("COMPONENT_SET 根「多语言/语言切换/切换语言/language」给 dropmenu/，不并入切换行", () => {
+  for (const name of ["多语言", "语言切换", "切换语言", "language switch"]) {
+    const hit = functionWordPattern(node(name, "COMPONENT_SET"));
+    assert.ok(hit, `「${name}」应该命中功能词表`);
+    assert.equal(hit.confidentPrefix, "dropmenu", `「${name}」`);
+    assert.ok(hit.candidatePrefixes.includes("dropmenu"), `「${name}」候选要含 dropmenu`);
+    assert.equal(hit.candidatePrefixes.includes("btn"), false, `「${name}」候选不含 btn`);
+    assert.equal(hit.candidatePrefixes.includes("switch"), false, `「${name}」不得并入切换行`);
+    assert.equal(hit.candidatePrefixes.includes("tab"), false);
+    assert.equal(hit.candidatePrefixes.includes("ind"), false);
+  }
+});
+
+test("INSTANCE「多语言」仍走 btn/（手机入口）", () => {
   for (const name of ["多语言", "语言切换", "切换语言", "language switch"]) {
     const hit = functionWordPattern(node(name));
     assert.ok(hit, `「${name}」应该命中功能词表`);

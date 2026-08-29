@@ -123,18 +123,27 @@ export function isBackingName(name) {
 export function functionWordPattern(node) {
   const name = String(node.name ?? "");
   const lower = name.toLowerCase();
+  const languageWords = ["多语言", "语言切换", "切换语言", "language"];
   const rows = [
-    { words: ["切换", "轮播", "swiper", "carousel"], candidates: ["switch", "tab", "ind"] },
+    { words: ["轮播", "swiper", "carousel"], candidates: ["switch", "tab", "ind"] },
+    { words: ["切换"], candidates: ["switch", "tab", "ind"], skipIf: ["语言切换", "切换语言"] },
     { words: ["翻页", "箭头", "arrow", "prev", "next", "上一", "下一"], candidates: ["btn", "ind"] },
     { words: ["按钮", "点击", "btn", "button"], candidates: ["btn", "hot"] },
     { words: ["指示", "进度", "indicator", "dots"], candidates: ["ind"] },
     { words: ["滑动", "scroll"], candidates: ["scroll"] },
     { words: ["页签", "tab"], candidates: ["tab"] },
-    { words: ["多语言", "语言切换", "切换语言", "language"], candidates: ["btn"] },
+    { words: languageWords, candidates: ["dropmenu", "btn"] },
   ];
-  const hits = rows.filter((row) => row.words.some((word) => lower.includes(word)));
+  const hits = rows.filter((row) => {
+    if (row.skipIf?.some((phrase) => name.includes(phrase) || lower.includes(phrase))) return false;
+    return row.words.some((word) => lower.includes(word));
+  });
   if (hits.length === 0) return null;
-  const candidatePrefixes = [...new Set(hits.flatMap((row) => row.candidates))];
+  const languageWord = languageWords.some((w) => lower.includes(w));
+  const isLanguageSet = node.type === "COMPONENT_SET" && languageWord;
+  const candidatePrefixes = isLanguageSet
+    ? ["dropmenu"]
+    : [...new Set(hits.flatMap((row) => row.candidates))];
   const hitWords = hits.flatMap((row) => row.words.filter((word) => lower.includes(word)));
 
   // 带「背景/底」的一律不是功能件本身，让它走 img/ 那条路。
@@ -149,14 +158,16 @@ export function functionWordPattern(node) {
   // 只挡 confident，仍然出「需要确认」的条目。真稿四帧含「icon」的 80 层里
   // 带前缀的 19 个全部是 img/、btn/ 一个都没有，方向一致。
   const iconish = /icon/i.test(lower);
+  const buttonWord = ["按钮", "点击", "button", "prev", "next", "上一", "下一"].some((w) => lower.includes(w));
   const confident = backing || iconish
     ? null
-    : ["按钮", "点击", "button", "prev", "next", "上一", "下一",
-      "多语言", "语言切换", "切换语言", "language"].some((w) => lower.includes(w))
-      ? "btn"
-      : ["指示", "进度", "indicator", "dots"].some((w) => lower.includes(w))
-        ? "ind"
-        : null;
+    : isLanguageSet
+      ? "dropmenu"
+      : buttonWord || languageWord
+        ? "btn"
+        : ["指示", "进度", "indicator", "dots"].some((w) => lower.includes(w))
+          ? "ind"
+          : null;
 
   return {
     candidatePrefixes,

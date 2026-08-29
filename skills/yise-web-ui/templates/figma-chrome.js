@@ -706,9 +706,13 @@
     var productPlatform = productViewportPlatform();
     if (productPlatform) renderPrefs.plat = productPlatform;
     var vp = viewport();
+    /* Product view has no window.__qa. Pass the same persist+syncAll writer
+       dropmenu language uses, so ?product=1 self-labels rewrite S.prefs
+       instead of this cp(S.prefs) snapshot. */
     cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
-      interactionPayload: cfg.interactionPayload || null });
+      interactionPayload: cfg.interactionPayload || null,
+      setPref: applyPref });
   }
 
   /* 字体就绪回调：渲染层重量完缩字号后调这里，让读数（缩字号条数/字宽对账/缺字形）
@@ -2120,6 +2124,18 @@
     if (q.grid === '1') S.grid = true;
   }
 
+  function applyPref(key, value) {
+    if (!cfg.matrix || !(key in ({ plat: 1, region: 1, os: 1, mode: 1, lang: 1 }))) {
+      throw new Error('__qa.setPref: 未声明的维度 ' + key);
+    }
+    /* Platform is a geometry preference: use the same device-routing path as
+       the visible platform buttons, otherwise syncAll immediately derives PC
+       again from the old device viewport. */
+    if (key === 'plat') syncDeviceToPlat(value);
+    S.prefs[key] = value;
+    persist();
+    syncAll();
+  }
   function persist() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S.prefs)); } catch (e) {} }
   function clamp(v, lo, hi) { v = Number(v) || lo; return Math.min(hi, Math.max(lo, v)); }
   function cp(o) { var r = {}; for (var k in o) r[k] = o[k]; return r; }
@@ -2146,14 +2162,7 @@
        自动化仍要能把它们写进 prefs 走完整校验链，走这个正式 API 而非点不可见 DOM。
        只许写 cfg.matrix 已声明的 key；写后 persist+syncAll 让 case 持久化与读数一致。 */
     setPref: function (key, value) {
-      if (!cfg.matrix || !(key in ({ plat: 1, region: 1, os: 1, mode: 1, lang: 1 }))) {
-        throw new Error('__qa.setPref: 未声明的维度 ' + key);
-      }
-      /* Platform is a geometry preference: use the same device-routing path as
-         the visible platform buttons, otherwise syncAll immediately derives PC
-         again from the old device viewport. */
-      if (key === 'plat') syncDeviceToPlat(value);
-      S.prefs[key] = value; persist(); syncAll();
+      applyPref(key, value);
     },
     scale: function () { return typeof cfg.scale === 'function' ? cfg.scale.call(cfg) : 1; },
     supports: function () { return cfg.supports || {}; },

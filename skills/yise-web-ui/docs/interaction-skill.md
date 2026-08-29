@@ -111,9 +111,12 @@ parent group to normal. Replacement is in-place hide/show of already extracted
 variant trees. TEXT/HUG nodes need `display:none` plus the saved original
 display. Flattened `I{owner};…` descendants must not be reparented.
 
-PC `btn/多语言切换按钮` highlight is the large opener panel itself, not a
-`modal/`. The small language list-item set is a different component set and
-must not replace the homepage opener.
+PC language open/close is a `dropmenu/` control, not independent `btn/`
+highlight. Exact lowercase `on`/`off` only. Click the root to toggle; inner
+list `btn/` wins over the root; click outside returns `off`. When `off`, the
+globe `img/` may receive programmatic hover. Inner self-labels
+`简体中文`/`繁體中文`/`English`/`日本語`/`한국어` switch language and close;
+unknown labels fail-visible and must not fall back to zh-CN.
 
 Directory `btn/导航状态` is the same independent family. Selected row shows
 that instance's `Property 1=highlight` tree; siblings return to
@@ -145,9 +148,9 @@ the named source modal exists:
 2. On mobile, `btn/导航按钮` opens `modal/顶部导航-1624尺寸`.
 3. On mobile, `btn/多语言按钮` opens `modal/多语言按钮弹窗`.
 
-The PC `btn/多语言切换按钮` is a separate opener component. It may open the
-language modal through its unique named source contract, but it must not be
-confused with the mobile `btn/多语言按钮` component-set variant.
+PC language uses `dropmenu/` on/off as above. Do not treat the PC control as
+`btn/多语言切换按钮` plus highlight. Mobile stays `btn/多语言按钮` →
+`modal/多语言按钮弹窗`; do not rewrite that path as `dropmenu/`.
 
 Several openers may share one unique `modal/`. Zero hits or two same-name
 modals stay unresolved. In-modal play/close must not write `@go`. A mounted

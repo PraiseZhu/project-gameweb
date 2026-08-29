@@ -95,9 +95,13 @@ A profile may now become determined from inventory names when the extracted
 modal tree and matching `btn/` label are unique on that platform:
 
 - `btn/导航按钮` → `modal/顶部导航-1624尺寸` (`menu-open`)
-- `btn/多语言按钮` → `modal/多语言按钮弹窗` (`language-open`)
+- mobile `btn/多语言按钮` → `modal/多语言按钮弹窗` (`language-open`)
 - the two overlays are mutually exclusive
 - `btn/关闭按钮` inside a modal returns that platform to `default`
+
+PC language open/close is a `dropmenu/` control with exact lowercase `on`/`off`.
+It is not a named `modal/` opener and not `btn/` highlight. Click the root to
+toggle; inner list `btn/` wins over the root; click outside returns `off`.
 
 Evidence kind is `template-naming`. Prototype remains valid when present, but
 an empty prototype no longer blocks these uniquely named openers. Ambiguous

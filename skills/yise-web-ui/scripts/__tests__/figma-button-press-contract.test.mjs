@@ -64,7 +64,7 @@ test('source-backed highlight variant stays distinct from CSS press', () => {
     ],
   };
   const model = deriveInteractionModel([
-    { id: 'lang', type: 'INSTANCE', name: 'btn/多语言切换按钮', componentProperties: { 'Property 1': { value: 'normal', type: 'VARIANT' } }, componentVariantGraph: graph },
+    { id: 'lang', type: 'INSTANCE', name: 'btn/头像状态按钮', componentProperties: { 'Property 1': { value: 'normal', type: 'VARIANT' } }, componentVariantGraph: graph },
   ]);
   const attrs = model.attributes.find((entry) => entry.id === 'lang')?.attrs;
   assert.equal(attrs['data-btn-variant'], 'true');
@@ -119,4 +119,46 @@ test('attachButtonPressAttrs does not mark unnamed frames as buttons', () => {
   const next = attachButtonPressAttrs({ 'data-node': 'title' }, { role: null });
   assert.equal(next.role, undefined);
   assert.equal(next['data-btn-press'], undefined);
+});
+
+test('dropmenu off/on stay pressable and do not inherit btn disable', () => {
+  const graph = {
+    componentSetId: 'dropmenu-set',
+    variants: [
+      { componentId: 'menu-off', name: 'Property 1=off', interactions: [] },
+      { componentId: 'menu-on', name: 'Property 1=on', interactions: [] },
+    ],
+  };
+  const offModel = deriveInteractionModel([
+    {
+      id: 'menu-off',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        'Property 1': { value: 'off', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const onModel = deriveInteractionModel([
+    {
+      id: 'menu-on',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        'Property 1': { value: 'on', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const dropmenuOff = offModel.attributes.find((entry) => entry.id === 'menu-off')?.attrs;
+  const dropmenuOn = onModel.attributes.find((entry) => entry.id === 'menu-on')?.attrs;
+  assert.equal(dropmenuOff['data-dropmenu'], 'true');
+  assert.equal(dropmenuOff['data-dropmenu-state'], 'off');
+  assert.equal(dropmenuOff['data-btn-press'], 'true');
+  assert.equal(dropmenuOn['data-dropmenu-state'], 'on');
+  assert.equal(dropmenuOn['data-btn-press'], 'true');
+  const css = buttonPressCss();
+  assert.match(css, /\[data-dropmenu="true"\]:hover/);
+  assert.match(css, /\[data-dropmenu-state="on"\] \[data-prefix="img"\]\{filter:none\}/);
 });

@@ -38,7 +38,7 @@ test("校验：三种回答之外的一律拒绝", () => {
 test("校验：不许发明规范总表以外的前缀", () => {
   const bad = validateVerdict({ ...base, prefix: "card" });
   assert.equal(bad.ok, false);
-  assert.match(bad.reason, /15 个前缀/);
+  assert.match(bad.reason, /\d+ 个前缀/);
 });
 
 /**

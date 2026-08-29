@@ -546,7 +546,7 @@ function handleUiMessage(msg) {
  * → merge-verdicts.mjs 并进 data/user-labels.json。不新建存储/导出/合并。
  *
  * body 用图层原名，不编（用户新稿里两个弹窗都叫「视频弹窗」→ modal/视频弹窗）。
- * validateVerdict 会挡住不在规范 15 个前缀里的值，这里不重复校验。
+ * validateVerdict 会挡住不在规范 PREFIXES.size 个前缀里的值，这里不重复校验。
  */
 async function markNode(msg) {
   const node = await figma.getNodeByIdAsync(msg.nodeId);

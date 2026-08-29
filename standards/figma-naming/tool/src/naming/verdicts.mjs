@@ -27,7 +27,7 @@ export const VERDICT_KINDS = new Set([
 
 const PREFIXES = new Set([
   "sec", "fix", "ref", "img", "bg", "kv", "btn", "hot",
-  "modal", "dyn", "mix", "scroll", "switch", "tab", "ind",
+  "modal", "dropmenu", "dyn", "mix", "scroll", "switch", "tab", "ind",
 ]);
 
 /**
@@ -50,7 +50,7 @@ export function validateVerdict(input) {
   }
   if (kind === "correct") {
     if (!PREFIXES.has(prefix)) {
-      return { ok: false, reason: `「${prefix}」不在规范的 15 个前缀里` };
+      return { ok: false, reason: `「${prefix}」不在规范的 ${PREFIXES.size} 个前缀里` };
     }
     if (body != null && typeof body !== "string") return { ok: false, reason: "body 必须是字符串" };
   }
