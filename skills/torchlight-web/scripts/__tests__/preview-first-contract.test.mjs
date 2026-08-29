@@ -1,0 +1,195 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { explainMeaningfulContract, candidateCompletion, decodeJsonBytes, productViewUrl, externalTruthFileProtocolFailure, EXTERNAL_TRUTH_FILE_FAILURE } from '../preview-first.mjs';
+import { parsePreviewJson } from '../figma-html-from-handoff.mjs';
+import { validateSpec } from '../lib/schema.mjs';
+import { qaTruthIsExternal } from '../lib/html-volume.mjs';
+import { createSafeStaticServer } from '../lib/safe-server.mjs';
+
+const PREVIEW = fileURLToPath(new URL('../preview-first.mjs', import.meta.url));
+const SKILL_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
+
+test('preview-first decodes UTF-8, UTF-16LE, and UTF-16BE BOM JSON', () => {
+  const value = { platform: 'mobile', label: '伊瑟' };
+  const json = JSON.stringify(value);
+
+  assert.deepEqual(
+    decodeJsonBytes(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(json, 'utf8')])),
+    value,
+  );
+  assert.deepEqual(
+    decodeJsonBytes(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')])),
+    value,
+  );
+
+  const le = Buffer.from(json, 'utf16le');
+  const be = Buffer.alloc(le.length);
+  for (let i = 0; i < le.length; i += 2) {
+    be[i] = le[i + 1];
+    be[i + 1] = le[i];
+  }
+  assert.deepEqual(decodeJsonBytes(Buffer.concat([Buffer.from([0xfe, 0xff]), be])), value);
+});
+
+test('preview-first meaningful contract rejects one flat blank source region', () => {
+  const failures = explainMeaningfulContract({
+    hasRenderer: true,
+    placeholder: false,
+    visibleSourceNodes: 1,
+    meaningfulSourceNodes: 1,
+    meaningfulCoverage: 1,
+    largestNodeCoverage: 1,
+  });
+  assert.ok(failures.some((failure) => /meaningful source nodes/.test(failure)), failures.join('\n'));
+  assert.ok(failures.some((failure) => /single flat source region/.test(failure)), failures.join('\n'));
+});
+
+test('qaTruthIsExternal detects data-src and ignores inlined truth', () => {
+  assert.equal(qaTruthIsExternal('<script id="qa-truth" type="application/json">{"ok":true}</script>'), false);
+  assert.equal(qaTruthIsExternal('<script id="qa-truth" type="application/json" data-src="truth.json" data-html-volume="external"></script>'), true);
+});
+
+test('preview-first red never ships an open command', () => {
+  const output = candidateCompletion({
+    ok: false,
+    spec: { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] } },
+    truth: {},
+    indexPath: join(tmpdir(), 'demo', 'index.html'),
+  });
+  assert.equal(output.userPreviewAllowed, false);
+  assert.equal(output.humanStopPreviewAllowed, false);
+  assert.equal(output.previewDisposition, 'internal-candidate-only');
+  assert.equal(output.productView.command, null);
+  assert.equal(output.productView.url, null);
+  assert.equal(output.humanReview.presentPage, false);
+  assert.match(output.humanReview.nextHumanStep, /preview:first 红了不许给人打开/);
+});
+
+test('preview-first candidate output always uses a durable file:// product URL', () => {
+  const spec = { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] } };
+  const indexPath = join(tmpdir(), 'demo', 'index.html');
+  const output = candidateCompletion({
+    ok: true,
+    spec,
+    truth: {},
+    indexPath,
+  });
+  assert.equal(output.productView.url, productViewUrl(indexPath));
+  assert.match(output.productView.url, /^file:/);
+  assert.match(output.productView.url, /product=1/);
+  assert.doesNotMatch(output.productView.url, /^http:/);
+  assert.equal(output.humanReview.presentPage, true);
+  assert.equal(output.humanReview.id, 'static-and-translation');
+  assert.equal(output.userPreviewAllowed, false);
+  assert.equal(output.humanStopPreviewAllowed, true);
+  assert.equal(output.previewDisposition, 'human-review-stop');
+  assert.ok(output.unclaimedCapabilities.includes('independentTranslation'));
+});
+
+test('ephemeral HTTP check URL dies after the server closes; file:// product URL remains', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'preview-durable-url-'));
+  const indexPath = join(dir, 'index.html');
+  writeFileSync(indexPath, '<html><body>durable</body></html>');
+  const server = createSafeStaticServer(dir);
+  const base = await server.listen('127.0.0.1');
+  const checkUrl = `${base}/index.html?product=1`;
+  const live = await fetch(checkUrl);
+  assert.equal(live.status, 200);
+  await server.close();
+  await assert.rejects(() => fetch(checkUrl));
+  const output = candidateCompletion({ ok: true, spec: {}, truth: {}, indexPath });
+  assert.match(output.productView.url, /^file:/);
+  const filePath = fileURLToPath(output.productView.url.split('?')[0]);
+  assert.equal(existsSync(filePath), true);
+  assert.match(readFileSync(filePath, 'utf8'), /durable/);
+});
+
+test('preview-first candidate output carries product-view path and unclaimed capabilities', () => {
+  const spec = { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] } };
+  const truth = { sections: { '1:1': { meta: { platform: 'desktop' }, nodes: [] } } };
+  const output = candidateCompletion({ ok: true, spec, truth, indexPath: '/tmp/demo/index.html' });
+
+  assert.equal(output.evidenceLevel, 'candidate');
+  assert.match(output.productView.url, /product=1/);
+  assert.deepEqual(output.sourcePlatformEvidence.claimed, ['desktop']);
+  assert.ok(output.unclaimedCapabilities.includes('mobileSourcePlatform'));
+  assert.ok(output.unclaimedCapabilities.includes('productRepoIntegration'));
+  assert.ok(output.unclaimedCapabilities.includes('pullRequestEvidence'));
+});
+
+test('preview-first does not list mobile as unclaimed when source evidence declares it', () => {
+  const spec = { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop', 'mobile'] } };
+  const output = candidateCompletion({ ok: true, spec, truth: {}, indexPath: '/tmp/demo/index.html' });
+
+  assert.deepEqual(output.sourcePlatformEvidence.claimed, ['desktop', 'mobile']);
+  assert.ok(!output.unclaimedCapabilities.includes('mobileSourcePlatform'));
+});
+
+test('figma-showcase schema accepts mobile only when workflow or figma sourcePlatforms declares it', () => {
+  const base = {
+    workflow: {
+      id: 'figma-showcase',
+      completion: 'candidate-product-view-preview',
+      productViewPath: 'index.html?product=1',
+      requires: { productRepo: false, trueSandbox: false, pullRequest: false },
+    },
+    matrix: {
+      platforms: ['desktop', 'mobile'],
+      regions: ['cn'],
+      systems: ['mac'],
+      themes: ['light'],
+      langs: ['zh-CN'],
+    },
+    states: [{ id: 'entry', via: [{ expect: 'entry' }] }],
+    verify: {
+      noClip: ['.frame'],
+      cases: [{ prefs: { plat: 'desktop', region: 'cn', os: 'mac', mode: 'light', lang: 'zh-CN' } }],
+    },
+    bindings: [],
+  };
+
+  assert.ok(validateSpec(base).some((problem) => /mobile/.test(problem)));
+  assert.deepEqual(validateSpec({ ...base, figma: { sourcePlatforms: ['mobile'] } }), []);
+});
+
+test('preview-first HTTP check is required for external truth; file:// is a contract failure without a browser', () => {
+  assert.equal(externalTruthFileProtocolFailure('file', true), EXTERNAL_TRUTH_FILE_FAILURE);
+  assert.equal(externalTruthFileProtocolFailure('http', true), null);
+  assert.equal(externalTruthFileProtocolFailure('file', false), null);
+  assert.equal(externalTruthFileProtocolFailure('http', false), null);
+});
+
+test('preview-first rejects file:// external truth before launching a browser', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'preview-file-external-'));
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({
+    workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] },
+  }));
+  writeFileSync(join(dir, 'truth.json'), JSON.stringify({ ok: true }));
+  writeFileSync(join(dir, 'index.html'), [
+    '<html><head></head><body>',
+    '<script id="qa-truth" type="application/json" data-src="truth.json" data-html-volume="external"></script>',
+    '<script id="qa-devices" type="application/json">{}</script>',
+    '<!-- FIGMA_RENDER_BEGIN -->',
+    '<script>window.__figmaRender.renderApp = function () {};</script>',
+    '<!-- FIGMA_RENDER_END -->',
+    '<!-- FIGMA_CHROME_BEGIN --><script></script><!-- FIGMA_CHROME_END -->',
+    '</body></html>',
+  ].join('\n'));
+  const res = spawnSync(process.execPath, [PREVIEW, '--demo', dir, '--protocol', 'file'], {
+    cwd: SKILL_ROOT,
+    encoding: 'utf8',
+    env: process.env,
+    timeout: 15000,
+  });
+  assert.equal(res.status, 2, res.stderr || res.stdout);
+  const out = parsePreviewJson(res.stdout) || parsePreviewJson(res.stderr);
+  assert.equal(out?.ok, false, res.stderr || res.stdout);
+  assert.equal(out.protocol, 'file');
+  assert.equal(out.externalTruth, true);
+  assert.deepEqual(out.contractFailures, [EXTERNAL_TRUTH_FILE_FAILURE]);
+});
