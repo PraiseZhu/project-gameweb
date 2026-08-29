@@ -216,6 +216,69 @@ function indSetParent(parent) {
   return parent?.type === "COMPONENT_SET" && parseName(parent.name).prefix === "ind";
 }
 
+const DROPMENU_ON_OFF = new Set(["on", "off"]);
+
+function variantValueExact(raw) {
+  return String(variantPropertyRaw(raw) ?? "");
+}
+
+function isExactOnOffSet(values) {
+  return values.size === DROPMENU_ON_OFF.size && [...values].every((value) => DROPMENU_ON_OFF.has(value));
+}
+
+function dropmenuAxisMap(node) {
+  const byAxis = new Map();
+  const add = (key, value) => {
+    const axis = variantPropertyName(key) || String(key || "").trim();
+    if (!axis) return;
+    if (!byAxis.has(axis)) byAxis.set(axis, new Set());
+    byAxis.get(axis).add(String(value ?? ""));
+  };
+  const defs = node?.componentPropertyDefinitions;
+  if (defs && typeof defs === "object") {
+    for (const [key, definition] of Object.entries(defs)) {
+      if (definition?.type !== "VARIANT") continue;
+      const options = definition.variantOptions;
+      if (!Array.isArray(options) || options.length === 0) continue;
+      for (const value of options) add(key, value);
+    }
+    if (byAxis.size) return byAxis;
+  }
+  for (const child of node?.children || []) {
+    if (child?.type !== "COMPONENT") continue;
+    for (const pair of variantPropertyPairs(child.name)) add(pair.key, pair.value);
+    const props = child.componentProperties;
+    if (props && typeof props === "object") {
+      for (const [key, raw] of Object.entries(props)) add(key, variantValueExact(raw));
+    }
+  }
+  return byAxis;
+}
+
+function dropmenuAxisValues(node) {
+  const matches = [...dropmenuAxisMap(node).values()].filter(isExactOnOffSet);
+  return matches.length === 1 ? matches[0] : new Set();
+}
+
+function dropmenuSetParent(parent) {
+  if (parent?.type !== "COMPONENT_SET") return false;
+  if (parseName(parent.name).prefix !== "dropmenu") return false;
+  const values = dropmenuAxisValues(parent);
+  return isExactOnOffSet(values);
+}
+
+function dropmenuVariantValue(node) {
+  const props = node?.componentProperties;
+  if (props && typeof props === "object") {
+    for (const raw of Object.values(props)) {
+      const value = variantValueExact(raw);
+      if (DROPMENU_ON_OFF.has(value)) return value;
+    }
+  }
+  const fromName = variantPropertyPairs(node?.name).find((pair) => DROPMENU_ON_OFF.has(pair.value));
+  return fromName ? fromName.value : "";
+}
+
 const IMG_LANG_VALUES = new Set(["cn", "tw", "en", "jp", "kr"]);
 
 function variantPropertyName(key) {
@@ -281,6 +344,7 @@ function imgLangSetParent(parent) {
 function promotedSetVariantRole(parent, node) {
   if (node?.type !== "COMPONENT") return null;
   if (indSetParent(parent)) return "ind";
+  if (dropmenuSetParent(parent) && DROPMENU_ON_OFF.has(dropmenuVariantValue(node))) return "dropmenu";
   if (imgLangSetParent(parent) && IMG_LANG_VALUES.has(langValueOfVariant(node))) return "img";
   return null;
 }
@@ -381,7 +445,7 @@ export function rebuildInventoryIndexes(inv) {
   inv.backgrounds = determined.filter((node) => node.role === "kv" || node.role === "bg").map((node) => ({
     id: node.id, role: node.role, label: node.label, pageBox: node.pageBox ?? null,
   }));
-  inv.modules = determined.filter((node) => ["switch", "tab", "ind", "scroll", "mix", "dyn", "modal"].includes(node.role)).map((node) => ({ id: node.id, role: node.role, label: node.label }));
+  inv.modules = determined.filter((node) => ["switch", "tab", "ind", "scroll", "mix", "dyn", "modal", "dropmenu"].includes(node.role)).map((node) => ({ id: node.id, role: node.role, label: node.label }));
   return inv;
 }
 
@@ -547,7 +611,7 @@ function serializeTree(root, scope, counts, pageBox = null) {
       entry.role = role;
       entry.label = parsed.body
         || (role === "copy" ? (text?.characters ?? "") : "")
-        || (via === "structure" && (role === "img" || role === "scroll" || role === "ind") ? (node.name || node.id) : "");
+        || (via === "structure" && (role === "img" || role === "scroll" || role === "ind" || role === "dropmenu") ? (node.name || node.id) : "");
       entry.params = params;
       entry.behavior = behaviorOf(role, params);
       entry.via = via;

@@ -7,6 +7,8 @@ import { ledgerFingerprint } from "../plugin/ledger-fingerprint.mjs";
 import {
   emptyLedger,
 } from "./exemption-fixtures.mjs";
+import { lint } from "../src/lint.mjs";
+import { PREFIX_NAMES } from "../src/spec.mjs";
 
 const EXEMPTIONS_KEY = "naming-lint:exemptions";
 const EXEMPTIONS_META_KEY = "naming-lint:exemptions-meta";
@@ -653,4 +655,28 @@ test("main：versions 带标签来源与条数；没注入来源标记时报 unk
   assert.equal(bareVersions.labelsSource, "unknown",
     "没注入来源标记时不许兜底成 sample 或 custom——那是把「不知道」说成「知道」");
   assert.equal(bareVersions.labelsTotal, 0);
+});
+
+const PREFIX_TEST_BOX = { x: 0, y: 0, width: 100, height: 100 };
+const prefixFrame = (id, name, children = []) => ({
+  id, name, type: "FRAME", absoluteBoundingBox: PREFIX_TEST_BOX, children,
+});
+const prefixRoot = (child) => prefixFrame("root", "pc", [child]);
+const prefixCodes = (name) => lint(prefixRoot(prefixFrame("n", name)))
+  .findings.filter((f) => f.nodeId === "n").map((f) => f.code);
+
+test("main：dropdown/ select/ menu/ tag/ 报 N-PREFIX-NOT-IN-TABLE，dropmenu/ 合法根不报", () => {
+  assert.equal(PREFIX_NAMES.includes("tag"), false, "PREFIX_NAMES 不得含 tag");
+  assert.equal(PREFIX_NAMES.includes("dropmenu"), true, "PREFIX_NAMES 必须含 dropmenu");
+  for (const alias of ["dropdown/x", "select/x", "menu/x", "tag/x"]) {
+    assert.ok(
+      prefixCodes(alias).includes("N-PREFIX-NOT-IN-TABLE"),
+      `${alias} 必须报 N-PREFIX-NOT-IN-TABLE`,
+    );
+  }
+  assert.equal(
+    prefixCodes("dropmenu/语言").includes("N-PREFIX-NOT-IN-TABLE"),
+    false,
+    "dropmenu/ 合法根不得报 N-PREFIX-NOT-IN-TABLE",
+  );
 });

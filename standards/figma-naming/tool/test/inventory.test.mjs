@@ -973,6 +973,131 @@ test("ind/ 组件集每个变体根带切图，零件 skipped，switch 变体不
   assert.equal(check.ok, true, check.problems.join("\n"));
 });
 
+test("dropmenu/ on/off 变体根升 determined；On/OFF/true 不升；btn/状态仍 click", () => {
+  const node = inventoryNode;
+  const dropSet = node("drop-set", "COMPONENT_SET", "dropmenu/语言", [
+    node("drop-on", "COMPONENT", "Property 1=on", [
+      node("drop-on-copy", "TEXT", "简体中文", [], {
+        characters: "简体中文",
+        style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400 },
+      }),
+    ], { componentProperties: { "Property 1": "on" } }),
+    node("drop-off", "COMPONENT", "Property 1=off", [
+      node("drop-off-globe", "RECTANGLE", "img/地球", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ], { componentProperties: { "Property 1": "off" } }),
+  ], {
+    componentPropertyDefinitions: {
+      "Property 1": { type: "VARIANT", defaultValue: "off", variantOptions: ["on", "off"] },
+    },
+  });
+  const badSet = node("bad-set", "COMPONENT_SET", "dropmenu/错值", [
+    node("bad-on", "COMPONENT", "Property 1=On", [], { componentProperties: { "Property 1": "On" } }),
+    node("bad-off", "COMPONENT", "Property 1=OFF", [], { componentProperties: { "Property 1": "OFF" } }),
+    node("bad-true", "COMPONENT", "Property 1=true", [], { componentProperties: { "Property 1": "true" } }),
+  ], {
+    componentPropertyDefinitions: {
+      "Property 1": { type: "VARIANT", defaultValue: "On", variantOptions: ["On", "OFF", "true"] },
+    },
+  });
+  const btnSet = node("btn-set", "COMPONENT_SET", "btn/状态", [
+    node("btn-on", "COMPONENT", "Property 1=on", [], { componentProperties: { "Property 1": "on" } }),
+    node("btn-off", "COMPONENT", "Property 1=off", [], { componentProperties: { "Property 1": "off" } }),
+  ], {
+    componentPropertyDefinitions: {
+      "Property 1": { type: "VARIANT", defaultValue: "on", variantOptions: ["on", "off"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("drop-inst", "INSTANCE", "dropmenu/语言", [], { componentId: "drop-off" }),
+      node("bad-inst", "INSTANCE", "dropmenu/错值", [], { componentId: "bad-on" }),
+      node("btn-inst", "INSTANCE", "btn/状态", [], { componentId: "btn-on" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, dropSet, badSet, btnSet]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const drop = inv.attachments.componentSets.find((item) => item.id === "drop-set");
+  const onVar = drop.variants.find((item) => item.id === "drop-on");
+  const offVar = drop.variants.find((item) => item.id === "drop-off");
+  assert.equal(onVar.status, "determined");
+  assert.equal(onVar.role, "dropmenu");
+  assert.equal(onVar.via, "structure");
+  assert.equal(onVar.behavior, "toggle");
+  assert.equal(onVar.sliceExport, undefined);
+  assert.equal(offVar.status, "determined");
+  assert.equal(offVar.role, "dropmenu");
+  assert.equal(offVar.behavior, "toggle");
+  const dropNodes = Object.fromEntries(drop.nodes.map((item) => [item.id, item]));
+  assert.equal(dropNodes["drop-on"].role, "dropmenu");
+  assert.equal(dropNodes["drop-off"].role, "dropmenu");
+  assert.ok(inv.modules.some((item) => item.role === "dropmenu"));
+  const bad = inv.attachments.componentSets.find((item) => item.id === "bad-set");
+  for (const variant of bad.variants) {
+    assert.notEqual(variant.role, "dropmenu");
+    assert.notEqual(variant.status, "determined");
+  }
+  const btn = inv.attachments.componentSets.find((item) => item.id === "btn-set");
+  const btnOn = btn.variants.find((item) => item.id === "btn-on");
+  assert.notEqual(btnOn.role, "dropmenu");
+  assert.notEqual(btnOn.behavior, "toggle");
+  const pageBtn = inv.nodes.find((item) => item.id === "btn-inst");
+  assert.equal(pageBtn.role, "btn");
+  assert.equal(pageBtn.behavior, "click");
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
+test("dropmenu 双 {on,off} 轴不升；无 definitions 按轴聚合不 flatten", () => {
+  const node = inventoryNode;
+  const dualSet = node("dual-set", "COMPONENT_SET", "dropmenu/语言", [
+    node("dual-a", "COMPONENT", "State=off, Open=off", [], { componentProperties: { State: "off", Open: "off" } }),
+    node("dual-b", "COMPONENT", "State=on, Open=off", [], { componentProperties: { State: "on", Open: "off" } }),
+    node("dual-c", "COMPONENT", "State=off, Open=on", [], { componentProperties: { State: "off", Open: "on" } }),
+    node("dual-d", "COMPONENT", "State=on, Open=on", [], { componentProperties: { State: "on", Open: "on" } }),
+  ], {
+    componentPropertyDefinitions: {
+      State: { type: "VARIANT", defaultValue: "off", variantOptions: ["on", "off"] },
+      Open: { type: "VARIANT", defaultValue: "off", variantOptions: ["on", "off"] },
+    },
+  });
+  const namedSet = node("named-set", "COMPONENT_SET", "dropmenu/语言", [
+    node("named-off-en", "COMPONENT", "State=off, Lang=en", [], { componentProperties: { State: "off", Lang: "en" } }),
+    node("named-on-en", "COMPONENT", "State=on, Lang=en", [], { componentProperties: { State: "on", Lang: "en" } }),
+  ]);
+  const dualNoDef = node("dual-nodef", "COMPONENT_SET", "dropmenu/语言", [
+    node("dn-a", "COMPONENT", "State=off, Open=off", [], { componentProperties: { State: "off", Open: "off" } }),
+    node("dn-b", "COMPONENT", "State=on, Open=off", [], { componentProperties: { State: "on", Open: "off" } }),
+    node("dn-c", "COMPONENT", "State=off, Open=on", [], { componentProperties: { State: "off", Open: "on" } }),
+    node("dn-d", "COMPONENT", "State=on, Open=on", [], { componentProperties: { State: "on", Open: "on" } }),
+  ]);
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("dual-inst", "INSTANCE", "dropmenu/语言", [], { componentId: "dual-a" }),
+      node("named-inst", "INSTANCE", "dropmenu/语言", [], { componentId: "named-off-en" }),
+      node("dn-inst", "INSTANCE", "dropmenu/语言", [], { componentId: "dn-a" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, dualSet, namedSet, dualNoDef]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const dual = inv.attachments.componentSets.find((item) => item.id === "dual-set");
+  for (const variant of dual.variants) {
+    assert.notEqual(variant.role, "dropmenu");
+    assert.notEqual(variant.status, "determined");
+  }
+  const named = inv.attachments.componentSets.find((item) => item.id === "named-set");
+  const namedOff = named.variants.find((item) => item.id === "named-off-en");
+  assert.equal(namedOff.status, "determined");
+  assert.equal(namedOff.role, "dropmenu");
+  assert.equal(namedOff.behavior, "toggle");
+  const nodef = inv.attachments.componentSets.find((item) => item.id === "dual-nodef");
+  for (const variant of nodef.variants) {
+    assert.notEqual(variant.role, "dropmenu");
+    assert.notEqual(variant.status, "determined");
+  }
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
 test("img/ lang 变体根带切图；Property 1=cn 的 logo 不跟语言", () => {
   const node = inventoryNode;
   const langSet = node("lang-set", "COMPONENT_SET", "img/模块2可替换素材", [

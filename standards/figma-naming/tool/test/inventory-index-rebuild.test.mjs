@@ -222,11 +222,24 @@ test("goldPrefixClassesFor：参考稿有 determined tab/ 才并进必检", () =
   assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: withoutTab }), GOLD_PC_PREFIX_CLASSES);
   assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: unknownTab }), GOLD_PC_PREFIX_CLASSES);
   assert.equal(OPTIONAL_GOLD_PREFIX_CLASSES.includes("tab"), true);
-  for (const role of ["dyn", "hot", "ind", "kv", "mix", "modal", "scroll", "switch"]) {
+  for (const role of ["dropmenu", "dyn", "hot", "ind", "kv", "mix", "modal", "scroll", "switch"]) {
     assert.equal(OPTIONAL_GOLD_PREFIX_CLASSES.includes(role), true);
     assert.equal(GOLD_PC_PREFIX_CLASSES.includes(role), false);
     assert.equal(GOLD_MOBILE_PREFIX_CLASSES.includes(role), false);
   }
+});
+
+test("goldPrefixClassesFor：参考稿有 determined dropmenu/ 才并进必检；候选缺类要红", () => {
+  const pc = { page: { box: { w: 3840 } } };
+  const withDropmenu = goldClassDoc([...GOLD_PC_PREFIX_CLASSES, "dropmenu"], 3840);
+  const withoutDropmenu = goldClassDoc(GOLD_PC_PREFIX_CLASSES, 3840);
+  assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: withDropmenu }), [...GOLD_PC_PREFIX_CLASSES, "dropmenu"]);
+  assert.deepEqual(goldPrefixClassesFor(pc, { referenceDoc: withoutDropmenu }), GOLD_PC_PREFIX_CLASSES);
+  const missing = auditLikeCli(withoutDropmenu, [], { referenceDoc: withDropmenu });
+  assert.equal(missing.ok, false);
+  assert.match(missing.problems.join("\n"), /相对规范稿缺前缀类：dropmenu/);
+  const present = auditLikeCli(withDropmenu, [], { referenceDoc: withDropmenu });
+  assert.doesNotMatch(present.problems.join("\n"), /缺前缀类：.*\bdropmenu\b/);
 });
 
 test("requiredIndexPresenceFor：PC 要分区/悬浮/底图，mobile 不要 overlays；modules 不强制", () => {

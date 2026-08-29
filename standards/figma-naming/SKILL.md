@@ -70,7 +70,7 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 
 脚本已经按规范前缀编好 ready。agent 只核：
 
-- determined 非 copy 的 `name` 以 `role/` 开头；`via=structure` 的 mix 自动拆 `img/` / `scroll/` 与 `ind/` / `img/`+`lang` 合法变体根例外，看 `role` + `sliceExport`；BOOLEAN `btn/` 看 click + `sliceExport`。无 `lang` 轴、只有一个变体、或值不是精确小写五码的 `img/` 不跟语言
+- determined 非 copy 的 `name` 以 `role/` 开头；`via=structure` 的 mix 自动拆 `img/` / `scroll/` 与 `ind/` / `img/`+`lang` 合法变体根、以及 `dropmenu/` 精确小写 `on/off` 变体根例外，看 `role`（dropmenu 看开合树，不切图）；BOOLEAN `btn/` 看 click + `sliceExport`。无 `lang` 轴、只有一个变体、或值不是精确小写五码的 `img/` 不跟语言。PC 语言开合走 `dropmenu/` `on/off`；手机仍 `btn/` → `modal/`
 - `sections` / `overlays` / `backgrounds` / `modules` 字段在；mobile 的 `overlays` 可以是空数组
 - unknown 保持 unknown，不猜交互
 - 两端 page id 不同、fileKey 相同

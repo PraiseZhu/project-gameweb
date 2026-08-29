@@ -1,6 +1,6 @@
 # 设计稿命名规范
 
-> 版本 **v2.14**（2026-08-27）。本文件是本项目判定命名对错的**唯一事实来源**。
+> 版本 **v2.15**（2026-08-29）。本文件是本项目判定命名对错的**唯一事实来源**。
 > 同目录 `spec.mjs` 是它的机器可读镜像，`tool/test/spec-drift.test.mjs` 锁住两者一致（前缀表、参数表、前缀语法参数、§4.2 两道排除闸门、§6 规则清单、§7 名字形态、版本号）。
 > 规则的 `why` / `fix` 文案属于实现侧解释，在 `src/rules.mjs` 里维护，不在本文件锁定范围内。
 > 判定后果所依赖的下游假定见 [`consumer-assumptions.md`](consumer-assumptions.md)。
@@ -51,8 +51,11 @@
 | `btn/` | 可点击元素 | `@link=` 跳转 / `@go=` 状态转移 / `@sec=N` 滚到分区（**均为选填**） |
 | `hot/` | 透明热区 | `@link=` / `@go=` |
 | `modal/` | 弹窗帧 | 应是独立 frame，不叠画在页面稿内 |
+| `dropmenu/` | PC 开合菜单 | 不挂 `@` 参数。开合走组件集变体，值精确小写 `on` / `off`（假定 A9） |
 
 `btn/` 的动作参数是选填。点击后发生什么由下游配置决定，不属于命名规范的职责（假定 A3）。
+
+**`dropmenu/` PC 开合菜单（假定 A9）：** 只用于 PC 语言开合这类点根切开合的菜单。组件集前缀是 `dropmenu/`；变体值必须是精确小写 `on` 与 `off`。属性名不锁，Figma 默认 `Property 1` 可用。多轴时只认值集合恰好是 `{on,off}` 的那一轴；`On` / `OFF` / `true` / `1` 不当开合，fail-visible。不要写 `@on` / `@off` / `@state`——参数表没收它们。点根切开合；列表行内部若有 `btn/`，点击优先走该 `btn/`，不走根热区。点列表外回到 `off`。地球是 `img/`：稿上不画 hover / pressdown；`off` 时由做页程序加 hover，`on` 时地球不加 hover。列表行内部 `btn/`，当前语言用稿上 highlight，其它行 hover / pressdown 由程序加。点选项用封闭自称表认语言后切页并回 `off`；判不出 fail-visible，不猜中文。自称表（可归一空格与大小写）：`简体中文` / `繁體中文` / `English` / `日本語` / `한국어`。手机仍走 `btn/多语言按钮` → `modal/多语言按钮弹窗`，不改成 `dropmenu/`。`dropdown/` `select/` `menu` 不进总表，仍报 `N-PREFIX-NOT-IN-TABLE`。不加 `tag/`。页上用到的 `dropmenu/` 组件集，值精确小写 `on`/`off` 的无前缀变体 `COMPONENT` 根由清单升 `determined` `dropmenu/`（`via=structure`）；零件不另发明前缀。
 
 ### 复合与行为类
 
@@ -260,6 +263,16 @@ Export 勾选是 Figma 里的人工导出设置，不是资产身份契约。前
 ---
 
 ## §8 版本变更
+
+### v2.15（2026-08-29）
+
+用户拍板：PC 语言开合菜单收 `dropmenu/`，变体值精确小写 `on` / `off`；手机仍 `btn` → `modal`。
+
+**① 交互类增收 `dropmenu/`。** 不挂 `@` 参数。开合只认变体值集合恰好 `{on,off}` 的那一轴；属性名不锁。`On` / `OFF` / `true` 不当开合。
+
+**② 点根切开合。** 行上内部 `btn/` 优先于根热区；点列表外回 `off`。地球是 `img/`，稿上不画 hover / pressdown。选项用封闭自称表认语言：`简体中文` / `繁體中文` / `English` / `日本語` / `한국어`；判不出 fail-visible，不猜中文。
+
+**③ 别名仍红。** `dropdown/` `select/` `menu` 报 `N-PREFIX-NOT-IN-TABLE`。不加 `tag/`。手机不改成 `dropmenu/`。
 
 ### v2.14（2026-08-27）
 

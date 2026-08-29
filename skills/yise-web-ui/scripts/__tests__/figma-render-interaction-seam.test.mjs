@@ -69,7 +69,7 @@ test('left/right switch arrows are commands and do not wait on deferred assets',
   assert.match(renderer, /btn-component-set/);
   assert.match(renderer, /getAttribute\('data-nav-item'\) !== 'true'/);
   assert.doesNotMatch(renderer, /source-file-swap/);
-  assert.match(renderer, /多语言切换按钮/);
+  assert.match(renderer, /toggleDropmenu/);
   assert.doesNotMatch(renderer, /ready\.then\(\(\) => applySwitch\(sid, idx, true\)\)/);
 });
 
@@ -85,6 +85,156 @@ test('renderer loops applySwitch and keeps calendar/hscroll commands off native 
   assert.match(renderer, /data-btn-press', 'inert'/);
   assert.doesNotMatch(renderer, /activity-calendar-reveal/);
   assert.doesNotMatch(renderer, /左滑\|前/);
+});
+
+test('dropmenu off/on fixtures stay pressable and do not reuse indicatorVariant', () => {
+  const graph = {
+    componentSetId: 'dropmenu-set',
+    variants: [
+      { componentId: 'menu-off', name: 'Property 1=off', interactions: [] },
+      { componentId: 'menu-on', name: 'Property 1=on', interactions: [] },
+    ],
+  };
+  const offModel = deriveInteractionModel([
+    {
+      id: 'menu-off',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        'Property 1': { value: 'off', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const onModel = deriveInteractionModel([
+    {
+      id: 'menu-on',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        'Property 1': { value: 'on', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const dropmenuOff = offModel.attributes.find((entry) => entry.id === 'menu-off')?.attrs;
+  const dropmenuOn = onModel.attributes.find((entry) => entry.id === 'menu-on')?.attrs;
+  assert.equal(dropmenuOff['data-dropmenu'], 'true');
+  assert.equal(dropmenuOff['data-dropmenu-state'], 'off');
+  assert.equal(dropmenuOff['data-btn-press'], 'true');
+  assert.equal(dropmenuOn['data-dropmenu-state'], 'on');
+  assert.equal(dropmenuOn['data-btn-press'], 'true');
+  assert.match(renderer, /applyDropmenuVariant/);
+  assert.match(renderer, /toggleDropmenu/);
+  assert.match(renderer, /dropmenuLangFromSelfLabel/);
+  assert.match(renderer, /DROPMENU_SELF_LABELS/);
+  assert.match(renderer, /data-dropmenu-globe-hover/);
+  assert.match(renderer, /closeDropmenuOutside/);
+  assert.match(renderer, /'简体中文': 'zh-CN'/);
+  assert.match(renderer, /'繁體中文': 'zh-TW'/);
+  assert.match(renderer, /'English': 'en'/);
+  assert.match(renderer, /'日本語': 'ja'/);
+  assert.match(renderer, /'한국어': 'ko'/);
+  assert.doesNotMatch(renderer, /'English': 'en-US'/);
+  assert.doesNotMatch(renderer, /'日本語': 'ja-JP'/);
+  assert.doesNotMatch(renderer, /'한국어': 'ko-KR'/);
+  assert.match(renderer, /data-dropmenu-self-label/);
+  assert.match(renderer, /dropmenuExactState/);
+  assert.match(renderer, /dropmenuParsePairs/);
+  assert.match(renderer, /dropmenuAxisName/);
+  assert.match(renderer, /dropmenuVariantToken/);
+  assert.match(renderer, /isDropmenuGlobeImg/);
+  assert.match(renderer, /地球\|globe\|多语言icon/);
+  assert.match(renderer, /\.filter\(isDropmenuGlobeImg\)/);
+  assert.doesNotMatch(renderer, /split\('='\)\.pop\(\)/);
+  assert.doesNotMatch(renderer, /for \(const globe of globes\)/);
+  assert.doesNotMatch(renderer, /indicatorVariant\(n\) === 'on'/);
+  assert.match(renderer, /On\/OFF\/true must fail-visible/);
+  assert.match(renderer, /data-btn-name="多语言按钮"/);
+  assert.doesNotMatch(renderer, /data-btn-name="多语言切换按钮"/);
+});
+
+test('dropmenu multi-axis k=v variants stay pressable and mountable', () => {
+  const graph = {
+    componentSetId: 'dropmenu-set',
+    variants: [
+      { componentId: 'menu-off-en', name: 'State=off, Lang=en', interactions: [] },
+      { componentId: 'menu-on-en', name: 'State=on, Lang=en', interactions: [] },
+    ],
+  };
+  const offModel = deriveInteractionModel([
+    {
+      id: 'menu-off-en',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        State: { value: 'off', type: 'VARIANT' },
+        Lang: { value: 'en', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const dropmenuOff = offModel.attributes.find((entry) => entry.id === 'menu-off-en')?.attrs;
+  assert.equal(dropmenuOff['data-dropmenu-state'], 'off');
+  assert.equal(dropmenuOff['data-btn-press'], 'true');
+  assert.equal(dropmenuOff['data-dropmenu-set'], 'dropmenu-set');
+  assert.match(renderer, /unique \{on,off\} axis counts/);
+  assert.match(renderer, /comma-separated k=v/);
+});
+
+test('paint-scope dropmenu helpers are defined before paint and execute for k=v names', () => {
+  const paintIdx = renderer.indexOf('const paint = (list, rawList, container, options = {}) => {');
+  const parseIdx = renderer.indexOf('const dropmenuParsePairs = (name) => {');
+  const axisIdx = renderer.indexOf('const dropmenuAxisName = (variants, nameOf) => {');
+  const tokensIdx = renderer.indexOf('const dropmenuOnOffTokens = (variants, nameOf) => Boolean(dropmenuAxisName(variants, nameOf));');
+  const variantIdx = renderer.indexOf('const dropmenuVariantToken = (name, axis) => {');
+  const bridgeIdx = renderer.indexOf('const interactionBridge = (items) => {');
+  assert.ok(parseIdx > 0 && parseIdx < bridgeIdx && parseIdx < paintIdx);
+  assert.ok(axisIdx > parseIdx && axisIdx < bridgeIdx && axisIdx < paintIdx);
+  assert.ok(tokensIdx > axisIdx && tokensIdx < bridgeIdx && tokensIdx < paintIdx);
+  assert.ok(variantIdx > tokensIdx && variantIdx < bridgeIdx && variantIdx < paintIdx);
+  const start = renderer.indexOf('/* dropmenu open/close is exact lowercase on/off only.');
+  const end = renderer.indexOf('/* Main Skill interaction bridge:');
+  assert.ok(start > 0 && end > start);
+  const helpers = renderer.slice(start, end)
+    .replaceAll('__u', '((v) => (v && typeof v === "object" && "value" in v ? v.value : v))')
+    .replaceAll('attachPlatformVariantGraph', '((n) => n)')
+    .replaceAll('__plain', '((v) => v)');
+  const fn = new Function(`${helpers}; return { dropmenuParsePairs, dropmenuAxisName, dropmenuOnOffTokens, dropmenuVariantToken, dropmenuExactState };`);
+  const api = fn();
+  const variants = [
+    { name: 'State=off, Lang=en' },
+    { name: 'State=on, Lang=en' },
+  ];
+  const nameOf = (variant) => variant.name;
+  assert.equal(api.dropmenuParsePairs('State=off, Lang=en').State, 'off');
+  assert.equal(api.dropmenuParsePairs('State=off, Lang=en').Lang, 'en');
+  assert.equal(api.dropmenuAxisName(variants, nameOf), 'State');
+  assert.equal(api.dropmenuOnOffTokens(variants, nameOf), true);
+  assert.equal(api.dropmenuVariantToken('State=off, Lang=en', 'State'), 'off');
+  assert.equal(api.dropmenuExactState({
+    componentProperties: { State: { value: 'off' }, Lang: { value: 'en' } },
+    componentVariantGraph: { variants },
+  }), 'off');
+});
+
+test('product-view dropmenu language writes chrome S.prefs, not the renderPrefs copy', () => {
+  const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
+  assert.match(chrome, /prefs: renderPrefs/);
+  assert.match(chrome, /function cp\(o\)/);
+  assert.match(chrome, /setPref: applyPref/);
+  assert.match(chrome, /function applyPref\(key, value\)/);
+  assert.match(chrome, /S\.prefs\[key\] = value/);
+  assert.match(chrome, /persist\(\);\s*syncAll\(\)/);
+  assert.match(chrome, /if \(!PRODUCT_VIEW\) window\.__qa =/);
+  assert.match(renderer, /typeof ctx\.setPref === 'function'/);
+  assert.match(renderer, /typeof setPref !== 'function'\) return false/);
+  assert.doesNotMatch(renderer, /ctx\.prefs\.lang = lang/);
+  assert.match(renderer, /if \(!applyDropmenuLang\(lang\)\)/);
+  assert.match(renderer, /selfLabel: 'no-pref-handle'/);
+  assert.match(renderer, /if \(!axis\) return 'invalid'/);
+  assert.match(renderer, /source-on instance still lands off/);
+  assert.match(renderer, /querySelectorAll\('\[data-dropmenu="true"\]\[data-dropmenu-mount-status="owner-local-mutually-exclusive"\]'\)/);
 });
 
 test('unresolved model does not emit a direct-child runtime bridge', () => {

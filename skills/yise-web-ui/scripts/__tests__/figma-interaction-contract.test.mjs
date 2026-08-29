@@ -292,7 +292,7 @@ test('independent btn with normal and highlight is not a missing switch owner', 
   };
   const model = deriveInteractionModel([
     { id: 'chrome', type: 'FRAME', name: 'fix/nav' },
-    { id: 'lang', type: 'INSTANCE', name: 'btn/多语言切换按钮', parentId: 'chrome', ownerPath: ['chrome', 'lang'], componentProperties: { 'Property 1': { value: 'normal', type: 'VARIANT' } }, componentVariantGraph: graph },
+    { id: 'lang', type: 'INSTANCE', name: 'btn/头像状态按钮', parentId: 'chrome', ownerPath: ['chrome', 'lang'], componentProperties: { 'Property 1': { value: 'normal', type: 'VARIANT' } }, componentVariantGraph: graph },
     { id: 'download', type: 'FRAME', name: 'btn/下载按钮', parentId: 'chrome' },
   ]);
   const lang = model.attributes.find((entry) => entry.id === 'lang')?.attrs;
@@ -351,6 +351,187 @@ test('fix/@from emits a scroll-gated pin and @go copies the modal name', () => {
   assert.equal(byId.get('nav')['data-go'], 'modal/顶部导航');
   assert.equal(byId.get('play')['data-go'], 'modal/视频弹窗');
   assert.equal(byId.get('play')['data-sec-target'], undefined);
+});
+
+test('dropmenu exact on/off is not disabled and stays pressable', () => {
+  const graph = {
+    componentSetId: 'dropmenu-set',
+    variants: [
+      { componentId: 'menu-off', name: 'Property 1=off', interactions: [] },
+      { componentId: 'menu-on', name: 'Property 1=on', interactions: [] },
+    ],
+  };
+  const offModel = deriveInteractionModel([
+    {
+      id: 'menu-off',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        'Property 1': { value: 'off', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const onModel = deriveInteractionModel([
+    {
+      id: 'menu-on',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        'Property 1': { value: 'on', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const dropmenuOff = offModel.attributes.find((entry) => entry.id === 'menu-off')?.attrs;
+  const dropmenuOn = onModel.attributes.find((entry) => entry.id === 'menu-on')?.attrs;
+  assert.equal(dropmenuOff['data-dropmenu'], 'true');
+  assert.equal(dropmenuOff['data-dropmenu-state'], 'off');
+  assert.equal(dropmenuOff['data-btn-press'], 'true');
+  assert.equal(dropmenuOn['data-dropmenu-state'], 'on');
+  assert.equal(dropmenuOn['data-btn-press'], 'true');
+  assert.ok(!offModel.unresolved.some((entry) => entry.id === 'menu-off'));
+});
+
+test('dropmenu On/OFF/true is invalid and not an open state', () => {
+  const model = deriveInteractionModel([
+    { id: 'menu-bad', type: 'INSTANCE', name: 'dropmenu/语言', componentProperties: { 'Property 1': { value: 'On', type: 'VARIANT' } } },
+  ]);
+  const dropmenu = model.attributes.find((entry) => entry.id === 'menu-bad')?.attrs;
+  assert.equal(dropmenu['data-dropmenu-state'], 'invalid');
+  assert.equal(dropmenu['data-btn-press'], 'inert');
+  assert.ok(model.unresolved.some((entry) => /exact lowercase on\/off/.test(entry.reason)));
+});
+
+test('dropmenu multi-axis uses the on/off axis and ignores Lang', () => {
+  const graph = {
+    componentSetId: 'dropmenu-set',
+    variants: [
+      { componentId: 'menu-off-en', name: 'State=off, Lang=en', interactions: [] },
+      { componentId: 'menu-on-en', name: 'State=on, Lang=en', interactions: [] },
+      { componentId: 'menu-off-zh', name: 'State=off, Lang=zh', interactions: [] },
+      { componentId: 'menu-on-zh', name: 'State=on, Lang=zh', interactions: [] },
+    ],
+  };
+  const offModel = deriveInteractionModel([
+    {
+      id: 'menu-off-en',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        State: { value: 'off', type: 'VARIANT' },
+        Lang: { value: 'en', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const onModel = deriveInteractionModel([
+    {
+      id: 'menu-on-en',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        State: { value: 'on', type: 'VARIANT' },
+        Lang: { value: 'en', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const dropmenuOff = offModel.attributes.find((entry) => entry.id === 'menu-off-en')?.attrs;
+  const dropmenuOn = onModel.attributes.find((entry) => entry.id === 'menu-on-en')?.attrs;
+  assert.equal(dropmenuOff['data-dropmenu-state'], 'off');
+  assert.equal(dropmenuOff['data-btn-press'], 'true');
+  assert.equal(dropmenuOff['data-dropmenu-set'], 'dropmenu-set');
+  assert.equal(dropmenuOn['data-dropmenu-state'], 'on');
+  assert.equal(dropmenuOn['data-btn-press'], 'true');
+  assert.ok(!offModel.unresolved.some((entry) => entry.id === 'menu-off-en'));
+});
+
+test('dropmenu two on/off axes stay invalid', () => {
+  const graph = {
+    componentSetId: 'dropmenu-set',
+    variants: [
+      { componentId: 'menu-a', name: 'State=off, Open=off', interactions: [] },
+      { componentId: 'menu-b', name: 'State=on, Open=off', interactions: [] },
+      { componentId: 'menu-c', name: 'State=off, Open=on', interactions: [] },
+      { componentId: 'menu-d', name: 'State=on, Open=on', interactions: [] },
+    ],
+  };
+  const model = deriveInteractionModel([
+    {
+      id: 'menu-a',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        State: { value: 'off', type: 'VARIANT' },
+        Open: { value: 'off', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const dropmenu = model.attributes.find((entry) => entry.id === 'menu-a')?.attrs;
+  assert.equal(dropmenu['data-dropmenu-state'], 'invalid');
+  assert.equal(dropmenu['data-btn-press'], 'inert');
+});
+
+test('dropmenu on/off axis is not locked to the name State', () => {
+  const graph = {
+    componentSetId: 'dropmenu-set',
+    variants: [
+      { componentId: 'menu-off', name: 'Open=off, Lang=jp', interactions: [] },
+      { componentId: 'menu-on', name: 'Open=on, Lang=jp', interactions: [] },
+    ],
+  };
+  const model = deriveInteractionModel([
+    {
+      id: 'menu-off',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        Open: { value: 'off', type: 'VARIANT' },
+        Lang: { value: 'jp', type: 'VARIANT' },
+      },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const dropmenu = model.attributes.find((entry) => entry.id === 'menu-off')?.attrs;
+  assert.equal(dropmenu['data-dropmenu-state'], 'off');
+  assert.equal(dropmenu['data-btn-press'], 'true');
+  assert.equal(dropmenu['data-dropmenu-set'], 'dropmenu-set');
+});
+
+test('dropmenu without a unique on/off graph axis stays invalid', () => {
+  const model = deriveInteractionModel([
+    {
+      id: 'menu-fallback',
+      type: 'INSTANCE',
+      name: 'dropmenu/语言',
+      componentProperties: {
+        State: { value: 'off', type: 'VARIANT' },
+      },
+    },
+  ]);
+  const dropmenu = model.attributes.find((entry) => entry.id === 'menu-fallback')?.attrs;
+  assert.equal(dropmenu['data-dropmenu-state'], 'invalid');
+  assert.equal(dropmenu['data-btn-press'], 'inert');
+});
+
+test('btn disable and unavailable stay inert beside dropmenu off', () => {
+  const graph = {
+    componentSetId: 'avatar-set',
+    variants: [
+      { componentId: 'a-normal', name: 'Property 1=normal', interactions: [] },
+      { componentId: 'a-disable', name: 'Property 1=disable', interactions: [] },
+    ],
+  };
+  const model = deriveInteractionModel([
+    { id: 'avatar', type: 'INSTANCE', name: 'btn/角色头像', componentProperties: { 'Property 1': { value: 'disable', type: 'VARIANT' } }, componentVariantGraph: graph },
+    { id: 'menu', type: 'INSTANCE', name: 'dropmenu/语言', componentProperties: { 'Property 1': { value: 'off', type: 'VARIANT' } }, componentVariantGraph: { componentSetId: 'dropmenu-set', variants: [{ componentId: 'menu-off', name: 'Property 1=off', interactions: [] }, { componentId: 'menu-on', name: 'Property 1=on', interactions: [] }] } },
+  ]);
+  const avatar = model.attributes.find((entry) => entry.id === 'avatar')?.attrs;
+  const dropmenu = model.attributes.find((entry) => entry.id === 'menu')?.attrs;
+  assert.equal(avatar['data-btn-press'], 'inert');
+  assert.equal(dropmenu['data-btn-press'], 'true');
 });
 
 test('maps directional commands beside a component graph without consuming variant indexes', () => {

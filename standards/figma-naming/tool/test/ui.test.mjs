@@ -398,7 +398,7 @@ test("UI：需确认的组带裁决条，点一下管整组；可直接改那档
   assert.ok(bars[1], "「需要确认」那档必须有裁决条");
 
   // 候选前缀直接做成按钮：判不准时人最需要的是「在这几个里选一个」，
-  // 让他自己敲前缀等于把 15 个前缀的总表背下来的活推给他。
+  // 让他自己敲前缀等于把 PREFIXES.size 个前缀的总表背下来的活推给他。
   const labels = bars[1].children.map((el) => el.textContent);
   assert.ok(labels.some((t) => t.includes("改成 switch/")), "候选前缀要做成按钮");
   assert.ok(labels.some((t) => t.includes("改成 ind/")));

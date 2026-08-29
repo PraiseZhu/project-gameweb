@@ -1771,7 +1771,7 @@ export function computeNamingPlan(section, options) {
   //    只是它有个实例被拿来当第8屏用。母版和实例同名这条规范（17:51311/1:1185
   //    两个反例）里，两个前缀都是「组件是什么」（ind/btn），不是位置类前缀，
   //    所以把范围收紧到同一类前缀。
-  const MASTER_INHERITABLE_PREFIXES = new Set(["btn", "img", "ind", "switch", "tab", "hot", "modal", "mix"]);
+  const MASTER_INHERITABLE_PREFIXES = new Set(["btn", "img", "ind", "switch", "tab", "hot", "modal", "mix", "dropmenu"]);
   const masterNameByMasterId = new Map();
   for (const entry of state.claimedNodes.values()) {
     if (!entry.newName || entry.disposition !== "confirmed") continue;

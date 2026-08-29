@@ -106,6 +106,7 @@ const PREFIX_SEMANTICS = {
   btn: '可点击，可挂 @link=',
   hot: '热区，无视觉只吃点击',
   modal: 'fixed + 遮罩，默认 display:none',
+  dropmenu: 'PC 开合菜单；变体值精确小写 on/off，不挂 @ 参数',
   dyn: '运行时件（数据来自接口）',
   mix: '图文混排，不整块切图',
   scroll: 'overflow + 隐藏滚动条',
@@ -232,7 +233,7 @@ export const FIELD_DISPOSITION = {
 /** 切图导出类前缀：自身出节点，子树随整张导出不出节点。 */
 const EXPORT_IMAGE_PREFIXES = new Set(['img', 'bg', 'kv']);
 
-const SEMANTIC_CONTAINER_PREFIXES = new Set(['switch', 'tab', 'ind', 'scroll', 'mix', 'btn', 'hot', 'dyn', 'modal']);
+const SEMANTIC_CONTAINER_PREFIXES = new Set(['switch', 'tab', 'ind', 'scroll', 'mix', 'btn', 'hot', 'dyn', 'modal', 'dropmenu']);
 
 /** 容器类型（可含子级；纯容器按规则穿过）。 */
 const CONTAINER_TYPES = new Set(['FRAME', 'GROUP', 'INSTANCE']);

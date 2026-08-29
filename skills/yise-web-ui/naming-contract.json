@@ -1,8 +1,9 @@
 {
-  "targetSpecVersion": "v2.13 (2026-08-25)",
+  "targetSpecVersion": "v2.15 (2026-08-29)",
   "rolesUsed": [
     "bg",
     "btn",
+    "dropmenu",
     "dyn",
     "fix",
     "hot",

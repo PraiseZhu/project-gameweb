@@ -1,7 +1,7 @@
 # 下游消费假定
 
-> 版本 **A-v1.12**（2026-08-27）。与 `spec/naming-spec.md` 同步升版，`test/spec-drift.test.mjs` 锁住版本号与条目集合。
-> A-v1.12：A8 增补页上用到的 `img/` + `lang` 组件集每个变体根带 `sliceExport`。A-v1.11：A2 增补 `fix/@from=N` 从第 N 屏起钉视口。A-v1.10：A8 增补页上 `ind/` 组件集每个变体根带 `sliceExport`。A-v1.9：A8 增补 mix 内裁切溢出自动 `scroll/`；BOOLEAN `btn/` 带 `sliceExport`。A-v1.8：A8 `mix/` 子树带图像填充的叶子由清单自动拆成 `img/` 切图；`scroll/` 写在 `mix/` 内仍按 A5 滑动裁切。A-v1.7：A0 全角斜杠 `／` 与半角 `/` 同义。A-v1.6：A0 前缀语法改大小写不敏感、半角斜杠两侧允许空格；A6 明确视觉前缀挂在 TEXT 上时按切图消费（名字压过类型）。
+> 版本 **A-v1.13**（2026-08-29）。与 `spec/naming-spec.md` 同步升版，`test/spec-drift.test.mjs` 锁住版本号与条目集合。
+> A-v1.13：新增 A9，`dropmenu/` 开合只认值集合恰好 `{on,off}` 的那一轴。A-v1.12：A8 增补页上用到的 `img/` + `lang` 组件集每个变体根带 `sliceExport`。A-v1.11：A2 增补 `fix/@from=N` 从第 N 屏起钉视口。A-v1.10：A8 增补页上 `ind/` 组件集每个变体根带 `sliceExport`。A-v1.9：A8 增补 mix 内裁切溢出自动 `scroll/`；BOOLEAN `btn/` 带 `sliceExport`。A-v1.8：A8 `mix/` 子树带图像填充的叶子由清单自动拆成 `img/` 切图；`scroll/` 写在 `mix/` 内仍按 A5 滑动切图。A-v1.7：A0 全角斜杠 `／` 与半角 `/` 同义。A-v1.6：A0 前缀语法改大小写不敏感、半角斜杠两侧允许空格；A6 明确视觉前缀挂在 TEXT 上时按切图消费（名字压过类型）。
 
 ## 这份文件为什么存在
 
@@ -118,6 +118,18 @@ TEXT 节点**默认**即可配置文案，不需要前缀声明——无前缀�
 6. `BOOLEAN_OPERATION` 的 `btn/` 保持 click，同时写 `sliceExport`；子层是 `slice-child`。导按钮合成形，不要给 Subtract 零件加 `img/`。
 7. 页上用到的 `ind/` 组件集，每个变体 `COMPONENT` 根保持 indicator，同时写 `sliceExport`；零件是 `slice-child`。导变体合成形，不要给小钻石加 `img/`，不要用 CSS 菱形。做页按实例 `componentId` 消费对应变体 PNG。
 8. 页上用到的 `img/` 组件集，仅当变体属性名是 `lang`、且至少有两个不同的精确小写 `cn` / `tw` / `en` / `jp` / `kr` 变体时，这些合法变体 `COMPONENT` 根保持 slice，同时写 `sliceExport`；零件是 `slice-child`。导的是该语言合成形。没有 `lang` 轴、只有一个变体、`CN` / `xx` 这类非精确小写五码、`Property 1=cn` 旧写法当普通图，不跟页面语言。未画的语言不做出清单失败条件；做页切到缺变体时 fail-visible，不回落 `cn` 图。页面语言 key 仍是 `zh-CN` / `zh-TW` / `en` / `ja` / `ko`，映射到上述五码；`region=cn` 是国服。
+
+## A9 · dropmenu 开合消费
+
+`dropmenu/` 是 PC 开合菜单。下游按组件集前缀识别；开合状态只认变体，不认 `@` 参数。
+
+1. **值集合恰好 `{on,off}`。** 精确小写。属性名不锁，`Property 1` 可用。多轴时只认值集合恰好这两个的那一轴。
+2. **错值 fail-visible。** `On` / `OFF` / `true` / `1` / `open` 不当开合，不升 `determined` `dropmenu/`，也不静默当成 `on`。
+3. **点根切开合。** 点根在 `off`↔`on` 之间切换。列表行内部若有 `btn/`，点击优先走该 `btn/`。点列表外回到 `off`。
+4. **用字认语言。** 选项自称必须落在封闭表：`简体中文` / `繁體中文` / `English` / `日本語` / `한국어`（可归一空格与大小写）。判不出 fail-visible，不猜中文、不回落 `zh-CN`。
+5. **手机不走本条。** 手机语言入口仍是 `btn/` 开 `modal/`，不把 `dropmenu/` 接到手机稿。
+
+页上用到的 `dropmenu/` 组件集，无自己前缀、变体值精确小写 `on`/`off` 的 `COMPONENT` 根升 `determined` `dropmenu/`（`via=structure`）。`btn/` 组件集即使变体也叫 `on`/`off` 仍是 click，不升 dropmenu。
 
 ---
 

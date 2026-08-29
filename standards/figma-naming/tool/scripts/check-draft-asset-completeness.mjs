@@ -51,7 +51,7 @@ function auditCardAndReward(doc) {
   return { ok: problems.length === 0, problems };
 }
 
-const PAGE_PREFIX_RE = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab)[/／]/;
+const PAGE_PREFIX_RE = /^(bg|btn|dropmenu|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab)[/／]/;
 
 function collectPrefix(found, node) {
   if (node?.status !== "determined") return;
@@ -108,7 +108,7 @@ export const GOLD_PC_PREFIX_CLASSES = ["bg", "btn", "fix", "img", "sec"];
 /** 冻住跨页结构/视觉底座。mobile 无 fix。 */
 export const GOLD_MOBILE_PREFIX_CLASSES = ["bg", "btn", "img", "sec"];
 /** 参考稿有 determined 才检查的模块前缀。冻结核心表不含这些，避免无倒计时/KV/混排/滑动区的合法稿被闸门红掉。 */
-export const OPTIONAL_GOLD_PREFIX_CLASSES = ["dyn", "hot", "ind", "kv", "mix", "modal", "scroll", "switch", "tab"];
+export const OPTIONAL_GOLD_PREFIX_CLASSES = ["dropmenu", "dyn", "hot", "ind", "kv", "mix", "modal", "scroll", "switch", "tab"];
 const GOLD_PC_MIN_WIDTH = 1200;
 
 export function goldPrefixClassesFor(doc, options = {}) {
@@ -189,7 +189,7 @@ function auditIndexConsistency(doc) {
     ["sections", "determined sec/"],
     ["overlays", "determined fix/"],
     ["backgrounds", "determined bg/kv"],
-    ["modules", "determined switch/tab/ind/scroll/mix/dyn/modal"],
+    ["modules", "determined switch/tab/ind/scroll/mix/dyn/modal/dropmenu"],
   ];
   for (const [key, label] of checks) {
     const actualList = doc[key] || [];
