@@ -30,6 +30,10 @@ window.__qaDemo = {
     lang:   { label: 'Language', options: [{ v: 'zh-CN', label: 'zh-CN' }] },
   },
   defaultPrefs: { plat: 'desktop', region: 'cn', os: 'any', mode: 'default', lang: 'zh-CN' },
+  compositionBreakpoints: [
+    { key: 'mobile', min: 0, max: 1126 },
+    { key: 'desktop', min: 1127, max: null },
+  ],
   initialState: 'entry',
   states: { entry: {} },
   tabStates: [],

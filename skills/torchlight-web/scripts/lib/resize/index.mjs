@@ -37,6 +37,15 @@ const DEFAULT_BREAKPOINTS = Object.freeze([
   { key: 'desktop', min: 1024, max: null },
 ]);
 
+/* Official torchlight poster: `@media (max-width: 1126px)` hides PC controls
+   and shows the mobile ones. Inclusive 1126 → mobile tree; 1127 → pc.
+   Device-picker buckets stay on DEFAULT_BREAKPOINTS. This list is composition
+   only — do not copy the season media-query size patches. */
+export const TORCHLIGHT_COMPOSITION_BREAKPOINTS = Object.freeze([
+  { key: 'mobile', min: 0, max: 1126 },
+  { key: 'desktop', min: 1127, max: null },
+]);
+
 function finite(value) {
   return Number.isFinite(Number(value));
 }
@@ -65,12 +74,12 @@ export function platOfWidth(width, breakpoints = DEFAULT_BREAKPOINTS) {
  * 750px mobile cutoff. `compositionBreakpoints` makes that policy explicit
  * instead of accidentally depending on the presence or absence of a pad tree.
  */
-export function compositionBucketForWidth(width, compositionBreakpoints = null) {
+export function compositionBucketForWidth(width, compositionBreakpoints = TORCHLIGHT_COMPOSITION_BREAKPOINTS) {
   const w = n(width, NaN);
   if (!Number.isFinite(w)) return null;
   const list = Array.isArray(compositionBreakpoints) && compositionBreakpoints.length
     ? compositionBreakpoints
-    : DEFAULT_BREAKPOINTS;
+    : TORCHLIGHT_COMPOSITION_BREAKPOINTS;
   const bp = list.find((b) => w >= n(b.min) && (b.max == null || w <= n(b.max)));
   if (!bp) return null;
   if (bp.key === 'mobile') return 'mobile';
@@ -88,7 +97,7 @@ export function compositionKeyForViewport({
   width,
   platforms = {},
   breakpoints = DEFAULT_BREAKPOINTS,
-  compositionBreakpoints = null,
+  compositionBreakpoints = TORCHLIGHT_COMPOSITION_BREAKPOINTS,
 } = {}) {
   const requested = platOfWidth(width, breakpoints);
   const composition = compositionBucketForWidth(width, compositionBreakpoints);
@@ -105,6 +114,26 @@ export function compositionKeyForViewport({
     return { requested, key: 'pc', fallback: 'mobile-uses-pc-tree' };
   }
   return { requested: requested || 'pc', key: 'pc', fallback: null };
+}
+
+/**
+ * Product view and QA both pick the Figma tree from width.
+ * Official torchlight: width ≤ 1126 → mobile tree, ≥ 1127 → pc.
+ * Official `is-pc` / `is-mobile` is a UA body class and does not select the tree.
+ * `uaDeviceType` is ignored when present.
+ */
+export function compositionForView({
+  width,
+  platforms = {},
+  breakpoints,
+  compositionBreakpoints = TORCHLIGHT_COMPOSITION_BREAKPOINTS,
+} = {}) {
+  return compositionKeyForViewport({
+    width,
+    platforms,
+    breakpoints,
+    compositionBreakpoints,
+  });
 }
 
 /**
@@ -328,7 +357,7 @@ export function classifyResizeIntent({
   width,
   platforms = {},
   breakpoints = DEFAULT_BREAKPOINTS,
-  compositionBreakpoints = null,
+  compositionBreakpoints = TORCHLIGHT_COMPOSITION_BREAKPOINTS,
   dragActive = false,
   forceFullRender = false,
   grid = false,
@@ -343,8 +372,16 @@ export function classifyResizeIntent({
   designWidth = null,
   heroDesignHeight = null,
   productView = false,
+  uaDeviceType = null,
 } = {}) {
-  const composition = compositionKeyForViewport({ width, platforms, breakpoints, compositionBreakpoints });
+  /* uaDeviceType is accepted and ignored: official body class is not the tree. */
+  void uaDeviceType;
+  const composition = compositionForView({
+    width,
+    platforms,
+    breakpoints,
+    compositionBreakpoints,
+  });
   const vpW = viewportW ?? width;
   const ruler = widthScale({
     viewportW: vpW,
@@ -389,8 +426,8 @@ export function heroSlotAtScroll(input = {}, scrollTop = 0) {
 
 export function resizeOwns() {
   return [
-    'viewport-to-platform mapping',
-    'composition base (pc / mobile / pad-uses-pc-tree)',
+    'product/QA tree from composition width (torchlight official 0–1126 mobile, ≥1127 pc; no pad tree)',
+    'device-picker buckets stay 0–750 / 751–1023 / ≥1024 and do not select the Figma tree',
     'continuous width scale k = viewportW / designWidth (official 10vw ruler)',
     'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; inventory stays one sheet)',
     'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
@@ -411,7 +448,7 @@ export function resizeDoesNotOwn() {
     'click / switch / tab / scrollspy wiring (Interaction Skill)',
     'Figma fetch, truth extraction, or asset export (Main Skill)',
     'page-specific node IDs or official-site one-off CSS',
-    'per-device special-case layouts',
+    'per-device special-case layouts or official media-query size patches (1920/1440/1024/750/650, aspect-ratio, device-vertical; 1126 is the tree cutoff only)',
   ];
 }
 
