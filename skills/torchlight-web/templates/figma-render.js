@@ -611,6 +611,75 @@
     return { family, weight, role: fontRole, language: lang, routed: family !== sourceFamily };
   },
 
+  /* Owner-slice geometry used by the main img paint path and by img/ lang remount.
+     Prefer a delivered exportBox; otherwise derive a render-bound box from
+     sliceExport.bounds === 'render' plus the source renderBox. */
+  _ownerSliceBox(assetRec, _ownerBox, renderBox) {
+    const rb = renderBox || {};
+    const renderBoxReady = [rb.x, rb.y, rb.w, rb.h].every((v) => Number.isFinite(Number(v)))
+      && Number(rb.w) > 0 && Number(rb.h) > 0;
+    const renderSlice = assetRec
+      && String(assetRec?.sliceExport?.bounds || assetRec?.exportBounds || '').toLowerCase() === 'render'
+      && renderBoxReady
+      ? rb
+      : null;
+    return (assetRec && assetRec.exportBox) || renderSlice || null;
+  },
+  _mountOwnerSliceImg(el, url, ownerBox, exportBox, { alt = '', eager = false } = {}) {
+    if (!el || !url) return null;
+    const img = document.createElement('img');
+    img.className = 'fx-img';
+    img.style.position = 'absolute';
+    const box = ownerBox || {};
+    if (exportBox) {
+      img.style.left = ((exportBox.x ?? box.x ?? 0) - (box.x ?? 0)) + 'px';
+      img.style.top = ((exportBox.y ?? box.y ?? 0) - (box.y ?? 0)) + 'px';
+      img.style.width = (exportBox.w ?? box.w ?? 0) + 'px';
+      img.style.height = (exportBox.h ?? box.h ?? 0) + 'px';
+      const fillOwnerCanvas = (objectFit, policy, extra = {}) => {
+        img.style.left = '0';
+        img.style.top = '0';
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = objectFit;
+        Object.assign(img.style, extra);
+        el.setAttribute('data-asset-bounds-resolved', policy);
+      };
+      const fitDeliveredCanvas = () => {
+        const nw = Number(img.naturalWidth), nh = Number(img.naturalHeight);
+        const ow = Number(box.w), oh = Number(box.h);
+        const rw = Number(exportBox.w), rh = Number(exportBox.h);
+        if (![nw, nh, ow, oh, rw, rh].every(Number.isFinite)
+          || nw <= 0 || nh <= 0 || ow <= 0 || oh <= 0 || rw <= 0 || rh <= 0) return;
+        const aspectDistance = (w, h) => Math.abs((nw / nh) - (w / h));
+        const ownerDistance = aspectDistance(ow, oh);
+        const renderDistance = aspectDistance(rw, rh);
+        if (ownerDistance <= 0.035 && ownerDistance + 0.08 < renderDistance) {
+          fillOwnerCanvas('fill', 'owner-canvas-from-delivered-png');
+        } else {
+          el.setAttribute('data-asset-bounds-resolved', 'render-canvas-from-delivered-png');
+        }
+      };
+      img.addEventListener('load', fitDeliveredCanvas, { once: true });
+    } else {
+      img.style.top = '0';
+      img.style.left = '0';
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.objectFit = 'fill';
+    }
+    img.setAttribute('data-asset-src', url);
+    img.setAttribute('data-asset-state', eager ? 'eager' : 'deferred');
+    if (eager) img.setAttribute('src', url);
+    img.setAttribute('alt', alt);
+    img.setAttribute('loading', 'eager');
+    img.setAttribute('decoding', 'async');
+    if (!el.style.overflow || el.style.overflow === 'visible') el.style.overflow = 'hidden';
+    if (!el.style.position) el.style.position = 'relative';
+    el.appendChild(img);
+    return img;
+  },
+
   /* 双真源 locale 目标字号（镜像 scripts/lib/translation/typography-policy.mjs 的
      officialTargetDesignSize / LOCALE_FONT_SCALE）。证据 artifacts/official-locale-typography-20260810.json：
      本地 2× 高清稿，官网运行时约为一半，语言比 = 官网该语言视觉字号 / 官网 zh-CN 视觉字号。
@@ -639,6 +708,92 @@
     let lineHeight = Number.isFinite(Number(sourceLineHeight)) && Number(sourceLineHeight) > 0 ? Number(sourceLineHeight) * ratio : null;
     if (tier === 'card-title' && (lang === 'ja' || lang === 'zh-TW')) lineHeight = fontSize;
     return { fontSize, lineHeight, ratio, tier, kind: tier === 'body' ? 'body' : 'title', role, language: lang };
+  },
+
+  /* img/ + lang variant follow. Mirror scripts/lib/translation/locale-policy.mjs.
+     Page prefs.lang stays BCP-47; variant values are exact lowercase cn/tw/en/jp/kr.
+     Missing languages stay missing — never fall back to the Figma-selected cn tree. */
+  _imgLangVariantValue(language) {
+    const raw = String(language || '').replace('_', '-');
+    const lower = raw.toLowerCase();
+    if (lower.startsWith('zh-tw') || lower.startsWith('zh-hk')) return 'tw';
+    if (lower.startsWith('zh')) return 'cn';
+    if (lower.startsWith('ja')) return 'jp';
+    if (lower.startsWith('ko')) return 'kr';
+    if (lower.startsWith('en')) return 'en';
+    return null;
+  },
+  _langValueOfImgVariant(variant) {
+    const props = variant && variant.componentProperties;
+    const nameOf = (key) => String(key || '').replace(/#[^#]+$/, '').trim().toLowerCase();
+    const rawOf = (raw) => (raw && typeof raw === 'object' ? (raw.value ?? raw.defaultValue ?? '') : raw);
+    if (props && typeof props === 'object') {
+      for (const [key, raw] of Object.entries(props)) {
+        if (nameOf(key) !== 'lang') continue;
+        return String(rawOf(raw) ?? '');
+      }
+    }
+    const parts = String((variant && variant.name) || '').split(',');
+    for (const part of parts) {
+      const index = part.indexOf('=');
+      if (index < 0) continue;
+      if (nameOf(part.slice(0, index)) !== 'lang') continue;
+      return String(part.slice(index + 1)).trim();
+    }
+    return '';
+  },
+  _imgLangAxisOfSet(set) {
+    const defs = set && set.propertyDefinitions;
+    if (!defs || typeof defs !== 'object' || Array.isArray(defs)) return null;
+    const nameOf = (key) => String(key || '').replace(/#[^#]+$/, '').trim().toLowerCase();
+    const typeOf = (raw) => String((raw && typeof raw === 'object' ? (raw.type && raw.type.value) ?? raw.type : '') || '').toUpperCase();
+    const optionsOf = (raw) => {
+      const options = raw && typeof raw === 'object'
+        ? (Array.isArray(raw.variantOptions) ? raw.variantOptions : raw.variantOptions && raw.variantOptions.value)
+        : null;
+      return Array.isArray(options) ? options.map((item) => String(item && typeof item === 'object' && 'value' in item ? item.value : item)) : [];
+    };
+    for (const [key, raw] of Object.entries(defs)) {
+      if (nameOf(key) !== 'lang' || typeOf(raw) !== 'VARIANT') continue;
+      return { key, options: optionsOf(raw) };
+    }
+    return null;
+  },
+  _isLegalImgLangSet(set) {
+    const name = String((set && set.name) || '');
+    const pfx = ((/^([A-Za-z]+)\s*[\/／]/.exec(name) || [])[1] || '').toLowerCase();
+    if (pfx !== 'img') return false;
+    const axis = this._imgLangAxisOfSet(set);
+    if (!axis) return false;
+    const allowed = new Set(axis.options.filter((value) => value === 'cn' || value === 'tw' || value === 'en' || value === 'jp' || value === 'kr'));
+    if (allowed.size < 2) return false;
+    const variants = Array.isArray(set && set.variants) ? set.variants : [];
+    const values = new Set(variants.map((variant) => this._langValueOfImgVariant(variant)).filter((value) => allowed.has(value)));
+    return values.size >= 2;
+  },
+  _resolveImgLangVariant(componentSets, componentId, language) {
+    const value = this._imgLangVariantValue(language);
+    const id = String(componentId || '');
+    const lang = String(language || '');
+    if (!value || !id) return { status: 'not-applicable', language: lang, value: value || null, componentId: null, reason: value ? 'no-component-id' : 'unmapped-page-language' };
+    const sets = Array.isArray(componentSets) ? componentSets : [];
+    const foundSet = sets.find((set) => (Array.isArray(set && set.variants) ? set.variants : [])
+      .some((variant) => String((variant && (variant.componentId || variant.id)) || '') === id)) || null;
+    if (!foundSet || !this._isLegalImgLangSet(foundSet)) {
+      return { status: 'not-applicable', language: lang, value, componentId: null, reason: foundSet ? 'not-img-lang-set' : 'set-not-found' };
+    }
+    const match = (Array.isArray(foundSet.variants) ? foundSet.variants : [])
+      .find((variant) => this._langValueOfImgVariant(variant) === value) || null;
+    if (!match) {
+      return { status: 'missing', language: lang, value, componentId: null, reason: 'missing-language-variant' };
+    }
+    return {
+      status: 'matched',
+      language: lang,
+      value,
+      componentId: String(match.componentId || match.id || ''),
+      reason: 'page-language-variant',
+    };
   },
 
   /* Step-fit authorization policy — single source of truth is
@@ -2728,23 +2883,47 @@
        }
        const componentVariantOwners = [];
        /* A ready package may reference a small component instance directly
-          (indicator, tab/icon button) while the page node intentionally has
-          no duplicated child tree.  Its selected component variant is still
-          carried, source-backed, in componentVariantGraph.  Index those
-          trees once so the consumer can mount the *selected* instance tree
-          into an otherwise empty owner.  This is deliberately not a generic
-          fallback drawing path: the component id, single root, and exact
-          owner extent must all agree before any pixels are added. */
+          (indicator, tab/icon button, img/ lang art) while the page node
+          intentionally has no duplicated child tree.  Index every source
+          variant tree so the consumer can mount either the Figma-selected
+          tree or, for legal img/+lang sets, the page-language tree.
+          Width must still match the owner; language art may differ in
+          height.  This stays one platform's componentSets — PC and mobile
+          never share slices. */
        const componentInstanceTrees = new Map();
-       for (const set of asArr(__activeTruth && __activeTruth.componentVariantGraph
-         && __activeTruth.componentVariantGraph.componentSets)) {
+       const imgLangSetsByMemberId = new Map();
+       const activeComponentSets = asArr(__activeTruth && __activeTruth.componentVariantGraph
+         && __activeTruth.componentVariantGraph.componentSets);
+       for (const set of activeComponentSets) {
+         const legalImgLang = this._isLegalImgLangSet(set);
          for (const variant of asArr(set && set.variants)) {
-           const componentId = String(__u(variant && variant.componentId) || '');
+           const componentId = String(__u(variant && (variant.componentId || variant.id)) || '');
            const nodes = asArr(variant && variant.nodes);
            const roots = nodes.filter((node) => String(__u(node && node.id)) === componentId
              && String(node && node.type || '') === 'COMPONENT');
-           if (!componentId || roots.length !== 1 || nodes.length < 2 || componentInstanceTrees.has(componentId)) continue;
-           componentInstanceTrees.set(componentId, { componentId, root: roots[0], nodes });
+           const hasLangSlice = legalImgLang && !!(variant.sliceExport || this._assetRec(componentId, __base));
+           const root = roots.length === 1 ? roots[0]
+             : ((legalImgLang && (variant.box || hasLangSlice)) ? {
+               id: componentId,
+               type: 'COMPONENT',
+               name: variant.name,
+               box: variant.box || null,
+               renderBox: variant.renderBox || null,
+               sliceExport: variant.sliceExport || null,
+             } : null);
+           if (!componentId || componentInstanceTrees.has(componentId)) {
+             if (legalImgLang && componentId) imgLangSetsByMemberId.set(componentId, set);
+             continue;
+           }
+           if (!legalImgLang && (roots.length !== 1 || nodes.length < 2 || !root)) continue;
+           if (legalImgLang) imgLangSetsByMemberId.set(componentId, set);
+           if (!root) continue;
+           componentInstanceTrees.set(componentId, {
+             componentId,
+             root,
+             nodes: roots.length === 1 ? nodes : [root, ...nodes],
+             sliceExport: variant.sliceExport || null,
+           });
          }
        }
        const componentInstanceOwners = [];
@@ -3065,14 +3244,7 @@
            geometry remains untouched, and non-render/page-bound assets keep
            the original owner-box behavior. */
         const renderBox = n.renderBox || {};
-        const renderBoxReady = [renderBox.x, renderBox.y, renderBox.w, renderBox.h].every((v) => Number.isFinite(Number(v)))
-          && Number(renderBox.w) > 0 && Number(renderBox.h) > 0;
-        const _renderSliceBox = assetRec
-          && String(assetRec?.sliceExport?.bounds || assetRec?.exportBounds || '').toLowerCase() === 'render'
-          && renderBoxReady
-          ? n.renderBox
-          : null;
-        const exportBox = (assetRec && assetRec.exportBox) || _renderSliceBox || null;
+        const exportBox = this._ownerSliceBox(assetRec, box, renderBox);
         /* 消费 truth 的 auto-layout（layoutMode HORIZONTAL/VERTICAL）。这些 frame
            的子节点在 truth 里被穿透成顶层 sibling（children=[]，靠 ownerPath 关联），
            若仍按源坐标绝对定位，译文变宽后：按钮 icon 被顶出框、跟随标签压住文字、
@@ -4388,83 +4560,21 @@
                 }
                 continue;
               }
-              const img = document.createElement('img');
-              img.className = 'fx-img';
-              if (el.getAttribute('data-shadow-via') === 'asset-baked') img.setAttribute('data-shadow-source', 'asset');
-              if (el.getAttribute('data-blur-via') === 'asset-baked') img.setAttribute('data-blur-source', 'asset');
               /* ═══ fx-img 必须填满 owner 盒，禁止用原始像素尺寸 ═══
                  exportBox：已有精确的 mask/export 边界，按它绝对定位到 owner 内。
                  无 exportBox：img 必须 100% 填满 owner（width/height/object-fit:fill），
-                 禁止走 intrinsic 尺寸 —— 页面缩 0.5 时原图会 2 倍溢出 owner 框。 */
-              img.style.position = 'absolute';
-              if (exportBox) {
-                img.style.left = ((exportBox.x ?? box.x ?? 0) - (box.x ?? 0)) + 'px';
-                img.style.top = ((exportBox.y ?? box.y ?? 0) - (box.y ?? 0)) + 'px';
-                img.style.width = (exportBox.w ?? box.w ?? 0) + 'px';
-                img.style.height = (exportBox.h ?? box.h ?? 0) + 'px';
-
-                /* `sliceExport.bounds: render` says where the node was visible
-                   in the source canvas; it does not guarantee that the delivered
-                   PNG canvas itself was cropped to that visible range.  Scroll
-                   tracks and switch previews deliberately export a full owner
-                   canvas even when their source renderBox is just the clipped
-                   viewport.  Detect that from the *delivered bytes* on load:
-                   when their intrinsic aspect follows the owner box rather than
-                   the renderBox, keep the complete asset in its real owner and
-                   let the already-proven source clip ancestor do the cropping.
-                   This is geometry-based (not node/name special casing) and keeps
-                   genuinely render-bound shadows/overhang exports unchanged. */
-                const fillOwnerCanvas = (objectFit, policy, extra = {}) => {
-                  img.style.left = '0';
-                  img.style.top = '0';
-                  img.style.width = '100%';
-                  img.style.height = '100%';
-                  img.style.objectFit = objectFit;
-                  Object.assign(img.style, extra);
-                  el.setAttribute('data-asset-bounds-resolved', policy);
-                };
-                const fitDeliveredCanvas = () => {
-                  const nw = Number(img.naturalWidth), nh = Number(img.naturalHeight);
-                  const ow = Number(box.w), oh = Number(box.h);
-                  const rw = Number(exportBox.w), rh = Number(exportBox.h);
-                  if (![nw, nh, ow, oh, rw, rh].every(Number.isFinite)
-                    || nw <= 0 || nh <= 0 || ow <= 0 || oh <= 0 || rw <= 0 || rh <= 0) return;
-                  const aspectDistance = (w, h) => Math.abs((nw / nh) - (w / h));
-                  const ownerDistance = aspectDistance(ow, oh);
-                  const renderDistance = aspectDistance(rw, rh);
-                  /* Require a clear winner so an expanded shadow box that shares
-                     the same aspect ratio does not lose its render-bound mapping. */
-                  if (ownerDistance <= 0.035 && ownerDistance + 0.08 < renderDistance) {
-                    fillOwnerCanvas('fill', 'owner-canvas-from-delivered-png');
-                  } else {
-                    el.setAttribute('data-asset-bounds-resolved', 'render-canvas-from-delivered-png');
-                  }
-                };
-                img.addEventListener('load', fitDeliveredCanvas, { once: true });
-              } else {
-                img.style.top = '0';
-                img.style.left = '0';
-                img.style.width = '100%';
-                img.style.height = '100%';
-                img.style.objectFit = 'fill';
-              }
-              img.setAttribute('data-asset-src', entry.url);
+                 禁止走 intrinsic 尺寸 —— 页面缩 0.5 时原图会 2 倍溢出 owner 框。
+                 Language remount uses the same helper so img/ + lang slices keep
+                 render-bound export geometry instead of a second 100% fill path. */
+              const img = this._mountOwnerSliceImg(el, entry.url, box, exportBox, {
+                alt: n.name ?? '',
+                eager: !!__indComponentFallback,
+              });
+              if (el.getAttribute('data-shadow-via') === 'asset-baked') img.setAttribute('data-shadow-source', 'asset');
+              if (el.getAttribute('data-blur-via') === 'asset-baked') img.setAttribute('data-blur-source', 'asset');
               img.setAttribute('data-image-fill-index', String(entry.index));
               if (entry.fill && entry.fill.imageRef) img.setAttribute('data-image-ref', String(entry.fill.imageRef));
               if (entry.composite) img.setAttribute('data-asset-composite', 'source-svg');
-              /* Indicator component-context PNGs are tiny and sit on the initial
-                 Figma snapshot. Deferring src leaves an empty 24x25 box, which
-                 reads as a missing progress mark. Keep every other asset deferred. */
-              if (__indComponentFallback) {
-                img.setAttribute('src', entry.url);
-                img.setAttribute('data-asset-state', 'eager');
-              } else {
-                img.setAttribute('data-asset-state', 'deferred');
-              }
-              img.setAttribute('alt', n.name ?? '');
-              img.setAttribute('loading', 'eager');
-              img.setAttribute('decoding', 'async');
-              el.appendChild(img);
               mountedImageCount += 1;
             }
             if (mountedImageCount) {
@@ -4545,14 +4655,31 @@
         renderedById.set(String(__u(nid)), record);
         stack.push(record);
         /* Direct component instances normally include their descendants in
-           the page list.  If they do not, consume the exact selected variant
-           tree from the ready component graph after the main tree finishes.
-           Waiting avoids duplicate content when a regular instance does have
-           page descendants later in DFS order. */
+           the page list.  If they do not, consume a source variant tree from
+           the ready component graph after the main tree finishes.
+           Legal img/+lang sets follow page language; everything else still
+           mounts the Figma-selected componentId.  Waiting avoids duplicate
+           content when a regular instance does have page descendants later
+           in DFS order. */
         const componentId = String(__u(n.componentId) || '');
-        const componentTree = componentId ? componentInstanceTrees.get(componentId) : null;
-        if (!suppressInteractions && componentTree && pfx !== 'switch') {
-          componentInstanceOwners.push({ el, tree: componentTree, ownerBox: box, ownerId: String(__u(nid)), prefix: pfx });
+        const imgLangChoice = imgLangSetsByMemberId.has(componentId)
+          ? this._resolveImgLangVariant(activeComponentSets, componentId, ctx.prefs && ctx.prefs.lang)
+          : { status: 'not-applicable' };
+        const wantedComponentId = imgLangChoice.status === 'matched'
+          ? imgLangChoice.componentId
+          : componentId;
+        const componentTree = wantedComponentId ? componentInstanceTrees.get(wantedComponentId) : null;
+        if (!suppressInteractions && pfx !== 'switch'
+          && (componentTree || imgLangChoice.status === 'missing' || imgLangChoice.status === 'matched')) {
+          componentInstanceOwners.push({
+            el,
+            tree: componentTree,
+            ownerBox: box,
+            ownerId: String(__u(nid)),
+            prefix: pfx,
+            selectedComponentId: componentId,
+            imgLang: imgLangChoice,
+          });
         }
         if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-switch-page-source'] === 'component-set-variant'
           && evidenceAttrs['data-btn-variant'] !== 'true') {
@@ -4703,10 +4830,13 @@
           owner.el.setAttribute('data-switch-variant-mount-status', 'blocked-incomplete-content-layer');
         }
       }
-      /* Mount the selected source component tree only into an empty,
-         dimension-compatible INSTANCE.  This restores component-owned pixels
-         such as ind/ progress marks without inventing descendants, borrowing
-         a sibling state, or wiring new interaction behavior. */
+      /* Mount a source component tree only into an empty, width-compatible
+         INSTANCE.  This restores component-owned pixels such as ind/ progress
+         marks and img/ lang art without inventing descendants, borrowing a
+         sibling state, or wiring new interaction behavior.  Ordinary sets
+         still require an exact owner/root box.  Legal img/+lang sets follow
+         page language and may differ in height; a missing language stays
+         empty instead of falling back to the Figma-selected cn tree. */
       for (const owner of componentInstanceOwners) {
         /* The exact component-context reference above already supplied the
            complete selected ind root.  Do not mount its partial raw child tree
@@ -4716,18 +4846,92 @@
           owner.el.setAttribute('data-component-instance-mount-status', 'source-component-fallback-complete');
           continue;
         }
-        if (!owner.el || owner.el.querySelector('[data-node]')) continue;
+        const imgLang = owner.imgLang || { status: 'not-applicable' };
+        const imgLangFollow = imgLang.status === 'matched';
+        const alreadyPainted = !!(owner.el && (owner.el.querySelector('[data-node]') || owner.el.querySelector('img.fx-img')));
+        const sameSelectedSlice = imgLangFollow
+          && String(owner.selectedComponentId || '') === String(imgLang.componentId || '');
+        const stripOwnerPixels = () => {
+          for (const child of [...owner.el.querySelectorAll('[data-node], img.fx-img')]) child.remove();
+        };
+        const markImgLang = (status) => {
+          owner.el.setAttribute('data-component-instance-mount-status', status);
+          owner.el.setAttribute('data-img-lang-value', String(imgLang.value || ''));
+          if (imgLang.componentId) owner.el.setAttribute('data-img-lang-component-id', String(imgLang.componentId));
+          else owner.el.removeAttribute('data-img-lang-component-id');
+        };
+        const failImgLang = (status) => {
+          stripOwnerPixels();
+          markImgLang(status);
+          owner.el.setAttribute('data-img-lang-missing', String(imgLang.language || (ctx.prefs && ctx.prefs.lang) || ''));
+          owner.el.classList.add('fx-img-ph');
+          owner.el.setAttribute('data-owner-asset-policy', 'asset-missing');
+          owner.el.setAttribute('data-asset-pending', owner.prefix || 'img');
+          owner.el.removeAttribute('data-asset-src');
+          owner.el.removeAttribute('data-asset-bounds-resolved');
+        };
+        const clearImgPlaceholder = () => {
+          owner.el.classList.remove('fx-img-ph');
+          owner.el.removeAttribute('data-asset-pending');
+        };
+        if (imgLang.status === 'missing') {
+          failImgLang('img-lang-missing');
+          continue;
+        }
+        if (!owner.el) continue;
+        if (imgLangFollow && !owner.tree) {
+          failImgLang('img-lang-missing');
+          continue;
+        }
+        if (!imgLangFollow && alreadyPainted) continue;
+        if (imgLangFollow && sameSelectedSlice && alreadyPainted) {
+          markImgLang('img-lang-variant-tree');
+          clearImgPlaceholder();
+          continue;
+        }
         const root = owner.tree && owner.tree.root;
-        const rootBox = root && root.box || {};
+        const rootBox = (root && root.box) || {};
         const ownerW = Number(owner.ownerBox && owner.ownerBox.w);
         const ownerH = Number(owner.ownerBox && owner.ownerBox.h);
         const rootW = Number(rootBox.w), rootH = Number(rootBox.h);
+        const widthOk = Number.isFinite(ownerW) && Number.isFinite(rootW) && Math.abs(ownerW - rootW) <= 0.5;
+        const heightOk = Number.isFinite(ownerH) && Number.isFinite(rootH) && Math.abs(ownerH - rootH) <= 0.5;
         if (!root || !Number.isFinite(ownerW) || !Number.isFinite(ownerH)
           || !Number.isFinite(rootW) || !Number.isFinite(rootH)
-          || Math.abs(ownerW - rootW) > 0.5 || Math.abs(ownerH - rootH) > 0.5) {
-          owner.el.setAttribute('data-component-instance-mount-status', 'blocked-owner-root-mismatch');
+          || !widthOk || (!imgLangFollow && !heightOk)) {
+          if (imgLangFollow) failImgLang('blocked-owner-root-mismatch');
+          else owner.el.setAttribute('data-component-instance-mount-status', 'blocked-owner-root-mismatch');
           continue;
         }
+        const langAsset = imgLangFollow ? this._assetRec(owner.tree.componentId, __base) : null;
+        const langSliceFile = langAsset && langAsset.file ? langAsset.file : null;
+        if (imgLangFollow && !langSliceFile) {
+          failImgLang('img-lang-asset-missing');
+          continue;
+        }
+        if (imgLangFollow) {
+          if (!heightOk) {
+            owner.el.style.height = rootH + 'px';
+            owner.el.setAttribute('data-img-lang-height', 'variant-root');
+          }
+          const mountBox = heightOk ? owner.ownerBox : { ...owner.ownerBox, h: rootH };
+          const rawExport = this._ownerSliceBox(langAsset, rootBox, (root && root.renderBox) || langAsset.renderBox);
+          const exportBox = rawExport ? {
+            x: Number(rawExport.x) - Number(rootBox.x || 0) + Number(mountBox.x || 0),
+            y: Number(rawExport.y) - Number(rootBox.y || 0) + Number(mountBox.y || 0),
+            w: rawExport.w,
+            h: rawExport.h,
+          } : null;
+          stripOwnerPixels();
+          this._mountOwnerSliceImg(owner.el, langSliceFile, mountBox, exportBox, {
+            alt: String((root && root.name) || owner.el.getAttribute('data-name') || ''),
+          });
+          owner.el.setAttribute('data-owner-asset-policy', 'slice');
+          markImgLang('img-lang-variant-tree');
+          clearImgPlaceholder();
+          continue;
+        }
+        if (alreadyPainted) continue;
         paint(owner.tree.nodes, owner.tree.nodes, owner.el, {
           originX: Number(rootBox.x) || 0,
           originY: Number(rootBox.y) || 0,

@@ -121,9 +121,18 @@ test('sc-ready-consume-contracts: legal owner mapping without invented visuals',
   assert.match(renderSrc, /n\.layout\?\.layoutMode \?\? n\.layoutMode/);
   assert.match(renderSrc, /normalizeFigmaLineBreaks/);
   assert.match(renderSrc, /selected-component-tree/);
+  assert.match(renderSrc, /img-lang-variant-tree/);
+  assert.match(renderSrc, /data-img-lang-missing/);
+  assert.match(renderSrc, /_resolveImgLangVariant/);
+  assert.match(renderSrc, /_imgLangAxisOfSet/);
+  assert.match(renderSrc, /nameOf\(key\) !== 'lang' \|\| typeOf\(raw\) !== 'VARIANT'/);
+  assert.match(renderSrc, /_mountOwnerSliceImg/);
+  assert.match(renderSrc, /img-lang-asset-missing/);
+  assert.doesNotMatch(renderSrc, /langSliceFile && langSliceFile\.file/);
   assert.match(chromeSrc, /function canonicalPlat\(p\)/);
   assert.match(chromeSrc, /p === 'desktop' \? 'pc'/);
   assert.match(staticDoc, /empty INSTANCE may mount the selected/);
+  assert.match(staticDoc, /page-used `img\/` sets whose `propertyDefinitions` declare a VARIANT/);
   assert.match(staticDoc, /Do not squeeze letter-spacing/);
   assert.doesNotMatch(renderSrc, /semantic-directional-chevron/);
   assert.doesNotMatch(renderSrc, /data-indicator-fallback/);

@@ -119,3 +119,41 @@ test('ind variant roots with sliceExport are sliced from componentVariantGraph',
   assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['397:35947', '397:35949']);
   assert.match(picks[0].reason, /sliceExport/);
 });
+
+test('img/ lang variant roots with sliceExport are sliced from componentVariantGraph', () => {
+  const picks = pickSliceNodes({
+    sections: { 'sec:1': { nodes: [] } },
+    componentVariantGraph: {
+      componentSets: [{
+        componentSetId: '700:10241',
+        name: 'img/模块2可替换素材',
+        variants: [
+          {
+            id: '700:10242',
+            componentId: '700:10242',
+            name: 'lang=cn',
+            type: 'COMPONENT',
+            status: 'determined',
+            role: 'img',
+            sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '700-10242.png' },
+            nodes: [],
+          },
+          {
+            id: '700:10243',
+            componentId: '700:10243',
+            name: 'lang=en',
+            type: 'COMPONENT',
+            status: 'determined',
+            role: 'img',
+            sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '700-10243.png' },
+            nodes: [],
+          },
+        ],
+      }],
+      components: [],
+      variantTrees: {},
+    },
+  });
+  assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['700:10242', '700:10243']);
+  assert.match(picks[0].reason, /sliceExport/);
+});
