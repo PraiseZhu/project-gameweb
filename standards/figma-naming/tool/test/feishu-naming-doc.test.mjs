@@ -17,6 +17,8 @@ import {
   prefixesByGroup,
   paramRows,
   ruleRows,
+  topicRuleRows,
+  flattenDocText,
   decideLocalSync,
   FEISHU_DOCUMENT_ID,
   FEISHU_SYNC_PATHS,
@@ -34,6 +36,35 @@ test("生成稿含当前版本、全部前缀、参数、报警码", () => {
   assert.deepEqual(expectedFacts().prefixes, Object.keys(PREFIXES).map((p) => `${p}/`).sort());
   assert.deepEqual(expectedFacts().params, Object.keys(PARAMS).sort());
   assert.deepEqual(expectedFacts().rules, Object.keys(RULES).sort());
+});
+
+test("按语言换图单独成节，总表 img/ 只留触发词", () => {
+  const doc = buildDesignerDoc();
+  const headings = doc.blocks.filter((b) => b.type === "h2").map((b) => b.text);
+  assert.ok(headings.includes("按语言换图"), headings.join(" / "));
+  const imgTip = prefixesByGroup()
+    .flatMap((g) => g.rows)
+    .find((r) => r.prefix === "img/")?.tip ?? "";
+  assert.match(imgTip, /按语言换图/);
+  assert.doesNotMatch(imgTip, /cn\/tw\/en\/jp\/kr/);
+  const text = flattenDocText(doc);
+  assert.match(text, /变体属性名 lang/);
+  assert.match(text, /不要回落中文图/);
+  assert.match(text, /Property 1/);
+});
+
+test("报警主题覆盖全部必须改的码，生成稿仍按现象分组", () => {
+  const must = ruleRows()
+    .filter((r) => r.disposition === "must_fix" || r.disposition === "must_answer")
+    .map((r) => r.code)
+    .sort();
+  const topics = topicRuleRows();
+  const listed = topics.flatMap((t) => t.rows.map((row) => row[0])).sort();
+  assert.deepEqual(listed, must);
+  const doc = buildDesignerDoc();
+  const h3 = doc.blocks.filter((b) => b.type === "h3").map((b) => b.text);
+  for (const topic of topics) assert.ok(h3.includes(topic.heading), `缺主题 ${topic.heading}`);
+  assert.equal(h3.includes("必须改"), false);
 });
 
 test("每个前缀分组都有表，且表体来自 PREFIXES", () => {
