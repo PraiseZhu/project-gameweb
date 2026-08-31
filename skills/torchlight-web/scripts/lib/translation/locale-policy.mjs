@@ -7,6 +7,147 @@ import { normalizeLanguage, scriptsForText } from './typography-policy.mjs';
 
 export const DEFAULT_TRANSLATION_LANGUAGES = Object.freeze(['zh-CN', 'en', 'ja', 'ko', 'zh-TW']);
 
+/** Exact lowercase img/ lang variant values. Page prefs.lang stays BCP-47. */
+export const IMG_LANG_VALUES = Object.freeze(['cn', 'tw', 'en', 'jp', 'kr']);
+export const PAGE_LANG_TO_IMG_VARIANT = Object.freeze({
+  'zh-CN': 'cn',
+  'zh-TW': 'tw',
+  en: 'en',
+  ja: 'jp',
+  ko: 'kr',
+});
+
+function variantPropertyName(key) {
+  return String(key || '').replace(/#[^#]+$/, '').trim().toLowerCase();
+}
+
+function variantPropertyPairs(name) {
+  return String(name || '').split(',').flatMap((part) => {
+    const index = part.indexOf('=');
+    if (index < 0) return [];
+    const key = variantPropertyName(part.slice(0, index));
+    if (!key) return [];
+    return [{ key, value: String(part.slice(index + 1)).trim() }];
+  });
+}
+
+function variantPropertyRaw(raw) {
+  if (raw && typeof raw === 'object') return raw.value ?? raw.defaultValue ?? '';
+  return raw;
+}
+
+function definitionType(raw) {
+  if (raw && typeof raw === 'object') return String(raw.type?.value ?? raw.type ?? '').toUpperCase();
+  return '';
+}
+
+function definitionOptions(raw) {
+  const options = raw && typeof raw === 'object'
+    ? (Array.isArray(raw.variantOptions) ? raw.variantOptions : raw.variantOptions?.value)
+    : null;
+  if (!Array.isArray(options)) return [];
+  return options.map((item) => String(item && typeof item === 'object' && 'value' in item ? item.value : item));
+}
+
+/** COMPONENT_SET axis named lang (Figma may hash the key as lang#id). */
+export function imgLangAxisOfSet(set = {}) {
+  const defs = set.propertyDefinitions;
+  if (!defs || typeof defs !== 'object' || Array.isArray(defs)) return null;
+  for (const [key, raw] of Object.entries(defs)) {
+    if (variantPropertyName(key) !== 'lang') continue;
+    if (definitionType(raw) !== 'VARIANT') continue;
+    return { key, options: definitionOptions(raw) };
+  }
+  return null;
+}
+
+export function imgLangVariantValue(language) {
+  const lang = normalizeLanguage(language);
+  return PAGE_LANG_TO_IMG_VARIANT[lang] || null;
+}
+
+export function langValueOfImgVariant(variant = {}) {
+  const props = variant.componentProperties;
+  if (props && typeof props === 'object') {
+    for (const [key, raw] of Object.entries(props)) {
+      if (variantPropertyName(key) !== 'lang') continue;
+      return String(variantPropertyRaw(raw) ?? '');
+    }
+  }
+  const fromName = variantPropertyPairs(variant.name).find((pair) => pair.key === 'lang');
+  return fromName ? fromName.value : '';
+}
+
+function imgPrefixOf(name) {
+  const match = /^([A-Za-z]+)\s*[\/／]/.exec(String(name || ''));
+  return match ? match[1].toLowerCase() : '';
+}
+
+export function legalImgLangValuesOfSet(set = {}) {
+  const axis = imgLangAxisOfSet(set);
+  const values = new Set();
+  if (!axis) return values;
+  const allowed = new Set(axis.options.filter((value) => IMG_LANG_VALUES.includes(value)));
+  if (!allowed.size) return values;
+  for (const variant of Array.isArray(set.variants) ? set.variants : []) {
+    const value = langValueOfImgVariant(variant);
+    if (allowed.has(value)) values.add(value);
+  }
+  return values;
+}
+
+export function isLegalImgLangSet(set = {}) {
+  return imgPrefixOf(set.name) === 'img' && legalImgLangValuesOfSet(set).size >= 2;
+}
+
+/**
+ * Resolve the img/ + lang variant that must follow page language.
+ * Missing languages stay missing — never fall back to cn / the Figma-selected tree.
+ * Callers pass one platform's componentSets; PC and mobile stay separate.
+ */
+function imgLangResult(status, language, value, extra = {}) {
+  return {
+    status,
+    language,
+    value,
+    componentId: extra.componentId ?? null,
+    setId: extra.setId ?? null,
+    reason: extra.reason,
+  };
+}
+
+export function resolveImgLangVariant({
+  componentSets = [],
+  componentId = '',
+  language = 'zh-CN',
+} = {}) {
+  const normalizedLanguage = normalizeLanguage(language);
+  const value = imgLangVariantValue(normalizedLanguage);
+  const id = String(componentId || '');
+  if (!value) return imgLangResult('not-applicable', normalizedLanguage, null, { reason: 'unmapped-page-language' });
+  if (!id) return imgLangResult('not-applicable', normalizedLanguage, value, { reason: 'no-component-id' });
+  const sets = Array.isArray(componentSets) ? componentSets : [];
+  const foundSet = sets.find((set) => (Array.isArray(set?.variants) ? set.variants : [])
+    .some((variant) => String(variant?.componentId || variant?.id || '') === id)) || null;
+  if (!foundSet || !isLegalImgLangSet(foundSet)) {
+    return imgLangResult('not-applicable', normalizedLanguage, value, {
+      setId: foundSet ? String(foundSet.componentSetId || foundSet.id || '') : null,
+      reason: foundSet ? 'not-img-lang-set' : 'set-not-found',
+    });
+  }
+  const match = (Array.isArray(foundSet.variants) ? foundSet.variants : [])
+    .find((variant) => langValueOfImgVariant(variant) === value) || null;
+  const setId = String(foundSet.componentSetId || foundSet.id || '');
+  if (!match) {
+    return imgLangResult('missing', normalizedLanguage, value, { setId, reason: 'missing-language-variant' });
+  }
+  return imgLangResult('matched', normalizedLanguage, value, {
+    componentId: String(match.componentId || match.id || ''),
+    setId,
+    reason: 'page-language-variant',
+  });
+}
+
 function isPresentTable(value) {
   if (!value) return false;
   if (Array.isArray(value)) return value.length > 0;

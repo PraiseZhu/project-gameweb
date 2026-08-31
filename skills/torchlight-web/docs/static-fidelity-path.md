@@ -104,7 +104,9 @@ Interaction, or Resize.
    RECTANGLE/VECTOR fill descendants of `ind/` stay paint nodes; do not
    guess `class=progress`. An empty INSTANCE may mount the selected
    `componentVariantGraph` tree when the owner box matches that root;
-   a missing highlight `imageRef` stays a red asset gate, never a
+   page-used `img/` sets whose `propertyDefinitions` declare a VARIANT
+   axis named `lang` remount the page-language variant instead of the
+   Figma-selected tree, and a missing language stays empty. A missing highlight `imageRef` stays a red asset gate, never a
    borrowed Figma reference PNG. PC geometry comes from Figma `1:180`.
 2. **PC / mobile bottom gap** — two independent paint facts, not one white
    card. (a) QA `.frame` must not be an opaque white card in product view.

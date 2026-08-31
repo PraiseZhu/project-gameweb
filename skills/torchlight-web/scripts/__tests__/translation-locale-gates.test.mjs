@@ -12,6 +12,9 @@ import {
   classifyUnresolvedCopy,
   groupUnresolvedCopy,
   translationAxisClaim,
+  imgLangVariantValue,
+  isLegalImgLangSet,
+  resolveImgLangVariant,
 } from '../lib/translation/index.mjs';
 
 const leaf = (value, row, lang) => ({ value, provenance: {
@@ -191,4 +194,125 @@ test('translation axis stays not-claimed without a copy table even if zh-CN font
   });
   assert.equal(claimed.status, 'claimed');
   assert.equal(claimed.claimed, true);
+});
+
+test('img/ lang variants follow page language and never fall back to cn', () => {
+  assert.equal(imgLangVariantValue('zh-CN'), 'cn');
+  assert.equal(imgLangVariantValue('zh-TW'), 'tw');
+  assert.equal(imgLangVariantValue('en'), 'en');
+  assert.equal(imgLangVariantValue('ja'), 'jp');
+  assert.equal(imgLangVariantValue('ko'), 'kr');
+
+  const set = {
+    componentSetId: 'set-pc',
+    name: 'img/模块2可替换素材',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['cn', 'tw', 'en', 'kr'] } },
+    variants: [
+      { componentId: 'pc-cn', name: 'lang=cn', componentProperties: { lang: { type: 'VARIANT', value: 'cn' } } },
+      { componentId: 'pc-tw', name: 'lang=tw', componentProperties: { lang: { type: 'VARIANT', value: 'tw' } } },
+      { componentId: 'pc-en', name: 'lang=en', componentProperties: { lang: { type: 'VARIANT', value: 'en' } } },
+      { componentId: 'pc-kr', name: 'lang=kr', componentProperties: { lang: { type: 'VARIANT', value: 'kr' } } },
+    ],
+  };
+  const mobile = {
+    componentSetId: 'set-mobile',
+    name: 'img/模块2可替换素材',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['cn', 'tw', 'en', 'kr'] } },
+    variants: [
+      { componentId: 'm-cn', name: 'lang=cn', componentProperties: { lang: { type: 'VARIANT', value: 'cn' } } },
+      { componentId: 'm-en', name: 'lang=en', componentProperties: { lang: { type: 'VARIANT', value: 'en' } } },
+    ],
+  };
+  const prize = {
+    componentSetId: 'set-prize',
+    name: 'img/奖品框',
+    propertyDefinitions: { 'Property 1': { type: 'VARIANT', variantOptions: ['a'] } },
+    variants: [{ componentId: 'prize-a', name: 'Property 1=a' }],
+  };
+
+  assert.equal(isLegalImgLangSet(set), true);
+  assert.equal(isLegalImgLangSet(prize), false);
+  assert.equal(resolveImgLangVariant({ componentSets: [set], componentId: 'pc-cn', language: 'en' }).componentId, 'pc-en');
+  assert.equal(resolveImgLangVariant({ componentSets: [set], componentId: 'pc-cn', language: 'ja' }).status, 'missing');
+  assert.equal(resolveImgLangVariant({ componentSets: [set], componentId: 'pc-cn', language: 'ja' }).componentId, null);
+  assert.equal(resolveImgLangVariant({ componentSets: [prize], componentId: 'prize-a', language: 'en' }).status, 'not-applicable');
+  assert.equal(resolveImgLangVariant({ componentSets: [mobile], componentId: 'm-cn', language: 'en' }).componentId, 'm-en');
+  assert.notEqual(resolveImgLangVariant({ componentSets: [mobile], componentId: 'm-cn', language: 'en' }).componentId, 'pc-en');
+
+  const logo = {
+    componentSetId: 'set-logo',
+    name: 'img/logo',
+    propertyDefinitions: { 'Property 1': { type: 'VARIANT', variantOptions: ['cn', 'en'] } },
+    variants: [
+      { componentId: 'logo-cn', name: 'Property 1=cn', componentProperties: { 'Property 1': { type: 'VARIANT', value: 'cn' } } },
+      { componentId: 'logo-en', name: 'Property 1=en', componentProperties: { 'Property 1': { type: 'VARIANT', value: 'en' } } },
+    ],
+  };
+  const single = {
+    componentSetId: 'set-single',
+    name: 'img/模块单图',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['cn'] } },
+    variants: [
+      { componentId: 'single-cn', name: 'lang=cn', componentProperties: { lang: { type: 'VARIANT', value: 'cn' } } },
+    ],
+  };
+  const illegal = {
+    componentSetId: 'set-illegal',
+    name: 'img/非法码',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['CN', 'xx'] } },
+    variants: [
+      { componentId: 'bad-cn', name: 'lang=CN', componentProperties: { lang: { type: 'VARIANT', value: 'CN' } } },
+      { componentId: 'bad-xx', name: 'lang=xx', componentProperties: { lang: { type: 'VARIANT', value: 'xx' } } },
+    ],
+  };
+  assert.equal(isLegalImgLangSet(logo), false);
+  assert.equal(resolveImgLangVariant({ componentSets: [logo], componentId: 'logo-cn', language: 'en' }).status, 'not-applicable');
+  assert.equal(isLegalImgLangSet(single), false);
+  assert.equal(resolveImgLangVariant({ componentSets: [single], componentId: 'single-cn', language: 'en' }).status, 'not-applicable');
+  assert.equal(isLegalImgLangSet(illegal), false);
+  assert.equal(resolveImgLangVariant({ componentSets: [illegal], componentId: 'bad-cn', language: 'en' }).status, 'not-applicable');
+
+  const spoofedName = {
+    componentSetId: 'set-spoof',
+    name: 'img/假轴名',
+    propertyDefinitions: { 'Property 1': { type: 'VARIANT', variantOptions: ['cn', 'en'] } },
+    variants: [
+      { componentId: 'spoof-cn', name: 'lang=cn', componentProperties: { 'Property 1': { type: 'VARIANT', value: 'cn' } } },
+      { componentId: 'spoof-en', name: 'lang=en', componentProperties: { 'Property 1': { type: 'VARIANT', value: 'en' } } },
+    ],
+  };
+  const noDefs = {
+    componentSetId: 'set-nodefs',
+    name: 'img/模块2可替换素材',
+    variants: [
+      { componentId: 'nodefs-cn', name: 'lang=cn' },
+      { componentId: 'nodefs-en', name: 'lang=en' },
+    ],
+  };
+  const hashed = {
+    componentSetId: 'set-hashed',
+    name: 'img/模块2可替换素材',
+    propertyDefinitions: { 'lang#2:1': { type: 'VARIANT', variantOptions: ['cn', 'tw', 'en', 'kr'] } },
+    variants: [
+      { componentId: 'hash-cn', name: 'lang=cn' },
+      { componentId: 'hash-en', name: 'lang=en' },
+    ],
+  };
+  const emptyProps = {
+    componentSetId: 'set-empty-props',
+    name: 'img/模块2可替换素材',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['cn', 'tw', 'en', 'kr'] } },
+    variants: [
+      { componentId: 'empty-cn', name: 'lang=cn', componentProperties: {} },
+      { componentId: 'empty-en', name: 'lang=en', componentProperties: {} },
+    ],
+  };
+  assert.equal(isLegalImgLangSet(spoofedName), false);
+  assert.equal(resolveImgLangVariant({ componentSets: [spoofedName], componentId: 'spoof-cn', language: 'en' }).status, 'not-applicable');
+  assert.equal(isLegalImgLangSet(noDefs), false);
+  assert.equal(resolveImgLangVariant({ componentSets: [noDefs], componentId: 'nodefs-cn', language: 'en' }).status, 'not-applicable');
+  assert.equal(isLegalImgLangSet(hashed), true);
+  assert.equal(resolveImgLangVariant({ componentSets: [hashed], componentId: 'hash-cn', language: 'en' }).componentId, 'hash-en');
+  assert.equal(isLegalImgLangSet(emptyProps), true);
+  assert.equal(resolveImgLangVariant({ componentSets: [emptyProps], componentId: 'empty-cn', language: 'en' }).componentId, 'empty-en');
 });
