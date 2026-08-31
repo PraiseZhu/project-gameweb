@@ -127,10 +127,12 @@ complemented by independent reusable capabilities and one optional audit:
   graphs stay unresolved. See `docs/interaction-skill.md`.
 - **Resize Skill** — viewport stretch, composition base, continuous
   `k = viewportW / designWidth` (official `10vw` ruler), first-screen fill of
-  current viewport height (official `100vh`), product-view page X clip,
-  preview 1:1 fit, background/UI/sea plane policies, and hero lock/exit/release
-  geometry while the window size changes (`scripts/lib/resize/index.mjs`; see
-  `docs/resize-skill.md`). Directory stretch stays here with the rest of Resize.
+  current viewport height (official `100vh`), product/QA tree from composition
+  width (torchlight official `0–1126` mobile / `≥1127` pc), product-view page
+  X clip, preview 1:1 fit, background/UI/sea plane policies, and hero
+  lock/exit/release geometry while the window size changes
+  (`scripts/lib/resize/index.mjs`; see `docs/resize-skill.md`). Directory
+  stretch stays here with the rest of Resize.
 - **Pack (delivery, not a Skill axis)** — after Resize acceptance only.
   Lossy WebP, font subset/woff2, SHA collapse, truth externalize, 15MB
   served-folder budget. Keep `figma-indicator-*` fallback files. See

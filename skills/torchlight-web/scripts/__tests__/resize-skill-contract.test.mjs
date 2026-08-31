@@ -7,6 +7,8 @@ import {
   platOfWidth,
   compositionBucketForWidth,
   compositionKeyForViewport,
+  compositionForView,
+  TORCHLIGHT_COMPOSITION_BREAKPOINTS,
   lightDragPathAllowed,
   viewFitScale,
   classifyResizeIntent,
@@ -33,12 +35,72 @@ test('width maps to plat without page IDs', () => {
 });
 
 test('tablet without a pad tree reuses PC instead of inventing a layout', () => {
-  const padFallback = compositionKeyForViewport({ width: 768, platforms: {} });
+  const kitBreakpoints = [
+    { key: 'mobile', min: 0, max: 750 },
+    { key: 'tablet', min: 751, max: 1023 },
+    { key: 'desktop', min: 1024, max: null },
+  ];
+  const padFallback = compositionKeyForViewport({
+    width: 768,
+    platforms: {},
+    compositionBreakpoints: kitBreakpoints,
+  });
   assert.equal(padFallback.key, 'pc');
   assert.equal(padFallback.fallback, 'pad-uses-pc-tree');
   const nativeMobile = compositionKeyForViewport({ width: 390, platforms: { mobile: true } });
   assert.equal(nativeMobile.key, 'mobile');
   assert.equal(nativeMobile.fallback, null);
+});
+
+test('product and QA trees follow official torchlight 1126 width, not UA', () => {
+  const platforms = { mobile: true };
+  const cases = [
+    { width: 390, key: 'mobile' },
+    { width: 800, key: 'mobile' },
+    { width: 1126, key: 'mobile' },
+    { width: 1127, key: 'pc' },
+    { width: 1920, key: 'pc' },
+  ];
+  for (const { width, key } of cases) {
+    assert.equal(compositionForView({ width, platforms }).key, key, `width ${width}`);
+    assert.equal(compositionForView({
+      productView: true,
+      uaDeviceType: 'desktop',
+      width,
+      platforms,
+    }).key, key, `product desktop UA at ${width}`);
+  }
+
+  assert.equal(compositionBucketForWidth(1126, TORCHLIGHT_COMPOSITION_BREAKPOINTS), 'mobile');
+  assert.equal(compositionBucketForWidth(1127, TORCHLIGHT_COMPOSITION_BREAKPOINTS), 'pc');
+  assert.equal(compositionForView({ width: 390, platforms: {} }).fallback, 'mobile-uses-pc-tree');
+  assert.notEqual(compositionForView({ width: 390, platforms }).source, 'ua');
+});
+
+test('classifyResizeIntent in product view uses window width for the tree', () => {
+  const intent = classifyResizeIntent({
+    width: 390,
+    platforms: { mobile: true },
+    productView: true,
+    uaDeviceType: 'desktop',
+    viewportW: 390,
+    viewportH: 844,
+  });
+  assert.equal(intent.composition.key, 'mobile');
+  assert.equal(intent.overflow.overflowX, 'hidden');
+  assert.equal(intent.widthScale.k, 390 / 750);
+});
+
+test('product-view chrome selects the tree from width 1126, not UA', () => {
+  assert.match(chromeSrc, /function productViewportPlatform\(\)/);
+  assert.match(chromeSrc, /max-width: 1126/);
+  assert.match(chromeSrc, /function productViewportPlatform\(\)[\s\S]{0,500}innerWidth/);
+  assert.match(chromeSrc, /function productViewportPlatform\(\)[\s\S]{0,700}compositionBpOf\(width\)/);
+  assert.doesNotMatch(chromeSrc, /function officialUaDeviceType\(\)/);
+  assert.doesNotMatch(chromeSrc, /officialUaDeviceType\(\) === 'mobile' && platforms\.mobile\) return 'mobile'/);
+  assert.match(chromeSrc, /function productViewportSize\(\)[\s\S]{0,250}window\.innerWidth/);
+  const shellSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/demo-shell.html'), 'utf8');
+  assert.match(shellSrc, /compositionBreakpoints:\s*\[[\s\S]*max:\s*1126/);
 });
 
 test('a product can keep the pad picker while explicitly using desktop composition above its observed mobile cutoff', () => {
@@ -192,6 +254,8 @@ test('resize skill names its own axis and refuses translation/interaction owners
   assert.ok(resizeDoesNotOwn().some((item) => /Translation/i.test(item)));
   assert.ok(resizeDoesNotOwn().some((item) => /Interaction/i.test(item)));
   assert.ok(resizeDoesNotOwn().some((item) => /per-device/i.test(item)));
+  assert.ok(resizeOwns().some((item) => /1126/.test(item)));
+  assert.ok(resizeDoesNotOwn().some((item) => /media-query/i.test(item)));
 });
 
 test('PC cover crop belongs to the KV plane, not homepage UI width-scale', () => {

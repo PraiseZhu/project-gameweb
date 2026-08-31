@@ -124,9 +124,15 @@
   /* Device picker buckets come from the shared kit. A page may separately
      declare the layout tree observed on its official site; this must never be
      inferred from whether a pad Figma tree happens to exist. */
+  /* Official torchlight tree switch is max-width 1126px, not the kit 750/1024
+     device-picker buckets. Missing cfg must not fall back to BREAKPOINTS. */
+  var TORCHLIGHT_COMPOSITION_BREAKPOINTS = [
+    { key: 'mobile', min: 0, max: 1126 },
+    { key: 'desktop', min: 1127, max: null },
+  ];
   var COMPOSITION_BREAKPOINTS = Array.isArray(cfg.compositionBreakpoints) && cfg.compositionBreakpoints.length
     ? cfg.compositionBreakpoints
-    : BREAKPOINTS;
+    : TORCHLIGHT_COMPOSITION_BREAKPOINTS;
   var FREE = { name: '自由状态', free: true };
 
   /* ── 状态 ── */
@@ -675,15 +681,15 @@
 
   }
 
-  /* Product mode uses the actual browser viewport to select the native source
-     composition. QA mode still derives the simulated viewport from presets. */
+  /* Official poster: `@media (max-width: 1126px)` swaps PC vs mobile controls.
+     Product view matches that width cutoff. UA is-pc / is-mobile is not the tree.
+     No pad tree. */
   function productViewportPlatform() {
     if (!PRODUCT_VIEW) return null;
     var width = window.innerWidth || document.documentElement.clientWidth || 0;
-    var requested = platOfWidth(width);
     var platforms = (TRUTH && TRUTH.platforms) || {};
-    if (requested === 'mobile' && platforms.mobile) return 'mobile';
-    if (requested === 'pad' && platforms.pad) return 'pad';
+    var composition = compositionBpOf(width).key;
+    if (composition === 'mobile' && platforms.mobile) return 'mobile';
     return 'pc';
   }
 
