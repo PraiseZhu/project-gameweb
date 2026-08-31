@@ -4,7 +4,7 @@
  * Does not write HTML. unknown stays draw-only and is never wired.
  */
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { validateHandoffPack } from "../../../standards/figma-naming/tool/src/handoff.mjs";
 import {
   adaptInventoryToTruthShape,
@@ -12,6 +12,10 @@ import {
   inventoryAcceptanceReport,
   validateInventory,
 } from "./lib/figma-inventory-v2.mjs";
+import { fontProblemsOf, matchHandoffFonts } from "./lib/font-registry.mjs";
+
+const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const FONT_ROOT = join(SKILL_ROOT, "fonts");
 
 const EMPTY_PLATFORM_SCOPE = Object.freeze({ nodes: [], platformRoots: [] });
 
@@ -65,13 +69,49 @@ function paintedIdsOf(adapted) {
   return ids.filter(Boolean);
 }
 
+function collectPaintNodes(nodes, out = []) {
+  for (const node of nodes || []) {
+    if (!node || typeof node !== "object") continue;
+    out.push(node);
+    collectPaintNodes(node.nodes, out);
+  }
+  return out;
+}
+
+function adaptedPaintTrees(adapted) {
+  const nodes = [
+    ...collectPaintNodes(adapted.pageChrome?.nodes),
+    ...collectPaintNodes(adapted.fixedOverlays?.nodes),
+    ...collectPaintNodes(adapted.modals),
+  ];
+  for (const set of adapted.componentVariantGraph?.componentSets || []) {
+    collectPaintNodes(set.nodes, nodes);
+    for (const variant of set.variants || []) collectPaintNodes(variant.nodes, nodes);
+  }
+  for (const component of adapted.componentVariantGraph?.components || []) {
+    collectPaintNodes(component.nodes, nodes);
+  }
+  return nodes;
+}
+
+function allowedSkippedPaintIds(adapted) {
+  return new Set(
+    adaptedPaintTrees(adapted)
+      .filter((node) => node && node.paintAsFragment === true && typeof node.id === "string" && node.id)
+      .map((node) => node.id),
+  );
+}
+
 function consumeOne(label, inv, options) {
   const gate = validateInventory(inv, options);
   const report = inventoryAcceptanceReport(inv, options);
   const adapted = gate.ok ? adaptInventoryToTruthShape(inv, options) : null;
   const counts = countConsume(inv);
   const skippedIds = collectSkippedNodeIds(inv);
-  const skippedPaintedIds = adapted ? paintedIdsOf(adapted).filter((id) => skippedIds.has(id)) : [];
+  const allowedSkipped = adapted ? allowedSkippedPaintIds(adapted) : new Set();
+  const skippedPaintedIds = adapted
+    ? paintedIdsOf(adapted).filter((id) => skippedIds.has(id) && !allowedSkipped.has(id))
+    : [];
   const skippedPainted = skippedPaintedIds.length > 0;
   const pendingModals = adapted
     ? adapted.modals.filter((modal) => modal.triggerStatus !== "determined")
@@ -115,7 +155,9 @@ export function runFromHandoff(dirPath) {
   };
   const pc = consumeOne("pc", pack.pcDoc, options);
   const mobile = consumeOne("mobile", pack.mobileDoc, options);
-  const ok = pc.ok && mobile.ok;
+  const fonts = matchHandoffFonts(dirPath, FONT_ROOT);
+  const fontProblems = fontProblemsOf(fonts);
+  const ok = pc.ok && mobile.ok && fonts.ok;
   return {
     ok,
     kind: pack.kind,
@@ -132,8 +174,13 @@ export function runFromHandoff(dirPath) {
       total: pc.drawOnly + mobile.drawOnly,
     },
     consume: { pc, mobile },
-    problems: ok ? [] : [...pc.problems, ...mobile.problems],
-    note: "unknown 只画不接线。本命令不写出 HTML。",
+    fonts: {
+      ok: fonts.ok,
+      used: fonts.usage.map((item) => item.family),
+      missing: fonts.missing,
+    },
+    problems: ok ? [] : [...pc.problems, ...mobile.problems, ...fontProblems],
+    note: "unknown 只画不接线。本命令不写出 HTML。稿里的 family 必须已在 fonts/registry.json。",
   };
 }
 

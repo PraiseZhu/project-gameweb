@@ -90,6 +90,19 @@
       "usedBy": "zh-TW 全部（Figma 真源映射）；variable font 覆盖官网实测 400/500/700 字重",
       "sha256": "73e6d9035f4ff34ea2ce5af1d022698f63ce0dd8aa2e05e07e3328fe1f7669b0",
       "bytes": 11887164
+    },
+    "FZVariable-YouHeiS WT W H": {
+      "file": "FZVariable-YouHeiJWTWH.ttf",
+      "postScriptName": "FZVariable-YouHSWTWH-GB1-0",
+      "weight": "100 900",
+      "style": "normal",
+      "format": "truetype",
+      "source": "同事交付 FZVariable-YouHeiJWTWH.ttf（方正可变悠黑）",
+      "license": "方正可变悠黑，同事交付的商用文件；再分发条款需人工确认",
+      "licenseReview": "同事交付商用文件，未随附正式 license 文本；再分发/捆绑进 Skill 的条款需人工向权利方确认后移除本标记。不虚构为已确认安全。",
+      "usedBy": "Torch 中文活字（稿内 600/900）",
+      "sha256": "ff882dd6ac6741a61423a3338ccf0f9d2bf7e9a106ef7c12f73fe5b049a74b4f",
+      "bytes": 17814956
     }
   },
   "_languageRouting": "语言+角色字体路由表见 scripts/lib/translation/font-routing.mjs（FONT_SOURCE_ROUTING）。本册只登记字体文件；路由由渲染层按 lang+角色现算。"

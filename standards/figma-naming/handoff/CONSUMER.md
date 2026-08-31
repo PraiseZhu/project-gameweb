@@ -49,7 +49,7 @@ TEXT 默认可改字；一旦 `role` 是 `img/` `bg/` `kv/` 就按切图，不�
 有 `rotation` 必须按这个角度摆，不能当 0。`style.fills` 用全层，不能只吃第一层。  
 拉伸读 `layout.constraints`（钉左/钉右/居中/随页）。遮罩/裁切读 `isMask` `maskChildren` `clipsContent`，按父层裁，不让子层漏边。  
 弹窗默认隐藏、不进页面滚动高度；只有 `modal-trigger` 为 determined 才接线，unknown 不接。`params.go` 抄的是弹窗图层名（`modal/顶部导航`），不是 node id。  
-文字必带 `fontFamily` `fontWeight` `fontSize`，再用 `lineHeightPercent`、`paragraphSpacing`、外层 min/max。换不出百分比才留 `lineHeight` 像素。  
+文字必带 `fontFamily` `fontWeight` `fontSize`，再用 `lineHeightPercent`、`paragraphSpacing`、外层 min/max。换不出百分比才留 `lineHeight` 像素。Figma REST 不给字文件。吃包时对照 `fonts/registry.json`：稿里的 family 不在登记册 → 不出 HTML，红停并给出 `fonts:register`。登记一次后，`figma:html-from-handoff` 每次自动拷进 demo、写入 `#qa-fonts`。不许拿系统黑体顶上。  
 实例相对母版的改动在 `instanceOverrides`。布局约束原样带 Figma 字段，含 `layoutPositioning`。  
 PC/手机同一模块看 `sameModules`：按前缀+名字一对一配对；对不上标 `pc-only` / `mobile-only`。配对上的各用各端 `pageBox`，不能拿 PC 坐标摆手机。  
 判断过程、截图不进清单。

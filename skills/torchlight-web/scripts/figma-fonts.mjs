@@ -238,9 +238,12 @@ function main() {
        CDP 实测推翻：file:// 下 document.fonts.status='loaded'，三个字体全部 loaded:true
        —— 「加载不上」不成立，内联只会让 index.html 从 1.5MB 涨到约 10MB，零收益。
        结论已记自进化台账（by-design：字体保持独立文件）。 */
+    const variation = /YouHei|FZVariable/i.test(r.family)
+      ? 'font-named-instance:"Regular";'
+      : '';
     faces.push(
       `@font-face{font-family:"${r.family}";src:url("assets/fonts/${r.entry.file}") format("${r.entry.format}");` +
-      `font-weight:${r.entry.weight};font-style:${r.entry.style || 'normal'};font-display:block}`
+      `font-weight:${r.entry.weight};font-style:${r.entry.style || 'normal'};${variation}font-display:block}`
     );
   }
 

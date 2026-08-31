@@ -24,6 +24,8 @@
     "inventory:check": "node scripts/figma-inventory-check.mjs",
     "figma:from-handoff": "node scripts/figma-from-handoff.mjs",
     "figma:html-from-handoff": "node scripts/figma-html-from-handoff.mjs",
+    "fonts:check": "node scripts/fonts-install.mjs --check",
+    "fonts:register": "node scripts/fonts-register.mjs",
     "human:review": "node scripts/human-review.mjs",
     "recall:torchlightweb": "node scripts/recall-torchlightweb.mjs",
     "pack:demo": "node scripts/pack-demo.mjs"

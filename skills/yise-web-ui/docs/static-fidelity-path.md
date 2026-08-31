@@ -13,10 +13,13 @@ fonts → extract/truth + visual-state candidates → render → browser snapsho
 
 ```bash
 node scripts/fonts-install.mjs --check
+npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>
 node scripts/figma-fonts.mjs --demo <demo-dir>
 ```
 
-`figma-fonts` copies only registered local font files into
+`figma:from-handoff` matches inventory `fontFamily` against `fonts/registry.json`
+before HTML is written. A missing family fail-closes and prints `fonts:register`.
+`figma-fonts` then copies only registered local font files into
 `assets/fonts/`, injects the generated `#qa-fonts` `@font-face` block, and
 writes `fonts-manifest.json` with source, licence, hash, and byte evidence. A
 missing registry, missing binary, or unregistered design family exits non-zero

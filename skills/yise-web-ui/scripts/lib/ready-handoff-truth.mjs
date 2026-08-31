@@ -2,9 +2,11 @@
  * Ready-pack → renderer truth. Official page-build path only.
  * Distilled from the local adapter used to consume inventory/v2 into
  * `{ schema: 'yise-ready-platform-truth/v1', platforms: { pc, mobile } }`.
- * Does not fetch live Figma. Skipped nodes stay out of paint trees.
+ * Does not fetch live Figma. Skipped nodes stay out of paint trees, except
+ * CSS-paintable art-fragments (play triangle on btn/) which restoreOwnerComposites
+ * stamps as paintAsFragment.
  */
-import { adaptInventoryToTruthShape } from './figma-inventory-v2.mjs';
+import { adaptInventoryToTruthShape, restoreOwnerComposites } from './figma-inventory-v2.mjs';
 
 const EMPTY_PLATFORM_SCOPE = Object.freeze({ nodes: [], platformRoots: [] });
 
@@ -32,7 +34,8 @@ function boxOf(entry) {
 
 /**
  * Map one inventory/v2 document onto a renderer platform tree.
- * unknown stays drawable; skipped is omitted. No live Figma fetch.
+ * unknown stays drawable; skipped is omitted except CSS-paintable art-fragments.
+ * No live Figma fetch.
  */
 export function platformTruthFromInventory(inventory, options = {}) {
   const adapted = adaptInventoryToTruthShape(inventory, {
@@ -49,6 +52,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
 
   const fixed = new Set(asArray(adapted.fixedOverlays?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
   const roots = new Set(asArray(adapted.pagePaintOrder).map((entry) => String(entry?.id || '')).filter(Boolean));
+  const liveNodes = restoreOwnerComposites(asArray(inventory.nodes));
   const sections = {};
   for (const section of asArray(inventory.sections)) {
     if (!section?.id) continue;
@@ -57,9 +61,8 @@ export function platformTruthFromInventory(inventory, options = {}) {
         id: section.id,
         ...boxOf(section),
       },
-      nodes: ordered(asArray(inventory.nodes).filter((node) => (
-        node?.status !== 'skipped'
-        && !fixed.has(String(node?.id || ''))
+      nodes: ordered(liveNodes.filter((node) => (
+        !fixed.has(String(node?.id || ''))
         && descendantsOf(node, section.id)
       ))),
     };
