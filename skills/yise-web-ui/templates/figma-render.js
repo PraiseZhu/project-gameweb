@@ -5671,6 +5671,63 @@
           setPref('lang', lang);
           return true;
         };
+        const dropmenuOptionValue = (btn) => {
+          const text = String((btn && btn.textContent) || '').replace(/\s+/g, ' ').trim();
+          const name = String((btn && btn.getAttribute('data-btn-name')) || '').trim();
+          const raw = text || name;
+          if (!raw) return '';
+          const plus = raw.lastIndexOf('+');
+          if (plus < 0) return raw;
+          const digits = raw.slice(plus + 1).replace(/\s+/g, '');
+          if (!/^\d+$/.test(digits)) return raw;
+          const before = raw.slice(0, plus).replace(/\s+/g, '');
+          /* 台灣+886 → +886. Keep 1+2 as-is: both sides are digits. */
+          if (plus > 0 && /^\d+$/.test(before)) return raw;
+          return '+' + digits;
+        };
+        const isDropmenuDynHost = (el) => {
+          if (!el || el.nodeType !== 1) return false;
+          if (el.getAttribute('data-prefix') === 'dyn') return true;
+          const name = String(el.getAttribute('data-name') || el.getAttribute('data-node-name') || '');
+          return /^dyn\s*[\/／]/i.test(name);
+        };
+        const dropmenuDynHosts = (root) => {
+          if (!root) return [];
+          const self = isDropmenuDynHost(root) ? [root] : [];
+          if (typeof root.querySelectorAll !== 'function') return self;
+          return self.concat([...root.querySelectorAll('[data-prefix], [data-name], [data-node-name]')].filter(isDropmenuDynHost));
+        };
+        const applyDropmenuDynValue = (owner, value) => {
+          if (!owner || !value) return false;
+          const layers = Array.isArray(owner.__fxDropmenuLayers) ? owner.__fxDropmenuLayers : [];
+          /* Owner scan already covers the base layer and mounted on-layer
+             children. Only sibling externals sit outside owner. */
+          const hosts = dropmenuDynHosts(owner).concat(
+            layers.flatMap((layer) => (layer && layer.externals || []).flatMap(dropmenuDynHosts)),
+          );
+          const unique = [...new Set(hosts)];
+          owner.setAttribute('data-dropmenu-option-value', value);
+          if (!unique.length) {
+            owner.setAttribute('data-dropmenu-dyn-miss', 'true');
+            return false;
+          }
+          owner.removeAttribute('data-dropmenu-dyn-miss');
+          for (const host of unique) {
+            const textEl = (host.matches && host.matches('[data-owner-role="txt"], [data-figma-type="TEXT"]') && host)
+              || (host.querySelector && (host.querySelector('[data-owner-role="txt"]') || host.querySelector('[data-figma-type="TEXT"]')))
+              || host;
+            textEl.textContent = value;
+          }
+          return true;
+        };
+        const closeDropmenuOwners = (root) => {
+          const scope = root && typeof root.querySelectorAll === 'function' ? root : frame;
+          for (const owner of [...scope.querySelectorAll('[data-dropmenu="true"][data-dropmenu-mount-status="owner-local-mutually-exclusive"]')]) {
+            owner.removeAttribute('data-dropmenu-self-label');
+            owner.removeAttribute('data-dropmenu-invalid');
+            applyDropmenuVariant(owner, 'off');
+          }
+        };
         const dropmenuGlobeName = (el) => String((el && (el.getAttribute('data-name') || el.getAttribute('data-node-name'))) || '');
         const isDropmenuGlobeImg = (el) => {
           if (!el || el.getAttribute('data-prefix') !== 'img') return false;
@@ -5980,29 +6037,25 @@
           const dropmenuOwner = closestIn(ev.target, '[data-dropmenu="true"]');
           if (innerBtn && dropmenuOwner && dropmenuOwner.contains(innerBtn)
             && dropmenuOwner.getAttribute('data-dropmenu-state') === 'on') {
-            const label = String(innerBtn.getAttribute('data-btn-name')
-              || innerBtn.textContent
-              || '').trim();
-            const lang = dropmenuLangFromSelfLabel(label);
-            if (!lang) {
-              markDropmenuInvalid(dropmenuOwner, { selfLabel: 'unresolved' });
-              ev.preventDefault();
-              ev.stopPropagation();
-              return;
-            }
-            if (!applyDropmenuLang(lang)) {
-              markDropmenuInvalid(dropmenuOwner, { selfLabel: 'no-pref-handle' });
-              ev.preventDefault();
-              ev.stopPropagation();
-              return;
-            }
-            /* setPref → chrome syncAll → renderApp clears frame.innerHTML.
-               dropmenuOwner is detached. Close menus on the rebuilt tree so a
-               source-on instance still lands off after the language change. */
-            for (const owner of [...frame.querySelectorAll('[data-dropmenu="true"][data-dropmenu-mount-status="owner-local-mutually-exclusive"]')]) {
-              owner.removeAttribute('data-dropmenu-self-label');
-              owner.removeAttribute('data-dropmenu-invalid');
-              applyDropmenuVariant(owner, 'off');
+            /* Visible copy decides. A row named btn/台湾 whose TEXT is 简体中文
+               is a language option; btn/English whose TEXT is 香港+852 is a
+               region option. Fall back to the button name only when there is
+               no visible copy. */
+            const visible = String((innerBtn.textContent || '')).replace(/\s+/g, ' ').trim();
+            const named = String(innerBtn.getAttribute('data-btn-name') || '').trim();
+            const lang = dropmenuLangFromSelfLabel(visible || named);
+            if (lang) {
+              if (!applyDropmenuLang(lang)) {
+                markDropmenuInvalid(dropmenuOwner, { selfLabel: 'no-pref-handle' });
+              } else {
+                /* setPref → chrome syncAll → renderApp clears frame.innerHTML.
+                   dropmenuOwner is detached. Close menus on the rebuilt tree so a
+                   source-on instance still lands off after the language change. */
+                closeDropmenuOwners(frame);
+              }
+            } else {
+              applyDropmenuDynValue(dropmenuOwner, dropmenuOptionValue(innerBtn));
+              applyDropmenuVariant(dropmenuOwner, 'off');
             }
             ev.preventDefault();
             ev.stopPropagation();

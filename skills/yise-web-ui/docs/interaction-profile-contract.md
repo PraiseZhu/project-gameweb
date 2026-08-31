@@ -99,9 +99,12 @@ modal tree and matching `btn/` label are unique on that platform:
 - the two overlays are mutually exclusive
 - `btn/关闭按钮` inside a modal returns that platform to `default`
 
-PC language open/close is a `dropmenu/` control with exact lowercase `on`/`off`.
-It is not a named `modal/` opener and not `btn/` highlight. Click the root to
-toggle; inner list `btn/` wins over the root; click outside returns `off`.
+`dropmenu/` open/close uses exact lowercase `on`/`off` on whichever platform
+named it that way. It is not a named `modal/` opener and not `btn/` highlight.
+Click the root to toggle; inner list `btn/` wins over the root; click outside
+returns `off`. Language self-labels switch language; other option labels close
+and may update a sibling `dyn/`. A page that still names
+`btn/多语言按钮` → `modal/多语言按钮弹窗` keeps that modal path.
 
 Evidence kind is `template-naming`. Prototype remains valid when present, but
 an empty prototype no longer blocks these uniquely named openers. Ambiguous

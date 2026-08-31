@@ -111,12 +111,14 @@ parent group to normal. Replacement is in-place hide/show of already extracted
 variant trees. TEXT/HUG nodes need `display:none` plus the saved original
 display. Flattened `I{owner};…` descendants must not be reparented.
 
-PC language open/close is a `dropmenu/` control, not independent `btn/`
-highlight. Exact lowercase `on`/`off` only. Click the root to toggle; inner
-list `btn/` wins over the root; click outside returns `off`. When `off`, the
-globe `img/` may receive programmatic hover. Inner self-labels
-`简体中文`/`繁體中文`/`English`/`日本語`/`한국어` switch language and close;
-unknown labels fail-visible and must not fall back to zh-CN.
+`dropmenu/` is a generic open/close shell on PC and mobile, not independent
+`btn/` highlight. Exact lowercase `on`/`off` only. Click the root to toggle;
+inner list `btn/` wins over the root; click outside returns `off`. When `off`,
+the globe `img/` may receive programmatic hover. Inner self-labels
+`简体中文`/`繁體中文`/`English`/`日本語`/`한국어` switch language and close.
+Other option labels close the menu and, if a `dyn/` sits in the same
+`dropmenu/`, replace that visible copy. Do not fail the whole menu, and do
+not fall back to zh-CN.
 
 Directory `btn/导航状态` is the same independent family. Selected row shows
 that instance's `Property 1=highlight` tree; siblings return to
@@ -148,9 +150,10 @@ the named source modal exists:
 2. On mobile, `btn/导航按钮` opens `modal/顶部导航-1624尺寸`.
 3. On mobile, `btn/多语言按钮` opens `modal/多语言按钮弹窗`.
 
-PC language uses `dropmenu/` on/off as above. Do not treat the PC control as
-`btn/多语言切换按钮` plus highlight. Mobile stays `btn/多语言按钮` →
-`modal/多语言按钮弹窗`; do not rewrite that path as `dropmenu/`.
+Language on a given platform follows the source naming: `dropmenu/` on/off
+as above, or `btn/多语言按钮` → `modal/多语言按钮弹窗` when that is what the
+page named. Do not rewrite one path into the other. Do not treat a
+`dropmenu/` as `btn/多语言切换按钮` plus highlight.
 
 Several openers may share one unique `modal/`. Zero hits or two same-name
 modals stay unresolved. In-modal play/close must not write `@go`. A mounted

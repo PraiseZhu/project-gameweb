@@ -19,7 +19,13 @@ const model = (active = 'tab-b') => deriveInteractionModel([
   { id: 'prev', type: 'FRAME', name: 'btn/prev', parentId: 'section' }, { id: 'next', type: 'FRAME', name: 'btn/next', parentId: 'section' },
 ]);
 const truth = () => ({ sections: { section: { meta: { x: 0, y: 0, width: 400, height: 240 }, nodes: [node('switch', 'switch/cards', 'section', 0, 0, 400, 180), ...['a', 'b', 'c', 'd'].map((suffix) => node('page-' + suffix, 'State ' + suffix.toUpperCase(), 'switch', 0, 0, 400, 180)), ...['tab-a', 'tab-b', 'tab-c', 'tab-d', 'ind-a', 'ind-b', 'ind-c', 'ind-d', 'prev', 'next'].map((id, i) => node(id, id.replace('-', '/'), 'section', i * 30, 190, 20, 20))] } } });
-async function setup() { const { browser } = await launchChromium(root, { headless: true }); const page = await browser.newPage({ viewport: { width: 400, height: 300 } }); await page.setContent('<!doctype html><body><div class="frame"></div></body>'); await page.addScriptTag({ path: rendererPath }); return { browser, page }; }
+async function setup(viewport = { width: 400, height: 300 }, pageOpts = {}) {
+  const { browser } = await launchChromium(root, { headless: true });
+  const page = await browser.newPage({ viewport, ...pageOpts });
+  await page.setContent('<!doctype html><body><div class="frame"></div></body>');
+  await page.addScriptTag({ path: rendererPath });
+  return { browser, page };
+}
 function browserTest(name, fn) {
   test(name, async (t) => {
     if (!HAS_BROWSER_DEPS) {
@@ -205,6 +211,297 @@ browserTest('browser calendar today/return swaps on hscroll and restores on clic
     assert.equal(back.state, 'today');
     assert.equal(back.offset, 0);
     assert.match(back.text, /^\d{2}\/\d{2}$/);
+  } finally {
+    await browser.close();
+  }
+});
+
+function dropmenuTree(componentId, variantName, w, h, children) {
+  const root = {
+    id: componentId,
+    type: 'COMPONENT',
+    name: variantName,
+    box: { x: 0, y: 0, w, h },
+    renderBox: { x: 0, y: 0, w, h },
+    style: { fills: [{ type: 'SOLID', color: { r: 0.1, g: 0.1, b: 0.1, a: 1 } }] },
+  };
+  return {
+    componentId,
+    box: root.box,
+    nodes: [root, ...children.map((child) => ({
+      ...child,
+      ownerPath: child.ownerPath || [componentId, child.id],
+    }))],
+  };
+}
+
+function dropmenuGraph(setId, offId, onId, offTree, onTree) {
+  return {
+    componentSetId: setId,
+    variants: [
+      { componentId: offId, name: 'Property 1=off', interactions: [] },
+      { componentId: onId, name: 'Property 1=on', interactions: [] },
+    ],
+    variantTrees: [offTree, onTree],
+  };
+}
+
+function textNode(id, parentId, characters, x, y, w, h) {
+  return {
+    id,
+    name: characters,
+    type: 'TEXT',
+    parentId,
+    ownerPath: [parentId, id],
+    box: { x, y, w, h },
+    renderBox: { x, y, w, h },
+    characters,
+    text: { characters },
+    style: { fills: [{ type: 'SOLID', color: { r: 1, g: 1, b: 1, a: 1 } }] },
+  };
+}
+
+function dropmenuInstance(id, name, componentId, graph) {
+  return node(id, name, 'section', 8, 8, 200, 40, {
+    type: 'INSTANCE',
+    componentId,
+    componentProperties: { 'Property 1': { value: 'off', type: 'VARIANT' } },
+    componentVariantGraph: graph,
+  });
+}
+
+function mobileDropmenuTruth(nodes) {
+  return {
+    platforms: {
+      mobile: {
+        sections: {
+          section: { meta: { x: 0, y: 0, width: 390, height: 844 }, nodes },
+        },
+      },
+    },
+  };
+}
+
+const setupMobile = () => setup({ width: 390, height: 844 }, { isMobile: true, hasTouch: true });
+
+browserTest('browser mobile dropmenu opens, replaces dyn region code, then closes', async () => {
+  const { browser, page } = await setupMobile();
+  try {
+    const offTree = dropmenuTree('region-off', 'Property 1=off', 200, 40, [
+      node('dyn-off', 'dyn/当前区号', 'region-off', 8, 8, 80, 24),
+      textNode('dyn-off-txt', 'dyn-off', '+886', 8, 8, 80, 24),
+    ]);
+    const onTree = dropmenuTree('region-on', 'Property 1=on', 200, 120, [
+      node('dyn-on', 'dyn/当前区号', 'region-on', 8, 8, 80, 24),
+      textNode('dyn-on-txt', 'dyn-on', '+886', 8, 8, 80, 24),
+      node('btn-tw', 'btn/台湾', 'region-on', 8, 40, 180, 28),
+      textNode('btn-tw-txt', 'btn-tw', '台灣+886', 8, 40, 180, 28),
+      node('btn-hk', 'btn/香港', 'region-on', 8, 72, 180, 28),
+      textNode('btn-hk-txt', 'btn-hk', '香港+852', 8, 72, 180, 28),
+    ]);
+    const graph = dropmenuGraph('region-set', 'region-off', 'region-on', offTree, onTree);
+    const truth = mobileDropmenuTruth([
+      dropmenuInstance('region', 'dropmenu/切换地区', 'region-off', graph),
+      node('dyn-page', 'dyn/当前区号', 'region', 16, 16, 80, 24),
+      textNode('dyn-page-txt', 'dyn-page', '+886', 16, 16, 80, 24),
+    ]);
+    await page.evaluate((payload) => window.__figmaRender.renderApp({
+      truth: payload,
+      rawTruth: payload,
+      prefs: { plat: 'mobile', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 390, h: 844, dpr: 1 },
+    }), truth);
+    const start = await page.evaluate(() => {
+      const owner = document.querySelector('[data-dropmenu="true"]');
+      return {
+        plat: document.querySelector('.frame')?.getAttribute('data-render-plat'),
+        state: owner?.getAttribute('data-dropmenu-state'),
+        mount: owner?.getAttribute('data-dropmenu-mount-status'),
+        dyn: (document.querySelector('[data-name="dyn/当前区号"]')?.textContent || '').trim(),
+      };
+    });
+    assert.equal(start.plat, 'mobile');
+    assert.equal(start.state, 'off');
+    assert.equal(start.mount, 'owner-local-mutually-exclusive');
+    assert.equal(start.dyn, '+886');
+    await click(page, 'region');
+    const opened = await page.evaluate(() => {
+      const owner = document.querySelector('[data-dropmenu="true"]');
+      const hk = document.querySelector('[data-node="btn-hk"]');
+      return {
+        state: owner?.getAttribute('data-dropmenu-state'),
+        hkHidden: hk ? !!hk.hidden || hk.closest('[hidden]') != null : true,
+        hkName: hk?.getAttribute('data-btn-name'),
+      };
+    });
+    assert.equal(opened.state, 'on');
+    assert.equal(opened.hkHidden, false);
+    assert.equal(opened.hkName, '香港');
+    await click(page, 'btn-hk');
+    const picked = await page.evaluate(() => {
+      const owner = document.querySelector('[data-dropmenu="true"]');
+      const dyns = [...document.querySelectorAll('[data-name="dyn/当前区号"], [data-prefix="dyn"]')];
+      return {
+        state: owner?.getAttribute('data-dropmenu-state'),
+        value: owner?.getAttribute('data-dropmenu-option-value'),
+        miss: owner?.getAttribute('data-dropmenu-dyn-miss'),
+        texts: dyns.map((el) => (el.textContent || '').trim()),
+      };
+    });
+    assert.equal(picked.state, 'off');
+    assert.equal(picked.value, '+852');
+    assert.equal(picked.miss, null);
+    assert.ok(picked.texts.every((text) => text.includes('+852')), JSON.stringify(picked.texts));
+  } finally {
+    await browser.close();
+  }
+});
+
+browserTest('browser mobile dropmenu language click uses visible copy and records lang', async () => {
+  const { browser, page } = await setupMobile();
+  try {
+    const offTree = dropmenuTree('lang-off', 'Property 1=off', 200, 40, [
+      node('globe', 'img/地球', 'lang-off', 8, 8, 24, 24),
+    ]);
+    const onTree = dropmenuTree('lang-on', 'Property 1=on', 200, 120, [
+      node('btn-tw', 'btn/台湾', 'lang-on', 8, 8, 180, 28),
+      textNode('btn-tw-txt', 'btn-tw', '简体中文', 8, 8, 180, 28),
+      node('btn-en', 'btn/English', 'lang-on', 8, 44, 180, 28),
+      textNode('btn-en-txt', 'btn-en', 'English', 8, 44, 180, 28),
+    ]);
+    const graph = dropmenuGraph('lang-set', 'lang-off', 'lang-on', offTree, onTree);
+    const truth = mobileDropmenuTruth([
+      dropmenuInstance('lang', 'dropmenu/语言', 'lang-off', graph),
+    ]);
+    await page.evaluate((payload) => {
+      const prefs = { plat: 'mobile', lang: 'zh-TW' };
+      const ctx = {
+        truth: payload,
+        rawTruth: payload,
+        prefs,
+        setPref: (key, value) => {
+          prefs[key] = value;
+          window.__figmaRender.renderApp(ctx);
+        },
+        state: 'default',
+        frame: document.querySelector('.frame'),
+        viewport: { w: 390, h: 844, dpr: 1 },
+      };
+      window.__dropmenuPrefs = prefs;
+      window.__figmaRender.renderApp(ctx);
+    }, truth);
+    await click(page, 'lang');
+    const opened = await page.evaluate(() => document.querySelector('[data-dropmenu="true"]')?.getAttribute('data-dropmenu-state'));
+    assert.equal(opened, 'on');
+    await click(page, 'btn-tw');
+    const afterZh = await page.evaluate(() => ({
+      lang: window.__dropmenuPrefs.lang,
+      state: document.querySelector('[data-dropmenu="true"]')?.getAttribute('data-dropmenu-state'),
+      invalid: document.querySelector('[data-dropmenu="true"]')?.getAttribute('data-dropmenu-invalid'),
+    }));
+    assert.equal(afterZh.lang, 'zh-CN');
+    assert.equal(afterZh.state, 'off');
+    assert.equal(afterZh.invalid, null);
+    await click(page, 'lang');
+    await click(page, 'btn-en');
+    const afterEn = await page.evaluate(() => ({
+      lang: window.__dropmenuPrefs.lang,
+      state: document.querySelector('[data-dropmenu="true"]')?.getAttribute('data-dropmenu-state'),
+    }));
+    assert.equal(afterEn.lang, 'en');
+    assert.equal(afterEn.state, 'off');
+  } finally {
+    await browser.close();
+  }
+});
+
+browserTest('browser mobile dropmenu visible region copy beats a language button name', async () => {
+  const { browser, page } = await setupMobile();
+  try {
+    const offTree = dropmenuTree('mix-off', 'Property 1=off', 200, 40, [
+      node('dyn-off', 'dyn/当前区号', 'mix-off', 8, 8, 80, 24),
+      textNode('dyn-off-txt', 'dyn-off', '+886', 8, 8, 80, 24),
+    ]);
+    const onTree = dropmenuTree('mix-on', 'Property 1=on', 200, 80, [
+      node('dyn-on', 'dyn/当前区号', 'mix-on', 8, 8, 80, 24),
+      textNode('dyn-on-txt', 'dyn-on', '+886', 8, 8, 80, 24),
+      node('btn-en', 'btn/English', 'mix-on', 8, 40, 180, 28),
+      textNode('btn-en-txt', 'btn-en', '香港+852', 8, 40, 180, 28),
+    ]);
+    const graph = dropmenuGraph('mix-set', 'mix-off', 'mix-on', offTree, onTree);
+    const truth = mobileDropmenuTruth([
+      dropmenuInstance('mix', 'dropmenu/切换地区', 'mix-off', graph),
+    ]);
+    await page.evaluate((payload) => {
+      const prefs = { plat: 'mobile', lang: 'zh-CN' };
+      window.__dropmenuPrefs = prefs;
+      window.__figmaRender.renderApp({
+        truth: payload,
+        rawTruth: payload,
+        prefs,
+        setPref: (key, value) => { prefs[key] = value; },
+        state: 'default',
+        frame: document.querySelector('.frame'),
+        viewport: { w: 390, h: 844, dpr: 1 },
+      });
+    }, truth);
+    await click(page, 'mix');
+    await click(page, 'btn-en');
+    const after = await page.evaluate(() => {
+      const owner = document.querySelector('[data-dropmenu="true"]');
+      return {
+        lang: window.__dropmenuPrefs.lang,
+        state: owner?.getAttribute('data-dropmenu-state'),
+        value: owner?.getAttribute('data-dropmenu-option-value'),
+        dyn: (document.querySelector('[data-name="dyn/当前区号"]')?.textContent || '').trim(),
+      };
+    });
+    assert.equal(after.lang, 'zh-CN');
+    assert.equal(after.state, 'off');
+    assert.equal(after.value, '+852');
+    assert.equal(after.dyn, '+852');
+  } finally {
+    await browser.close();
+  }
+});
+
+browserTest('browser mobile dropmenu option without dyn still closes and marks miss', async () => {
+  const { browser, page } = await setupMobile();
+  try {
+    const offTree = dropmenuTree('plain-off', 'Property 1=off', 200, 40, [
+      node('label-off', 'img/地球', 'plain-off', 8, 8, 24, 24),
+    ]);
+    const onTree = dropmenuTree('plain-on', 'Property 1=on', 200, 80, [
+      node('btn-opt', 'btn/选项', 'plain-on', 8, 8, 180, 28),
+      textNode('btn-opt-txt', 'btn-opt', '没有区号', 8, 8, 180, 28),
+    ]);
+    const graph = dropmenuGraph('plain-set', 'plain-off', 'plain-on', offTree, onTree);
+    const truth = mobileDropmenuTruth([
+      dropmenuInstance('plain', 'dropmenu/选项', 'plain-off', graph),
+    ]);
+    await page.evaluate((payload) => window.__figmaRender.renderApp({
+      truth: payload,
+      rawTruth: payload,
+      prefs: { plat: 'mobile', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 390, h: 844, dpr: 1 },
+    }), truth);
+    await click(page, 'plain');
+    await click(page, 'btn-opt');
+    const after = await page.evaluate(() => {
+      const owner = document.querySelector('[data-dropmenu="true"]');
+      return {
+        state: owner?.getAttribute('data-dropmenu-state'),
+        value: owner?.getAttribute('data-dropmenu-option-value'),
+        miss: owner?.getAttribute('data-dropmenu-dyn-miss'),
+      };
+    });
+    assert.equal(after.state, 'off');
+    assert.equal(after.value, '没有区号');
+    assert.equal(after.miss, 'true');
   } finally {
     await browser.close();
   }
