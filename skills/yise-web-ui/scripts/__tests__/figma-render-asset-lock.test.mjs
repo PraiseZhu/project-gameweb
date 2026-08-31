@@ -17,6 +17,18 @@ test('platform-prefixed asset records keep bare-id exportBox geometry', () => {
   assert.match(renderer, /return \{ \.\.\.bareRec, \.\.\.platformRec, file: platformRec\.file \|\| bareRec\.file \}/);
 });
 
+test('ind/ instances consume the selected componentId slice instead of inventing CSS diamonds', () => {
+  assert.match(renderer, /_assetRecForNode\(n, platform = null\)/);
+  assert.match(renderer, /CONSUMER\.md: consume by instance componentId/);
+  assert.match(renderer, /data-ind-variant-slice', 'componentId'/);
+  assert.match(renderer, /ind-variant-slice-complete/);
+  assert.match(renderer, /data-paint-as-fragment', 'art-fragment'/);
+});
+
+test('REGULAR_POLYGON play triangle uses non-rect shadow/clip mapping, not a CSS rectangle', () => {
+  assert.match(renderer, /REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1/);
+});
+
 test('only explicit interaction descendants remain renderable under baked assets', () => {
   assert.match(renderer, /const evidenceAttrs = interactionAttrs\.get\(String\(nid\)\)/);
   assert.match(renderer, /const hasStructuralInteraction = !!evidenceAttrs/);

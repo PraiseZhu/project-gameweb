@@ -148,6 +148,8 @@ function textOf(node) {
   out.fontFamily = style.fontFamily ?? null;
   out.fontSize = style.fontSize ?? null;
   out.fontWeight = style.fontWeight ?? null;
+  if (style.fontPostScriptName != null) out.fontPostScriptName = style.fontPostScriptName;
+  if (style.fontStyle != null) out.fontStyle = style.fontStyle;
   const lineHeightPercent = lineHeightPercentOf(style);
   if (lineHeightPercent != null) out.lineHeightPercent = lineHeightPercent;
   else if (style.lineHeightPx != null) out.lineHeight = style.lineHeightPx;

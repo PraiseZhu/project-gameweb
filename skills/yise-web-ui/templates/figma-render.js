@@ -508,6 +508,19 @@
     return platformRec || bareRec;
   },
 
+  /* Ready pack slices the selected `ind/` COMPONENT root (`2:2424`), not the
+     page INSTANCE. CONSUMER.md: consume by instance componentId. Do not invent
+     a CSS diamond, and do not reuse a sibling IMAGE fill as the whole mark. */
+  _assetRecForNode(n, platform = null) {
+    const rec = this._assetRec(n && n.id, platform);
+    if (rec) return rec;
+    const componentId = String((n && n.componentId) || '');
+    if (!componentId) return null;
+    const pfx = ((/^([a-z]+)\//.exec(String(n && n.name || '')) || [])[1] || '');
+    if (pfx !== 'ind' && String(n && n.role || '') !== 'ind') return null;
+    return this._assetRec(componentId, platform);
+  },
+
   /* Resolve a source IMAGE fill to its own delivered file. A node-level
      manifest record may legitimately contain several imageRefs but retain
      only the first file for backwards compatibility; never reuse that first
@@ -3013,7 +3026,7 @@
         const kind = this._fillKind(st.fills);
         const SLICE = { img: 1, bg: 1, kv: 1 };
         const needsAsset = !isText && (SLICE[pfx] || kind === 'gradient' || kind === 'image');
-        const assetRec = this._assetRec(nid, __base);
+        const assetRec = this._assetRecForNode(n, __base);
         const bakeReleasedForLiveHscroll = liveHscrollBakeRelease.has(String(__u(nid)));
         /* `ind/进度条` is a source component set whose two *component roots*
            intentionally have no page-level slice.  The ready truth does retain
@@ -3038,7 +3051,7 @@
         const assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
           : (__indComponentFallback && __indComponentFallback.file);
-        const NONRECT_SHAPE = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, ELLIPSE: 1, LINE: 1 };
+        const NONRECT_SHAPE = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1 };
 
         /* 这里**不再判断"是不是纯容器"**。
            判定规则（无 fill/stroke/effect 且 clipsContent≠true → 穿过）已经在提取器里，
@@ -3088,6 +3101,12 @@
           el.setAttribute('data-source-component-node', __indComponentFallback.sourceNodeId);
           el.setAttribute('data-source-component-state', __indComponentFallback.state);
         }
+        if (assetRec && String(__u(n && n.componentId) || '') && (pfx === 'ind' || String(n.role || '') === 'ind')
+          && !this._assetRec(nid, __base)) {
+          el.setAttribute('data-source-component-id', String(__u(n.componentId)));
+          el.setAttribute('data-ind-variant-slice', 'componentId');
+        }
+        if (n.paintAsFragment === true) el.setAttribute('data-paint-as-fragment', 'art-fragment');
         const __ownerAssetPolicy = (n.exportSettings && (Array.isArray(n.exportSettings) ? n.exportSettings.length : true)) ? 'export'
           : (assetUrl ? 'slice'
             : ((pfx === 'img' || pfx === 'bg' || pfx === 'kv') ? 'asset-missing'
@@ -4376,7 +4395,7 @@
              ≥24px 的已被 figma-assets 切走（第 13 项）；剩下 <24px 的（6×6 色点等）
              矩形近似肉眼无差 —— 但近似不许静默：打 data-shape-approx 留痕，
              探针会数。有资产（切了图）的走 <img>，轮廓在 PNG 里是准的，不标。 */
-          const NONRECT_T = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, ELLIPSE: 1, LINE: 1 };
+          const NONRECT_T = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1 };
           if (NONRECT_T[n.type] && !assetUrl) el.setAttribute('data-shape-approx', 'rect');
           /* REGULAR_POLYGON(3 点=三角形)未切图时，用 clip-path 画出真实三角轮廓，
              而不是外接矩形。Figma 正多边形内接于 box、首顶点朝上，三角形轮廓即
@@ -4852,6 +4871,10 @@
            and double-paint the source component. */
         if (owner.el && owner.el.hasAttribute('data-source-component-fallback')) {
           owner.el.setAttribute('data-component-instance-mount-status', 'source-component-fallback-complete');
+          continue;
+        }
+        if (owner.el && owner.el.hasAttribute('data-ind-variant-slice')) {
+          owner.el.setAttribute('data-component-instance-mount-status', 'ind-variant-slice-complete');
           continue;
         }
         if (!owner.el || owner.el.querySelector('[data-node]')) continue;

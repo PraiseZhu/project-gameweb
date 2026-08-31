@@ -508,6 +508,19 @@
     return platformRec || bareRec;
   },
 
+  /* Ready pack slices the selected `ind/` COMPONENT root (`2:2424`), not the
+     page INSTANCE. CONSUMER.md: consume by instance componentId. Do not invent
+     a CSS diamond, and do not reuse a sibling IMAGE fill as the whole mark. */
+  _assetRecForNode(n, platform = null) {
+    const rec = this._assetRec(n && n.id, platform);
+    if (rec) return rec;
+    const componentId = String((n && n.componentId) || '');
+    if (!componentId) return null;
+    const pfx = ((/^([a-z]+)\//.exec(String(n && n.name || '')) || [])[1] || '');
+    if (pfx !== 'ind' && String(n && n.role || '') !== 'ind') return null;
+    return this._assetRec(componentId, platform);
+  },
+
   /* Resolve a source IMAGE fill to its own delivered file. A node-level
      manifest record may legitimately contain several imageRefs but retain
      only the first file for backwards compatibility; never reuse that first
@@ -546,13 +559,31 @@
   },
 
   /** 从 id 叶子的 locator 里解析 children 索引序列 —— 这就是树位置 + 绘制顺序。
-      结构信息不是我们编的派生数据，而是从被门 A 校验过的 locator 里推出来的。 */
+      结构信息不是我们编的派生数据，而是从被门 A 校验过的 locator 里推出来的。
+      Ready 包解包后 orderKey 常是 `"0.1.1.2"` 这种点分串，没有 locator；
+      只认 `/children/N` 会让父子栈全空，clipsContent 裁不到活字。 */
   _orderKey(locator) {
     const out = [];
     const re = /\/children\/(\d+)/g;
     let m;
     while ((m = re.exec(locator || ''))) out.push(Number(m[1]));
     return out;
+  },
+
+  _seqFromOrderKey(raw) {
+    const key = this._unwrap ? this._unwrap(raw) : raw;
+    const value = (key && typeof key === 'object' && 'value' in key) ? key.value : key;
+    if (Array.isArray(value) && value.length) {
+      const nums = value.map((item) => Number(item)).filter((n) => Number.isFinite(n));
+      if (nums.length === value.length) return nums;
+    }
+    if (typeof value === 'string' && /^\d+(?:\.\d+)*$/.test(value.trim())) {
+      return value.trim().split('.').map(Number);
+    }
+    const loc = (key && key.provenance && key.provenance.locator)
+      || (raw && raw.provenance && raw.provenance.locator)
+      || '';
+    return this._orderKey(loc);
   },
 
   /* Font source-truth routing — single source of truth is
@@ -562,8 +593,8 @@
      A missing local file is NOT faked: the truth family is still routed, and the
      missing load surfaces via fonts-manifest `missing` + evidence font.loaded. */
   /* 字体角色以【源字体家族】为真源签名，不靠脆弱的名称正则：Figma 里
-     title/button 用 display 家族（Alimama ShuHeiTi 700 / Bebas Neue），body 正文用
-     FontquanXinYiGuanHeiTi 400。源家族是 display 类 → 该节点在目标语言里也用
+     title/button 用 display 家族（Torch 优黑 / Bebas Neue），body 正文用同一份
+     优黑或目标语言的思源/Noto。源家族是 display 类 → 该节点在目标语言里也用
      display/标题/按钮家族；源是正文类 → 目标语言用正文家族。这比从 role 字符串猜
      更稳：同一 heading-content-card 角色里既有标题也有正文，但它们的源家族不同。 */
   _fontRoleFor({ sourceFamily = '', role = '', semanticClass = '' } = {}) {
@@ -571,7 +602,7 @@
     /* Bebas Neue 只承载 latin/ASCII 字形（日期/兑换码/计数），任何语言都保持
        Bebas（weight 400）：换成 CJK display 家族会改字重并撑爆固定框（如兑换码）。 */
     if (/Bebas/i.test(fam)) return 'latin-display';
-    if (/Alimama/i.test(fam)) {
+    if (/Alimama/i.test(fam) || /YouHei/i.test(fam) || /FZVariable/i.test(fam)) {
       /* display 家族：再分 title / button。按钮标签由结构 role 决定。 */
       const hay = (String(role || '') + ' ' + String(semanticClass || '')).toLowerCase();
       if (/button|btn|skill-label|tag|label|badge/.test(hay)) return 'button';
@@ -585,8 +616,8 @@
       : raw.startsWith('zh') ? 'zh-CN' : raw.startsWith('ja') ? 'ja'
       : raw.startsWith('ko') ? 'ko' : raw.startsWith('en') ? 'en' : raw;
     const TABLE = {
-      'zh-CN': { title: 'Alimama ShuHeiTi', button: 'Alimama ShuHeiTi', body: 'FontquanXinYiGuanHeiTi' },
-      'en':    { title: 'Bebas Neue',       button: 'Bebas Neue',       body: 'Noto Sans' },
+      'zh-CN': { title: 'FZVariable-YouHeiS WT W H', button: 'FZVariable-YouHeiS WT W H', body: 'FZVariable-YouHeiS WT W H' },
+      'en':    { title: 'Noto Sans',        button: 'Noto Sans',        body: 'Noto Sans' },
       'ja':    { title: 'Noto Sans JP',     button: 'Noto Sans JP',     body: 'Noto Sans JP' },
       'ko':    { title: 'Noto Sans KR',     button: 'Noto Sans KR',     body: 'Noto Sans KR' },
       'zh-TW': { title: 'Noto Sans HK',     button: 'Noto Sans HK',     body: 'Noto Sans HK' },
@@ -601,14 +632,25 @@
     const family = /^Noto Sans/i.test(String(sourceFamily || ''))
       ? (lang === 'zh-CN' ? sourceFamily : (t.body || sourceFamily))
       : (t[fontRole] || t.body || sourceFamily);
-    /* zh-CN title/button are weight-700 display fonts (Alimama); body is 400.
-       en Bebas Neue only ships 400. The routed weight follows the family, so the
-       CJK display face does not get a synthetic-700 from a 400 file and vice versa. */
+    /* Torch zh-CN keeps the source YouHei weight (600/900). en Bebas Neue only
+       ships 400. The routed weight follows the family. */
     const requestedWeight = Number(sourceWeight);
     const weight = /Alimama/.test(family) ? 700
       : /Bebas/i.test(family) ? 400
+      : /YouHei/i.test(family) || /FZVariable/i.test(family)
+        ? (Number.isFinite(requestedWeight) ? requestedWeight : 600)
       : Number.isFinite(requestedWeight) ? requestedWeight : 400;
     return { family, weight, role: fontRole, language: lang, routed: family !== sourceFamily };
+  },
+  /* Mirror scripts/lib/translation/font-routing.mjs#youHeiVariationSettings.
+     The inlined renderer cannot import that module. */
+  _youHeiVariationSettings({ sourceWeight = null, postScriptName = null, fontStyle = null } = {}) {
+    const hint = `${postScriptName || ''} ${fontStyle || ''}`;
+    const requested = Number(sourceWeight);
+    const wght = Number.isFinite(requested) ? requested : 600;
+    const wdth = /Condensed/i.test(hint) ? 9 : 3;
+    const hght = /60$/.test(hint) ? 9 : 3;
+    return `"wght" ${wght}, "wdth" ${wdth}, "hght" ${hght}`;
   },
 
   /* Owner-slice geometry used by the main img paint path and by img/ lang remount.
@@ -2930,6 +2972,8 @@
        const independentButtonOwners = [];
        const seqOf = (i) => {
          const r = rawList[i];
+         const fromOrderKey = this._seqFromOrderKey(r && r.orderKey);
+         if (fromOrderKey.length) return fromOrderKey;
          const anchor = r && (r.orderKey || r.id);
          const loc = anchor && anchor.provenance ? anchor.provenance.locator : '';
          return this._orderKey(loc);
@@ -2958,10 +3002,16 @@
            only then climb ownerPath, and finally retain the legacy stack fallback. */
         const directParentId = nodeParentId(n);
         const directParentRecord = directParentId ? renderedById.get(directParentId) : null;
+        const ancestorIdsForParent = Array.isArray(n.ancestorIds) ? n.ancestorIds : [];
+        const ancestorParentRecord = ancestorIdsForParent
+          .map((id) => renderedById.get(String(__u(id))))
+          .reverse()
+          .find(Boolean);
         const parent = directParentRecord
           || (ownerPath.length
             ? ownerPath.slice(0, -1).reverse().map((id) => renderedById.get(String(__u(id)))).find(Boolean)
             : null)
+          || ancestorParentRecord
           || (stack.length ? stack[stack.length - 1] : null);
         /* The source-component fallback replaces the whole ind instance. Its
            original highlight child is still present in the flattened truth list;
@@ -3002,8 +3052,23 @@
            This prevents Boolean operands (often gray solid rectangles) from
            being painted on top of an already-exported compound asset while
            preserving truth-backed interaction descendants. */
-        const bakedOwnerId = ownerPath.slice(0, -1).map((id) => String(__u(id)))
-          .reverse().find((id) => !!this._assetRec(id));
+        /* ownerPath is the preferred Figma owner chain, but extract may leave it
+           empty after punching through unnamed containers. ancestorIds still
+           names those passed-through parents (e.g. a designer-export `slg`
+           frame that baked live slogans). Without this fallback, copy TEXT is
+           painted again on top of the parent raster. */
+        const bakedOwnerSeen = new Set();
+        const bakedOwnerChain = [];
+        const pushBakedOwner = (rawId) => {
+          const id = String(__u(rawId) || '');
+          if (!id || id === String(__u(nid)) || bakedOwnerSeen.has(id)) return;
+          bakedOwnerSeen.add(id);
+          bakedOwnerChain.push(id);
+        };
+        for (const id of ownerPath.slice(0, -1).map((raw) => String(__u(raw))).reverse()) pushBakedOwner(id);
+        const ancestorIds = Array.isArray(n.ancestorIds) ? n.ancestorIds : [];
+        for (const id of ancestorIds.map((raw) => String(__u(raw))).reverse()) pushBakedOwner(id);
+        const bakedOwnerId = bakedOwnerChain.find((id) => !!this._assetRec(id));
         /* Non-default blend layers (SOFT_LIGHT/OVERLAY/…) punched through by the
            extractor: a baked export rasterizes them on a transparent canvas, so the
            blend loses its page backdrop and flattens to a near-white fill (06 barcode
@@ -3078,7 +3143,7 @@
         const kind = this._fillKind(st.fills);
         const SLICE = { img: 1, bg: 1, kv: 1 };
         const needsAsset = !isText && (SLICE[pfx] || kind === 'gradient' || kind === 'image');
-        const assetRec = this._assetRec(nid, __base);
+        const assetRec = this._assetRecForNode(n, __base);
         const bakeReleasedForLiveHscroll = liveHscrollBakeRelease.has(String(__u(nid)));
         /* `ind/进度条` is a source component set whose two *component roots*
            intentionally have no page-level slice.  The ready truth does retain
@@ -3103,7 +3168,7 @@
         const assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
           : (__indComponentFallback && __indComponentFallback.file);
-        const NONRECT_SHAPE = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, ELLIPSE: 1, LINE: 1 };
+        const NONRECT_SHAPE = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1 };
 
         /* 这里**不再判断"是不是纯容器"**。
            判定规则（无 fill/stroke/effect 且 clipsContent≠true → 穿过）已经在提取器里，
@@ -3149,6 +3214,12 @@
           el.setAttribute('data-source-component-node', __indComponentFallback.sourceNodeId);
           el.setAttribute('data-source-component-state', __indComponentFallback.state);
         }
+        if (assetRec && String(__u(n && n.componentId) || '') && (pfx === 'ind' || String(n.role || '') === 'ind')
+          && !this._assetRec(nid, __base)) {
+          el.setAttribute('data-source-component-id', String(__u(n.componentId)));
+          el.setAttribute('data-ind-variant-slice', 'componentId');
+        }
+        if (n.paintAsFragment === true) el.setAttribute('data-paint-as-fragment', 'art-fragment');
         const __ownerAssetPolicy = (n.exportSettings && (Array.isArray(n.exportSettings) ? n.exportSettings.length : true)) ? 'export'
           : (assetUrl ? 'slice'
             : ((pfx === 'img' || pfx === 'bg' || pfx === 'kv') ? 'asset-missing'
@@ -3823,7 +3894,16 @@
           if (n.parentId != null) el.setAttribute('data-text-parent-id', String(n.parentId));
           if (tx.fontSize != null) el.style.fontSize = tx.fontSize + 'px';
           if (tx.fontWeight != null) el.style.fontWeight = String(tx.fontWeight);
-          if (typeof tx.lineHeight === 'number') el.style.lineHeight = tx.lineHeight + 'px';
+          /* inventory/v2 often ships FONT_SIZE_% as lineHeightPercent and omits
+             lineHeightPx. CSS default line-height (~1.2) is taller than Figma's
+             112.7%, so 8 authored lines overflow the 650px 正文 clip. Resolve
+             percent → px here; do not invent a family. */
+          const lineHeightPx = (typeof tx.lineHeight === 'number' && Number.isFinite(tx.lineHeight))
+            ? tx.lineHeight
+            : (Number.isFinite(Number(tx.fontSize)) && Number.isFinite(Number(tx.lineHeightPercent))
+              ? Number(tx.fontSize) * Number(tx.lineHeightPercent) / 100
+              : null);
+          if (typeof lineHeightPx === 'number') el.style.lineHeight = lineHeightPx + 'px';
           if (tx.letterSpacing) el.style.letterSpacing = tx.letterSpacing + 'px';
           if (tx.align) el.style.textAlign = String(tx.align).toLowerCase();
           if (tx.textCase === 'UPPER') el.style.textTransform = 'uppercase';
@@ -3860,6 +3940,17 @@
           }
           if (effectiveFamily) el.style.fontFamily = '"' + effectiveFamily + '", "PingFang SC", "Microsoft YaHei", sans-serif';
           if (fontRoute.routed && fontRoute.weight != null) el.style.fontWeight = String(fontRoute.weight);
+          /* Founder YouHei is a 3-axis variable. Named Regular is wdth=3 (wide);
+             CSS default width lands on the condensed end, so copy looks thinner
+             than Figma. Pin Regular unless PostScript says Condensed / *60. */
+          if (/YouHei/i.test(String(effectiveFamily || '')) || /FZVariable/i.test(String(effectiveFamily || ''))) {
+            el.style.fontVariationSettings = this._youHeiVariationSettings({
+              sourceWeight: el.style.fontWeight || tx.fontWeight,
+              postScriptName: tx.fontPostScriptName,
+              fontStyle: tx.fontStyle,
+            });
+            el.setAttribute('data-font-variation', el.style.fontVariationSettings);
+          }
           el.setAttribute('data-text-container', constraint.mode);
           el.setAttribute('data-text-container-evidence', constraint.evidence);
           if (constraint.openFlow && constraint.sectionWidth != null) el.setAttribute('data-text-section-width', String(constraint.sectionWidth));
@@ -4430,7 +4521,7 @@
              ≥24px 的已被 figma-assets 切走（第 13 项）；剩下 <24px 的（6×6 色点等）
              矩形近似肉眼无差 —— 但近似不许静默：打 data-shape-approx 留痕，
              探针会数。有资产（切了图）的走 <img>，轮廓在 PNG 里是准的，不标。 */
-          const NONRECT_T = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, ELLIPSE: 1, LINE: 1 };
+          const NONRECT_T = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1 };
           if (NONRECT_T[n.type] && !assetUrl) el.setAttribute('data-shape-approx', 'rect');
           /* REGULAR_POLYGON(3 点=三角形)未切图时，用 clip-path 画出真实三角轮廓，
              而不是外接矩形。Figma 正多边形内接于 box、首顶点朝上，三角形轮廓即
@@ -4844,6 +4935,10 @@
            and double-paint the source component. */
         if (owner.el && owner.el.hasAttribute('data-source-component-fallback')) {
           owner.el.setAttribute('data-component-instance-mount-status', 'source-component-fallback-complete');
+          continue;
+        }
+        if (owner.el && owner.el.hasAttribute('data-ind-variant-slice')) {
+          owner.el.setAttribute('data-component-instance-mount-status', 'ind-variant-slice-complete');
           continue;
         }
         const imgLang = owner.imgLang || { status: 'not-applicable' };

@@ -533,6 +533,43 @@ test("restoreOwnerComposites lifts skipped gradient onto the determined btn owne
   assert.equal(restored.find((node) => node.id === "btn-copy-text").status, "determined");
 });
 
+test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as paintAsFragment", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "btn-play",
+      type: "FRAME",
+      name: "btn/播放按钮",
+      status: "determined",
+      role: "btn",
+      box: { x: 0, y: 0, w: 228, h: 228 },
+    },
+    {
+      id: "poly-34",
+      type: "REGULAR_POLYGON",
+      name: "Polygon 34",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "btn-play",
+      box: { x: 80, y: 80, w: 68, h: 68 },
+      rotation: -0.52,
+      style: { fills: [{ type: "SOLID", visible: true, color: { r: 1, g: 1, b: 1, a: 1 } }] },
+    },
+    {
+      id: "mask-group",
+      type: "GROUP",
+      name: "Mask group",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "btn-play",
+      box: { x: 20, y: 20, w: 44, h: 44 },
+    },
+  ]);
+  const triangle = restored.find((node) => node.id === "poly-34");
+  assert.equal(triangle.paintAsFragment, true);
+  assert.equal(triangle.status, "skipped");
+  assert.equal(restored.some((node) => node.id === "mask-group"), false);
+});
+
 test("calendar identity keeps today and marks missing return-today unread instead of synthesizing", () => {
   const identity = calendarIdentityFromNodes([
     { id: "today", name: "dyn/今日日期", status: "determined", role: "dyn" },

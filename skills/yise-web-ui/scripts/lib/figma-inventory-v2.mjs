@@ -55,6 +55,27 @@ function visibleFillsOf(node) {
   return asArray(node?.style?.fills).filter((fill) => fill && fill.visible !== false);
 }
 
+const CSS_PAINTABLE_FRAGMENT = new Set(['REGULAR_POLYGON', 'ELLIPSE', 'STAR', 'LINE']);
+
+function firstVisibleSolidFill(node) {
+  return visibleFillsOf(node).find((fill) => String(fill.type || '') === 'SOLID') || null;
+}
+
+/**
+ * Inventory skips Figma-default names (`Polygon 34`, `Ellipse 1`) as art-fragment.
+ * That is correct for unnamed plates under a slice, but a CSS-paintable shape
+ * sitting on a determined btn/ (play triangle) is still live Main paint.
+ * Keep the skipped status so from-handoff does not treat it as wired, and
+ * stamp paintAsFragment so the truth tree can draw it without inventing a role.
+ */
+function isCssPaintableArtFragment(node) {
+  if (!isPlainObject(node) || !isSkipped(node)) return false;
+  if (String(node.why || '') !== 'art-fragment') return false;
+  if (node.isMask === true) return false;
+  if (!CSS_PAINTABLE_FRAGMENT.has(String(node.type || '').toUpperCase())) return false;
+  return Boolean(firstVisibleSolidFill(node) || firstGradientFill(node));
+}
+
 function firstGradientFill(node) {
   return visibleFillsOf(node).find((fill) => String(fill.type || '').startsWith('GRADIENT')) || null;
 }
@@ -99,13 +120,23 @@ function childrenOf(nodes, parentId) {
   return asArray(nodes).filter((node) => node && node.parentId === parentId);
 }
 
+function keepSkippedPaintNode(node) {
+  if (!isCssPaintableArtFragment(node)) return null;
+  return { ...node, paintAsFragment: true };
+}
+
+function keepLivePaintNode(node, skippedChildren) {
+  if (!isPlainObject(node)) return [];
+  const fragment = keepSkippedPaintNode(node);
+  if (fragment) return [fragment];
+  if (isSkipped(node)) return [];
+  return [liftOwnerComposite(node, skippedChildren)];
+}
+
 /** Flat inventory/v2 page nodes: lift owner composites without painting skipped ids. */
 export function restoreOwnerComposites(nodes) {
   const list = asArray(nodes);
-  return list.flatMap((node) => {
-    if (!isPlainObject(node) || isSkipped(node)) return [];
-    return [liftOwnerComposite(node, childrenOf(list, node.id).filter(isSkipped))];
-  });
+  return list.flatMap((node) => keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped)));
 }
 
 const TODAY_NAME = /^dyn\/今日日期/;
@@ -134,12 +165,9 @@ export function calendarIdentityFromNodes(nodes) {
   };
 }
 
-/** Drop skipped records from a paint tree. Keep determined and unknown. */
+/** Drop skipped records from a paint tree. Keep determined, unknown, and CSS-paintable fragments. */
 function omitSkippedNodes(nodes) {
-  return asArray(nodes).flatMap((node) => {
-    if (!isPlainObject(node) || isSkipped(node)) return [];
-    return [liftOwnerComposite(node, asArray(node.nodes).filter(isSkipped))];
-  });
+  return asArray(nodes).flatMap((node) => keepLivePaintNode(node, asArray(node.nodes).filter(isSkipped)));
 }
 
 function visitNodeTree(nodes, visit) {

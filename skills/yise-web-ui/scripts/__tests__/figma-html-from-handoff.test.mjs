@@ -108,8 +108,64 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   assert.equal(truth.schema, 'yise-ready-platform-truth/v1');
   assert.ok(truth.platforms.pc);
   assert.ok(truth.platforms.mobile);
+  const spec = JSON.parse(readFileSync(join(demoDir, 'spec.json'), 'utf8'));
+  assert.equal(spec.figma.fileKey, 'FILEKEY');
+  assert.equal(spec.figma.pcPageId, '1:1');
+  assert.equal(spec.figma.mobilePageId, '2:2');
+  assert.equal(spec.figma.exportScale, 1);
   assert.equal(existsSync(join(pack.outDir, 'index.html')), false);
   assert.equal(result.htmlVolume.ok, true);
+  assert.equal(existsSync(join(demoDir, 'fonts-manifest.json')), true);
+});
+
+function packedReadyWithFont(dir, family) {
+  const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920 });
+  const mobileDoc = sample('2:2', { roles: GOLD_MOBILE_PREFIX_CLASSES, pageWidth: 750 });
+  const textNode = (id) => stampReadyFields({
+    id: `${id}-copy`,
+    type: 'TEXT',
+    name: 'copy/标题',
+    status: 'determined',
+    role: 'copy',
+    label: '标题',
+    behavior: behaviorOf('copy'),
+    via: 'prefix',
+    parentId: `${id}-sec`,
+    box: { x: 0, y: 0, w: 80, h: 32 },
+    text: { characters: 'x', fontFamily: family, fontWeight: 400, fontSize: 16 },
+  });
+  pcDoc.nodes.push(textNode('1:1'));
+  mobileDoc.nodes.push(textNode('2:2'));
+  rebuildInventoryIndexes(pcDoc);
+  rebuildInventoryIndexes(mobileDoc);
+  fixtureJudgment(pcDoc);
+  fixtureJudgment(mobileDoc);
+  const pcPath = join(dir, 'pc.json');
+  const mobilePath = join(dir, 'mo.json');
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  return writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: 'ready', outDir: join(dir, 'out'),
+  });
+}
+
+test('html-from-handoff fail-closes before HTML when a source font is not in the registry', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-missing-font-'));
+  const pack = packedReadyWithFont(dir, 'Missing Face');
+  const demoDir = join(dir, 'demo');
+  const consume = runFromHandoff(pack.outDir);
+  assert.equal(consume.ok, false);
+  assert.match((consume.problems || []).join('\n'), /Missing Face/);
+  assert.match((consume.problems || []).join('\n'), /fonts:register/);
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.wroteHtml, false);
+  assert.equal(existsSync(join(demoDir, 'index.html')), false);
+  assert.match((result.problems || []).join('\n'), /Missing Face|fonts:register|登记册/);
 });
 
 test('html-from-handoff fails when index.html stays over the HTML volume gate', () => {

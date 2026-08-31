@@ -7,14 +7,28 @@ const assetPipeline = readFileSync(new URL('../figma-assets.mjs', import.meta.ur
 const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.url), 'utf8');
 
 test('asset locking is based on ownerPath when DOM parent stack is incomplete', () => {
-  assert.match(renderer, /const bakedOwnerId = ownerPath\.slice\(0, -1\)/);
-  assert.match(renderer, /find\(\(id\) => !!this\._assetRec\(id\)\)/);
+  assert.match(renderer, /const bakedOwnerChain = \[\]/);
+  assert.match(renderer, /ancestorIds still\s+names those passed-through parents/);
+  assert.match(renderer, /for \(const id of ancestorIds\.map\(\(raw\) => String\(__u\(raw\)\)\)\.reverse\(\)\) pushBakedOwner\(id\)/);
+  assert.match(renderer, /const bakedOwnerId = bakedOwnerChain\.find\(\(id\) => !!this\._assetRec\(id\)\)/);
   assert.match(renderer, /parent && parent\.assetLock \|\| \(bakedOwnerId && !bakedOwnerReleased\)/);
 });
 
 test('platform-prefixed asset records keep bare-id exportBox geometry', () => {
   assert.match(renderer, /A platform-prefixed record can be a thin file\/imageRef pointer/);
   assert.match(renderer, /return \{ \.\.\.bareRec, \.\.\.platformRec, file: platformRec\.file \|\| bareRec\.file \}/);
+});
+
+test('ind/ instances consume the selected componentId slice instead of inventing CSS diamonds', () => {
+  assert.match(renderer, /_assetRecForNode\(n, platform = null\)/);
+  assert.match(renderer, /CONSUMER\.md: consume by instance componentId/);
+  assert.match(renderer, /data-ind-variant-slice', 'componentId'/);
+  assert.match(renderer, /ind-variant-slice-complete/);
+  assert.match(renderer, /data-paint-as-fragment', 'art-fragment'/);
+});
+
+test('REGULAR_POLYGON play triangle uses non-rect shadow/clip mapping, not a CSS rectangle', () => {
+  assert.match(renderer, /REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1/);
 });
 
 test('only explicit interaction descendants remain renderable under baked assets', () => {
@@ -60,6 +74,34 @@ test('exported assets do not receive source opacity a second time', () => {
 test('component variant controls preserve each source thumbnail identity', () => {
   assert.match(renderer, /data-switch-identity-preserved/);
   assert.match(renderer, /retain\s+each\s+selectable's\s+own\s+complete\s+source\s+tree/);
+});
+
+test('Founder YouHei live copy pins Regular width axis instead of CSS condensed default', () => {
+  assert.match(renderer, /_youHeiVariationSettings/);
+  assert.match(renderer, /Named Regular is wdth=3 \(wide\)/);
+  assert.match(renderer, /"wdth" \$\{wdth\}, "hght"/);
+  assert.match(renderer, /el\.style\.fontVariationSettings = this\._youHeiVariationSettings\(/);
+});
+
+test('FONT_SIZE_% lineHeightPercent becomes a px line-height', () => {
+  /* inventory/v2 often omits lineHeightPx and only ships lineHeightPercent.
+     CSS default ~1.2 then makes 8 authored lines taller than the Figma 448px
+     box, and the 650px 正文 clip eats the last line. */
+  assert.match(renderer, /lineHeightPercent/);
+  assert.match(renderer, /Number\(tx\.fontSize\) \* Number\(tx\.lineHeightPercent\) \/ 100/);
+  assert.match(renderer, /el\.style\.lineHeight = lineHeightPx \+ 'px'/);
+});
+
+test('ready dotted orderKey rebuilds the parent clip stack', () => {
+  /* html-from-handoff unwraps provenance, so orderKey is "0.1.1.2" not a
+     locator. Parsing only /children/N left the DFS parent stack empty:
+     正文 clipsContent never wrapped the carnival copy, which then spilled
+     out of the 650px panel. */
+  assert.match(renderer, /_seqFromOrderKey/);
+  assert.match(renderer, /Ready 包解包后 orderKey 常是/);
+  assert.match(renderer, /fromOrderKey\.length/);
+  assert.match(renderer, /ancestorParentRecord/);
+  assert.match(renderer, /\/\^\\d\+\(\?:\\\.\\d\+\)\*\$\//);
 });
 
 test('hscroll track releases only a parent viewport renderBox clip', () => {

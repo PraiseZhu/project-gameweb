@@ -7,6 +7,10 @@
  *
  * Preview-first is required before showing `?product=1`. Tests may pass
  * `skipPreview: true` to `buildHtmlFromHandoff`; the CLI never skips it.
+ * After HTML is written, `figma-fonts` copies registered source families into
+ * the demo. Consume already fail-closes when a source family is missing from
+ * fonts/registry.json — Figma REST cannot download font binaries. Register
+ * with `npm run fonts:register` once; later restores copy it automatically.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -21,6 +25,7 @@ import { workflowDeclaration } from './lib/workflows.mjs';
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const INIT = join(SKILL_ROOT, 'scripts/init.mjs');
 const INLINE = join(SKILL_ROOT, 'scripts/figma-inline.mjs');
+const FONTS = join(SKILL_ROOT, 'scripts/figma-fonts.mjs');
 const PREVIEW = join(SKILL_ROOT, 'scripts/preview-first.mjs');
 
 function fail(message, extra = {}) {
@@ -90,6 +95,10 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
   assertHtmlVolume(demoDir, htmlLimitBytes, embedOrExternalizeTruth(demoDir, truth, htmlLimitBytes));
   patchShowcaseSpec(demoDir, consume);
   runNode(INLINE, ['--demo', demoDir]);
+  /* Figma REST cannot ship font binaries. Main copies registered files into
+     the demo and fail-closes when a source family is missing — never swap in
+     PingFang/YaHei as if the page matched the file. */
+  runNode(FONTS, ['--demo', demoDir]);
   return { indexPath, htmlVolume: assertHtmlVolume(demoDir, htmlLimitBytes) };
 }
 

@@ -19,17 +19,19 @@ import { normalizeLanguage } from '../figma-typography.mjs';
 export const FONT_ROLES = Object.freeze(['title', 'button', 'body']);
 
 /* language -> role -> fontFamily. A role may be omitted to inherit `body`.
-   zh-CN distinguishes title/button (Alimama ShuHeiTi) from body (FontquanXinYiGuanHeiTi);
-   en title/button use Bebas Neue; ja/ko/zh-TW use a single Noto family for all roles.
+   Torch zh-CN live copy uses Founder YouHei (FZVariable-YouHeiS WT W H) for
+   title/button/body. Other languages use the matching Source Han / Noto face
+   (colleague rule 2026-08-31: 中文优黑，其它语言默认思源黑体对应的语言).
+   en title/button stay Bebas Neue for latin-only display; en body is Noto Sans.
 
    Locale-invariant display family: Bebas Neue only ever carries latin/ASCII glyphs in
    the source (dates, redeem codes, counters) that no CJK font covers, so it stays
-   Bebas Neue (weight 400) in EVERY language, including zh-CN. Re-routing it to the
-   CJK display face (Alimama 700) in zh-CN was a regression: it changed the weight and
+   Bebas Neue (weight 400) in EVERY language, including zh-CN. Re-routing it to a
+   CJK display face in zh-CN was a regression: it changed the weight and
    blew the fixed reward-code width past its source box. */
 export const FONT_SOURCE_ROUTING = Object.freeze({
-  'zh-CN': { title: 'Alimama ShuHeiTi', button: 'Alimama ShuHeiTi', body: 'FontquanXinYiGuanHeiTi' },
-  'en':    { title: 'Bebas Neue',       button: 'Bebas Neue',       body: 'Noto Sans' },
+  'zh-CN': { title: 'FZVariable-YouHeiS WT W H', button: 'FZVariable-YouHeiS WT W H', body: 'FZVariable-YouHeiS WT W H' },
+  'en':    { title: 'Noto Sans',        button: 'Noto Sans',        body: 'Noto Sans' },
   'ja':    { title: 'Noto Sans JP',     button: 'Noto Sans JP',     body: 'Noto Sans JP' },
   'ko':    { title: 'Noto Sans KR',     button: 'Noto Sans KR',     body: 'Noto Sans KR' },
   'zh-TW': { title: 'Noto Sans HK',     button: 'Noto Sans HK',     body: 'Noto Sans HK' },
@@ -45,7 +47,7 @@ export const FONT_SOURCE_ROUTING = Object.freeze({
 export function fontRoleFor({ sourceFamily = null, role = null, semanticClass = null } = {}) {
   const fam = String(sourceFamily || '');
   if (/Bebas/i.test(fam)) return 'latin-display';
-  if (/Alimama/i.test(fam)) {
+  if (/Alimama/i.test(fam) || /YouHei/i.test(fam) || /FZVariable/i.test(fam)) {
     const hay = (String(role || '') + ' ' + String(semanticClass || '')).toLowerCase();
     if (/button|btn|skill-label|tag|label|badge/.test(hay)) return 'button';
     return 'title';
@@ -60,7 +62,35 @@ export function routeFontWeight({ family = null, sourceWeight = null } = {}) {
   const requested = Number(sourceWeight);
   if (/Bebas/i.test(String(family || ''))) return 400;
   if (/Alimama/i.test(String(family || ''))) return 700;
+  if (/YouHei/i.test(String(family || '')) || /FZVariable/i.test(String(family || ''))) {
+    return Number.isFinite(requested) ? requested : 600;
+  }
   return Number.isFinite(requested) ? requested : 400;
+}
+
+/* Founder YouHei variable axes: wght 300–900, wdth 3–9, hght 3–9.
+   Named Regular is wght=600 / wdth=3 / hght=3. CSS default width maps this
+   family onto the condensed end, so live copy looks narrower than Figma. */
+export const YOUHEI_VARIATION = Object.freeze({
+  familyRe: /YouHei|FZVariable/i,
+  regular: Object.freeze({ wght: 600, wdth: 3, hght: 3 }),
+  condensedRe: /Condensed/i,
+  condensedWidth: 9,
+  tallRe: /60$/,
+  tallHeight: 9,
+});
+
+export function youHeiVariationSettings({ sourceWeight = null, postScriptName = null, fontStyle = null } = {}) {
+  const hint = `${postScriptName || ''} ${fontStyle || ''}`;
+  const requested = Number(sourceWeight);
+  const wght = Number.isFinite(requested) ? requested : YOUHEI_VARIATION.regular.wght;
+  const wdth = YOUHEI_VARIATION.condensedRe.test(hint)
+    ? YOUHEI_VARIATION.condensedWidth
+    : YOUHEI_VARIATION.regular.wdth;
+  const hght = YOUHEI_VARIATION.tallRe.test(hint)
+    ? YOUHEI_VARIATION.tallHeight
+    : YOUHEI_VARIATION.regular.hght;
+  return `"wght" ${wght}, "wdth" ${wdth}, "hght" ${hght}`;
 }
 
 export function routeFontFamily({ language = 'unknown', role = null, semanticClass = null, sourceFamily = null, sourceWeight = null } = {}) {
