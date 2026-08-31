@@ -120,8 +120,30 @@ export function isBackingName(name) {
  * 层级是关键——我 2026-08-12 拿零件跟整体比，得出「参照页答案和人相反」的错
  * 结论，用户当天已经就同一个病纠正过一次（「真稿的 ind/ 是针对外层的分组」）。
  */
+const FUNCTION_KEEP_PREFIXES = new Set(
+  Object.entries(PREFIXES)
+    .filter(([name, def]) => def.structural && name !== "sec" && name !== "ref")
+    .map(([name]) => name),
+);
+
 export function functionWordPattern(node) {
   const name = String(node.name ?? "");
+  /* 已经写成规范前缀的层，身份以斜杠前那一段为准。
+     「dropmenu/切换地区」里的「切换」不再冒充 switch/tab/ind 候选。
+     但仍要返回 hit：scanSubtreeFunctionWords 靠它挡住父层 img/ 把
+     btn/dropmenu 整块切走。img/bg/kv 不是功能件，不算。 */
+  const parsed = parseName(name);
+  if (parsed.prefix && PREFIXES[parsed.prefix]) {
+    if (!FUNCTION_KEEP_PREFIXES.has(parsed.prefix)) return null;
+    return {
+      candidatePrefixes: [parsed.prefix],
+      matchedWords: [parsed.prefix],
+      confidentPrefix: parsed.prefix,
+      isBacking: isBackingName(name),
+      evidence: `已经写成 ${parsed.prefix}/，身份以斜杠前那一段为准。`,
+      reason: `已经写成 ${parsed.prefix}/，不再用名字里的词改写前缀。`,
+    };
+  }
   const lower = name.toLowerCase();
   const languageWords = ["多语言", "语言切换", "切换语言", "language"];
   const rows = [

@@ -114,7 +114,7 @@ complemented by independent reusable capabilities and one optional audit:
 - **Translation Skill** — locale/copy context plus font, glyph, weight, and
   browser typography evidence (`scripts/lib/translation/index.mjs`).
 - **Interaction Skill** — formerly Motion Skill. Click, switch/tab, directory
-  scrollspy, PC `dropmenu/` on/off, independent `btn/` highlight/normal
+  scrollspy, `dropmenu/` on/off on whichever platform named it, independent `btn/` highlight/normal
   replacement, programmatic hover/press, named modal openers, and retained
   motion contracts
   (`scripts/lib/figma-interaction-contract.mjs`,

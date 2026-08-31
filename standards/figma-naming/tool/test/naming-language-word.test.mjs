@@ -36,12 +36,29 @@ test("COMPONENT_SET 根「多语言/语言切换/切换语言/language」给 dro
   }
 });
 
-test("INSTANCE「多语言」仍走 btn/（手机入口）", () => {
+test("INSTANCE「多语言」无名实例仍走 btn/；已写成 dropmenu/ 的组件集不改写成 btn", () => {
   for (const name of ["多语言", "语言切换", "切换语言", "language switch"]) {
     const hit = functionWordPattern(node(name));
     assert.ok(hit, `「${name}」应该命中功能词表`);
     assert.equal(hit.confidentPrefix, "btn", `「${name}」`);
   }
+  const namedDrop = functionWordPattern(node("dropmenu/切换地区", "COMPONENT_SET"));
+  assert.ok(namedDrop, "已写成 dropmenu/ 仍算功能件，避免父层 img/ 整块切走");
+  assert.deepEqual(namedDrop.candidatePrefixes, ["dropmenu"]);
+  assert.equal(namedDrop.confidentPrefix, "dropmenu");
+  assert.equal(namedDrop.candidatePrefixes.includes("switch"), false);
+  assert.equal(namedDrop.candidatePrefixes.includes("tab"), false);
+  assert.equal(namedDrop.candidatePrefixes.includes("ind"), false);
+  assert.equal(namedDrop.candidatePrefixes.includes("btn"), false);
+  const namedBtn = functionWordPattern(node("btn/关闭按钮"));
+  assert.equal(namedBtn?.confidentPrefix, "btn");
+  assert.deepEqual(namedBtn?.candidatePrefixes, ["btn"]);
+  const namedArt = functionWordPattern(node("img/按钮背景"));
+  assert.equal(namedArt, null, "img/ 不是功能件，防埋层不靠它开门");
+  const unnamedRegion = functionWordPattern(node("切换地区", "COMPONENT_SET"));
+  assert.ok(unnamedRegion, "没写前缀的「切换地区」仍走功能词表");
+  assert.notEqual(unnamedRegion.confidentPrefix, "btn");
+  assert.equal(unnamedRegion.candidatePrefixes.includes("dropmenu"), false);
 });
 
 test("名字带 icon 的不给 confident btn/——参照页最外层 16 个含 icon 的全是 img/", () => {

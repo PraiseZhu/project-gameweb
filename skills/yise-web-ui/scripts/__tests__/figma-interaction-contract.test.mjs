@@ -336,7 +336,49 @@ test('generic modal button names map to their named Etheria modal contracts', ()
   assert.equal(byId.get('play')['data-go'], 'modal/视频弹窗');
   assert.equal(byId.get('nav')['data-go'], 'modal/顶部导航-1624尺寸');
   assert.equal(byId.get('lang')['data-go'], 'modal/多语言按钮弹窗');
+  assert.equal(byId.get('lang')['data-dropmenu'], undefined);
 });
+
+test('mobile dropmenu/切换地区 still mounts as dropmenu, not a modal opener', () => {
+  const graph = {
+    componentSetId: 'region-set',
+    variants: [
+      { componentId: 'region-off', name: 'Property 1=off', interactions: [] },
+      { componentId: 'region-on', name: 'Property 1=on', interactions: [] },
+    ],
+  };
+  const model = deriveInteractionModel([
+    { id: 'section', type: 'FRAME', name: 'sec/登录', platform: 'mobile' },
+    {
+      id: 'region',
+      type: 'INSTANCE',
+      name: 'dropmenu/切换地区',
+      parentId: 'section',
+      platform: 'mobile',
+      componentProperties: { 'Property 1': { value: 'off', type: 'VARIANT' } },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const region = model.attributes.find((entry) => entry.id === 'region')?.attrs;
+  assert.equal(region['data-dropmenu'], 'true');
+  assert.equal(region['data-dropmenu-state'], 'off');
+  assert.equal(region['data-btn-press'], 'true');
+  assert.equal(region['data-go'], undefined);
+});
+
+test('mobile btn/多语言按钮 still opens the named modal, not dropmenu', () => {
+  const model = deriveInteractionModel([
+    { id: 'section', type: 'FRAME', name: 'sec/登录', platform: 'mobile' },
+    { id: 'lang', type: 'FRAME', name: 'btn/多语言按钮@go=modal/多语言按钮弹窗', parentId: 'section', platform: 'mobile' },
+    { id: 'modal', type: 'FRAME', name: 'modal/多语言按钮弹窗', platform: 'mobile' },
+  ]);
+  const lang = model.attributes.find((entry) => entry.id === 'lang')?.attrs;
+  const modal = model.attributes.find((entry) => entry.id === 'modal')?.attrs;
+  assert.equal(lang['data-go'], 'modal/多语言按钮弹窗');
+  assert.equal(lang['data-dropmenu'], undefined);
+  assert.equal(modal?.['data-dropmenu'], undefined);
+});
+
 test('fix/@from emits a scroll-gated pin and @go copies the modal name', () => {
   const model = deriveInteractionModel([
     { id: 'sec-1', type: 'FRAME', name: 'sec/1-首屏' },

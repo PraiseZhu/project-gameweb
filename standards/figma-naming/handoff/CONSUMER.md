@@ -40,7 +40,7 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 - `kind` / `ready` / `fingerprint`
 
 只核前缀：`btn/` `img/` `scroll/` `switch/` `fix/` `bg/` `kv/` `modal/` `ind/` `tab/` `hot/` `mix/` `sec/` `dyn/` `dropmenu/`。  
-PC `dropmenu/` 点根切开合，变体值精确小写 `on`/`off`；列表行内部 `btn/` 优先于根热区；点列表外回 `off`。选项自称必须落在封闭表：`简体中文` / `繁體中文` / `English` / `日本語` / `한국어`（可归一空格与大小写）；判不出 fail-visible，不猜中文。地球是 `img/`，稿上不画 hover。手机语言入口仍是 `btn/` 开 `modal/`，不把 `dropmenu/` 接到手机稿。  
+`dropmenu/` 点根切开合，PC / 手机都认，变体值精确小写 `on`/`off`；列表行内部 `btn/` 优先于根热区；点列表外回 `off`。开合壳不认语义：行内字落在封闭自称表（`简体中文` / `繁體中文` / `English` / `日本語` / `한국어`，可归一空格与大小写）则切语言并回 `off`，判不出不猜中文；否则当普通选项，回 `off`，同一菜单里若有 `dyn/` 则换成该行对应值。地球是 `img/`，稿上不画 hover。端别不改写：稿上是 `dropmenu/` 就开合，稿上是 `btn/` 开 `modal/` 就弹窗。  
 行为看清单里的 `role` + `params`，禁止 `parseLayerName` / `deriveRole` 再猜图层名。
 
 摆位置用 `pageBox`（相对这一页）和 `parentBox`（相对父层），不要拿画布 `box` 去摆。`fix/` 钉视口，坐标用 `viewportBox` / `pageBox`。写了 `params.from` / `overlays.from` 的，滚到该 `sec/N` 及以下才出现；不写则进页就钉。`@from` 只在 `fix/` 上，不要当成 `btn/@sec`。  

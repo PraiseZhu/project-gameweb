@@ -7,12 +7,12 @@
  * 住在 spec/：人读正文和机器表同一层。tool/ 与 skills/ 都读这里，不必下到工具目录。
  * 本文件保持零 Node 依赖，以便 Figma 插件打包。
  */
-export const SPEC_VERSION = "v2.15 (2026-08-29)";
+export const SPEC_VERSION = "v2.16 (2026-08-31)";
 /** 相对 figma-naming/ 根的展示路径 */
 export const SPEC_DOC = "spec/naming-spec.md";
 
 /** 下游消费假定（判定后果的前提），见 spec/consumer-assumptions.md */
-export const ASSUMPTIONS_VERSION = "A-v1.13 (2026-08-29)";
+export const ASSUMPTIONS_VERSION = "A-v1.14 (2026-08-31)";
 export const ASSUMPTIONS_DOC = "spec/consumer-assumptions.md";
 
 /**
@@ -56,7 +56,7 @@ export const PREFIXES = {
     group: "交互", desc: "弹窗帧（独立 frame）", params: [], structural: true,
   },
   dropmenu: {
-    group: "交互", desc: "PC 开合菜单；变体值精确小写 on/off，不挂 @ 参数", params: [],
+    group: "交互", desc: "点根切开合菜单；变体值精确小写 on/off，不挂 @ 参数；PC / 手机都认", params: [],
     structural: true,
   },
   dyn: {

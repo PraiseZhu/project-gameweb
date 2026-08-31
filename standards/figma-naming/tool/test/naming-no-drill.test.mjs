@@ -148,6 +148,29 @@ test("img/ 认定后不下钻，除非子树里有名字写着功能的层", () 
   assert.ok(byIdBtn.has("realbtn"), "名字写着「按钮」的层被埋了——这正是防埋层要防的");
 });
 
+test("无文字外壳里已写成 btn/ 的层仍要出条目，不能被 img/ 整块切走", () => {
+  const shell = node({
+    id: "shell", name: "顶部装饰", type: "GROUP",
+    absoluteBoundingBox: box(0, 400, 400, 100),
+    children: [
+      node({
+        id: "frag", name: "碎片", type: "RECTANGLE",
+        absoluteBoundingBox: box(0, 400, 100, 100),
+        fills: [{ type: "SOLID", visible: true }],
+      }),
+      node({
+        id: "close", name: "btn/关闭按钮", type: "FRAME",
+        absoluteBoundingBox: box(120, 400, 100, 100),
+        fills: [{ type: "SOLID", visible: true }],
+      }),
+    ],
+  });
+  const byId = planOf(sectionOf([shell]));
+  assert.ok(byId.has("close"), "已写成 btn/ 的层被外壳 img/ 埋了");
+  assert.equal(byId.get("close")?.prefix, "btn");
+  assert.equal(byId.get("close")?.tier, "alreadyNamed");
+});
+
 /**
  * 指示器组件内部的零件一个都不问。
  *

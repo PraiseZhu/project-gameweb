@@ -1047,6 +1047,73 @@ test("dropmenu/ on/off 变体根升 determined；On/OFF/true 不升；btn/状态
   assert.equal(check.ok, true, check.problems.join("\n"));
 });
 
+test("手机稿写成 dropmenu/ 仍升开合，不因端别改写成 btn/modal", () => {
+  const node = inventoryNode;
+  const dropSet = node("region-set", "COMPONENT_SET", "dropmenu/切换地区", [
+    node("region-on", "COMPONENT", "Property 1=on", [
+      node("region-on-copy", "TEXT", "台灣+886", [], {
+        characters: "台灣+886",
+        style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400 },
+      }),
+    ], { componentProperties: { "Property 1": "on" } }),
+    node("region-off", "COMPONENT", "Property 1=off", [
+      node("region-off-dyn", "FRAME", "dyn/当前区号", [
+        node("region-off-text", "TEXT", "+886", [], {
+          characters: "+886",
+          style: { fontFamily: "Source Han Sans", fontSize: 16, fontWeight: 400 },
+        }),
+      ]),
+    ], { componentProperties: { "Property 1": "off" } }),
+  ], {
+    componentPropertyDefinitions: {
+      "Property 1": { type: "VARIANT", defaultValue: "off", variantOptions: ["on", "off"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_mobile", [
+    node("sec", "FRAME", "sec/1-登录", [
+      node("drop-inst", "INSTANCE", "dropmenu/切换地区", [], { componentId: "region-off" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_mobile", [page, dropSet]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const drop = inv.attachments.componentSets.find((item) => item.id === "region-set");
+  assert.equal(drop.variants.find((item) => item.id === "region-on").role, "dropmenu");
+  assert.equal(drop.variants.find((item) => item.id === "region-off").role, "dropmenu");
+  const inst = inv.nodes.find((item) => item.id === "drop-inst");
+  assert.equal(inst.role, "dropmenu");
+  assert.equal(inst.behavior, "toggle");
+  assert.notEqual(inst.role, "btn");
+  assert.ok(inv.modules.some((item) => item.role === "dropmenu" && item.label === "切换地区"));
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
+test("手机稿写成 btn/ 开 modal/ 仍走弹窗，不升 dropmenu", () => {
+  const node = inventoryNode;
+  const page = node("page", "FRAME", "cn_mobile", [
+    node("sec", "FRAME", "sec/1-登录", [
+      node("lang-btn", "FRAME", "btn/多语言按钮@go=modal/多语言按钮弹窗"),
+    ]),
+  ]);
+  const modal = node("lang-modal", "FRAME", "modal/多语言按钮弹窗", [
+    node("lang-row", "FRAME", "btn/简体中文"),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_mobile", [page, modal]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const btn = inv.nodes.find((item) => item.id === "lang-btn");
+  assert.equal(btn.role, "btn");
+  assert.equal(btn.behavior, "go-state");
+  assert.equal(btn.params.go, "modal/多语言按钮弹窗");
+  assert.notEqual(btn.role, "dropmenu");
+  const modalPack = (inv.attachments?.modals || []).find((item) => item.id === "lang-modal" || item.name === "modal/多语言按钮弹窗");
+  assert.ok(modalPack, JSON.stringify(inv.attachments?.modals || []));
+  const modalNode = (modalPack.nodes || []).find((item) => item.id === "lang-modal") || modalPack;
+  assert.equal(modalNode.role || ( /modal\//.test(modalNode.name || "") ? "modal" : undefined ), "modal");
+  assert.equal(inv.modules.some((item) => item.role === "dropmenu"), false);
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
 test("dropmenu 双 {on,off} 轴不升；无 definitions 按轴聚合不 flatten", () => {
   const node = inventoryNode;
   const dualSet = node("dual-set", "COMPONENT_SET", "dropmenu/语言", [

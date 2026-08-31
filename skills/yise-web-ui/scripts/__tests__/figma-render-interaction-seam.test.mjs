@@ -139,6 +139,10 @@ test('dropmenu off/on fixtures stay pressable and do not reuse indicatorVariant'
   assert.doesNotMatch(renderer, /'日本語': 'ja-JP'/);
   assert.doesNotMatch(renderer, /'한국어': 'ko-KR'/);
   assert.match(renderer, /data-dropmenu-self-label/);
+  assert.match(renderer, /applyDropmenuDynValue/);
+  assert.match(renderer, /dropmenuOptionValue/);
+  assert.match(renderer, /closeDropmenuOwners/);
+  assert.doesNotMatch(renderer, /selfLabel: 'unresolved'/);
   assert.match(renderer, /dropmenuExactState/);
   assert.match(renderer, /dropmenuParsePairs/);
   assert.match(renderer, /dropmenuAxisName/);
@@ -218,6 +222,76 @@ test('paint-scope dropmenu helpers are defined before paint and execute for k=v 
   }), 'off');
 });
 
+test('dropmenu option value prefers visible copy and extracts region codes', () => {
+  const start = renderer.indexOf('const dropmenuOptionValue = (btn) => {');
+  const end = renderer.indexOf('const applyDropmenuDynValue = (owner, value) => {');
+  assert.ok(start > 0 && end > start);
+  const fn = new Function(`${renderer.slice(start, end)}; return dropmenuOptionValue;`);
+  const dropmenuOptionValue = fn();
+  assert.equal(dropmenuOptionValue({
+    getAttribute: (name) => (name === 'data-btn-name' ? '台湾' : ''),
+    textContent: '台灣+886',
+  }), '+886');
+  assert.equal(dropmenuOptionValue({
+    getAttribute: () => '',
+    textContent: '简体中文',
+  }), '简体中文');
+  assert.equal(dropmenuOptionValue({
+    getAttribute: () => '',
+    textContent: '1+2',
+  }), '1+2');
+  assert.equal(dropmenuOptionValue({
+    getAttribute: () => '',
+    textContent: '+886',
+  }), '+886');
+});
+
+test('dropmenu language click prefers visible copy over btn name', () => {
+  assert.match(renderer, /Visible copy decides/);
+  assert.match(renderer, /dropmenuLangFromSelfLabel\(visible \|\| named\)/);
+  assert.doesNotMatch(renderer, /dropmenuLangFromSelfLabel\(visible\) \|\| dropmenuLangFromSelfLabel\(named\)/);
+  assert.doesNotMatch(renderer, /innerBtn\.getAttribute\('data-btn-name'\)\s*\|\|\s*innerBtn\.textContent/);
+});
+
+test('applyDropmenuDynValue finds dyn hosts by layer name when data-prefix is missing', () => {
+  const start = renderer.indexOf('const isDropmenuDynHost = (el) => {');
+  const end = renderer.indexOf('const closeDropmenuOwners = (root) => {');
+  assert.ok(start > 0 && end > start);
+  const fn = new Function(`${renderer.slice(start, end)}; return { isDropmenuDynHost, applyDropmenuDynValue };`);
+  const api = fn();
+  const txt = {
+    nodeType: 1,
+    matches: (sel) => String(sel).includes('[data-figma-type="TEXT"]') || String(sel).includes('[data-owner-role="txt"]'),
+    textContent: '+886',
+    getAttribute: (name) => (name === 'data-figma-type' ? 'TEXT' : ''),
+    querySelector: () => null,
+    querySelectorAll: () => [],
+  };
+  const host = {
+    nodeType: 1,
+    matches: () => false,
+    getAttribute: (name) => (name === 'data-name' ? 'dyn/当前区号' : ''),
+    querySelector: (sel) => (String(sel).includes('TEXT') || String(sel).includes('txt') ? txt : null),
+    querySelectorAll: () => [],
+  };
+  const owner = {
+    nodeType: 1,
+    __fxDropmenuLayers: [],
+    attrs: {},
+    matches: () => false,
+    getAttribute: () => '',
+    setAttribute(key, value) { this.attrs[key] = value; },
+    removeAttribute(key) { delete this.attrs[key]; },
+    querySelector: () => null,
+    querySelectorAll: (sel) => (String(sel).includes('[data-name]') || String(sel).includes('[data-prefix]') ? [host] : []),
+  };
+  assert.equal(api.isDropmenuDynHost(host), true);
+  assert.equal(api.applyDropmenuDynValue(owner, '+852'), true);
+  assert.equal(txt.textContent, '+852');
+  assert.equal(owner.attrs['data-dropmenu-option-value'], '+852');
+  assert.equal(owner.attrs['data-dropmenu-dyn-miss'], undefined);
+});
+
 test('product-view dropmenu language writes chrome S.prefs, not the renderPrefs copy', () => {
   const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
   assert.match(chrome, /prefs: renderPrefs/);
@@ -234,7 +308,8 @@ test('product-view dropmenu language writes chrome S.prefs, not the renderPrefs 
   assert.match(renderer, /selfLabel: 'no-pref-handle'/);
   assert.match(renderer, /if \(!axis\) return 'invalid'/);
   assert.match(renderer, /source-on instance still lands off/);
-  assert.match(renderer, /querySelectorAll\('\[data-dropmenu="true"\]\[data-dropmenu-mount-status="owner-local-mutually-exclusive"\]'\)/);
+  assert.match(renderer, /closeDropmenuOwners\(frame\)/);
+  assert.match(renderer, /applyDropmenuDynValue\(dropmenuOwner, dropmenuOptionValue\(innerBtn\)\)/);
 });
 
 test('unresolved model does not emit a direct-child runtime bridge', () => {

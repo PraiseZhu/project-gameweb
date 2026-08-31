@@ -106,7 +106,7 @@ const PREFIX_SEMANTICS = {
   btn: '可点击，可挂 @link=',
   hot: '热区，无视觉只吃点击',
   modal: 'fixed + 遮罩，默认 display:none',
-  dropmenu: 'PC 开合菜单；变体值精确小写 on/off，不挂 @ 参数',
+  dropmenu: '点根切开合菜单；变体值精确小写 on/off，不挂 @ 参数；PC / 手机都认',
   dyn: '运行时件（数据来自接口）',
   mix: '图文混排，不整块切图',
   scroll: 'overflow + 隐藏滚动条',

@@ -1,7 +1,7 @@
 # 下游消费假定
 
-> 版本 **A-v1.13**（2026-08-29）。与 `spec/naming-spec.md` 同步升版，`test/spec-drift.test.mjs` 锁住版本号与条目集合。
-> A-v1.13：新增 A9，`dropmenu/` 开合只认值集合恰好 `{on,off}` 的那一轴。A-v1.12：A8 增补页上用到的 `img/` + `lang` 组件集每个变体根带 `sliceExport`。A-v1.11：A2 增补 `fix/@from=N` 从第 N 屏起钉视口。A-v1.10：A8 增补页上 `ind/` 组件集每个变体根带 `sliceExport`。A-v1.9：A8 增补 mix 内裁切溢出自动 `scroll/`；BOOLEAN `btn/` 带 `sliceExport`。A-v1.8：A8 `mix/` 子树带图像填充的叶子由清单自动拆成 `img/` 切图；`scroll/` 写在 `mix/` 内仍按 A5 滑动切图。A-v1.7：A0 全角斜杠 `／` 与半角 `/` 同义。A-v1.6：A0 前缀语法改大小写不敏感、半角斜杠两侧允许空格；A6 明确视觉前缀挂在 TEXT 上时按切图消费（名字压过类型）。
+> 版本 **A-v1.14**（2026-08-31）。与 `spec/naming-spec.md` 同步升版，`test/spec-drift.test.mjs` 锁住版本号与条目集合。
+> A-v1.14：A9 开合通用化，去掉「手机不走 dropmenu」；选项点完分语言 / 普通值两路。A-v1.13：新增 A9，`dropmenu/` 开合只认值集合恰好 `{on,off}` 的那一轴。A-v1.12：A8 增补页上用到的 `img/` + `lang` 组件集每个变体根带 `sliceExport`。A-v1.11：A2 增补 `fix/@from=N` 从第 N 屏起钉视口。A-v1.10：A8 增补页上 `ind/` 组件集每个变体根带 `sliceExport`。A-v1.9：A8 增补 mix 内裁切溢出自动 `scroll/`；BOOLEAN `btn/` 带 `sliceExport`。A-v1.8：A8 `mix/` 子树带图像填充的叶子由清单自动拆成 `img/` 切图；`scroll/` 写在 `mix/` 内仍按 A5 滑动切图。A-v1.7：A0 全角斜杠 `／` 与半角 `/` 同义。A-v1.6：A0 前缀语法改大小写不敏感、半角斜杠两侧允许空格；A6 明确视觉前缀挂在 TEXT 上时按切图消费（名字压过类型）。
 
 ## 这份文件为什么存在
 
@@ -121,13 +121,13 @@ TEXT 节点**默认**即可配置文案，不需要前缀声明——无前缀�
 
 ## A9 · dropmenu 开合消费
 
-`dropmenu/` 是 PC 开合菜单。下游按组件集前缀识别；开合状态只认变体，不认 `@` 参数。
+`dropmenu/` 是点根切开合菜单，PC 和手机都认。下游按组件集前缀识别；开合状态只认变体，不认 `@` 参数。端别不改写：稿上是 `dropmenu/` 就按本条；稿上是 `btn/` 开 `modal/` 就按 A7。
 
 1. **值集合恰好 `{on,off}`。** 精确小写。属性名不锁，`Property 1` 可用。多轴时只认值集合恰好这两个的那一轴。
 2. **错值 fail-visible。** `On` / `OFF` / `true` / `1` / `open` 不当开合，不升 `determined` `dropmenu/`，也不静默当成 `on`。
 3. **点根切开合。** 点根在 `off`↔`on` 之间切换。列表行内部若有 `btn/`，点击优先走该 `btn/`。点列表外回到 `off`。
-4. **用字认语言。** 选项自称必须落在封闭表：`简体中文` / `繁體中文` / `English` / `日本語` / `한국어`（可归一空格与大小写）。判不出 fail-visible，不猜中文、不回落 `zh-CN`。
-5. **手机不走本条。** 手机语言入口仍是 `btn/` 开 `modal/`，不把 `dropmenu/` 接到手机稿。
+4. **选项点完分两路，开合壳不认语义。** 行内字落在封闭自称表（`简体中文` / `繁體中文` / `English` / `日本語` / `한국어`，可归一空格与大小写）则切语言并回 `off`；判不出不猜中文、不回落 `zh-CN`。否则当普通选项：回 `off`，同一 `dropmenu/` 里若有 `dyn/` 则把可见文案换成该行对应值；没有 `dyn/` 只关菜单。不是语言字不把整菜单判废。
+5. **按稿上命名，不因端别改写。** 手机语言入口若仍是 `btn/多语言按钮` → `modal/多语言按钮弹窗`，保持弹窗。手机若写成 `dropmenu/`，按本条开合。
 
 页上用到的 `dropmenu/` 组件集，无自己前缀、变体值精确小写 `on`/`off` 的 `COMPONENT` 根升 `determined` `dropmenu/`（`via=structure`）。`btn/` 组件集即使变体也叫 `on`/`off` 仍是 click，不升 dropmenu。
 
