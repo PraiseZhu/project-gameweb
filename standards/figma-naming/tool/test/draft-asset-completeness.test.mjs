@@ -84,6 +84,34 @@ test("draft asset completeness：via=structure 的 ind 变体根不要求 name �
   assert.equal(result.problems.filter((p) => p.includes("name 未写入")).length, 0, result.problems.join("\n"));
 });
 
+test("draft asset completeness：via=structure 的 dropmenu on/off 变体根不要求 name 写 dropmenu/", () => {
+  const doc = rebuildInventoryIndexes({ nodes: [
+    node("392:32148", "COMPONENT", "Property 1=on", {
+      role: "dropmenu",
+      label: "Property 1=on",
+      behavior: "click",
+      via: "structure",
+    }),
+    node("393:32190", "COMPONENT", "Property 1=off", {
+      role: "dropmenu",
+      label: "Property 1=off",
+      behavior: "click",
+      via: "structure",
+    }),
+  ] });
+  const result = auditDraftAssetCompleteness(doc);
+  assert.equal(result.problems.filter((p) => p.includes("name 未写入")).length, 0, result.problems.join("\n"));
+});
+
+test("draft asset completeness：via=prefix 的 dropmenu 仍必须把前缀写入 name", () => {
+  const doc = rebuildInventoryIndexes({ nodes: [
+    node("named", "COMPONENT_SET", "语言", { role: "dropmenu", label: "语言", behavior: "click", via: "prefix" }),
+  ] });
+  const result = auditDraftAssetCompleteness(doc);
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /name 未写入 dropmenu\/ 前缀/);
+});
+
 test("draft asset completeness：via=structure 的 mix 自动拆 img 不要求 name 写 img/", () => {
   const doc = rebuildInventoryIndexes({ nodes: [
     node("cell", "RECTANGLE", "Rectangle 84370", {
