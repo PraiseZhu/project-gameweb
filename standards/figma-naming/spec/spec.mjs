@@ -7,12 +7,12 @@
  * 住在 spec/：人读正文和机器表同一层。tool/ 与 skills/ 都读这里，不必下到工具目录。
  * 本文件保持零 Node 依赖，以便 Figma 插件打包。
  */
-export const SPEC_VERSION = "v2.17 (2026-09-01)";
+export const SPEC_VERSION = "v2.18 (2026-09-01)";
 /** 相对 figma-naming/ 根的展示路径 */
 export const SPEC_DOC = "spec/naming-spec.md";
 
 /** 下游消费假定（判定后果的前提），见 spec/consumer-assumptions.md */
-export const ASSUMPTIONS_VERSION = "A-v1.15 (2026-09-01)";
+export const ASSUMPTIONS_VERSION = "A-v1.16 (2026-09-01)";
 export const ASSUMPTIONS_DOC = "spec/consumer-assumptions.md";
 
 /**
@@ -47,10 +47,10 @@ export const PREFIXES = {
     group: "视觉", desc: "KV 视差分层", params: ["parallax"], slice: true,
   },
   btn: {
-    group: "交互", desc: "可点击元素", params: ["link", "go", "sec"], structural: true,
+    group: "交互", desc: "可点击元素", params: ["link", "go", "sec", "lang"], structural: true,
   },
   hot: {
-    group: "交互", desc: "透明热区", params: ["link", "go"], structural: true,
+    group: "交互", desc: "透明热区", params: ["link", "go", "lang"], structural: true,
   },
   modal: {
     group: "交互", desc: "弹窗帧（独立 frame）", params: [], structural: true,
@@ -87,6 +87,7 @@ export const PREFIXES = {
  *   required 必须带值（任意字符串）
  *   int      必须带值且为正整数
  *   ratio    必须带值且为 0–1 之间的数
+ *   langs    必须带值：逗号分隔的精确小写 cn|tw|en|jp|kr，至少一个、去重后仍合法
  *   none     纯标记，不能带 =值
  */
 export const PARAMS = {
@@ -97,7 +98,28 @@ export const PARAMS = {
   parallax: { value: "ratio", on: ["kv"], desc: "视差系数 0–1" },
   x: { value: "none", on: ["scroll"], desc: "横滑（默认）" },
   y: { value: "none", on: ["scroll"], desc: "纵滑" },
+  lang: { value: "langs", on: ["btn", "hot"], desc: "只在这些语言出现（精确小写 cn/tw/en/jp/kr，逗号分隔）" },
 };
+
+/** A8 / A10 / A11 共用的精确小写五码。非法值不得映射成这些码。 */
+export const LANG_CODES = ["cn", "tw", "en", "jp", "kr"];
+export const LANG_CODE_SET = new Set(LANG_CODES);
+
+/**
+ * 解析 `@lang` 取值。合法才返回去重后按 LANG_CODES 顺序的数组。
+ * 空值、无等号、空项、空白、重复码、zh-CN / CN / region=cn 一律 null。
+ */
+export function parseLangCodes(raw) {
+  if (raw == null || raw === true) return null;
+  const text = String(raw);
+  if (text !== text.trim() || text === "") return null;
+  const seen = new Set();
+  for (const part of text.split(",")) {
+    if (part !== part.trim() || part === "" || !LANG_CODE_SET.has(part) || seen.has(part)) return null;
+    seen.add(part);
+  }
+  return LANG_CODES.filter((code) => seen.has(code));
+}
 
 /**
  * §4.1 前缀形态判定参数。规范正文的 `<!-- PREFIX_SYNTAX -->` 表是事实来源，
@@ -189,7 +211,7 @@ export const DISPOSITIONS = ["must_fix", "must_answer", "confirm"];
 export const BASES = ["deterministic", "heuristic"];
 
 /** consumer-assumptions.md 里定义的假定编号 */
-export const ASSUMPTION_IDS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"];
+export const ASSUMPTION_IDS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11"];
 
 export const PREFIX_NAMES = Object.keys(PREFIXES);
 export const PARAM_NAMES = Object.keys(PARAMS);

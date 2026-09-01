@@ -2,7 +2,7 @@
 
 给一个 Figma 稿链接，可做两件事：把已规范命名稿编成做页前的 `inventory/v2` ready 清单，或对稿件出**图层命名体检报告**。做页前交接是当前主入口；命名体检是独立的既有工具。
 
-规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.17），21 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后由本机 `sync-local` 有变才重铺（密钥放本机，不进 GitHub）；不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
+规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.18），21 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后由本机 `sync-local` 有变才重铺（密钥放本机，不进 GitHub）；不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
 
 ## 判什么、不判什么
 
@@ -38,7 +38,7 @@
    链接里的 `node-id` 是拉稿根；`--page` 只在已拉取的树中选择页面，不改变拉稿范围。
 3. 命令自验通过后产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 的
    `schema` 为 `inventory/v2`。本仓 `status` 为 `ready`。清单覆盖页面本体、同货架 modal、页面实际引用的组件集/
-   完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持为对应关系上的 `unknown`。无前缀 `lang` 壳把变体内那颗 `btn/` 的 `@go` 编成页实例的 `modal-trigger`（`lang-shell-variant:@go`）；JSON 与 `.txt` 摘要都带 `lang=`。页上语言壳实例保持 unknown，不要改成 `btn/`。
+   完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持为对应关系上的 `unknown`。无前缀 `lang` 壳把变体内那颗 `btn/` 的 `@go` 编成页实例的 `modal-trigger`（`lang-shell-variant:@go`）；JSON 与 `.txt` 摘要都带 `lang=`。页上语言壳实例保持 unknown，不要改成 `btn/`。独立入口 `@lang` 收成 `langs`，摘要打 `langs=`；做页未接语言门前不得宣称只有简中。
 4. 已规范稿两端都 `ready` 后打交接包（不要 `--allow-green-draft`）：
 
    ```bash

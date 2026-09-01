@@ -1,6 +1,6 @@
 # 设计稿命名规范
 
-> 版本 **v2.17**（2026-09-01）。本文件是本项目判定命名对错的**唯一事实来源**。
+> 版本 **v2.18**（2026-09-01）。本文件是本项目判定命名对错的**唯一事实来源**。
 > 同目录 `spec.mjs` 是它的机器可读镜像，`tool/test/spec-drift.test.mjs` 锁住两者一致（前缀表、参数表、前缀语法参数、§4.2 两道排除闸门、§6 规则清单、§7 名字形态、版本号）。
 > 规则的 `why` / `fix` 文案属于实现侧解释，在 `src/rules.mjs` 里维护，不在本文件锁定范围内。
 > 判定后果所依赖的下游假定见 [`consumer-assumptions.md`](consumer-assumptions.md)。
@@ -48,8 +48,8 @@
 
 | 前缀 | 含义 | 参数 |
 |---|---|---|
-| `btn/` | 可点击元素 | `@link=` 跳转 / `@go=` 状态转移 / `@sec=N` 滚到分区（**均为选填**） |
-| `hot/` | 透明热区 | `@link=` / `@go=` |
+| `btn/` | 可点击元素 | `@link=` 跳转 / `@go=` 状态转移 / `@sec=N` 滚到分区 / `@lang=` 只在这些语言出现（**均为选填**） |
+| `hot/` | 透明热区 | `@link=` / `@go=` / `@lang=` |
 | `modal/` | 弹窗帧 | 应是独立 frame，不叠画在页面稿内 |
 | `dropmenu/` | 点根切开合菜单 | 不挂 `@` 参数。开合走组件集变体，值精确小写 `on` / `off`（假定 A9）。PC / 手机都认，按稿上命名，不因端别改写 |
 
@@ -74,9 +74,9 @@
 
 `ind/` 全组同名是允许的，序号按同级顺序推定，不需逐个改名。它的作用域是最近的 `sec/` 祖先（没有 `sec/` 祖先时用体检根）；作用域内恰好一个 `switch/` 时，即使两者是兄弟或隔着纯布局容器，也能唯一确定联动对象。作用域内没有候选时报 `N-IND-NO-CAROUSEL`，有多个候选且 `ind/` 不在任一 `switch/` 内时报 `N-IND-CAROUSEL-AMBIGUOUS`；若祖先链已有 `switch/` 则由嵌套关系短路确定（假定 A4）。页上用到的 `ind/` 组件集，每个变体根由清单写 `sliceExport`（假定 A8）；内部小钻石不命名、不单独切图。
 
-**`img/` 语言切图（假定 A8）：** 只有同时满足三条才跟页面语言换图——组件集前缀是 `img/`、变体属性名是 `lang`（大小写不敏感）、且至少有两个不同的精确小写 `cn` / `tw` / `en` / `jp` / `kr`。组件集叫功能名（如 `img/模块2可替换素材`）；变体层保持 Figma 自动名 `lang=cn`，不要改成 `img/标题-cn`。稿上只做小写五码：`cn` 与 `CN` 是两个变体，`tc` / `zh-CN` / `ja-JP` 都不是合法值。没有 `lang` 轴、只有一个变体、普通 `img/`、`CN` / `xx`、以及 `Property 1=cn` 这种旧写法，都不跟语言，始终画稿上选中的那一张。不要写 `@lang`——参数表没收它，声明会被静默丢掉。多轴组件集只认名为 `lang` 的那一轴。未画的语言（例如只有 `cn`/`tw`）不做出清单失败条件；缺的语言由做页切过去时 fail-visible，不回落默认中文图。页上语言 key 仍是 `zh-CN` / `zh-TW` / `en` / `ja` / `ko`；`region=cn` 是国服，不是语言。映射：`zh-CN→cn`、`zh-TW→tw`、`en→en`、`ja→jp`、`ko→kr`。页上用到的这类组件集，只有精确小写合法变体根由清单写 `sliceExport`；零件不命名。
+**`img/` 语言切图（假定 A8）：** 只有同时满足三条才跟页面语言换图——组件集前缀是 `img/`、变体属性名是 `lang`（大小写不敏感）、且至少有两个不同的精确小写 `cn` / `tw` / `en` / `jp` / `kr`。组件集叫功能名（如 `img/模块2可替换素材`）；变体层保持 Figma 自动名 `lang=cn`，不要改成 `img/标题-cn`。稿上只做小写五码：`cn` 与 `CN` 是两个变体，`tc` / `zh-CN` / `ja-JP` 都不是合法值。没有 `lang` 轴、只有一个变体、普通 `img/`、`CN` / `xx`、以及 `Property 1=cn` 这种旧写法，都不跟语言，始终画稿上选中的那一张。不要用 `@lang` 代替本条的 `lang` 轴——`img/…@lang=cn` 是错挂，报 `N-PARAM-MISPLACED`。出现条件走页上独立 `btn/` / `hot/` 的 `@lang`（假定 A11），不能写在 `img/` 上。多轴组件集只认名为 `lang` 的那一轴。未画的语言（例如只有 `cn`/`tw`）不做出清单失败条件；缺的语言由做页切过去时 fail-visible，不回落默认中文图。页上语言 key 仍是 `zh-CN` / `zh-TW` / `en` / `ja` / `ko`；`region=cn` 是国服，不是语言。映射：`zh-CN→cn`、`zh-TW→tw`、`en→en`、`ja→jp`、`ko→kr`。页上用到的这类组件集，只有精确小写合法变体根由清单写 `sliceExport`；零件不命名。
 
-**无前缀 `lang` 壳（假定 A10）：** 页上只要一个槽、各国点完不是同一件事（下载 vs 不同预约窗）时，组件集**不要**标 `btn/`。它只是语言壳：变体属性名 `lang`，值精确小写五码，变体根保持 Figma 自动名 `lang=cn`，不要改成 `btn/预约-cn`，不要把 `@go` 写进变体值。每个合法变体内部恰好一颗 `btn/` 或 `hot/`；要开窗的在这颗上写 `@go=modal/…`。页上只放一个无前缀实例，占那一个槽；切 `prefs.lang` 时换整棵变体树，点的是换上来的那颗 `btn/`。组件集自己标了 `btn/`、变体里再写 `btn/`，是两颗按钮，不按本条。适龄提示等不占该槽的入口，仍是页上独立的 `btn/`。未画的语言 fail-visible，不回落中文按钮。语言码、映射、缺变体与 A8 相同；本条不给变体根写 `sliceExport`。
+**无前缀 `lang` 壳（假定 A10）：** 页上只要一个槽、各国点完不是同一件事（下载 vs 不同预约窗）时，组件集**不要**标 `btn/`。它只是语言壳：变体属性名 `lang`，值精确小写五码，变体根保持 Figma 自动名 `lang=cn`，不要改成 `btn/预约-cn`，不要把 `@go` 写进变体值。每个合法变体内部恰好一颗 `btn/` 或 `hot/`；要开窗的在这颗上写 `@go=modal/…`。页上只放一个无前缀实例，占那一个槽；切 `prefs.lang` 时换整棵变体树，点的是换上来的那颗 `btn/`。组件集自己标了 `btn/`、变体里再写 `btn/`，是两颗按钮，不按本条。适龄提示等不占该槽的入口，仍是页上独立的 `btn/`；只要「只有某几种语言出现」，在那颗独立 `btn/` / `hot/` 上写 `@lang`（假定 A11），不要放进本条语言壳，也不要为藏它去画空变体。变体内那颗 `btn/` / `hot/` 禁止再写 `@lang`。未画的语言 fail-visible，不回落中文按钮。语言码、映射、缺变体与 A8 相同；本条不给变体根写 `sliceExport`。
 
 `sec/` 不要求是体检根的直接子层。下游在体检根子树内搜集所有 `sec/`；中间无识别前缀的纯布局容器透明。若 `sec/` 分散在多个逻辑父层、嵌在另一个 `sec/` 内，或祖先链上已有带语义前缀的节点，分别按 §6 的 `N-SEC-SCATTERED` / `N-SEC-NESTED` 判定。
 
@@ -88,6 +88,7 @@
 |---|---|---|---|
 | `@link=<key>` | `btn/` `hot/` | 任意字符串 | 跳转语义；URL 在配置里，不写死在稿里 |
 | `@go=<state>` | `btn/` `hot/` | 任意字符串 | 开弹窗时抄弹窗图层名，如 `@go=modal/顶部导航`。不要写图层 id。A10 语言壳写在变体内部那颗 `btn/` / `hot/` 上，不要写在组件集名或 `lang=cn` 上 |
+| `@lang=<codes>` | `btn/` `hot/` | 逗号分隔的精确小写 `cn` / `tw` / `en` / `jp` / `kr` | 只在这些语言出现（假定 A11）。不写则五语都在。不要写 `zh-CN` / `CN` / `region=cn`。不要写进变体值。`img/` 与 A10 壳内那颗按钮禁止 |
 | `@sec=<N>` | `btn/` | 正整数 | 滚动跳转到分区 N |
 | `@from=<N>` | `fix/` | 正整数 | 滚到分区 N 及以下才出现，并钉视口。不写则进页就钉 |
 | `@parallax=<0-1>` | `kv/` | 0–1 的数 | 视差系数 |
@@ -191,10 +192,10 @@ Export 勾选是 Figma 里的人工导出设置，不是资产身份契约。前
 |---|---|---|---|---|
 | `N-PREFIX-SLASH` | P1 | must_fix | deterministic | A0 |
 | `N-PREFIX-NOT-IN-TABLE` | P0 | must_fix | deterministic | A0 |
-| `N-PARAM-EMPTY` | P0 | must_fix | deterministic | A3 |
-| `N-PARAM-BAD-VALUE` | P0 | must_fix | deterministic | A3 |
+| `N-PARAM-EMPTY` | P0 | must_fix | deterministic | A3 A11 |
+| `N-PARAM-BAD-VALUE` | P0 | must_fix | deterministic | A3 A11 |
 | `N-PARAM-UNKNOWN` | P1 | must_fix | deterministic | A3 |
-| `N-PARAM-MISPLACED` | P1 | must_fix | deterministic | A3 |
+| `N-PARAM-MISPLACED` | P1 | must_fix | deterministic | A3 A11 |
 | `N-SEC-NO-NUMBER` | P1 | must_fix | deterministic | A2 |
 | `N-SEC-DUP-NUMBER` | P0 | must_fix | deterministic | A2 |
 | `N-SEC-GAP` | P2 | confirm | heuristic | A2 |
@@ -266,6 +267,24 @@ Export 勾选是 Figma 里的人工导出设置，不是资产身份契约。前
 
 ## §8 版本变更
 
+### v2.18（2026-09-01）
+
+用户拍板：适龄等不占下载槽的入口，要能按图层名声明「只在某些语言出现」；没写就全语显示，不自动迁移旧稿。做页按语言藏节点后做，本版不得宣称已经只有简中。
+
+**① `@lang` 是出现条件。** 只挂页上独立入口的 `btn/` / `hot/`。值是逗号分隔的精确小写 `cn` / `tw` / `en` / `jp` / `kr`。空值、无等号、空项、重复参数、重复码、`zh-CN` / `CN` / `region=cn` fail-visible。不写 `@lang` 与现在相同，五语都在。
+
+**② 清单语言无关。** 节点仍 `determined`；`@go` 无论当前语言是否命中都按 A3 校验；`sliceExport` 仍出。语言不匹配是做页运行时门，不是 `skipped` / `unknown`。摘要把带门的开窗关系打出 `langs=`。
+
+**③ 不进 A10 壳。** 变体内那颗 `btn/` / `hot/` 再写 `@lang` 硬拒绝。`img/` 禁止用 `@lang` 代替 `lang` 轴。不要为藏适龄去画空变体。
+
+示例：
+
+```text
+btn/年龄@go=modal/pc适龄提示@lang=cn
+```
+
+未写 `@lang` 的旧 `btn/年龄@go=modal/pc适龄提示` 继续五语常驻。含 `@lang` 的 ready 包在做页接上语言门之前，不得宣称实现只有简中出现。
+
 ### v2.17（2026-09-01）
 
 用户拍板：首屏同一槽位要同时收下各国不同流程（下载 / 不同预约窗），组件集不标 `btn/`，变体内部那颗 `btn/` 写 `@go`。
@@ -292,7 +311,7 @@ Export 勾选是 Figma 里的人工导出设置，不是资产身份契约。前
     btn/预约-韩国@go=modal/pc预约-韩国
 ```
 
-适龄仍是页上独立的 `btn/年龄@go=modal/pc适龄提示`。
+适龄仍是页上独立入口。只要「只有简中」就写 `btn/年龄@go=modal/pc适龄提示@lang=cn`（假定 A11）；不写 `@lang` 则五语常驻。
 
 ### v2.16（2026-08-31）
 

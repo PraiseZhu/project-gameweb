@@ -897,6 +897,85 @@ test("sameModules：PC/mobile 按前缀+名字一对一，对不上标单端", (
   assert.ok(result.unmatched.some((row) => row.end === "mobile-only" && row.id === "2:2-extra-scroll"));
 });
 
+test("sameModules：两端 langs 门不一致不配成同一模块", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  pc.nodes.push(stampReadyFields({
+    id: "pc-age",
+    type: "FRAME",
+    name: "btn/年龄@lang=cn",
+    status: "determined",
+    role: "btn",
+    label: "年龄",
+    langs: ["cn"],
+    params: { lang: "cn" },
+    behavior: "click",
+    via: "prefix",
+    box: { x: 0, y: 40, w: 80, h: 32 },
+  }));
+  mobile.nodes.push(stampReadyFields({
+    id: "mo-age",
+    type: "FRAME",
+    name: "btn/年龄",
+    status: "determined",
+    role: "btn",
+    label: "年龄",
+    behavior: "click",
+    via: "prefix",
+    box: { x: 0, y: 40, w: 80, h: 32 },
+  }));
+  const result = sameModulesOf(pc, mobile);
+  assert.equal(result.paired.some((row) => row.pcId === "pc-age" || row.mobileId === "mo-age"), false);
+  assert.ok(result.unmatched.some((row) => row.id === "pc-age" && row.end === "pc-only"));
+  assert.ok(result.unmatched.some((row) => row.id === "mo-age" && row.end === "mobile-only"));
+});
+
+test("handoff：consume.determined 带上 langs，无门则为 null", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-langs-"));
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  pc.nodes.push(stampReadyFields({
+    id: "pc-age",
+    type: "FRAME",
+    name: "btn/年龄@lang=cn",
+    status: "determined",
+    role: "btn",
+    label: "年龄",
+    langs: ["cn"],
+    params: { lang: "cn" },
+    behavior: "click",
+    via: "prefix",
+    box: { x: 0, y: 40, w: 80, h: 32 },
+  }));
+  mobile.nodes.push(stampReadyFields({
+    id: "mo-age",
+    type: "FRAME",
+    name: "btn/年龄",
+    status: "determined",
+    role: "btn",
+    label: "年龄",
+    behavior: "click",
+    via: "prefix",
+    box: { x: 0, y: 40, w: 80, h: 32 },
+  }));
+  rebuildInventoryIndexes(pc);
+  rebuildInventoryIndexes(mobile);
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
+  writeFileSync(pcPath, JSON.stringify(pc));
+  writeFileSync(mobilePath, JSON.stringify(mobile));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath,
+    pcDoc: pc, mobileDoc: mobile,
+    kind: "ready",
+    outDir: join(dir, "out"),
+  });
+  const gated = pack.manifest.consume.pc.determined.find((node) => node.id === "pc-age");
+  const ungated = pack.manifest.consume.mobile.determined.find((node) => node.id === "mo-age");
+  assert.deepEqual(gated.langs, ["cn"]);
+  assert.equal(ungated.langs, null);
+});
+
 test("sliceIdsOf：页上用到的组件集每个变体里的切图都要覆盖", () => {
   const doc = sample("1:1");
   doc.nodes.push({

@@ -9,11 +9,12 @@
  */
 import {
   PREFIXES, PARAMS, PARAM_NAMES, NON_PREFIX_WORDS, FIGMA_DEFAULT_COMPOUND_NAMES,
-  FIGMA_DEFAULT_CN_NAMES, FIGMA_COPY_SUFFIX_RE, isSlicePrefix,
+  FIGMA_DEFAULT_CN_NAMES, FIGMA_COPY_SUFFIX_RE, isSlicePrefix, parseLangCodes,
 } from "./spec.mjs";
 import { parseName, usesPrefixSyntax, nearestParam } from "./parse.mjs";
 import { RULES, severityOf, dispositionOf, basisOf, SEVERITIES } from "./rules.mjs";
 import { DISPOSITIONS } from "./spec.mjs";
+import { unprefixedLangShellSet } from "./lang-axis.mjs";
 
 export function lint(root) {
   const findings = [];
@@ -115,11 +116,17 @@ export function lint(root) {
 
     /* ── @参数（仅在前缀已识别时校验，避免在自造前缀上叠加噪音）── */
     if (prefix) {
+      const seenParams = new Set();
       for (const p of parsed.params) {
         if (!p.key) {
           add("N-PARAM-UNKNOWN", "出现空的 `@` 参数");
           continue;
         }
+        if (seenParams.has(p.key)) {
+          add("N-PARAM-BAD-VALUE", `\`@${p.key}\` 重复声明`);
+          continue;
+        }
+        seenParams.add(p.key);
         const ps = PARAMS[p.key];
         if (!ps) {
           const near = nearestParam(p.key, PARAM_NAMES);
@@ -132,6 +139,10 @@ export function lint(root) {
           add("N-PARAM-MISPLACED",
             `\`@${p.key}\` 只能用在 ${ps.on.map((x) => `\`${x}/\``).join(" / ")} 上，当前是 \`${prefix}/\``);
         }
+        if (p.key === "lang" && (prefix === "btn" || prefix === "hot") && langParamForbidden(ctx)) {
+          add("N-PARAM-MISPLACED",
+            `\`@lang\` 不能写在 A10 语言壳变体内的 \`${prefix}/\``);
+        }
         if (ps.value === "none") {
           if (p.hasEq) add("N-PARAM-BAD-VALUE", `\`@${p.key}\` 是纯标记，不能带 \`=值\``, n.name.replace(p.raw, `@${p.key}`));
         } else if (!p.hasEq || !p.value) {
@@ -142,6 +153,11 @@ export function lint(root) {
           const v = Number(p.value);
           if (!Number.isFinite(v) || v < 0 || v > 1)
             add("N-PARAM-BAD-VALUE", `\`@${p.key}=${p.value}\` 必须是 0–1 之间的数`);
+        } else if (ps.value === "langs") {
+          if (parseLangCodes(p.value) == null) {
+            add("N-PARAM-BAD-VALUE",
+              `\`@${p.key}=${p.value}\` 必须是逗号分隔的精确小写 cn/tw/en/jp/kr，不能重复、不能写 zh-CN/CN`);
+          }
         }
       }
 
@@ -255,6 +271,7 @@ export function lint(root) {
         namingExempt: childExempt,
         sliceAncestor, ancPrefixes, ancestorPrefixes, instance, semanticAncestor,
         scopeRoot: childScopeRoot, structuralPath,
+        ancestorNodes: [...(ctx.ancestorNodes || []), n],
       });
     });
   };
@@ -263,6 +280,7 @@ export function lint(root) {
     path: "", parentId: null, parentName: null, isRoot: true, isTopLevel: false, index: 0,
     namingExempt: false, sliceAncestor: null, ancPrefixes: new Set(), instance: null,
     ancestorPrefixes: [], semanticAncestor: null, scopeRoot: rootScope, structuralPath: "",
+    ancestorNodes: [],
   });
 
   /* ── 跨节点：分区编号 ── */
@@ -498,6 +516,11 @@ export function namePatternOf(name) {
 /** A4/D6：库里的 COMPONENT / COMPONENT_SET 没有页面使用现场，不参与 ind/switch 联动判定。 */
 export function isComponentDefinition(n) {
   return n?.type === "COMPONENT" || n?.type === "COMPONENT_SET";
+}
+
+/** A11：A10 语言壳变体内那颗 btn/hot 禁止再挂 @lang。判定与清单同一份。 */
+function langParamForbidden(ctx) {
+  return (ctx?.ancestorNodes || []).some((item) => unprefixedLangShellSet(item));
 }
 
 function countNodes(n) {

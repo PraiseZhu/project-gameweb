@@ -93,7 +93,13 @@ L.push("## @参数表（机器可读镜像）");
 L.push("");
 L.push("| 参数 | 取值 | 可用前缀 | 作用 |");
 L.push("|---|---|---|---|");
-const VAL = { required: "必填，任意字符串", int: "必填，正整数", ratio: "必填，0–1 的数", none: "纯标记，不带值" };
+const VAL = {
+  required: "必填，任意字符串",
+  int: "必填，正整数",
+  ratio: "必填，0–1 的数",
+  langs: "必填，逗号分隔的精确小写 cn/tw/en/jp/kr",
+  none: "纯标记，不带值",
+};
 for (const [k, v] of Object.entries(PARAMS)) {
   L.push(`| \`@${k}\` | ${VAL[v.value]} | ${v.on.map((x) => `\`${x}/\``).join(" ")} | ${v.desc} |`);
 }

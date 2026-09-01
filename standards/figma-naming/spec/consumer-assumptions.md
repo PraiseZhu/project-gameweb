@@ -1,7 +1,7 @@
 # 下游消费假定
 
-> 版本 **A-v1.15**（2026-09-01）。与 `spec/naming-spec.md` 同步升版，`test/spec-drift.test.mjs` 锁住版本号与条目集合。
-> A-v1.15：新增 A10，无前缀 `lang` 壳按语言换树，变体内那颗 `btn/` 的 `@go` 接到对应窗。A-v1.14：A9 开合通用化，去掉「手机不走 dropmenu」；选项点完分语言 / 普通值两路。A-v1.13：新增 A9，`dropmenu/` 开合只认值集合恰好 `{on,off}` 的那一轴。A-v1.12：A8 增补页上用到的 `img/` + `lang` 组件集每个变体根带 `sliceExport`。A-v1.11：A2 增补 `fix/@from=N` 从第 N 屏起钉视口。A-v1.10：A8 增补页上 `ind/` 组件集每个变体根带 `sliceExport`。A-v1.9：A8 增补 mix 内裁切溢出自动 `scroll/`；BOOLEAN `btn/` 带 `sliceExport`。A-v1.8：A8 `mix/` 子树带图像填充的叶子由清单自动拆成 `img/` 切图；`scroll/` 写在 `mix/` 内仍按 A5 滑动切图。A-v1.7：A0 全角斜杠 `／` 与半角 `/` 同义。A-v1.6：A0 前缀语法改大小写不敏感、半角斜杠两侧允许空格；A6 明确视觉前缀挂在 TEXT 上时按切图消费（名字压过类型）。
+> 版本 **A-v1.16**（2026-09-01）。与 `spec/naming-spec.md` 同步升版，`test/spec-drift.test.mjs` 锁住版本号与条目集合。
+> A-v1.16：新增 A11，页上独立 `btn/` / `hot/` 用 `@lang` 声明出现语言；不写则全语显示。A-v1.15：新增 A10，无前缀 `lang` 壳按语言换树，变体内那颗 `btn/` 的 `@go` 接到对应窗。A-v1.14：A9 开合通用化，去掉「手机不走 dropmenu」；选项点完分语言 / 普通值两路。A-v1.13：新增 A9，`dropmenu/` 开合只认值集合恰好 `{on,off}` 的那一轴。A-v1.12：A8 增补页上用到的 `img/` + `lang` 组件集每个变体根带 `sliceExport`。A-v1.11：A2 增补 `fix/@from=N` 从第 N 屏起钉视口。A-v1.10：A8 增补页上 `ind/` 组件集每个变体根带 `sliceExport`。A-v1.9：A8 增补 mix 内裁切溢出自动 `scroll/`；BOOLEAN `btn/` 带 `sliceExport`。A-v1.8：A8 `mix/` 子树带图像填充的叶子由清单自动拆成 `img/` 切图；`scroll/` 写在 `mix/` 内仍按 A5 滑动切图。A-v1.7：A0 全角斜杠 `／` 与半角 `/` 同义。A-v1.6：A0 前缀语法改大小写不敏感、半角斜杠两侧允许空格；A6 明确视觉前缀挂在 TEXT 上时按切图消费（名字压过类型）。
 
 ## 这份文件为什么存在
 
@@ -141,7 +141,17 @@ TEXT 节点**默认**即可配置文案，不需要前缀声明——无前缀�
 4. **变体根不切图。** 本条不给变体根写 `sliceExport`。`img/` + `lang` 仍按 A8。
 5. **同名不算两颗资产。** 同一语言壳的不同变体内同名 `btn/`（如 `en` / `jp` 都叫 `btn/下载`）父层不同，`N-NAME-DUPLICATE` 不报。
 
-适龄提示等不占该槽的入口，仍是页上独立的 `btn/`，按 A3 接线。
+适龄提示等不占该槽的入口，仍是页上独立的 `btn/`，按 A3 接线；只要限制出现语言，走 A11 的 `@lang`，不要放进本条语言壳。
+
+## A11 · 独立入口语言门
+
+页上独立的 `btn/` / `hot/` 可以声明「只在这些语言出现」。这是出现条件，不是语言壳，不并进 A10，也不改 A8 的换图。
+
+1. **命名为主。** 不写 `@lang` 则五语都在，与现在相同。v2.18 不自动给旧稿补门。写了 `@lang` 的节点：`prefs.lang` 按 A8 映射落到取值里则按 A3 画、可点；否则做页不画、不点，不当 fail-visible。
+2. **只挂独立入口。** 可挂 `btn/` `hot/`，含 `fix/` / `mix/` 子树里的那颗按钮；门作用在该入口节点（含其切图子树），不把整个 `fix/` 钉视口拿掉。`img/`、组件集、A10 变体内那颗 `btn/` / `hot/`、`modal/` 内容禁止。`img/…@lang=` 报错，不能代替 A8 的 `lang` 轴。
+3. **取值闭合。** 逗号分隔的精确小写 `cn` / `tw` / `en` / `jp` / `kr`。空值、无等号、空项、重复参数、重复码、空白、`zh-CN` / `CN` / `region=cn` fail-visible，不做映射。未知参数仍走 `N-PARAM-UNKNOWN`，已登记非法值走 `N-PARAM-EMPTY` / `N-PARAM-BAD-VALUE`。
+4. **清单语言无关。** 节点仍 `determined`，关系仍编，`sliceExport` 仍出。清单保存规范化 `langs` 数组，不按某个 `prefs.lang` 改 `skipped` / `unknown`。隐藏层仍按 `skipped`/`invisible`，与语言门不是同一状态。`@go` 对不上或不唯一的 `modal/`，即使该语言永远不显示也按 A3 红。
+5. **消费未实现前不得宣称只有简中。** 做页按 `prefs.lang` 藏节点是后续任务。含 `@lang` 的 ready 包在 yise / torchlight 接上语言门之前，不得声称已经只有简中出现。
 
 ---
 

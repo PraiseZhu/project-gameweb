@@ -41,16 +41,16 @@ export const RULES = {
   },
   "N-PARAM-EMPTY": {
     severity: "P0", disposition: "must_fix", basis: "deterministic",
-    layer: "语法", spec: "§2", assumes: ["A3"],
+    layer: "语法", spec: "§2", assumes: ["A3", "A11"],
     title: "@参数缺值",
-    why: "`@link=` / `@go=` / `@sec=` / `@from=` 后面空着，等于声明了动作却没说动作是什么。下游据此生成的元素点了没反应，或 `fix/` 不知道从哪一屏开始钉（A3），且不会报错。",
+    why: "`@link=` / `@go=` / `@sec=` / `@from=` / `@lang=` 后面空着，等于声明了动作或出现条件却没说取值。下游据此生成的元素点了没反应，或 `fix/` 不知道从哪一屏开始钉，或语言门被整段丢掉（A3、A11），且不会报错。",
     fix: "补上值，或去掉该参数。",
   },
   "N-PARAM-BAD-VALUE": {
     severity: "P0", disposition: "must_fix", basis: "deterministic",
-    layer: "语法", spec: "§2", assumes: ["A3"],
+    layer: "语法", spec: "§2", assumes: ["A3", "A11"],
     title: "@参数取值不合法",
-    why: "`@sec=` / `@from=` 必须是正整数、`@parallax=` 必须在 0–1、`@x`/`@y` 是纯标记不能带值。取值越界会让跳转指错分区、`fix/` 从错误屏开始钉或视差计算失真（依据 A3）。",
+    why: "`@sec=` / `@from=` 必须是正整数、`@parallax=` 必须在 0–1、`@x`/`@y` 是纯标记不能带值、`@lang=` 必须是逗号分隔的精确小写 `cn`/`tw`/`en`/`jp`/`kr`，同一参数不能写两次。取值越界或重复声明会让跳转指错分区、`fix/` 从错误屏开始钉、视差计算失真，或语言门被静默丢掉（依据 A3、A11）。",
     fix: "按 §2 参数表修正取值。",
   },
   "N-PARAM-UNKNOWN": {
@@ -62,9 +62,9 @@ export const RULES = {
   },
   "N-PARAM-MISPLACED": {
     severity: "P1", disposition: "must_fix", basis: "deterministic",
-    layer: "语法", spec: "§2", assumes: ["A3"],
+    layer: "语法", spec: "§2", assumes: ["A3", "A11"],
     title: "@参数用在了不支持它的前缀上",
-    why: "参数只在特定前缀上有意义（`@parallax` 只对 kv/、`@sec` 只对 btn/、`@from` 只对 fix/、`@x`/`@y` 只对 scroll/），挂错位置一律无效（依据 A3）。",
+    why: "参数只在特定前缀上有意义（`@parallax` 只对 kv/、`@sec` 只对 btn/、`@from` 只对 fix/、`@x`/`@y` 只对 scroll/、`@lang` 只对独立入口的 btn/hot），挂错位置一律无效（依据 A3、A11）。",
     fix: "把参数挪到正确的前缀节点上，或改用该前缀支持的参数。",
   },
 

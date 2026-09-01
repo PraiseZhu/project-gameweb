@@ -65,6 +65,7 @@ function consumeSlice(doc) {
       status: node.status ?? null,
       role: node.role ?? null,
       behavior: node.behavior ?? null,
+      langs: Array.isArray(node.langs) && node.langs.length ? node.langs : null,
       box: node.box ?? null,
       pageBox: node.pageBox ?? null,
       parentBox: node.parentBox ?? null,
@@ -94,11 +95,16 @@ function consumeSlice(doc) {
   };
 }
 
+function langsKeyOf(node) {
+  return (Array.isArray(node?.langs) ? node.langs.filter(Boolean) : []).join(",");
+}
+
 function moduleKeyOf(node) {
   if (node?.status !== "determined" || !CROSS_END_MODULE_ROLES.includes(node.role)) return null;
   const label = String(node.label ?? "").trim() || String(node.name ?? "").replace(/^[^/]+\//, "").trim();
   if (!label) return null;
-  return `${node.role}/${label}`;
+  const langs = langsKeyOf(node);
+  return langs ? `${node.role}/${label}@lang=${langs}` : `${node.role}/${label}`;
 }
 
 function collectModuleCandidates(doc) {
@@ -148,6 +154,7 @@ function consumeFingerprintOf(doc) {
     rotation: node.rotation ?? null,
     sliceExport: node.sliceExport ?? null,
     pin: node.pin ?? null,
+    langs: Array.isArray(node.langs) && node.langs.length ? node.langs : null,
     text: node.text ? {
       fontFamily: node.text.fontFamily ?? null,
       fontWeight: node.text.fontWeight ?? null,

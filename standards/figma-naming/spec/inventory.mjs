@@ -45,7 +45,7 @@ export const SLICE_EXPORT = Object.freeze({
 
 /** 跨端同一模块：只认 determined 前缀 + 剥前缀后的名字，不认图层 id。 */
 export const CROSS_END_MODULE_ROLES = Object.freeze([
-  "sec", "fix", "bg", "kv", "scroll", "switch", "tab", "ind", "mix", "dyn", "modal", "dropmenu",
+  "sec", "fix", "bg", "kv", "scroll", "switch", "tab", "ind", "mix", "dyn", "modal", "dropmenu", "btn", "hot",
 ]);
 
 /** TEXT 必带：字体类型、粗细、字号。判断过程 / 截图不进清单。 */
