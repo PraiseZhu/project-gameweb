@@ -753,7 +753,9 @@ function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = 
       if (role) entry.role = role;
     }
     nodes.push(entry);
-    (node.children || []).forEach((child, index) => walk(child, node, `${orderKey}.${index}`, nextCtx));
+    (node.children || []).forEach((child, index) => {
+      walk(child, node, `${orderKey}.${index}`, nextCtx);
+    });
   };
   walk(root, null, "0", { underRef: false, underHidden: false, underSlice: false, underMix: false, ancestors: [] });
   return nodes;
@@ -840,6 +842,15 @@ function modalsNamed(byName, raw) {
   return byName.get(key) || byName.get(`modal/${key}`) || [];
 }
 
+function goTargetProblems(node, byName) {
+  const go = goParam(node.params);
+  if (go == null) return [];
+  const hits = modalsNamed(byName, go);
+  if (hits.length === 0) return [`${node.id} @go=${go} 对不上任何 modal/`];
+  if (hits.length > 1) return [`${node.id} @go=${go} 命中 ${hits.length} 个同名 modal/`];
+  return [];
+}
+
 function positiveIntParam(value) {
   if (value == null || value === true || value === "") return null;
   if (!/^[1-9]\d*$/.test(String(value))) return null;
@@ -890,7 +901,24 @@ function makeModalRelations(pageNodes, modals, componentSets = []) {
     const instances = instancesBySet.get(set.id) || [];
     if (!instances.length) continue;
     for (const { lang, clicks } of langShellVariantClicks(set)) {
-      if (clicks.length !== 1) continue;
+      if (clicks.length !== 1) {
+        // 0 颗不抬；多颗不抬到页实例，各颗按 A3 编自己的 @go
+        for (const click of clicks) {
+          const hits = modalsNamed(byName, goParam(click.params));
+          if (hits.length !== 1) continue;
+          const modal = hits[0];
+          linked.add(modal.id);
+          relations.push({
+            kind: "modal-trigger",
+            status: "determined",
+            evidence: "name-param:@go",
+            lang,
+            from: { id: click.id, scope: click.scope || `component-set:${set.id}` },
+            to: { id: modal.id, scope: `modal:${modal.id}` },
+          });
+        }
+        continue;
+      }
       const hits = modalsNamed(byName, goParam(clicks[0].params));
       if (hits.length !== 1) continue;
       const modal = hits[0];
@@ -992,7 +1020,7 @@ function paramProblemsOf(node) {
   return problems;
 }
 
-/** 前缀已说死的结构：出清单硬闸。不挡 unknown、光 btn/、切图没命名、同名 ind、货架 modal、全角斜杠。 */
+/** 前缀已说死的结构：出清单硬闸。不挡 unknown、光 btn/、切图没命名、同名 ind、货架 modal、全角斜杠、语言壳变体内 0/多颗 btn。 */
 export function auditDeclaredStructure(inv) {
   const problems = [];
   const nodes = allNodesOf(inv);
@@ -1078,23 +1106,17 @@ export function auditDeclaredStructure(inv) {
   for (const set of inv.attachments?.componentSets || []) {
     if (!unprefixedLangShellSet(set)) continue;
     if (!(set.variants || []).some((variant) => pageVariantIds.has(variant.id))) continue;
-    for (const { variant, lang, clicks } of langShellVariantClicks(set)) {
-      if (clicks.length === 0) {
-        problems.push(`${variant.id} 语言壳变体 lang=${lang} 内部没有 btn/ 或 hot/`);
-        continue;
+    for (const { clicks } of langShellVariantClicks(set)) {
+      for (const click of clicks) {
+        if (clickHasLangParam(click)) {
+          problems.push(`${click.id} 语言壳变体内的 ${click.role}/ 不能写 @lang`);
+        }
+        const go = goParam(click.params);
+        if (go == null) continue;
+        const hits = modalsNamed(modalByName, go);
+        if (hits.length === 0) problems.push(`${click.id} @go=${go} 对不上任何 modal/`);
+        else if (hits.length > 1) problems.push(`${click.id} @go=${go} 命中 ${hits.length} 个同名 modal/`);
       }
-      if (clicks.length > 1) {
-        problems.push(`${variant.id} 语言壳变体 lang=${lang} 内部有 ${clicks.length} 个 btn/ 或 hot/`);
-        continue;
-      }
-      if (clickHasLangParam(clicks[0])) {
-        problems.push(`${clicks[0].id} 语言壳变体内的 ${clicks[0].role}/ 不能写 @lang`);
-      }
-      const go = goParam(clicks[0].params);
-      if (go == null) continue;
-      const hits = modalsNamed(modalByName, go);
-      if (hits.length === 0) problems.push(`${clicks[0].id} @go=${go} 对不上任何 modal/`);
-      else if (hits.length > 1) problems.push(`${clicks[0].id} @go=${go} 命中 ${hits.length} 个同名 modal/`);
     }
   }
 

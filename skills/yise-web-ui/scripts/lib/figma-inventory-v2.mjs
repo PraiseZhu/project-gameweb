@@ -461,19 +461,10 @@ function platformOf(value) {
   return null;
 }
 
-function namedGoModalTriggers(inv) {
-  const modals = asArray(inv.attachments?.modals).filter((modal) => modal && typeof modal.id === 'string');
-  const modalIds = new Set(modals.map((modal) => modal.id));
-  const byId = nodeMapOf(inv.nodes);
-  for (const modal of modals) {
-    visitNodeTree([modal], (node) => {
-      if (node && typeof node.id === 'string' && !byId.has(node.id)) byId.set(node.id, node);
-    });
-  }
-  const byName = groupModalsByName(modals);
+function collectNamedGoOpeners(nodes, { byName, modalIds, byId, requirePlatform }) {
   const extra = [];
   const openers = [];
-  visitNodeTree(inv.nodes, (node) => {
+  visitNodeTree(nodes, (node) => {
     if (node && typeof node.id === 'string') openers.push(node);
   });
   for (const node of openers) {
@@ -482,17 +473,51 @@ function namedGoModalTriggers(inv) {
     if (isInsideModal(node, modalIds, byId)) continue;
     const go = goParamOf(node);
     if (go == null || go === true || go === '') continue;
+    const named = modalsNamed(byName, go);
     const openerPlatform = platformOf(node);
-    const hits = modalsNamed(byName, go).filter((modal) => {
-      const modalPlatform = platformOf(modal);
-      return openerPlatform && modalPlatform && openerPlatform === modalPlatform;
-    });
+    const hits = requirePlatform
+      ? named.filter((modal) => {
+        const modalPlatform = platformOf(modal);
+        return openerPlatform && modalPlatform && openerPlatform === modalPlatform;
+      })
+      : named;
     if (hits.length !== 1) continue;
     extra.push({
       toId: hits[0].id,
       fromId: node.id,
       evidence: { kind: 'name-param:@go', go: String(go) },
     });
+  }
+  return extra;
+}
+
+function namedGoModalTriggers(inv) {
+  const modals = asArray(inv.attachments?.modals).filter((modal) => modal && typeof modal.id === 'string');
+  const modalIds = new Set(modals.map((modal) => modal.id));
+  const byId = nodeMapOf(inv.nodes);
+  const remember = (node) => {
+    if (node && typeof node.id === 'string' && !byId.has(node.id)) byId.set(node.id, node);
+  };
+  for (const modal of modals) visitNodeTree([modal], remember);
+  const componentSets = asArray(inv.attachments?.componentSets);
+  for (const set of componentSets) {
+    visitNodeTree([set], remember);
+    visitNodeTree(set.nodes, remember);
+    for (const variant of asArray(set.variants)) visitNodeTree(asArray(variant.nodes), remember);
+  }
+  const byName = groupModalsByName(modals);
+  const extra = collectNamedGoOpeners(inv.nodes, { byName, modalIds, byId, requirePlatform: true });
+  const seen = new Set(extra.map((entry) => `${entry.fromId}->${entry.toId}`));
+  const variantTrees = [];
+  for (const set of componentSets) {
+    variantTrees.push(...asArray(set.nodes));
+    for (const variant of asArray(set.variants)) variantTrees.push(...asArray(variant.nodes));
+  }
+  for (const entry of collectNamedGoOpeners(variantTrees, { byName, modalIds, byId, requirePlatform: false })) {
+    const key = `${entry.fromId}->${entry.toId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    extra.push(entry);
   }
   return extra;
 }

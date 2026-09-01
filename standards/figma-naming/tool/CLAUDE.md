@@ -77,7 +77,7 @@
 | `src/lint.mjs` | 遍历树产出 findings + 体检根自检。纯函数，不碰网络与文件系统 | 新增规则必须在 `rules.mjs` 先登记，否则 `push()` 抛错 |
 | `src/report.mjs` | findings → 终端 / Markdown / JSON，按 `disposition` 分区 + 按组件归并 | 归并键四段「组件 + 错误码 + 实例内位置索引 + 图层名」，少任何一段都会少报动作数 |
 | `src/figma.mjs` | Figma REST 最小封装 + lastModified 缓存 | — |
-| `src/inventory.mjs` | 已规范命名稿 → `inventory/v2`，收页面、同货架 modal、实际引用组件/完整变体与关系 | 无原型或 `@go` 证据的弹窗入口必须保持 `unknown`。无前缀 `lang` 壳把变体内 `@go` 编成页实例 `modal-trigger`（`lang-shell-variant:@go`，带 `lang`）；人读摘要同样打印 `lang=`。独立入口 `@lang` 收成 `langs`，摘要打印 `langs=`；壳内禁止再写 `@lang` |
+| `src/inventory.mjs` | 已规范命名稿 → `inventory/v2`，收页面、同货架 modal、实际引用组件/完整变体与关系 | 无原型或 `@go` 证据的弹窗入口必须保持 `unknown`。无前缀 `lang` 壳仅在变体内恰好一颗时把 `@go` 编成页实例 `modal-trigger`（`lang-shell-variant:@go`，带 `lang`）；0 颗不抬；多颗不抬到页实例，各颗 `@go` 编 `name-param:@go`（带该变体 `lang`）；人读摘要同样打印 `lang=`。独立入口 `@lang` 收成 `langs`，摘要打印 `langs=`；壳内禁止再写 `@lang` |
 | `bin/inventory.mjs` | 解析货架链接与 `--page`，输出 `_tmp/inventory-<page>.json/.txt` | 拉稿根只能用链接 `node-id`；`--page` 只选页面端 |
 | `scripts/serve-inventory-review.mjs` | 提供 inventory/v2 可视化人工核对页 | UI 只读仓内 `inventory-review/index.html`，禁止从 `_tmp` 凑 HTML。保存时覆盖页面与 attachments 全部节点计数，保持 `ready` |
 | `bin/cli.mjs` | 参数解析、体检根校验、退出码 | 有 P0 → 退出码 1；`--require-sec` 让选根失败直接退出 |

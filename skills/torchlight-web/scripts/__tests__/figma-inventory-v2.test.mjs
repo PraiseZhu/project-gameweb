@@ -222,6 +222,58 @@ test("@go copies a unique modal layer name and can be shared by several openers"
   assert.equal(overlay.from, 2);
 });
 
+test("lang-shell multi-btn @go in variant trees becomes determined openers", () => {
+  const inv = fixture();
+  inv.nodes.push({
+    id: "cal",
+    scope: "page",
+    type: "INSTANCE",
+    name: "日历",
+    parentId: PAGE_ID,
+    orderKey: "0.7",
+    status: "unknown",
+    role: null,
+    componentId: "cal-cn",
+    platform: "pc",
+  });
+  inv.attachments.componentSets.push({
+    id: "cal-set",
+    name: "日历",
+    componentPropertyDefinitions: { lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] } },
+    variants: [
+      {
+        id: "cal-cn",
+        type: "COMPONENT",
+        name: "lang=cn",
+        componentProperties: { lang: "cn" },
+        nodes: [
+          { id: "cal-cn", name: "lang=cn", type: "COMPONENT" },
+          { id: "apple", name: "btn/苹果日历@go=modal/苹果日历", type: "FRAME", status: "determined", role: "btn", params: { go: "modal/苹果日历" }, platform: "pc" },
+          { id: "ms", name: "btn/微软日历@go=modal/微软日历", type: "FRAME", status: "determined", role: "btn", params: { go: "modal/微软日历" }, platform: "pc" },
+        ],
+      },
+    ],
+  });
+  inv.attachments.modals = [
+    { id: "m-apple", name: "modal/苹果日历", platform: "pc", box: { x: 0, y: 0, w: 100, h: 100 }, nodes: [{ id: "m-apple", name: "modal/苹果日历" }] },
+    { id: "m-ms", name: "modal/微软日历", platform: "pc", box: { x: 0, y: 0, w: 100, h: 100 }, nodes: [{ id: "m-ms", name: "modal/微软日历" }] },
+  ];
+  inv.relations = [
+    { kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link", from: null, to: { id: "m-apple", scope: "modal:m-apple" } },
+    { kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link", from: null, to: { id: "m-ms", scope: "modal:m-ms" } },
+  ];
+  const triggers = classifyModalTriggers(inv);
+  assert.deepEqual((triggers.get("m-apple") || []).filter((t) => t.status === "determined").map((t) => t.fromId), ["apple"]);
+  assert.deepEqual((triggers.get("m-ms") || []).filter((t) => t.status === "determined").map((t) => t.fromId), ["ms"]);
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const byId = new Map(adapted.modals.map((modal) => [modal.id, modal]));
+  assert.equal(byId.get("m-apple").triggerStatus, "determined");
+  assert.deepEqual(byId.get("m-apple").triggerFrom, ["apple"]);
+  assert.equal(byId.get("m-ms").triggerStatus, "determined");
+  assert.deepEqual(byId.get("m-ms").triggerFrom, ["ms"]);
+  assert.ok(!byId.get("m-apple").triggerFrom.includes("cal"), "page lang-shell instance stays unlifted");
+});
+
 test("@go stays unwired when the modal name is missing or duplicated", () => {
   const missing = fixture();
   missing.nodes.push({ id: "100:70", scope: "page", type: "FRAME", name: "btn/播放@go=modal/没有这扇窗", parentId: PAGE_ID, status: "determined", role: "btn", params: { go: "modal/没有这扇窗" } });

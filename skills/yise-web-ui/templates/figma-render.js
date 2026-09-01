@@ -4893,7 +4893,9 @@
           originX: Number(rootBox.x) || 0,
           originY: Number(rootBox.y) || 0,
           skipNodeIds: new Set([String(__u(root.id))]),
-          suppressInteractions: true,
+          /* Visible selected tree keeps @go / @link on inner btn/hot.
+             Alternate switch/btn/dropmenu layers and modal paint stay suppressed. */
+          suppressInteractions: false,
         });
         owner.el.setAttribute('data-component-instance-mount-status', 'selected-component-tree');
 
