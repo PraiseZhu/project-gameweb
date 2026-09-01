@@ -125,12 +125,18 @@ function keepSkippedPaintNode(node) {
   return { ...node, paintAsFragment: true };
 }
 
+function paintBoxOf(node) {
+  if (!isPlainObject(node)) return node;
+  if (!isPlainObject(node.pageBox)) return node;
+  return { ...node, box: node.pageBox };
+}
+
 function keepLivePaintNode(node, skippedChildren) {
   if (!isPlainObject(node)) return [];
   const fragment = keepSkippedPaintNode(node);
-  if (fragment) return [fragment];
+  if (fragment) return [paintBoxOf(fragment)];
   if (isSkipped(node)) return [];
-  return [liftOwnerComposite(node, skippedChildren)];
+  return [paintBoxOf(liftOwnerComposite(node, skippedChildren))];
 }
 
 /** Flat inventory/v2 page nodes: lift owner composites without painting skipped ids. */

@@ -107,9 +107,13 @@ export function matchFamilies(usage, fontRoot) {
 
 export function matchHandoffFonts(handoffDir, fontRoot) {
   const pack = resolve(handoffDir);
-  const pc = JSON.parse(readFileSync(join(pack, 'inventory-pc.json'), 'utf8'));
-  const mobile = JSON.parse(readFileSync(join(pack, 'inventory-mobile.json'), 'utf8'));
-  const usage = collectFamiliesFromInventories([pc, mobile]);
+  const docs = [];
+  for (const fileName of ['inventory-pc.json', 'inventory-mobile.json']) {
+    const path = join(pack, fileName);
+    if (!existsSync(path)) continue;
+    docs.push(JSON.parse(readFileSync(path, 'utf8')));
+  }
+  const usage = collectFamiliesFromInventories(docs);
   return { ...matchFamilies(usage, fontRoot), usage };
 }
 

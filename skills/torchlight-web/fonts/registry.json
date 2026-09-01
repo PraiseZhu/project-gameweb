@@ -103,6 +103,42 @@
       "usedBy": "Torch 中文活字（稿内 600/900）",
       "sha256": "ff882dd6ac6741a61423a3338ccf0f9d2bf7e9a106ef7c12f73fe5b049a74b4f",
       "bytes": 17814956
+    },
+    "Noto Sans SC": {
+      "file": "NotoSansSC-VF.ttf",
+      "postScriptName": "NotoSansSC",
+      "weight": "100 900",
+      "style": "normal",
+      "format": "truetype",
+      "source": "Noto CJK project variable subset font: https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "稿内简体 Noto（语言菜单/区号）",
+      "sha256": "d68bafcb48a2707749396aa12bbbd833cb70401f3a9a689fd2902c7e0d295964",
+      "bytes": 17773132
+    },
+    "Noto Sans TC": {
+      "file": "NotoSansTC-VF.ttf",
+      "postScriptName": "NotoSansTC",
+      "weight": "100 900",
+      "style": "normal",
+      "format": "truetype",
+      "source": "Noto CJK project variable subset font: https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/Subset/NotoSansTC-VF.ttf",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "稿内繁体 Noto（守夜人/首充双倍/预约弹窗）",
+      "sha256": "ac091cc8cd19e848202afc8fe6d3809b4526c8fdbdb4be82da20c4f785949591",
+      "bytes": 11942800
+    },
+    "Noto Serif SC": {
+      "file": "NotoSerifSC-VF.ttf",
+      "postScriptName": "NotoSerifSC",
+      "weight": "100 900",
+      "style": "normal",
+      "format": "truetype",
+      "source": "Noto CJK project variable subset font: https://github.com/notofonts/noto-cjk/raw/main/Serif/Variable/TTF/Subset/NotoSerifSC-VF.ttf",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "稿内语言菜单한국어",
+      "sha256": "5326cfb097e3ab26fcb39329752b5c0a439bf8d5c4649520e4b492939c352a09",
+      "bytes": 25125232
     }
   },
   "_languageRouting": "语言+角色字体路由表见 scripts/lib/translation/font-routing.mjs（FONT_SOURCE_ROUTING）。本册只登记字体文件；路由由渲染层按 lang+角色现算。"

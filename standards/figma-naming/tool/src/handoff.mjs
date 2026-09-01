@@ -1,7 +1,9 @@
 /**
- * 真稿交接：校验成对 ready 清单并打做页包。
- * 本仓不打 green-draft。未规范判断写回在 projects/project-unnamed-inventory。
- * 两端都是 ready 时 completeness 只核索引/前缀类/determined 前缀写入，不跑 draft 形态发现（issue #31）。
+ * 真稿交接：校验 ready 清单并打做页包。
+ * 稿上有哪一端就装哪一端：--pc / --mobile 可只给一端，manifest.ends 写明。
+ * 两端都在时行为与成对包相同。本仓不打 green-draft。
+ * 未规范判断写回在 projects/project-unnamed-inventory。
+ * 已给的每一端都是 ready 时 completeness 只核索引/前缀类/determined 前缀写入，不跑 draft 形态发现（issue #31）。
  * 另接 auditDeclaredStructure：前缀已说死的结构错误直接拒包。
  * 切图 PNG 不进包；manifest.assets 只列 sliceExport 与 node id，做页自导。
  */
@@ -164,17 +166,25 @@ function consumeFingerprintOf(doc) {
   }));
 }
 
+export function endsOfDocs(pcDoc, mobileDoc) {
+  const ends = [];
+  if (pcDoc) ends.push("pc");
+  if (mobileDoc) ends.push("mobile");
+  return ends;
+}
+
 export function fingerprintInventories(pcDoc, mobileDoc) {
   const payload = {
-    pc: pcDoc.requestedNodeId,
-    mobile: mobileDoc.requestedNodeId,
-    fileKey: pcDoc.fileKey ?? null,
-    pcStatus: pcDoc.status,
-    mobileStatus: mobileDoc.status,
-    pcCounts: pcDoc.counts ?? null,
-    mobileCounts: mobileDoc.counts ?? null,
-    pcFields: consumeFingerprintOf(pcDoc),
-    mobileFields: consumeFingerprintOf(mobileDoc),
+    ends: endsOfDocs(pcDoc, mobileDoc),
+    pc: pcDoc?.requestedNodeId ?? null,
+    mobile: mobileDoc?.requestedNodeId ?? null,
+    fileKey: pcDoc?.fileKey ?? mobileDoc?.fileKey ?? null,
+    pcStatus: pcDoc?.status ?? null,
+    mobileStatus: mobileDoc?.status ?? null,
+    pcCounts: pcDoc?.counts ?? null,
+    mobileCounts: mobileDoc?.counts ?? null,
+    pcFields: pcDoc ? consumeFingerprintOf(pcDoc) : null,
+    mobileFields: mobileDoc ? consumeFingerprintOf(mobileDoc) : null,
   };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
 }
@@ -297,10 +307,10 @@ function slicePlanOf(doc) {
   };
 }
 
-function packedAssetProblems(assets) {
+function packedAssetProblems(assets, ends = ["pc", "mobile"]) {
   if (!assets || typeof assets !== "object") return ["缺 assets 切图计划"];
   const problems = [];
-  for (const end of ["pc", "mobile"]) {
+  for (const end of ends) {
     const row = assets[end];
     if (!row || typeof row !== "object") {
       problems.push(`${end} 缺切图计划`);
@@ -318,17 +328,39 @@ function packedAssetProblems(assets) {
   return problems;
 }
 
+function pageRecord(path, doc) {
+  if (!doc) return null;
+  return {
+    file: path ? basename(path) : null,
+    requestedNodeId: doc.requestedNodeId,
+    status: doc.status,
+    counts: doc.counts ?? null,
+  };
+}
+
+function loadPackInventory(full, fileName) {
+  const path = join(full, fileName);
+  if (!existsSync(path)) return { path, doc: null };
+  return { path, doc: JSON.parse(readFileSync(path, "utf8")) };
+}
+
+function declaredEndsOf(manifest, pcDoc, mobileDoc) {
+  const listed = Array.isArray(manifest?.ends) ? manifest.ends.filter((end) => end === "pc" || end === "mobile") : [];
+  if (listed.length) return [...new Set(listed)];
+  return endsOfDocs(pcDoc, mobileDoc);
+}
+
 export function validateHandoffPack(dirPath) {
   const full = resolve(dirPath);
   const manifestPath = join(full, "manifest.json");
-  const pcPath = join(full, "inventory-pc.json");
-  const mobilePath = join(full, "inventory-mobile.json");
-  if (!existsSync(manifestPath) || !existsSync(pcPath) || !existsSync(mobilePath)) {
-    return { ok: false, problems: [`交接目录缺 manifest.json / inventory-pc.json / inventory-mobile.json：${full}`] };
+  if (!existsSync(manifestPath)) {
+    return { ok: false, problems: [`交接目录缺 manifest.json：${full}`] };
   }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const pcDoc = JSON.parse(readFileSync(pcPath, "utf8"));
-  const mobileDoc = JSON.parse(readFileSync(mobilePath, "utf8"));
+  const pcLoaded = loadPackInventory(full, "inventory-pc.json");
+  const mobileLoaded = loadPackInventory(full, "inventory-mobile.json");
+  const pcDoc = pcLoaded.doc;
+  const mobileDoc = mobileLoaded.doc;
   const problems = [];
   if (manifest.schema !== HANDOFF_SCHEMA) {
     problems.push(`manifest.schema 必须是 ${HANDOFF_SCHEMA}，收到 ${manifest.schema ?? "(空)"}`);
@@ -336,6 +368,12 @@ export function validateHandoffPack(dirPath) {
   if (manifest.kind === "green-draft") {
     problems.push(GREEN_DRAFT_REDIRECT);
   }
+  const ends = declaredEndsOf(manifest, pcDoc, mobileDoc);
+  if (!ends.length) problems.push("交接包至少要有 pc 或 mobile 一端");
+  if (ends.includes("pc") && !pcDoc) problems.push(`交接目录缺 inventory-pc.json：${full}`);
+  if (ends.includes("mobile") && !mobileDoc) problems.push(`交接目录缺 inventory-mobile.json：${full}`);
+  if (!ends.includes("pc") && pcDoc) problems.push("manifest.ends 未声明 pc，但目录里有 inventory-pc.json");
+  if (!ends.includes("mobile") && mobileDoc) problems.push("manifest.ends 未声明 mobile，但目录里有 inventory-mobile.json");
   const gate = validateHandoffPair(pcDoc, mobileDoc, { allowGreenDraft: false });
   if (!gate.ok) problems.push(...gate.problems);
   if (gate.ok && manifest.kind !== gate.kind) {
@@ -345,20 +383,25 @@ export function validateHandoffPack(dirPath) {
   if (gate.ok && manifest.ready !== expectedReady) {
     problems.push(`manifest.ready 与 kind 不一致：ready=${manifest.ready} kind=${manifest.kind ?? gate.kind}`);
   }
+  const expectedEnds = endsOfDocs(pcDoc, mobileDoc);
+  if (gate.ok && JSON.stringify(manifest.ends ?? expectedEnds) !== JSON.stringify(expectedEnds)) {
+    problems.push(`manifest.ends 与清单不一致：${JSON.stringify(manifest.ends ?? null)} vs ${JSON.stringify(expectedEnds)}`);
+  }
   const expectedFingerprint = fingerprintInventories(pcDoc, mobileDoc);
   if (manifest.fingerprint !== expectedFingerprint) {
     problems.push(`manifest.fingerprint 过期或被篡改：${manifest.fingerprint ?? "(空)"} vs ${expectedFingerprint}`);
   }
   const pcPageId = manifest.pages?.pc?.requestedNodeId;
   const mobilePageId = manifest.pages?.mobile?.requestedNodeId;
-  if (pcPageId && pcPageId !== pcDoc.requestedNodeId) {
+  if (pcDoc && pcPageId && pcPageId !== pcDoc.requestedNodeId) {
     problems.push(`manifest.pages.pc.requestedNodeId 与清单不一致：${pcPageId} vs ${pcDoc.requestedNodeId}`);
   }
-  if (mobilePageId && mobilePageId !== mobileDoc.requestedNodeId) {
+  if (mobileDoc && mobilePageId && mobilePageId !== mobileDoc.requestedNodeId) {
     problems.push(`manifest.pages.mobile.requestedNodeId 与清单不一致：${mobilePageId} vs ${mobileDoc.requestedNodeId}`);
   }
-  problems.push(...packedAssetProblems(manifest.assets));
+  problems.push(...packedAssetProblems(manifest.assets, expectedEnds));
   for (const [end, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
+    if (!doc) continue;
     const expected = sliceIdsOf(doc).slice().sort();
     const actual = [...(manifest.assets?.[end]?.ids || [])].slice().sort();
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -371,6 +414,7 @@ export function validateHandoffPack(dirPath) {
     kind: gate.kind ?? manifest.kind ?? null,
     ready: expectedReady,
     fingerprint: expectedFingerprint,
+    ends: expectedEnds,
     problems,
     pcDoc,
     mobileDoc,
@@ -383,29 +427,33 @@ export function validateHandoffPair(pcDoc, mobileDoc, {
   referenceDoc = null,
 } = {}) {
   const problems = [];
+  const ends = endsOfDocs(pcDoc, mobileDoc);
+  if (!ends.length) problems.push("至少要有 pc 或 mobile 一端 ready 清单");
   for (const [label, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
-    if (!doc || doc.schema !== INVENTORY_SCHEMA) problems.push(`${label} schema 必须是 ${INVENTORY_SCHEMA}`);
-    if (doc && doc.ok !== true) problems.push(`${label} 清单 ok 不为 true`);
-    if (doc && !INVENTORY_STATUSES.includes(doc.status)) problems.push(`${label} status 非法：${doc.status}`);
-    if (doc && !doc.requestedNodeId) problems.push(`${label} 缺少 requestedNodeId`);
-    if (doc && !doc.page?.id) problems.push(`${label} 缺少 page.id`);
+    if (!doc) continue;
+    if (doc.schema !== INVENTORY_SCHEMA) problems.push(`${label} schema 必须是 ${INVENTORY_SCHEMA}`);
+    if (doc.ok !== true) problems.push(`${label} 清单 ok 不为 true`);
+    if (!INVENTORY_STATUSES.includes(doc.status)) problems.push(`${label} status 非法：${doc.status}`);
+    if (!doc.requestedNodeId) problems.push(`${label} 缺少 requestedNodeId`);
+    if (!doc.page?.id) problems.push(`${label} 缺少 page.id`);
   }
   if (pcDoc?.fileKey && mobileDoc?.fileKey && pcDoc.fileKey !== mobileDoc.fileKey) {
     problems.push(`PC/mobile fileKey 不一致：${pcDoc.fileKey} vs ${mobileDoc.fileKey}`);
   }
-  if (pcDoc?.requestedNodeId && pcDoc.requestedNodeId === mobileDoc?.requestedNodeId) {
+  if (pcDoc && mobileDoc && pcDoc.requestedNodeId && pcDoc.requestedNodeId === mobileDoc.requestedNodeId) {
     problems.push("PC/mobile 不能是同一 page id");
   }
-  const statuses = [pcDoc?.status, mobileDoc?.status];
-  const bothReady = statuses.every((status) => status === "ready");
+  const presentDocs = [pcDoc, mobileDoc].filter(Boolean);
+  const statuses = presentDocs.map((doc) => doc.status);
+  const allReady = presentDocs.length > 0 && statuses.every((status) => status === "ready");
   const pcGate = pcDoc
-    ? auditLikeCli(pcDoc, mobileDoc ? [mobileDoc] : [], { readyPair: bothReady, referenceDoc })
-    : { ok: false, problems: ["缺 PC"] };
+    ? auditLikeCli(pcDoc, mobileDoc ? [mobileDoc] : [], { readyPair: allReady, referenceDoc })
+    : { ok: true, problems: [], skipped: true };
   const mobileGate = mobileDoc
-    ? auditLikeCli(mobileDoc, pcDoc ? [pcDoc] : [], { readyPair: bothReady, referenceDoc })
-    : { ok: false, problems: ["缺 mobile"] };
-  if (!pcGate.ok) problems.push(...pcGate.problems.map((item) => `pc completeness: ${item}`));
-  if (!mobileGate.ok) problems.push(...mobileGate.problems.map((item) => `mobile completeness: ${item}`));
+    ? auditLikeCli(mobileDoc, pcDoc ? [pcDoc] : [], { readyPair: allReady, referenceDoc })
+    : { ok: true, problems: [], skipped: true };
+  if (pcDoc && !pcGate.ok) problems.push(...pcGate.problems.map((item) => `pc completeness: ${item}`));
+  if (mobileDoc && !mobileGate.ok) problems.push(...mobileGate.problems.map((item) => `mobile completeness: ${item}`));
   if (pcDoc) {
     const structure = auditDeclaredStructure(pcDoc);
     if (!structure.ok) problems.push(...structure.problems.map((item) => `pc structure: ${item}`));
@@ -415,26 +463,27 @@ export function validateHandoffPair(pcDoc, mobileDoc, {
     if (!structure.ok) problems.push(...structure.problems.map((item) => `mobile structure: ${item}`));
   }
   for (const [label, doc] of [["pc", pcDoc], ["mobile", mobileDoc]]) {
-    for (const node of allNodesOf(doc || {})) {
+    if (!doc) continue;
+    for (const node of allNodesOf(doc)) {
       if (node.status !== "determined") continue;
       problems.push(...determinedReadyFieldProblems(node, { label }));
     }
   }
 
-  const bothDraft = statuses.every((status) => status === "draft");
-  if (allowGreenDraft || bothDraft) problems.push(GREEN_DRAFT_REDIRECT);
+  const allDraft = presentDocs.length > 0 && statuses.every((status) => status === "draft");
+  if (allowGreenDraft || allDraft) problems.push(GREEN_DRAFT_REDIRECT);
 
   let kind = null;
-  if (bothReady && !allowGreenDraft) kind = "ready";
+  if (allReady && !allowGreenDraft) kind = "ready";
   else if (new Set(statuses.filter(Boolean)).size > 1) {
     problems.push(`PC/mobile status 必须同档，收到 ${statuses.join(",")}`);
-  } else if (!bothReady && !bothDraft) {
-    problems.push(`PC/mobile 必须都是 ready，收到 ${statuses.join(",")}`);
+  } else if (!allReady && !allDraft) {
+    problems.push(`已给的端必须都是 ready，收到 ${statuses.join(",") || "(空)"}`);
   }
 
   const determinedRoles = new Set();
-  for (const doc of [pcDoc, mobileDoc]) {
-    for (const node of collectNodes(doc || {})) {
+  for (const doc of presentDocs) {
+    for (const node of collectNodes(doc)) {
       if (node.status === "determined" && node.role && !INVENTORY_ROLES.includes(node.role)) {
         problems.push(`${node.id} 角色不在总表：${node.role}`);
       }
@@ -445,6 +494,7 @@ export function validateHandoffPair(pcDoc, mobileDoc, {
   return {
     ok: problems.length === 0 && Boolean(kind),
     kind,
+    ends,
     problems,
     completeness: { pc: pcGate, mobile: mobileGate },
     determinedRoles: [...determinedRoles],
@@ -453,27 +503,29 @@ export function validateHandoffPair(pcDoc, mobileDoc, {
 
 export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets = {} }) {
   const fingerprint = fingerprintInventories(pcDoc, mobileDoc);
+  const ends = endsOfDocs(pcDoc, mobileDoc);
+  const assetPlan = {};
+  if (pcDoc) assetPlan.pc = assets.pc ?? slicePlanOf(pcDoc);
+  if (mobileDoc) assetPlan.mobile = assets.mobile ?? slicePlanOf(mobileDoc);
   return {
     schema: HANDOFF_SCHEMA,
     kind,
     ready: kind === "ready",
     fingerprint,
-    fileKey: pcDoc.fileKey ?? mobileDoc.fileKey ?? null,
+    ends,
+    fileKey: pcDoc?.fileKey ?? mobileDoc?.fileKey ?? null,
     createdAt: new Date().toISOString(),
     warning: null,
     pages: {
-      pc: { file: basename(pcPath), requestedNodeId: pcDoc.requestedNodeId, status: pcDoc.status, counts: pcDoc.counts ?? null },
-      mobile: { file: basename(mobilePath), requestedNodeId: mobileDoc.requestedNodeId, status: mobileDoc.status, counts: mobileDoc.counts ?? null },
+      pc: pageRecord(pcPath, pcDoc),
+      mobile: pageRecord(mobilePath, mobileDoc),
     },
     consume: {
-      pc: consumeSlice(pcDoc),
-      mobile: consumeSlice(mobileDoc),
+      pc: pcDoc ? consumeSlice(pcDoc) : null,
+      mobile: mobileDoc ? consumeSlice(mobileDoc) : null,
     },
     sameModules: sameModulesOf(pcDoc, mobileDoc),
-    assets: {
-      pc: assets.pc ?? slicePlanOf(pcDoc),
-      mobile: assets.mobile ?? slicePlanOf(mobileDoc),
-    },
+    assets: assetPlan,
     rules: {
       unknownNoInteraction: true,
       unknownModalTriggerNoWire: true,
@@ -512,31 +564,34 @@ export function writeHandoffPack({
   if (kind !== gate.kind) {
     throw new Error(`kind 与清单不一致：传入 ${kind}，实际 ${gate.kind}`);
   }
-  const assets = {
-    pc: slicePlanOf(pcDoc),
-    mobile: slicePlanOf(mobileDoc),
-  };
+  const assets = {};
+  if (pcDoc) assets.pc = slicePlanOf(pcDoc);
+  if (mobileDoc) assets.mobile = slicePlanOf(mobileDoc);
   const manifest = buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets });
   mkdirSync(outDir, { recursive: true });
-  const pcOut = join(outDir, "inventory-pc.json");
-  const mobileOut = join(outDir, "inventory-mobile.json");
-  if (resolve(pcPath) !== resolve(pcOut)) cpSync(pcPath, pcOut);
-  if (resolve(mobilePath) !== resolve(mobileOut)) cpSync(mobilePath, mobileOut);
+  const pcOut = pcDoc ? join(outDir, "inventory-pc.json") : null;
+  const mobileOut = mobileDoc ? join(outDir, "inventory-mobile.json") : null;
+  if (pcDoc && pcPath && resolve(pcPath) !== resolve(pcOut)) cpSync(pcPath, pcOut);
+  if (mobileDoc && mobilePath && resolve(mobilePath) !== resolve(mobileOut)) cpSync(mobilePath, mobileOut);
   writeFileSync(join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   writeFileSync(join(outDir, "README.md"), packReadme(manifest, outDir));
   return { outDir, manifest, pcOut, mobileOut };
 }
 
 function packReadme(manifest, outDir) {
+  const ends = Array.isArray(manifest.ends) ? manifest.ends.join(" / ") : "（未声明）";
+  const pcId = manifest.pages?.pc?.requestedNodeId ?? "（本包无 PC）";
+  const mobileId = manifest.pages?.mobile?.requestedNodeId ?? "（本包无 mobile）";
   return `# 做页交接包 ${manifest.fingerprint}
 
 - 种类：${manifest.kind}${manifest.ready ? "（可称 ready）" : ""}
-- PC：${manifest.pages.pc.requestedNodeId}
-- mobile：${manifest.pages.mobile.requestedNodeId}
+- 端：${ends}
+- PC：${pcId}
+- mobile：${mobileId}
 
 做页只读本目录：
-- \`manifest.json\` 的 \`consume.pc\` / \`consume.mobile\`（determined 接线，unknown 只画）
-- \`inventory-pc.json\` / \`inventory-mobile.json\` 全树（需要变体/关系时）
+- \`manifest.json\` 的 \`ends\` 与已有的 \`consume.pc\` / \`consume.mobile\`（determined 接线，unknown 只画）
+- 已装箱的 \`inventory-pc.json\` / \`inventory-mobile.json\` 全树（需要变体/关系时）
 - 切图按节点 \`sliceExport\` 自己导出，包里不带 PNG
 
 unknown 不赋交互。问题带 fingerprint \`${manifest.fingerprint}\` 开 issue。

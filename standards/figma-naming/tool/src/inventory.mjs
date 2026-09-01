@@ -60,7 +60,15 @@ export function findNode(root, id) {
 export function resolvePageRoot(document, requestedId) {
   const requested = requestedId ? findNode(document, requestedId) : document;
   if (!requested) return { page: null, reason: "requested-missing" };
-  if (requested.type === "CANVAS" || isShelfFrame(requested)) {
+  if (requested.type === "CANVAS") {
+    const inner = pickInnerPage(requested);
+    if (inner) return { page: inner, reason: "resolved-inner-page", requested };
+    return { page: null, reason: "canvas-or-shelf-without-page", requested };
+  }
+  if (isWorkboardPage(requested)) {
+    return { page: requested, reason: "requested-is-workboard-page", requested };
+  }
+  if (isShelfFrame(requested)) {
     const inner = pickInnerPage(requested);
     if (inner) return { page: inner, reason: "resolved-inner-page", requested };
     return { page: null, reason: "canvas-or-shelf-without-page", requested };
@@ -68,10 +76,37 @@ export function resolvePageRoot(document, requestedId) {
   return { page: requested, reason: "requested-is-page", requested };
 }
 
+function isDefinitionNode(node) {
+  return node?.type === "COMPONENT" || node?.type === "COMPONENT_SET";
+}
+
+function isDirectSecChild(node) {
+  return node?.type === "FRAME" && parseName(node.name).prefix === "sec";
+}
+
+/**
+ * 工作区画板：sec/ 直接挂在框上，旁边还堆着 modal/ 或组件集，没有内层叠页框。
+ * 不能只靠「组件集占比」当货架，否则阶段一 cn_pc 这种简中 PC 编不了清单。
+ */
+function isWorkboardPage(node) {
+  if (!node || node.type !== "FRAME") return false;
+  const kids = node.children || [];
+  const secs = kids.filter(isDirectSecChild);
+  if (secs.length < 2) return false;
+  const numbered = new Set();
+  for (const sec of secs) {
+    const match = /^(\d+)/.exec(String(parseName(sec.name).body || ""));
+    if (match) numbered.add(Number(match[1]));
+  }
+  if (numbered.size < 2) return false;
+  return kids.some((child) => isDefinitionNode(child) || isModalName(child));
+}
+
 function isShelfFrame(node) {
+  if (isWorkboardPage(node)) return false;
   const kids = node.children || [];
   if (kids.length < 8) return false;
-  const defs = kids.filter((c) => c.type === "COMPONENT" || c.type === "COMPONENT_SET").length;
+  const defs = kids.filter(isDefinitionNode).length;
   return defs >= 6 && defs / kids.length >= 0.4;
 }
 
@@ -79,9 +114,11 @@ function pickInnerPage(node) {
   const kids = node.children || [];
   const frames = kids.filter((c) => c.type === "FRAME");
   const named = frames.find((c) => /^(pc|mobile|cn_pc|cn_mobile)$/i.test(String(c.name || "")));
+  if (named && isWorkboardPage(named)) return named;
   if (named && !isShelfFrame(named)) return named;
   const bySize = [...frames].sort((a, b) => area(b) - area(a));
   for (const frame of bySize) {
+    if (isWorkboardPage(frame)) return frame;
     if (isShelfFrame(frame)) {
       const inner = pickInnerPage(frame);
       if (inner) return inner;
@@ -103,6 +140,38 @@ function boxOf(node) {
   return { x: b.x, y: b.y, w: b.width, h: b.height };
 }
 
+function numberedDirectSecs(page) {
+  return (page?.children || []).filter(isDirectSecChild).map((node) => {
+    const box = boxOf(node);
+    const number = secNumber(parseName(node.name).body);
+    return box && number != null ? { node, box, number } : null;
+  }).filter(Boolean).sort((a, b) => a.number - b.number || a.box.y - b.box.y);
+}
+
+/**
+ * 工作区没有内层叠页框。页坐标按编号 sec/ 竖排相接，不要把工作台上 sec 之间的空档算进滚动页。
+ * 例：三个 2143 高的 sec，中间各空 493，并集会得到 7415；叠页只要 6429。
+ */
+function stackedWorkboardLayout(page) {
+  const secs = numberedDirectSecs(page);
+  if (!secs.length) return null;
+  const left = Math.min(...secs.map((item) => item.box.x));
+  const width = Math.max(...secs.map((item) => item.box.x + item.box.w)) - left;
+  let y = 0;
+  const byId = new Map();
+  for (const item of secs) {
+    byId.set(item.node.id, {
+      pageBox: { x: item.box.x - left, y, w: item.box.w, h: item.box.h },
+      canvasBox: item.box,
+    });
+    y += item.box.h;
+  }
+  return {
+    pageBox: { x: 0, y: 0, w: width, h: y },
+    stackedSecPageBox: byId,
+  };
+}
+
 function relativeBox(inner, origin) {
   if (!inner || !origin) return null;
   return {
@@ -111,6 +180,25 @@ function relativeBox(inner, origin) {
     w: inner.w,
     h: inner.h,
   };
+}
+
+function offsetBox(origin, local) {
+  if (!origin || !local) return null;
+  return {
+    x: origin.x + local.x,
+    y: origin.y + local.y,
+    w: local.w,
+    h: local.h,
+  };
+}
+
+function stackedPageBoxOf(node, ancestors, stackedSecPageBox) {
+  if (!stackedSecPageBox?.size) return null;
+  const stackedSelf = stackedSecPageBox.get(node.id);
+  if (stackedSelf?.pageBox) return stackedSelf.pageBox;
+  const stackedAncestorId = [...ancestors].reverse().map((item) => item.id).find((id) => stackedSecPageBox.has(id));
+  const stackedAncestor = stackedSecPageBox.get(stackedAncestorId);
+  return offsetBox(stackedAncestor?.pageBox, relativeBox(boxOf(node), stackedAncestor?.canvasBox));
 }
 
 function percentOf(part, whole) {
@@ -497,10 +585,17 @@ function boxCenterX(node) {
   return Number(box.x || 0) + Number(box.width || 0) / 2;
 }
 
-/** 同一货架多页时，弹窗只跟离它最近的那一页。PC 不收手机弹窗。 */
+function siblingFramesOf(page, shelf) {
+  const kids = isWorkboardPage(page) ? (page.children || []) : (shelf?.children || []);
+  return kids.filter((node) => node.type === "FRAME");
+}
+
+/** 同一货架多页时，弹窗只跟离它最近的那一页。PC 不收手机弹窗。工作区上的 modal/ 跟本框走。 */
 function modalsForPage(shelf, page) {
-  const kids = shelf?.children || [];
-  const pages = kids.filter((node) => node.type === "FRAME" && !isModalName(node));
+  const kids = siblingFramesOf(page, shelf);
+  const pages = isWorkboardPage(page)
+    ? [page]
+    : kids.filter((node) => node.type === "FRAME" && !isModalName(node));
   const modals = kids.filter((node) => isShelfModalFrame(node, page.id));
   if (pages.length <= 1) return modals;
   return modals.filter((modal) => {
@@ -521,12 +616,26 @@ function modalsForPage(shelf, page) {
   });
 }
 
+/** 工作区上的 COMPONENT / COMPONENT_SET 不当页面子层，只当货架定义。 */
+function isPageContentChild(node) {
+  if (!node) return false;
+  if (isDefinitionNode(node)) return false;
+  if (isModalName(node)) return false;
+  return true;
+}
+
+function contentRootOf(page) {
+  if (!isWorkboardPage(page)) return page;
+  const children = (page.children || []).filter(isPageContentChild);
+  return { ...page, children };
+}
+
 function relationTargetId(relation) {
   return relation.to?.id ?? relation.from?.id ?? null;
 }
 
 /** 用完全一致的字段编一棵作用域树；modal/组件定义不混入页面父子链。 */
-function serializeTree(root, scope, counts, pageBox = null) {
+function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = null) {
   const nodes = [];
   const origin = pageBox || boxOf(root);
   const walk = (node, parent, orderKey, ctx) => {
@@ -582,7 +691,8 @@ function serializeTree(root, scope, counts, pageBox = null) {
       orderKey,
       status,
     };
-    const pageRel = relativeBox(box, origin);
+    const pageRel = stackedPageBoxOf(node, ctx.ancestors, stackedSecPageBox)
+      || relativeBox(box, origin);
     if (pageRel) entry.pageBox = pageRel;
     const parentRel = relativeBox(box, parentBox);
     if (parentRel) entry.parentBox = parentRel;
@@ -1037,8 +1147,9 @@ export function buildInventory(document, {
   const { byId, parents } = indexDocument(document);
   const shelf = parents.get(page.id) ?? null;
   const counts = { determined: 0, unknown: 0, skipped: 0 };
-  const pageBox = boxOf(page);
-  const pageNodes = serializeTree(page, "page", counts, pageBox);
+  const stacked = isWorkboardPage(page) ? stackedWorkboardLayout(page) : null;
+  const pageBox = stacked?.pageBox || boxOf(page);
+  const pageNodes = serializeTree(contentRootOf(page), "page", counts, pageBox, stacked?.stackedSecPageBox);
   const pageCounts = { ...counts };
 
   const modalRoots = modalsForPage(shelf, page);
@@ -1124,7 +1235,7 @@ export function buildInventory(document, {
     fileKey: fileKey ?? null,
     requestedNodeId: requestedNodeId ?? page.id,
     scope: { pageId: page.id, shelfId: shelf?.id ?? null, shelfName: shelf?.name ?? null, snapshotRootId: document.id },
-    page: { id: page.id, name: page.name ?? "", box: boxOf(page), resolvedFrom: resolved.reason },
+    page: { id: page.id, name: page.name ?? "", box: pageBox, resolvedFrom: resolved.reason },
     snapshot: { lastModified, hash: snapshotHash },
     sliceExport: { ...SLICE_EXPORT },
     status,

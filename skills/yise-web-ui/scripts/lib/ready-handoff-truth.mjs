@@ -23,13 +23,18 @@ function ordered(nodes) {
 }
 
 function boxOf(entry) {
-  const box = entry?.box ?? entry?.pageBox ?? {};
+  const box = entry?.pageBox ?? entry?.box ?? {};
   return {
     x: box.x ?? 0,
     y: box.y ?? 0,
     w: box.w ?? 0,
     h: box.h ?? 0,
   };
+}
+
+function paintWithPageBox(node) {
+  if (!node?.pageBox) return node;
+  return { ...node, box: node.pageBox };
 }
 
 /**
@@ -70,7 +75,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
 
   const pageBox = inventory.page?.box ?? {};
   const chromeNodes = asArray(adapted.pageChrome?.nodes).map((node) => {
-    const copy = { ...node };
+    const copy = paintWithPageBox({ ...node });
     const ancestorIds = asArray(copy.ancestorIds).map(String);
     const root = roots.has(String(copy.id))
       ? String(copy.id)
@@ -88,7 +93,10 @@ export function platformTruthFromInventory(inventory, options = {}) {
       meta: { ...pageBox, id: adapted.page?.id, name: adapted.page?.name },
       nodes: chromeNodes,
     },
-    fixedOverlays: adapted.fixedOverlays,
+    fixedOverlays: {
+      ...(adapted.fixedOverlays || {}),
+      nodes: asArray(adapted.fixedOverlays?.nodes).map(paintWithPageBox),
+    },
     pagePaintOrder: adapted.pagePaintOrder,
     sections,
     modals: adapted.modals,
@@ -100,11 +108,14 @@ export function platformTruthFromInventory(inventory, options = {}) {
 }
 
 export function readyPlatformTruth({ fingerprint, source, pc, mobile }) {
+  const platforms = {};
+  if (pc) platforms.pc = pc;
+  if (mobile) platforms.mobile = mobile;
   return {
     schema: 'yise-ready-platform-truth/v1',
     fingerprint,
     source,
-    platforms: { pc, mobile },
+    platforms,
   };
 }
 

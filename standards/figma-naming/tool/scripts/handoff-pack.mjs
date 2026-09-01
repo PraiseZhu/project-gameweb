@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * 打做页交接包。本仓只要成对 ready。交接包只装箱信息，切图目录可选。
+ * 打做页交接包。稿上有哪一端就装哪一端，两端都给时仍打成对包。
  *   node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir>
+ *   node scripts/handoff-pack.mjs --pc <pc.json> --out <dir>
  *   [--reference <参考稿.json>] 切图 PNG 不进包。
  * 未规范 green-draft 请到 projects/project-unnamed-inventory。
  */
@@ -13,12 +14,12 @@ import {
 
 export function runHandoffPack(argv = process.argv.slice(2)) {
   const args = parseHandoffArgs(argv);
-  if (!args.pc || !args.mobile) {
-    console.error("用法：node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir> [--reference <参考稿.json>]\n切图 PNG 不进交接包，不要传 --assets-pc / --assets-mobile。");
+  if (!args.pc && !args.mobile) {
+    console.error("用法：node scripts/handoff-pack.mjs --pc <pc.json> [--mobile <mobile.json>] --out <dir>\n也可只给 --mobile。切图 PNG 不进交接包，不要传 --assets-pc / --assets-mobile。");
     process.exit(1);
   }
-  const pc = loadInventoryFile(args.pc);
-  const mobile = loadInventoryFile(args.mobile);
+  const pc = args.pc ? loadInventoryFile(args.pc) : { path: null, doc: null };
+  const mobile = args.mobile ? loadInventoryFile(args.mobile) : { path: null, doc: null };
   if (args.allowGreenDraft) {
     console.error(JSON.stringify({
       ok: false,
@@ -42,7 +43,8 @@ export function runHandoffPack(argv = process.argv.slice(2)) {
     console.error(JSON.stringify({ ok: false, problems: gate.problems }, null, 2));
     process.exit(1);
   }
-  const outDir = resolve(args.out || `_tmp/out/handoff-${String(pc.doc.requestedNodeId).replace(/:/g, "-")}`);
+  const seedId = (pc.doc || mobile.doc).requestedNodeId;
+  const outDir = resolve(args.out || `_tmp/out/handoff-${String(seedId).replace(/:/g, "-")}`);
   const pack = writeHandoffPack({
     pcPath: pc.path,
     mobilePath: mobile.path,
@@ -57,6 +59,7 @@ export function runHandoffPack(argv = process.argv.slice(2)) {
     ok: true,
     kind: pack.manifest.kind,
     fingerprint: pack.manifest.fingerprint,
+    ends: pack.manifest.ends,
     outDir: pack.outDir,
     ready: pack.manifest.ready,
     warning: pack.manifest.warning,

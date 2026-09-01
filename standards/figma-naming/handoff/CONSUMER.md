@@ -1,6 +1,6 @@
 # 做页怎么吃交接包
 
-本仓做页只吃 ready 包。真稿，不另造清单。未规范判断写回 / green-draft 在 `projects/project-unnamed-inventory`。已规范命名稿：两端 `inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`）。交接包只装箱信息，不导 png。做页按清单 `sliceExport` 自己导图，不猜图层名、不按节点框重导。
+本仓做页只吃 ready 包。真稿，不另造清单。未规范判断写回 / green-draft 在 `projects/project-unnamed-inventory`。已规范命名稿：稿上有的每一端 `inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`）。只有 PC 或只有手机时只传那一端。交接包只装箱信息，不导 png。做页按清单 `sliceExport` 自己导图，不猜图层名、不按节点框重导。
 
 ## 已规范稿打出包
 
@@ -14,7 +14,7 @@ npm run handoff:pack -- \
   --out ../../../_tmp/out/handoff-<page>
 ```
 
-包 `kind=ready`。不要 `--allow-green-draft`，不要判断包。缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项 → 打包失败。不要传 `--assets-pc` / `--assets-mobile`：PNG 不进交接包。`export-handoff-slices` 是做页可选工具，不是装箱前置。
+包 `kind=ready`。只有 PC 或只有手机时，对应那一行不要传。不要 `--allow-green-draft`，不要判断包。缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项 → 打包失败。不要传 `--assets-pc` / `--assets-mobile`：PNG 不进交接包。`export-handoff-slices` 是做页可选工具，不是装箱前置。
 
 未规范稿去 `projects/project-unnamed-inventory`。本仓 `--allow-green-draft` 直接失败。禁止手改 JSON 的 `status`。
 
@@ -25,7 +25,7 @@ cd skills/yise-web-ui
 npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 ```
 
-`inventory:check` 不是做页吃包入口。它只保留对单份 `status=ready` inventory JSON 的五项诊断。吃包用 `figma:from-handoff`。非 ready 包不可被消费。对人只交交接包目录，不要把两端 inventory JSON 当交付物。
+`inventory:check` 不是做页吃包入口。它只保留对单份 `status=ready` inventory JSON 的五项诊断。吃包用 `figma:from-handoff`。非 ready 包不可被消费。对人只交交接包目录，不要把 inventory JSON 当交付物。
 
 交接包只交清单。切图按节点 `sliceExport`（墨迹框、1 倍、png、完整 node id）由做页自己导出，包里不带 PNG。消费包时要核 `manifest.schema` / `kind` / `ready` / `fingerprint`，对不上就不要吃。
 
@@ -33,11 +33,11 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 
 目录里：
 
-- `manifest.json` → `consume.pc` / `consume.mobile`
+- `manifest.json` → `ends`，以及已装箱的 `consume.pc` / `consume.mobile`
   - `determined`：接线、切图、滑动、切换。独立 `btn/` / `hot/` 若有 `langs`，那是出现语言；没有则五语都在
   - `unknown`：只画样子，不点、不弹窗
-- `inventory-pc.json` / `inventory-mobile.json`：变体树、关系
-- `kind` / `ready` / `fingerprint`
+- 已装箱的 `inventory-pc.json` / `inventory-mobile.json`：变体树、关系
+- `kind` / `ready` / `fingerprint` / `ends`
 
 只核前缀：`btn/` `img/` `scroll/` `switch/` `fix/` `bg/` `kv/` `modal/` `ind/` `tab/` `hot/` `mix/` `sec/` `dyn/` `dropmenu/`。  
 `dropmenu/` 点根切开合，PC / 手机都认，变体值精确小写 `on`/`off`；列表行内部 `btn/` 优先于根热区；点列表外回 `off`。开合壳不认语义：行内字落在封闭自称表（`简体中文` / `繁體中文` / `English` / `日本語` / `한국어`，可归一空格与大小写）则切语言并回 `off`，判不出不猜中文；否则当普通选项，回 `off`，同一菜单里若有 `dyn/` 则换成该行对应值。地球是 `img/`，稿上不画 hover。端别不改写：稿上是 `dropmenu/` 就开合，稿上是 `btn/` 开 `modal/` 就弹窗。  
