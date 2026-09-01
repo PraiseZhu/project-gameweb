@@ -1515,7 +1515,7 @@ test("无前缀 lang 壳：变体内 btn/@go 编成页实例开窗，下载无 @
   assert.doesNotMatch(summary, /lang-shell-variant:@go  lang=en/);
 });
 
-test("无前缀 lang 壳：变体内缺 btn 或两颗 btn 都红；@go 没靶也红", () => {
+test("无前缀 lang 壳：0 颗不红不抬；多颗不红不抬；单颗 @go 没靶仍红", () => {
   const node = inventoryNode;
   const defs = {
     lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
@@ -1528,13 +1528,13 @@ test("无前缀 lang 壳：变体内缺 btn 或两颗 btn 都红；@go 没靶也
       node("btn-tw", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
     ], { componentProperties: { lang: "tw" } }),
   ], { componentPropertyDefinitions: defs });
-  const dual = node("dual-set", "COMPONENT_SET", "首屏主按钮", [
+  const dual = node("dual-set", "COMPONENT_SET", "社媒", [
     node("dual-cn", "COMPONENT", "lang=cn", [
-      node("a", "FRAME", "btn/预约-区号手机@go=modal/pc预约-区号手机"),
-      node("b", "FRAME", "btn/下载"),
+      node("a", "FRAME", "btn/icon@link=taptap"),
+      node("b", "FRAME", "btn/icon@link=bilibili"),
     ], { componentProperties: { lang: "cn" } }),
     node("dual-tw", "COMPONENT", "lang=tw", [
-      node("c", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+      node("c", "FRAME", "btn/icon@link=x"),
     ], { componentProperties: { lang: "tw" } }),
   ], { componentPropertyDefinitions: defs });
   const orphan = node("orphan-set", "COMPONENT_SET", "首屏主按钮", [
@@ -1545,38 +1545,105 @@ test("无前缀 lang 壳：变体内缺 btn 或两颗 btn 都红；@go 没靶也
       node("btn-ok", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
     ], { componentProperties: { lang: "tw" } }),
   ], { componentPropertyDefinitions: defs });
-  const pageOf = (id, componentId) => node("page", "FRAME", "cn_pc", [
+  const pageOf = (id, name, componentId) => node("page", "FRAME", "cn_pc", [
     node("sec", "FRAME", "sec/1-首屏", [
-      node(id, "INSTANCE", "首屏主按钮", [], { componentId }),
+      node(id, "INSTANCE", name, [], { componentId }),
     ]),
   ]);
   const missingShelf = node("shelf-missing", "FRAME", "cn_pc", [
-    pageOf("cta-missing", "miss-cn"),
+    pageOf("cta-missing", "首屏主按钮", "miss-cn"),
     missing,
     node("m-mail", "FRAME", "modal/pc预约-邮箱"),
   ]);
-  const missingCheck = validateInventory(buildInventory(missingShelf, { requestedNodeId: "page" }), missingShelf);
-  assert.equal(missingCheck.ok, false);
-  assert.match(missingCheck.problems.join("\n"), /语言壳变体 lang=cn 内部没有 btn\/ 或 hot\//);
+  const missingInv = buildInventory(missingShelf, { requestedNodeId: "page" });
+  const missingCheck = validateInventory(missingInv, missingShelf);
+  assert.equal(missingCheck.ok, true, missingCheck.problems.join("\n"));
+  assert.equal(missingInv.relations.some((r) => r.evidence === "lang-shell-variant:@go" && r.lang === "cn"), false);
+  assert.equal(missingInv.relations.some((r) => r.evidence === "lang-shell-variant:@go" && r.lang === "tw"), true);
 
   const dualShelf = node("shelf-dual", "FRAME", "cn_pc", [
-    pageOf("cta-dual", "dual-cn"),
+    pageOf("cta-dual", "社媒", "dual-cn"),
     dual,
-    node("m-phone", "FRAME", "modal/pc预约-区号手机"),
-    node("m-mail-2", "FRAME", "modal/pc预约-邮箱"),
   ]);
-  const dualCheck = validateInventory(buildInventory(dualShelf, { requestedNodeId: "page" }), dualShelf);
-  assert.equal(dualCheck.ok, false);
-  assert.match(dualCheck.problems.join("\n"), /语言壳变体 lang=cn 内部有 2 个 btn\/ 或 hot\//);
+  const dualInv = buildInventory(dualShelf, { requestedNodeId: "page" });
+  const dualCheck = validateInventory(dualInv, dualShelf);
+  assert.equal(dualCheck.ok, true, dualCheck.problems.join("\n"));
+  assert.equal(dualInv.relations.some((r) => r.evidence === "lang-shell-variant:@go"), false);
 
   const orphanShelf = node("shelf-orph", "FRAME", "cn_pc", [
-    pageOf("cta-orph", "orph-cn"),
+    pageOf("cta-orph", "首屏主按钮", "orph-cn"),
     orphan,
     node("m-mail-3", "FRAME", "modal/pc预约-邮箱"),
   ]);
   const orphanCheck = validateInventory(buildInventory(orphanShelf, { requestedNodeId: "page" }), orphanShelf);
   assert.equal(orphanCheck.ok, false);
   assert.match(orphanCheck.problems.join("\n"), /@go=modal\/没有这扇窗 对不上任何 modal/);
+});
+
+test("无前缀 lang 壳：多颗日历按钮不抬页实例；各颗 @go 自己跳；一颗没靶只红那颗", () => {
+  const node = inventoryNode;
+  const defs = {
+    lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+  };
+  const calendar = node("cal-set", "COMPONENT_SET", "日历", [
+    node("cal-cn", "COMPONENT", "lang=cn", [
+      node("apple", "FRAME", "btn/苹果日历@go=modal/苹果日历"),
+      node("ms", "FRAME", "btn/微软日历@go=modal/微软日历"),
+      node("ics", "FRAME", "btn/ics文件@link=ics"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("cal-tw", "COMPONENT", "lang=tw", [
+      node("apple-tw", "FRAME", "btn/苹果日历@go=modal/苹果日历"),
+      node("google-tw", "FRAME", "btn/谷歌日历@go=modal/谷歌日历"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], { componentPropertyDefinitions: defs });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("cal", "INSTANCE", "日历", [], { componentId: "cal-cn" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [
+    page,
+    calendar,
+    node("m-apple", "FRAME", "modal/苹果日历"),
+    node("m-ms", "FRAME", "modal/微软日历"),
+    node("m-google", "FRAME", "modal/谷歌日历"),
+  ]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+  assert.equal(inv.relations.some((r) => r.evidence === "lang-shell-variant:@go"), false);
+  const perClick = inv.relations.filter((r) => r.kind === "modal-trigger" && r.evidence === "name-param:@go");
+  assert.deepEqual(perClick.map((r) => r.from.id).sort(), ["apple", "apple-tw", "google-tw", "ms"]);
+  assert.equal(perClick.find((r) => r.from.id === "apple").to.id, "m-apple");
+  assert.equal(perClick.find((r) => r.from.id === "ms").to.id, "m-ms");
+  assert.equal(perClick.find((r) => r.from.id === "apple-tw").to.id, "m-apple");
+  assert.equal(perClick.find((r) => r.from.id === "google-tw").to.id, "m-google");
+  assert.equal(perClick.find((r) => r.from.id === "apple").lang, "cn");
+  assert.equal(perClick.find((r) => r.from.id === "google-tw").lang, "tw");
+  assert.equal(perClick.every((r) => r.from.id !== "ics" && r.status === "determined"), true);
+  assert.match(renderHumanSummary(inv), /name-param:@go  lang=cn/);
+
+  const broken = node("cal-broken", "COMPONENT_SET", "日历", [
+    node("brk-cn", "COMPONENT", "lang=cn", [
+      node("ok-btn", "FRAME", "btn/苹果日历@go=modal/苹果日历"),
+      node("bad-btn", "FRAME", "btn/微软日历@go=modal/没有这扇窗"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("brk-tw", "COMPONENT", "lang=tw", [
+      node("ok-tw", "FRAME", "btn/苹果日历@go=modal/苹果日历"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], { componentPropertyDefinitions: defs });
+  const brokenShelf = node("shelf-broken", "FRAME", "cn_pc", [
+    node("page", "FRAME", "cn_pc", [
+      node("sec", "FRAME", "sec/1-首屏", [
+        node("cal-b", "INSTANCE", "日历", [], { componentId: "brk-cn" }),
+      ]),
+    ]),
+    broken,
+    node("m-apple-2", "FRAME", "modal/苹果日历"),
+  ]);
+  const brokenCheck = validateInventory(buildInventory(brokenShelf, { requestedNodeId: "page" }), brokenShelf);
+  assert.equal(brokenCheck.ok, false);
+  assert.match(brokenCheck.problems.join("\n"), /bad-btn @go=modal\/没有这扇窗 对不上任何 modal/);
 });
 
 test("组件集自己标了 btn/ 即使有 lang 轴也不按语言壳接线", () => {

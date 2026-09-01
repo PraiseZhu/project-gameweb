@@ -39,6 +39,15 @@ test('named modal runtime only wires openers listed in triggerFrom', () => {
   assert.doesNotMatch(renderer, /entry\.name === '视频弹窗' && name === '播放按钮'/);
 });
 
+test('selected component tree keeps inner btn @go live', () => {
+  const marker = "data-component-instance-mount-status', 'selected-component-tree'";
+  const mountAt = renderer.lastIndexOf(marker);
+  const paintAt = renderer.lastIndexOf('paint(owner.tree.nodes', mountAt);
+  const paintCall = renderer.slice(paintAt, mountAt);
+  assert.match(paintCall, /suppressInteractions:\s*false/);
+  assert.doesNotMatch(paintCall, /suppressInteractions:\s*true/);
+});
+
 test('renderer consumes pure direct-child interaction payload without raw switch classification', () => {
   assert.match(renderer, /ctx\.interactionPayload \|\| ctx\.renderInteractionPayload/);
   assert.match(renderer, /interactionPayload\.attributes/);

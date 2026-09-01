@@ -1,8 +1,8 @@
 # 检查规则表
 
 > 本文件由 `npm run rules` 从 `src/rules.mjs` 生成，**不要手改**。
-> 依据规范：v2.18 (2026-09-01) — `spec/naming-spec.md`
-> 下游假定：A-v1.16 (2026-09-01) — `spec/consumer-assumptions.md`
+> 依据规范：v2.19 (2026-09-01) — `spec/naming-spec.md`
+> 下游假定：A-v1.17 (2026-09-01) — `spec/consumer-assumptions.md`
 
 ## 三个维度
 
