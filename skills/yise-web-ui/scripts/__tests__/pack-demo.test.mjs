@@ -17,10 +17,17 @@ import {
   rewritePackedRefs,
 } from '../lib/pack-demo.mjs';
 import { probeSymlinkCapability } from '../lib/runtime-capabilities.mjs';
+import { detectWebpEncoder } from '../lib/encode-webp.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const CLI = join(ROOT, 'scripts/pack-demo.mjs');
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const PYTHON = detectWebpEncoder().bin;
+
+function spawnPython(args, extra = {}) {
+  assert.ok(PYTHON, '本机没有 Python Pillow（python/python3/py + PIL）');
+  return spawnSync(PYTHON, args, { encoding: 'utf8', timeout: 30000, windowsHide: true, ...extra });
+}
 
 function acceptedStops() {
   return {
@@ -300,7 +307,7 @@ test('backup cleanup failure does not restore a half-removed backup over the pac
 });
 
 test('PNG that does not shrink keeps the original path instead of a missing webp alias', () => {
-  const maker = spawnSync('python', ['-c', [
+  const maker = spawnPython(['-c', [
     'from PIL import Image',
     'from pathlib import Path',
     'import tempfile',
@@ -312,7 +319,7 @@ test('PNG that does not shrink keeps the original path instead of a missing webp
     '    pix[x,y]=((x*13+y*7)%256,(x*3)%256,(y*11)%256)',
     'im.save(p,"PNG",optimize=False)',
     'print(p)',
-  ].join('\n')], { encoding: 'utf8', timeout: 30000, windowsHide: true });
+  ].join('\n')]);
   assert.equal(maker.status, 0, maker.stdout + maker.stderr);
   const source = maker.stdout.trim();
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-png-skip-'));
@@ -344,7 +351,7 @@ test('slice-time encoder default still keeps omitted-lossless alpha lossless', (
   const src = join(work, 'alpha.png');
   const dest = join(work, 'out.webp');
   const jobs = join(work, 'jobs.json');
-  const maker = spawnSync('python', ['-c', [
+  const maker = spawnPython(['-c', [
     'from PIL import Image, ImageDraw, ImageFilter',
     'from pathlib import Path',
     'import os',
@@ -353,10 +360,10 @@ test('slice-time encoder default still keeps omitted-lossless alpha lossless', (
     'd.ellipse((20,20,220,220),fill=(210,160,90,180))',
     'im=im.filter(ImageFilter.GaussianBlur(radius=6))',
     'im.save(Path(os.environ["YISE_SLICE_ALPHA_PNG"]),"PNG")',
-  ].join('\n')], { encoding: 'utf8', timeout: 30000, windowsHide: true, env: { ...process.env, YISE_SLICE_ALPHA_PNG: src } });
+  ].join('\n')], { env: { ...process.env, YISE_SLICE_ALPHA_PNG: src } });
   assert.equal(maker.status, 0, maker.stdout + maker.stderr);
   writeFileSync(jobs, JSON.stringify({ quality: 90, jobs: [{ src, dest }] }));
-  const encoded = spawnSync('python', [join(ROOT, 'scripts/lib/encode-webp.py'), jobs], { encoding: 'utf8', timeout: 30000, windowsHide: true });
+  const encoded = spawnPython([join(ROOT, 'scripts/lib/encode-webp.py'), jobs]);
   assert.equal(encoded.status, 0, encoded.stdout + encoded.stderr);
   const payload = JSON.parse(encoded.stdout);
   assert.equal(payload.ok, true);
@@ -365,7 +372,7 @@ test('slice-time encoder default still keeps omitted-lossless alpha lossless', (
 });
 
 test('large alpha art is packed lossy instead of staying slice-time lossless', () => {
-  const maker = spawnSync('python', ['-c', [
+  const maker = spawnPython(['-c', [
     'from PIL import Image, ImageDraw, ImageFilter',
     'from pathlib import Path',
     'import tempfile',
@@ -378,7 +385,7 @@ test('large alpha art is packed lossy instead of staying slice-time lossless', (
     'im=im.filter(ImageFilter.GaussianBlur(radius=28))',
     'im.save(p,"WEBP",lossless=True,method=6,quality=100)',
     'print(p)',
-  ].join('\n')], { encoding: 'utf8', timeout: 30000, windowsHide: true });
+  ].join('\n')]);
   assert.equal(maker.status, 0, maker.stdout + maker.stderr);
   const source = maker.stdout.trim();
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-alpha-lossy-'));
@@ -400,7 +407,7 @@ test('large alpha art is packed lossy instead of staying slice-time lossless', (
 });
 
 test('existing WebP is re-encoded at pack quality and HTML still points at it', () => {
-  const maker = spawnSync('python', ['-c', [
+  const maker = spawnPython(['-c', [
     'from PIL import Image',
     'from pathlib import Path',
     'import os, tempfile',
@@ -412,7 +419,7 @@ test('existing WebP is re-encoded at pack quality and HTML still points at it', 
     '    pix[x,y]=((x*13+y*7)%256,(x*3)%256,(y*11)%256)',
     'im.save(p,"WEBP",quality=95,method=0,lossless=False)',
     'print(p)',
-  ].join('\n')], { encoding: 'utf8', timeout: 30000, windowsHide: true });
+  ].join('\n')]);
   assert.equal(maker.status, 0, maker.stdout + maker.stderr);
   const noisy = maker.stdout.trim();
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-webp-reencode-'));

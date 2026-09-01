@@ -1401,3 +1401,350 @@ test("img/ lang 定义缺 VARIANT 类型或值带空格都不跟语言", () => {
     assert.equal(variant.sliceExport, undefined, variant.id);
   }
 });
+
+test("无前缀 lang 壳：变体内 btn/@go 编成页实例开窗，下载无 @go 不挡 ready", () => {
+  const node = inventoryNode;
+  const langDefs = {
+    lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw", "en", "kr"] },
+  };
+  const set = node("cta-set", "COMPONENT_SET", "首屏主按钮", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("btn-cn", "FRAME", "btn/预约-区号手机@go=modal/pc预约-区号手机"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("btn-tw", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+    node("v-en", "COMPONENT", "lang=en", [
+      node("btn-en", "FRAME", "btn/下载"),
+    ], { componentProperties: { lang: "en" } }),
+    node("v-kr", "COMPONENT", "lang=kr", [
+      node("btn-kr", "FRAME", "btn/预约-韩国@go=modal/pc预约-韩国"),
+    ], { componentProperties: { lang: "kr" } }),
+  ], { componentPropertyDefinitions: langDefs });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("cta", "INSTANCE", "首屏主按钮", [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [
+    page,
+    set,
+    node("m-phone", "FRAME", "modal/pc预约-区号手机"),
+    node("m-mail", "FRAME", "modal/pc预约-邮箱"),
+    node("m-kr", "FRAME", "modal/pc预约-韩国"),
+  ]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+  const hits = inv.relations.filter((r) => r.kind === "modal-trigger" && r.evidence === "lang-shell-variant:@go");
+  assert.equal(hits.length, 3);
+  assert.ok(hits.every((r) => r.from.id === "cta" && r.status === "determined"));
+  assert.deepEqual(hits.map((r) => r.lang).sort(), ["cn", "kr", "tw"]);
+  assert.equal(hits.find((r) => r.lang === "cn").to.id, "m-phone");
+  assert.equal(hits.find((r) => r.lang === "tw").to.id, "m-mail");
+  assert.equal(hits.find((r) => r.lang === "kr").to.id, "m-kr");
+  const setRow = inv.attachments.componentSets.find((item) => item.id === "cta-set");
+  assert.equal(setRow.variants.find((item) => item.id === "v-cn").sliceExport, undefined);
+  assert.equal(inv.nodes.find((n) => n.id === "cta").role, null);
+  const summary = renderHumanSummary(inv);
+  assert.match(summary, /lang-shell-variant:@go  lang=cn/);
+  assert.match(summary, /lang-shell-variant:@go  lang=tw/);
+  assert.match(summary, /lang-shell-variant:@go  lang=kr/);
+  assert.doesNotMatch(summary, /lang-shell-variant:@go  lang=en/);
+});
+
+test("无前缀 lang 壳：变体内缺 btn 或两颗 btn 都红；@go 没靶也红", () => {
+  const node = inventoryNode;
+  const defs = {
+    lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+  };
+  const missing = node("missing-set", "COMPONENT_SET", "首屏主按钮", [
+    node("miss-cn", "COMPONENT", "lang=cn", [
+      node("art-cn", "RECTANGLE", "图"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("miss-tw", "COMPONENT", "lang=tw", [
+      node("btn-tw", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], { componentPropertyDefinitions: defs });
+  const dual = node("dual-set", "COMPONENT_SET", "首屏主按钮", [
+    node("dual-cn", "COMPONENT", "lang=cn", [
+      node("a", "FRAME", "btn/预约-区号手机@go=modal/pc预约-区号手机"),
+      node("b", "FRAME", "btn/下载"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("dual-tw", "COMPONENT", "lang=tw", [
+      node("c", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], { componentPropertyDefinitions: defs });
+  const orphan = node("orphan-set", "COMPONENT_SET", "首屏主按钮", [
+    node("orph-cn", "COMPONENT", "lang=cn", [
+      node("btn-orph", "FRAME", "btn/预约-区号手机@go=modal/没有这扇窗"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("orph-tw", "COMPONENT", "lang=tw", [
+      node("btn-ok", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], { componentPropertyDefinitions: defs });
+  const pageOf = (id, componentId) => node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node(id, "INSTANCE", "首屏主按钮", [], { componentId }),
+    ]),
+  ]);
+  const missingShelf = node("shelf-missing", "FRAME", "cn_pc", [
+    pageOf("cta-missing", "miss-cn"),
+    missing,
+    node("m-mail", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const missingCheck = validateInventory(buildInventory(missingShelf, { requestedNodeId: "page" }), missingShelf);
+  assert.equal(missingCheck.ok, false);
+  assert.match(missingCheck.problems.join("\n"), /语言壳变体 lang=cn 内部没有 btn\/ 或 hot\//);
+
+  const dualShelf = node("shelf-dual", "FRAME", "cn_pc", [
+    pageOf("cta-dual", "dual-cn"),
+    dual,
+    node("m-phone", "FRAME", "modal/pc预约-区号手机"),
+    node("m-mail-2", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const dualCheck = validateInventory(buildInventory(dualShelf, { requestedNodeId: "page" }), dualShelf);
+  assert.equal(dualCheck.ok, false);
+  assert.match(dualCheck.problems.join("\n"), /语言壳变体 lang=cn 内部有 2 个 btn\/ 或 hot\//);
+
+  const orphanShelf = node("shelf-orph", "FRAME", "cn_pc", [
+    pageOf("cta-orph", "orph-cn"),
+    orphan,
+    node("m-mail-3", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const orphanCheck = validateInventory(buildInventory(orphanShelf, { requestedNodeId: "page" }), orphanShelf);
+  assert.equal(orphanCheck.ok, false);
+  assert.match(orphanCheck.problems.join("\n"), /@go=modal\/没有这扇窗 对不上任何 modal/);
+});
+
+test("组件集自己标了 btn/ 即使有 lang 轴也不按语言壳接线", () => {
+  const node = inventoryNode;
+  const set = node("btn-set", "COMPONENT_SET", "btn/首屏主按钮", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("btn-cn", "FRAME", "btn/预约-区号手机@go=modal/pc预约-区号手机"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("btn-tw", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("cta", "INSTANCE", "btn/首屏主按钮", [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [
+    page,
+    set,
+    node("m-phone", "FRAME", "modal/pc预约-区号手机"),
+    node("m-mail", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  assert.equal(inv.relations.some((r) => r.evidence === "lang-shell-variant:@go"), false);
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
+test("未知前缀组件集即使有 lang 轴也不按语言壳接线", () => {
+  const node = inventoryNode;
+  const set = node("foo-set", "COMPONENT_SET", "foo/首屏主按钮", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("btn-cn", "FRAME", "btn/预约-区号手机@go=modal/pc预约-区号手机"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("btn-tw", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("cta", "INSTANCE", "foo/首屏主按钮", [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [
+    page,
+    set,
+    node("m-phone", "FRAME", "modal/pc预约-区号手机"),
+    node("m-mail", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  assert.equal(inv.relations.some((r) => r.evidence === "lang-shell-variant:@go"), false);
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
+test("无前缀 lang 壳：页实例写成 btn/ 或未知前缀都不接线", () => {
+  const node = inventoryNode;
+  const defs = {
+    lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+  };
+  const set = node("cta-set", "COMPONENT_SET", "首屏主按钮", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("btn-cn", "FRAME", "btn/预约-区号手机@go=modal/pc预约-区号手机"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("btn-tw", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], { componentPropertyDefinitions: defs });
+  const pageOf = (id, name) => node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node(id, "INSTANCE", name, [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const btnShelf = node("shelf-btn", "FRAME", "cn_pc", [
+    pageOf("cta-btn", "btn/首屏主按钮"),
+    set,
+    node("m-phone", "FRAME", "modal/pc预约-区号手机"),
+    node("m-mail", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const btnInv = buildInventory(btnShelf, { requestedNodeId: "page" });
+  assert.equal(btnInv.nodes.find((n) => n.id === "cta-btn").status, "determined");
+  assert.equal(btnInv.nodes.find((n) => n.id === "cta-btn").role, "btn");
+  assert.equal(btnInv.relations.some((r) => r.evidence === "lang-shell-variant:@go"), false);
+  assert.equal(validateInventory(btnInv, btnShelf).ok, true, validateInventory(btnInv, btnShelf).problems.join("\n"));
+
+  const fooShelf = node("shelf-foo", "FRAME", "cn_pc", [
+    pageOf("cta-foo", "foo/首屏主按钮"),
+    set,
+    node("m-phone-2", "FRAME", "modal/pc预约-区号手机"),
+    node("m-mail-2", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const fooInv = buildInventory(fooShelf, { requestedNodeId: "page" });
+  assert.equal(fooInv.nodes.find((n) => n.id === "cta-foo").status, "unknown");
+  assert.equal(fooInv.relations.some((r) => r.evidence === "lang-shell-variant:@go"), false);
+  assert.equal(validateInventory(fooInv, fooShelf).ok, true, validateInventory(fooInv, fooShelf).problems.join("\n"));
+});
+
+test("无前缀 lang 壳：货架有壳但页上没用，不红也不接线", () => {
+  const node = inventoryNode;
+  const set = node("cta-set", "COMPONENT_SET", "首屏主按钮", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("art-cn", "RECTANGLE", "图"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("btn-tw", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("plain", "FRAME", "btn/下载"),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [
+    page,
+    set,
+    node("m-mail", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+  assert.equal(inv.relations.some((r) => r.evidence === "lang-shell-variant:@go"), false);
+});
+
+test("无前缀 lang 壳：变体内 Group 包一颗 btn 仍接线；hot/ 同样算可点层", () => {
+  const node = inventoryNode;
+  const set = node("cta-set", "COMPONENT_SET", "首屏主按钮", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("wrap", "GROUP", "内容组", [
+        node("btn-cn", "FRAME", "btn/预约-区号手机@go=modal/pc预约-区号手机"),
+      ]),
+    ], { componentProperties: { lang: "cn" } }),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("hot-tw", "FRAME", "hot/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("cta", "INSTANCE", "首屏主按钮", [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [
+    page,
+    set,
+    node("m-phone", "FRAME", "modal/pc预约-区号手机"),
+    node("m-mail", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+  const hits = inv.relations.filter((r) => r.evidence === "lang-shell-variant:@go");
+  assert.deepEqual(hits.map((r) => r.lang).sort(), ["cn", "tw"]);
+  assert.equal(hits.find((r) => r.lang === "cn").to.id, "m-phone");
+  assert.equal(hits.find((r) => r.lang === "tw").to.id, "m-mail");
+});
+
+test("无前缀 lang 壳：隐藏实例不接线；只有隐藏实例时缺 btn 也不红", () => {
+  const node = inventoryNode;
+  const set = node("cta-set", "COMPONENT_SET", "首屏主按钮", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("art-cn", "RECTANGLE", "图"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("btn-tw", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("cta", "INSTANCE", "首屏主按钮", [], { componentId: "v-cn", visible: false }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [
+    page,
+    set,
+    node("m-mail", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  assert.equal(inv.nodes.find((n) => n.id === "cta").status, "skipped");
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+  assert.equal(inv.relations.some((r) => r.evidence === "lang-shell-variant:@go"), false);
+
+  const mixedSet = node("mixed-set", "COMPONENT_SET", "首屏主按钮", [
+    node("mix-cn", "COMPONENT", "lang=cn", [
+      node("btn-mix-cn", "FRAME", "btn/预约-区号手机@go=modal/pc预约-区号手机"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("mix-tw", "COMPONENT", "lang=tw", [
+      node("btn-mix-tw", "FRAME", "btn/预约-邮箱@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+    },
+  });
+  const mixedPage = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("cta-live", "INSTANCE", "首屏主按钮", [], { componentId: "mix-cn" }),
+      node("cta-hidden", "INSTANCE", "首屏主按钮", [], { componentId: "mix-cn", visible: false }),
+    ]),
+  ]);
+  const mixedShelf = node("shelf-mixed", "FRAME", "cn_pc", [
+    mixedPage,
+    mixedSet,
+    node("m-phone", "FRAME", "modal/pc预约-区号手机"),
+    node("m-mail-2", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const mixedInv = buildInventory(mixedShelf, { requestedNodeId: "page" });
+  const mixedHits = mixedInv.relations.filter((r) => r.evidence === "lang-shell-variant:@go");
+  assert.ok(mixedHits.length > 0);
+  assert.ok(mixedHits.every((r) => r.from.id === "cta-live"));
+  assert.equal(mixedHits.some((r) => r.from.id === "cta-hidden"), false);
+  assert.equal(validateInventory(mixedInv, mixedShelf).ok, true, validateInventory(mixedInv, mixedShelf).problems.join("\n"));
+});

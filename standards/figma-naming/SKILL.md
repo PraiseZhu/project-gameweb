@@ -55,7 +55,7 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 
 链接形如 `https://www.figma.com/design/<fileKey>/...?node-id=392-18375`，`--page` 另给 `392:24190` 这类页 id。链接里的 `node-id` 是拉稿根；`--page` 不改变拉稿范围。PC / mobile 各出一份。抓取、整理、自验任一步失败就停。
 
-自验含确定性结构：`@sec` 没靶、`fix/@from` 没靶、`@go` 对不上或命中多个同名 `modal/`、`ind/` 无/多 `switch/`、`scroll/` 没轨道、`sec/` 重号嵌套分散、参数非法。缺完成标准里的字段就停。全角斜杠与半角同义，不算错。`inventory` 自验不挡没命名的 unknown、光 `btn/`、命名体检启发式报警。打包时 `handoff:pack` 另跑 completeness：无 `img/` 祖先、名字整段是 `素材图` / `素材` / `边框背景`+数字 / `背景边框` / `立绘` 的 unknown 仍会失败，停在打包，不改 JSON。
+自验含确定性结构：`@sec` 没靶、`fix/@from` 没靶、`@go` 对不上或命中多个同名 `modal/`、无前缀 `lang` 壳变体内不是恰好一颗 `btn/` / `hot/`、语言壳里那颗 `@go` 对不上或命中多个同名 `modal/`、`ind/` 无/多 `switch/`、`scroll/` 没轨道、`sec/` 重号嵌套分散、参数非法。缺完成标准里的字段就停。全角斜杠与半角同义，不算错。`inventory` 自验不挡没命名的 unknown、光 `btn/`、语言壳里没有 `@go` 的变体（如下载）、命名体检启发式报警。打包时 `handoff:pack` 另跑 completeness：无 `img/` 祖先、名字整段是 `素材图` / `素材` / `边框背景`+数字 / `背景边框` / `立绘` 的 unknown 仍会失败，停在打包，不改 JSON。
 
 完成标准（两端都要）：
 
@@ -70,7 +70,7 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 
 脚本已经按规范前缀编好 ready。agent 只核：
 
-- determined 非 copy 的 `name` 以 `role/` 开头；`via=structure` 的 mix 自动拆 `img/` / `scroll/` 与 `ind/` / `img/`+`lang` 合法变体根、以及 `dropmenu/` 精确小写 `on/off` 变体根例外，看 `role`（dropmenu 看开合树，不切图）；BOOLEAN `btn/` 看 click + `sliceExport`。无 `lang` 轴、只有一个变体、或值不是精确小写五码的 `img/` 不跟语言。`dropmenu/` 点根切开合，PC / 手机都认；稿上是 `btn/` → `modal/` 的仍走弹窗，不因端别改写
+- determined 非 copy 的 `name` 以 `role/` 开头。例外只看 `role`，不要求 name 写前缀：`via=structure` 的 mix 自动拆 `img/` / `scroll/`、`ind/` / `img/`+`lang` 合法变体根、`dropmenu/` 精确小写 `on/off` 变体根（dropmenu 看开合树，不切图）。BOOLEAN `btn/` 看 click + `sliceExport`。无 `lang` 轴、只有一个变体、或值不是精确小写五码的 `img/` 不跟语言。页上无前缀、`lang` 轴合法的组件集是语言壳：页实例保持 unknown / 无 `btn/` 前缀，只占槽换树；变体内那颗 `btn/` 才是可点层。`modal-trigger` 证据 `lang-shell-variant:@go`，JSON 与 `.txt` 摘要都带 `lang=`；组件集自己标了 `btn/` 不按这条。`dropmenu/` 点根切开合，PC / 手机都认；稿上是 `btn/` → `modal/` 的仍走弹窗，不因端别改写
 - `sections` / `overlays` / `backgrounds` / `modules` 字段在；mobile 的 `overlays` 可以是空数组
 - unknown 保持 unknown，不猜交互
 - 两端 page id 不同、fileKey 相同

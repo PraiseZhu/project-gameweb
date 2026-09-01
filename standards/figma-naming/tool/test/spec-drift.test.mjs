@@ -229,7 +229,7 @@ test("规则引用的假定编号都在假定文档里定义过", () => {
 test("每条规则的 why/fix 正文点名的假定与 assumes 完全一致", () => {
   for (const [code, r] of Object.entries(RULES)) {
     const text = `${r.why} ${r.fix}`;
-    const cited = new Set([...text.matchAll(/A\d/g)].map((m) => m[0]));
+    const cited = new Set([...text.matchAll(/A\d+/g)].map((m) => m[0]));
     const declared = new Set(r.assumes ?? []);
     for (const a of declared) {
       assert.ok(cited.has(a), `${code} 声明依赖 ${a}，但 why/fix 正文里没有点名它——改了 assumes 却没改说法`);

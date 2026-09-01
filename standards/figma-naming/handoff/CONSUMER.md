@@ -48,8 +48,9 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 TEXT 默认可改字；一旦 `role` 是 `img/` `bg/` `kv/` 就按切图，不排字。  
 有 `rotation` 必须按这个角度摆，不能当 0。`style.fills` 用全层，不能只吃第一层。  
 拉伸读 `layout.constraints`（钉左/钉右/居中/随页）。遮罩/裁切读 `isMask` `maskChildren` `clipsContent`，按父层裁，不让子层漏边。  
-弹窗默认隐藏、不进页面滚动高度；只有 `modal-trigger` 为 determined 才接线，unknown 不接。`params.go` 抄的是弹窗图层名（`modal/顶部导航`），不是 node id。  
+弹窗默认隐藏、不进页面滚动高度；只有 `modal-trigger` 为 determined 才接线，unknown 不接。`params.go` 抄的是弹窗图层名（`modal/顶部导航`），不是 node id。页上无前缀、`lang` 轴合法的组件集是语言壳：页实例保持 unknown，切 `prefs.lang` 换整棵变体树，点的是变体内那颗 `btn/` / `hot/`。证据 `lang-shell-variant:@go` 的关系带 `lang`（JSON 与 `.txt` 摘要都打印 `lang=`），开对应那扇窗；没有 `@go` 的变体（如下载）不接线。不要把 `@go` 写进 `lang=cn`。组件集自己标了 `btn/` 不按这条。
 文字必带 `fontFamily` `fontWeight` `fontSize`，再用 `lineHeightPercent`、`paragraphSpacing`、外层 min/max。换不出百分比才留 `lineHeight` 像素。Figma REST 不给字文件。吃包时对照 `fonts/registry.json`：稿里的 family 不在登记册 → 不出 HTML，红停并给出 `fonts:register`。登记一次后，`figma:html-from-handoff` 每次自动拷进 demo、写入 `#qa-fonts`。不许拿系统黑体顶上。  
+
 实例相对母版的改动在 `instanceOverrides`。布局约束原样带 Figma 字段，含 `layoutPositioning`。  
 PC/手机同一模块看 `sameModules`：按前缀+名字一对一配对；对不上标 `pc-only` / `mobile-only`。配对上的各用各端 `pageBox`，不能拿 PC 坐标摆手机。  
 判断过程、截图不进清单。

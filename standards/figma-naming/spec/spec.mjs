@@ -7,12 +7,12 @@
  * 住在 spec/：人读正文和机器表同一层。tool/ 与 skills/ 都读这里，不必下到工具目录。
  * 本文件保持零 Node 依赖，以便 Figma 插件打包。
  */
-export const SPEC_VERSION = "v2.16 (2026-08-31)";
+export const SPEC_VERSION = "v2.17 (2026-09-01)";
 /** 相对 figma-naming/ 根的展示路径 */
 export const SPEC_DOC = "spec/naming-spec.md";
 
 /** 下游消费假定（判定后果的前提），见 spec/consumer-assumptions.md */
-export const ASSUMPTIONS_VERSION = "A-v1.14 (2026-08-31)";
+export const ASSUMPTIONS_VERSION = "A-v1.15 (2026-09-01)";
 export const ASSUMPTIONS_DOC = "spec/consumer-assumptions.md";
 
 /**
@@ -189,7 +189,7 @@ export const DISPOSITIONS = ["must_fix", "must_answer", "confirm"];
 export const BASES = ["deterministic", "heuristic"];
 
 /** consumer-assumptions.md 里定义的假定编号 */
-export const ASSUMPTION_IDS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9"];
+export const ASSUMPTION_IDS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"];
 
 export const PREFIX_NAMES = Object.keys(PREFIXES);
 export const PARAM_NAMES = Object.keys(PARAMS);

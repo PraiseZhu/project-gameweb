@@ -43,6 +43,29 @@ test("N-NAME-DUPLICATE：整组等价构件同名不报", () => {
   assert.equal(dupsOf(tree).length, 0);
 });
 
+test("N-NAME-DUPLICATE：语言壳不同变体内同名 btn/ 不报", () => {
+  const btn = (id, x) => ({
+    id,
+    name: "btn/下载",
+    type: "FRAME",
+    absoluteBoundingBox: box(x, 30),
+  });
+  const tree = {
+    id: "set", name: "首屏主按钮", type: "COMPONENT_SET", absoluteBoundingBox: box(0, 100),
+    children: [
+      {
+        id: "en", name: "lang=en", type: "COMPONENT", absoluteBoundingBox: box(0, 40),
+        children: [btn("en-btn", 0)],
+      },
+      {
+        id: "jp", name: "lang=jp", type: "COMPONENT", absoluteBoundingBox: box(40, 40),
+        children: [btn("jp-btn", 40)],
+      },
+    ],
+  };
+  assert.equal(dupsOf(tree).length, 0);
+});
+
 test("N-NAME-DUPLICATE：同名的只占少数时仍要报——两个不构成一组", () => {
   const tree = {
     id: "r3", name: "容器", type: "FRAME", absoluteBoundingBox: box(0, 100),
