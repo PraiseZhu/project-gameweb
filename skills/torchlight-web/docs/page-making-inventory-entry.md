@@ -1,5 +1,7 @@
 # Page-making inventory entry
 
+政策听本包 `DESIGN.md` 第 3 章，本文件不另定数字。
+
 `inventory:check` accepts either:
 
 - a normal `inventory/v2` package with `status: "ready"`; or

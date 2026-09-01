@@ -1,5 +1,7 @@
 # Hero Scroll-Slot Contract
 
+政策数字听本包 `DESIGN.md` 第 5 章，本文件不另定数字。
+
 The reusable runtime contract is `scripts/lib/hero-scroll-slot.mjs` and the
 renderer integration is in `templates/figma-render.js`. It models
 `HERO_LOCKED -> HERO_EXITING -> CONTENT_RELEASED` from page geometry and
