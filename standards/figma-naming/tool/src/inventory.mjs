@@ -17,7 +17,7 @@ import {
   determinedReadyFieldProblems,
   needsSliceExport,
 } from "../../spec/inventory.mjs";
-import { parseName } from "./parse.mjs";
+import { parseName, usesPrefixSyntax } from "./parse.mjs";
 import { hasImageFill, namePatternOf } from "./lint.mjs";
 
 const UNNAMED_REPO = "projects/project-unnamed-inventory";
@@ -325,7 +325,7 @@ function hasLangVariantDefinition(node) {
 
 function legalLangValuesOfSet(node) {
   const values = new Set();
-  for (const child of node?.children || []) {
+  for (const child of node?.children || node?.variants || []) {
     if (child?.type !== "COMPONENT") continue;
     const value = langValueOfVariant(child);
     if (IMG_LANG_VALUES.has(value)) values.add(value);
@@ -341,6 +341,47 @@ function imgLangSetParent(parent) {
   return parent?.type === "COMPONENT_SET"
     && parseName(parent.name).prefix === "img"
     && hasLangVariantAxis(parent);
+}
+
+function unprefixedLangShellSet(node) {
+  if (node?.type !== "COMPONENT_SET") return false;
+  if (usesPrefixSyntax(parseName(node.name))) return false;
+  return hasLangVariantAxis(node);
+}
+
+function clickNodesInVariant(nodes, variantId) {
+  return (nodes || []).filter((node) => {
+    if (node.status !== "determined") return false;
+    if (node.role !== "btn" && node.role !== "hot") return false;
+    if (node.id === variantId) return false;
+    return node.ancestorIds?.includes(variantId);
+  });
+}
+
+function langShellVariantClicks(set) {
+  const rows = [];
+  for (const variant of set.variants || []) {
+    const lang = langValueOfVariant(variant);
+    if (!IMG_LANG_VALUES.has(lang)) continue;
+    rows.push({
+      variant,
+      lang,
+      clicks: clickNodesInVariant(variant.nodes || set.nodes, variant.id),
+    });
+  }
+  return rows;
+}
+
+function livePageInstances(pageNodes) {
+  return (pageNodes || []).filter((node) => node.status !== "skipped" && node.componentId);
+}
+
+function langShellPageInstances(pageNodes) {
+  return livePageInstances(pageNodes).filter((node) => (
+    node.type === "INSTANCE"
+    && node.status === "unknown"
+    && !usesPrefixSyntax(parseName(node.name))
+  ));
 }
 
 function promotedSetVariantRole(parent, node) {
@@ -706,6 +747,12 @@ function groupModalsByName(modals) {
   return byName;
 }
 
+function goParam(params) {
+  const go = params?.go;
+  if (go == null || go === true || go === "") return null;
+  return go;
+}
+
 function modalsNamed(byName, raw) {
   if (raw == null || raw === true || raw === "") return [];
   const key = modalNameKey(raw) || String(raw);
@@ -718,7 +765,7 @@ function positiveIntParam(value) {
   return Number(value);
 }
 
-function makeModalRelations(pageNodes, modals) {
+function makeModalRelations(pageNodes, modals, componentSets = []) {
   const relations = [];
   const modalById = new Map(modals.map((modal) => [modal.id, modal]));
   const linked = new Set();
@@ -735,7 +782,7 @@ function makeModalRelations(pageNodes, modals) {
   }
   const byName = groupModalsByName(modals);
   for (const node of pageNodes) {
-    const hits = modalsNamed(byName, node.params?.go);
+    const hits = modalsNamed(byName, goParam(node.params));
     if (hits.length !== 1) continue;
     const modal = hits[0];
     linked.add(modal.id);
@@ -743,6 +790,39 @@ function makeModalRelations(pageNodes, modals) {
       kind: "modal-trigger", status: "determined", evidence: "name-param:@go",
       from: { id: node.id, scope: "page" }, to: { id: modal.id, scope: `modal:${modal.id}` },
     });
+  }
+  const variantToSet = new Map();
+  for (const set of componentSets) {
+    for (const variant of set.variants || []) variantToSet.set(variant.id, set.id);
+  }
+  const instancesBySet = new Map();
+  for (const node of langShellPageInstances(pageNodes)) {
+    const setId = variantToSet.get(node.componentId);
+    if (!setId) continue;
+    if (!instancesBySet.has(setId)) instancesBySet.set(setId, []);
+    instancesBySet.get(setId).push(node);
+  }
+  for (const set of componentSets) {
+    if (!unprefixedLangShellSet(set)) continue;
+    const instances = instancesBySet.get(set.id) || [];
+    if (!instances.length) continue;
+    for (const { lang, clicks } of langShellVariantClicks(set)) {
+      if (clicks.length !== 1) continue;
+      const hits = modalsNamed(byName, goParam(clicks[0].params));
+      if (hits.length !== 1) continue;
+      const modal = hits[0];
+      linked.add(modal.id);
+      for (const instance of instances) {
+        relations.push({
+          kind: "modal-trigger",
+          status: "determined",
+          evidence: "lang-shell-variant:@go",
+          lang,
+          from: { id: instance.id, scope: "page" },
+          to: { id: modal.id, scope: `modal:${modal.id}` },
+        });
+      }
+    }
   }
   for (const modal of modals) {
     if (linked.has(modal.id)) continue;
@@ -883,11 +963,31 @@ export function auditDeclaredStructure(inv) {
   }
   const modalByName = groupModalsByName(inv.attachments?.modals);
   for (const node of pageNodes) {
-    const go = node.params?.go;
-    if (go == null || go === true || go === "") continue;
+    const go = goParam(node.params);
+    if (go == null) continue;
     const hits = modalsNamed(modalByName, go);
     if (hits.length === 0) problems.push(`${node.id} @go=${go} 对不上任何 modal/`);
     else if (hits.length > 1) problems.push(`${node.id} @go=${go} 命中 ${hits.length} 个同名 modal/`);
+  }
+  const pageVariantIds = new Set(langShellPageInstances(pageNodes).map((node) => node.componentId));
+  for (const set of inv.attachments?.componentSets || []) {
+    if (!unprefixedLangShellSet(set)) continue;
+    if (!(set.variants || []).some((variant) => pageVariantIds.has(variant.id))) continue;
+    for (const { variant, lang, clicks } of langShellVariantClicks(set)) {
+      if (clicks.length === 0) {
+        problems.push(`${variant.id} 语言壳变体 lang=${lang} 内部没有 btn/ 或 hot/`);
+        continue;
+      }
+      if (clicks.length > 1) {
+        problems.push(`${variant.id} 语言壳变体 lang=${lang} 内部有 ${clicks.length} 个 btn/ 或 hot/`);
+        continue;
+      }
+      const go = goParam(clicks[0].params);
+      if (go == null) continue;
+      const hits = modalsNamed(modalByName, go);
+      if (hits.length === 0) problems.push(`${clicks[0].id} @go=${go} 对不上任何 modal/`);
+      else if (hits.length > 1) problems.push(`${clicks[0].id} @go=${go} 命中 ${hits.length} 个同名 modal/`);
+    }
   }
 
   for (const node of nodes) {
@@ -1017,7 +1117,7 @@ export function buildInventory(document, {
     from: { id: componentSet.id, scope: `component-set:${componentSet.id}` },
     to: { id: variant.id, scope: `component-set:${componentSet.id}` },
   })));
-  const relations = [...instanceRelations, ...variantRelations, ...makeModalRelations(pageNodes, modals)];
+  const relations = [...instanceRelations, ...variantRelations, ...makeModalRelations(pageNodes, modals, componentSets)];
 
   const inv = {
     ok: true,
@@ -1083,7 +1183,8 @@ export function renderHumanSummary(inv) {
   lines.push("");
   lines.push("关系（待核对关系不会被当作已实现）");
   for (const relation of inv.relations || []) {
-    lines.push(`  ${relation.status === "determined" ? "已确定" : "未知"}  ${relation.kind}  ${relation.from?.id || "（入口待定）"} → ${relation.to?.id || "（目标待定）"}  ${relation.evidence}`);
+    const lang = relation.lang ? `  lang=${relation.lang}` : "";
+    lines.push(`  ${relation.status === "determined" ? "已确定" : "未知"}  ${relation.kind}  ${relation.from?.id || "（入口待定）"} → ${relation.to?.id || "（目标待定）"}  ${relation.evidence}${lang}`);
   }
   lines.push("");
   lines.push("页面已确定（请核对身份）");

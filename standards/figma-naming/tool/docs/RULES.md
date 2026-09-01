@@ -1,8 +1,8 @@
 # 检查规则表
 
 > 本文件由 `npm run rules` 从 `src/rules.mjs` 生成，**不要手改**。
-> 依据规范：v2.14 (2026-08-27) — `spec/naming-spec.md`
-> 下游假定：A-v1.12 (2026-08-27) — `spec/consumer-assumptions.md`
+> 依据规范：v2.17 (2026-09-01) — `spec/naming-spec.md`
+> 下游假定：A-v1.15 (2026-09-01) — `spec/consumer-assumptions.md`
 
 ## 三个维度
 
@@ -49,7 +49,7 @@
 | `N-KV-SINGLE-LAYER` | KV 只有单层 | P2 | confirm | heuristic | §5 | A1 |
 | `N-IMG-FILL-NO-NAME` | 有图像填充但未命名 | P1 | must_answer | heuristic | §0 / §1 | A1 |
 | `N-TEXT-FIXED-SIZE` | 文字是固定尺寸文本框 | P2 | confirm | heuristic | §3 | A6 |
-| `N-NAME-DUPLICATE` | 两个图层同名 | P1 | must_fix | deterministic | §6 | A1 |
+| `N-NAME-DUPLICATE` | 两个图层同名 | P1 | must_fix | deterministic | §6 | A1 A10 |
 
 ## 必须改 · `must_fix`（17 条）
 
@@ -168,9 +168,9 @@
 ### `N-NAME-DUPLICATE` 两个图层同名
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语义层
-- **不改会怎样**：命名是资产身份的来源（A1）。两个资产同名，下游按名字取用时无法确定拿到哪一个——切图会互相覆盖，引用会指向错误对象，而且不会报错。
-- **怎么改**：给其中一个换个能区分它们的名字。加数字后缀通常不够：`img/头像-1` 与 `img/头像-2` 若来自两组不同列表，编号并没说明它们各自是什么。
-- **规范依据**：`spec/naming-spec.md` §6 ｜ **依赖假定**：A1（见 `spec/consumer-assumptions.md`）
+- **不改会怎样**：命名是资产身份的来源（A1）。同一父层下两个资产同名，下游按名字取用时无法确定拿到哪一个——切图会互相覆盖，引用会指向错误对象，而且不会报错。同一无前缀 `lang` 壳的不同变体内同名 `btn/` 父层不同，不算两颗资产（A10）。
+- **怎么改**：给其中一个换个能区分它们的名字。加数字后缀通常不够：`img/头像-1` 与 `img/头像-2` 若来自两组不同列表，编号并没说明它们各自是什么。语言壳里各国各写各的 `btn/`，不要为了避重把下载改成 `btn/下载-en`。
+- **规范依据**：`spec/naming-spec.md` §6 ｜ **依赖假定**：A1 A10（见 `spec/consumer-assumptions.md`）
 
 ## 必须回答 · `must_answer`（1 条）
 
@@ -217,6 +217,7 @@
 | `btn/` | 交互 | 可点击元素 | `@link` `@go` `@sec` | 结构语义 |
 | `hot/` | 交互 | 透明热区 | `@link` `@go` | 结构语义 |
 | `modal/` | 交互 | 弹窗帧（独立 frame） | — | 结构语义 |
+| `dropmenu/` | 交互 | 点根切开合菜单；变体值精确小写 on/off，不挂 @ 参数；PC / 手机都认 | — | 结构语义 |
 | `dyn/` | 复合 | 运行时动态组件 | — | 结构语义；子树免前缀语法/免图像未命名报警 |
 | `mix/` | 复合 | 图文混排大块（自动拆切图） | — | 结构语义；子树免前缀语法/免图像未命名报警 |
 | `scroll/` | 复合 | 可滑动区 | `@x` `@y` | 结构语义 |
