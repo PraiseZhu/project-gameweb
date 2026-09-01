@@ -153,25 +153,30 @@ export function runFromHandoff(dirPath) {
     allowDraft: pack.kind === "green-draft",
     platformScopeInput: EMPTY_PLATFORM_SCOPE,
   };
-  const pc = consumeOne("pc", pack.pcDoc, options);
-  const mobile = consumeOne("mobile", pack.mobileDoc, options);
+  const ends = Array.isArray(pack.ends) && pack.ends.length
+    ? pack.ends
+    : [pack.pcDoc ? "pc" : null, pack.mobileDoc ? "mobile" : null].filter(Boolean);
+  const pc = pack.pcDoc ? consumeOne("pc", pack.pcDoc, options) : null;
+  const mobile = pack.mobileDoc ? consumeOne("mobile", pack.mobileDoc, options) : null;
   const fonts = matchHandoffFonts(dirPath, FONT_ROOT);
   const fontProblems = fontProblemsOf(fonts);
-  const ok = pc.ok && mobile.ok && fonts.ok;
+  const endResults = [pc, mobile].filter(Boolean);
+  const ok = endResults.length > 0 && endResults.every((item) => item.ok) && fonts.ok;
   return {
     ok,
     kind: pack.kind,
     ready: pack.ready === true,
     fingerprint: pack.fingerprint,
+    ends,
     wirable: {
-      pc: pc.wirable,
-      mobile: mobile.wirable,
-      total: pc.wirable + mobile.wirable,
+      pc: pc?.wirable ?? 0,
+      mobile: mobile?.wirable ?? 0,
+      total: (pc?.wirable ?? 0) + (mobile?.wirable ?? 0),
     },
     drawOnly: {
-      pc: pc.drawOnly,
-      mobile: mobile.drawOnly,
-      total: pc.drawOnly + mobile.drawOnly,
+      pc: pc?.drawOnly ?? 0,
+      mobile: mobile?.drawOnly ?? 0,
+      total: (pc?.drawOnly ?? 0) + (mobile?.drawOnly ?? 0),
     },
     consume: { pc, mobile },
     fonts: {
@@ -179,8 +184,8 @@ export function runFromHandoff(dirPath) {
       used: fonts.usage.map((item) => item.family),
       missing: fonts.missing,
     },
-    problems: ok ? [] : [...pc.problems, ...mobile.problems, ...fontProblems],
-    note: "unknown 只画不接线。本命令不写出 HTML。稿里的 family 必须已在 fonts/registry.json。",
+    problems: ok ? [] : [...(pc?.problems || []), ...(mobile?.problems || []), ...fontProblems],
+    note: "unknown 只画不接线。本命令不写出 HTML。稿里的 family 必须已在 fonts/registry.json。包里没有的端不吃。",
   };
 }
 

@@ -39,7 +39,7 @@
 3. 命令自验通过后产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 的
    `schema` 为 `inventory/v2`。本仓 `status` 为 `ready`。清单覆盖页面本体、同货架 modal、页面实际引用的组件集/
    完整变体和实例关联；没有原型或 `@go` 证据的弹窗入口保持为对应关系上的 `unknown`。无前缀 `lang` 壳把变体内那颗 `btn/` 的 `@go` 编成页实例的 `modal-trigger`（`lang-shell-variant:@go`）；JSON 与 `.txt` 摘要都带 `lang=`。页上语言壳实例保持 unknown，不要改成 `btn/`。独立入口 `@lang` 收成 `langs`，摘要打 `langs=`；做页未接语言门前不得宣称只有简中。
-4. 已规范稿两端都 `ready` 后打交接包（不要 `--allow-green-draft`）：
+4. 已规范稿有的每一端都 `ready` 后打交接包（不要 `--allow-green-draft`；只有一端就只传那一端）：
 
    ```bash
    cd standards/figma-naming/tool
@@ -58,7 +58,7 @@
    npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
    ```
 
-   退出码 0，且 stdout 顶层 `ok/kind/ready` 为 true/`ready`/true；`consume.pc.unknownNotWired` 与 `consume.mobile.unknownNotWired` 都为 true。没有顶层 `unknownNotWired`。闸门绿才算交付。
+   退出码 0，且 stdout 顶层 `ok/kind/ready` 为 true/`ready`/true；已装箱每一端的 `consume.<end>.unknownNotWired` 为 true。没有顶层 `unknownNotWired`。闸门绿才算交付。
 
 做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
 完整组件变体树和 modal 附件本体。摆位置用 `pageBox` / `parentBox`；`fix/` 钉视口；切图按 `sliceExport`（墨迹框、1 倍、png；含 mix 自动拆 img/、BOOLEAN btn/、ind/ 变体根）由做页自导，交接包不带 PNG。`unknown` 节点只画样子，不赋交互；`unknown` 的

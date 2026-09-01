@@ -208,6 +208,68 @@ test("画布落到内层带 sec/ 的页面框", () => {
   assert.equal(reason, "resolved-inner-page");
 });
 
+test("工作区画板：sec/ 与组件集并排时仍是页根，不因货架启发式编不了清单", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const sets = Array.from({ length: 8 }, (_, i) => node(
+    `set${i}`, "COMPONENT_SET", `btn/按钮${i}`,
+    [node(`v${i}`, "COMPONENT", "Property 1=on", [], { componentProperties: { "Property 1": "on" } })],
+    {
+      box: { x: 5000, y: i * 40, width: 40, height: 40 },
+      componentPropertyDefinitions: {
+        "Property 1": { type: "VARIANT", defaultValue: "on", variantOptions: ["on"] },
+      },
+    },
+  ));
+  const page = node("board", "FRAME", "cn_pc", [
+    node("s1", "FRAME", "sec/1", [node("btn", "INSTANCE", "btn/按钮0", [], { componentId: "v0" })], { box: { x: 0, y: 0, width: 3840, height: 800 } }),
+    node("s2", "FRAME", "sec/2", [], { box: { x: 0, y: 900, width: 3840, height: 800 } }),
+    node("modal", "FRAME", "modal/pc适龄提示", [node("close", "FRAME", "btn/关闭")]),
+    ...sets,
+  ], { box: { x: 0, y: 0, width: 8000, height: 4000 } });
+
+  const { page: resolved, reason } = resolvePageRoot(page, "board");
+  assert.equal(resolved.id, "board");
+  assert.equal(reason, "requested-is-workboard-page");
+
+  const inv = buildInventory(page, { requestedNodeId: "board" });
+  assert.equal(inv.ok, true);
+  assert.equal(inv.page.id, "board");
+  assert.equal(inv.scope.shelfId, null);
+  assert.deepEqual(inv.page.box, { x: 0, y: 0, w: 3840, h: 1600 });
+  assert.deepEqual(inv.sections.map((item) => item.id), ["s1", "s2"]);
+  assert.deepEqual(inv.sections[0].pageBox, { x: 0, y: 0, w: 3840, h: 800 });
+  assert.deepEqual(inv.sections[1].pageBox, { x: 0, y: 800, w: 3840, h: 800 });
+  assert.equal(inv.attachments.modals.length, 1);
+  assert.equal(inv.attachments.modals[0].id, "modal");
+  assert.equal(inv.nodes.some((item) => item.id === "modal"), false);
+  assert.equal(inv.nodes.some((item) => item.id.startsWith("set")), false);
+  assert.ok(inv.attachments.componentSets.some((item) => item.id === "set0"));
+  const check = validateInventory(inv, page);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+});
+
+test("外层货架仍落到内层叠页，工作区画板不改这条路径", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const inner = node("page", "FRAME", "pc", [
+    node("s1", "FRAME", "sec/1", [], { box: { x: 0, y: 0, width: 3840, height: 800 } }),
+  ], { box: { x: 0, y: 0, width: 3840, height: 2000 } });
+  const sets = Array.from({ length: 8 }, (_, i) => node(`set${i}`, "COMPONENT_SET", `btn/按钮${i}`, [
+    node(`v${i}`, "COMPONENT", "Property 1=on"),
+  ]));
+  const shelf = node("shelf", "FRAME", "cn_pc", [inner, ...sets], { box: { x: 0, y: 0, width: 9000, height: 4000 } });
+  const { page: resolved, reason } = resolvePageRoot(shelf, "shelf");
+  assert.equal(resolved.id, "page");
+  assert.equal(reason, "resolved-inner-page");
+});
+
 test("自造前缀不升格为 determined", () => {
   const tree = {
     id: "r", name: "pc", type: "FRAME",

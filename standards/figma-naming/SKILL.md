@@ -53,11 +53,11 @@ cd standards/figma-naming/tool
 npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc 或 mobile 页 id>
 ```
 
-链接形如 `https://www.figma.com/design/<fileKey>/...?node-id=392-18375`，`--page` 另给 `392:24190` 这类页 id。链接里的 `node-id` 是拉稿根；`--page` 不改变拉稿范围。PC / mobile 各出一份。抓取、整理、自验任一步失败就停。
+链接形如 `https://www.figma.com/design/<fileKey>/...?node-id=392-18375`，`--page` 另给 `392:24190` 这类页 id。链接里的 `node-id` 是拉稿根；`--page` 不改变拉稿范围。稿上有哪一端就出哪一端；两端都在就各出一份。抓取、整理、自验任一步失败就停。
 
 自验含确定性结构：`@sec` 没靶、`fix/@from` 没靶、`@go` 对不上或命中多个同名 `modal/`、无前缀 `lang` 壳变体内不是恰好一颗 `btn/` / `hot/`、语言壳里那颗 `@go` 对不上或命中多个同名 `modal/`、`ind/` 无/多 `switch/`、`scroll/` 没轨道、`sec/` 重号嵌套分散、参数非法。缺完成标准里的字段就停。全角斜杠与半角同义，不算错。`inventory` 自验不挡没命名的 unknown、光 `btn/`、语言壳里没有 `@go` 的变体（如下载）、命名体检启发式报警。打包时 `handoff:pack` 另跑 completeness：无 `img/` 祖先、名字整段是 `素材图` / `素材` / `边框背景`+数字 / `背景边框` / `立绘` 的 unknown 仍会失败，停在打包，不改 JSON。
 
-完成标准（两端都要）：
+完成标准（稿上有的每一端都要）：
 
 - 命令退出码 0
 - `_tmp/inventory-<page>.json` 与 `.txt` 落地
@@ -74,7 +74,7 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 - determined 非 copy 的 `name` 以 `role/` 开头。例外只看 `role`，不要求 name 写前缀：`via=structure` 的 mix 自动拆 `img/` / `scroll/`、`ind/` / `img/`+`lang` 合法变体根、`dropmenu/` 精确小写 `on/off` 变体根（dropmenu 看开合树，不切图）。BOOLEAN `btn/` 看 click + `sliceExport`。无 `lang` 轴、只有一个变体、或值不是精确小写五码的 `img/` 不跟语言。页上无前缀、`lang` 轴合法的组件集是语言壳：页实例保持 unknown / 无 `btn/` 前缀，只占槽换树；变体内那颗 `btn/` 才是可点层。`modal-trigger` 证据 `lang-shell-variant:@go`，JSON 与 `.txt` 摘要都带 `lang=`；组件集自己标了 `btn/` 不按这条。`dropmenu/` 点根切开合，PC / 手机都认；稿上是 `btn/` → `modal/` 的仍走弹窗，不因端别改写
 - `sections` / `overlays` / `backgrounds` / `modules` 字段在；mobile 的 `overlays` 可以是空数组
 - unknown 保持 unknown，不猜交互
-- 两端 page id 不同、fileKey 相同
+- 有两端时 page id 不同、fileKey 相同；只有一端时不核另一端
 
 过不了：停，点名 node id，不打包。
 
@@ -90,11 +90,13 @@ npm run handoff:pack -- \
   --out ../../../_tmp/out/handoff-<page>
 ```
 
+只有 PC 或只有手机时，对应那一行不要传。`--pc` / `--mobile` 至少给一端。
+
 完成标准：
 
 - 退出码 0
-- `kind=ready`、`manifest.ready=true`、有 `fingerprint`
-- 目录含 `manifest.json`、`inventory-pc.json`、`inventory-mobile.json`
+- `kind=ready`、`manifest.ready=true`、有 `fingerprint`、`manifest.ends` 写出实际装箱的端
+- 目录含 `manifest.json`，以及 `ends` 里声明的 `inventory-pc.json` / `inventory-mobile.json`
 
 缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项 → 打包失败。页面和附件里的 determined 都核。交接包只装箱信息；PNG 不进包。`manifest.assets.pc/mobile.packed` 为 `false` 仍可 ready。不要传 `--assets-pc` / `--assets-mobile`。`export-handoff-slices` 不是本 skill 步骤。做页按清单 `sliceExport` 自己导 png。
 
@@ -113,13 +115,13 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 
 - 退出码 0
 - stdout 顶层 `ok: true`、`kind: "ready"`、`ready: true`
-- `consume.pc.unknownNotWired` 与 `consume.mobile.unknownNotWired` 都是 `true`（没有顶层 `unknownNotWired`）
+- 已装箱的每一端 `consume.<end>.unknownNotWired` 都是 `true`（没有顶层 `unknownNotWired`；包里没有的端是 `null`，不核）
 
 闸门绿之后对人只交交接包路径 `_tmp/out/handoff-<page>`，可带 fingerprint。禁止接着跑抽真值 / 搭页 / `figma:preview`。`inventory:check` 不是吃包入口。消费细则见 `handoff/CONSUMER.md`。
 
 ### 6. 才能说交付
 
-必须同时成立：两端 ready JSON、交接包 `kind=ready`、吃包闸门绿。缺一不可称完成。
+必须同时成立：稿上有的每一端 ready JSON、交接包 `kind=ready`、吃包闸门绿。缺一不可称完成。稿上没有的端不要造一份。
 
 对人只交交接包路径 `_tmp/out/handoff-<page>`。不要把 `_tmp/inventory-<page>.json`、核对页 URL 当交付物。交付物是交接包目录，不是 HTML，也不是两份 JSON。
 

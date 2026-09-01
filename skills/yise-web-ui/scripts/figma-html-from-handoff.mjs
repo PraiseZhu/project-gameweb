@@ -102,15 +102,31 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
   return { indexPath, htmlVolume: assertHtmlVolume(demoDir, htmlLimitBytes) };
 }
 
-function showcaseWorkflow() {
+function endsOfConsume(consume) {
+  if (Array.isArray(consume?.ends) && consume.ends.length) return consume.ends;
+  return [
+    consume?.consume?.pc ? 'pc' : null,
+    consume?.consume?.mobile ? 'mobile' : null,
+  ].filter(Boolean);
+}
+
+function sourcePlatformsOf(ends) {
+  const platforms = [];
+  if (ends.includes('pc')) platforms.push('desktop');
+  if (ends.includes('mobile')) platforms.push('mobile');
+  return platforms;
+}
+
+function showcaseWorkflow(ends) {
   const workflow = workflowDeclaration('figma-showcase');
+  const platforms = sourcePlatformsOf(ends);
   return {
     ...workflow,
-    sourcePlatforms: ['desktop', 'mobile'],
+    sourcePlatforms: platforms,
     claimedCapabilities: {
       ...workflow.claimedCapabilities,
-      desktopSourcePlatform: 'claimed',
-      mobileSourcePlatform: 'claimed',
+      desktopSourcePlatform: ends.includes('pc') ? 'claimed' : 'not-claimed',
+      mobileSourcePlatform: ends.includes('mobile') ? 'claimed' : 'not-claimed',
     },
   };
 }
@@ -130,9 +146,11 @@ function embedOrExternalizeTruth(demoDir, truth, limitBytes = DEFAULT_MAX_HTML_B
 function patchShowcaseSpec(demoDir, consume) {
   const specPath = join(demoDir, 'spec.json');
   const spec = JSON.parse(readFileSync(specPath, 'utf8'));
-  spec.workflow = showcaseWorkflow();
+  const ends = endsOfConsume(consume);
+  const platforms = sourcePlatformsOf(ends);
+  spec.workflow = showcaseWorkflow(ends);
   spec.figma = {
-    sourcePlatforms: ['desktop', 'mobile'],
+    sourcePlatforms: platforms,
     source: 'ready-handoff',
     fileKey: consume?.consume?.pc?.fileKey
       ?? consume?.consume?.mobile?.fileKey
@@ -143,7 +161,7 @@ function patchShowcaseSpec(demoDir, consume) {
   };
   spec.matrix = {
     ...(spec.matrix || {}),
-    platforms: ['desktop', 'mobile'],
+    platforms,
   };
   writeFileSync(specPath, `${JSON.stringify(spec, null, 2)}\n`);
 }
@@ -159,12 +177,21 @@ function consumeReadyPack(handoffDir) {
     ]) };
   }
   const adaptOptions = { allowDraft: false, platformScopeInput: EMPTY_PLATFORM_SCOPE };
-  const pc = platformTruthFromInventory(JSON.parse(readFileSync(join(handoffDir, 'inventory-pc.json'), 'utf8')), adaptOptions);
-  const mobile = platformTruthFromInventory(JSON.parse(readFileSync(join(handoffDir, 'inventory-mobile.json'), 'utf8')), adaptOptions);
-  if (!pc.ok || !mobile.ok) {
-    return { error: failBuild(consume, [...(pc.problems || []), ...(mobile.problems || [])]) };
-  }
-  return { consume, pc, mobile };
+  const ends = endsOfConsume(consume);
+  const pcPath = join(handoffDir, 'inventory-pc.json');
+  const mobilePath = join(handoffDir, 'inventory-mobile.json');
+  const pc = ends.includes('pc') && existsSync(pcPath)
+    ? platformTruthFromInventory(JSON.parse(readFileSync(pcPath, 'utf8')), adaptOptions)
+    : null;
+  const mobile = ends.includes('mobile') && existsSync(mobilePath)
+    ? platformTruthFromInventory(JSON.parse(readFileSync(mobilePath, 'utf8')), adaptOptions)
+    : null;
+  const problems = [];
+  if (ends.includes('pc') && !pc?.ok) problems.push(...(pc?.problems || ['pc inventory missing']));
+  if (ends.includes('mobile') && !mobile?.ok) problems.push(...(mobile?.problems || ['mobile inventory missing']));
+  if (!ends.length) problems.push('handoff pack has no pc or mobile end');
+  if (problems.length) return { error: failBuild(consume, problems) };
+  return { consume, pc, mobile, ends };
 }
 
 export function buildHtmlFromHandoff({

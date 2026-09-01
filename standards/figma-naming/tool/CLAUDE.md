@@ -20,7 +20,7 @@
    未规范稿去 `projects/project-unnamed-inventory`。本仓拒绝 `--status draft`。
    链接里的 `node-id` 是拉稿根，`--page` 只在已拉取的树中选页面，不能拿 `--page` 代替拉稿根。
 3. 命令产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 为 `schema: "inventory/v2"`、`status: ready`。抓取、整理或自验失败即停止。
-4. 两端 ready 后 `handoff:pack` 打交接包；再从仓库根 `cd skills/yise-web-ui` 跑 `figma:from-handoff`。吃包闸门绿才交付。对人只交交接包路径，不要把两份 inventory JSON 或核对页链接当交付物。命令不写 HTML。unknown 节点只画样子、不赋交互，unknown 的 `modal-trigger` 不自动接线。
+4. 稿上有的每一端 ready 后 `handoff:pack` 打交接包（只有一端就只传那一端）；再从仓库根 `cd skills/yise-web-ui` 跑 `figma:from-handoff`。吃包闸门绿才交付。对人只交交接包路径，不要把 inventory JSON 或核对页链接当交付物。命令不写 HTML。unknown 节点只画样子、不赋交互，unknown 的 `modal-trigger` 不自动接线。
 
 做页消费边界：先按已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、完整
 组件变体树和 modal 附件本体搭页；`unknown` 节点只画样子、不赋交互；
@@ -45,7 +45,7 @@
 | 形态 | 状态 | 说明 |
 |---|---|---|
 | `inventory/v2` CLI | **当前主入口** | `npm run inventory -- --file "<整棵货架链接>" --page <页面 id>` → `_tmp/inventory-<page>.json/.txt`，自验通过输出 `ready` |
-| `handoff:pack` + 吃包闸门 | **交付终点** | 两端 ready 后打包，再 `figma:from-handoff`；闸门绿才算交付。对人只交交接包路径，不写 HTML |
+| `handoff:pack` + 吃包闸门 | **交付终点** | 稿上有的每一端 ready 后打包，再 `figma:from-handoff`；闸门绿才算交付。对人只交交接包路径，不写 HTML |
 | 命令行 | 已可用 | `npm run lint -- "<figma 链接>"` → 终端摘要 + `report/naming-report.{md,json}` |
 | 本机桥 / Figma 插件 | 已有实现，非本轮入口 | 仍服务既有命名实现；本轮不得用于 inventory 交接，也不在此轮修改写回逻辑 |
 

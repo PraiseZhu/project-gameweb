@@ -118,6 +118,32 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   assert.equal(existsSync(join(demoDir, 'fonts-manifest.json')), true);
 });
 
+test('html-from-handoff writes a pc-only ready pack without claiming mobile', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-pc-only-'));
+  const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920 });
+  const pcPath = join(dir, 'pc.json');
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath: null, pcDoc, mobileDoc: null, kind: 'ready', outDir: join(dir, 'out'),
+  });
+  const demoDir = join(dir, 'demo');
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const truth = JSON.parse(readFileSync(join(demoDir, 'truth.json'), 'utf8'));
+  assert.ok(truth.platforms.pc);
+  assert.equal(Object.hasOwn(truth.platforms, 'mobile'), false);
+  const spec = JSON.parse(readFileSync(join(demoDir, 'spec.json'), 'utf8'));
+  assert.deepEqual(spec.figma.sourcePlatforms, ['desktop']);
+  assert.equal(spec.figma.pcPageId, '1:1');
+  assert.equal(spec.figma.mobilePageId, null);
+  assert.equal(spec.workflow.claimedCapabilities.desktopSourcePlatform, 'claimed');
+  assert.equal(spec.workflow.claimedCapabilities.mobileSourcePlatform, 'not-claimed');
+});
+
 function packedReadyWithFont(dir, family) {
   const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920 });
   const mobileDoc = sample('2:2', { roles: GOLD_MOBILE_PREFIX_CLASSES, pageWidth: 750 });

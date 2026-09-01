@@ -128,7 +128,7 @@ function assertHandoffBashBlocksSelfCd(text, label) {
     const tmpArgs = [...block.matchAll(/(?:\s)((?:\.\.\/)+_tmp\/\S+)/g)].map((match) => match[1]);
     for (const arg of tmpArgs) {
       const resolved = resolve(cwd, arg);
-      assert.equal(resolved.startsWith(`${TMP_DIR}/`) || resolved === TMP_DIR, true, `${label} ${arg} 从 ${cd} 必须落到仓库根 _tmp，收到 ${resolved}`);
+      assert.equal(resolved === TMP_DIR || resolved.startsWith(`${TMP_DIR}/`) || resolved.startsWith(`${TMP_DIR}\\`), true, `${label} ${arg} 从 ${cd} 必须落到仓库根 _tmp，收到 ${resolved}`);
     }
   }
 }
@@ -150,7 +150,7 @@ test("SKILL.md 每个 bash 块从仓库根自己 cd，_tmp 解析到仓库根", 
     const tmpArgs = [...block.matchAll(/(?:\s)((?:\.\.\/)+_tmp\/\S+)/g)].map((match) => match[1]);
     for (const arg of tmpArgs) {
       const resolved = resolve(cwd, arg);
-      assert.equal(resolved.startsWith(`${TMP_DIR}/`) || resolved === TMP_DIR, true, `${arg} 从 ${cd} 必须落到仓库根 _tmp，收到 ${resolved}`);
+      assert.equal(resolved === TMP_DIR || resolved.startsWith(`${TMP_DIR}/`) || resolved.startsWith(`${TMP_DIR}\\`), true, `${arg} 从 ${cd} 必须落到仓库根 _tmp，收到 ${resolved}`);
     }
   }
   const eat = blocks.find((block) => block.includes("figma:from-handoff"));
@@ -159,8 +159,7 @@ test("SKILL.md 每个 bash 块从仓库根自己 cd，_tmp 解析到仓库根", 
   assert.equal(eat.includes("../../../_tmp"), false, "吃包不得用三级 ../_tmp");
   assert.equal(text.includes("unknownNotWired: true"), false, "不得把 unknownNotWired 写成顶层完成条件");
   assert.equal(text.includes("assets.ok"), false, "不得使用不存在的 assets.ok");
-  assert.match(text, /consume\.pc\.unknownNotWired/);
-  assert.match(text, /consume\.mobile\.unknownNotWired/);
+  assert.match(text, /consume\.<end>\.unknownNotWired/);
   assert.match(text, /manifest\.assets\.pc\/mobile\.packed/);
 });
 
@@ -201,4 +200,22 @@ test("吃包完成条件字段必须和脚本返回值同名", () => {
   assert.equal(Object.hasOwn(eaten, "unknownNotWired"), false);
   assert.equal(eaten.consume.pc.unknownNotWired, true);
   assert.equal(eaten.consume.mobile.unknownNotWired, true);
+
+  const pcOnlyDir = mkdtempSync(join(tmpdir(), "skill-field-lock-pc-"));
+  const pcOnlyPath = join(pcOnlyDir, "pc.json");
+  writeFileSync(pcOnlyPath, JSON.stringify(sampleReady("3:3")));
+  const pcOnlyOut = join(pcOnlyDir, "out");
+  writeHandoffPack({
+    pcPath: pcOnlyPath,
+    mobilePath: null,
+    pcDoc: sampleReady("3:3"),
+    mobileDoc: null,
+    kind: "ready",
+    outDir: pcOnlyOut,
+  });
+  const pcOnlyEaten = runFromHandoff(pcOnlyOut);
+  assert.equal(pcOnlyEaten.ok, true, (pcOnlyEaten.problems || []).join("\n"));
+  assert.deepEqual(pcOnlyEaten.ends, ["pc"]);
+  assert.equal(pcOnlyEaten.consume.pc.unknownNotWired, true);
+  assert.equal(pcOnlyEaten.consume.mobile, null);
 });

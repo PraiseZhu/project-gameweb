@@ -7,7 +7,7 @@
 
 1. Clone 已含 `handoff:pack` 的分支。
 2. 本机 Figma token（文件能读）。没有权限问命名侧要已抓好的真稿 json，不要造清单。
-3. 本仓只吃已规范 ready：两端 `npm run inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`）。交接包只装箱信息，不导 png。不要走判断包。
+3. 本仓只吃已规范 ready：稿上有的每一端 `npm run inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`；只有一端就只传那一端）。交接包只装箱信息，不导 png。不要走判断包。
 4. 未规范稿去 `projects/project-unnamed-inventory`。那边的 green-draft 不能直接喂本仓做页。
 5. 做页只用 `cd skills/yise-web-ui && npm run figma:from-handoff -- <交接包目录>` 吃这个包：`determined` 接线；`unknown` 只画、不点、弹窗不接。
 6. png 由做页按清单 `sliceExport` 自己导出（墨迹框、1 倍、png、文件名=完整 node id）。不要等包内 `assets-pc/`。

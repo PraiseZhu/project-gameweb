@@ -68,6 +68,50 @@ test("handoff：成对 ready 可打包", () => {
   const result = validateHandoffPair(sample("1:1"), sample("2:2"));
   assert.equal(result.ok, true, result.problems.join("\n"));
   assert.equal(result.kind, "ready");
+  assert.deepEqual(result.ends, ["pc", "mobile"]);
+});
+
+test("handoff：只有 PC 也可以打 ready 包", () => {
+  const pc = sample("1:1");
+  const result = validateHandoffPair(pc, null);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.equal(result.kind, "ready");
+  assert.deepEqual(result.ends, ["pc"]);
+
+  const dir = mkdtempSync(join(tmpdir(), "handoff-pc-only-"));
+  const pcPath = join(dir, "pc.json");
+  writeFileSync(pcPath, JSON.stringify(pc));
+  const outDir = join(dir, "out");
+  const pack = writeHandoffPack({
+    pcPath,
+    mobilePath: null,
+    pcDoc: pc,
+    mobileDoc: null,
+    kind: "ready",
+    outDir,
+  });
+  assert.deepEqual(pack.manifest.ends, ["pc"]);
+  assert.equal(pack.manifest.pages.mobile, null);
+  assert.equal(pack.manifest.consume.mobile, null);
+  assert.ok(existsSync(join(outDir, "inventory-pc.json")));
+  assert.equal(existsSync(join(outDir, "inventory-mobile.json")), false);
+  const loaded = validateHandoffPack(outDir);
+  assert.equal(loaded.ok, true, (loaded.problems || []).join("\n"));
+  assert.deepEqual(loaded.ends, ["pc"]);
+  assert.equal(loaded.mobileDoc, null);
+});
+
+test("handoff：只有 mobile 也可以打 ready 包", () => {
+  const mobile = sample("2:2");
+  const result = validateHandoffPair(null, mobile);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.deepEqual(result.ends, ["mobile"]);
+});
+
+test("handoff：两端都不给则拒", () => {
+  const result = validateHandoffPair(null, null);
+  assert.equal(result.ok, false);
+  assert.match(result.problems.join("\n"), /至少要有 pc 或 mobile/);
 });
 
 test("handoff：BOOLEAN btn 的 sliceExport 进入切图计划", () => {
