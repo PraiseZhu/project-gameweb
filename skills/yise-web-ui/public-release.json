@@ -5,6 +5,7 @@
   "publishable": [
     "SKILL.md",
     "README.md",
+    "DESIGN.md",
     "PUBLIC-RELEASE.md",
     "public-release.json",
     "LICENSE",

@@ -4,7 +4,7 @@
 
 ## Publish
 
-The publishable generic surface is listed mechanically in `public-release.json`: `SKILL.md`, `README.md`, `LICENSE`, package metadata and lockfile, reusable `scripts/`, reusable `templates/`, and reviewed generic `docs/`.
+The publishable generic surface is listed mechanically in `public-release.json`: `SKILL.md`, `README.md`, `DESIGN.md`, `LICENSE`, package metadata and lockfile, reusable `scripts/`, reusable `templates/`, and reviewed generic `docs/`.
 
 The release audit is deterministic and fail-closed:
 
