@@ -4,7 +4,7 @@
  * 不写回 Figma；没有原型或命名证据的关系一律标 unknown。
  */
 import { createHash } from "node:crypto";
-import { PREFIXES, PARAMS, SPEC_VERSION } from "../../spec/spec.mjs";
+import { PREFIXES, PARAMS, SPEC_VERSION, LANG_CODE_SET, parseLangCodes } from "../../spec/spec.mjs";
 import {
   INVENTORY_SCHEMA,
   INVENTORY_ROLES,
@@ -19,6 +19,14 @@ import {
 } from "../../spec/inventory.mjs";
 import { parseName, usesPrefixSyntax } from "./parse.mjs";
 import { hasImageFill, namePatternOf } from "./lint.mjs";
+import {
+  hasLangVariantAxis,
+  langValueOfVariant,
+  unprefixedLangShellSet,
+  variantPropertyName,
+  variantPropertyPairs,
+  variantPropertyRaw,
+} from "./lang-axis.mjs";
 
 const UNNAMED_REPO = "projects/project-unnamed-inventory";
 export const UNNAMED_REDIRECT =
@@ -281,72 +289,10 @@ function dropmenuVariantValue(node) {
   return fromName ? fromName.value : "";
 }
 
-const IMG_LANG_VALUES = new Set(["cn", "tw", "en", "jp", "kr"]);
-
-function variantPropertyName(key) {
-  return String(key || "").replace(/#[^#]+$/, "").trim().toLowerCase();
-}
-
-function variantPropertyPairs(name) {
-  return String(name || "").split(",").flatMap((part) => {
-    const index = part.indexOf("=");
-    if (index < 0) return [];
-    const key = variantPropertyName(part.slice(0, index));
-    if (!key) return [];
-    return [{ key, value: part.slice(index + 1) }];
-  });
-}
-
-function variantPropertyRaw(raw) {
-  if (raw && typeof raw === "object") return raw.value ?? raw.defaultValue ?? "";
-  return raw;
-}
-
-function langValueOfVariant(node) {
-  const props = node?.componentProperties;
-  if (props && typeof props === "object") {
-    for (const [key, raw] of Object.entries(props)) {
-      if (variantPropertyName(key) !== "lang") continue;
-      return String(variantPropertyRaw(raw) ?? "");
-    }
-  }
-  const fromName = variantPropertyPairs(node?.name).find((pair) => pair.key === "lang");
-  return fromName ? fromName.value : "";
-}
-
-function hasLangVariantDefinition(node) {
-  const defs = node?.componentPropertyDefinitions;
-  if (!defs || typeof defs !== "object") return false;
-  return Object.entries(defs).some(([key, definition]) => {
-    if (variantPropertyName(key) !== "lang") return false;
-    return definition?.type === "VARIANT";
-  });
-}
-
-function legalLangValuesOfSet(node) {
-  const values = new Set();
-  for (const child of node?.children || node?.variants || []) {
-    if (child?.type !== "COMPONENT") continue;
-    const value = langValueOfVariant(child);
-    if (IMG_LANG_VALUES.has(value)) values.add(value);
-  }
-  return values;
-}
-
-function hasLangVariantAxis(node) {
-  return hasLangVariantDefinition(node) && legalLangValuesOfSet(node).size >= 2;
-}
-
 function imgLangSetParent(parent) {
   return parent?.type === "COMPONENT_SET"
     && parseName(parent.name).prefix === "img"
     && hasLangVariantAxis(parent);
-}
-
-function unprefixedLangShellSet(node) {
-  if (node?.type !== "COMPONENT_SET") return false;
-  if (usesPrefixSyntax(parseName(node.name))) return false;
-  return hasLangVariantAxis(node);
 }
 
 function clickNodesInVariant(nodes, variantId) {
@@ -362,7 +308,7 @@ function langShellVariantClicks(set) {
   const rows = [];
   for (const variant of set.variants || []) {
     const lang = langValueOfVariant(variant);
-    if (!IMG_LANG_VALUES.has(lang)) continue;
+    if (!LANG_CODE_SET.has(lang)) continue;
     rows.push({
       variant,
       lang,
@@ -388,7 +334,7 @@ function promotedSetVariantRole(parent, node) {
   if (node?.type !== "COMPONENT") return null;
   if (indSetParent(parent)) return "ind";
   if (dropmenuSetParent(parent) && DROPMENU_ON_OFF.has(dropmenuVariantValue(node))) return "dropmenu";
-  if (imgLangSetParent(parent) && IMG_LANG_VALUES.has(langValueOfVariant(node))) return "img";
+  if (imgLangSetParent(parent) && LANG_CODE_SET.has(langValueOfVariant(node))) return "img";
   return null;
 }
 
@@ -445,8 +391,31 @@ function descendantSoftEffects(node) {
 
 function paramsOf(parsed) {
   const out = {};
-  for (const p of parsed.params || []) if (p.key) out[p.key] = p.hasEq ? p.value : true;
+  const seen = new Set();
+  for (const p of parsed.params || []) {
+    if (!p.key) continue;
+    if (seen.has(p.key)) {
+      out[`${p.key}__dup`] = true;
+      continue;
+    }
+    seen.add(p.key);
+    out[p.key] = p.hasEq ? p.value : true;
+  }
   return out;
+}
+
+function langsOf(params) {
+  return parseLangCodes(params?.lang);
+}
+
+function langsMatch(expected, actual) {
+  if (!expected) return actual == null || (Array.isArray(actual) && actual.length === 0);
+  if (!Array.isArray(actual) || actual.length !== expected.length) return false;
+  return expected.every((code, index) => actual[index] === code);
+}
+
+function clickHasLangParam(node) {
+  return Object.prototype.hasOwnProperty.call(node?.params || {}, "lang");
 }
 
 function secNumber(body) {
@@ -656,6 +625,8 @@ function serializeTree(root, scope, counts, pageBox = null) {
         || (role === "copy" ? (text?.characters ?? "") : "")
         || (via === "structure" && (role === "img" || role === "scroll" || role === "ind" || role === "dropmenu") ? (node.name || node.id) : "");
       entry.params = params;
+      const langs = langsOf(params);
+      if (langs) entry.langs = langs;
       entry.behavior = behaviorOf(role, params);
       entry.via = via;
       const sliceExport = sliceExportOf(node, role);
@@ -786,9 +757,11 @@ function makeModalRelations(pageNodes, modals, componentSets = []) {
     if (hits.length !== 1) continue;
     const modal = hits[0];
     linked.add(modal.id);
+    const langs = langsOf(node.params);
     relations.push({
       kind: "modal-trigger", status: "determined", evidence: "name-param:@go",
       from: { id: node.id, scope: "page" }, to: { id: modal.id, scope: `modal:${modal.id}` },
+      ...(langs ? { langs } : {}),
     });
   }
   const variantToSet = new Map();
@@ -869,6 +842,7 @@ function paramProblemsOf(node) {
   const problems = [];
   if (node.status !== "determined" || !node.role) return problems;
   for (const [key, value] of Object.entries(node.params || {})) {
+    if (key.endsWith("__dup")) continue;
     const spec = PARAMS[key];
     if (!spec) {
       problems.push(`${node.id} @${key} 不在参数表内`);
@@ -891,7 +865,19 @@ function paramProblemsOf(node) {
       if (!Number.isFinite(number) || number < 0 || number > 1) {
         problems.push(`${node.id} @${key}=${value} 必须是 0–1`);
       }
+    } else if (spec.value === "langs") {
+      if (parseLangCodes(value) == null) {
+        problems.push(`${node.id} @${key}=${value} 必须是逗号分隔的精确小写 cn/tw/en/jp/kr`);
+      }
     }
+  }
+  if (node.params?.lang__dup) problems.push(`${node.id} @lang 重复声明`);
+  const expectedLangs = langsOf(node.params);
+  if (expectedLangs && !langsMatch(expectedLangs, node.langs)) {
+    problems.push(`${node.id} langs 必须与 @lang 一致`);
+  }
+  if (!expectedLangs && Array.isArray(node.langs) && node.langs.length) {
+    problems.push(`${node.id} 未声明 @lang 不得带 langs`);
   }
   return problems;
 }
@@ -969,6 +955,15 @@ export function auditDeclaredStructure(inv) {
     if (hits.length === 0) problems.push(`${node.id} @go=${go} 对不上任何 modal/`);
     else if (hits.length > 1) problems.push(`${node.id} @go=${go} 命中 ${hits.length} 个同名 modal/`);
   }
+  for (const relation of inv.relations || []) {
+    if (relation.kind !== "modal-trigger" || relation.evidence !== "name-param:@go") continue;
+    const from = byId.get(relation.from?.id);
+    if (!from) continue;
+    const expectedLangs = langsOf(from.params);
+    if (!langsMatch(expectedLangs, relation.langs)) {
+      problems.push(`${relation.from.id} 开窗关系 langs 必须与入口 @lang 一致`);
+    }
+  }
   const pageVariantIds = new Set(langShellPageInstances(pageNodes).map((node) => node.componentId));
   for (const set of inv.attachments?.componentSets || []) {
     if (!unprefixedLangShellSet(set)) continue;
@@ -981,6 +976,9 @@ export function auditDeclaredStructure(inv) {
       if (clicks.length > 1) {
         problems.push(`${variant.id} 语言壳变体 lang=${lang} 内部有 ${clicks.length} 个 btn/ 或 hot/`);
         continue;
+      }
+      if (clickHasLangParam(clicks[0])) {
+        problems.push(`${clicks[0].id} 语言壳变体内的 ${clicks[0].role}/ 不能写 @lang`);
       }
       const go = goParam(clicks[0].params);
       if (go == null) continue;
@@ -1184,7 +1182,10 @@ export function renderHumanSummary(inv) {
   lines.push("关系（待核对关系不会被当作已实现）");
   for (const relation of inv.relations || []) {
     const lang = relation.lang ? `  lang=${relation.lang}` : "";
-    lines.push(`  ${relation.status === "determined" ? "已确定" : "未知"}  ${relation.kind}  ${relation.from?.id || "（入口待定）"} → ${relation.to?.id || "（目标待定）"}  ${relation.evidence}${lang}`);
+    const langs = Array.isArray(relation.langs) && relation.langs.length
+      ? `  langs=${relation.langs.join(",")}`
+      : "";
+    lines.push(`  ${relation.status === "determined" ? "已确定" : "未知"}  ${relation.kind}  ${relation.from?.id || "（入口待定）"} → ${relation.to?.id || "（目标待定）"}  ${relation.evidence}${lang}${langs}`);
   }
   lines.push("");
   lines.push("页面已确定（请核对身份）");

@@ -1,8 +1,8 @@
 # 检查规则表
 
 > 本文件由 `npm run rules` 从 `src/rules.mjs` 生成，**不要手改**。
-> 依据规范：v2.17 (2026-09-01) — `spec/naming-spec.md`
-> 下游假定：A-v1.15 (2026-09-01) — `spec/consumer-assumptions.md`
+> 依据规范：v2.18 (2026-09-01) — `spec/naming-spec.md`
+> 下游假定：A-v1.16 (2026-09-01) — `spec/consumer-assumptions.md`
 
 ## 三个维度
 
@@ -31,10 +31,10 @@
 |---|---|---|---|---|---|---|
 | `N-PREFIX-SLASH` | 分隔符不是斜杠 | P1 | must_fix | deterministic | §1 / §4.1 | A0 |
 | `N-PREFIX-NOT-IN-TABLE` | 前缀词不在总表内 | P0 | must_fix | deterministic | §4.3 | A0 |
-| `N-PARAM-EMPTY` | @参数缺值 | P0 | must_fix | deterministic | §2 | A3 |
-| `N-PARAM-BAD-VALUE` | @参数取值不合法 | P0 | must_fix | deterministic | §2 | A3 |
+| `N-PARAM-EMPTY` | @参数缺值 | P0 | must_fix | deterministic | §2 | A3 A11 |
+| `N-PARAM-BAD-VALUE` | @参数取值不合法 | P0 | must_fix | deterministic | §2 | A3 A11 |
 | `N-PARAM-UNKNOWN` | 未知 @参数 | P1 | must_fix | deterministic | §2 | A3 |
-| `N-PARAM-MISPLACED` | @参数用在了不支持它的前缀上 | P1 | must_fix | deterministic | §2 | A3 |
+| `N-PARAM-MISPLACED` | @参数用在了不支持它的前缀上 | P1 | must_fix | deterministic | §2 | A3 A11 |
 | `N-SEC-NO-NUMBER` | 分区缺编号 | P1 | must_fix | deterministic | §1 | A2 |
 | `N-SEC-DUP-NUMBER` | 分区编号重复 | P0 | must_fix | deterministic | §1 | A2 |
 | `N-SEC-GAP` | 分区编号断号 | P2 | confirm | heuristic | §1 | A2 |
@@ -63,16 +63,16 @@
 ### `N-PARAM-EMPTY` @参数缺值
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
-- **不改会怎样**：`@link=` / `@go=` / `@sec=` / `@from=` 后面空着，等于声明了动作却没说动作是什么。下游据此生成的元素点了没反应，或 `fix/` 不知道从哪一屏开始钉（A3），且不会报错。
+- **不改会怎样**：`@link=` / `@go=` / `@sec=` / `@from=` / `@lang=` 后面空着，等于声明了动作或出现条件却没说取值。下游据此生成的元素点了没反应，或 `fix/` 不知道从哪一屏开始钉，或语言门被整段丢掉（A3、A11），且不会报错。
 - **怎么改**：补上值，或去掉该参数。
-- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3 A11（见 `spec/consumer-assumptions.md`）
 
 ### `N-PARAM-BAD-VALUE` @参数取值不合法
 
 - **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
-- **不改会怎样**：`@sec=` / `@from=` 必须是正整数、`@parallax=` 必须在 0–1、`@x`/`@y` 是纯标记不能带值。取值越界会让跳转指错分区、`fix/` 从错误屏开始钉或视差计算失真（依据 A3）。
+- **不改会怎样**：`@sec=` / `@from=` 必须是正整数、`@parallax=` 必须在 0–1、`@x`/`@y` 是纯标记不能带值、`@lang=` 必须是逗号分隔的精确小写 `cn`/`tw`/`en`/`jp`/`kr`，同一参数不能写两次。取值越界或重复声明会让跳转指错分区、`fix/` 从错误屏开始钉、视差计算失真，或语言门被静默丢掉（依据 A3、A11）。
 - **怎么改**：按 §2 参数表修正取值。
-- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3 A11（见 `spec/consumer-assumptions.md`）
 
 ### `N-SEC-DUP-NUMBER` 分区编号重复
 
@@ -140,9 +140,9 @@
 ### `N-PARAM-MISPLACED` @参数用在了不支持它的前缀上
 
 - **级别**：P1 返工 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
-- **不改会怎样**：参数只在特定前缀上有意义（`@parallax` 只对 kv/、`@sec` 只对 btn/、`@from` 只对 fix/、`@x`/`@y` 只对 scroll/），挂错位置一律无效（依据 A3）。
+- **不改会怎样**：参数只在特定前缀上有意义（`@parallax` 只对 kv/、`@sec` 只对 btn/、`@from` 只对 fix/、`@x`/`@y` 只对 scroll/、`@lang` 只对独立入口的 btn/hot），挂错位置一律无效（依据 A3、A11）。
 - **怎么改**：把参数挪到正确的前缀节点上，或改用该前缀支持的参数。
-- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3（见 `spec/consumer-assumptions.md`）
+- **规范依据**：`spec/naming-spec.md` §2 ｜ **依赖假定**：A3 A11（见 `spec/consumer-assumptions.md`）
 
 ### `N-SEC-NO-NUMBER` 分区缺编号
 
@@ -214,8 +214,8 @@
 | `img/` | 视觉 | 静态装饰图、美术字标题；语言切图走组件集变体属性 lang，不挂 @ 参数 | — | 命名即切图 |
 | `bg/` | 视觉 | 大面积底图 | — | 命名即切图 |
 | `kv/` | 视觉 | KV 视差分层 | `@parallax` | 命名即切图 |
-| `btn/` | 交互 | 可点击元素 | `@link` `@go` `@sec` | 结构语义 |
-| `hot/` | 交互 | 透明热区 | `@link` `@go` | 结构语义 |
+| `btn/` | 交互 | 可点击元素 | `@link` `@go` `@sec` `@lang` | 结构语义 |
+| `hot/` | 交互 | 透明热区 | `@link` `@go` `@lang` | 结构语义 |
 | `modal/` | 交互 | 弹窗帧（独立 frame） | — | 结构语义 |
 | `dropmenu/` | 交互 | 点根切开合菜单；变体值精确小写 on/off，不挂 @ 参数；PC / 手机都认 | — | 结构语义 |
 | `dyn/` | 复合 | 运行时动态组件 | — | 结构语义；子树免前缀语法/免图像未命名报警 |
@@ -236,6 +236,7 @@
 | `@parallax` | 必填，0–1 的数 | `kv/` | 视差系数 0–1 |
 | `@x` | 纯标记，不带值 | `scroll/` | 横滑（默认） |
 | `@y` | 纯标记，不带值 | `scroll/` | 纵滑 |
+| `@lang` | 必填，逗号分隔的精确小写 cn/tw/en/jp/kr | `btn/` `hot/` | 只在这些语言出现（精确小写 cn/tw/en/jp/kr，逗号分隔） |
 
 ## 前缀形态判定参数（规范 §4.1 镜像）
 

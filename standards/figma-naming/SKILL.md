@@ -65,6 +65,7 @@ npm run inventory -- --file "<整棵画布货架的 Figma 链接>" --page <pc �
 - 覆盖页面本体、同货架 modal、页面实际引用的组件集及完整变体、实例关联
 - 节点带 `pageBox`/`parentBox`；`img/` `bg/` `kv/`、BOOLEAN `btn/`、页上 `ind/` 变体根、以及页上用到的 `img/` + `lang` 且至少两个不同的精确小写 `cn/tw/en/jp/kr` 的合法变体根带 `sliceExport`（墨迹框、1 倍、png）；`fix/` 钉视口，写了 `@from=N` 的 overlays 带 `from`；文字带 `fontFamily`/`fontWeight`/`fontSize`
 - 没有原型或 `@go` 证据的弹窗入口留在对应关系上的 `unknown`，不改变整份清单 ready
+- 页上独立 `btn/` / `hot/` 写了 `@lang` 的，节点 `langs` 是规范化五码数组，关系摘要打 `langs=`；不写则全语显示。做页语言门未接上前，不要对人口头说已经只有简中
 
 ### 3. agent 核一遍
 

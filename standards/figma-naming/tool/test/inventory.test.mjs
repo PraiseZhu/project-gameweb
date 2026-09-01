@@ -1748,3 +1748,121 @@ test("无前缀 lang 壳：隐藏实例不接线；只有隐藏实例时缺 btn 
   assert.equal(mixedHits.some((r) => r.from.id === "cta-hidden"), false);
   assert.equal(validateInventory(mixedInv, mixedShelf).ok, true, validateInventory(mixedInv, mixedShelf).problems.join("\n"));
 });
+
+test("A11：页上独立 btn/@lang 记下 langs，节点仍 determined，摘要打 langs=", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 40 },
+    ...extra,
+  });
+  const page = node("page", "FRAME", "pc", [
+    node("sec1", "FRAME", "sec/1-首屏", [
+      node("age", "BOOLEAN_OPERATION", "btn/年龄@go=modal/pc适龄提示@lang=cn"),
+      node("plain", "FRAME", "btn/年龄@go=modal/pc适龄提示"),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "pc", [
+    page,
+    node("modal", "FRAME", "modal/pc适龄提示"),
+  ]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+  const gated = inv.nodes.find((n) => n.id === "age");
+  assert.equal(gated.status, "determined");
+  assert.deepEqual(gated.langs, ["cn"]);
+  assert.equal(gated.sliceExport.format, "png");
+  const ungated = inv.nodes.find((n) => n.id === "plain");
+  assert.equal(ungated.langs, undefined);
+  const hit = inv.relations.find((r) => r.from.id === "age" && r.evidence === "name-param:@go");
+  assert.deepEqual(hit.langs, ["cn"]);
+  const summary = renderHumanSummary(inv);
+  assert.match(summary, /langs=cn/);
+  assert.equal((summary.match(/langs=/g) || []).length, 1);
+
+  delete gated.langs;
+  const missingLangs = validateInventory(inv, shelf);
+  assert.equal(missingLangs.ok, false);
+  assert.match(missingLangs.problems.join("\n"), /langs 必须与 @lang 一致/);
+  gated.langs = ["cn"];
+
+  delete hit.langs;
+  const missingRel = validateInventory(inv, shelf);
+  assert.equal(missingRel.ok, false);
+  assert.match(missingRel.problems.join("\n"), /开窗关系 langs 必须与入口 @lang 一致/);
+  hit.langs = ["cn"];
+});
+
+test("A11：@lang 对不上窗仍红；壳内 @lang 红；不写 @lang 不挡 ready", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 40 },
+    ...extra,
+  });
+  const missing = node("page", "FRAME", "pc", [
+    node("sec1", "FRAME", "sec/1-首屏", [
+      node("age", "FRAME", "btn/年龄@go=modal/没有这扇窗@lang=cn"),
+    ]),
+  ]);
+  const missingInv = buildInventory(missing, { requestedNodeId: "page" });
+  assert.equal(validateInventory(missingInv, missing).ok, false);
+  assert.match(validateInventory(missingInv, missing).problems.join("\n"), /对不上任何 modal/);
+
+  const defs = { lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] } };
+  const set = node("cta-set", "COMPONENT_SET", "首屏主按钮", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("btn-cn", "FRAME", "btn/预约@go=modal/pc预约-区号手机@lang=cn"),
+    ], { componentProperties: { lang: "cn" } }),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("btn-tw", "FRAME", "btn/预约@go=modal/pc预约-邮箱"),
+    ], { componentProperties: { lang: "tw" } }),
+  ], { componentPropertyDefinitions: defs });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("cta", "INSTANCE", "首屏主按钮", [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [
+    page,
+    set,
+    node("m-phone", "FRAME", "modal/pc预约-区号手机"),
+    node("m-mail", "FRAME", "modal/pc预约-邮箱"),
+  ]);
+  const shellInv = buildInventory(shelf, { requestedNodeId: "page" });
+  assert.equal(validateInventory(shellInv, shelf).ok, false);
+  assert.match(validateInventory(shellInv, shelf).problems.join("\n"), /不能写 @lang/);
+
+  const dupPage = node("page", "FRAME", "pc", [
+    node("sec1", "FRAME", "sec/1-首屏", [
+      node("age", "FRAME", "btn/年龄@go=modal/pc适龄提示@lang=cn@lang=tw"),
+    ]),
+  ]);
+  const dupShelf = node("shelf", "FRAME", "pc", [
+    dupPage,
+    node("modal", "FRAME", "modal/pc适龄提示"),
+  ]);
+  const dupInv = buildInventory(dupShelf, { requestedNodeId: "page" });
+  assert.equal(validateInventory(dupInv, dupShelf).ok, false);
+  assert.match(validateInventory(dupInv, dupShelf).problems.join("\n"), /@lang 重复声明/);
+
+  const stateDefs = { State: { type: "VARIANT", defaultValue: "Default", variantOptions: ["Default", "Hover"] } };
+  const stateSet = node("state-set", "COMPONENT_SET", "状态按钮", [
+    node("v-default", "COMPONENT", "State=Default", [
+      node("age-in-set", "FRAME", "btn/年龄@go=modal/pc适龄提示@lang=cn"),
+    ]),
+  ], { componentPropertyDefinitions: stateDefs });
+  const statePage = node("page", "FRAME", "pc", [
+    node("sec1", "FRAME", "sec/1-首屏", [
+      node("age-page", "FRAME", "btn/年龄@go=modal/pc适龄提示@lang=cn"),
+    ]),
+  ]);
+  const stateShelf = node("shelf", "FRAME", "pc", [
+    statePage,
+    stateSet,
+    node("modal", "FRAME", "modal/pc适龄提示"),
+  ]);
+  const stateInv = buildInventory(stateShelf, { requestedNodeId: "page" });
+  const stateCheck = validateInventory(stateInv, stateShelf);
+  assert.equal(stateCheck.ok, true, stateCheck.problems.join("\n"));
+  assert.equal(stateCheck.problems.join("\n").includes("不能写 @lang"), false);
+});

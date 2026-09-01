@@ -862,13 +862,84 @@ test("已取消的 @ellipsis 现在报未知参数", () => {
   assert.equal(byCode(lint(tree), "N-PARAM-UNKNOWN").length, 1);
 });
 
-test("img/ 上写 @lang 报未知参数，不能当语言声明", () => {
+test("img/ 上写 @lang 报错挂，不能当语言声明", () => {
   const box = { x: 0, y: 0, width: 10, height: 10 };
   const tree = {
     id: "1:1", name: "pc", type: "FRAME", absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 },
     children: [{ id: "1:2", name: "img/标题@lang=cn", type: "RECTANGLE", absoluteBoundingBox: box }],
   };
-  assert.equal(byCode(lint(tree), "N-PARAM-UNKNOWN").length, 1);
+  assert.equal(byCode(lint(tree), "N-PARAM-MISPLACED").length, 1);
+  assert.equal(byCode(lint(tree), "N-PARAM-UNKNOWN").length, 0);
+});
+
+test("@lang 合法五码过；空值、zh-CN、重复码、重复参数、壳内按钮红；非壳组件集不误报", () => {
+  const box = { x: 0, y: 0, width: 10, height: 10 };
+  const ok = {
+    id: "ok", name: "pc", type: "FRAME", absoluteBoundingBox: box,
+    children: [{ id: "b", name: "btn/年龄@go=modal/pc适龄提示@lang=cn", type: "FRAME", absoluteBoundingBox: box }],
+  };
+  assert.equal(byCode(lint(ok), "N-PARAM-BAD-VALUE").length, 0);
+  assert.equal(byCode(lint(ok), "N-PARAM-EMPTY").length, 0);
+
+  const empty = {
+    id: "empty", name: "pc", type: "FRAME", absoluteBoundingBox: box,
+    children: [{ id: "b", name: "btn/年龄@lang=", type: "FRAME", absoluteBoundingBox: box }],
+  };
+  assert.equal(byCode(lint(empty), "N-PARAM-EMPTY").length, 1);
+
+  const zh = {
+    id: "zh", name: "pc", type: "FRAME", absoluteBoundingBox: box,
+    children: [{ id: "b", name: "btn/年龄@lang=zh-CN", type: "FRAME", absoluteBoundingBox: box }],
+  };
+  assert.equal(byCode(lint(zh), "N-PARAM-BAD-VALUE").length, 1);
+
+  const dup = {
+    id: "dup", name: "pc", type: "FRAME", absoluteBoundingBox: box,
+    children: [{ id: "b", name: "btn/年龄@lang=cn,cn", type: "FRAME", absoluteBoundingBox: box }],
+  };
+  assert.equal(byCode(lint(dup), "N-PARAM-BAD-VALUE").length, 1);
+
+  const dupKey = {
+    id: "dup-key", name: "pc", type: "FRAME", absoluteBoundingBox: box,
+    children: [{ id: "b", name: "btn/年龄@lang=cn@lang=tw", type: "FRAME", absoluteBoundingBox: box }],
+  };
+  assert.ok(byCode(lint(dupKey), "N-PARAM-BAD-VALUE").some((f) => /重复声明/.test(f.detail)));
+
+  const defs = { lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] } };
+  const shell = {
+    id: "shell", name: "pc", type: "FRAME", absoluteBoundingBox: box,
+    children: [{
+      id: "set", name: "首屏主按钮", type: "COMPONENT_SET", absoluteBoundingBox: box,
+      componentPropertyDefinitions: defs,
+      children: [
+        {
+          id: "v-cn", name: "lang=cn", type: "COMPONENT", absoluteBoundingBox: box,
+          componentProperties: { lang: "cn" },
+          children: [{ id: "inner", name: "btn/预约@lang=cn", type: "FRAME", absoluteBoundingBox: box }],
+        },
+        {
+          id: "v-tw", name: "lang=tw", type: "COMPONENT", absoluteBoundingBox: box,
+          componentProperties: { lang: "tw" },
+          children: [{ id: "inner-tw", name: "btn/预约", type: "FRAME", absoluteBoundingBox: box }],
+        },
+      ],
+    }],
+  };
+  assert.ok(byCode(lint(shell), "N-PARAM-MISPLACED").some((f) => f.nodeId === "inner"));
+
+  const notShell = {
+    id: "plain-set", name: "pc", type: "FRAME", absoluteBoundingBox: box,
+    children: [{
+      id: "set", name: "状态按钮", type: "COMPONENT_SET", absoluteBoundingBox: box,
+      componentPropertyDefinitions: { State: { type: "VARIANT", defaultValue: "Default", variantOptions: ["Default", "Hover"] } },
+      children: [{
+        id: "v", name: "State=Default", type: "COMPONENT", absoluteBoundingBox: box,
+        children: [{ id: "age", name: "btn/年龄@lang=cn", type: "FRAME", absoluteBoundingBox: box }],
+      }],
+    }],
+  };
+  assert.equal(byCode(lint(notShell), "N-PARAM-MISPLACED").filter((f) => f.nodeId === "age").length, 0);
+  assert.equal(byCode(lint(notShell), "N-PARAM-BAD-VALUE").length, 0);
 });
 
 test("拼错前缀给出最近建议", () => {
