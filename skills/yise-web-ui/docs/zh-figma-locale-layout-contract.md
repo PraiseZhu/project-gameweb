@@ -1,5 +1,7 @@
 # zh-CN Figma → locale translation layout contract
 
+本文件不再当政策数字权威。外文档位比例、缩字阶梯与地板听本包 `DESIGN.md` **第 6 章**。
+
 Use this contract when the only design file is zh-CN Figma and target copy comes from a translation table. It keeps Figma as the structural source of truth while applying evidence-backed locale typography rules.
 
 Input: Figma text metrics (`fontFamily`, `fontWeight`, `fontSize`, `lineHeight`, `autoResize`, source box), owner context (parent/group, HUG/open-flow/bounded/clip semantics), semantic role, locale, and translation status/text. Output: routed font family/weight, target design and visual size, wrap and group-fit policy, owner/overflow policy, and evidence status.

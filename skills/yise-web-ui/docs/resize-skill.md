@@ -1,5 +1,7 @@
 # Resize Skill
 
+Policy numbers for stretch (breakpoints, `k`, `10vw`, `100vh`, three planes) listen to this package's `DESIGN.md` **第 5 章**. This file is the stretch implementation contract; it does not own those numbers.
+
 This is the reusable resize / stretch contract. The Etheria demo is only a
 fixture consumer; no rule here may depend on Etheria node IDs, page selectors,
 or page-specific CSS.
@@ -50,8 +52,8 @@ logic.
 - Click / switch / tab / directory wiring
 - Figma fetch, truth extraction, or asset export
 - One-off official-site CSS or page node IDs. Official CSS is a behaviour
-  reference (`10vw` / `100vh` / clip X); Resize owns the numbers, not the
-  poster stylesheet.
+  reference (`10vw` / `100vh` / clip X); this file implements the numbers
+  from `DESIGN.md` 第 5 章, not the poster stylesheet.
 - Per-device special-case layouts. Sample 360 / 375 / 390 / 412 / 414 / 430
   wide and 667 / 844 / 932 tall; do not invent a layout between those widths.
 

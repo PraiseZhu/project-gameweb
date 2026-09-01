@@ -1,5 +1,7 @@
 ﻿# Translation Skill: Typography and Range
 
+本文件不再当政策数字权威。外文档位比例、缩字阶梯与地板听本包 `DESIGN.md` **第 6 章**。
+
 This is a reusable translation-skill contract. The Etheria demo is only a
 fixture consumer; no rule in this directory may depend on Etheria node IDs,
 page selectors, or page-specific CSS.
