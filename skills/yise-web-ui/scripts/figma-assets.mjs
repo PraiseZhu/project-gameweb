@@ -70,6 +70,7 @@ function parseArgs(argv) {
 
 function readToken(startDir) {
   if (process.env.FIGMA_TOKEN) return process.env.FIGMA_TOKEN.trim();
+  if (process.env.FIGMA_ACCESS_TOKEN) return process.env.FIGMA_ACCESS_TOKEN.trim();
   let dir = resolve(startDir);
   for (let i = 0; i < 8; i++) {
     const p = join(dir, '.env');

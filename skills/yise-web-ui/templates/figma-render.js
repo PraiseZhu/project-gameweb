@@ -1441,12 +1441,21 @@
        及允许的固定层不被重新命名或重排。没有这份结构证据的旧 truth 显式降级，不猜。
     */
     const heroSlot = (() => {
+      try {
+        if (String(new URLSearchParams(window.location.search).get('inventory-static-gate') || '') === '1') return null;
+      } catch (err) { /* keep hero for ordinary preview */ }
       if (!pageScope || !pagePaintOrder || !ids.length || !Number.isFinite(k) || k <= 0) return null;
       const sectionId = ids[0];
       const first = sections[sectionId] && sections[sectionId].meta;
       const viewportH = Number(ctx.viewport && ctx.viewport.h);
       if (!first || !Number.isFinite(Number(first.y)) || !Number.isFinite(Number(first.height)) || Number(first.height) <= 0
         || !Number.isFinite(viewportH) || viewportH <= 0) return null;
+      /* Design-viewport static lock resizes to the full Figma page box.
+         100vh then equals the whole page, which would stretch sec/1 to
+         page height and shove later sections. Keep the hero slot for
+         real device viewports only. */
+      if (Number.isFinite(pageContentHeight) && pageContentHeight > 0
+        && viewportH + 1 >= Math.min(pageContentHeight, Number(first.height))) return null;
       const startsAtPageOrigin = Math.abs(Number(first.y) - pageOriginY) <= 0.5;
       const listedRoot = pagePaintOrder.find((entry) => {
         const sectionIds = Array.isArray(entry && entry.sectionIds) ? entry.sectionIds : [];
@@ -2892,7 +2901,9 @@
            显式跳过确保渐变实心块不会糊住兄弟。 */
         if (n.notPainted === true || n.isMask === true) continue;
         const nid = n.id;
-        const box = n.box || {};
+        const box = (n.pageBox && Number.isFinite(Number(n.pageBox.x)) && Number.isFinite(Number(n.pageBox.y)))
+          ? n.pageBox
+          : (n.box || {});
         const st = n.style || {};
          const seq = seqOf(ni);
          while (stack.length && !isPrefix(stack[stack.length - 1].seq, seq)) stack.pop();
@@ -3188,7 +3199,9 @@
            parent, which fixes expanded-instance children that otherwise jump
            by their missing owner's absolute coordinates. */
         const directParentNode = directParentId ? truthNodeById.get(directParentId) : null;
-        const coordinateOwnerBox = directParentRecord?.box || directParentNode?.box || parent?.box || null;
+        const coordinateOwnerBox = directParentRecord?.pageBox || directParentRecord?.box
+          || directParentNode?.pageBox || directParentNode?.box
+          || parent?.pageBox || parent?.box || null;
         const originX = coordinateOwnerBox ? (coordinateOwnerBox.x ?? 0) : paintOriginX;
         const originY = coordinateOwnerBox ? (coordinateOwnerBox.y ?? 0) : paintOriginY;
         /* A ready handoff's declared slice is exported on the bounds named by
@@ -3202,14 +3215,25 @@
            geometry remains untouched, and non-render/page-bound assets keep
            the original owner-box behavior. */
         const renderBox = n.renderBox || {};
-        const renderBoxReady = [renderBox.x, renderBox.y, renderBox.w, renderBox.h].every((v) => Number.isFinite(Number(v)))
-          && Number(renderBox.w) > 0 && Number(renderBox.h) > 0;
-        const _renderSliceBox = assetRec
-          && String(assetRec?.sliceExport?.bounds || assetRec?.exportBounds || '').toLowerCase() === 'render'
-          && renderBoxReady
-          ? n.renderBox
+        const slicePageBox = n.sliceExport && n.sliceExport.box && [n.sliceExport.box.x, n.sliceExport.box.y, n.sliceExport.box.w, n.sliceExport.box.h].every((v) => Number.isFinite(Number(v)))
+          && Number(n.sliceExport.box.w) > 0 && Number(n.sliceExport.box.h) > 0
+          ? n.sliceExport.box
           : null;
-        const exportBox = (assetRec && assetRec.exportBox) || _renderSliceBox || null;
+        const geomReady = (item) => !!(item
+          && [item.x, item.y, item.w, item.h].every((v) => Number.isFinite(Number(v)))
+          && Number(item.w) > 0 && Number(item.h) > 0);
+        const delivered = assetRec && assetRec.exportBox;
+        const exportBox = geomReady(slicePageBox)
+          ? slicePageBox
+          : (geomReady(delivered)
+            ? delivered
+            : ((geomReady(renderBox) && geomReady(box)
+              && (Number(renderBox.w) > Number(box.w) + 0.5
+                || Number(renderBox.h) > Number(box.h) + 0.5
+                || Number(renderBox.x) < Number(box.x) - 0.5
+                || Number(renderBox.y) < Number(box.y) - 0.5))
+              ? renderBox
+              : (geomReady(box) ? box : null)));
         /* 消费 truth 的 auto-layout（layoutMode HORIZONTAL/VERTICAL）。这些 frame
            的子节点在 truth 里被穿透成顶层 sibling（children=[]，靠 ownerPath 关联），
            若仍按源坐标绝对定位，译文变宽后：按钮 icon 被顶出框、跟随标签压住文字、
@@ -3577,7 +3601,7 @@
           }
         }
         if (exportBox) {
-          el.setAttribute('data-asset-bounds', assetRec.exportBounds || 'render');
+          el.setAttribute('data-asset-bounds', (assetRec && assetRec.exportBounds) || 'render');
           el.setAttribute('data-node-box', [box.x, box.y, box.w, box.h].map((v) => Number(v ?? 0).toFixed(3)).join(','));
         }
         if (assetRec) el.setAttribute('data-asset-descendants', 'baked');
@@ -3873,11 +3897,11 @@
           const sourceNoWrapTitle = sourceSingleLine && displayTitle;
           el.style.whiteSpace = (inlineHugs || sourceNoWrapTitle) ? 'pre' : 'pre-wrap';
           if (sourceNoWrapTitle) el.setAttribute('data-text-layout-policy', 'source-single-line-display-title');
-          if (!constraint.openFlow && !inlineHugs && constraint.ownerWidth != null) {
-            // Framed text wraps within its nearest rendered Figma owner. The
-            // source box remains the anchor; owner width is the available
-            // local content bound for adopted languages.
-            el.style.width = constraint.ownerWidth + 'px';
+          if (!constraint.openFlow && !inlineHugs) {
+            // zh-CN static gate measures the text leaf against pageBox.
+            // Owner width is for adopted languages; the source box is the
+            // design-viewport lock.
+            el.style.width = (box.w ?? constraint.ownerWidth) + 'px';
           }
           if (constraint.openFlow) {
             // Generic widow/orphan mitigation for open-flow translations.
@@ -4529,16 +4553,22 @@
               img.className = 'fx-img';
               if (el.getAttribute('data-shadow-via') === 'asset-baked') img.setAttribute('data-shadow-source', 'asset');
               if (el.getAttribute('data-blur-via') === 'asset-baked') img.setAttribute('data-blur-source', 'asset');
-              /* ═══ fx-img 必须填满 owner 盒，禁止用原始像素尺寸 ═══
-                 exportBox：已有精确的 mask/export 边界，按它绝对定位到 owner 内。
-                 无 exportBox：img 必须 100% 填满 owner（width/height/object-fit:fill），
-                 禁止走 intrinsic 尺寸 —— 页面缩 0.5 时原图会 2 倍溢出 owner 框。 */
+              /* ═══ fx-img 按清单框摆，禁止用原始像素尺寸 ═══
+                 exportBox / sliceExport：按导出边界绝对定位到 owner 内。
+                 无导出框：按节点 pageBox/box 的 w/h 摆，简中静态禁止 100% + object-fit:fill
+                 撑满 owner。非 zh-CN / Resize 轴才允许 fill。 */
               img.style.position = 'absolute';
-              if (exportBox) {
-                img.style.left = ((exportBox.x ?? box.x ?? 0) - (box.x ?? 0)) + 'px';
-                img.style.top = ((exportBox.y ?? box.y ?? 0) - (box.y ?? 0)) + 'px';
-                img.style.width = (exportBox.w ?? box.w ?? 0) + 'px';
-                img.style.height = (exportBox.h ?? box.h ?? 0) + 'px';
+              const sliceBox = (n.sliceExport && n.sliceExport.box) || null;
+              const placedBox = exportBox || sliceBox;
+              const lang = String((ctx && ctx.prefs && ctx.prefs.lang) || 'zh-CN');
+              const zhStatic = lang === 'zh-CN';
+              if (placedBox) {
+                img.style.left = ((placedBox.x ?? box.x ?? 0) - (box.x ?? 0)) + 'px';
+                img.style.top = ((placedBox.y ?? box.y ?? 0) - (box.y ?? 0)) + 'px';
+                img.style.width = (placedBox.w ?? box.w ?? 0) + 'px';
+                img.style.height = (placedBox.h ?? box.h ?? 0) + 'px';
+                img.style.objectFit = 'none';
+                el.setAttribute('data-asset-bounds-resolved', exportBox ? 'export-box' : 'slice-export');
 
                 /* `sliceExport.bounds: render` says where the node was visible
                    in the source canvas; it does not guarantee that the delivered
@@ -4571,19 +4601,27 @@
                   const renderDistance = aspectDistance(rw, rh);
                   /* Require a clear winner so an expanded shadow box that shares
                      the same aspect ratio does not lose its render-bound mapping. */
-                  if (ownerDistance <= 0.035 && ownerDistance + 0.08 < renderDistance) {
+                  if (!zhStatic && ownerDistance <= 0.035 && ownerDistance + 0.08 < renderDistance) {
                     fillOwnerCanvas('fill', 'owner-canvas-from-delivered-png');
                   } else {
                     el.setAttribute('data-asset-bounds-resolved', 'render-canvas-from-delivered-png');
                   }
                 };
                 img.addEventListener('load', fitDeliveredCanvas, { once: true });
+              } else if (zhStatic) {
+                img.style.top = '0';
+                img.style.left = '0';
+                img.style.width = (box.w ?? 0) + 'px';
+                img.style.height = (box.h ?? 0) + 'px';
+                img.style.objectFit = 'none';
+                el.setAttribute('data-asset-bounds-resolved', 'owner-box-zh-cn');
               } else {
                 img.style.top = '0';
                 img.style.left = '0';
                 img.style.width = '100%';
                 img.style.height = '100%';
                 img.style.objectFit = 'fill';
+                el.setAttribute('data-asset-bounds-resolved', 'owner-fill-non-zh');
               }
               img.setAttribute('data-asset-src', entry.url);
               img.setAttribute('data-image-fill-index', String(entry.index));
@@ -5405,7 +5443,9 @@
           if (modal.triggerStatus !== 'determined') continue;
           const parsed = splitName(modal && modal.name);
           if (parsed.role !== 'modal') continue;
-          const box = __plain(modal.box || {});
+          const box = __plain((modal.pageBox && Number.isFinite(Number(modal.pageBox.w)) && Number.isFinite(Number(modal.pageBox.h)))
+            ? modal.pageBox
+            : (modal.box || {}));
           const nodes = asArr(modal.nodes);
           if (!nodes.length || !Number.isFinite(Number(box.w)) || !Number.isFinite(Number(box.h))) continue;
           const layer = document.createElement('div');

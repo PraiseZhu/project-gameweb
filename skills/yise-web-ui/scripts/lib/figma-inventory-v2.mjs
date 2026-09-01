@@ -88,6 +88,18 @@ function sameBox(a, b, epsilon = 0.75) {
     && Math.abs(Number(a.h) - Number(b.h)) <= epsilon;
 }
 
+/** Drawing columns from inventory. Never substitute canvas `box` for pageBox. */
+function passthroughDrawFields(entry) {
+  if (!isPlainObject(entry)) return {};
+  return {
+    pageBox: entry.pageBox ?? null,
+    parentBox: entry.parentBox ?? null,
+    sliceExport: entry.sliceExport ?? null,
+    text: entry.text ?? null,
+    layout: entry.layout ?? null,
+  };
+}
+
 /**
  * Restore visual material that inventory skipped as art-fragment / slice-child
  * onto a legal owner. Never paint the skipped node itself.
@@ -824,6 +836,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       name: modal.name ?? '',
       platform: modal.platform ?? modal.sourcePlatform ?? modal.meta?.platform ?? null,
       box: modal.box ?? null,
+      ...passthroughDrawFields(modal),
       hidden: true,
       excludedFromScroll: true,
       triggerStatus: determined.length ? 'determined' : 'unknown',
@@ -846,6 +859,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
       name: variant.name ?? '',
       order: variant.order ?? 0,
       box: variant.box ?? null,
+      ...passthroughDrawFields(variant),
       componentProperties: variant.componentProperties ?? {},
       status: variant.status ?? null,
       role: variant.role ?? null,
@@ -861,6 +875,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
     componentId: component.id,
     name: component.name ?? '',
     box: component.box ?? null,
+    ...passthroughDrawFields(component),
     componentProperties: component.componentProperties ?? {},
     nodes: omitSkippedNodes(component.nodes),
   }));

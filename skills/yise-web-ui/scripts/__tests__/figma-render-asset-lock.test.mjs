@@ -249,7 +249,7 @@ test('owner-tree consumption: page/fixed roots keep paint order, placement origi
   assert.match(renderer, /layer\.setAttribute\('data-paint-source-key', key\)/);
   /* placement origin：子节点坐标相对真实 owner（parentId 优先，ownerPath 回退，stack 最后） */
   assert.match(renderer, /const directParentId = nodeParentId\(n\)/);
-  assert.match(renderer, /const coordinateOwnerBox = directParentRecord\?\.box \|\| directParentNode\?\.box \|\| parent\?\.box \|\| null/);
+  assert.match(renderer, /const coordinateOwnerBox = directParentRecord\?\.pageBox \|\| directParentRecord\?\.box/);
   /* fixed overlay：sticky + 内部 zoom（owner 自身 zoom=1，相对定位不被重复缩放） */
   assert.match(renderer, /fixedStage\.style\.position = 'sticky'/);
   assert.match(renderer, /fixedStage\.style\.zoom = String\(k\)/);
@@ -265,17 +265,27 @@ test('hscroll gutter expands host box and survives the generic box.h height over
 });
 
 test('fx-img follows the owner box instead of intrinsic pixels', () => {
-  /* 无 exportBox：100% + object-fit:fill。有 exportBox：按 export 边界定位。
-     两个分支都先 absolute，owner 裁剪并作为定位锚。禁止空 else 走原图像素。 */
+  /* 有 exportBox/sliceExport：按导出框像素摆。简中无导出框：按 owner box 像素，禁止 100%+fill。 */
   assert.match(renderer, /img\.style\.position = 'absolute'/);
-  const block = renderer.match(/if \(exportBox\) \{[\s\S]*?img\.style\.left[\s\S]*?img\.style\.height[\s\S]*?\} else \{[\s\S]*?img\.style\.top = '0'[\s\S]*?img\.style\.objectFit = 'fill'[\s\S]*?\}/);
-  assert.ok(block, 'exportBox if/else block must set dimensions on both branches');
-  assert.match(block[0], /exportBox\.w \?\? box\.w \?\? 0/);
-  assert.match(block[0], /exportBox\.h \?\? box\.h \?\? 0/);
-  assert.match(block[0], /img\.style\.width = '100%'/);
-  assert.match(block[0], /img\.style\.objectFit = 'fill'/);
+  assert.match(renderer, /const placedBox = exportBox \|\| sliceBox/);
+  assert.match(renderer, /owner-box-zh-cn/);
+  assert.match(renderer, /img\.style\.objectFit = 'none'/);
   assert.match(renderer, /el\.style\.overflow = 'hidden'/);
   assert.match(renderer, /el\.style\.position = 'relative'/);
+});
+
+test('render-bound slice prefers sliceExport.box over owner pageBox', () => {
+  assert.match(renderer, /const exportBox = geomReady\(slicePageBox\)/);
+  assert.doesNotMatch(renderer, /const exportBox = \(ownerReady \? box : null\) \|\| slicePageBox/);
+});
+
+test('zh-CN static images must not stretch with object-fit fill', () => {
+  const zhBlock = renderer.match(/else if \(zhStatic\) \{[\s\S]*?owner-box-zh-cn[\s\S]*?\}/);
+  assert.ok(zhBlock, 'zh-CN no-exportBox branch must exist');
+  assert.match(zhBlock[0], /img\.style\.width = \(box\.w \?\? 0\) \+ 'px'/);
+  assert.match(zhBlock[0], /img\.style\.objectFit = 'none'/);
+  assert.doesNotMatch(zhBlock[0], /objectFit = 'fill'/);
+  assert.match(renderer, /if \(!zhStatic && ownerDistance/);
 });
 
 test('auto-layout axis alignment fields flow from fixture into truth and feed the renderer flex model', () => {

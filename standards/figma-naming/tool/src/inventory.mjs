@@ -182,6 +182,11 @@ function relativeBox(inner, origin) {
   };
 }
 
+function geomBox(box) {
+  if (!box || ![box.x, box.y, box.w, box.h].every(Number.isFinite)) return null;
+  return { x: box.x, y: box.y, w: box.w, h: box.h };
+}
+
 function offsetBox(origin, local) {
   if (!origin || !local) return null;
   return {
@@ -284,11 +289,22 @@ function sliceFileName(nodeId) {
   return `${String(nodeId).replace(/[:;]/g, "-")}.${SLICE_EXPORT.format}`;
 }
 
-function sliceExportOf(node, role) {
+function sliceExportOf(node, role, pageRel) {
   if (!needsSliceExport({ type: node.type, role })) return undefined;
+  const canvas = boxOf(node);
+  const inkCanvas = renderBoxOf(node) || canvas;
+  const ink = geomBox(pageRel) && canvas && inkCanvas
+    ? {
+      x: pageRel.x + (inkCanvas.x - canvas.x),
+      y: pageRel.y + (inkCanvas.y - canvas.y),
+      w: inkCanvas.w,
+      h: inkCanvas.h,
+    }
+    : geomBox(pageRel);
   return {
     ...SLICE_EXPORT,
     file: sliceFileName(node.id),
+    ...(ink ? { box: ink } : {}),
   };
 }
 
@@ -691,8 +707,9 @@ function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = 
       orderKey,
       status,
     };
-    const pageRel = stackedPageBoxOf(node, ctx.ancestors, stackedSecPageBox)
-      || relativeBox(box, origin);
+    const pageRel = parent == null && stackedSecPageBox?.size
+      ? geomBox(origin)
+      : stackedPageBoxOf(node, ctx.ancestors, stackedSecPageBox) || relativeBox(box, origin);
     if (pageRel) entry.pageBox = pageRel;
     const parentRel = relativeBox(box, parentBox);
     if (parentRel) entry.parentBox = parentRel;
@@ -739,7 +756,7 @@ function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = 
       if (langs) entry.langs = langs;
       entry.behavior = behaviorOf(role, params);
       entry.via = via;
-      const sliceExport = sliceExportOf(node, role);
+      const sliceExport = sliceExportOf(node, role, pageRel);
       if (sliceExport) entry.sliceExport = sliceExport;
       if (role === "fix") {
         entry.pin = "viewport";
@@ -1175,10 +1192,16 @@ export function buildInventory(document, {
   const pageCounts = { ...counts };
 
   const modalRoots = modalsForPage(shelf, page);
-  const modals = modalRoots.map((modal) => ({
-    ...rootRecord(modal),
-    nodes: serializeTree(modal, `modal:${modal.id}`, counts, boxOf(modal)),
-  }));
+  const modals = modalRoots.map((modal) => {
+    const modalBox = boxOf(modal);
+    const nodes = serializeTree(modal, `modal:${modal.id}`, counts, modalBox);
+    const rootNode = nodes.find((item) => item.id === modal.id);
+    return {
+      ...rootRecord(modal),
+      ...(rootNode?.pageBox ? { pageBox: rootNode.pageBox } : {}),
+      nodes,
+    };
+  });
 
   // 先从页面和 modal 收集引用，再递归收组件内部引用，直到定义闭合。
   const componentOwners = new Map();
@@ -1257,7 +1280,7 @@ export function buildInventory(document, {
     fileKey: fileKey ?? null,
     requestedNodeId: requestedNodeId ?? page.id,
     scope: { pageId: page.id, shelfId: shelf?.id ?? null, shelfName: shelf?.name ?? null, snapshotRootId: document.id },
-    page: { id: page.id, name: page.name ?? "", box: pageBox, resolvedFrom: resolved.reason },
+    page: { id: page.id, name: page.name ?? "", box: pageBox, pageBox, resolvedFrom: resolved.reason },
     snapshot: { lastModified, hash: snapshotHash },
     sliceExport: { ...SLICE_EXPORT },
     status,
