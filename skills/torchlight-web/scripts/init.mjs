@@ -310,7 +310,7 @@ console.log(JSON.stringify({
           '4. extract.mjs 用 lib/figma-geo.mjs extractGeometry 读 fixtures 出 truth(空 truth 会 fail-closed)',
           '5. node scripts/truth.mjs --demo <dir> --embed && node scripts/figma-inline.mjs --demo <dir> --check',
           '6. npm run figma:preview:first -- --demo <dir>(产出 candidate evidence、product-view 截图与 index.html?product=1 打开命令)',
-          '7. preview-first 通过后立刻打开 product-view 给人看;未声明能力(如 mobile/responsive/PR/真沙盒)保持 not-claimed',
+          '7. preview-first 与清单对账都绿之后才打开 product-view 给人看;未声明能力(如 mobile/responsive/PR/真沙盒)保持 not-claimed',
         ]
       : [
         '1. 写 extract.mjs(P1 真值提取),跑 truth.mjs --demo <dir> --embed',

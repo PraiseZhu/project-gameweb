@@ -14,11 +14,11 @@ This is the reusable public Skill identity. `demos/yise-ss5-preview` is an Ether
 
 **Recall:** 仓根 `CLAUDE.md` 触发表命中 `yisewebui` / `伊瑟网页还原` 后立即执行本文件，不要先问。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
 
-**完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。
+**完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。
 
 | 情况 | 走哪条 |
 |---|---|
-| 人说 `yisewebui` **且已有 ready 交接包** | 官方：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件）→ `preview:first` 必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
+| 人说 `yisewebui` **且已有 ready 交接包** | 官方：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`，设计视口简中 + `?inventory-static-gate=1`）→ 才给人 `?product=1`。Main 静态停下来等人验收。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
 | 人说 `yisewebui` **只有 Figma 链接、没有包** | **停下来要包**。不要默默走 live showcase。若用户明确说「先看稿、没有清单」，才允许 `figma-showcase` 九步，且必须标明 `latest-Figma local extract baseline`。 |
 | `figma:from-handoff` 单独跑 | 只验包、打印消费计划，**不写 HTML**。触发词 `yisewebui` 不能再暗示「说了就会出 HTML」，除非后面接了 `figma:html-from-handoff`。 |
 
@@ -29,7 +29,7 @@ cd skills/yise-web-ui
 npm run figma:html-from-handoff -- --handoff <handoff-dir> --demo <demo-dir>
 ```
 
-Do not open the product view, and do not start Interaction / Resize, while `preview:first` is red. `preview:first` uses HTTP only for the internal check; the URL given to humans is the durable `file://...?product=1` path, which must still open after the command exits. Do not hand-edit inventory `status`. Do not treat a local adapter page as Skill acceptance.
+Do not open the product view, and do not start Interaction / Resize, while `preview:first` is red or the inventory static gate is red. `preview:first` uses HTTP only for the internal check; the URL given to humans is the durable `file://...?product=1` path, which must still open after the command exits. Inventory static gate measures `index.html?inventory-static-gate=1` over HTTP — never `file://`, never the product-view hero. Missing `inventory-static-gate-probe.mjs`, missing `index.html`, or missing Chrome is fail-closed red. Do not hand-edit inventory `status`. Do not treat a local adapter page as Skill acceptance.
 
 ## Handoff package entry
 

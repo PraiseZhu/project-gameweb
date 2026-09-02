@@ -39,7 +39,7 @@ export function buildTruthIndex(truth) {
 }
 
 export function expectedRelativeBox(node, origin) {
-  const box = node?.box || {};
+  const box = (node?.pageBox && Number.isFinite(Number(node.pageBox.x))) ? node.pageBox : (node?.box || {});
   const ox = Number(origin?.x || 0);
   const oy = Number(origin?.y || 0);
   return {

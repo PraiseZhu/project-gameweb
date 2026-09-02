@@ -116,6 +116,143 @@ browserTest('browser same-name unauthorized opener stays inert', async () => {
     await browser.close();
   }
 });
+browserTest('browser canvas-offset modal mounts from pageBox, not canvas box', async () => {
+  const { browser, page } = await setup();
+  try {
+    const modalTruth = {
+      platforms: {
+        pc: {
+          pageChrome: { meta: { x: 0, y: 0, width: 400, height: 300 }, nodes: [] },
+          sections: {
+            section: {
+              meta: { x: 0, y: 0, width: 400, height: 300 },
+              nodes: [
+                node('play-ok', 'btn/播放按钮@go=modal/视频弹窗', 'section', 10, 10, 80, 24, { params: { go: 'modal/视频弹窗' } }),
+              ],
+            },
+          },
+          modals: [{
+            id: 'modal-video',
+            name: 'modal/视频弹窗',
+            platform: 'pc',
+            triggerStatus: 'determined',
+            triggerFrom: ['play-ok'],
+            box: { x: 9000, y: 8000, w: 200, h: 120 },
+            pageBox: { x: 40, y: 80, w: 200, h: 120 },
+            nodes: [node('modal-video', 'modal/视频弹窗', null, 40, 80, 200, 120, { pageBox: { x: 40, y: 80, w: 200, h: 120 } })],
+          }],
+        },
+      },
+    };
+    await page.evaluate((truth) => window.__figmaRender.renderApp({
+      truth,
+      rawTruth: truth,
+      prefs: { plat: 'pc', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 400, h: 300, dpr: 1 },
+    }), modalTruth);
+    const geom = await page.evaluate(() => {
+      const modal = document.querySelector('[data-modal-name="视频弹窗"]');
+      return {
+        count: document.querySelector('.frame').getAttribute('data-named-modal-count'),
+        left: modal ? modal.style.left : null,
+        top: modal ? modal.style.top : null,
+        width: modal ? modal.style.width : null,
+        height: modal ? modal.style.height : null,
+      };
+    });
+    assert.equal(geom.count, '1');
+    assert.equal(geom.left, '40px');
+    assert.equal(geom.top, '80px');
+    assert.equal(geom.width, '200px');
+    assert.equal(geom.height, '120px');
+  } finally {
+    await browser.close();
+  }
+});
+browserTest('browser render-bound slice keeps spill PNG larger than owner pageBox', async () => {
+  const { browser, page } = await setup();
+  try {
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    await page.evaluate((payload) => {
+      let el = document.getElementById('qa-assets');
+      if (!el) {
+        el = document.createElement('script');
+        el.id = 'qa-assets';
+        el.type = 'application/json';
+        document.body.appendChild(el);
+      }
+      el.textContent = JSON.stringify(payload);
+    }, {
+      card: {
+        file: png,
+        exportBounds: 'render',
+        exportBox: { x: 0, y: 10, w: 220, h: 320 },
+        sliceExport: { bounds: 'render', scale: 1, format: 'png', box: { x: 0, y: 10, w: 220, h: 320 } },
+      },
+    });
+    const spillTruth = {
+      platforms: {
+        pc: {
+          pageChrome: { meta: { x: 0, y: 0, width: 400, height: 400 }, nodes: [] },
+          sections: {
+            section: {
+              meta: { x: 0, y: 0, width: 400, height: 400 },
+              nodes: [{
+                id: 'card',
+                type: 'INSTANCE',
+                name: 'img/卡片',
+                parentId: 'section',
+                ownerPath: ['section', 'card'],
+                box: { x: 10, y: 20, w: 200, h: 300 },
+                pageBox: { x: 10, y: 20, w: 200, h: 300 },
+                renderBox: { x: 0, y: 10, w: 220, h: 320 },
+                sliceExport: { bounds: 'render', scale: 1, format: 'png', file: 'card.png', box: { x: 0, y: 10, w: 220, h: 320 } },
+                style: { fills: [{ type: 'IMAGE', imageRef: 'r1', visible: true }] },
+              }],
+            },
+          },
+        },
+      },
+    };
+    await page.evaluate((truth) => {
+      window.__figmaRender.__assetCache = null;
+      window.__figmaRender.renderApp({
+        truth,
+        rawTruth: truth,
+        prefs: { plat: 'pc', lang: 'zh-CN' },
+        state: 'default',
+        frame: document.querySelector('.frame'),
+        viewport: { w: 400, h: 400, dpr: 1 },
+      });
+    }, spillTruth);
+    const geom = await page.evaluate(() => {
+      const el = document.querySelector('[data-node="card"]');
+      const img = el && el.querySelector('img.fx-img');
+      return {
+        ownerW: el && el.style.width,
+        ownerH: el && el.style.height,
+        overflow: el && el.style.overflow,
+        left: img && img.style.left,
+        top: img && img.style.top,
+        width: img && img.style.width,
+        height: img && img.style.height,
+        objectFit: img && img.style.objectFit,
+      };
+    });
+    assert.equal(geom.ownerW, '200px');
+    assert.equal(geom.ownerH, '300px');
+    assert.equal(geom.overflow, 'hidden');
+    assert.equal(geom.left, '-10px');
+    assert.equal(geom.top, '-10px');
+    assert.equal(geom.width, '220px');
+    assert.equal(geom.height, '320px');
+    assert.equal(geom.objectFit, 'none');
+  } finally {
+    await browser.close();
+  }
+});
 browserTest('browser left/right switch arrows loop from last back to first', async () => {
   const { browser, page } = await setup();
   try {

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { buildTruthIndex, compareGeometry, expectedRenderedBox } from '../lib/figma-source-geometry-browser-check.mjs';
 
 const origin = { x: 3660, y: 4656 };
@@ -54,16 +56,32 @@ test('truth index keeps fixed-overlay and section nodes addressable', () => {
   assert.equal(index.get('fixed-node').__scope, '__fixed__');
 });
 
+test('zh-CN expected box prefers inventory pageBox over canvas box', () => {
+  const node = { id: 'n1', pageBox: { x: 10, y: 20, w: 200, h: 40 }, box: { x: 9000, y: 8000, w: 200, h: 40 } };
+  assert.deepEqual(expectedRenderedBox(node, new Map(), { x: 0, y: 0 }), { x: 10, y: 20, w: 200, h: 40 });
+});
 
-import { readFileSync as _readGateSrc } from 'node:fs';
-import { fileURLToPath as _f2p } from 'node:url';
+test('renderer source prefers pageBox for paint placement', () => {
+  const src = readFileSync(fileURLToPath(new URL('../../templates/figma-render.js', import.meta.url)), 'utf8');
+  assert.match(src, /n\.pageBox && Number\.isFinite\(Number\(n\.pageBox\.x\)\)/);
+  assert.match(src, /directParentRecord\?\.pageBox \|\| directParentRecord\?\.box/);
+});
+
+test('zh-CN image paint uses sliceExport/box pixels, not fill stretch', () => {
+  const src = readFileSync(fileURLToPath(new URL('../../templates/figma-render.js', import.meta.url)), 'utf8');
+  assert.match(src, /owner-box-zh-cn/);
+  assert.match(src, /objectFit = 'none'/);
+  const zh = src.match(/else if \(zhStatic\) \{[\s\S]*?owner-box-zh-cn[\s\S]*?\}/);
+  assert.ok(zh);
+  assert.doesNotMatch(zh[0], /objectFit = 'fill'/);
+});
 
 test('static geometry gate freezes decorative entry animations before measuring', () => {
   /* Regression: probes scrollIntoView each section, which (re)triggers
      data-motion-role slide/fade keyframes. Mid-animation translate was read
      as a source offset (titles reported 30-50px high). The gate must inject
      its freeze stylesheet before probing, like the motion browser check. */
-  const src = _readGateSrc(_f2p(new URL('../lib/figma-source-geometry-browser-check.mjs', import.meta.url)), 'utf8');
+  const src = readFileSync(fileURLToPath(new URL('../lib/figma-source-geometry-browser-check.mjs', import.meta.url)), 'utf8');
   assert.match(src, /data-geometry-gate-freeze/);
   const freezeAt = src.indexOf('data-geometry-gate-freeze');
   const probeAt = src.indexOf('for (const probe of probes || [])');

@@ -240,6 +240,9 @@ test("工作区画板：sec/ 与组件集并排时仍是页根，不因货架启
   assert.equal(inv.page.id, "board");
   assert.equal(inv.scope.shelfId, null);
   assert.deepEqual(inv.page.box, { x: 0, y: 0, w: 3840, h: 1600 });
+  assert.deepEqual(inv.page.pageBox, { x: 0, y: 0, w: 3840, h: 1600 });
+  const board = inv.nodes.find((item) => item.id === "board");
+  assert.deepEqual(board.pageBox, { x: 0, y: 0, w: 3840, h: 1600 });
   assert.deepEqual(inv.sections.map((item) => item.id), ["s1", "s2"]);
   assert.deepEqual(inv.sections[0].pageBox, { x: 0, y: 0, w: 3840, h: 800 });
   assert.deepEqual(inv.sections[1].pageBox, { x: 0, y: 800, w: 3840, h: 800 });
@@ -374,6 +377,35 @@ test("v2：同一货架多页时，弹窗只跟最近的那一页", () => {
   const mobileInv = buildInventory(shelf, { requestedNodeId: "mobile" });
   assert.deepEqual(pcInv.attachments.modals.map((item) => item.id), ["pc-modal"]);
   assert.deepEqual(mobileInv.attachments.modals.map((item) => item.id), ["m-modal"]);
+  assert.deepEqual(pcInv.attachments.modals[0].box, { x: 4000, y: 0, w: 3840, h: 2160 });
+  assert.deepEqual(pcInv.attachments.modals[0].pageBox, { x: 0, y: 0, w: 3840, h: 2160 });
+  assert.deepEqual(mobileInv.attachments.modals[0].box, { x: 30800, y: 0, w: 750, h: 1600 });
+  assert.deepEqual(mobileInv.attachments.modals[0].pageBox, { x: 0, y: 0, w: 750, h: 1600 });
+});
+
+test("v2：画布偏移的 modal 子节点 pageBox 相对弹窗原点，不跟画布走", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏"),
+  ], { box: { x: 0, y: 0, width: 1920, height: 1080 } });
+  const modal = node("modal", "FRAME", "modal/视频弹窗", [
+    node("close", "FRAME", "btn/关闭", [], { box: { x: 9100, y: 8100, width: 40, height: 24 } }),
+  ], { box: { x: 9000, y: 8000, width: 400, height: 300 } });
+  const shelf = node("shelf", "CANVAS", "cn_pc", [page, modal]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const pack = inv.attachments.modals[0];
+  assert.equal(pack.id, "modal");
+  assert.deepEqual(pack.box, { x: 9000, y: 8000, w: 400, h: 300 });
+  assert.deepEqual(pack.pageBox, { x: 0, y: 0, w: 400, h: 300 });
+  const root = pack.nodes.find((item) => item.id === "modal");
+  const close = pack.nodes.find((item) => item.id === "close");
+  assert.deepEqual(root.pageBox, { x: 0, y: 0, w: 400, h: 300 });
+  assert.deepEqual(close.pageBox, { x: 100, y: 100, w: 40, h: 24 });
+  assert.notEqual(close.pageBox.x, close.box.x);
 });
 
 test("v2：跨货架 componentId 在 draft 留 unknown 关系，在 ready 仍阻断", () => {
@@ -507,7 +539,13 @@ test("做页字段：相对页/父层坐标、fix 钉视口、切图墨迹框、
   const sec = built.nodes.find((n) => n.id === "sec");
   assert.deepEqual(sec.pageBox, { x: 0, y: 0, w: 1000, h: 800 });
   const img = built.nodes.find((n) => n.id === "img:1");
-  assert.deepEqual(img.sliceExport, { bounds: "render", scale: 1, format: "png", file: "img-1.png" });
+  assert.deepEqual(img.sliceExport, {
+    bounds: "render",
+    scale: 1,
+    format: "png",
+    file: "img-1.png",
+    box: { x: 40, y: 50, w: 220, h: 320 },
+  });
   assert.equal(img.rotation, 15);
   assert.equal(img.style.fills.length, 2);
   const txt = built.nodes.find((n) => n.id === "txt");
@@ -678,7 +716,13 @@ test("做页字段：相对页/父层坐标、fix 钉视口、切图墨迹框、
   const sec = built.nodes.find((n) => n.id === "sec");
   assert.deepEqual(sec.pageBox, { x: 0, y: 0, w: 1000, h: 800 });
   const img = built.nodes.find((n) => n.id === "img:1");
-  assert.deepEqual(img.sliceExport, { bounds: "render", scale: 1, format: "png", file: "img-1.png" });
+  assert.deepEqual(img.sliceExport, {
+    bounds: "render",
+    scale: 1,
+    format: "png",
+    file: "img-1.png",
+    box: { x: 40, y: 50, w: 220, h: 320 },
+  });
   assert.equal(img.rotation, 15);
   assert.equal(img.style.fills.length, 2);
   const txt = built.nodes.find((n) => n.id === "txt");
@@ -818,7 +862,13 @@ test("mix/ 子树带图叶子自动升 img 切图，文字仍 copy，scroll 身�
   assert.equal(byId.cell.role, "img");
   assert.equal(byId.cell.via, "structure");
   assert.equal(byId.cell.behavior, "slice");
-  assert.deepEqual(byId.cell.sliceExport, { bounds: "render", scale: 1, format: "png", file: "cell.png" });
+  assert.deepEqual(byId.cell.sliceExport, {
+    bounds: "render",
+    scale: 1,
+    format: "png",
+    file: "cell.png",
+    box: { x: 0, y: 0, w: 40, h: 20 },
+  });
   assert.equal(byId.named.status, "determined");
   assert.equal(byId.named.role, "img");
   assert.equal(byId.named.via, "prefix");
@@ -961,7 +1011,13 @@ test("mix/ 内裁切溢出框自动升 scroll，BOOLEAN btn 带切图", () => {
   assert.equal(byId.arrow.status, "determined");
   assert.equal(byId.arrow.role, "btn");
   assert.equal(byId.arrow.behavior, "click");
-  assert.deepEqual(byId.arrow.sliceExport, { bounds: "render", scale: 1, format: "png", file: "arrow.png" });
+  assert.deepEqual(byId.arrow.sliceExport, {
+    bounds: "render",
+    scale: 1,
+    format: "png",
+    file: "arrow.png",
+    box: { x: 300, y: 40, w: 52, h: 54 },
+  });
   assert.equal(byId.part.status, "skipped");
   assert.equal(byId.part.why, "slice-child");
   const check = validateInventory(inv, page);
@@ -1021,9 +1077,21 @@ test("ind/ 组件集每个变体根带切图，零件 skipped，switch 变体不
   assert.equal(highlight.role, "ind");
   assert.equal(highlight.behavior, "indicator");
   assert.equal(highlight.via, "structure");
-  assert.deepEqual(highlight.sliceExport, { bounds: "render", scale: 1, format: "png", file: "397-35947.png" });
+  assert.deepEqual(highlight.sliceExport, {
+    bounds: "render",
+    scale: 1,
+    format: "png",
+    file: "397-35947.png",
+    box: { x: 0, y: 0, w: 40, h: 40 },
+  });
   assert.equal(normal.status, "determined");
-  assert.deepEqual(normal.sliceExport, { bounds: "render", scale: 1, format: "png", file: "397-35949.png" });
+  assert.deepEqual(normal.sliceExport, {
+    bounds: "render",
+    scale: 1,
+    format: "png",
+    file: "397-35949.png",
+    box: { x: 0, y: 0, w: 40, h: 40 },
+  });
   const byId = Object.fromEntries(set.nodes.map((item) => [item.id, item]));
   assert.equal(byId["397:35947"].behavior, "indicator");
   assert.equal(byId["397:35946"].status, "skipped");
@@ -1264,9 +1332,21 @@ test("img/ lang 变体根带切图；Property 1=cn 的 logo 不跟语言", () =>
   assert.equal(cn.status, "determined");
   assert.equal(cn.role, "img");
   assert.equal(cn.via, "structure");
-  assert.deepEqual(cn.sliceExport, { bounds: "render", scale: 1, format: "png", file: "v-cn.png" });
+  assert.deepEqual(cn.sliceExport, {
+    bounds: "render",
+    scale: 1,
+    format: "png",
+    file: "v-cn.png",
+    box: { x: 0, y: 0, w: 40, h: 40 },
+  });
   assert.equal(tw.status, "determined");
-  assert.deepEqual(tw.sliceExport, { bounds: "render", scale: 1, format: "png", file: "v-tw.png" });
+  assert.deepEqual(tw.sliceExport, {
+    bounds: "render",
+    scale: 1,
+    format: "png",
+    file: "v-tw.png",
+    box: { x: 0, y: 0, w: 40, h: 40 },
+  });
   const byId = Object.fromEntries(set.nodes.map((item) => [item.id, item]));
   assert.equal(byId["art-cn"].status, "skipped");
   assert.equal(byId["art-cn"].why, "slice-child");

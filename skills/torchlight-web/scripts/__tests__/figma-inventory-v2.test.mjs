@@ -640,3 +640,66 @@ test("calendar identity keeps today and marks missing return-today unread instea
   assert.deepEqual(adapted.calendarIdentity.today, ["today"]);
 });
 
+test("adaptInventoryToTruthShape keeps pageBox/parentBox/sliceExport/text/layout on attachments", () => {
+  const pageBox = { x: 12, y: 34, w: 200, h: 80 };
+  const parentBox = { x: 0, y: 0, w: 1920, h: 1080 };
+  const sliceExport = { box: { ...pageBox }, scale: 1, format: "png", file: "100-31.png" };
+  const text = { fontFamily: "Source Han Sans", fontWeight: 500, fontSize: 22 };
+  const layout = { constraints: { horizontal: "LEFT", vertical: "TOP" }, layoutMode: "NONE" };
+  const inv = fixture();
+  inv.nodes[2] = {
+    ...inv.nodes[2],
+    box: { x: 9000, y: 8000, w: 200, h: 80 },
+    pageBox,
+    parentBox,
+    sliceExport,
+    text,
+    layout,
+  };
+  inv.attachments.modals[0] = {
+    ...inv.attachments.modals[0],
+    box: { x: 1, y: 2, w: 3, h: 4 },
+    pageBox,
+    parentBox,
+    sliceExport,
+    text,
+    layout,
+  };
+  inv.attachments.componentSets[0].variants[0] = {
+    ...inv.attachments.componentSets[0].variants[0],
+    box: { x: 9, y: 9, w: 9, h: 9 },
+    pageBox,
+    parentBox,
+    sliceExport,
+    text,
+    layout,
+  };
+  inv.attachments.components[0] = {
+    ...inv.attachments.components[0],
+    box: { x: 8, y: 8, w: 8, h: 8 },
+    pageBox,
+    parentBox,
+    sliceExport,
+    text,
+    layout,
+  };
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(adapted.ok, true);
+  const kv = adapted.pageChrome.nodes.find((node) => node.id === "100:3");
+  assert.deepEqual(kv.pageBox, pageBox);
+  assert.deepEqual(kv.parentBox, parentBox);
+  assert.deepEqual(kv.sliceExport, sliceExport);
+  assert.equal(kv.text.fontSize, 22);
+  assert.deepEqual(kv.layout.constraints, layout.constraints);
+  assert.notEqual(kv.pageBox.x, kv.box.x);
+  const modal = adapted.modals[0];
+  assert.deepEqual(modal.pageBox, pageBox);
+  assert.deepEqual(modal.sliceExport, sliceExport);
+  const variant = adapted.componentVariantGraph.componentSets[0].variants[0];
+  assert.deepEqual(variant.pageBox, pageBox);
+  assert.deepEqual(variant.sliceExport, sliceExport);
+  const component = adapted.componentVariantGraph.components[0];
+  assert.deepEqual(component.pageBox, pageBox);
+  assert.deepEqual(component.parentBox, parentBox);
+});
+

@@ -22,13 +22,32 @@ function ordered(nodes) {
   return [...nodes].sort((a, b) => String(a.orderKey || '').localeCompare(String(b.orderKey || ''), undefined, { numeric: true }));
 }
 
-function boxOf(entry) {
-  const box = entry?.pageBox ?? entry?.box ?? {};
+function geomOf(box) {
+  if (!box || typeof box !== 'object') {
+    return { x: 0, y: 0, w: 0, h: 0 };
+  }
   return {
     x: box.x ?? 0,
     y: box.y ?? 0,
     w: box.w ?? 0,
     h: box.h ?? 0,
+  };
+}
+
+/** Drawing box is pageBox. Never fall back to canvas `box`. */
+function pageBoxOf(entry) {
+  return geomOf(entry?.pageBox);
+}
+
+function drawMeta(entry) {
+  const pageBox = pageBoxOf(entry);
+  return {
+    ...pageBox,
+    width: pageBox.w,
+    height: pageBox.h,
+    pageBox: entry?.pageBox ?? null,
+    parentBox: entry?.parentBox ?? null,
+    box: entry?.box ?? null,
   };
 }
 
@@ -62,10 +81,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
   for (const section of asArray(inventory.sections)) {
     if (!section?.id) continue;
     sections[String(section.id)] = {
-      meta: {
-        id: section.id,
-        ...boxOf(section),
-      },
+      meta: { id: section.id, ...drawMeta(section) },
       nodes: ordered(liveNodes.filter((node) => (
         !fixed.has(String(node?.id || ''))
         && descendantsOf(node, section.id)
@@ -73,7 +89,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
     };
   }
 
-  const pageBox = inventory.page?.box ?? {};
+  const pageMeta = drawMeta(inventory.page);
   const chromeNodes = asArray(adapted.pageChrome?.nodes).map((node) => {
     const copy = paintWithPageBox({ ...node });
     const ancestorIds = asArray(copy.ancestorIds).map(String);
@@ -88,9 +104,9 @@ export function platformTruthFromInventory(inventory, options = {}) {
     ok: true,
     source: adapted.source,
     page: adapted.page,
-    pageBackground: { meta: pageBox, nodes: [] },
+    pageBackground: { meta: pageMeta, nodes: [] },
     pageChrome: {
-      meta: { ...pageBox, id: adapted.page?.id, name: adapted.page?.name },
+      meta: { ...pageMeta, id: adapted.page?.id, name: adapted.page?.name },
       nodes: chromeNodes,
     },
     fixedOverlays: {
@@ -99,7 +115,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
     },
     pagePaintOrder: adapted.pagePaintOrder,
     sections,
-    modals: adapted.modals,
+    modals: asArray(adapted.modals).map(paintWithPageBox),
     componentVariantGraph: adapted.componentVariantGraph,
     pageStateGraph: adapted.pageStateGraph,
     failClosed: adapted.failClosed,
