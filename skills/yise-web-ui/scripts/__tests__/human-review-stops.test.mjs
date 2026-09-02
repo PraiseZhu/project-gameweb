@@ -44,6 +44,8 @@ test('first stop must be accepted before Interaction / Resize, second before Pac
 
   assert.equal(acceptStop(dir, 'static-and-translation').ok, true);
   assert.equal(canStartLaterAxis(dir).ok, true);
+  assert.equal(canStartLaterAxis(dir, { inventoryLock: { ok: false, reason: 'static-page-not-equal-inventory' } }).ok, false);
+  assert.equal(canStartLaterAxis(dir, { inventoryLock: { ok: true } }).ok, true);
   assert.equal(packAllowedAfterSecondStop(dir).ok, false);
 
   assert.equal(presentStop(dir, 'interaction-and-resize', { previewOk: true }).ok, true);

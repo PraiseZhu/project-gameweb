@@ -30,6 +30,9 @@
  *   填充是渐变或 IMAGE →  切
  *   其余              →  不切（scroll/ 是容器；普通 btn/ 无 sliceExport 不切）
  *
+ *   扫描树在 scripts/lib/figma-slice-nodes.mjs。page-scope（含顶层
+ *   truth.modals）独立扫描，不绑 section 循环。
+ *
  * ═══ 用法 ═══
  *   node scripts/figma-assets.mjs --demo <dir>              # 按 truth.json 找出该切的节点并导出
  *   node scripts/figma-assets.mjs --demo <dir> --dry-run    # 只列清单不下载
@@ -39,13 +42,14 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 import { encodeWebpBatch } from './lib/encode-webp.mjs';
-import { deriveRole } from './lib/figma-name-semantics.mjs';
+import { pickSliceNodes } from './lib/figma-slice-nodes.mjs';
+
+export { pickSliceNodes };
 
 const API = 'https://api.figma.com/v1';
-const SLICE_PREFIXES = new Set(['img', 'bg', 'kv']);
-const BTN_ARROW_NAME = /(?:左|右)(?:划动|滑动)?(?:按钮|箭头)|(?:prev|next)/i;
 const BATCH = 40;               // Figma images 接口一次给太多 id 会超时，分批
 
 function fail(msg) {
@@ -62,6 +66,7 @@ function parseArgs(argv) {
     else if (k === '--dry-run') a.dryRun = true;
     else if (k === '--only') a.only = String(argv[++i] || '').split(',').map((s) => s.trim()).filter(Boolean);
     else if (k === '--no-webp') a.noWebp = true;
+    else if (k === '--resume') a.resume = true;
     else fail(`未知参数：${k}`);
   }
   if (!a.demo) fail('必须给 --demo <dir>');
@@ -93,223 +98,27 @@ function unwrap(n) {
   return n;
 }
 
-/** 填充类型：solid / gradient / image / none */
-function fillKind(fills) {
-  if (!Array.isArray(fills)) return 'none';
-  for (const f of fills) {
-    if (!f || f.visible === false) continue;
-    if (f.type === 'SOLID') return 'solid';
-    if (String(f.type).startsWith('GRADIENT')) return 'gradient';
-    if (f.type === 'IMAGE') return 'image';
-  }
-  return 'none';
+function sleep(ms) {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
 
-function spillBox(box, renderBox, threshold = 1) {
-  if (!box || !renderBox) return false;
-  const dx1 = (box.x ?? 0) - (renderBox.x ?? box.x ?? 0);
-  const dy1 = (box.y ?? 0) - (renderBox.y ?? box.y ?? 0);
-  const dx2 = ((renderBox.x ?? 0) + (renderBox.w ?? 0)) - ((box.x ?? 0) + (box.w ?? 0));
-  const dy2 = ((renderBox.y ?? 0) + (renderBox.h ?? 0)) - ((box.y ?? 0) + (box.h ?? 0));
-  return Math.max(dx1, dy1, dx2, dy2) > threshold;
-}
-
-function roundBox(b) {
-  if (!b) return null;
-  return {
-    x: +Number(b.x ?? 0).toFixed(3),
-    y: +Number(b.y ?? 0).toFixed(3),
-    w: +Number(b.w ?? 0).toFixed(3),
-    h: +Number(b.h ?? 0).toFixed(3),
-  };
-}
-
-/** 从 truth 里挑出需要切图的节点 */
-function nodesOf(value) {
-  return Array.isArray(value) ? value : Object.values(value || {});
-}
-
-function withChildNodes(item) {
-  return item ? [item, ...nodesOf(item.nodes)] : [];
-}
-
-/** Adapted componentVariantGraph plus captured variantTrees. Dedup happens in pickSliceNodes. */
-function collectVariantSliceNodes(graph) {
-  const fromSets = nodesOf(graph?.componentSets).flatMap((set) => [
-    ...nodesOf(set?.nodes),
-    ...nodesOf(set?.variants).flatMap(withChildNodes),
-  ]);
-  const fromComponents = nodesOf(graph?.components).flatMap(withChildNodes);
-  const fromTrees = Object.values(graph?.variantTrees || {}).flatMap((trees) =>
-    nodesOf(trees).flatMap(withChildNodes));
-  return [...fromSets, ...fromComponents, ...fromTrees];
-}
-
-export function pickSliceNodes(truth, { minDim = 24 } = {}) {
-  /* 非矩形类型（轮廓不是矩形的节点）。渲染层对它们只能按外接矩形画填充，
-     够大的方块化一眼可见（第 13 项实测：官网点阵与细三角轮廓成了实心方块）。 */
-  const NONRECT = new Set(['VECTOR', 'BOOLEAN_OPERATION', 'STAR', 'POLYGON', 'ELLIPSE', 'LINE']);
-  const out = [];
-  const seenNodeIds = new Set();
-  if (truth.platforms && Object.keys(truth.platforms).length) {
-    const merged = { ...truth, sections: { ...(truth.sections || {}) }, platforms: null };
-    const platformGraphs = [];
-    for (const [platform, root] of Object.entries(truth.platforms || {})) {
-      if (root?.componentVariantGraph) platformGraphs.push(root.componentVariantGraph);
-      let first = true;
-      for (const [sid, sec] of Object.entries(root.sections || {})) {
-        const nodes = first
-          ? [
-            ...nodesOf(root.pageBackground && root.pageBackground.nodes),
-            ...nodesOf(root.pageChrome && root.pageChrome.nodes),
-            ...nodesOf(root.fixedOverlays && root.fixedOverlays.nodes),
-            ...nodesOf(sec.nodes),
-          ]
-          : nodesOf(sec.nodes);
-        merged.sections[`${platform}:${sid}`] = { ...sec, nodes };
-        first = false;
-      }
-    }
-    if (!merged.componentVariantGraph && platformGraphs.length) {
-      merged.componentVariantGraph = {
-        componentSets: platformGraphs.flatMap((graph) => nodesOf(graph.componentSets)),
-        components: platformGraphs.flatMap((graph) => nodesOf(graph.components)),
-        variantTrees: Object.assign({}, ...platformGraphs.map((graph) => graph.variantTrees || {})),
-      };
-    }
-    truth = merged;
-  }
-  let includedPageScopeAssets = false;
-  const variantSliceNodes = collectVariantSliceNodes(truth.componentVariantGraph);
-  for (const [sid, sec] of Object.entries(truth.sections || {})) {
-    // nodes 是数组（顺序即 DFS 先序）。节点 id 取 n.id ——
-    // ⚠️ 不能用遍历下标当 nodeId：踩过一次，结果向 Figma 发了 ids=0,1,2…
-    //    换来 "ID 1 is not a valid node_id"。
-    // ⚠️ 背景层也要切：它是稿里另一棵树（页面框下的 bg/*），
-    //    漏了它页面上就是一排"缺图"占位 —— 实测漏过 5 张。
-    let list = nodesOf(sec.nodes).concat(nodesOf(sec.background && sec.background.nodes));
-    if (!includedPageScopeAssets) {
-      list = list.concat(
-        nodesOf(truth.pageBackground && truth.pageBackground.nodes),
-        nodesOf(truth.pageChrome && truth.pageChrome.nodes),
-        nodesOf(truth.fixedOverlays && truth.fixedOverlays.nodes),
-        variantSliceNodes,
-      );
-      includedPageScopeAssets = true;
-    }
-    /* Alternate component states on the selected instance tree. */
-    list = list.concat(list.flatMap((node) => nodesOf(node?.componentVariantGraph?.variantTrees)
-      .flatMap((tree) => nodesOf(tree?.nodes))));
-    for (const n of list) {
-      const nid = n.id || n.componentId;
-      if (!nid) continue;
-      if (seenNodeIds.has(nid)) continue;
-      seenNodeIds.add(nid);
-      const derived = deriveRole(n);
-      if (derived.errors?.length) continue;
-      const pfx = SLICE_PREFIXES.has(derived.role) ? derived.role : null;
-      const listedSlice = Boolean(n.sliceExport);
-      if (n.type === 'TEXT' && !pfx) continue;               // unprefixed TEXT is editable copy; visual names can override type
-      /* Lead decision (2026-08-10): the page-background owner root (bg/*) is no
-         longer baked as one giant PNG — its 233-node subtree is restored in truth
-         with 4 ALPHA masks + 98 non-default blends that a single raster destroys.
-         The owner root itself has no own fill (a pure structural frame), so it must
-         not be sliced; genuinely atomic leaves (decor vectors, image fills, mask
-         owners) still bake under the owner tree via the normal rules below. Only
-         skip the empty owner root, not blend/mask/image descendants. */
-      const ownFills = ((n.style || {}).fills || []).filter((fl) => fl && fl.visible !== false);
-      const isEmptyBgOwnerRoot = pfx === 'bg' && n.type !== 'TEXT' && ownFills.length === 0 && Array.isArray(n.ownerPath);
-      if (isEmptyBgOwnerRoot) continue;
-      const fills = ((n.style || {}).fills || []).filter((f) => f && f.visible !== false);
-      const kind = fillKind((n.style || {}).fills);
-      const hasImageFill = Array.isArray((n.style || {}).fills)
-        && (n.style || {}).fills.some((f) => f && f.visible !== false && f.type === 'IMAGE');
-
-      /* ═══ 「纯渐变不切图」 ═══
-       * 单层渐变 CSS 能**精确**画出来（linear-gradient 的角度与色标就是稿里的原值），
-       * 切成图只会更差。而且实测差得很严重：
-       *   阴影 745x17309 与 Rectangle 3468575 745x15982 都是单层渐变，
-       *   为了显示分区内那 1543px 的一段，切出了 706x16384 / 764x16384 两张图，
-       *   合计 14MB —— 更要命的是 **Figma 导出在 16384px 处截断**，图比节点矮，
-       *   渲染时拉伸填满节点框会把渐变压扁约 5%，是静默的几何错误。
-       * 多层填充仍然切图：叠层的合成顺序在 CSS 里不保证与 Figma 一致，切图更稳。 */
-      const b = n.box || {};
-      const w = Math.round(b.w ?? 0), h = Math.round(b.h ?? 0);
-      /* ═══ 非矩形大节点 → 切图（第 13 项，2026-08-04）═══
-       * 渲染层对非矩形只能按外接矩形画填充。实测分界：28 个 <24px 的（6×6 色点等）
-       * 矩形近似肉眼无差；≥24px 的（细三角/不规则轮廓）方块化一眼可见 ——
-       * 欣仪拿官网截图对比确认的可见问题。阈值 minDim 可由 spec.figma.sliceMinDimPx 覆盖。
-       * 退化形状（宽或高为 0，如 Vector 88 的 0×644）也会进清单 —— Figma 可能导不出，
-       * 那时落在 noUrl 里报出来，不静默。
-       * ⚠️ 优先级在「纯渐变不切」之上：那个豁免是为**矩形**渐变准备的（CSS 精确画），
-       * 非矩形的轮廓 CSS 画不出 —— 实测漏过 2128×290 的 Union（OVERLAY 渐变），
-       * 它就是"轮廓比渐变精确性更要紧"的反例。 */
-      const bigNonRect = NONRECT.has(n.type) && Math.max(w, h) >= minDim;
-      /* BOOLEAN/VECTOR directional btn/ arrows are composite contours. CSS
-         chevrons/diamonds are forbidden; a missing slice must stay missing,
-         not become a white rectangle. Slice even when the inventory left
-         sliceExport unset — the name+type is the source identity. */
-      const booleanBtnArrow = NONRECT.has(n.type) && derived.role === 'btn'
-        && BTN_ARROW_NAME.test(String(n.name || ''));
-      /* 多层填充且含位图（IMAGE）→ 整节点切图。Figma 叠层按各自 blendMode 混合
-         （SOLID/NORMAL + IMAGE/SOFT_LIGHT 这类），CSS background-blend-mode 只能给
-         一个元素里的多层背景统一一套模式，没法逐层指定 —— 硬画必错。整节点 PNG 把
-         混合结果烤进去，视觉与稿一致。全 SOLID 叠层不切（CSS background 多色层能
-         精确画，见 figma-render 的 data-multifill）。 */
-      const multiFillImage = fills.length > 1 && fills.some((f) => f.type === 'IMAGE');
-      /* ??????????????exportSettings?2026-08-04 ?? truth??
-         ??????"?????"???????????? Slider 17:51300?
-         ???? img/ ???????????? */
-      const hasExportIntent = Array.isArray(n.exportSettings) && n.exportSettings.length > 0;
-      /* Figma alpha/gradient mask 的 owner 必须整体导出：它后面的兄弟依赖 mask 的
-         alpha 与原始绘制顺序，拆成 CSS 节点会让局部纹理/背景跨出真实可见区。 */
-      const hasMaskOwner = Array.isArray(n.maskChildren) && n.maskChildren.length > 0;
-      const onlyGradient = fills.length === 1 && String(fills[0].type).startsWith('GRADIENT');
-      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !booleanBtnArrow && !hasMaskOwner) continue;
-
-      if (!(listedSlice || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
-      const effects = ((n.style || {}).effects || []).filter((e) => e && e.visible !== false);
-      const descendantEffects = ((n.style || {}).descendantEffects || []).filter((e) => e && e.effectType);
-      const allEffectTypes = [
-        ...effects.map((e) => e.type),
-        ...descendantEffects.map((e) => e.effectType),
-      ].filter(Boolean);
-      const rb = n.renderBox || null;
-      const hasSoftSpillEffect = allEffectTypes.some((type) =>
-        type === 'DROP_SHADOW' || type === 'LAYER_BLUR' || type === 'BACKGROUND_BLUR');
-      /* A baked `img/` instance can carry its entire visual frame (including
-         its soft underside) in descendants. Once it is selected as one PNG,
-         direct `effects` is no longer evidence of whether its rendered
-         pixels spill. Its source renderBox is. Export that render canvas so
-         the renderer can place it without stretching or silently trimming
-         the card frame at a section boundary. Other slice types retain the
-         conservative effect-backed rule. */
-      const isBakedImageOwner = pfx === 'img' && (n.type === 'INSTANCE' || n.type === 'COMPONENT');
-      const exportBounds = ((hasSoftSpillEffect || isBakedImageOwner) && spillBox(b, rb)) ? 'render' : 'box';
-      const exportBox = exportBounds === 'render' ? roundBox(rb) : null;
-      // ⚠️ truth 里的键是 w/h，不是 width/height。之前写成 b.width，清单里
-      //    designSize 一直是 "0x0" —— 一份本该当证据的清单，记了一路空数。
-      const imageRefs = [...new Set(fills
-        .filter((f) => f && f.type === 'IMAGE' && f.imageRef)
-        .map((f) => String(f.imageRef)))];
-      out.push({
-        sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
-        reason: listedSlice ? '清单 sliceExport' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
-        w, h, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
-        imageRefs: imageRefs.length ? imageRefs : undefined,
-        renderCropPolicy: exportBounds === 'render' && isBakedImageOwner ? 'top-left-render-canvas' : null,
-        effectTypes: [...new Set(allEffectTypes)],
-        descendantEffectTypes: [...new Set(descendantEffects.map((e) => e.effectType).filter(Boolean))],
-        dropShadowCount: allEffectTypes.filter((type) => type === 'DROP_SHADOW').length,
-        blurCount: allEffectTypes.filter((type) => type === 'LAYER_BLUR' || type === 'BACKGROUND_BLUR').length,
-      });
+async function fetchWithRetry(url, options = {}, { attempts = 6, label = url } = {}) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(url, options);
+      return res;
+    } catch (err) {
+      lastErr = err;
+      const wait = Math.min(15000, 800 * (2 ** i));
+      await sleep(wait);
     }
   }
-  return out;
+  throw new Error(`${label}: ${lastErr?.message || lastErr}`);
 }
 
 async function figmaGet(url, token) {
-  const res = await fetch(url, { headers: { 'X-Figma-Token': token } });
+  const res = await fetchWithRetry(url, { headers: { 'X-Figma-Token': token } }, { label: 'Figma API' });
   const text = await res.text();
   let json;
   try { json = JSON.parse(text); } catch { fail(`Figma 返回非 JSON（HTTP ${res.status}）：${text.slice(0, 200)}`); }
@@ -358,6 +167,16 @@ function cropPng(buf, sx, sy, sw, sh) {
 function pngSize(buf) {
   if (buf.length <= 24 || buf.readUInt32BE(0) !== 0x89504e47) return { pxW: null, pxH: null };
   return { pxW: buf.readUInt32BE(16), pxH: buf.readUInt32BE(20) };
+}
+
+function roundBox(b) {
+  if (!b) return null;
+  return {
+    x: +Number(b.x ?? 0).toFixed(3),
+    y: +Number(b.y ?? 0).toFixed(3),
+    w: +Number(b.w ?? 0).toFixed(3),
+    h: +Number(b.h ?? 0).toFixed(3),
+  };
 }
 
 async function main() {
@@ -474,7 +293,7 @@ async function main() {
     const u = urlMap[p.nodeId];
     if (!u) continue;
     try {
-      const res = await fetch(u);
+      const res = await fetchWithRetry(u, {}, { label: `download ${p.nodeId}` });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       let buf = Buffer.from(await res.arrayBuffer());
       const file = assetFileName(p.nodeId);
@@ -498,13 +317,30 @@ async function main() {
         pxH >= wantH &&
         (pxW !== wantW || pxH !== wantH);
       const shouldCropBakedRenderCanvas =
-        p.renderCropPolicy === 'top-left-render-canvas' &&
+        (p.renderCropPolicy === 'owner-relative-render-canvas' || p.renderCropPolicy === 'top-left-render-canvas') &&
         pxW != null && pxW >= wantW && pxH >= wantH &&
         (pxW !== wantW || pxH !== wantH);
       if (shouldCropBakedRenderCanvas) {
         const sourcePixelSize = `${pxW}x${pxH}`;
-        buf = cropPng(buf, 0, 0, wantW, wantH);
-        renderCrop = { sourcePixelSize, crop: `0,0,${wantW},${wantH}`, policy: p.renderCropPolicy };
+        /* Figma's default images export is the unclipped ink canvas (owner +
+           shadow). Adjacent switch cards only keep a peek strip, so that
+           canvas is wider than exportBox. Cropping from 0,0 always takes the
+           owner's left edge — a right-peek card then shows a mirrored gold
+           border. Place the crop at exportBox relative to the owner box. */
+        const ownerX = Number(p.box?.x);
+        const ownerY = Number(p.box?.y);
+        const exportX = Number(p.exportBox?.x);
+        const exportY = Number(p.exportBox?.y);
+        let cropX = 0;
+        let cropY = 0;
+        if ([ownerX, ownerY, exportX, exportY].every(Number.isFinite)) {
+          cropX = Math.round((exportX - ownerX) * p.scale);
+          cropY = Math.round((exportY - ownerY) * p.scale);
+        }
+        cropX = Math.max(0, Math.min(cropX, pxW - wantW));
+        cropY = Math.max(0, Math.min(cropY, pxH - wantH));
+        buf = cropPng(buf, cropX, cropY, wantW, wantH);
+        renderCrop = { sourcePixelSize, crop: `${cropX},${cropY},${wantW},${wantH}`, policy: 'owner-relative-render-canvas' };
         ({ pxW, pxH } = pngSize(buf));
       } else if (shouldCropLayerBlur) {
         const fullW = pxW / p.scale;
@@ -665,6 +501,18 @@ async function main() {
   console.log(JSON.stringify(out, null, 2));
 }
 
-if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href) {
+function isDirectRun() {
+  const invoked = process.argv[1];
+  if (!invoked) return false;
+  try {
+    return import.meta.url === pathToFileURL(resolve(invoked)).href;
+  } catch {
+    return false;
+  }
+}
+
+export { cropPng, pngSize };
+
+if (isDirectRun()) {
   main().catch((e) => fail(e?.message || String(e)));
 }

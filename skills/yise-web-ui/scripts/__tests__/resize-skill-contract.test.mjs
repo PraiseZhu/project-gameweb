@@ -254,3 +254,10 @@ test('directory browser check locates the rail by name and source box, not a sea
   assert.doesNotMatch(navRailCheckSrc, /targetRect\.width \/ 727/);
   assert.doesNotMatch(navRailCheckSrc, /targetRect\.height \/ 2376/);
 });
+
+test('product-view window resize keeps the same composition on the light path', () => {
+  assert.match(chromeSrc, /产品视图同构图走拖拽轻路径/);
+  assert.match(chromeSrc, /if \(PRODUCT_VIEW && !_resizeDragActive && _lastCompositionKey\)/);
+  assert.match(chromeSrc, /if \(nextKey === _lastCompositionKey\) beginResizeDrag\(\)/);
+  assert.match(chromeSrc, /winResizeIdleTimer = setTimeout\(function \(\) \{\s*winResizeIdleTimer = 0;\s*endResizeDrag\(\);/s);
+});

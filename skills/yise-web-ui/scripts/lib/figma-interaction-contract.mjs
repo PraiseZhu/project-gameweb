@@ -384,6 +384,39 @@ function siblingHscrollHost(node, hostsById, byId) {
   return siblings.length === 1 ? siblings[0] : null;
 }
 
+function isCalendarWindowNode(node) {
+  if (!node) return false;
+  const parsed = parseLayerName(node.name);
+  return isCalendarMix(node, parsed) || /日历|calendar/i.test(str(node.name));
+}
+
+function calendarWindowHscrollHost(node, hostsById, byId) {
+  let windowNode = null;
+  let current = node;
+  for (let guard = 0; guard < 12 && current; guard++) {
+    if (isCalendarWindowNode(current) && String(idOf(current)) !== String(idOf(node))) {
+      windowNode = current;
+      break;
+    }
+    current = byId.get(String(asId(current.parentId)));
+  }
+  if (!windowNode) return null;
+  const windowId = String(idOf(windowNode));
+  const windowHosts = [...hostsById.values()].filter((host) => {
+    const hostNode = byId.get(String(host.id));
+    if (!hostNode) return false;
+    const hostId = String(idOf(hostNode));
+    if (hostId === windowId) return true;
+    let cursor = hostNode;
+    for (let hops = 0; hops < 8 && cursor; hops++) {
+      if (String(idOf(cursor)) === windowId) return true;
+      cursor = byId.get(String(asId(cursor.parentId)));
+    }
+    return false;
+  });
+  return windowHosts.length === 1 ? windowHosts[0] : null;
+}
+
 /**
  * Build a source-backed interaction model. Missing owner/index evidence is
  * reported as unresolved instead of guessed, making the bridge fail-closed.
@@ -444,7 +477,8 @@ export function deriveInteractionModel(nodes = []) {
       };
     }
     if (role === 'switch' || role === 'swpage' || role === 'tab' || role === 'ind' || role === 'btn') {
-      const owner = role === 'switch' ? node : ownerSwitch(node, byId);
+      const languageSwitchBtn = role === 'btn' && /多语言切换按钮/.test(str(node.name));
+      const owner = languageSwitchBtn ? null : (role === 'switch' ? node : ownerSwitch(node, byId));
       const ownerId = owner && idOf(owner);
       if (ownerId != null) {
         const key = String(ownerId);
@@ -456,7 +490,9 @@ export function deriveInteractionModel(nodes = []) {
         /* Independent btn/ controls are not switch pages. A COMPONENT_SET that
            actually contains Property 1=normal and Property 1=highlight is a
            source-backed instance replacement. Missing those two states stays
-           draw-only; it is not a missing switch owner. disable remains inert. */
+           draw-only; it is not a missing switch owner. disable remains inert.
+           `btn/多语言切换按钮` lives inside dropmenu/ or a language modal and
+           still keeps its own highlight/normal set. */
         const stateGraph = standaloneButtonVariantGraph(node);
         if (stateGraph && entry.controlState !== 'disabled') {
           entry.buttonVariant = {
@@ -498,7 +534,9 @@ export function deriveInteractionModel(nodes = []) {
     if (!node) continue;
     const command = isHscrollCommand(node);
     if (!command) continue;
-    const host = nearestHscrollAncestor(node, hostsById, byId) || siblingHscrollHost(node, hostsById, byId);
+    const host = nearestHscrollAncestor(node, hostsById, byId)
+      || siblingHscrollHost(node, hostsById, byId)
+      || calendarWindowHscrollHost(node, hostsById, byId);
     if (!host) continue;
     entry.hscrollHostId = String(host.id);
     entry.hscrollAction = command;

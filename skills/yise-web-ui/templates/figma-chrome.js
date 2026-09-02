@@ -981,7 +981,8 @@
        （2026-08-11 实测拖拽每 pointermove 重建 2.7 万条 DOM、长帧 230ms）。
        拖拽中只更新 frame 几何 + 读数；松手（endResizeDrag）或断点切换时
        _forceFullRender 置位，强制一次精确完整 render。
-       非拖拽的 resize（窗口拉伸、W/H 数字框）仍走完整 render —— 它们是低频离散事件。 */
+       产品视图的窗口拉伸同构图也走这条轻路径：只更新已有节点的位置/缩放，
+       不把整页 DOM 拆掉重画。构图变了或 QA 数字框仍走完整 render。 */
     var _skipContentRebuild = !!_resizeDragActive && !_forceFullRender && !S.grid;
     /* A breakpoint label is not itself a composition boundary: pad may reuse
        the PC truth, while a native mobile tree is structurally different.
@@ -1458,8 +1459,8 @@
        （render 跳过 renderInto，只更新几何+读数，锚点天然保持）。
      endResizeDrag：pointerup/pointercancel 时调用，置 _forceFullRender 并
        立即做一次精确完整 render（含锚点按比例恢复），保证松手即终态精确。
-     两者幂等；非拖拽路径（窗口拉伸、W/H 数字框、语言/状态/设备切换）不经过这里，
-     始终完整 render。 */
+     两者幂等。QA 数字框 / 语言 / 状态 / 设备切换仍完整 render。
+     产品视图窗口拉伸在同构图下复用这条轻路径，停稳后再 endResizeDrag 精确一次。 */
   var _resizeDragActive = false;
   var _forceFullRender = false;
   var _lastCompositionKey = null; /* 上次完整 render 的 truth composition base */
@@ -2252,15 +2253,41 @@
 
   if (!PRODUCT_VIEW) readHash();   // 深链(g=/d=/w=/h=/state=)是 QA 功能,产品视图不消费
   syncAll();
-  /* 窗口 resize 与 slider 同理：RAF 合并，同帧多次 resize 只重渲染一次。 */
+  /* 窗口 resize 与 slider 同理：RAF 合并，同帧多次 resize 只重渲染一次。
+     产品视图同构图走拖拽轻路径：只更新已有节点的位置/缩放，停稳后再精确 render。
+     构图变了立刻完整重建。 */
   var winResizeScheduled = false;
+  var winResizeIdleTimer = 0;
   window.addEventListener('resize', function () {
-    if (winResizeScheduled) return;
+    if (PRODUCT_VIEW && !_resizeDragActive && _lastCompositionKey) {
+      var nextKey = compositionKeyForViewport(viewport());
+      if (nextKey === _lastCompositionKey) beginResizeDrag();
+    }
+    if (winResizeScheduled) {
+      if (PRODUCT_VIEW && _resizeDragActive) {
+        if (winResizeIdleTimer) clearTimeout(winResizeIdleTimer);
+        winResizeIdleTimer = setTimeout(function () {
+          winResizeIdleTimer = 0;
+          endResizeDrag();
+        }, 140);
+      }
+      return;
+    }
     winResizeScheduled = true;
     var raf = typeof window.requestAnimationFrame === 'function'
       ? window.requestAnimationFrame.bind(window)
       : function (fn) { return setTimeout(fn, 0); };
-    raf(function () { winResizeScheduled = false; render(); });
+    raf(function () {
+      winResizeScheduled = false;
+      render();
+      if (PRODUCT_VIEW && _resizeDragActive) {
+        if (winResizeIdleTimer) clearTimeout(winResizeIdleTimer);
+        winResizeIdleTimer = setTimeout(function () {
+          winResizeIdleTimer = 0;
+          endResizeDrag();
+        }, 140);
+      }
+    });
   });
   } // continueChromeBoot
 })();

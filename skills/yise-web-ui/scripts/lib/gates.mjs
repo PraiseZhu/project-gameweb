@@ -25,6 +25,7 @@ export const TRUSTED_GATES = Object.freeze({
   D: 'verify',
   E: 'pixel',
   F: 'verify',
+  L: 'verify',
   X: 'verify',
 });
 

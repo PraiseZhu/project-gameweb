@@ -115,6 +115,23 @@ test('generic sibling buttons with 前/后 are not hscroll commands', () => {
   assert.equal(byId.get('later')['data-hscroll-action'], undefined);
 });
 
+test('calendar window arrows bind to the unique nested scroll host', () => {
+  const model = deriveInteractionModel([
+    { id: 'cal', type: 'FRAME', name: '日历', parentId: 'section' },
+    { id: 'mix', type: 'FRAME', name: 'mix/calendar', parentId: 'cal', clipsContent: true, box: { x: 0, y: 0, w: 200, h: 40 } },
+    { id: 'scroll', type: 'FRAME', name: 'scroll/可滑动内容', parentId: 'mix', clipsContent: true, box: { x: 20, y: 0, w: 100, h: 40 } },
+    { id: 'track', type: 'FRAME', name: 'content', parentId: 'scroll', box: { x: 20, y: 0, w: 240, h: 40 } },
+    { id: 'today', type: 'FRAME', name: 'dyn/今日日期', parentId: 'cal' },
+    { id: 'next', type: 'BOOLEAN_OPERATION', name: 'btn/右滑动箭头', parentId: 'cal' },
+    { id: 'section', type: 'FRAME', name: 'sec/2' },
+  ]);
+  const byId = new Map(model.attributes.map((x) => [x.id, x.attrs]));
+  assert.equal(byId.get('scroll')['data-hscroll'], 'x');
+  assert.equal(byId.get('next')['data-hscroll-action'], 'next');
+  assert.equal(byId.get('next')['data-hscroll-host'], 'scroll');
+  assert.equal(byId.get('today')['data-calendar-now'], 'true');
+});
+
 test('named scroll inside a mix clip is the hscroll host', () => {
   const model = deriveInteractionModel([
     { id: 'mix', type: 'FRAME', name: 'mix/calendar', clipsContent: true, box: { x: 0, y: 0, w: 100, h: 40 } },
@@ -280,6 +297,28 @@ test('fails closed when disabled or incomplete controls cannot cover component-s
   ]);
   assert.ok(model.unresolved.some((entry) => /component-set variant graph has 3 variants/.test(entry.reason)));
   assert.equal(model.stats.componentVariantControls, 0);
+});
+
+test('btn/多语言切换按钮 inside dropmenu keeps highlight/normal, not switch membership', () => {
+  const graph = {
+    componentSetId: 'lang-row-set',
+    variants: [
+      { componentId: '392:32112', name: 'Property 1=highlight', interactions: [] },
+      { componentId: '392:32119', name: 'Property 1=normal', interactions: [] },
+    ],
+  };
+  const model = deriveInteractionModel([
+    { id: 'menu', type: 'INSTANCE', name: 'dropmenu/语言', parentId: 'chrome', componentProperties: { 'Property 1': { value: 'on', type: 'VARIANT' } }, componentVariantGraph: { componentSetId: 'dropmenu-set', variants: [{ componentId: 'off', name: 'Property 1=off', interactions: [] }, { componentId: 'on', name: 'Property 1=on', interactions: [] }] } },
+    { id: 'row-zh', type: 'INSTANCE', name: 'btn/多语言切换按钮', parentId: 'menu', ownerPath: ['chrome', 'menu', 'row-zh'], componentId: '392:32112', componentProperties: { 'Property 1': { value: 'highlight', type: 'VARIANT' } }, componentVariantGraph: graph },
+    { id: 'row-en', type: 'INSTANCE', name: 'btn/多语言切换按钮', parentId: 'menu', ownerPath: ['chrome', 'menu', 'row-en'], componentId: '392:32119', componentProperties: { 'Property 1': { value: 'normal', type: 'VARIANT' } }, componentVariantGraph: graph },
+    { id: 'chrome', type: 'FRAME', name: 'fix/nav' },
+  ]);
+  const byId = new Map(model.attributes.map((entry) => [entry.id, entry.attrs]));
+  assert.equal(byId.get('row-zh')['data-btn-variant'], 'true');
+  assert.equal(byId.get('row-zh')['data-btn-variant-state'], 'highlight');
+  assert.equal(byId.get('row-en')['data-btn-variant-state'], 'normal');
+  assert.equal(byId.get('row-zh')['data-switch'], undefined);
+  assert.equal(byId.get('menu')['data-dropmenu'], 'true');
 });
 
 test('independent btn with normal and highlight is not a missing switch owner', () => {

@@ -864,8 +864,8 @@ test('文档契约(不 skip): SKILL.md 必须写明执行时序原则、S ⊆ E 
 // ============================================================================
 
 test('条目 7a 唯一真相源(不 skip): 门列表只有 TRUSTED_GATES 一份，别处不许再手写', () => {
-  assert.deepEqual(GATE_LETTERS, ['A', 'B', 'C', 'D', 'E', 'F', 'X']);
-  assert.deepEqual(lettersFor('verify'), ['A', 'B', 'C', 'D', 'F', 'X']);
+  assert.deepEqual(GATE_LETTERS, ['A', 'B', 'C', 'D', 'E', 'F', 'L', 'X']);
+  assert.deepEqual(lettersFor('verify'), ['A', 'B', 'C', 'D', 'F', 'L', 'X']);
   assert.deepEqual(lettersFor('pixel'), ['E']);
   // verify / pr-block / 渲染器都必须遍历映射,而不是内联门字母数组
   const v = stripComments(readFileSync(VERIFY, 'utf8'));
@@ -908,7 +908,7 @@ test('条目 7b taint 单测(不 skip): 未标记的 report 喂给渲染器必�
     ok: true, toolVersion: 'x', generatedAt: 'now', coverage: { cases: [] },
     gateA: { pass: true }, gateB: { pass: true, passed: 1, total: 1, entryRenderProof: 'proved' },
     gateC: { pass: true, checks: [{ id: 'no-clip' }] }, gateD: { pass: true, total: 1 },
-    gateF: { pass: true, total: 1 }, gateX: { pass: true, total: 0 },
+    gateF: { pass: true, total: 1 }, gateL: { status: 'not-claimed', pass: false, total: 0 }, gateX: { pass: true, total: 0 },
     inputHashes: { componentSources: { sources: { 'a.ts': 'h' } } },
   };
   // ① 直接喂 JSON.parse 出来的普通对象(模拟"忘了走可信侧")→ 必须炸
