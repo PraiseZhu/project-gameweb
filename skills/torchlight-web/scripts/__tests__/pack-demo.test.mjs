@@ -319,7 +319,7 @@ test('PNG that does not shrink keeps the original path instead of a missing webp
     '    pix[x,y]=((x*13+y*7)%256,(x*3)%256,(y*11)%256)',
     'im.save(p,"PNG",optimize=False)',
     'print(p)',
-  ].join('\n')], { encoding: 'utf8', timeout: 30000, windowsHide: true });
+  ].join('\n')]);
   assert.equal(maker.status, 0, maker.stdout + maker.stderr);
   const source = maker.stdout.trim();
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-png-skip-'));
@@ -360,7 +360,7 @@ test('slice-time encoder default still keeps omitted-lossless alpha lossless', (
     'd.ellipse((20,20,220,220),fill=(210,160,90,180))',
     'im=im.filter(ImageFilter.GaussianBlur(radius=6))',
     'im.save(Path(os.environ["YISE_SLICE_ALPHA_PNG"]),"PNG")',
-  ].join('\n')], { encoding: 'utf8', timeout: 30000, windowsHide: true, env: { ...process.env, YISE_SLICE_ALPHA_PNG: src } });
+  ].join('\n')], { env: { ...process.env, YISE_SLICE_ALPHA_PNG: src } });
   assert.equal(maker.status, 0, maker.stdout + maker.stderr);
   writeFileSync(jobs, JSON.stringify({ quality: 90, jobs: [{ src, dest }] }));
   const encoded = spawnPython([join(ROOT, 'scripts/lib/encode-webp.py'), jobs]);
@@ -385,7 +385,7 @@ test('large alpha art is packed lossy instead of staying slice-time lossless', (
     'im=im.filter(ImageFilter.GaussianBlur(radius=28))',
     'im.save(p,"WEBP",lossless=True,method=6,quality=100)',
     'print(p)',
-  ].join('\n')], { encoding: 'utf8', timeout: 30000, windowsHide: true });
+  ].join('\n')]);
   assert.equal(maker.status, 0, maker.stdout + maker.stderr);
   const source = maker.stdout.trim();
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-alpha-lossy-'));
@@ -419,7 +419,7 @@ test('existing WebP is re-encoded at pack quality and HTML still points at it', 
     '    pix[x,y]=((x*13+y*7)%256,(x*3)%256,(y*11)%256)',
     'im.save(p,"WEBP",quality=95,method=0,lossless=False)',
     'print(p)',
-  ].join('\n')], { encoding: 'utf8', timeout: 30000, windowsHide: true });
+  ].join('\n')]);
   assert.equal(maker.status, 0, maker.stdout + maker.stderr);
   const noisy = maker.stdout.trim();
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-webp-reencode-'));
