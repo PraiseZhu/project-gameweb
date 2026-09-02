@@ -1,6 +1,6 @@
 # 做页怎么吃交接包
 
-本仓做页只吃 ready 包。真稿，不另造清单。未规范判断写回 / green-draft 在 `projects/project-unnamed-inventory`。已规范命名稿：稿上有的每一端 `inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`）。只有 PC 或只有手机时只传那一端。交接包只装箱信息，不导 png。做页按清单 `sliceExport` 自己导图，不猜图层名、不按节点框重导。
+本仓做页只吃 ready 包。真稿，不另造清单。清单只答这一稿画了什么；拉伸/外文字号听做页包里的 `DESIGN.md`。未规范判断写回 / green-draft 在 `projects/project-unnamed-inventory`。已规范命名稿：稿上有的每一端 `inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`）。只有 PC 或只有手机时只传那一端。交接包只装箱信息，不导 png。做页按清单 `sliceExport` 自己导图，不猜图层名、不按节点框重导。
 
 ## 已规范稿打出包
 

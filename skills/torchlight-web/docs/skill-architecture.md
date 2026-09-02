@@ -1,7 +1,9 @@
 # torchlight-web Skill architecture
 
 This repository exposes a Main Skill plus three named axes and one optional
-evidence module. The Main Skill owns the complete extraction-to-demo workflow,
+evidence module. Policy numbers listen to this package's `DESIGN.md`. Resize
+stretch numbers (breakpoints, `k`, `10vw`, `100vh`) come from **第 5 章**.
+The Main Skill owns the complete extraction-to-demo workflow,
 including component/state structure, official behavior references, demo wiring,
 and final review. Translation, Interaction, and Resize are independent axes.
 The old Motion label is kept only on existing file names. The normal workflow
