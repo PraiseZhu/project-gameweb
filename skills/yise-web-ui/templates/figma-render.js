@@ -21,6 +21,13 @@
  */
 (function () {
   'use strict';
+  function designPolicy() {
+    var policy = (typeof window !== 'undefined' && window.__designPolicy) || null;
+    if (!policy || typeof policy !== 'object') {
+      throw new Error('figma-render: missing window.__designPolicy');
+    }
+    return policy;
+  }
   window.__figmaRender = {
 
   /* ═══ 渲染层支持清单 ═══
@@ -638,13 +645,20 @@
     if (lang === 'zh-CN') return null;
     const src = Number(sourceFontSize);
     if (!Number.isFinite(src) || src <= 0) return null;
-    /* tier 分类镜像 classifySourceSizeTier：fw<600=body；fw>=600 且源>40=card-title；否则 heading。 */
-    const tier = Number(fontWeight) < 600 ? 'body' : (src > 40 ? 'card-title' : 'heading');
-    const SCALE = {
-      body: { en: 0.8, ja: 0.8, ko: 0.8, 'zh-TW': 1 },
-      'card-title': { en: 1, ja: 0.833, ko: 1, 'zh-TW': 0.833 },
-      heading: { en: 1, ja: 1, ko: 1, 'zh-TW': 1 },
-    };
+    const policy = (typeof window !== 'undefined' && window.__designPolicy) || null;
+    if (!policy || typeof policy !== 'object') {
+      throw new Error('figma-render: missing window.__designPolicy');
+    }
+    const tierRules = policy.tierRules || {};
+    const bodyMax = Number(tierRules.bodyMaxWeightExclusive);
+    const cardMin = Number(tierRules.cardTitleMinSourcePxExclusive);
+    if (!Number.isFinite(bodyMax) || !Number.isFinite(cardMin)) {
+      throw new Error('figma-render: tierRules missing from DESIGN.md YAML');
+    }
+    const tier = Number(fontWeight) < bodyMax
+      ? 'body'
+      : (src > cardMin ? 'card-title' : 'heading');
+    const SCALE = policy.localeFontScale || {};
     const row = SCALE[tier] || {};
     const ratio = Number.isFinite(row[lang]) ? row[lang] : 1;
     const fontSize = src * ratio;
@@ -659,14 +673,20 @@
      because this renderer is a self-contained inlined artifact. A fixed UI
      frame may shrink translated copy to fit its maximum owner/content range;
      open-flow / unbounded HEIGHT text keeps source metrics and grows instead. */
-  _fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null } = {}) {
+  _fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null, hugNoShrink, openFlowNoShrink } = {}) {
+    const policy = (typeof window !== 'undefined' && window.__designPolicy) || null;
+    if (!policy || typeof policy !== 'object') {
+      throw new Error('figma-render: missing window.__designPolicy');
+    }
+    const hugOff = hugNoShrink == null ? policy.hugNoShrink === true : hugNoShrink === true;
+    const openOff = openFlowNoShrink == null ? policy.openFlowNoShrink === true : openFlowNoShrink === true;
     const truncating = String(autoResize || 'FIXED').toUpperCase() === 'TRUNCATE' || truncation === 'ENDING';
-    if (openFlow) return { authorized: false, reason: 'open-flow-natural-growth' };
+    if (openFlow && openOff) return { authorized: false, reason: 'open-flow-natural-growth' };
     if (explicitFit) return { authorized: true, reason: 'explicit-fit-grant' };
     if (truncating) return { authorized: true, reason: 'truncation' };
     if (clipsContent === true || isMask === true) return { authorized: true, reason: 'clip-or-mask' };
-    // mirrored from scripts/lib/figma-typography.mjs#fitAuthorization
-    if (String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
+    // mirrored from scripts/lib/figma-typography.mjs#fitAuthorization; flags from DESIGN.md YAML
+    if (hugOff && String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
     if (boundedOwner) return { authorized: true, reason: 'framed-bounded-owner' };
     return { authorized: false, reason: 'preserve-source-metrics' };
   },
@@ -729,12 +749,15 @@
       if (!measuredW()) return;
       const fitsW = () => measuredW() <= widthFit + 0.5;
       if (fitsW()) return;
-      /* Source-anchored one-line title slots may take the documented 70/65%
-         terminal tiers after the official locale base, so every sibling keeps
-         source-derived clearance rather than one long title touching a frame. */
-      const FLOORW = opts.sourceTitleInlineSafe ? 65 : 75;
-      const stepsW = opts.sourceTitleInlineSafe ? [92, 85, 78, 75, 70, FLOORW] : [92, 85, 78, FLOORW];
+      /* Width-fit uses the same YAML shrink ladder as height-fit. Extra 70/65
+         terminal tiers are not a second policy. */
+      const FLOORW = Number(designPolicy().shrinkFloorPercent);
+      const stepsW = Array.isArray(designPolicy().shrinkSteps) ? designPolicy().shrinkSteps.map(Number) : [];
+      if (!Number.isFinite(FLOORW) || FLOORW <= 0 || !stepsW.length) {
+        throw new Error('figma-render: shrinkSteps missing from DESIGN.md YAML');
+      }
       for (const s of stepsW) {
+        if (s >= 100) continue;
         el.style.fontSize = (fs * s / 100) + 'px';
         el.style.lineHeight = (lh * s / 100) + 'px';
         el.setAttribute('data-fit-scale', String(s));
@@ -816,8 +839,13 @@
        fontSize/lineHeight scale together to preserve leading & vertical
        centering. Reaching the floor without fitting is a human-review state,
        not a silent pass. */
-    const FLOOR = 75;
-    for (const s of [92, 85, 78, FLOOR]) {
+    const FLOOR = Number(designPolicy().shrinkFloorPercent);
+    const shrinkSteps = Array.isArray(designPolicy().shrinkSteps) ? designPolicy().shrinkSteps.map(Number) : [];
+    if (!Number.isFinite(FLOOR) || FLOOR <= 0 || !shrinkSteps.length) {
+      throw new Error('figma-render: shrinkSteps missing from DESIGN.md YAML');
+    }
+    for (const s of shrinkSteps) {
+      if (s >= 100) continue;
       el.style.fontSize = (fs * s / 100) + 'px';
       el.style.lineHeight = (lh * s / 100) + 'px';
       el.setAttribute('data-fit-scale', String(s));
@@ -1253,7 +1281,15 @@
 
     // 当前端对应的设计稿宽度。规范只有 mobile(750) 与 pc(3840) 两套稿；
     // tablet 区间用哪套稿在 spec.adaptation.knownDeviations 里标着 TODO，未定，暂按 pc。
-    const DW = { pc: 3840, pad: 3840, mobile: 750 };
+    const widths = designPolicy().designWidths || {};
+    const DW = {
+      pc: Number(widths.pc),
+      pad: Number(widths.pad),
+      mobile: Number(widths.mobile),
+    };
+    if (![DW.pc, DW.pad, DW.mobile].every((n) => Number.isFinite(n) && n > 0)) {
+      throw new Error('figma-render: designWidths missing from DESIGN.md YAML');
+    }
     const __platforms = t.platforms || {};
     /* The acceptance shell uses matrix vocabulary (`desktop` / `tablet`), while
        ready platform truth is keyed by its source compositions (`pc` / `pad`).
@@ -1320,7 +1356,10 @@
     /* Directory stretch and KV plane roles are Resize-owned structure, not an
        optional motion-adapter extra. Always derive them from source labels. */
     const motionRoleMap = this._deriveMotionRoleMap(__activeTruth);
-    const designWidth = DW[__base] ?? DW[__plat] ?? 3840;
+    const designWidth = DW[__base] ?? DW[__plat];
+    if (!Number.isFinite(designWidth) || designWidth <= 0) {
+      throw new Error('figma-render: designWidth missing from DESIGN.md YAML');
+    }
     this._designWidth = designWidth;
     /* 缩放系数的分母端：用**被模拟的设备视口宽**（壳经 ctx.viewport 传入），
        不是 frame.clientWidth —— 帧的边框/内边距是壳的装饰，不属于被模拟的视口。
@@ -1471,11 +1510,16 @@
          not the hero section that holds title/download UI. Applying slotScale
          to the section turns the title into a height-driven poster and leaves
          the actual KV artwork on width-scale with later sections. */
-      const slotScale = Math.max(k, viewportH / firstHeight);
+      const fillVh = Number(designPolicy().heroViewportFillVh);
+      if (!Number.isFinite(fillVh) || fillVh <= 0) {
+        throw new Error('figma-render: heroViewportFillVh missing from DESIGN.md YAML');
+      }
+      const slotH = viewportH * (fillVh / 100);
+      const slotScale = Math.max(k, slotH / firstHeight);
       if (Number.isFinite(slotScale) && slotScale > 0) {
         heroVisualScale = slotScale;
         heroVisualCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
-        heroCropWindowDesign = viewportH / slotScale;
+        heroCropWindowDesign = slotH / slotScale;
       }
       /* Cover-crop fills the viewport visually. Later sections stay on their
          Figma y and only follow width-scale; do not push the document down to
@@ -6512,7 +6556,7 @@
             const frameRect = frame.getBoundingClientRect();
             if (!frameRect.width || !frameRect.height) return;
             const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
-            const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base] || 3840;
+            const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
             const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1624 : 2160);
             const pageZoom = Number.parseFloat(frame.style.zoom) || 1;
             const visibleW = frameRect.width / (pageZoom || 1);

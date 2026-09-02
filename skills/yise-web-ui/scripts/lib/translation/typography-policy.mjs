@@ -12,13 +12,26 @@ export {
   classifyFontWeight,
   classifyTypographyRange,
   classifyTextContainerConstraint,
-  fitAuthorization,
   summarizeTypography,
   groupTypographyFailures,
 } from '../figma-typography.mjs';
 
-import { normalizeLanguage, scriptsForText, classifyFontWeight } from '../figma-typography.mjs';
+import { normalizeLanguage, scriptsForText, classifyFontWeight, fitAuthorization as fitAuthorizationCore } from '../figma-typography.mjs';
 import { routeFontFamily } from './font-routing.mjs';
+import { DESIGN_POLICY } from '../design-policy.generated.mjs';
+
+export { DESIGN_POLICY };
+const SHRINK_STEPS = DESIGN_POLICY.shrinkSteps;
+const SHRINK_FLOOR = DESIGN_POLICY.shrinkFloorPercent;
+const TIER_RULES = DESIGN_POLICY.tierRules;
+
+export function fitAuthorization(args = {}) {
+  return fitAuthorizationCore({
+    ...args,
+    hugNoShrink: args.hugNoShrink ?? DESIGN_POLICY.hugNoShrink,
+    openFlowNoShrink: args.openFlowNoShrink ?? DESIGN_POLICY.openFlowNoShrink,
+  });
+}
 
 const GENERIC_FALLBACKS = Object.freeze({
   latin: ['sans-serif'],
@@ -149,7 +162,7 @@ export function computeGroupRequiredScales(members = []) {
    by the widest source sibling: the source glyph width is the ceiling, never
    an invented padding percentage.  The longest translated sibling chooses a
    discrete shared scale for the whole component group. */
-export function computeSourceAnchoredInlineFit({ sourceWidths = [], targetWidths = [], slotWidths = [], steps = [100, 92, 85, 78, 75, 70, 65] } = {}) {
+export function computeSourceAnchoredInlineFit({ sourceWidths = [], targetWidths = [], slotWidths = [], steps = SHRINK_STEPS } = {}) {
   const finite = (values) => (Array.isArray(values) ? values : [])
     .map(Number).filter((value) => Number.isFinite(value) && value > 0);
   const source = finite(sourceWidths);
@@ -234,22 +247,15 @@ export function unifyGroupFitScales(members = []) {
    值 = 线上该语言视觉字号 / 线上 zh-CN 视觉字号（本地 2× 高清稿，同比例作用于任意 Figma 源档）。
    未收录 tier/语言回退 1（不动、不猜）。en 标题字重被 font routing 压 400 是字体缺口，不在此表。 */
 /* 默认基线数据表（来源与适用范围见上;其它产品线可经 localeFontScale({ overrides }) 覆写）。 */
-export const LOCALE_FONT_SCALE = Object.freeze({
-  /* 正文（源30档 fw<600）：ja/en/ko = zh 的 0.8（12/15）；zh-TW 同级。 */
-  body:         Object.freeze({ 'zh-CN': 1, en: 0.8,   ja: 0.8,   ko: 0.8, 'zh-TW': 1 }),
-  /* 卡片标题（源60档 fw>=600）：ja/zh-TW 0.833、en/ko 1.0。线上另把 ja/zh-TW 行高收紧到≈字号。 */
-  'card-title': Object.freeze({ 'zh-CN': 1, en: 1,     ja: 0.833, ko: 1,   'zh-TW': 0.833 }),
-  /* 标题/技能标题（源<=40档 fw>=600，含大标题/角色技能标题）：全语言同级 1.0。 */
-  heading:      Object.freeze({ 'zh-CN': 1, en: 1,     ja: 1,     ko: 1,   'zh-TW': 1 }),
-});
+export const LOCALE_FONT_SCALE = DESIGN_POLICY.localeFontScale;
 
 /* 由 Figma 源 fontWeight + 源字号推出官网缩放档（tier）。这是"源字号档"维度的分类器，
    解决同 fontWeight=700 的标题在官网分属不同缩放档的问题。不按文案/node/section 特判。 */
 export function classifySourceSizeTier({ fontWeight = 400, sourceFontSize = null } = {}) {
-  if (Number(fontWeight) < 600) return 'body';
+  if (Number(fontWeight) < TIER_RULES.bodyMaxWeightExclusive) return 'body';
   const src = Number(sourceFontSize);
-  /* 卡片标题档：源 > 40 的粗体大标题（03/02 卡片标题源60）。官网对 ja/zh-TW 收紧到 0.833。 */
-  if (Number.isFinite(src) && src > 40) return 'card-title';
+  /* 卡片标题档：源 > YAML cardTitleMinSourcePxExclusive 的粗体大标题。 */
+  if (Number.isFinite(src) && src > TIER_RULES.cardTitleMinSourcePxExclusive) return 'card-title';
   /* 技能/小节标题档：源 <= 40 的粗体（角色技能标题源25、列表小标题）。官网全语言同级。 */
   return 'heading';
 }
@@ -277,19 +283,20 @@ export function localeLayoutRolePolicy(role = 'body') {
 /* 由 role + fontWeight 推出官网类别（title/body）。标题/正文可能同 role
    （如 heading-content-card 下标题 700、正文 400），故用字重分流，不按文案/node。 */
 export function officialTypeKind({ role = 'unknown', fontWeight = 400 } = {}) {
-  return Number(fontWeight) >= 600 ? 'title' : 'body';
+  return Number(fontWeight) >= TIER_RULES.bodyMaxWeightExclusive ? 'title' : 'body';
 }
 
 /* non-zh-CN 翻译语言的官方目标缩放比。zh-CN 恒 1（保 Figma 静态指标）；
    未收录回退 1（不动、不猜）。 */
-export function localeFontScale({ role = 'unknown', language = 'zh-CN', fontWeight = 400, sourceFontSize = null, overrides = null } = {}) {
+export function localeFontScale({ role = 'unknown', language = 'zh-CN', fontWeight = 400, sourceFontSize = null, overrides = null, allowOverrides = false } = {}) {
   const lang = normalizeLanguage(language);
   if (lang === 'zh-CN') return 1;
   const tier = classifySourceSizeTier({ fontWeight, sourceFontSize });
-  /* 可配置数据源(2026-08-14 脱敏改造):使用方可注入自有产品线实测表
-     (同构 { tier: { lang: ratio } }),未提供的组合回退 LOCALE_FONT_SCALE 默认基线。 */
-  const custom = overrides?.[tier]?.[lang];
-  if (Number.isFinite(custom)) return custom;
+  /* Production page-making must not bypass YAML. Tests may pass allowOverrides. */
+  if (allowOverrides === true) {
+    const custom = overrides?.[tier]?.[lang];
+    if (Number.isFinite(custom)) return custom;
+  }
   const row = LOCALE_FONT_SCALE[tier];
   const v = row ? row[lang] : null;
   return Number.isFinite(v) ? v : 1;
@@ -384,7 +391,7 @@ export function buildLocaleTranslationLayoutContract({
         : resize.horizontalHug || resize.verticalHug
           ? { mode: 'hug-owner-growth', preserveOwnerStructure: true, groupFit: 'shared-required-scale' }
           : bounded
-            ? { mode: 'bounded-group-step-fit', floorPercent: 75, groupFit: 'shared-required-scale' }
+            ? { mode: 'bounded-group-step-fit', floorPercent: SHRINK_FLOOR, groupFit: 'shared-required-scale' }
             : { mode: 'wrap-review-required', groupFit: 'shared-required-scale' };
   const zoom = Number(stageZoom);
   const visual = target && Number.isFinite(zoom) && zoom > 0

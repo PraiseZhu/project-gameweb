@@ -77,7 +77,8 @@ test('sc-mobile-scale: product view uses real browser size and native mobile tre
   assert.match(chromeSrc, /src: 'product-view'/);
   assert.match(chromeSrc, /Using the PC 1920 lock on a 412-wide/);
   assert.match(renderSrc, /native 20:2205 tree at designWidth 750/);
-  assert.match(renderSrc, /mobile: 750/);
+  assert.match(renderSrc, /designPolicy\(\)\.designWidths/);
+  assert.match(renderSrc, /mobile: Number\(widths\.mobile\)/);
   assert.match(staticDoc, /native `20:2205` tree/);
   assert.match(staticDoc, /data-plat-fallback="mobile-uses-pc-tree"/);
 });

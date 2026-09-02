@@ -52,6 +52,21 @@
   })();
   if (PRODUCT_VIEW) document.documentElement.setAttribute('data-product-view', '1');
 
+  function designPolicy() {
+    var policy = window.__designPolicy;
+    if (!policy || typeof policy !== 'object') {
+      throw new Error('figma-chrome: missing window.__designPolicy');
+    }
+    return policy;
+  }
+  function officialRootFontVw() {
+    var value = Number(designPolicy().officialRootFontVw);
+    if (!isFinite(value) || value <= 0) {
+      throw new Error('figma-chrome: officialRootFontVw missing from DESIGN.md YAML');
+    }
+    return value;
+  }
+
   /* ── truth ──
      默认内嵌在 #qa-truth。index.html 超过 10MB 时 truth.mjs 会把块改成
      data-src="truth.json"（外置，页面需本地预览服务，不能再当纯 file:// 单文件）。 */
@@ -126,7 +141,9 @@
      inferred from whether a pad Figma tree happens to exist. */
   var COMPOSITION_BREAKPOINTS = Array.isArray(cfg.compositionBreakpoints) && cfg.compositionBreakpoints.length
     ? cfg.compositionBreakpoints
-    : BREAKPOINTS;
+    : (Array.isArray(designPolicy().composition) && designPolicy().composition.length
+      ? designPolicy().composition
+      : BREAKPOINTS);
   var FREE = { name: '自由状态', free: true };
 
   /* ── 状态 ── */
@@ -329,7 +346,7 @@
     '.frame{background:transparent;overflow:visible;transform-origin:0 0;border-radius:6px;',
     'box-shadow:0 0 0 1px #000}',
     '[data-product-view="1"] .frame{background:transparent;border-radius:0;box-shadow:none;overflow-x:hidden}',
-    'html[data-product-view="1"]{--fx-official-root:calc(10vw * var(--fx-root-scale, 1));overflow-x:hidden}',
+    'html[data-product-view="1"]{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1));overflow-x:hidden}',
     /* Keep the official 10vw number as a reported ruler. Do not apply it as the
        document font-size: Figma stages size in px, and a 10vw html font-size
        makes Chromium treat the product stage as a zoomed rem tree. */
@@ -1483,8 +1500,14 @@
   function compositionKeyForViewport(vp) {
     var composition = compositionBpOf(vp && vp.w).key;
     var platforms = (TRUTH && TRUTH.platforms) || {};
+    var policy = designPolicy();
     if (composition === 'mobile' && platforms.mobile) return 'mobile';
     if ((composition === 'tablet' || composition === 'pad') && platforms.pad) return 'pad';
+    if ((composition === 'tablet' || composition === 'pad') && !platforms.pad) {
+      if (policy.inventPadTree) return 'pad';
+      if (policy.padUsesPcTree) return 'pc';
+      return 'pc';
+    }
     return 'pc';
   }
   function beginResizeDrag() {

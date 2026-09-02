@@ -13,6 +13,13 @@
      验收/交付截图一律走这条路径(文件名 *-product.png);QA 壳视图(默认入口)截图只算 candidate 证据。 -->
 <script id="qa-truth" type="application/json"></script>
 <script id="qa-devices" type="application/json">{{QA_DEVICES}}</script>
+<script id="qa-design-policy" type="application/json">{}</script>
+<script>
+(function () {
+  var el = document.getElementById('qa-design-policy');
+  window.__designPolicy = el && el.textContent ? JSON.parse(el.textContent) : {};
+})();
+</script>
 <script>
 window.__qaDemo = {
   name: '{{NAME}}',
