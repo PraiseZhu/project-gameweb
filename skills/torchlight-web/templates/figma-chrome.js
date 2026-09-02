@@ -52,6 +52,21 @@
   })();
   if (PRODUCT_VIEW) document.documentElement.setAttribute('data-product-view', '1');
 
+  function designPolicy() {
+    var policy = window.__designPolicy;
+    if (!policy || typeof policy !== 'object') {
+      throw new Error('figma-chrome: missing window.__designPolicy');
+    }
+    return policy;
+  }
+  function officialRootFontVw() {
+    var value = Number(designPolicy().officialRootFontVw);
+    if (!isFinite(value) || value <= 0) {
+      throw new Error('figma-chrome: officialRootFontVw missing from DESIGN.md YAML');
+    }
+    return value;
+  }
+
   /* ── truth ──
      默认内嵌在 #qa-truth。index.html 超过 10MB 时 truth.mjs 会把块改成
      data-src="truth.json"（外置，页面需本地预览服务，不能再当纯 file:// 单文件）。 */
@@ -124,12 +139,13 @@
   /* Device picker buckets come from the shared kit. A page may separately
      declare the layout tree observed on its official site; this must never be
      inferred from whether a pad Figma tree happens to exist. */
-  /* Official torchlight tree switch is max-width 1126px, not the kit 750/1024
-     device-picker buckets. Missing cfg must not fall back to BREAKPOINTS. */
-  var TORCHLIGHT_COMPOSITION_BREAKPOINTS = [
-    { key: 'mobile', min: 0, max: 1126 },
-    { key: 'desktop', min: 1127, max: null },
-  ];
+  /* Official torchlight tree switch comes from DESIGN.md composition YAML,
+     not the kit 750/1024 device-picker buckets. Missing cfg must not fall
+     back to BREAKPOINTS. */
+  var TORCHLIGHT_COMPOSITION_BREAKPOINTS = designPolicy().composition;
+  if (!Array.isArray(TORCHLIGHT_COMPOSITION_BREAKPOINTS) || !TORCHLIGHT_COMPOSITION_BREAKPOINTS.length) {
+    throw new Error('figma-chrome: composition missing from DESIGN.md YAML');
+  }
   var COMPOSITION_BREAKPOINTS = Array.isArray(cfg.compositionBreakpoints) && cfg.compositionBreakpoints.length
     ? cfg.compositionBreakpoints
     : TORCHLIGHT_COMPOSITION_BREAKPOINTS;
@@ -335,7 +351,7 @@
     '.frame{background:transparent;overflow:visible;transform-origin:0 0;border-radius:6px;',
     'box-shadow:0 0 0 1px #000}',
     '[data-product-view="1"] .frame{background:transparent;border-radius:0;box-shadow:none;overflow-x:hidden}',
-    'html[data-product-view="1"]{--fx-official-root:calc(10vw * var(--fx-root-scale, 1));overflow-x:hidden}',
+    'html[data-product-view="1"]{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1));overflow-x:hidden}',
     /* Keep the official 10vw number as a reported ruler. Do not apply it as the
        document font-size: Figma stages size in px, and a 10vw html font-size
        makes Chromium treat the product stage as a zoomed rem tree. */
@@ -681,7 +697,7 @@
 
   }
 
-  /* Official poster: `@media (max-width: 1126px)` swaps PC vs mobile controls.
+  /* Official poster swaps PC vs mobile controls at DESIGN.md composition max.
      Product view matches that width cutoff. UA is-pc / is-mobile is not the tree.
      No pad tree. */
   function productViewportPlatform() {
@@ -1515,8 +1531,14 @@
   function compositionKeyForViewport(vp) {
     var composition = compositionBpOf(vp && vp.w).key;
     var platforms = (TRUTH && TRUTH.platforms) || {};
+    var policy = designPolicy();
     if (composition === 'mobile' && platforms.mobile) return 'mobile';
     if ((composition === 'tablet' || composition === 'pad') && platforms.pad) return 'pad';
+    if ((composition === 'tablet' || composition === 'pad') && !platforms.pad) {
+      if (policy.inventPadTree) return 'pad';
+      if (policy.padUsesPcTree) return 'pc';
+      return 'pc';
+    }
     return 'pc';
   }
   function beginResizeDrag() {

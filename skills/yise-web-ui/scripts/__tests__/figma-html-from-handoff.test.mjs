@@ -212,10 +212,16 @@ test('skipPreview still runs inventory static gate and never marks skipped-ok', 
   const src = readFileSync(new URL('../figma-html-from-handoff.mjs', import.meta.url), 'utf8');
   assert.match(src, /attachInventoryStaticGate/);
   assert.match(src, /runInventoryStaticGate/);
+  assert.match(src, /attachDesignPolicyMirror/);
   assert.match(src, /attachSliceAssets/);
   assert.match(src, /figma-assets\.mjs/);
   assert.doesNotMatch(src, /\|\| true/);
   assert.doesNotMatch(src, /--skip-preview/);
+  assert.doesNotMatch(src, /design-policy-dom-probe/);
+  assert.match(src, /chromeSource/);
+  assert.match(src, /renderSource/);
+  assert.match(src, /shellSource/);
+  assert.doesNotMatch(src, /chromeOfficialRootFontVw: policy\.officialRootFontVw/);
 });
 
 test('preview green + static gate red still blocks product view', () => {

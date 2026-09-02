@@ -27,6 +27,15 @@ const chromeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..
 const renderSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/figma-render.js'), 'utf8');
 const navRailCheckSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/figma-nav-rail-browser-check.mjs'), 'utf8');
 
+test('composition numbers come from DESIGN.md YAML', () => {
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/resize/index.mjs'), 'utf8');
+  assert.match(src, /design-policy\.generated\.mjs/);
+  assert.match(src, /TORCHLIGHT_COMPOSITION_BREAKPOINTS = DESIGN_POLICY\.composition/);
+  assert.match(src, /PAD_USES_PC_TREE = DESIGN_POLICY\.padUsesPcTree/);
+  assert.match(chromeSrc, /function officialRootFontVw\(\)/);
+  assert.doesNotMatch(chromeSrc, /officialRootFontVw\) \|\| 10/);
+});
+
 test('width maps to plat without page IDs', () => {
   assert.equal(platOfWidth(390), 'mobile');
   assert.equal(platOfWidth(750), 'mobile');
@@ -45,9 +54,15 @@ test('tablet without a pad tree reuses PC instead of inventing a layout', () => 
     width: 768,
     platforms: {},
     compositionBreakpoints: kitBreakpoints,
+    padUsesPcTree: true,
   });
   assert.equal(padFallback.key, 'pc');
   assert.equal(padFallback.fallback, 'pad-uses-pc-tree');
+  assert.equal(compositionKeyForViewport({
+    width: 768,
+    platforms: {},
+    compositionBreakpoints: kitBreakpoints,
+  }).fallback, null);
   const nativeMobile = compositionKeyForViewport({ width: 390, platforms: { mobile: true } });
   assert.equal(nativeMobile.key, 'mobile');
   assert.equal(nativeMobile.fallback, null);
@@ -94,14 +109,17 @@ test('classifyResizeIntent in product view uses window width for the tree', () =
 
 test('product-view chrome selects the tree from width 1126, not UA', () => {
   assert.match(chromeSrc, /function productViewportPlatform\(\)/);
-  assert.match(chromeSrc, /max-width: 1126/);
+  assert.match(chromeSrc, /designPolicy\(\)\.composition/);
+  assert.doesNotMatch(chromeSrc, /max: 1126/);
   assert.match(chromeSrc, /function productViewportPlatform\(\)[\s\S]{0,500}innerWidth/);
   assert.match(chromeSrc, /function productViewportPlatform\(\)[\s\S]{0,700}compositionBpOf\(width\)/);
   assert.doesNotMatch(chromeSrc, /function officialUaDeviceType\(\)/);
   assert.doesNotMatch(chromeSrc, /officialUaDeviceType\(\) === 'mobile' && platforms\.mobile\) return 'mobile'/);
   assert.match(chromeSrc, /function productViewportSize\(\)[\s\S]{0,250}window\.innerWidth/);
   const shellSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/demo-shell.html'), 'utf8');
-  assert.match(shellSrc, /compositionBreakpoints:\s*\[[\s\S]*max:\s*1126/);
+  assert.match(shellSrc, /get compositionBreakpoints\(\)/);
+  assert.match(shellSrc, /policy\.composition/);
+  assert.doesNotMatch(shellSrc, /max:\s*1126/);
 });
 
 test('a product can keep the pad picker while explicitly using desktop composition above its observed mobile cutoff', () => {
@@ -207,7 +225,7 @@ test('width scale is segmented: freeze k=0.5 on 1127–1920, stretch only above 
   assert.equal(widthScale({ viewportW: 430 }).k, 430 / 750);
 });
 
-test('hero fill uses max(k, viewportH / heroDesignHeight) so later sections leave the first screen', () => {
+test('hero fill uses YAML fillVh of the viewport so later sections leave the first screen', () => {
   const fill = heroViewportFill({ viewportH: 844, widthScaleK: 390 / 750, heroDesignHeight: 1334 });
   assert.equal(fill.slotScale, 844 / 1334);
   assert.ok(fill.slotScale > 390 / 750);
@@ -223,6 +241,11 @@ test('hero fill uses max(k, viewportH / heroDesignHeight) so later sections leav
   assert.ok(tabletFill.uiYRatio > 2);
   const fullWidth = heroViewportFill({ viewportH: 1080, widthScaleK: 1920 / 3840, heroDesignHeight: 2160 });
   assert.equal(fullWidth.uiYRatio, 1);
+  const ninety = heroViewportFill({
+    viewportH: 844, widthScaleK: 390 / 750, heroDesignHeight: 1334, fillVh: 90,
+  });
+  assert.equal(ninety.slotScale, (844 * 0.9) / 1334);
+  assert.notEqual(ninety.slotScale, 844 / 1334);
 });
 
 test('product view clips page X; QA keeps X auto for no-clip probes', () => {
