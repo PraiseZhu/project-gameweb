@@ -699,7 +699,7 @@
       img.style.top = (exportY - ownerY) + 'px';
       img.style.width = exportW + 'px';
       img.style.height = exportH + 'px';
-      img.style.objectFit = 'fill';
+      img.style.objectFit = 'none';
       el.setAttribute('data-asset-bounds-resolved', policy);
     };
     if (placedBox) {
@@ -5758,13 +5758,12 @@
           layer.setAttribute('data-modal-name', parsed.label);
           layer.setAttribute('data-node', String(modal.id || ''));
           layer.style.position = 'absolute';
-          layer.style.left = '0';
-          layer.style.top = '0';
-          layer.style.width = designWidth + 'px';
-          layer.style.height = (pageScrollHeight || pageMeta.height || Number(box.h) || 0) + 'px';
+          layer.style.left = ((Number(box.x) || 0) - pageX) + 'px';
+          layer.style.top = ((Number(box.y) || 0) - pageY) + 'px';
+          layer.style.width = Number(box.w) + 'px';
+          layer.style.height = Number(box.h) + 'px';
           layer.style.pointerEvents = 'auto';
           layer.style.zIndex = '41';
-          layer.style.background = 'rgba(0,0,0,.72)';
           hideInPlace(layer, true);
           host.appendChild(layer);
           try {
