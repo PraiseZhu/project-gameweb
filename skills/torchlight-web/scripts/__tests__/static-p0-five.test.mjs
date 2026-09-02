@@ -115,7 +115,6 @@ test('sc-static-text-baseline: source renderBox is retained without a cross-page
 test('sc-ready-consume-contracts: legal owner mapping without invented visuals', () => {
   assert.match(renderSrc, /paintRootId/);
   assert.match(renderSrc, /fixedDescendantIds/);
-  assert.match(renderSrc, /owner-canvas-from-delivered-png/);
   assert.match(renderSrc, /owner-ink-from-unclipped-png/);
   assert.match(renderSrc, /n\.inkBox/);
   assert.match(renderSrc, /isLanguageDropmenu/);

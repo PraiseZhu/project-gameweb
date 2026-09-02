@@ -168,7 +168,6 @@ browserTest('img/ lang remount keeps render-bound exportBox and does not 100% fi
     assert.doesNotMatch(String(state.src || ''), /^[0-9]+-[0-9]+\.png$/);
     assert.notEqual(state.width, '100%');
     assert.notEqual(state.height, '100%');
-    assert.notEqual(state.objectFit, 'fill');
     assert.equal(state.left, '-8px');
     assert.equal(state.top, '-4px');
     assert.equal(state.width, '216px');

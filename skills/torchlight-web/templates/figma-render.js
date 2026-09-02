@@ -685,15 +685,6 @@
     const lang = String((this.ctx && this.ctx.prefs && this.ctx.prefs.lang) || (typeof ctx !== 'undefined' && ctx.prefs && ctx.prefs.lang) || 'zh-CN');
     const zhStatic = lang === 'zh-CN';
     const placedBox = exportBox || sliceBox;
-    const fillOwnerCanvas = (objectFit, policy, extra = {}) => {
-      img.style.left = '0';
-      img.style.top = '0';
-      img.style.width = '100%';
-      img.style.height = '100%';
-      img.style.objectFit = objectFit;
-      Object.assign(img.style, extra);
-      el.setAttribute('data-asset-bounds-resolved', policy);
-    };
     /* Unclipped Figma ink (bounds=render) can be much larger than the owner
        frame. Prefer exportBox/inkBox (owner-relative) so carnival art that sits
        in the lower-left of a 7086×4734 PNG is not center-cropped into black. */
@@ -713,23 +704,6 @@
     };
     if (placedBox) {
       placeExportBox(placedBox, exportBox ? 'owner-ink-from-unclipped-png' : 'slice-export');
-      const fitDeliveredCanvas = () => {
-        if (!exportBox || zhStatic) return;
-        const nw = Number(img.naturalWidth), nh = Number(img.naturalHeight);
-        const ow = Number(box.w), oh = Number(box.h);
-        const rw = Number(exportBox.w), rh = Number(exportBox.h);
-        if (![nw, nh, ow, oh, rw, rh].every(Number.isFinite)
-          || nw <= 0 || nh <= 0 || ow <= 0 || oh <= 0 || rw <= 0 || rh <= 0) return;
-        const aspectDistance = (w, h) => Math.abs((nw / nh) - (w / h));
-        const ownerDistance = aspectDistance(ow, oh);
-        const renderDistance = aspectDistance(rw, rh);
-        if (ownerDistance <= 0.035 && ownerDistance + 0.08 < renderDistance) {
-          fillOwnerCanvas('fill', 'owner-canvas-from-delivered-png');
-        } else {
-          placeExportBox(placedBox, 'owner-ink-from-unclipped-png');
-        }
-      };
-      img.addEventListener('load', fitDeliveredCanvas, { once: true });
     } else if (zhStatic) {
       img.style.top = '0';
       img.style.left = '0';
