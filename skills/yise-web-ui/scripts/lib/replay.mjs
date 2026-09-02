@@ -1,12 +1,5 @@
 import { prefsSubsetEqual } from './schema.mjs';
 
-/** QA 壳入口。裸 index.html 是产品页，不暴露 __qa。 */
-export function withQaShell(url) {
-  const href = String(url || '');
-  if (!href || /(?:^|[?&])qa=/.test(href)) return href;
-  return href + (href.includes('?') ? '&' : '?') + 'qa=1';
-}
-
 export async function waitForQa(page, { adaptive = false } = {}) {
   await page.waitForFunction(() => typeof window.__qa === 'object' && typeof window.__qa.current === 'function', undefined, { timeout: 5000 });
   const result = await page.evaluate(async ({ adaptive }) => {
@@ -50,11 +43,10 @@ export async function waitForQa(page, { adaptive = false } = {}) {
 }
 
 export async function freshLoad(page, base, options = {}) {
-  const url = withQaShell(base);
-  await page.goto(url, { waitUntil: 'load' });
+  await page.goto(base, { waitUntil: 'load' });
   if (options.clearStorage !== false) {
     await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
-    await page.goto(url, { waitUntil: 'load' });
+    await page.reload({ waitUntil: 'load' });
   }
   await waitForQa(page, options);
 }

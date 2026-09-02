@@ -28,7 +28,6 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { loadPngApi, readPng } from './lib/png-compare.mjs';
-import { withQaShell } from './lib/replay.mjs';
 
 function fail(msg) {
   console.error(JSON.stringify({ ok: false, error: msg }, null, 2));
@@ -134,7 +133,7 @@ async function preflightOneToOne() {
   }
   try {
     const page = await browser.newPage({ viewport: { width: vp.w, height: vp.h } });
-    await page.goto(withQaShell(pathToFileURL(idx).href), { waitUntil: 'domcontentloaded' });
+    await page.goto(pathToFileURL(idx).href, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(2500);
     const info = await page.evaluate(() => {
       if (!window.__qa || typeof window.__qa.inspect !== 'function') return null;

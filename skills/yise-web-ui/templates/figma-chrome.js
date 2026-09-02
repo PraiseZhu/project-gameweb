@@ -39,17 +39,16 @@
   if (!cfg) throw new Error('figma-chrome: 缺 window.__qaDemo 配置');
   if (typeof cfg.renderApp !== 'function') throw new Error('figma-chrome: __qaDemo.renderApp 必填');
 
-  /* ── 产品视图是默认入口（裸 index.html）──
+  /* ── 产品视图纯净入口（?product=1）──
      QA 壳(控制栏/切换器/状态补齐 tab/拉伸手柄/读数/__qa API)与产品视图彻底分离:
-     默认只渲染 stage + 产品帧,不建任何调试 UI、不暴露 __qa、不读深链。
-     要 QA 壳显式加 ?qa=1。旧链接 ?product=1 仍当产品页(默认就是)。
+     product 模式下只渲染 stage + 产品帧,不建任何调试 UI、不暴露 __qa、不读深链。
      验收/交付截图一律走这条路径(文件名 *-product.png);QA 壳截图只是 candidate 级证据。
      实现约束:PRODUCT_VIEW 在同步代码最前面算好,后面所有 UI 挂载点共用同一开关。 */
   var PRODUCT_VIEW = (function () {
     try {
-      var qa = new URLSearchParams(window.location.search).get('qa');
-      return qa !== '1' && qa !== 'true' && qa !== 'yes';
-    } catch (e) { return true; }
+      var q = new URLSearchParams(window.location.search).get('product');
+      return q === '1' || q === 'true' || q === 'yes';
+    } catch (e) { return false; }
   })();
   if (PRODUCT_VIEW) document.documentElement.setAttribute('data-product-view', '1');
 
@@ -708,7 +707,7 @@
     if (productPlatform) renderPrefs.plat = productPlatform;
     var vp = viewport();
     /* Product view has no window.__qa. Pass the same persist+syncAll writer
-       dropmenu language uses, so product-view self-labels rewrite S.prefs
+       dropmenu language uses, so ?product=1 self-labels rewrite S.prefs
        instead of this cp(S.prefs) snapshot. */
     cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
@@ -2148,7 +2147,7 @@
   }
 
   /* ── 老师的 __qa 合约：verify.mjs 靠它驱动门 B/C/D/F，必须保住 ──
-     产品视图(默认 index.html)不暴露 __qa:QA 壳 = 工具区 + __qa API 所在的整个 chrome 运行时,
+     产品视图(?product=1)不暴露 __qa:QA 壳 = 工具区 + __qa API 所在的整个 chrome 运行时,
      纯净渲染路径里两者都不该存在。 */
   if (!PRODUCT_VIEW) window.__qa = {
     current: function () { return S.state; },

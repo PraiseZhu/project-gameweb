@@ -46,7 +46,7 @@ export function recallTorchlightweb(repoRoot = DEFAULT_REPO_ROOT) {
     skillPath,
     slashCommandInstalled: false,
     claudeDirIgnored,
-    note: '不装进 .claude/skills/。拉仓后靠 Agent 读仓根 CLAUDE.md 触发表。没有 ready 包就停下来要包。preview:first 红了不许给人打开 index.html。',
+    note: '不装进 .claude/skills/。拉仓后靠 Agent 读仓根 CLAUDE.md 触发表。没有 ready 包就停下来要包。preview:first 红了不许给人打开 ?product=1。',
   };
 }
 

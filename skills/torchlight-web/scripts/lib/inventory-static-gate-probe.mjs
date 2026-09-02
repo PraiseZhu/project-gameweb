@@ -9,7 +9,6 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSafeStaticServer } from './safe-server.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
-import { withQaShell } from './replay.mjs';
 
 const SKILL_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
@@ -61,7 +60,7 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
       viewport: { width: 1920, height: 1080 },
       deviceScaleFactor: 1,
     });
-    await page.goto(withQaShell(`${base}/index.html?inventory-static-gate=1`), { waitUntil: 'load', timeout: 120000 });
+    await page.goto(`${base}/index.html?inventory-static-gate=1`, { waitUntil: 'load', timeout: 120000 });
     await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: 120000 });
     await page.evaluate(({ w, h, lang: nextLang, plat }) => {
       if (typeof window.__qa.setPref === 'function' && plat) window.__qa.setPref('plat', plat);

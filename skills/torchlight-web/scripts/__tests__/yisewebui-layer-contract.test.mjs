@@ -35,7 +35,7 @@ test('sc-61-recall: CLAUDE.md trigger table loads torchlight-web SKILL.md', () =
 });
 
 test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence', () => {
-  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿 → 才给人 `index\.html`/;
+  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿 → 才给人 `\?product=1`/;
   const skill = read('SKILL.md');
   const readme = read('README.md');
   const claude = readClaude();
@@ -43,15 +43,15 @@ test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence',
   assert.match(skill, sentence);
   assert.match(readme, sentence);
   assert.match(claude, sentence);
-  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green → then show `index\.html`/);
+  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green → then show `\?product=1`/);
   assert.match(skill, /figma:html-from-handoff/);
   assert.match(readme, /figma:html-from-handoff/);
   assert.match(skill, /停下来要包/);
   assert.match(readme, /停下来要包/);
   assert.match(skill, /inventory-static-gate-probe\.mjs/);
   assert.match(readme, /inventory-static-gate-probe\.mjs/);
-  assert.match(skill, /inventory-static-gate=1&qa=1/);
-  assert.match(readme, /inventory-static-gate=1&qa=1/);
+  assert.match(skill, /inventory-static-gate=1/);
+  assert.match(readme, /inventory-static-gate=1/);
 });
 
 test('sc-label-direct-figma: live extract is not inventory/handoff', () => {
@@ -146,7 +146,7 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   const pack = read('docs/pack-skill.md');
   const lib = read('scripts/lib/pack-demo.mjs');
   assert.match(skill, /Main static → Translation/);
-  assert.match(skill, /After the second[\s\S]*human stop is accepted, run the Pack delivery/);
+  assert.match(skill, /After the second\n?human stop is accepted, run the Pack delivery/s);
   assert.match(skill, /Pack is not a restore axis/);
   assert.match(arch, /Pack delivery/);
   assert.match(arch, /not a restore axis/);
@@ -158,7 +158,7 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
 
 test('sc-prior-test-gaps: unknown stays inert; #38 is record-only', () => {
   const entry = read('docs/page-making-inventory-entry.md');
-  assert.match(entry, /Keep unresolved switch\/page relations[\s\S]*inert/);
-  assert.match(entry, /Issue #38: record\/analyse[\s\S]*only/);
+  assert.match(entry, /Keep unresolved switch\/page relations\ninert/);
+  assert.match(entry, /Issue #38: record\/analyse\nonly/);
   assert.match(entry, /do not change shaoshenze upstream completeness/);
 });

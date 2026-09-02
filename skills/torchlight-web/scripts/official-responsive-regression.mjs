@@ -44,7 +44,7 @@ const results = {
   schema: config.schema,
   generatedAt: new Date().toISOString(),
   officialUrl: config.officialUrl,
-  localProductUrl: base + '/index.html',
+  localProductUrl: base + '/index.html?product=1',
   samples: [],
 };
 const rec = (name, ok, detail = '') => {
@@ -90,7 +90,7 @@ async function measureOfficial(sample) {
 async function measureLocal(sample) {
   const page = await browser.newPage({ viewport: { width: sample.w, height: sample.h }, deviceScaleFactor: 1 });
   try {
-    await page.goto(base + '/index.html', { waitUntil: 'load', timeout: 60000 });
+    await page.goto(base + '/index.html?product=1', { waitUntil: 'load', timeout: 60000 });
     await page.waitForSelector('.frame[data-render-base]', { timeout: 60000 });
     await page.evaluate(() => typeof window.__fxAssetsReady === 'function' ? window.__fxAssetsReady() : Promise.resolve()).catch(() => {});
     await settle(page);

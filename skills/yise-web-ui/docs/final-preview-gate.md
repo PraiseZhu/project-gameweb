@@ -3,9 +3,9 @@
 `preview-first` proves that a candidate product view can render meaningful
 Figma-derived content in headless Chrome. It is **not** confirmed-final
 delivery (`userPreviewAllowed` stays false). After it is green, the first
-human review stop may open `index.html` (`humanStopPreviewAllowed` /
-`previewDisposition: "human-review-stop"`). Confirmed-final delivery still
-requires `scripts/final-preview.mjs`.
+human review stop may open `index.html` QA shell (`humanStopPreviewAllowed` /
+`previewDisposition: "human-review-stop"`). `?product=1` is the internal
+probe only. Confirmed-final delivery still requires `scripts/final-preview.mjs`.
 
 ## Final-ready input
 

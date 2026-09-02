@@ -11,12 +11,13 @@ is complete without a Figma prototype snapshot; prototype evidence is an audit
 that may be requested when a claim needs it.
 
 Workflow declarations are explicit and separate. `figma-showcase` is a Figma-only
-candidate path: `preview-first` must inspect `index.html`, produce a
-candidate evidence level, screenshot, URL/command, source-platform evidence, and
-`not-claimed` capabilities, then the product view is opened immediately for
-human review. Opening the page does not mean gates, Switch clicks, Resize, or
-handoff passed. Direct Figma extract is labelled a local extract baseline, not
-an inventory/handoff baseline. `product-qa` is the later product-repo /
+candidate path: `preview-first` must inspect `index.html?product=1` as an
+internal probe, produce a candidate evidence level, screenshot, human
+`index.html` QA-shell URL/command, source-platform evidence, and `not-claimed`
+capabilities, then the QA shell is opened immediately for human review.
+Opening the page does not mean gates, Switch clicks, Resize, or handoff
+passed. Direct Figma extract is labelled a local extract baseline, not an
+inventory/handoff baseline. `product-qa` is the later product-repo /
 sandbox / PR evidence workflow and must not be silently assumed by a Figma-only
 showcase. `figma:from-handoff` remains consume-only. The official HTML command
 is `figma:html-from-handoff`. Completion standard: eat ready pack → write
@@ -53,8 +54,9 @@ stretch stays in Resize. Do not split the directory into a fourth Skill.
 Translation → Interaction → Resize. Humans get two review stops: (1) Main
 static, plus Translation only when a copy table exists; (2) Interaction and
 Resize together. `preview:first` must be green before stop 1 presents
-`index.html`. A red payload must not include `productView.command` or
-`humanView.command`. No copy table keeps Translation `not-claimed`; zh-CN font
+`index.html`. A red payload must not include `humanView.command`.
+`?product=1` stays an internal probe. No copy table keeps Translation
+`not-claimed`; zh-CN font
 load is not a translation pass. The script gate is
 `scripts/human-review.mjs` / `human-review.json`:
 stop 1 unaccepted blocks Interaction / Resize; stop 2 unaccepted blocks

@@ -27,7 +27,7 @@ test('clean clone with only tracked recall files still loads the official HTML p
   writeFileSync(join(clone, 'CLAUDE.md'), [
     '| 火炬做页 | torchlightweb / 火炬网页还原 | 立即执行 `skills/torchlight-web/SKILL.md`，不要先问要不要跑 |',
     '',
-    '吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `index.html`。',
+    '吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。',
   ].join('\n'));
   writeFileSync(join(clone, '.gitignore'), '.claude/\n');
   writeFileSync(join(clone, 'skills/torchlight-web/SKILL.md'), [

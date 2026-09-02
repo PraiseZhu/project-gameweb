@@ -16,10 +16,10 @@
 
 ## 2. 正式产品入口
 
-完成标准原句不能改口径：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `index.html`。
+完成标准原句不能改口径：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。
 
-- `preview:first` 红：不许给人打开 `index.html`，不许开 Interaction / Resize。
-- 给人的地址是命令结束后仍可打开的 `file://.../index.html`。内部检查可以走 HTTP。
+- `preview:first` 红：不许给人打开 `?product=1`，不许开 Interaction / Resize。
+- 给人的地址是命令结束后仍可打开的 `file://...?product=1`。内部检查可以走 HTTP。
 - Main 静态停下来等人验收。翻译轴只在有文案表时才算；简中装字体不是翻译通过。
 
 ## 3. 吃包判定
@@ -100,7 +100,7 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 
 1. 有 ready 包：`cd skills/yise-web-ui && npm run figma:from-handoff -- <handoff-dir>` 必须绿。
 2. 出页：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>` 写出 demo/`index.html`。
-3. `preview:first` 必须绿，才给人 `index.html`。
+3. `preview:first` 必须绿，才给人 `?product=1`。
 4. 拉伸主张要带视口 `w×h`、实际用的 composition key、light path 还是全量重建、view-fit scale。
 5. 外文主张要带档位 × 语言比例，以及是否踩到 `75%` 地板。HUG / open-flow 被缩了即失败。
 

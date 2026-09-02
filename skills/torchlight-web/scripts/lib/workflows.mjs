@@ -23,7 +23,7 @@ export const WORKFLOW_DECLARATIONS = {
     id: 'figma-showcase',
     title: 'Figma showcase preview-first',
     completion: 'candidate-product-view-preview',
-    productViewPath: 'index.html',
+    productViewPath: 'index.html?product=1',
     requires: { productRepo: false, trueSandbox: false, pullRequest: false },
     sourcePlatforms: ['desktop'],
     claimedCapabilities: {
@@ -134,7 +134,7 @@ export function humanReviewStopAfterPreviewFirst({ spec = {}, truth = {}, previe
     return {
       id: null,
       presentPage: false,
-      nextHumanStep: 'preview:first 红了不许给人打开 index.html，也不许开 Interaction / Resize。',
+      nextHumanStep: 'preview:first 红了不许给人打开 ?product=1，也不许开 Interaction / Resize。',
     };
   }
   const translation = translationAxisClaim({ spec, truth });

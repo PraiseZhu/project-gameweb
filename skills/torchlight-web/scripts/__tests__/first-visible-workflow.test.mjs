@@ -185,7 +185,7 @@ test('figma:preview:first proves a visible Figma-derived source node when browse
   assert.ok(out.result.meaningfulCoverage >= 0.02);
   assert.equal(out.result.placeholder, false);
   assert.equal(out.evidenceLevel, 'candidate');
-  assert.match(out.productView.url, /index\.html$/);
+  assert.match(out.productView.url, /product=1/);
   assert.equal(out.result.hasQa, false, 'preview-first must inspect product view, not QA shell');
   assert.ok(out.unclaimedCapabilities.includes('mobileSourcePlatform'));
   assert.ok(existsSync(out.screenshot));
@@ -206,7 +206,7 @@ test('figma:preview:first rejects one flat source region over a blank page', { t
   assert.equal(out?.ok, false, res.stderr || res.stdout);
   assert.equal(out.evidenceLevel, 'none');
   assert.ok(out.contractFailures.some((msg) => /meaningful source nodes|single flat source region/.test(msg)), out.contractFailures.join('\n'));
-  /* 红路径不发货：URL 与命令都必须为 null（#66 契约），不能再断言 index.html 链接。 */
+  /* 红路径不发货：URL 与命令都必须为 null（#66 契约），不能再断言 product=1 链接。 */
   assert.equal(out.productView.url, null);
   assert.equal(out.productView.command, null);
   assert.equal(out.productView.blocked, true);
@@ -232,9 +232,9 @@ test('figma:preview:first serves external truth over HTTP and fails file:// (iss
   assert.equal(httpOut?.ok, true, httpRes.stderr || httpRes.stdout);
   assert.equal(httpOut.protocol, 'http');
   assert.equal(httpOut.externalTruth, true);
-  assert.match(httpOut.checkUrl, /^http:\/\/127\.0\.0\.1:\d+\/index\.html$/);
+  assert.match(httpOut.checkUrl, /^http:\/\/127\.0\.0\.1:\d+\/index\.html\?product=1/);
   assert.match(httpOut.productView.url, /^file:/);
-  assert.match(httpOut.productView.url, /index\.html$/);
+  assert.match(httpOut.productView.url, /product=1/);
 
   const fileRes = run(PREVIEW, ['--demo', dir, '--protocol', 'file'], { timeout: 180000 });
   assert.equal(fileRes.status, 2, fileRes.stderr || fileRes.stdout);

@@ -2,7 +2,6 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createSafeStaticServer } from './safe-server.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
-import { withQaShell } from './replay.mjs';
 import {
   classifySemanticText,
   classifyTypographyRange,
@@ -140,7 +139,7 @@ export async function runTypographyBrowserCheck({ demoDir, langs = DEFAULT_LANGS
     const page = await browser.newPage({ viewport });
     const errors = [];
     page.on('pageerror', (error) => errors.push(String(error?.message || error).slice(0, 240)));
-    await page.goto(withQaShell(base + '/index.html'), { waitUntil: 'load', timeout: timeoutMs });
+    await page.goto(base + '/index.html', { waitUntil: 'load', timeout: timeoutMs });
     await page.waitForFunction(() => typeof window.__qa === 'object' && window.__qa !== null, null, { timeout: timeoutMs });
     await page.evaluate(() => document.fonts?.ready || Promise.resolve());
     if (settleMs > 0) await page.waitForTimeout(settleMs);

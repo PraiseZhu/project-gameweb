@@ -173,13 +173,3 @@ test('源码契约:按钮候选 → select 回退 → setPref 兜底的次序写
   const clickPrefSrc = src.slice(src.indexOf('export async function clickPref'));
   assert.ok(!/selectOption/.test(clickPrefSrc.split('export async function applyCase')[0]), 'clickPref 本体不得残留未经可见性校验的 selectOption');
 });
-
-test('源码契约:freshLoad 必须走 ?qa=1，清 storage 后再 goto 同一 QA URL', () => {
-  const src = readFileSync(REPLAY, 'utf8');
-  assert.match(src, /export function withQaShell/);
-  assert.match(src, /qa=1/);
-  const fresh = src.slice(src.indexOf('export async function freshLoad'));
-  assert.match(fresh, /const url = withQaShell\(base\)/);
-  assert.doesNotMatch(fresh.split('export async function replay')[0], /page\.reload/);
-  assert.match(fresh, /await page\.goto\(url, \{ waitUntil: 'load' \}\)/);
-});

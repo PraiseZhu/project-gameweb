@@ -14,6 +14,8 @@ const PREVIEW_THRESHOLDS = {
   maxSingleNodeCoverage: 0.98,
 };
 
+const PRODUCT_QUERY = 'product=1';
+
 function argOf(args, flag) {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : null;
@@ -61,7 +63,7 @@ export function decodeJsonBytes(input, file = '<buffer>') {
 }
 
 function productViewUrl(indexPath) {
-  return pathToFileURL(indexPath).href;
+  return `${pathToFileURL(indexPath).href}?${PRODUCT_QUERY}`;
 }
 
 function qaShellUrl(indexPath) {
@@ -194,15 +196,15 @@ function previewPayload({ demoDir, screenshot, result, session, spec, truth, ind
 }
 
 function candidateCompletion({ ok, spec, truth, indexPath }) {
-  const url = productViewUrl(indexPath);
+  const probeUrl = productViewUrl(indexPath);
   const humanUrl = qaShellUrl(indexPath);
   const evidence = sourcePlatformEvidence(spec, truth);
   const productView = ok
-    ? { url, command: openViewCommand(url), role: 'product-view' }
-    : { url: null, command: null, blocked: true, role: 'product-view', reason: 'preview:first red; do not open product view' };
+    ? { url: probeUrl, command: null, role: 'internal-probe' }
+    : { url: null, command: null, blocked: true, role: 'internal-probe', reason: 'preview:first red; do not open QA shell' };
   const humanView = ok
-    ? { url: humanUrl, command: openViewCommand(humanUrl), path: 'index.html', role: 'product-view' }
-    : { url: null, command: null, blocked: true, role: 'product-view', reason: 'preview:first red; do not open product view' };
+    ? { url: humanUrl, command: openViewCommand(humanUrl), path: 'index.html', role: 'qa-shell' }
+    : { url: null, command: null, blocked: true, role: 'qa-shell', reason: 'preview:first red; do not open QA shell' };
   return {
     legalCandidateCompletionPath: spec?.workflow?.id === 'figma-showcase' ? 'figma-showcase.preview-first.candidate' : 'preview-first.candidate',
     evidenceLevel: ok ? 'candidate' : 'none',
@@ -227,7 +229,7 @@ async function openPreviewSession({ demoDir, indexPath, protocol, externalTruth 
   if (useHttp) {
     server = createSafeStaticServer(demoDir);
     const base = await server.listen('127.0.0.1');
-    url = `${base}/index.html`;
+    url = `${base}/index.html?${PRODUCT_QUERY}`;
   } else {
     url = productViewUrl(indexPath);
   }
