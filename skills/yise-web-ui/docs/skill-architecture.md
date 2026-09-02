@@ -21,7 +21,9 @@ inventory/handoff baseline. `product-qa` is the later product-repo /
 sandbox / PR evidence workflow and must not be silently assumed by a Figma-only
 showcase. `figma:from-handoff` remains consume-only. The official HTML command
 is `figma:html-from-handoff`. Completion standard: eat ready pack → write
-demo/`index.html` → `preview:first` must be green → then show `index.html`.
+demo/`index.html` → `preview:first` must be green → inventory static gate must be green →
+policy mirror must be green → then show `?product=1`. The policy mirror proves YAML
+numbers match code. It does not prove the whole DESIGN.md is on-page.
 Stop at Main static.
 
 ```mermaid

@@ -1,5 +1,6 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   buildFontFallbackPolicy,
   buildFontWeightPolicy,
@@ -385,6 +386,28 @@ test('officialTargetDesignSize scales ja body 30->24 with line-height, keeps zh-
   const zh = officialTargetDesignSize({ sourceFontSize: 30, sourceLineHeight: 36, role: 'card-frame', language: 'zh-CN' });
   assert.equal(zh.fontSize, 30, 'zh-CN keeps Figma source');
   assert.equal(zh.lineHeight, 36);
+});
+
+test('render _fitAuthorization reads YAML hug/open-flow flags', () => {
+  const render = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  assert.match(render, /window\.__designPolicy/);
+  assert.match(render, /hugNoShrink/);
+  assert.match(render, /openFlowNoShrink/);
+  assert.match(render, /hugOff && String\(layoutSizingVertical/);
+  assert.match(render, /openFlow && openOff/);
+  assert.match(render, /missing window\.__designPolicy/);
+  assert.doesNotMatch(render, /if \(openFlow\) return \{ authorized: false, reason: 'open-flow-natural-growth' \}/);
+});
+
+test('default shrink steps stop at YAML floor 75 and do not include 70/65', () => {
+  const fit = computeSourceAnchoredInlineFit({
+    sourceWidths: [100],
+    targetWidths: [200],
+    slotWidths: [100],
+  });
+  assert.equal(fit.scale, 75);
+  const src = readFileSync(new URL('../lib/translation/typography-policy.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /steps = \[100, 92, 85, 78, 75, 70, 65\]/);
 });
 
 test('source-anchored inline fit uses the widest source sibling as the localized title safe range', () => {

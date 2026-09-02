@@ -6,6 +6,7 @@ import { buildRendererInteractionPayload } from '../lib/figma-render-interaction
 import { deriveInteractionModel } from '../lib/figma-interaction-contract.mjs';
 import { launchChromium } from '../lib/resolve-playwright.mjs';
 import { playwrightBrowserSkipMessage, probePlaywrightCapability } from '../lib/runtime-capabilities.mjs';
+import { DESIGN_POLICY } from '../lib/design-policy.generated.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const PLAYWRIGHT_PROBE = probePlaywrightCapability(root);
 const HAS_BROWSER_DEPS = PLAYWRIGHT_PROBE.available;
@@ -23,6 +24,7 @@ async function setup(viewport = { width: 400, height: 300 }, pageOpts = {}) {
   const { browser } = await launchChromium(root, { headless: true });
   const page = await browser.newPage({ viewport, ...pageOpts });
   await page.setContent('<!doctype html><body><div class="frame"></div></body>');
+  await page.evaluate((policy) => { window.__designPolicy = policy; }, DESIGN_POLICY);
   await page.addScriptTag({ path: rendererPath });
   return { browser, page };
 }

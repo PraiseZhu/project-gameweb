@@ -10,6 +10,7 @@ import {
   resolveHeroContentRoot,
   HERO_SCROLL_STATES,
 } from '../hero-scroll-slot.mjs';
+import { DESIGN_POLICY } from '../design-policy.generated.mjs';
 
 export const RESIZE_SKILL_SCHEMA = 'yise-resize-skill/v1';
 export {
@@ -21,30 +22,24 @@ export {
   HERO_SCROLL_STATES,
 };
 
-export const DESIGN_WIDTHS = Object.freeze({
-  mobile: 750,
-  pad: 3840,
-  pc: 3840,
-});
+export { DESIGN_POLICY };
+
+export const DESIGN_WIDTHS = DESIGN_POLICY.designWidths;
 
 /* Official poster uses `html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`
-   so 10rem = 100vw. Resize owns the same ruler as a number, not that CSS. */
-export const OFFICIAL_ROOT_FONT_VW = 10;
+   so 10rem = 100vw. Numbers come from DESIGN.md YAML, not a second table. */
+export const OFFICIAL_ROOT_FONT_VW = DESIGN_POLICY.officialRootFontVw;
+export const HERO_VIEWPORT_FILL_VH = DESIGN_POLICY.heroViewportFillVh;
+export const PAD_USES_PC_TREE = DESIGN_POLICY.padUsesPcTree;
+export const INVENT_PAD_TREE = DESIGN_POLICY.inventPadTree;
 
-const DEFAULT_BREAKPOINTS = Object.freeze([
-  { key: 'mobile', min: 0, max: 750 },
-  { key: 'tablet', min: 751, max: 1023 },
-  { key: 'desktop', min: 1024, max: null },
-]);
+const DEFAULT_BREAKPOINTS = DESIGN_POLICY.qaBuckets;
+export const QA_BREAKPOINTS = DESIGN_POLICY.qaBuckets;
 
-/* Official torchlight poster: `@media (max-width: 1126px)` hides PC controls
-   and shows the mobile ones. Inclusive 1126 → mobile tree; 1127 → pc.
-   Device-picker buckets stay on DEFAULT_BREAKPOINTS. This list is composition
-   only — do not copy the season media-query size patches. */
-export const TORCHLIGHT_COMPOSITION_BREAKPOINTS = Object.freeze([
-  { key: 'mobile', min: 0, max: 1126 },
-  { key: 'desktop', min: 1127, max: null },
-]);
+/* Product tree is YAML composition (0–1126 / ≥1127). QA buckets stay on
+   DEFAULT_BREAKPOINTS and must not be merged into the product tree. */
+export const TORCHLIGHT_COMPOSITION_BREAKPOINTS = DESIGN_POLICY.composition;
+export const COMPOSITION_BREAKPOINTS = DESIGN_POLICY.composition;
 
 function finite(value) {
   return Number.isFinite(Number(value));
@@ -98,6 +93,8 @@ export function compositionKeyForViewport({
   platforms = {},
   breakpoints = DEFAULT_BREAKPOINTS,
   compositionBreakpoints = TORCHLIGHT_COMPOSITION_BREAKPOINTS,
+  padUsesPcTree = PAD_USES_PC_TREE,
+  inventPadTree = INVENT_PAD_TREE,
 } = {}) {
   const requested = platOfWidth(width, breakpoints);
   const composition = compositionBucketForWidth(width, compositionBreakpoints);
@@ -108,7 +105,13 @@ export function compositionKeyForViewport({
     return { requested, key: 'pad', fallback: null };
   }
   if (composition === 'pad' && !platforms.pad) {
-    return { requested, key: 'pc', fallback: 'pad-uses-pc-tree' };
+    if (inventPadTree) {
+      return { requested, key: 'pad', fallback: 'invent-pad-tree' };
+    }
+    if (padUsesPcTree) {
+      return { requested, key: 'pc', fallback: 'pad-uses-pc-tree' };
+    }
+    return { requested, key: 'pc', fallback: null };
   }
   if (composition === 'mobile' && !platforms.mobile) {
     return { requested, key: 'pc', fallback: 'mobile-uses-pc-tree' };
@@ -244,11 +247,13 @@ export function heroViewportFill({
   viewportH,
   widthScaleK,
   heroDesignHeight,
+  fillVh = HERO_VIEWPORT_FILL_VH,
 } = {}) {
   const vh = n(viewportH, NaN);
   const k = n(widthScaleK, NaN);
   const heroH = n(heroDesignHeight, NaN);
-  if (![vh, k, heroH].every((value) => Number.isFinite(value) && value > 0)) {
+  const fill = n(fillVh, NaN);
+  if (![vh, k, heroH, fill].every((value) => Number.isFinite(value) && value > 0)) {
     return {
       slotScale: null,
       fillsViewport: false,
@@ -256,10 +261,11 @@ export function heroViewportFill({
       uiYRatio: 1,
     };
   }
-  const slotScale = Math.max(k, vh / heroH);
-  const designHeight = vh / k;
+  const slotH = vh * (fill / 100);
+  const slotScale = Math.max(k, slotH / heroH);
+  const designHeight = slotH / k;
   const layoutOffsetDesign = Math.max(0, designHeight - heroH);
-  const cropWindowDesign = vh / slotScale;
+  const cropWindowDesign = slotH / slotScale;
   /* Size stays on k. When the 100vh slot is taller than k×hero, hero UI
      blocks anchor their BOTTOM fraction of the slot so a lower-hero title
      keeps its Figma distance above the first-screen bottom edge instead of
