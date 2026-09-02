@@ -47,13 +47,10 @@ localeFontScale:
 tierRules:
   bodyMaxWeightExclusive: 600
   cardTitleMinSourcePxExclusive: 40
+shrinkMode: integer-px
 shrinkSteps:
-  - 100
-  - 92
-  - 85
-  - 78
-  - 75
-shrinkFloorPercent: 75
+  - 1
+shrinkFloorPercent: 1
 hugNoShrink: true
 openFlowNoShrink: true
 ---
@@ -66,8 +63,8 @@ openFlowNoShrink: true
 
 | 入口 | 回答什么 | 不回答什么 |
 |---|---|---|
-| 交接包 / inventory | 数据：`pageBox`、`fonts`、`role` + `params`、`variants`、`determined` / `unknown` | 断点、`k`、`100vh`、外文比例、缩字阶梯 |
-| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、缩字阶梯 | 这一稿有哪些图层、哪条关系 determined |
+| 交接包 / inventory | 数据：`pageBox`、`fonts`、`role` + `params`、`variants`、`determined` / `unknown` | 断点、`k`、`100vh`、外文比例、Auto Layout 上限 |
+| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限 | 这一稿有哪些图层、哪条关系 determined |
 
 - 做页只吃 `kind=ready` 的交接包。`unknown` 只画不接线。
 - 吃包命令仍是 `figma:from-handoff`（只验包、打印消费计划，不写 HTML）。出页命令是 `figma:html-from-handoff`。
@@ -93,7 +90,7 @@ openFlowNoShrink: true
 ## 4. 视觉听谁的
 
 - 几何、切图、简中字号、图层结构听清单 + Figma 源。
-- 窗口切树、宽度尺子、首屏高度、三平面听本文件第 5 章（官方自适应尺寸模型）。外文档位比例、缩字阶梯听第 6 章。
+- 窗口切树、宽度尺子、首屏高度、三平面听本文件第 5 章（官方自适应尺寸模型）。外文档位比例、Auto Layout 上限听第 6 章。
 - 实现合同（resize / locale / typography）描述怎么做；政策数字以本文件第 5、6 章为准。YAML 管切树 / 稿宽 / `10vw` / `100vh` / 外文；第 5.0 节管 PC 冻列。
 - 官方 `is-pc` / `is-mobile` 是 UA body class，不选树。哈希 class / 季节切图 URL 不是产品选择器。
 
@@ -250,9 +247,50 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 | card-title | 字重 ≥ 600 且源字号 > 40px | ja / zh-TW `0.833`，en / ko `1.0` |
 | heading | 字重 ≥ 600 且源字号 ≤ 40px | 全语 `1.0` |
 
-缩字阶梯：`100→92→85→78→75`，地板 `75%`。到地板仍溢出就停，打 `floor-exceeded` 给人看，禁止再缩。HUG / open-flow 不缩：HUG 跟内容长高，open-flow 保源字号并纵向生长。组内兄弟共用一档，取最严的那档。
+外文框听稿上包着文案的那层 Auto Layout：`maxWidth` 是宽度硬限；写了 `maxHeight` 的，高度也是硬限。没写的那一轴不拿来当缩字理由，也不发明框。换语言后文案必须**完整**落在这些已写的上限里，禁止裁切、省略号、截断顶过关。
+
+溢出就缩：先套档位比例，再按整数 px 减字号（行高同比），直到完整放下。不走 `100→92→85→78→75`，没有 75% 地板。组内兄弟共用同一整数字号，取最严的那档。没有 B 的 owner 就停，不缩。
 
 缺目标文案输出 `unverified-no-locale-copy`，禁止拿简中顶上当通过。
+
+### 6.1 执行清单
+
+四项按这个顺序落地。extract 先写 `layout.maxWidth` / `layout.maxHeight`，再改 `_fitText`。本清单只授权改 extract 这两键的接线，以及 renderer 的 `_fitText` / 镜像 `_fitAuthorization`；不改 naming spec、Interaction、Pack、语义换行。
+
+#### A. 数据字段
+
+清单 `inventory/v2` 已经提这些键（Figma REST 原名，单位稿 px）：`layout.maxWidth`、`layout.maxHeight`、`layout.minWidth`、`layout.minHeight`、`layout.layoutMode`、`parentId`。
+
+做页 `figma-geo.mjs` 必须把 `maxWidth` / `maxHeight` / `minWidth` / `minHeight` 写进 truth `entry.layout`，键名与清单一致。稿上没写则整键缺席：禁止补 `0`，禁止用 `box.w` / `box.h` 冒充上限。
+
+TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都写时，数字听 B 找到的那一层。
+
+#### B. owner 查找
+
+从该 TEXT 沿 `parentId` 往上走。extract 写的 `parentId` 是最近仍进 truth 的祖先：被穿过的纯容器自身不出节点，不能出现在这条链上，否则查找会在缺失节点处断掉、外层 max 永远走不到。命中层必须同时满足：
+
+1. `layout.layoutMode` 是 `HORIZONTAL` 或 `VERTICAL`
+2. `maxWidth` 或 `maxHeight` 至少有一个有限正数
+
+取**最近**一层，不许跳过近层去用更外层。近层只写了一轴，就只听那一轴，缺的轴不向外借。整条链都没有 → 该节点不缩字，也不发明框。
+
+禁止用 section 宽、页面宽、源 `box.w` 当 `maxWidth`。
+
+#### C. `_fitText`
+
+基准字号仍是档位比例之后的 `data-locale-base-fontsize`（zh-CN 用源字号）。
+
+没有 B 的 owner 就停，不缩。有 owner 才量换语言后的完整墨水：宽对 `maxWidth`，高只对已写的 `maxHeight`。超了就把 `fontSize` 减 `1px`，`lineHeight` 同比，再量，直到完整放下。不要 `100→92→85→78→75`，不要 75% 地板，不要停在 `floor-exceeded` 当通过。
+
+同一 owner、同一档位的兄弟，共用缩完后最小的那个整数字号。省略号、`text-overflow`、clip 当放下 = 失败。
+
+#### D. 测试与验收
+
+- extract：fixture `maxWidth: 400` → truth `layout.maxWidth === 400`；没写的键必须缺席。
+- owner：近层无 max、外层 `maxWidth: 400` → 用 400；近层 `maxWidth: 200`、外层 400 → 用 200；外层 AL max 与 TEXT 之间夹着被穿过的纯容器 → `parentId` 挂到外层，owner 仍是外层，不得在缺失 wrapper 处断链。
+- `_fitText`：基准 24px、宽放不进 `maxWidth` → 23、22… 直到放下；只有 `maxWidth`、高度变长 → 不因高度缩；缩到源基准的 75% 仍超 → 继续减 1px，不许打 `floor-exceeded` 当绿。
+- 门：外文主张必须带 owner id、用到的 `maxWidth`（有则加 `maxHeight`）、缩完整数 px。`data-fit-scale` 百分比和 `floor-exceeded` 不再当通过证据。省略号 / clip 过关即红。
+- 旧单测里「HUG 永不缩」「75% 地板」「阶梯档」按本清单改口，不许留两条规则。
 
 ## 7. 不许改的
 
@@ -261,12 +299,12 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 - `kind=ready` 才吃；`unknown` 只画不接线。
 - Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=viewportW/750`。首屏两层 `100vh`。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
-- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；缩字地板 `75%`；HUG / open-flow 不缩。
-- 不把 inventory JSON 焊进本文件。不改 renderer、naming spec、Interaction / Pack / 语义换行。
+- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。
+- 不把 inventory JSON 焊进本文件。不改 naming spec、Interaction / Pack / 语义换行。`_fitText` 与 extract 的 max 字段只按第 6.1 节改。
 
 ## 8. 别造第二份
 
-- 断点、`k`、`100vh`、外文比例、缩字阶梯只在本文件定政策。resize / locale / typography 合同只描述实现，不再自称 owns the numbers。
+- 断点、`k`、`100vh`、外文比例、Auto Layout 上限只在本文件定政策。resize / locale / typography 合同只描述实现，不再自称 owns the numbers。
 - 自适应尺寸只在第 5.0 节定政策。5.1 是官方闭包清单。resize 合同只描述实现，不得另开一套 `k`。
 - 不要为样品宽度（360 / 375 / 390 / 412 / 414 / 430）发明中间布局，也不要发明 pad 树。
 - 不要把 live Figma extract 当成交接包。
@@ -277,17 +315,18 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 2. 出页：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>` 写出 demo/`index.html`。
 3. `preview:first` 必须绿，才给人 `?product=1`。
 4. 拉伸主张要带视口 `w×h`、树（≤1126 手机 / ≥1127 PC）、列宽（`>1920` 随视口 / `1127–1920` 冻 1920 / 手机 = 视口）、实际 `k`、两层 hero 是否都等于 `innerHeight`、`html` 字号是否等于 `10vw`。不得用 UA `is-pc` / `is-mobile` 当切树证据。`1127–1920` 若仍用 `k = viewportW/3840`（随视口变）即失败。
-5. 外文主张要带档位 × 语言比例，以及是否踩到 `75%` 地板。HUG / open-flow 被缩了即失败。
-6. 政策镜像闸保证 YAML 与 resize / 字号 / chrome / render 数字同源。它不保证三平面、Hero 钉底边、HUG / open-flow 不缩、或缺文案不许拿简中顶上已经在页面上成立。镜像绿不是页面对。当前 YAML 尚未收录 1920 冻列，第 5.0 节仍是这条的政策入口。
+5. 外文主张要带档位 × 语言比例、B 找到的 owner id、用到的 `maxWidth`（有则加 `maxHeight`）、缩完的整数 px。超出已写上限、用裁切 / 省略号顶过关、或仍用 `data-fit-scale` / `floor-exceeded` 当通过，即失败。详见第 6.1 节 D。
+6. 政策镜像闸保证 YAML 与 resize / 字号 / chrome / render 数字同源。它不保证三平面、Hero 钉底边、或缺文案不许拿简中顶上已经在页面上成立。镜像绿不是页面对。当前 YAML 尚未收录 1920 冻列，第 5.0 节仍是这条的政策入口。
 
 绿的 Main 静态截图、QA 壳拖拽、或「页面能打开」都不能单独关掉拉伸 / 外文主张。
 
 ## 10. 怎么改、还缺什么
 
-改政策数字：只改本文件第 5、6 章，然后让实现合同跟上。不要在 inventory、renderer、官方站 CSS 里另开一条数字。
+改政策数字：只改本文件第 5、6 章和文首 YAML，然后让实现合同跟上。不要在 inventory、renderer、官方站 CSS 里另开一条数字。第 6 章怎么落地见 6.1。
 
 还缺什么（本文件不补）：
 
 - 本文件不替代 `figma:from-handoff`。
 - 火炬不发明 pad 树；设备选择器的 750/1024 桶不是产品页切树。
 - 未观察过的 role 仍是 `official-title-body-pattern`，缺文案仍是 `unverified-no-locale-copy`。
+- 6.1 A–D 已按执行清单改 extract / owner / `_fitText`；伊瑟 renderer 仍走旧阶梯，是接受残余。

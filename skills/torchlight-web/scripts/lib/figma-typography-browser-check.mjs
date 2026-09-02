@@ -288,12 +288,16 @@ export async function runTypographyBrowserCheck({ demoDir, langs = DEFAULT_LANGS
             overflow: cs.overflow,
             textOverflow: cs.textOverflow,
             whiteSpace: cs.whiteSpace,
-            fitScale: el.getAttribute('data-fit-scale') ? Number(el.getAttribute('data-fit-scale')) : null,
+            fitPx: el.getAttribute('data-fit-px') ? Number(el.getAttribute('data-fit-px')) : null,
+            localeBaseFontSize: el.getAttribute('data-locale-base-fontsize')
+              ? Number(el.getAttribute('data-locale-base-fontsize')) : null,
+            fitMaxWidth: el.getAttribute('data-fit-max-width') ? Number(el.getAttribute('data-fit-max-width')) : null,
+            fitMaxHeight: el.getAttribute('data-fit-max-height') ? Number(el.getAttribute('data-fit-max-height')) : null,
             fitOverflow: el.getAttribute('data-fit-overflow') === '1',
             fitPolicy: el.getAttribute('data-fit-policy') || null,
             fitGroup: el.getAttribute('data-fit-group') || null,
             fitGroupUnified: el.getAttribute('data-fit-group-unified') || null,
-            fitFloor: el.getAttribute('data-fit-floor') ? Number(el.getAttribute('data-fit-floor')) : null,
+            fitFloor: null,
             fitNeedsReview: el.getAttribute('data-fit-needs-review') || null,
             container: {
               mode: el.getAttribute('data-text-container') || 'framed-fixed',
@@ -409,7 +413,7 @@ if (row.font && __routed && __routed.family) row.font.routedFamily = __routed.fa
           stageZoom: __m.stageZoom ?? null,
           visualFontPx: __m.visualFontPx ?? null,
           copyStatus: copy.status,
-          fitScale: Number.isFinite(Number(row.fitScale)) ? Number(row.fitScale) : null,
+          fitScale: Number.isFinite(Number(row.fitPx)) ? Number(row.fitPx) : null,
         });
         const layout = classifyTextLayoutIssue({ truth: source, browser: row, semanticClass: role, role });
         const layoutPlan = buildTextLayoutRepairPlan({ truth: source, browser: row, semanticClass: role, role, issue: layout });

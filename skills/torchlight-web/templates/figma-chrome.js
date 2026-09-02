@@ -2244,7 +2244,7 @@
         copyMissing: document.querySelectorAll('.frame [data-copy-missing]').length,
         textEmpty: document.querySelectorAll('.frame [data-text-empty]').length,
         assetPending: document.querySelectorAll('.frame [data-asset-pending]').length,
-        fitScaled: document.querySelectorAll('.frame [data-fit-scale]').length,
+        fitScaled: document.querySelectorAll('.frame [data-fit-px], .frame [data-fit-scale]').length,
         fitOverflow: document.querySelectorAll('.frame [data-fit-overflow]').length,
         lineBreakLost: document.querySelectorAll('.frame [data-copy-lb-lost]').length,
         designVersion: (TRUTH.design && TRUTH.design.fileVersion) || null,
@@ -2269,7 +2269,7 @@
       }
       var idx = window.__fxTextIndex || {};
       var items = [];
-      var els = document.querySelectorAll('.frame [data-fit-scale]');
+      var els = document.querySelectorAll('.frame [data-fit-px], .frame [data-fit-scale]');
       for (var i = 0; i < els.length; i++) {
         var el = els[i];
         var nid = el.getAttribute('data-node');
@@ -2282,7 +2282,8 @@
           designText: rec.chars != null ? rec.chars : null,   // 稿内原文（简中）
           shownText: el.textContent,                          // 当前实际显示的文字
           boxH: boxH,                                         // 稿框高（设计 px）
-          fitScale: Number(el.getAttribute('data-fit-scale')),// 缩到了哪一档（%）
+          fitPx: el.getAttribute('data-fit-px') ? Number(el.getAttribute('data-fit-px')) : null,
+          fitScale: el.getAttribute('data-fit-scale') ? Number(el.getAttribute('data-fit-scale')) : null,
           stillOverflow: el.getAttribute('data-fit-overflow') === '1',
           // 还超多少（缩放后 px；仍溢出的条目才有意义）。现测，不是推算
           overflowPx: (boxH != null && typeof el.scrollHeight === 'number')
@@ -2290,7 +2291,7 @@
         });
       }
       return {
-        _note: '超框缩字号清单（运行时实测，给本地化/设计裁决）。fitScale<100=已按档收进；stillOverflow=到下限 75% 仍溢出，要改文案或改稿',
+        _note: '超框缩字号清单（运行时实测，给本地化/设计裁决）。fitPx=相对 locale 基准的整数字号；stillOverflow=整数缩完仍溢出，要改文案或改稿',
         designVersion: (TRUTH.design && TRUTH.design.fileVersion) || null,
         lang: S.prefs.lang,
         count: items.length,

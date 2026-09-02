@@ -123,6 +123,9 @@ test('parses torchlight DESIGN.md YAML with composition != qaBuckets', () => {
   assert.equal(policy.qaBuckets[0].max, 750);
   assert.equal(policy.qaBuckets[2].min, 1024);
   assert.notDeepEqual(policy.composition, policy.qaBuckets);
+  assert.equal(policy.shrinkMode, 'integer-px');
+  assert.deepEqual([...policy.shrinkSteps], [1]);
+  assert.equal(policy.shrinkFloorPercent, 1);
 });
 
 test('fixture markdown parses the same shape', () => {

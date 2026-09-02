@@ -80,6 +80,7 @@ export function implementationFromPolicy(policy) {
     shrinkFloorPercent: policy.shrinkFloorPercent,
     hugNoShrink: policy.hugNoShrink,
     openFlowNoShrink: policy.openFlowNoShrink,
+    shrinkMode: policy.shrinkMode,
     chromeOfficialRootFontVw: policy.officialRootFontVw,
   };
 }
@@ -108,11 +109,12 @@ export function mirrorDesignPolicy({ policy, implementation, path = 'DESIGN.md' 
   if (steps.join(',') !== policy.shrinkSteps.join(',')) {
     problems.push(`shrinkSteps [${steps.join(',')}] != YAML [${policy.shrinkSteps.join(',')}]`);
   }
-  if (steps.some((step) => Number(step) < Number(policy.shrinkFloorPercent))) {
+  if (policy.shrinkMode === 'percent-ladder' && steps.some((step) => Number(step) < Number(policy.shrinkFloorPercent))) {
     problems.push(`shrinkSteps contain values below floor ${policy.shrinkFloorPercent}`);
   }
   pushIfNumberDrift(problems, 'shrinkFloorPercent', implementation.shrinkFloorPercent, policy.shrinkFloorPercent);
   pushIfDrift(problems, 'hugNoShrink', implementation.hugNoShrink, policy.hugNoShrink);
+  pushIfDrift(problems, 'shrinkMode', implementation.shrinkMode || 'percent-ladder', policy.shrinkMode);
   pushIfDrift(problems, 'openFlowNoShrink', implementation.openFlowNoShrink, policy.openFlowNoShrink);
   if (implementation.chromeOfficialRootFontVw == null) {
     problems.push('chromeOfficialRootFontVw missing');

@@ -893,7 +893,7 @@
      because this renderer is a self-contained inlined artifact. A fixed UI
      frame may shrink translated copy to fit its maximum owner/content range;
      open-flow / unbounded HEIGHT text keeps source metrics and grows instead. */
-  _fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null, hugNoShrink, openFlowNoShrink } = {}) {
+  _fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null, hugNoShrink, openFlowNoShrink, autoLayoutMax = null } = {}) {
     const policy = (typeof window !== 'undefined' && window.__designPolicy) || null;
     if (!policy || typeof policy !== 'object') {
       throw new Error('figma-render: missing window.__designPolicy');
@@ -901,13 +901,16 @@
     const hugOff = hugNoShrink == null ? policy.hugNoShrink === true : hugNoShrink === true;
     const openOff = openFlowNoShrink == null ? policy.openFlowNoShrink === true : openFlowNoShrink === true;
     const truncating = String(autoResize || 'FIXED').toUpperCase() === 'TRUNCATE' || truncation === 'ENDING';
+    const cap = (n) => { const v = Number(n); return Number.isFinite(v) && v > 0; };
+    const hasAlMax = autoLayoutMax && (cap(autoLayoutMax.maxWidth) || cap(autoLayoutMax.maxHeight));
+    if (hasAlMax) return { authorized: true, reason: 'auto-layout-max' };
     if (openFlow && openOff) return { authorized: false, reason: 'open-flow-natural-growth' };
     if (explicitFit) return { authorized: true, reason: 'explicit-fit-grant' };
     if (truncating) return { authorized: true, reason: 'truncation' };
     if (clipsContent === true || isMask === true) return { authorized: true, reason: 'clip-or-mask' };
     // mirrored from scripts/lib/figma-typography.mjs#fitAuthorization; flags from DESIGN.md YAML
     if (hugOff && String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
-    if (boundedOwner) return { authorized: true, reason: 'framed-bounded-owner' };
+    void boundedOwner;
     return { authorized: false, reason: 'preserve-source-metrics' };
   },
 
@@ -939,14 +942,23 @@
     return Number.isFinite(width) ? width : 0;
   },
 
-  /* 超框自动缩字号（2026-08-04 欣仪需求，lead 定的档）：
-     定宽折行文字换语言后实测超出稿框高度 → 按档缩：100% → 92% → 85% → 78% → 75%（下限）。
-     到下限仍溢出 → 停在下限、打 data-fit-overflow 标红交人裁决，**不再缩也不回弹**。
-     按档不连续缩：连续缩会让每种语言字号都不同，开发实现不出来，
-     也没法写成交付给开发的适配规则。字距不缩（同理），后备方案记在 knownGaps。
-     行高与字号同比例缩 —— 只缩字号不缩行高，三行变两行之前高度一点省不出来。
-     判定全部靠运行时实测（scrollHeight），Node 冒烟桩没有布局测不了 → 直接跳过，
-     机制由冒烟里的模拟探针验证（不许在无布局环境装样子）。 */
+  /* DESIGN.md 6.1 C：locale 基准字号上按整数 px 减，直到完整落入已写的
+     Auto Layout maxWidth / maxHeight。没有 75% 地板，也不走百分比阶梯。 */
+  _applyIntegerPxShrink(el, fs, lh, fits) {
+    const ratio = lh / fs;
+    let cur = fs;
+    while (cur > 1) {
+      cur -= 1;
+      el.style.fontSize = cur + 'px';
+      el.style.lineHeight = (cur * ratio) + 'px';
+      el.setAttribute('data-fit-px', String(cur));
+      if (fits()) return true;
+    }
+    el.setAttribute('data-fit-overflow', '1');
+    el.setAttribute('data-fit-needs-review', 'still-overflows');
+    return false;
+  },
+
   _fitText(el, tx, box, opts = {}) {
     /* An approved semantic line layout is content truth. It must retain the
        shared locale base size and its authored line count, never be squeezed
@@ -958,8 +970,37 @@
     const _lbLh = el ? Number(el.getAttribute('data-locale-base-lineheight')) : NaN;
     const fs = (Number.isFinite(_lbFs) && _lbFs > 0) ? _lbFs : (tx && tx.fontSize);
     const lh = (Number.isFinite(_lbLh) && _lbLh > 0) ? _lbLh : (tx && tx.lineHeight);
+    if (typeof fs !== 'number' || typeof lh !== 'number' || !lh) return;
+    const policy = (typeof window !== 'undefined' && window.__designPolicy) || null;
+    if (!policy || typeof policy !== 'object') {
+      throw new Error('figma-render: missing window.__designPolicy');
+    }
+    const cap = (n) => { const v = Number(n); return Number.isFinite(v) && v > 0 ? v : null; };
+    /* DESIGN.md 6.1 C: widthFit may only tighten a written maxWidth.
+       A parent box width is not a cap. Missing axis is not borrowed. */
+    const writtenW = cap(opts.maxWidth);
+    const writtenH = cap(opts.maxHeight);
+    const tightW = cap(opts.widthFit);
+    const maxW = writtenW != null && tightW != null ? Math.min(writtenW, tightW) : writtenW;
+    const maxH = writtenH;
+    if (policy.shrinkMode === 'integer-px') {
+      if (maxW == null && maxH == null) return;
+      const measuredW = () => {
+        if (typeof el.scrollWidth === 'number' && isFinite(el.scrollWidth) && el.scrollWidth > 0) return el.scrollWidth;
+        return this._measureInlineText(el, el.textContent || '');
+      };
+      const measuredH = () => (typeof el.scrollHeight === 'number' && isFinite(el.scrollHeight) ? el.scrollHeight : 0);
+      const fitsCaps = () => {
+        if (maxW != null && measuredW() > maxW + 0.5) return false;
+        if (maxH != null && measuredH() > maxH + 0.5) return false;
+        return true;
+      };
+      if (fitsCaps()) return;
+      this._applyIntegerPxShrink(el, fs, lh, fitsCaps);
+      return;
+    }
     const bh = box && box.h;
-    if (typeof fs !== 'number' || typeof lh !== 'number' || !lh || typeof bh !== 'number' || !bh) return;
+    if (typeof bh !== 'number' || !bh) return;
     /* Bounded hugging labels (button/tag) fit on WIDTH against the owner frame,
        not on height: they are single-line content-sized leaves whose adopted
        string may be wider than the source. The owner width is the hard bound. */
@@ -3067,6 +3108,44 @@
          const itemId = __u(item && item.id);
          if (itemId != null) truthNodeById.set(String(itemId), item);
        }
+       const layoutCap = (layout, key) => {
+         const n = Number(__u(layout && layout[key]));
+         return Number.isFinite(n) && n > 0 ? n : null;
+       };
+       /* DESIGN.md 6.1 B — mirrored from findAutoLayoutMaxOwner. Renderer is
+          inlined, so it cannot import the ESM helper. */
+       const findAlMaxOwner = (textNode, nodesById) => {
+         const none = { ownerId: null, maxWidth: null, maxHeight: null, reason: 'no-auto-layout-max' };
+         if (!textNode || !nodesById) return none;
+         const textId = String(__u(textNode.id) || '');
+         const capsOf = (node) => ({
+           maxWidth: layoutCap(node && node.layout, 'maxWidth'),
+           maxHeight: layoutCap(node && node.layout, 'maxHeight'),
+         });
+         const hasMax = (node) => {
+           const caps = capsOf(node);
+           return caps.maxWidth != null || caps.maxHeight != null;
+         };
+         const isAl = (node) => {
+           const mode = String(__u(node && node.layout && node.layout.layoutMode) || '').toUpperCase();
+           return mode === 'HORIZONTAL' || mode === 'VERTICAL';
+         };
+         if (hasMax(textNode)) return { ownerId: textId, ...capsOf(textNode), reason: 'text-self-max' };
+         const seen = new Set([textId]);
+         let current = textNode;
+         while (current) {
+           const parentId = String(__u(current.parentId) || '');
+           if (!parentId || seen.has(parentId)) break;
+           seen.add(parentId);
+           const parent = nodesById.get(parentId);
+           if (!parent) break;
+           if (isAl(parent) && hasMax(parent)) {
+             return { ownerId: parentId, ...capsOf(parent), reason: 'nearest-auto-layout-max' };
+           }
+           current = parent;
+         }
+         return none;
+       };
        const truthChildrenByParentId = new Map();
        for (const item of list) {
          const parentId = nodeParentId(item);
@@ -4622,6 +4701,10 @@
              (mirrored _fitAuthorization): a bounded framed owner is an
              authorized fixed-UI range, so translated copy fits it instead of
              overflowing; open-flow / unbounded HEIGHT keeps source metrics. */
+          const alOwner = findAlMaxOwner(n, truthNodeById);
+          const alMax = (alOwner.maxWidth != null || alOwner.maxHeight != null)
+            ? { maxWidth: alOwner.maxWidth, maxHeight: alOwner.maxHeight }
+            : null;
           const fitAuth = this._fitAuthorization({
             autoResize: ar,
             truncation: tx.truncation,
@@ -4629,10 +4712,10 @@
             isMask: n.isMask === true,
             explicitFit: tx.fit === true || n.fit === true,
             openFlow: constraint.openFlow === true,
-            boundedOwner: constraint.openFlow !== true && constraint.ownerWidth != null,
             layoutSizingVertical: sourceWidthHugText
               ? 'HUG'
               : __u(n.layout && n.layout.layoutSizingVertical),
+            autoLayoutMax: alMax,
           });
           const fitAuthorized = fitAuth.authorized;
           el.setAttribute('data-fit-policy', fitAuth.reason);
@@ -4667,17 +4750,26 @@
             el.setAttribute('data-text-layout-policy',
               el.getAttribute('data-text-layout-policy') || 'figma-exact');
           }
-          if (!_zhSourceExact && !inlineHugs && !constraint.openFlow && (fitAuthorized || _localizedSourceTitle || semanticBreak)) {
+          const hasAlCaps = alOwner.maxWidth != null || alOwner.maxHeight != null;
+          /* DESIGN.md 6.1 B/C and semantic line-break: no written Auto Layout
+             max → do not enqueue. semanticBreak keeps authored size; it must
+             not join fitCandidates or a sibling minPx would crush it. */
+          if (!_zhSourceExact && !inlineHugs && !constraint.openFlow && hasAlCaps && !semanticBreak) {
             el.setAttribute('data-fit-group', _fitGroupKey);
-            if (_localizedSourceTitle) {
+            if (_localizedSourceTitle && hasAlCaps) {
               el.setAttribute('data-fit-inline-policy', 'source-title-group-glyph-safe-width');
               el.setAttribute('data-fit-inline-slot-width', String(Number(box.w)));
             }
+            if (alOwner.ownerId) el.setAttribute('data-fit-owner', String(alOwner.ownerId));
+            if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
+            if (alOwner.maxHeight != null) el.setAttribute('data-fit-max-height', String(alOwner.maxHeight));
             fitCandidates.push({
               el, tx, box, groupKey: _fitGroupKey,
-              sourceTitleInlineSafe: _localizedSourceTitle,
-              sourceTitleText: _localizedSourceTitle ? String(fallback || '') : '',
+              sourceTitleInlineSafe: !!(hasAlCaps && _localizedSourceTitle),
+              sourceTitleText: (hasAlCaps && _localizedSourceTitle) ? String(fallback || '') : '',
               semanticBreak: !!semanticBreak,
+              maxWidth: alOwner.maxWidth,
+              maxHeight: alOwner.maxHeight,
             });
           }
           else if (!inlineHugs && !constraint.openFlow) {
@@ -4719,10 +4811,17 @@
              fill most of the owner in both axes; headings do not. */
           const _fillsOwner = _ownerW != null && _ownerH != null && _srcW > 0 && _srcH > 0
             && _srcH >= _ownerH * 0.6 && _srcW >= _ownerW * 0.55;
-          const boundedHugLabel = inlineHugs && !constraint.openFlow && _centered && _fillsOwner;
+          const boundedHugLabel = inlineHugs && !constraint.openFlow && _centered && _fillsOwner && hasAlCaps;
           if (boundedHugLabel) {
             el.setAttribute('data-fit-policy', 'bounded-hug-label');
-            fitCandidates.push({ el, tx, box, widthFit: _ownerW, heightFit: _ownerH });
+            if (alOwner.ownerId) el.setAttribute('data-fit-owner', String(alOwner.ownerId));
+            if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
+            if (alOwner.maxHeight != null) el.setAttribute('data-fit-max-height', String(alOwner.maxHeight));
+            fitCandidates.push({
+              el, tx, box,
+              maxWidth: alOwner.maxWidth,
+              maxHeight: alOwner.maxHeight,
+            });
           }
         } else {
           el.style.height = ((box.h ?? 0) + (Number(el.getAttribute('data-hscroll-gutter-h')) || 0)) + 'px';
@@ -6970,12 +7069,19 @@
           const safeWidth = Math.min(slotLimit, sourceMax);
           if (!Number.isFinite(safeWidth) || safeWidth <= 0) continue;
           for (const c of members) {
-            c.widthFit = safeWidth;
-            c.el.setAttribute('data-fit-inline-safe-width', String(safeWidth));
+            if (c.maxWidth == null && c.maxHeight == null) continue;
+            c.widthFit = c.maxWidth != null ? Math.min(c.maxWidth, safeWidth) : safeWidth;
+            c.el.setAttribute('data-fit-inline-safe-width', String(c.widthFit));
             c.el.setAttribute('data-fit-inline-source-max', String(sourceMax));
           }
         }
-        for (const c of fitCandidates) this._fitText(c.el, c.tx, c.box, { widthFit: c.widthFit, heightFit: c.heightFit, sourceTitleInlineSafe: c.sourceTitleInlineSafe, semanticBreak: c.semanticBreak });
+        for (const c of fitCandidates) this._fitText(c.el, c.tx, c.box, {
+          widthFit: c.widthFit,
+          sourceTitleInlineSafe: c.sourceTitleInlineSafe,
+          semanticBreak: c.semanticBreak,
+          maxWidth: c.maxWidth,
+          maxHeight: c.maxHeight,
+        });
         /* 组级最小统一字号（required-scale prepass，官网实证：同一组件组标题/正文
            统一字号，最严格成员定全组等级，其余兄弟跟随，最长项折行也不单独缩）。
            逐成员 step-fit 后读取各自"所需 scale"（未缩=100）；组内取 min，若确有成员
@@ -6984,24 +7090,30 @@
            保住 zh-CN 保真与本就合适的语言，不盲目统一降组。 */
         const groups = new Map();
         for (const c of fitCandidates) {
-          if (!c.groupKey) continue;
-          const sAttr = c.el.getAttribute('data-fit-scale');
-          const required = sAttr == null ? 100 : Number(sAttr);
+          if (!c.groupKey || c.semanticBreak) continue;
+          if (c.maxWidth == null && c.maxHeight == null) continue;
+          const _gFs = Number(c.el.getAttribute('data-locale-base-fontsize'));
+          const base = Number.isFinite(_gFs) && _gFs > 0 ? _gFs : Number(c.tx.fontSize);
+          const pxAttr = c.el.getAttribute('data-fit-px');
+          const required = pxAttr == null ? base : Number(pxAttr);
           if (!groups.has(c.groupKey)) groups.set(c.groupKey, []);
-          groups.get(c.groupKey).push({ c, required });
+          groups.get(c.groupKey).push({ c, required, base });
         }
         for (const members of groups.values()) {
           if (members.length < 2) continue;
-          const minScale = Math.min(...members.map((m) => m.required));
-          if (minScale >= 100) continue; // all fit at source size: keep source
+          const minPx = Math.min(...members.map((m) => m.required).filter((n) => Number.isFinite(n) && n > 0));
+          if (!Number.isFinite(minPx)) continue;
+          const allAtBase = members.every((m) => m.required >= m.base - 0.5);
+          if (allAtBase) continue;
           for (const m of members) {
-            if (m.required === minScale) continue; // already at strictest
-            const _gFs = Number(m.c.el.getAttribute('data-locale-base-fontsize'));
+            if (m.required === minPx) continue;
             const _gLh = Number(m.c.el.getAttribute('data-locale-base-lineheight'));
-            m.c.el.style.fontSize = ((Number.isFinite(_gFs) && _gFs > 0 ? _gFs : m.c.tx.fontSize) * minScale / 100) + 'px';
-            m.c.el.style.lineHeight = ((Number.isFinite(_gLh) && _gLh > 0 ? _gLh : m.c.tx.lineHeight) * minScale / 100) + 'px';
-            m.c.el.setAttribute('data-fit-scale', String(minScale));
-            m.c.el.setAttribute('data-fit-group-unified', String(m.required) + '->' + String(minScale));
+            const lh0 = Number.isFinite(_gLh) && _gLh > 0 ? _gLh : m.c.tx.lineHeight;
+            const ratio = m.base > 0 && Number.isFinite(lh0) ? lh0 / m.base : 1;
+            m.c.el.style.fontSize = minPx + 'px';
+            m.c.el.style.lineHeight = (minPx * ratio) + 'px';
+            m.c.el.setAttribute('data-fit-px', String(minPx));
+            m.c.el.setAttribute('data-fit-group-unified', String(m.required) + '->' + String(minPx));
           }
         }
       };
@@ -7018,6 +7130,7 @@
             const _lbLh = Number(c.el.getAttribute('data-locale-base-lineheight'));
             c.el.style.fontSize = (Number.isFinite(_lbFs) && _lbFs > 0 ? _lbFs : c.tx.fontSize) + 'px';
             c.el.style.lineHeight = (Number.isFinite(_lbLh) && _lbLh > 0 ? _lbLh : c.tx.lineHeight) + 'px';
+            c.el.removeAttribute('data-fit-px');
             c.el.removeAttribute('data-fit-scale');
             c.el.removeAttribute('data-fit-overflow');
           }

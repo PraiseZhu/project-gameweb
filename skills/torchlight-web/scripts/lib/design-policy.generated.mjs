@@ -69,13 +69,10 @@ export const DESIGN_POLICY = Object.freeze({
     "cardTitleMinSourcePxExclusive": 40
   },
   "shrinkSteps": [
-    100,
-    92,
-    85,
-    78,
-    75
+    1
   ],
-  "shrinkFloorPercent": 75,
+  "shrinkFloorPercent": 1,
   "hugNoShrink": true,
-  "openFlowNoShrink": true
+  "openFlowNoShrink": true,
+  "shrinkMode": "integer-px"
 });

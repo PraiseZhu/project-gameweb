@@ -243,21 +243,19 @@ test('fixed or clipped status-tag owners remain review-only', () => {
 });
 
 
-test('step-fit authorization: bounded framed owner may shrink, open-flow may not', () => {
-  /* A fixed UI frame (bounded owner) is an authorized max-range; translated
-     copy fits it via the stepped ladder instead of overflowing past it. */
+test('step-fit authorization: Auto Layout max authorizes shrink even for HUG', () => {
+  assert.deepEqual(
+    fitAuthorization({ autoResize: 'HEIGHT', layoutSizingVertical: 'HUG', autoLayoutMax: { maxWidth: 200 } }),
+    { authorized: true, reason: 'auto-layout-max' });
   assert.deepEqual(
     fitAuthorization({ autoResize: 'HEIGHT', boundedOwner: true }),
-    { authorized: true, reason: 'framed-bounded-owner' });
-  /* Open-flow keeps source metrics and grows naturally. */
+    { authorized: false, reason: 'preserve-source-metrics' });
   assert.deepEqual(
     fitAuthorization({ autoResize: 'HEIGHT', openFlow: true, boundedOwner: true }),
     { authorized: false, reason: 'open-flow-natural-growth' });
-  /* HEIGHT without truncation and without a bounded owner preserves metrics. */
   assert.deepEqual(
     fitAuthorization({ autoResize: 'HEIGHT' }),
     { authorized: false, reason: 'preserve-source-metrics' });
-  /* Explicit truncation / clip / grant still authorize regardless of owner. */
   assert.equal(fitAuthorization({ autoResize: 'TRUNCATE' }).reason, 'truncation');
   assert.equal(fitAuthorization({ autoResize: 'HEIGHT', truncation: 'ENDING' }).reason, 'truncation');
   assert.equal(fitAuthorization({ autoResize: 'HEIGHT', clipsContent: true }).reason, 'clip-or-mask');
@@ -285,7 +283,11 @@ test('framed HEIGHT text classifies as authorized step-fit only when it overflow
       font: { loaded: true, computedWeight: 700, availableWeights: [700], glyphsMissing: false },
     },
   };
-  const framed = classifyTypographyRange({ ...base, truth: { ...base.truth, container: { mode: 'framed-fixed' } }, browser: { ...base.browser, fitScale: 85 } });
+  const framed = classifyTypographyRange({
+    ...base,
+    truth: { ...base.truth, container: { mode: 'framed-fixed' }, autoLayoutMax: { maxWidth: 200 } },
+    browser: { ...base.browser, fitPx: 14, localeBaseFontSize: 16, fitMaxWidth: 200 },
+  });
   assert.equal(framed.rangeStatus, 'step-fit');
   assert.equal(framed.ok, true);
   /* Open-flow: rendered block grew past the source box height (clientHeight >
@@ -399,13 +401,14 @@ test('render _fitAuthorization reads YAML hug/open-flow flags', () => {
   assert.doesNotMatch(render, /if \(openFlow\) return \{ authorized: false, reason: 'open-flow-natural-growth' \}/);
 });
 
-test('default shrink steps stop at YAML floor 75 and do not include 70/65', () => {
+test('default shrink steps follow YAML integer-px mode', () => {
   const fit = computeSourceAnchoredInlineFit({
     sourceWidths: [100],
     targetWidths: [200],
     slotWidths: [100],
   });
-  assert.equal(fit.scale, 75);
+  assert.equal(fit.status, 'integer-ratio');
+  assert.equal(fit.requiredScale, 50);
   const src = readFileSync(new URL('../lib/translation/typography-policy.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /steps = \[100, 92, 85, 78, 75, 70, 65\]/);
 });
@@ -417,8 +420,8 @@ test('source-anchored inline fit uses the widest source sibling as the localized
     slotWidths: [686, 686, 686],
   });
   assert.equal(fit.safeInlineWidth, 540, 'source glyph extent, not an arbitrary padding, preserves source breathing room');
-  assert.equal(fit.scale, 78, 'the longest target chooses one discrete shared title scale');
-  assert.equal(fit.status, 'step-fit');
+  assert.equal(fit.status, 'integer-ratio');
+  assert.ok(fit.requiredScale < 100);
 });
 
 test('source-anchored inline fit leaves a source-safe title group at its base locale size', () => {
@@ -455,6 +458,22 @@ test('assessLocaleVisualLevel: zh-CN never scaled, missing data is unmeasured no
   const zh = assessLocaleVisualLevel({ role: 'card-frame', language: 'zh-CN', fontWeight: 700, sourceFontSize: 60, stageZoom: 0.398, visualFontPx: 23.9 });
   assert.equal(zh.ratio, 1);
   assert.equal(zh.status, 'on-target');
+});
+
+test('assessLocaleVisualLevel: integer fitPx is a size, not a percent', () => {
+  const src = 30;
+  const zoom = 0.5;
+  const ratio = 0.8;
+  const localeBase = src * ratio;
+  const fitPx = 16;
+  const visual = localeBase * (fitPx / localeBase) * zoom;
+  const r = assessLocaleVisualLevel({
+    role: 'card-frame', language: 'ja', fontWeight: 400,
+    sourceFontSize: src, stageZoom: zoom, visualFontPx: visual, fitScale: fitPx,
+  });
+  assert.equal(r.status, 'on-target');
+  assert.ok(Math.abs(r.groupFitScale - fitPx / localeBase) < 1e-6);
+  assert.notEqual(r.groupFitScale, fitPx / 100);
 });
 
 test('locale layout contract preserves zh-CN Figma and makes ja browser evidence explicit', () => {

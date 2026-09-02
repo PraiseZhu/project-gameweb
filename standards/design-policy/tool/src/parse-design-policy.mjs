@@ -27,9 +27,10 @@ export const REGISTERED_KEYS = Object.freeze([
   'shrinkFloorPercent',
   'hugNoShrink',
   'openFlowNoShrink',
+  'shrinkMode',
 ]);
 
-const REQUIRED_KEYS = Object.freeze([...REGISTERED_KEYS]);
+const REQUIRED_KEYS = Object.freeze(REGISTERED_KEYS.filter((key) => key !== 'shrinkMode'));
 
 function fail(message) {
   const err = new Error(message);
@@ -252,6 +253,10 @@ export function parseDesignPolicyMarkdown(markdown, { path = 'DESIGN.md' } = {})
     if (!hasOwn(doc.designWidths, key)) fail(`designWidths.${key} is required`);
     assertNumber(`designWidths.${key}`, doc.designWidths[key], { integer: true, min: 1 });
   }
+  const shrinkMode = hasOwn(doc, 'shrinkMode') ? String(doc.shrinkMode) : 'percent-ladder';
+  if (shrinkMode !== 'percent-ladder' && shrinkMode !== 'integer-px') {
+    fail(`shrinkMode must be percent-ladder or integer-px, got ${shrinkMode}`);
+  }
   if (!Array.isArray(doc.shrinkSteps)) fail('shrinkSteps must be a list');
   const shrinkSteps = doc.shrinkSteps.map((step, index) => {
     assertNumber(`shrinkSteps[${index}]`, step, { integer: true, min: 1 });
@@ -259,8 +264,14 @@ export function parseDesignPolicyMarkdown(markdown, { path = 'DESIGN.md' } = {})
   });
   if (!shrinkSteps.length) fail('shrinkSteps must be a non-empty list');
   const floor = assertNumber('shrinkFloorPercent', doc.shrinkFloorPercent, { integer: true, min: 1 });
-  if (Math.min(...shrinkSteps) !== floor) {
+  if (shrinkMode === 'percent-ladder' && Math.min(...shrinkSteps) !== floor) {
     fail(`shrinkSteps floor ${Math.min(...shrinkSteps)} must equal shrinkFloorPercent ${floor}`);
+  }
+  if (shrinkMode === 'integer-px') {
+    if (shrinkSteps.length !== 1 || shrinkSteps[0] !== 1) {
+      fail('integer-px shrinkMode requires shrinkSteps: [1]');
+    }
+    if (floor !== 1) fail('integer-px shrinkMode requires shrinkFloorPercent: 1');
   }
   return Object.freeze({
     schema: SCHEMA,
@@ -282,6 +293,7 @@ export function parseDesignPolicyMarkdown(markdown, { path = 'DESIGN.md' } = {})
     shrinkFloorPercent: floor,
     hugNoShrink: assertBool('hugNoShrink', doc.hugNoShrink),
     openFlowNoShrink: assertBool('openFlowNoShrink', doc.openFlowNoShrink),
+    shrinkMode,
   });
 }
 
