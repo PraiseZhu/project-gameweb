@@ -40,7 +40,7 @@ logic.
 |---|---|
 | Tree switch | Official site and product view (`?product=1`) pick the Figma tree from window width. Torchlight official cutoff is `max-width: 1126px`: `0–1126` mobile tree, `≥1127` pc. Desktop narrowing to 1126 and below must become the phone tree. QA uses the same composition breakpoints so a 390 / 800 frame is also the phone tree. Device-picker labels may still map `0–750` / `751–1023` / `≥1024`. Official `is-pc` / `is-mobile` is a UA body class and does not select the tree. No pad tree. |
 | Composition base | Native mobile/pad trees win when present. Pad without a pad tree is `pad-uses-pc-tree`. Never invent a third layout. |
-| Width ruler | `k = viewportW / designWidth` (phone 750, PC 3840). Same number as official `html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`. Device names are samples, not extra layouts. |
+| Width ruler | Segmented (DESIGN.md 第 5.0), not one k for every viewport. `viewportW > 1920`: column follows viewport, `k = viewportW / 3840`. `1127 ≤ viewportW ≤ 1920`: freeze `columnWidth` 1920, lock `k = 0.5`. `viewportW ≤ 1126`: mobile tree, `k = viewportW / 750`. `html` font stays `10vw` (`officialRootFontPx = 0.1 * viewportW`). Device names are samples, not extra layouts. |
 | First-screen height | Hero slot fills the current viewport height (official `100vh` / `--vh`). At `scrollTop=0` the next section stays outside the frame. A long `bg/*` sheet stays one inventory image; Resize cover-crops KV + that sheet into the first-screen window instead of slicing the asset. Hero UI size stays on width-scale `k`; blocks whose Figma bottom is in the lower hero half anchor their bottom fraction of the 100vh slot, so a hero title does not ride `y×k` into the top half. The left directory is a separate overlay that stretches to the current viewport height from its own source box. |
 | Product overflow | Product view clips page-level X (`overflow-x: hidden`), matching official `.adaptive-width`. QA keeps X auto for no-clip probes. Inner carousels stay legal. |
 | Light drag | Continuous edge-drag / slider may skip content rebuild only on the same composition base. Language, device, window resize, and W/H box stay on the full path. |
@@ -57,12 +57,14 @@ logic.
   reference (`10vw` / `100vh` / clip X); this file implements the numbers
   from `DESIGN.md` 第 5 章, not the poster stylesheet.
 - Per-device special-case layouts, and official media-query *size* patches
-  (1920 / 1440 / 1024 / 750 / 650, aspect-ratio, `device-vertical`).
-  1126 is only the composition cutoff (which Figma tree). Do not copy that
-  media-query's display/size rules into chrome or render. Those patches
-  change by season; Torchlight phase 1 and phase 2 already differ. Sample
-  360 / 375 / 390 / 412 / 414 / 430 wide and 667 / 844 / 932 tall; do not
-  invent a layout between those widths.
+  (1440 / 1024 / 750 / 650 rem, aspect-ratio, hover, 812 QR, `device-vertical`).
+  1126 is only the composition cutoff (which Figma tree). Inclusive 1920
+  column freeze (`1127–1920`, k locked at 0.5) is owned by the segmented
+  ruler, not a season patch. Do not copy that media-query's display/size
+  rules into chrome or render. Those patches change by season; Torchlight
+  phase 1 and phase 2 already differ. Sample 360 / 375 / 390 / 412 / 414 /
+  430 wide and 667 / 844 / 932 tall; do not invent a layout between those
+  widths.
 
 ## Evidence
 

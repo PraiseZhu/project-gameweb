@@ -707,6 +707,24 @@
     };
   }
 
+  /* DESIGN.md §5.0: 产品页 PC 列在 1127–1920（含 1920）冻 1920，overflow-x hidden 裁掉。
+     切树仍 1126。>1920 列随视口。QA fit/bezel 不得走这把尺。 */
+  function productColumnWidth(viewportW, plat) {
+    var w = Number(viewportW);
+    if (!PRODUCT_VIEW || !isFinite(w) || w <= 0) return w;
+    if (plat === 'mobile' || w <= 1126) return w;
+    if (w <= 1920) return 1920;
+    return w;
+  }
+
+  function productUiScaleK(viewportW, plat) {
+    var w = Number(viewportW);
+    if (!PRODUCT_VIEW || !isFinite(w) || w <= 0) return null;
+    if (plat === 'mobile' || w <= 1126) return w / 750;
+    if (w <= 1920) return 0.5;
+    return w / 3840;
+  }
+
   function renderInto(container, state) {
     var renderPrefs = cp(S.prefs);
     var productPlatform = productViewportPlatform();
@@ -714,7 +732,8 @@
     var vp = viewport();
     cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
-      interactionPayload: cfg.interactionPayload || null });
+      interactionPayload: cfg.interactionPayload || null,
+      productView: !!PRODUCT_VIEW });
   }
 
   /* 字体就绪回调：渲染层重量完缩字号后调这里，让读数（缩字号条数/字宽对账/缺字形）
@@ -1073,8 +1092,18 @@
     stage.classList.remove('tiled');
     wrap.style.display = '';
 
-    frame.style.width = vp.w + 'px';
-    if (PRODUCT_VIEW) frame.setAttribute('data-product-viewport-src', vp.src || 'product-view');
+    var productPlat = PRODUCT_VIEW ? productViewportPlatform() : null;
+    var columnW = PRODUCT_VIEW ? productColumnWidth(vp.w, productPlat) : vp.w;
+    frame.style.width = columnW + 'px';
+    if (PRODUCT_VIEW) {
+      frame.setAttribute('data-product-viewport-src', vp.src || 'product-view');
+      frame.setAttribute('data-product-column-width', String(columnW));
+      if (columnW !== vp.w) frame.setAttribute('data-product-column-frozen', '1920');
+      else frame.removeAttribute('data-product-column-frozen');
+    } else {
+      frame.removeAttribute('data-product-column-width');
+      frame.removeAttribute('data-product-column-frozen');
+    }
     /* screen 即独立模拟 viewport（2026-08-05 用户红框：页面不能上下顶天立地）。
        frame 固定可视尺寸 = viewport（宽 vp.w、高 vp.h），全页多分区内容在 frame **内部纵向滚动**
        （overflow-y:auto），外层 stage 只装一屏高的屏幕容器、四周留黑色呼吸空间 —— 不再被整页
@@ -1200,7 +1229,9 @@
         var ps = document.querySelector('.frame .fx-stage[data-node="__page__"]') || document.querySelector('.frame .fx-stage');
         var pz = ps ? parseFloat(getComputedStyle(ps).zoom) : 1;
         if (!isFinite(pz) || pz <= 0) pz = 1;
-        var effK = scale * pz;
+        /* 产品页像素对齐按有效 k×3840；1127–1920 用冻尺 k=0.5，不得用未冻结 viewportW/3840。 */
+        var productK = PRODUCT_VIEW ? productUiScaleK(vp.w, productViewportPlatform()) : null;
+        var effK = (productK != null && isFinite(productK) && productK > 0) ? productK : (scale * pz);
         var phys = effK * 3840;   /* 1 设计 px → 物理 CSS px（designWidth 3840 为 PC 基线） */
         window.__fxPixelAlign = {
           effectiveK: +effK.toFixed(6),

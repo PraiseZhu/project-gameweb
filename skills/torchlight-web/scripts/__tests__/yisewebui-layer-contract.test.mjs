@@ -115,10 +115,12 @@ test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not po
   const lib = read('scripts/lib/resize/index.mjs');
   const render = read('templates/figma-render.js');
   const chrome = read('templates/figma-chrome.js');
-  assert.match(resize, /k = viewportW \/ designWidth/);
   assert.match(resize, /10vw/);
   assert.match(resize, /100vh/);
+  assert.match(resize, /1127–1920/);
   assert.match(lib, /OFFICIAL_ROOT_FONT_VW = 10/);
+  assert.match(lib, /PC_COLUMN_FREEZE_MAX = 1920/);
+  assert.doesNotMatch(lib, /continuous width scale k = viewportW \/ designWidth/);
   assert.match(lib, /pageOverflowPolicy/);
   assert.match(render, /pagePaintOrder.length === 1/);
   assert.match(render, /data-hero-crop-window/);
