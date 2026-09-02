@@ -85,11 +85,38 @@
   },
 
   /* 当前「设计 px → CSS px」的缩放系数。门 D 的 scaled 绑定与门 F 都读它。
-     计算：帧可用宽度 ÷ 当前端的设计稿宽度。
-     注意这里不用 rem —— 线上站点的 1rem = 10vw 是相对【视口】的，
-     而预览帧只是页面里的一个 div，宽度 ≠ 视口宽。所以预览用 zoom
-     按设计 px 等比缩，几何关系与线上完全一致，且 __qa.scale() 能如实报出系数。
-     真正产出给开发的产品层会用 rem（那时容器就是视口），见 FIGMA-ADAPT.md §4。 */
+     产品页 UI 尺按 DESIGN.md §5.0 分段：PC 1127–1920 冻列宽 1920 → k=0.5；
+     >1920 随视口；手机 viewportW/750。背景 cover 窗仍用真实视口宽，不走这把冻尺。
+     QA 帧继续用被模拟视口宽 ÷ 设计稿宽。html 10vw 不在这里改。 */
+  _productViewFromCtx(ctx) {
+    if (ctx && ctx.productView === true) return true;
+    try {
+      if (typeof document !== 'undefined' && document.documentElement
+        && document.documentElement.getAttribute('data-product-view') === '1') return true;
+      if (typeof window !== 'undefined' && window.location && window.location.search) {
+        const q = new URLSearchParams(window.location.search).get('product');
+        return q === '1' || q === 'true' || q === 'yes';
+      }
+    } catch (e) { /* Node / missing location */ }
+    return false;
+  },
+  _viewportWidthFromCtx(ctx, frame, fallback) {
+    const fromCtx = ctx && ctx.viewport && Number(ctx.viewport.w);
+    if (Number.isFinite(fromCtx) && fromCtx > 0) return fromCtx;
+    const fromFrame = frame && Number(frame.clientWidth);
+    if (Number.isFinite(fromFrame) && fromFrame > 0) return fromFrame;
+    return fallback;
+  },
+  /* DESIGN.md §5.0 产品列宽。只冻 UI 列：1127–1920（含两端）= 1920；
+     >1920 随视口；≤1126 手机列 = 视口。QA 不走这把尺。 */
+  _productColumnWidth(viewportW, designWidth) {
+    const w = Number(viewportW);
+    const dw = Number(designWidth) || 3840;
+    if (!Number.isFinite(w) || w <= 0) return dw;
+    if (dw <= 750 || w <= 1126) return w;
+    if (w <= 1920) return 1920;
+    return w;
+  },
   scale() {
     const dw = this._designWidth || 3840;
     const fw = this._frameWidth || dw;
@@ -1559,8 +1586,15 @@
        k = 1918/3840 = 0.49947916… → 30px 字号在屏幕上 14.984px ——
        小数字号栅格化 → 每个字笔画落在不同子像素上 → 「字有粗有细有大有小」。
        用 1920：k = 0.5 → 30×0.5 = 15px 整数，笔画落整像素。
-       取不到 viewport（直调 renderApp 的旁路）才退回 clientWidth。 */
-    this._frameWidth = (ctx.viewport && ctx.viewport.w) || frame.clientWidth || designWidth;
+       取不到 viewport（直调 renderApp 的旁路）才退回 clientWidth。
+       产品页再按 §5.0 把 UI 列冻到 1920（k=0.5）；背景 cover 仍用真实视口。 */
+    const viewportW = this._viewportWidthFromCtx(ctx, frame, designWidth);
+    const productView = this._productViewFromCtx(ctx);
+    this._viewportWidth = viewportW;
+    this._productView = productView;
+    this._frameWidth = productView
+      ? this._productColumnWidth(viewportW, designWidth)
+      : viewportW;
     const k = this.scale();
 
     const sections = __activeTruth.sections || {};
@@ -1709,7 +1743,11 @@
       const slotScale = Math.max(k, slotH / Number(first.height));
       if (Number.isFinite(slotScale) && slotScale > 0) {
         heroVisualScale = slotScale;
-        heroVisualCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
+        /* Cover 窗宽永远是真实 viewport，不得把背景冻成 1920。UI k 走 _frameWidth。 */
+        const coverW = Number.isFinite(Number(this._viewportWidth)) && this._viewportWidth > 0
+          ? this._viewportWidth
+          : viewportW;
+        heroVisualCropLeft = (coverW / slotScale - designWidth) / 2;
         heroCropWindowDesign = slotH / slotScale;
       }
       /* Cover-crop fills the viewport visually. Later sections stay on their

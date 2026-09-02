@@ -26,6 +26,11 @@ export { DESIGN_POLICY };
 
 export const DESIGN_WIDTHS = DESIGN_POLICY.designWidths;
 
+/* DESIGN.md 第 5.0：PC 列在 inclusive 1920 冻宽；1921 才 stretch。
+   Tree cutoff stays 1126/1127. html 10vw is a separate number. */
+export const PC_COLUMN_FREEZE_MAX = 1920;
+export const PC_COLUMN_FREEZE_K = PC_COLUMN_FREEZE_MAX / DESIGN_WIDTHS.pc;
+
 /* Official poster uses `html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`
    so 10rem = 100vw. Numbers come from DESIGN.md YAML, not a second table. */
 export const OFFICIAL_ROOT_FONT_VW = DESIGN_POLICY.officialRootFontVw;
@@ -214,9 +219,12 @@ export function viewFitScale({
 }
 
 /**
- * Width ruler shared by QA zoom and product rem. Same number as official
- * `10vw`: k = viewportW / designWidth. Phone samples are 360/375/390/412/414/430;
- * they do not invent extra layouts.
+ * Segmented width ruler (DESIGN.md 第 5.0). Not one k for every viewport:
+ *   viewportW > 1920              → column follows viewport, k = viewportW / 3840
+ *   1127 ≤ viewportW ≤ 1920       → freeze columnWidth 1920, k locked at 0.5
+ *   viewportW ≤ 1126              → mobile tree, k = viewportW / 750
+ * officialRootFontPx stays 0.1 * viewportW (html 10vw). Tree cutoff stays 1126/1127.
+ * Do not copy season patches (1440/1024/750/650 rem, aspect-ratio, hover, 812 QR).
  */
 export function widthScale({
   viewportW,
@@ -227,14 +235,33 @@ export function widthScale({
   const dw = n(designWidth, NaN);
   const fallbackDw = DESIGN_WIDTHS[compositionKey] || DESIGN_WIDTHS.pc;
   const used = Number.isFinite(dw) && dw > 0 ? dw : fallbackDw;
-  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(used) || used <= 0) {
-    return { k: null, designWidth: used, officialRootFontPx: null };
+  const officialRootFontPx = Number.isFinite(width) && width > 0
+    ? width * (OFFICIAL_ROOT_FONT_VW / 100)
+    : null;
+  if (!Number.isFinite(width) || width <= 0) {
+    return { k: null, designWidth: used, officialRootFontPx: null, columnWidth: null };
   }
-  const k = width / used;
+  if (width <= TORCHLIGHT_COMPOSITION_BREAKPOINTS[0].max) {
+    return {
+      k: width / DESIGN_WIDTHS.mobile,
+      designWidth: DESIGN_WIDTHS.mobile,
+      officialRootFontPx,
+      columnWidth: width,
+    };
+  }
+  if (width <= PC_COLUMN_FREEZE_MAX) {
+    return {
+      k: PC_COLUMN_FREEZE_K,
+      designWidth: DESIGN_WIDTHS.pc,
+      officialRootFontPx,
+      columnWidth: PC_COLUMN_FREEZE_MAX,
+    };
+  }
   return {
-    k,
-    designWidth: used,
-    officialRootFontPx: width * (OFFICIAL_ROOT_FONT_VW / 100),
+    k: width / DESIGN_WIDTHS.pc,
+    designWidth: DESIGN_WIDTHS.pc,
+    officialRootFontPx,
+    columnWidth: width,
   };
 }
 
@@ -399,6 +426,7 @@ export function classifyResizeIntent({
     plat: composition.requested,
     composition,
     widthScale: ruler,
+    columnWidth: ruler.columnWidth,
     heroFill: heroViewportFill({
       viewportH,
       widthScaleK: ruler.k,
@@ -434,7 +462,7 @@ export function resizeOwns() {
   return [
     'product/QA tree from composition width (torchlight official 0–1126 mobile, ≥1127 pc; no pad tree)',
     'device-picker buckets stay 0–750 / 751–1023 / ≥1024 and do not select the Figma tree',
-    'continuous width scale k = viewportW / designWidth (official 10vw ruler)',
+    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5; ≤1126 k=viewportW/750 (official 10vw html font stays 0.1*viewportW)',
     'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; inventory stays one sheet)',
     'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
     'left directory rail stretches to the current viewport height without SS5 node IDs',
@@ -454,7 +482,7 @@ export function resizeDoesNotOwn() {
     'click / switch / tab / scrollspy wiring (Interaction Skill)',
     'Figma fetch, truth extraction, or asset export (Main Skill)',
     'page-specific node IDs or official-site one-off CSS',
-    'per-device special-case layouts or official media-query size patches (1920/1440/1024/750/650, aspect-ratio, device-vertical; 1126 is the tree cutoff only)',
+    'per-device special-case layouts or official media-query size patches (1440/1024/750/650 rem, aspect-ratio, hover, 812 QR, device-vertical; 1126 is the tree cutoff only — 1127–1920 column freeze is owned by the segmented ruler)',
   ];
 }
 

@@ -24,6 +24,7 @@ import {
 } from '../lib/resize/index.mjs';
 
 const chromeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/figma-chrome.js'), 'utf8');
+const renderSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/figma-render.js'), 'utf8');
 const navRailCheckSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/figma-nav-rail-browser-check.mjs'), 'utf8');
 
 test('composition numbers come from DESIGN.md YAML', () => {
@@ -199,12 +200,29 @@ test('hero lock/exit/release stays a resize geometry contract', () => {
   }, 0).slot, null);
 });
 
-test('width scale is one formula, same ruler as official 10vw', () => {
-  assert.equal(widthScale({ viewportW: 390, designWidth: 750 }).k, 390 / 750);
-  assert.equal(widthScale({ viewportW: 1920, compositionKey: 'pc' }).k, 0.5);
-  assert.equal(widthScale({ viewportW: 1249, designWidth: 3840 }).officialRootFontPx, 124.9);
-  assert.equal(widthScale({ viewportW: 360, designWidth: 750 }).k, 360 / 750);
-  assert.equal(widthScale({ viewportW: 430, designWidth: 750 }).k, 430 / 750);
+test('width scale is segmented: freeze k=0.5 on 1127–1920, stretch only above 1920', () => {
+  assert.equal(widthScale({ viewportW: 390 }).k, 390 / 750);
+  assert.equal(widthScale({ viewportW: 390 }).columnWidth, 390);
+  assert.equal(widthScale({ viewportW: 1126 }).k, 1126 / 750);
+  assert.equal(widthScale({ viewportW: 1126 }).columnWidth, 1126);
+  assert.equal(widthScale({ viewportW: 1127 }).k, 0.5);
+  assert.equal(widthScale({ viewportW: 1127 }).columnWidth, 1920);
+  const at1440 = widthScale({ viewportW: 1440 });
+  assert.equal(at1440.k, 0.5, '1440 must freeze k=0.5, not 1440/3840=0.375');
+  assert.notEqual(at1440.k, 1440 / 3840, 'single-formula k=viewportW/3840 at 1440 must fail closed');
+  assert.equal(at1440.columnWidth, 1920);
+  assert.equal(at1440.officialRootFontPx, 144);
+  const at1920 = widthScale({ viewportW: 1920 });
+  assert.equal(at1920.k, 0.5);
+  assert.equal(at1920.columnWidth, 1920);
+  const at1921 = widthScale({ viewportW: 1921 });
+  assert.equal(at1921.k, 1921 / 3840);
+  assert.equal(at1921.columnWidth, 1921);
+  assert.equal(widthScale({ viewportW: 2560 }).k, 2560 / 3840);
+  assert.equal(widthScale({ viewportW: 2560 }).columnWidth, 2560);
+  assert.equal(widthScale({ viewportW: 1249 }).officialRootFontPx, 124.9);
+  assert.equal(widthScale({ viewportW: 360 }).k, 360 / 750);
+  assert.equal(widthScale({ viewportW: 430 }).k, 430 / 750);
 });
 
 test('hero fill uses YAML fillVh of the viewport so later sections leave the first screen', () => {
@@ -272,13 +290,40 @@ test('resize skill names its own axis and refuses translation/interaction owners
   assert.ok(resizeOwns().some((item) => /hero UI/i.test(item)));
   assert.ok(resizeOwns().some((item) => /directory rail/i.test(item)));
   assert.ok(resizeOwns().some((item) => /overflow-x/i.test(item)));
-  assert.equal(intent.widthScale.k, 1846 / 3840);
+  assert.equal(intent.widthScale.k, 0.5);
+  assert.equal(intent.widthScale.columnWidth, 1920);
+  assert.equal(intent.columnWidth, 1920);
   assert.equal(intent.overflow.overflowX, 'auto');
   assert.ok(resizeDoesNotOwn().some((item) => /Translation/i.test(item)));
   assert.ok(resizeDoesNotOwn().some((item) => /Interaction/i.test(item)));
   assert.ok(resizeDoesNotOwn().some((item) => /per-device/i.test(item)));
   assert.ok(resizeOwns().some((item) => /1126/.test(item)));
+  assert.ok(resizeOwns().some((item) => /1127–1920 freeze columnWidth 1920/.test(item)));
   assert.ok(resizeDoesNotOwn().some((item) => /media-query/i.test(item)));
+  assert.ok(!resizeDoesNotOwn().some((item) => /1920\/1440/.test(item)));
+  assert.ok(resizeDoesNotOwn().some((item) => /1127–1920 column freeze is owned/.test(item)));
+});
+
+test('classifyResizeIntent hands k + columnWidth + composition in one shot', () => {
+  const pc = classifyResizeIntent({
+    width: 1440,
+    platforms: { mobile: true },
+    viewportW: 1440,
+    viewportH: 900,
+  });
+  assert.equal(pc.composition.key, 'pc');
+  assert.equal(pc.widthScale.k, 0.5);
+  assert.equal(pc.widthScale.columnWidth, 1920);
+  assert.equal(pc.columnWidth, 1920);
+  const phone = classifyResizeIntent({
+    width: 1126,
+    platforms: { mobile: true },
+    viewportW: 1126,
+    viewportH: 800,
+  });
+  assert.equal(phone.composition.key, 'mobile');
+  assert.equal(phone.widthScale.k, 1126 / 750);
+  assert.equal(phone.columnWidth, 1126);
 });
 
 test('PC cover crop belongs to the KV plane, not homepage UI width-scale', () => {
@@ -340,4 +385,81 @@ test('directory browser check locates the rail by name and source box, not a sea
   assert.doesNotMatch(navRailCheckSrc, /I52-3263-17-53006/);
   assert.doesNotMatch(navRailCheckSrc, /targetRect\.width \/ 727/);
   assert.doesNotMatch(navRailCheckSrc, /targetRect\.height \/ 2376/);
+});
+
+function evalProductColumnWidth(src, fnName) {
+  const needle = fnName + '(viewportW, ';
+  const start = src.indexOf(needle);
+  assert.ok(start >= 0, `missing ${fnName}`);
+  const brace = src.indexOf('{', start);
+  let depth = 0;
+  let end = brace;
+  for (let i = brace; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+  const body = src.slice(brace + 1, end).replace(/this\./g, '');
+  return new Function('viewportW', fnName.includes('ColumnWidth') && src.includes('_productColumnWidth') && fnName === '_productColumnWidth' ? 'designWidth' : 'plat', body);
+}
+
+test('sc-product-view-only: 1440 freeze is PRODUCT_VIEW only; QA fit/bezel stay unfrozen', () => {
+  assert.match(chromeSrc, /function productColumnWidth\(viewportW, plat\)/);
+  assert.match(chromeSrc, /if \(!PRODUCT_VIEW \|\| !isFinite\(w\) \|\| w <= 0\) return w/);
+  assert.match(chromeSrc, /var columnW = PRODUCT_VIEW \? productColumnWidth\(vp\.w, productPlat\) : vp\.w/);
+  assert.match(chromeSrc, /fit: !PRODUCT_VIEW/);
+  assert.match(chromeSrc, /BEZEL = PRODUCT_VIEW \? 0 : 22/);
+  assert.match(chromeSrc, /productView: !!PRODUCT_VIEW/);
+  assert.match(renderSrc, /this\._frameWidth = productView/);
+  assert.match(renderSrc, /this\._productColumnWidth\(viewportW, designWidth\)/);
+
+  const column = evalProductColumnWidth(renderSrc, '_productColumnWidth');
+  assert.equal(column(1440, 3840), 1920);
+  assert.equal(column(1920, 3840), 1920);
+  assert.equal(column(1921, 3840), 1921);
+  assert.equal(column(1126, 3840), 1126);
+  assert.equal(column(1127, 3840), 1920);
+  assert.equal(column(2560, 3840), 2560);
+  assert.equal(column(1126, 750), 1126);
+  assert.equal(column(1440, 3840) / 3840, 0.5);
+
+  const qa = classifyResizeIntent({
+    width: 1440,
+    productView: false,
+    viewportW: 1440,
+    viewportH: 900,
+    platforms: { mobile: true },
+    fit: true,
+  });
+  const product = classifyResizeIntent({
+    width: 1440,
+    productView: true,
+    viewportW: 1440,
+    viewportH: 900,
+    platforms: { mobile: true },
+    fit: false,
+  });
+  assert.equal(qa.composition.key, 'pc');
+  assert.equal(product.composition.key, 'pc');
+  assert.equal(qa.overflow.overflowX, 'auto');
+  assert.equal(product.overflow.overflowX, 'hidden');
+  assert.equal(qa.viewFit.scale < 1 || qa.viewFit.scale === 1, true);
+});
+
+test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () => {
+  assert.match(renderSrc, /Cover 窗宽永远是真实 viewport/);
+  assert.match(renderSrc, /coverW \/ slotScale - designWidth/);
+  assert.match(renderSrc, /this\._viewportWidth/);
+  assert.doesNotMatch(renderSrc, /heroVisualCropLeft = \(this\._frameWidth \/ slotScale/);
+  const fill = heroViewportFill({
+    viewportH: 900,
+    widthScaleK: 0.5,
+    heroDesignHeight: 2160,
+  });
+  assert.equal(fill.fillsViewport, true);
+  assert.equal(fill.designHeight, 900 / 0.5);
+  assert.equal(fill.cropWindowDesign, 900 / fill.slotScale);
+  assert.ok(fill.slotScale >= 900 / 2160);
 });
