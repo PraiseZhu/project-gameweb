@@ -255,6 +255,61 @@ test("工作区画板：sec/ 与组件集并排时仍是页根，不因货架启
   assert.equal(check.ok, true, check.problems.join("\n"));
 });
 
+test("工作区横排 sec/ 叠成竖排 x=0，不把画布间距算进页宽", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const page = node("board", "FRAME", "cn_mobile", [
+    node("s1", "FRAME", "sec/1", [], { box: { x: 20009, y: 209, width: 750, height: 1334 } }),
+    node("s2", "FRAME", "sec/2", [
+      node("bg", "FRAME", "bg/移动端背景", [
+        node("art", "RECTANGLE", "赛季kv", [], {
+          box: { x: 20400, y: 0, width: 1600, height: 1800 },
+        }),
+      ], {
+        box: { x: 20849, y: 209, width: 750, height: 1334 },
+        absoluteRenderBounds: { x: 20849, y: 209, width: 750, height: 1334 },
+      }),
+    ], { box: { x: 20849, y: 209, width: 750, height: 1334 }, clipsContent: true }),
+    node("s3", "FRAME", "sec/3", [], { box: { x: 21689, y: 209, width: 750, height: 1334 } }),
+  ], { box: { x: 20000, y: 0, width: 3000, height: 2000 } });
+
+  const inv = buildInventory(page, { requestedNodeId: "board" });
+  assert.equal(inv.ok, true);
+  assert.deepEqual(inv.page.box, { x: 0, y: 0, w: 750, h: 4002 });
+  assert.deepEqual(inv.sections[0].pageBox, { x: 0, y: 0, w: 750, h: 1334 });
+  assert.deepEqual(inv.sections[1].pageBox, { x: 0, y: 1334, w: 750, h: 1334 });
+  assert.deepEqual(inv.sections[2].pageBox, { x: 0, y: 2668, w: 750, h: 1334 });
+  const bg = inv.nodes.find((item) => item.id === "bg");
+  assert.deepEqual(bg.pageBox, { x: 0, y: 1334, w: 750, h: 1334 });
+  assert.deepEqual(bg.renderBox, { x: 0, y: 1334, w: 750, h: 1334 });
+  assert.deepEqual(bg.inkBox, { x: -449, y: 1125, w: 1600, h: 1800 });
+});
+
+test("内层竖排页面内容不按工作区吃空档", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const page = node("content", "FRAME", "页面内容", [
+    node("s1", "FRAME", "sec/1", [], { box: { x: 0, y: 0, width: 3840, height: 2143 } }),
+    node("s2", "FRAME", "sec/2", [], { box: { x: 0, y: 2636, width: 3840, height: 2143 } }),
+    node("s3", "FRAME", "sec/3", [], { box: { x: 0, y: 5272, width: 3840, height: 2143 } }),
+  ], { box: { x: 0, y: 0, width: 3840, height: 7415 } });
+
+  const { page: resolved, reason } = resolvePageRoot(page, "content");
+  assert.equal(resolved.id, "content");
+  assert.equal(reason, "requested-is-page");
+  const inv = buildInventory(page, { requestedNodeId: "content" });
+  assert.equal(inv.ok, true);
+  assert.deepEqual(inv.page.box, { x: 0, y: 0, w: 3840, h: 7415 });
+  assert.deepEqual(inv.sections[0].pageBox, { x: 0, y: 0, w: 3840, h: 2143 });
+  assert.deepEqual(inv.sections[1].pageBox, { x: 0, y: 2636, w: 3840, h: 2143 });
+});
+
 test("外层货架仍落到内层叠页，工作区画板不改这条路径", () => {
   const node = (id, type, name, children = [], extra = {}) => ({
     id, type, name, children,

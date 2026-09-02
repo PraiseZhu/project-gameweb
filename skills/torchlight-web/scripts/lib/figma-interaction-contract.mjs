@@ -42,12 +42,78 @@ function hasAncestorRole(node, role, byId) {
   return false;
 }
 
-function componentState(node) {
+function parseVariantPairs(name) {
+  const pairs = {};
+  for (const part of String(name || '').split(',')) {
+    const cut = part.indexOf('=');
+    if (cut <= 0) continue;
+    const key = part.slice(0, cut).trim();
+    const val = part.slice(cut + 1).trim();
+    if (key) pairs[key] = val;
+  }
+  return pairs;
+}
+
+function dropmenuPropertyMap(node) {
   const props = plain(node?.componentProperties || node?.properties || {});
-  const values = Object.values(props || {})
-    .map((item) => item && typeof item === 'object' ? item.value : item)
-    .filter((value) => typeof value === 'string')
-    .map((value) => value.toLowerCase());
+  const out = {};
+  for (const [key, item] of Object.entries(props || {})) {
+    const value = item && typeof item === 'object' && item && 'value' in item ? item.value : item;
+    if (typeof value === 'string') out[key] = value;
+  }
+  return out;
+}
+
+/* A9: axis name is unlocked. Only the axis whose unique values are exactly
+   {on,off} counts. Lang=en and other axes must not make the menu invalid. */
+function dropmenuAxisName(variants, nameOf = (variant) => variant?.name) {
+  const byAxis = new Map();
+  for (const variant of variants || []) {
+    const pairs = parseVariantPairs(nameOf(variant));
+    for (const [key, val] of Object.entries(pairs)) {
+      if (!byAxis.has(key)) byAxis.set(key, new Set());
+      byAxis.get(key).add(val);
+    }
+  }
+  const matches = [];
+  for (const [key, values] of byAxis) {
+    if (values.size === 2 && values.has('on') && values.has('off')) matches.push(key);
+  }
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) return null;
+  const tokens = (variants || []).map((variant) => {
+    const raw = String(nameOf(variant) || '').trim();
+    const values = Object.values(parseVariantPairs(raw));
+    if (values.length === 1) return values[0];
+    if (raw === 'on' || raw === 'off') return raw;
+    return null;
+  });
+  const unique = [...new Set(tokens)];
+  return unique.length === 2 && unique.includes('on') && unique.includes('off') && !unique.includes(null)
+    ? '*'
+    : null;
+}
+
+function dropmenuCurrentState(node) {
+  const graph = plain(node?.componentVariantGraph);
+  const variants = Array.isArray(graph?.variants) ? graph.variants : [];
+  const axis = dropmenuAxisName(variants);
+  if (!axis) return 'invalid';
+  const props = dropmenuPropertyMap(node);
+  if (axis !== '*' && Object.prototype.hasOwnProperty.call(props, axis)) {
+    const current = props[axis];
+    return current === 'on' || current === 'off' ? current : 'invalid';
+  }
+  if (axis === '*') {
+    const onOff = Object.entries(props).filter(([, value]) => value === 'on' || value === 'off');
+    if (onOff.length === 1) return onOff[0][1];
+  }
+  return 'invalid';
+}
+
+function componentState(node) {
+  if (interactionRole(node) === 'dropmenu') return dropmenuCurrentState(node);
+  const values = Object.values(dropmenuPropertyMap(node)).map((value) => value.toLowerCase());
   if (!values.length) return null;
   if (values.some((value) => /^(disabled?|disable|unavailable|off)$/.test(value))) return 'disabled';
   if (values.some((value) => /^(active|highlight|selected|on)$/.test(value))) return 'active';
@@ -173,6 +239,12 @@ function standaloneButtonVariantGraph(node) {
   const hasHighlight = names.some((name) => /(^|[=\s])highlight(\b|$)/.test(name));
   if (!hasNormal || !hasHighlight) return null;
   return graph;
+}
+
+function dropmenuVariantGraph(node) {
+  const graph = variantGraph(node);
+  if (!graph) return null;
+  return dropmenuAxisName(graph.variants) ? graph : null;
 }
 
 function directChildrenOf(owner, list) {
@@ -393,11 +465,23 @@ export function deriveInteractionModel(nodes = []) {
         unresolved.push({ id: String(id), role, reason: 'missing switch ownerPath' });
       }
     }
+    if (role === 'dropmenu') {
+      if (entry.controlState === 'invalid') {
+        unresolved.push({ id: String(id), role, reason: 'dropmenu axis must be exact lowercase on/off' });
+      } else {
+        const menuGraph = dropmenuVariantGraph(node);
+        entry.dropmenu = {
+          state: entry.controlState === 'on' ? 'on' : 'off',
+          componentSetId: menuGraph?.componentSetId || null,
+        };
+      }
+    }
     const target = explicitTarget(node, parsed);
     if (target && (role === 'tab' || role === 'btn' || role === 'hot' || role === 'sec')) entry.secTarget = target;
     if ((STRUCTURAL.has(role) && !(role === 'scroll' && !entry.hscroll) && !(role === 'mix' && !entry.hscroll))
       || role === 'btn'
       || role === 'hot'
+      || role === 'dropmenu'
       || entry.calendarNow
       || target) components.push(entry);
   }
@@ -540,7 +624,14 @@ export function deriveInteractionModel(nodes = []) {
       attrs['data-btn-variant-set'] = entry.buttonVariant.componentSetId;
       attrs['data-btn-variant-group'] = entry.buttonVariant.group;
     }
+    if (entry.role === 'dropmenu') {
+      attrs['data-dropmenu'] = 'true';
+      attrs['data-dropmenu-state'] = entry.dropmenu ? entry.dropmenu.state : 'invalid';
+      if (entry.dropmenu && entry.dropmenu.componentSetId) attrs['data-dropmenu-set'] = entry.dropmenu.componentSetId;
+      if (!entry.dropmenu) attrs['data-btn-press'] = 'inert';
+    }
     const parsed = parseLayerName(entry.name);
+    if (entry.role === 'dropmenu' && parsed.label) attrs['data-dropmenu-name'] = String(parsed.label);
     if (parsed.params.link) attrs['data-link'] = String(parsed.params.link);
     if (parsed.params.go) attrs['data-go'] = String(parsed.params.go);
     if (entry.role === 'fix') {

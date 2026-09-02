@@ -22,6 +22,7 @@ import { DEFAULT_MAX_HTML_BYTES, QA_TRUTH_RE, externalizeQaTruthIfOverLimit } fr
 import { safeJsonForScript } from './lib/fs-utils.mjs';
 import { workflowDeclaration } from './lib/workflows.mjs';
 import { runInventoryStaticGate } from './lib/inventory-static-gate.mjs';
+import { languageMatrixOptions, pageLangsFromImgLangSets } from './lib/translation/locale-policy.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const INIT = join(SKILL_ROOT, 'scripts/init.mjs');
@@ -86,6 +87,14 @@ function assertHtmlVolume(demoDir, limitBytes, htmlVolume = externalizeQaTruthIf
   return htmlVolume;
 }
 
+function pageLangsFromTruth(pc, mobile) {
+  const sets = [
+    ...((pc && pc.ok && pc.componentVariantGraph?.componentSets) || []),
+    ...((mobile && mobile.ok && mobile.componentVariantGraph?.componentSets) || []),
+  ];
+  return pageLangsFromImgLangSets(sets);
+}
+
 function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_MAX_HTML_BYTES) {
   const indexPath = join(demoDir, 'index.html');
   if (!existsSync(indexPath)) {
@@ -95,7 +104,8 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
   if (!existsSync(indexPath)) throw new Error(`init did not write ${indexPath}`);
   const truth = readyPlatformTruth({ fingerprint: consume.fingerprint, source: pc.source, pc, mobile });
   assertHtmlVolume(demoDir, htmlLimitBytes, embedOrExternalizeTruth(demoDir, truth, htmlLimitBytes));
-  patchShowcaseSpec(demoDir, consume);
+  patchShowcaseSpec(demoDir, consume, pageLangsFromTruth(pc, mobile));
+  patchShowcaseLanguageMatrix(demoDir, pageLangsFromTruth(pc, mobile));
   runNode(INLINE, ['--demo', demoDir]);
   /* Figma REST cannot ship font binaries. Main copies registered files into
      the demo and fail-closes when a source family is missing — never swap in
@@ -161,11 +171,12 @@ function embedOrExternalizeTruth(demoDir, truth, limitBytes = DEFAULT_MAX_HTML_B
   return externalizeQaTruthIfOverLimit(demoDir, { limitBytes });
 }
 
-function patchShowcaseSpec(demoDir, consume) {
+function patchShowcaseSpec(demoDir, consume, pageLangs = ['zh-CN']) {
   const specPath = join(demoDir, 'spec.json');
   const spec = JSON.parse(readFileSync(specPath, 'utf8'));
   const ends = endsOfConsume(consume);
   const platforms = sourcePlatformsOf(ends);
+  const langs = Array.isArray(pageLangs) && pageLangs.length ? pageLangs : ['zh-CN'];
   spec.workflow = showcaseWorkflow(ends);
   spec.figma = {
     sourcePlatforms: platforms,
@@ -180,8 +191,26 @@ function patchShowcaseSpec(demoDir, consume) {
   spec.matrix = {
     ...(spec.matrix || {}),
     platforms,
+    langs,
   };
   writeFileSync(specPath, `${JSON.stringify(spec, null, 2)}\n`);
+}
+
+function patchShowcaseLanguageMatrix(demoDir, pageLangs) {
+  const indexPath = join(demoDir, 'index.html');
+  const html = readFileSync(indexPath, 'utf8');
+  const options = languageMatrixOptions(pageLangs);
+  const langsJson = JSON.stringify(options).replace(/</g, '\\u003c');
+  const replacement = `lang:   { label: 'Language', options: ${langsJson} }`;
+  const next = html.replace(
+    /lang:\s*\{\s*label:\s*'Language',\s*options:\s*\[[\s\S]*?\]\s*\}/,
+    replacement,
+  );
+  if (next.includes(replacement)) {
+    if (next !== html) writeFileSync(indexPath, next);
+    return;
+  }
+  throw new Error('index.html missing hardcoded Language matrix options to patch');
 }
 
 function consumeReadyPack(handoffDir) {
