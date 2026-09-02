@@ -46,6 +46,7 @@ coverage/
 
 # === Local one-off artifacts ===
 _tmp/
+.cindy-worktrees/
 
 # === Skill private case ledger (root-cause layer stays public) ===
 skills/*/evolution/cases/
