@@ -38,7 +38,7 @@ logic.
 
 | Rule | Meaning |
 |---|---|
-| Platform from width | `0–750` mobile, `751–1023` pad, `≥1024` pc. QA device groups are the kit PC / iPhone / Android subset; fold and iPad groups are omitted. Matrix `desktop` / `tablet` / `phone` map to truth `pc` / `pad` / `mobile`. |
+| Platform from width | `0–750` mobile, `751–1023` pad, `≥1024` pc. QA device groups are the kit PC / iPhone / Android subset; fold and iPad groups are omitted. Matrix `desktop` / `tablet` / `phone` map to truth `pc` / `pad` / `mobile`. Official-site comparison is a behaviour regression (`npm run responsive:official`), not a claim that the page copies yise.xd.cn CSS. |
 | Composition base | Native mobile/pad trees win when present. Pad without a pad tree is `pad-uses-pc-tree`. Never invent a third layout. |
 | Width ruler | `k = viewportW / designWidth` (phone 750, PC 3840). Same number as official `html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`. Device names are samples, not extra layouts. |
 | First-screen height | Hero slot fills the current viewport height (official `100vh` / `--vh`). At `scrollTop=0` the next section stays outside the frame. A long `bg/*` sheet stays one inventory image; Resize cover-crops KV + that sheet into the first-screen window instead of slicing the asset. Hero UI size stays on width-scale `k`; blocks whose Figma bottom is in the lower hero half anchor their bottom fraction of the 100vh slot, so a hero title does not ride `y×k` into the top half. The left directory is a separate overlay that stretches to the current viewport height from its own source box. |

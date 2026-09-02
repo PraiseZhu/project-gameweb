@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickSliceNodes } from '../figma-assets.mjs';
+import { pickSliceNodes } from '../lib/figma-slice-nodes.mjs';
 
 function truthWith(nodes) {
   return {
@@ -29,6 +29,25 @@ test('unlabelled image fill can still be exported by fill evidence without becom
   ]));
   assert.deepEqual(picks.map((pick) => pick.nodeId), ['image-fill']);
   assert.match(picks[0].reason, /image/);
+});
+
+test('clipped unknown IMAGE fill exports the visible box, not the overflowing layout box', () => {
+  const picks = pickSliceNodes(truthWith([
+    {
+      id: '0:1788',
+      type: 'RECTANGLE',
+      name: '赛季kv-最终 1',
+      box: { x: -823, y: -46, w: 2443, h: 1380 },
+      renderBox: { x: 0, y: 0, w: 750, h: 1334 },
+      style: { fills: [{ type: 'IMAGE', visible: true }, { type: 'SOLID', visible: true }] },
+    },
+  ]));
+  assert.equal(picks[0].nodeId, '0:1788');
+  assert.equal(picks[0].exportBounds, 'box');
+  assert.deepEqual(picks[0].exportBox, { x: 0, y: 0, w: 750, h: 1334 });
+  assert.equal(picks[0].w, 750);
+  assert.equal(picks[0].h, 1334);
+  assert.equal(picks[0].cropToVisibleBox, true);
 });
 
 test('BOOLEAN btn with sliceExport is sliced without an img/ prefix', () => {
@@ -118,4 +137,84 @@ test('ind variant roots with sliceExport are sliced from componentVariantGraph',
   });
   assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['397:35947', '397:35949']);
   assert.match(picks[0].reason, /sliceExport/);
+});
+
+test('platform modal trees are sliced when they declare sliceExport or img/', () => {
+  const picks = pickSliceNodes({
+    platforms: {
+      mobile: {
+        sections: { 'sec:1': { nodes: [] } },
+        modals: [{
+          id: '392:27548',
+          name: 'modal/顶部导航-1624尺寸',
+          nodes: [
+            { id: '392:27548', type: 'FRAME', name: 'modal/顶部导航-1624尺寸', box: { x: 0, y: 0, w: 750, h: 1624 } },
+            {
+              id: '392:27549',
+              type: 'FRAME',
+              name: 'img/背景',
+              box: { x: 0, y: 0, w: 750, h: 1624 },
+              sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '392-27549.png' },
+            },
+            {
+              id: '392:27500',
+              type: 'FRAME',
+              name: 'img/弹窗背景',
+              box: { x: 0, y: 306, w: 750, h: 690 },
+              sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '392-27500.png' },
+            },
+          ],
+        }],
+      },
+    },
+  });
+  assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['392:27500', '392:27549']);
+});
+
+const TOP_LEVEL_VIDEO_MODAL = {
+  id: '392:27629',
+  name: 'modal/pc视频弹窗',
+  nodes: [
+    { id: '392:27629', type: 'FRAME', name: 'modal/pc视频弹窗', box: { x: 0, y: 0, w: 3840, h: 2160 } },
+    {
+      id: '392:27630',
+      type: 'FRAME',
+      name: 'img/弹窗背景',
+      box: { x: 0, y: 0, w: 3840, h: 2160 },
+      sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '392-27630.png' },
+    },
+    {
+      id: '392:27631',
+      type: 'FRAME',
+      name: 'img/关闭按钮',
+      box: { x: 3600, y: 80, w: 80, h: 80 },
+      sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '392-27631.png' },
+    },
+  ],
+};
+
+test('top-level truth.modals are sliced without platforms', () => {
+  const picks = pickSliceNodes({
+    sections: { 'sec:1': { nodes: [] } },
+    modals: [TOP_LEVEL_VIDEO_MODAL],
+  });
+  assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['392:27630', '392:27631']);
+});
+
+test('top-level truth.modals still slice when the handoff has no sections', () => {
+  const picks = pickSliceNodes({
+    modals: [TOP_LEVEL_VIDEO_MODAL],
+  });
+  assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['392:27630', '392:27631']);
+});
+
+test('platform modal trees still slice when that platform has no sections', () => {
+  const picks = pickSliceNodes({
+    platforms: {
+      pc: {
+        modals: [TOP_LEVEL_VIDEO_MODAL],
+      },
+    },
+  });
+  assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['392:27630', '392:27631']);
 });

@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { explainMeaningfulContract, candidateCompletion, decodeJsonBytes, productViewUrl, externalTruthFileProtocolFailure, EXTERNAL_TRUTH_FILE_FAILURE } from '../preview-first.mjs';
+import { explainMeaningfulContract, candidateCompletion, decodeJsonBytes, productViewUrl, qaShellUrl, externalTruthFileProtocolFailure, EXTERNAL_TRUTH_FILE_FAILURE } from '../preview-first.mjs';
 import { parsePreviewJson } from '../figma-html-from-handoff.mjs';
 import { validateSpec } from '../lib/schema.mjs';
 import { qaTruthIsExternal } from '../lib/html-volume.mjs';
@@ -66,11 +66,13 @@ test('preview-first red never ships an open command', () => {
   assert.equal(output.previewDisposition, 'internal-candidate-only');
   assert.equal(output.productView.command, null);
   assert.equal(output.productView.url, null);
+  assert.equal(output.humanView.command, null);
+  assert.equal(output.humanView.url, null);
   assert.equal(output.humanReview.presentPage, false);
   assert.match(output.humanReview.nextHumanStep, /preview:first 红了不许给人打开/);
 });
 
-test('preview-first candidate output always uses a durable file:// product URL', () => {
+test('preview-first candidate output always uses a durable file:// QA shell URL', () => {
   const spec = { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] } };
   const indexPath = join(tmpdir(), 'demo', 'index.html');
   const output = candidateCompletion({
@@ -79,10 +81,14 @@ test('preview-first candidate output always uses a durable file:// product URL',
     truth: {},
     indexPath,
   });
+  assert.equal(output.humanView.url, qaShellUrl(indexPath));
+  assert.match(output.humanView.url, /^file:/);
+  assert.match(output.humanView.url, /index\.html$/);
+  assert.doesNotMatch(output.humanView.url, /product=1/);
+  assert.doesNotMatch(output.humanView.url, /^http:/);
   assert.equal(output.productView.url, productViewUrl(indexPath));
-  assert.match(output.productView.url, /^file:/);
   assert.match(output.productView.url, /product=1/);
-  assert.doesNotMatch(output.productView.url, /^http:/);
+  assert.equal(output.productView.command, null);
   assert.equal(output.humanReview.presentPage, true);
   assert.equal(output.humanReview.id, 'static-and-translation');
   assert.equal(output.userPreviewAllowed, false);
@@ -91,7 +97,7 @@ test('preview-first candidate output always uses a durable file:// product URL',
   assert.ok(output.unclaimedCapabilities.includes('independentTranslation'));
 });
 
-test('ephemeral HTTP check URL dies after the server closes; file:// product URL remains', async () => {
+test('ephemeral HTTP check URL dies after the server closes; file:// QA shell URL remains', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'preview-durable-url-'));
   const indexPath = join(dir, 'index.html');
   writeFileSync(indexPath, '<html><body>durable</body></html>');
@@ -103,8 +109,9 @@ test('ephemeral HTTP check URL dies after the server closes; file:// product URL
   await server.close();
   await assert.rejects(() => fetch(checkUrl));
   const output = candidateCompletion({ ok: true, spec: {}, truth: {}, indexPath });
-  assert.match(output.productView.url, /^file:/);
-  const filePath = fileURLToPath(output.productView.url.split('?')[0]);
+  assert.match(output.humanView.url, /^file:/);
+  assert.doesNotMatch(output.humanView.url, /product=1/);
+  const filePath = fileURLToPath(output.humanView.url.split('?')[0]);
   assert.equal(existsSync(filePath), true);
   assert.match(readFileSync(filePath, 'utf8'), /durable/);
 });
@@ -116,6 +123,8 @@ test('preview-first candidate output carries product-view path and unclaimed cap
 
   assert.equal(output.evidenceLevel, 'candidate');
   assert.match(output.productView.url, /product=1/);
+  assert.match(output.humanView.url, /index\.html$/);
+  assert.doesNotMatch(output.humanView.url, /product=1/);
   assert.deepEqual(output.sourcePlatformEvidence.claimed, ['desktop']);
   assert.ok(output.unclaimedCapabilities.includes('mobileSourcePlatform'));
   assert.ok(output.unclaimedCapabilities.includes('productRepoIntegration'));

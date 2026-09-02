@@ -20,7 +20,7 @@ import { translationAxisClaim } from './translation/locale-policy.mjs';
 export function declarePageCapabilities({ spec = {}, truth = {}, report = null, fontLoaded = false } = {}) {
   const translation = translationAxisClaim({ spec, truth, fontLoaded });
   const gates = {};
-  for (const key of ['gateB', 'gateC', 'gateD', 'gateF', 'gateX']) {
+  for (const key of ['gateB', 'gateC', 'gateD', 'gateF', 'gateL', 'gateX']) {
     const gate = report?.[key];
     const status = gate?.status ?? 'not-claimed';
     gates[key] = {

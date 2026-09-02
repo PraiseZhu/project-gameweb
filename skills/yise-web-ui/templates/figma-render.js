@@ -1405,10 +1405,10 @@
     const pageOriginY = Number((pageScope && pageScope.meta && pageScope.meta.y) || 0);
     const pageContentHeight = pageScope
       ? Math.max(
-        Number((pageScope.meta && pageScope.meta.height) || 0),
+        Number((pageScope.meta && (pageScope.meta.height ?? pageScope.meta.h)) || 0),
         ...ids.map((id) => {
           const m = sections[id] && sections[id].meta;
-          return (Number((m && m.y) || 0) + Number((m && m.height) || 0)) - pageOriginY;
+          return (Number((m && m.y) || 0) + Number((m && (m.height ?? m.h)) || 0)) - pageOriginY;
         }),
         ...pageBgNodes.map((n) => {
           const b = n && n.box;
@@ -1448,7 +1448,8 @@
       const sectionId = ids[0];
       const first = sections[sectionId] && sections[sectionId].meta;
       const viewportH = Number(ctx.viewport && ctx.viewport.h);
-      if (!first || !Number.isFinite(Number(first.y)) || !Number.isFinite(Number(first.height)) || Number(first.height) <= 0
+      const firstHeight = Number(first && (first.height ?? first.h));
+      if (!first || !Number.isFinite(Number(first.y)) || !Number.isFinite(firstHeight) || firstHeight <= 0
         || !Number.isFinite(viewportH) || viewportH <= 0) return null;
       /* Design-viewport static lock resizes to the full Figma page box.
          100vh then equals the whole page, which would stretch sec/1 to
@@ -1470,7 +1471,7 @@
          not the hero section that holds title/download UI. Applying slotScale
          to the section turns the title into a height-driven poster and leaves
          the actual KV artwork on width-scale with later sections. */
-      const slotScale = Math.max(k, viewportH / Number(first.height));
+      const slotScale = Math.max(k, viewportH / firstHeight);
       if (Number.isFinite(slotScale) && slotScale > 0) {
         heroVisualScale = slotScale;
         heroVisualCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
@@ -1487,7 +1488,7 @@
         viewportHeight: viewportH,
         scale: pageStageScale,
         pageOriginY,
-        firstSection: { id: sectionId, y: first.y, height: first.height },
+        firstSection: { id: sectionId, y: first.y, height: firstHeight },
         followingSections: following.map((entry) => ({ id: entry.id, y: entry.meta.y })),
         contentRootId: String(__u(contentRoot.id)),
       });
@@ -1500,7 +1501,7 @@
       const m = sections[id] && sections[id].meta;
       if (!m) return 0;
       const afterHero = heroSlot && String(id) !== String(heroSlot.sectionId) && Number(m.y) > pageOriginY + 0.5;
-      return (Number(m.y || 0) + Number(m.height || 0) + (afterHero ? heroLayoutOffsetDesign : 0)) - pageOriginY;
+      return (Number(m.y || 0) + Number((m.height ?? m.h) || 0) + (afterHero ? heroLayoutOffsetDesign : 0)) - pageOriginY;
     };
     const pageScrollHeight = pageScope && heroLayoutOffsetDesign > 0
       ? Math.max(pageContentHeight, ...ids.map((id) => shiftedSectionBottom(id)))
@@ -1512,7 +1513,7 @@
        same layoutOffsetDesign. Do not translate the whole paint layer. */
     const heroSectionBottomY = heroSlot
       ? Number(heroSlot.firstSectionY != null ? heroSlot.firstSectionY : (sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && sections[heroSlot.sectionId].meta.y) || pageOriginY)
-        + Number((sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && sections[heroSlot.sectionId].meta.height) || heroSlot.heroHeight || 0)
+        + Number((sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && (sections[heroSlot.sectionId].meta.height ?? sections[heroSlot.sectionId].meta.h)) || heroSlot.heroHeight || 0)
       : 0;
     const afterHeroBackgroundShift = (node) => {
       if (!(heroLayoutOffsetDesign > 0) || !heroSlot) return 0;
@@ -1559,6 +1560,29 @@
     const fitCandidates = [];
     const hugGrowthOwners = [];
     const asArr = (v) => (Array.isArray(v) ? v : Object.values(v || {}));
+    const collectFixedDescendants = (node, into) => {
+      const nid = String(__u(node && node.id) || '');
+      if (!nid || into.has(nid)) return;
+      into.add(nid);
+      const kids = asArr(node && node.nodes);
+      for (const child of kids) collectFixedDescendants(child, into);
+    };
+    for (const node of asArr(__activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes)) {
+      collectFixedDescendants(node, fixedDescendantIds);
+      const nid = String(__u(node && node.id) || '');
+      if (!nid) continue;
+      for (const sid of ids) {
+        const secNodes = asArr(sections[sid] && sections[sid].nodes);
+        for (const child of secNodes) {
+          const cid = String(__u(child && child.id) || '');
+          const parentId = String(__u(child && child.parentId) || '');
+          const ownerPath = asArr(child && child.ownerPath).map((entry) => String(__u(entry)));
+          if (cid === nid || parentId === nid || ownerPath.includes(nid) || cid.startsWith('I' + nid + ';')) {
+            fixedDescendantIds.add(cid);
+          }
+        }
+      }
+    }
     const hideInPlace = (node, hidden) => {
       if (!node || node.nodeType !== 1) return;
       if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
@@ -1638,17 +1662,19 @@
          往上取整最多让分区高出不到 1 个设计 px（本例 1543 → 1544），
          而分区之间在稿里本来就是首尾相接的，抬高 0.5px 不会露出缝
          —— 背景是整页一张、跨分区连续的，缝隙不可见。 */
-      const _rawH = meta.height ?? 0;
+      /* Section extract writes `h`; page-scope extract writes `height`.
+         Reading only `height` collapses every live section stage to 0px.
+         Absolute children then paint against the unshifted page layer, so a
+         stretch leaves the Figma-y copy in place while the after-hero stage
+         moves — the same glyphs drawn twice. */
+      const _rawH = Number(meta.height ?? meta.h ?? 0);
       const isHeroStage = !pageStageMode && heroSlot && String(sid) === heroSlot.sectionId;
       const _snapH = k > 0 ? Math.ceil(_rawH * k) / k : _rawH;
       /* Official first screen is a 100vh crop window. Keep the Figma hero
          height on the visual plane. The UI stage itself must be tall enough
          for source Y × uiYRatio (vh/k), or a lower-hero UI title stays in
          the top half. */
-      const heroUiHeight = isHeroStage && heroSlot && Number(heroSlot.designHeight) > 0
-        ? Number(heroSlot.designHeight)
-        : _snapH;
-      stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : heroUiHeight) + 'px';
+      stage.style.height = (pageStageMode ? (pageScrollHeight || _rawH || _snapH) : _snapH) + 'px';
       if (isHeroStage) {
         stage.style.overflow = 'hidden';
         stage.setAttribute('data-hero-source-height', String(_rawH));
@@ -1727,11 +1753,23 @@
         const sets = Array.isArray(graph.componentSets) ? graph.componentSets : [];
         const treesBySet = graph.variantTrees && typeof graph.variantTrees === 'object' && !Array.isArray(graph.variantTrees)
           ? graph.variantTrees : {};
+        const treeFromVariantNodes = (variant) => {
+          const componentId = String(__u(variant && variant.componentId) || '');
+          const nodes = Array.isArray(variant && variant.nodes) ? variant.nodes : [];
+          if (!componentId || !nodes.length) return null;
+          return { componentId, nodes, box: variant.box || (nodes[0] && nodes[0].box) || null };
+        };
         for (const set of sets) {
           const setId = String(__u(set && (set.componentSetId || set.id)) || '');
           const variants = (Array.isArray(set && set.variants) ? set.variants : [])
             .filter((variant) => String(__u(variant && variant.componentId) || ''));
-          const trees = Array.isArray(treesBySet[setId]) ? treesBySet[setId] : [];
+          let trees = Array.isArray(treesBySet[setId]) ? treesBySet[setId] : [];
+          /* Inventory/v2 keeps each COMPONENT tree on variants[].nodes. A top-level
+             variantTrees map is optional; missing it must not drop highlight/normal. */
+          if (trees.length !== variants.length) {
+            const nested = variants.map(treeFromVariantNodes);
+            if (nested.every(Boolean)) trees = nested;
+          }
           if (!setId || variants.length < 2 || trees.length !== variants.length) continue;
           const aligned = variants.map((variant, index) => {
             const componentId = String(__u(variant && variant.componentId) || '');
@@ -1924,9 +1962,33 @@
             current = parentNode;
           }
           const pid = parentId(node);
-          if (!pid) return null;
-          const siblings = items.filter((candidate) => parentId(candidate) === pid && hscrollAxis(candidate, parse(candidate)));
-          return siblings.length === 1 ? id(siblings[0]) : null;
+          if (pid) {
+            const siblings = items.filter((candidate) => parentId(candidate) === pid && hscrollAxis(candidate, parse(candidate)));
+            if (siblings.length === 1) return id(siblings[0]);
+          }
+          let windowNode = node;
+          for (let hops = 0; hops < 12 && windowNode; hops++) {
+            const parsed = parse(windowNode);
+            const isWindow = (parsed.role === 'mix' && /^(?:calendar|日历)$/i.test(String(parsed.label || '')))
+              || /日历|calendar/i.test(String(value(windowNode && windowNode.name) || ''));
+            if (isWindow && id(windowNode) !== id(node)) break;
+            const next = byId.get(parentId(windowNode));
+            if (!next) { windowNode = null; break; }
+            windowNode = next;
+          }
+          if (!windowNode) return null;
+          const windowId = id(windowNode);
+          const windowHosts = items.filter((candidate) => {
+            if (!hscrollAxis(candidate, parse(candidate))) return false;
+            if (id(candidate) === windowId) return true;
+            let cursor = candidate;
+            for (let hops = 0; hops < 8 && cursor; hops++) {
+              if (id(cursor) === windowId) return true;
+              cursor = byId.get(parentId(cursor));
+            }
+            return false;
+          });
+          return windowHosts.length === 1 ? id(windowHosts[0]) : null;
         };
         const propertyValues = (raw, out = []) => {
           const v = value(raw);
@@ -1977,16 +2039,22 @@
             if (n) n.__componentVariantGraphBlock = 'variant-owner-extent-mismatch';
             return null;
           }
-          const widthMismatch = trees.some((tree) => {
+          /* highlight/normal COMPONENT trees may legally differ in size
+             (btn/角色头像 220 vs 180). Same-width is required only when this
+             owner is a switch page graph, not an independent selectable. */
+          const allSameWidth = trees.every((tree) => {
             const box = treeBox(tree);
             const w = Number(box.w), h = Number(box.h);
-            return !Number.isFinite(w) || !Number.isFinite(h) || Math.abs(w - ownerW) > 0.5;
+            return Number.isFinite(w) && Number.isFinite(h) && Math.abs(w - ownerW) <= 0.5;
           });
-          if (widthMismatch) {
+          const names = variants.map((variant) => String(value(variant && variant.name) || '').toLowerCase());
+          const sizeSwap = names.some((name) => /(^|[=\s])highlight(\b|$)/.test(name))
+            && names.some((name) => /(^|[=\s])normal(\b|$)/.test(name));
+          if (!allSameWidth && !sizeSwap) {
             if (n) n.__componentVariantGraphBlock = 'variant-owner-width-mismatch';
             return null;
           }
-          return { variants, trees };
+          return { variants, trees, sizeSwap: !allSameWidth && sizeSwap };
         };
         const ownerSwitch = (n) => {
           const path = Array.isArray(value(n && n.ownerPath)) ? value(n.ownerPath) : [];
@@ -2008,9 +2076,23 @@
           /* Directional commands can sit beside a switch under the same
              section owner rather than below the switch itself. Resolve that
              only when the closest shared owner path has exactly one switch
-             with a complete component-set graph; ties remain inert. */
+             with a complete component-set graph; ties remain inert.
+             `btn/角色头像` under `tab/角色头像切换` is the same family: the tab
+             host is a sibling of `switch/角色立绘模块`. */
           const label = String(value(n && n.name) || '').toLowerCase();
-          if (/\b(prev(?:ious)?|next|left|right)\b|上一|下一|左划|右划|左滑|右滑|左滑动|右滑动/.test(label)) {
+          const parsedRole = parse(n).role;
+          const avatarTab = parsedRole === 'btn' && /角色头像/.test(String(value(n && n.name) || ''));
+          if (avatarTab) {
+            let curTab = n;
+            for (let guard = 0; guard < 8 && curTab; guard++) {
+              const pid = parentId(curTab);
+              if (!pid) break;
+              const sibling = items.find((candidate) => parentId(candidate) === pid && parse(candidate).role === 'switch');
+              if (sibling) return id(sibling);
+              curTab = byId.get(pid);
+            }
+          }
+          if (/\b(prev(?:ious)?|next|left|right)\b|上一|下一|左划|右划|左滑|右滑|左滑动|右滑动/.test(label) || avatarTab) {
             const currentPath = path.map((entry) => String(value(entry)));
             const candidates = items.filter((candidate) => parse(candidate).role === 'switch'
               && componentVariantGraph(candidate)).map((candidate) => {
@@ -2243,16 +2325,25 @@
           if (p.role === 'btn' && switchId) {
             const label = String(value(n && n.name) || '').toLowerCase();
             const directional = /\bprev(?:ious)?\b|\bleft\b|\bnext\b|\bright\b|上一|下一|左划|右划|左滑|右滑|左滑动|右滑动/.test(label);
-            if (!directional) switchId = null;
+            const avatarTab = /角色头像/.test(String(value(n && n.name) || ''));
+            const languageSwitchBtn = /多语言切换按钮/.test(String(value(n && n.name) || ''));
+            if (!directional && !avatarTab) switchId = null;
+            if (languageSwitchBtn) switchId = null;
           }
           if (switchId) attrs['data-switch'] = switchId;
           const componentVariant = switchId && componentVariantSwitches.get(switchId);
           const componentVariantIndex = componentVariant && componentVariant.controls.get(id(n));
           const staticSelectable = (p.role === 'tab' || p.role === 'ind') && !componentVariant;
-          if (switchId && (p.role === 'swpage' || staticSelectable || componentVariantIndex != null)) {
+          if (switchId && (p.role === 'swpage' || staticSelectable || componentVariantIndex != null
+            || (p.role === 'btn' && /角色头像/.test(String(value(n && n.name) || ''))))) {
             /* Commands are deliberately excluded: prev/next operate on the
-               active index and are not extra pages in the switch graph. */
-            const same = (groups.get(switchId) || []).filter((x) => x.p.role === p.role);
+               active index and are not extra pages in the switch graph.
+               `btn/角色头像` under `tab/角色头像切换` is a selectable, not a command. */
+            const same = (groups.get(switchId) || []).filter((x) => {
+              if (x.p.role !== p.role) return false;
+              if (p.role === 'btn') return /角色头像/.test(String(value(x.n && x.n.name) || ''));
+              return true;
+            });
             const idx = componentVariantIndex != null ? componentVariantIndex : same.findIndex((x) => id(x.n) === id(n));
             if (idx >= 0) attrs['data-swpage'] = String(idx);
           }
@@ -2278,13 +2369,17 @@
             if (/\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(label)) attrs['data-switch-action'] = 'prev';
             else if (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(label)) attrs['data-switch-action'] = 'next';
           }
-          if (p.role === 'btn' && !attrs['data-switch-action']) {
+          if ((p.role === 'btn' || p.role === 'hot') && !attrs['data-switch-action']) {
             const command = hscrollCommand(n);
             const hostId = command ? nearestHscrollId(n) : null;
             if (command && hostId) {
               attrs['data-hscroll-host'] = hostId;
               attrs['data-hscroll-action'] = command;
             }
+          }
+          if (p.role === 'btn' || p.role === 'hot') {
+            const btnLabel = String(p.label || '').split('@')[0].trim();
+            if (btnLabel) attrs['data-btn-name'] = btnLabel;
           }
           if (calendarNowLabel(n, p)) {
             attrs['data-calendar-now'] = 'true';
@@ -2293,8 +2388,8 @@
             attrs['data-btn-press'] = 'inert';
           }
           /* Independent btn/ with a real normal+highlight COMPONENT_SET is not a
-             missing switch. Directory `btn/导航状态` is that family. Static still
-             owns 切换按钮 / 角色头像 and draw-only controls. */
+             missing switch. Directory `btn/导航状态` is that family. `btn/角色头像`
+             under `tab/角色头像切换` is a switch tab, not a static-owned draw. */
           if (p.role === 'dropmenu') {
             const menuState = dropmenuExactState(n);
             attrs['data-dropmenu'] = 'true';
@@ -2312,9 +2407,9 @@
               }
             }
           }
-          if (p.role === 'btn' && !switchId && !attrs['data-switch-action']) {
+          if (p.role === 'btn' && !attrs['data-switch-action']) {
             const btnLabel = String(value(n && n.name) || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
-            const staticOwned = /^(切换按钮|角色头像|下载按钮|充值按钮|官网按钮|播放按钮|关闭按钮|兑换码按钮|复制按钮|更多按钮)$/.test(btnLabel);
+            const staticOwned = /^(切换按钮|下载按钮|充值按钮|官网按钮|播放按钮|关闭按钮|兑换码按钮|复制按钮|更多按钮)$/.test(btnLabel);
             attachPlatformVariantGraph(n);
             const graph = n && n.componentVariantGraph;
             const variants = Array.isArray(graph && graph.variants) ? graph.variants : [];
@@ -2325,16 +2420,24 @@
             const state = indicatorVariant(n);
             const selectedId = String(value(n && n.componentId) || '');
             const selectedName = String(value((variants.find((variant) => String(value(variant && variant.componentId)) === selectedId) || {}).name) || '').toLowerCase();
+            const avatarTab = switchId && /角色头像/.test(String(value(n && n.name) || ''));
+            const languageSwitchBtn = /多语言切换按钮/.test(String(value(n && n.name) || ''));
             if (!staticOwned && hasNormal && hasHighlight && trees.length === variants.length && variants.length >= 2
-              && state !== 'disabled' && !/disable/.test(selectedName)) {
+              && state !== 'disabled' && !/disable/.test(selectedName)
+              && (!switchId || avatarTab || languageSwitchBtn)) {
               attrs['data-btn-variant'] = 'true';
               attrs['data-btn-variant-set'] = String(value(graph.componentSetId) || '');
               attrs['data-btn-variant-state'] = state === 'active' || /highlight/.test(selectedName) ? 'highlight' : 'normal';
               attrs['data-btn-variant-component'] = selectedId;
-              attrs['data-btn-variant-group'] = parentId(n) || id(n);
+              attrs['data-btn-variant-group'] = avatarTab
+                ? (switchId || parentId(n) || id(n))
+                : (languageSwitchBtn ? (parentId(n) || id(n)) : (parentId(n) || id(n)));
+              if (avatarTab) attrs['data-btn-variant-size-swap'] = 'true';
             }
           }
-          if ((staticSelectable && p.role === 'tab' || (componentVariantIndex != null && p.role !== 'ind')) && switchId) {
+          if ((staticSelectable && p.role === 'tab'
+            || (componentVariantIndex != null && p.role !== 'ind')
+            || (p.role === 'btn' && switchId && /角色头像/.test(String(value(n && n.name) || '')))) && switchId) {
             attrs['data-tab'] = 'true';
             const variant = indicatorVariant(n);
             if (variant) attrs['data-switch-variant'] = variant;
@@ -2775,7 +2878,7 @@
           block's stretched top instead of being stretched themselves, or a
           top-bar button label drifts out of its button frame. heroUiHalf is
           the generic top/bottom-chrome split at half the Figma hero height. */
-       const heroUiBlocks = isHeroStage && heroUiYRatio > 1.001 ? [] : null;
+       const heroUiBlocks = isHeroStage && pageStageMode && heroUiYRatio > 1.001 ? [] : null;
        const heroUiHalf = heroUiBlocks && heroSlot ? Number(heroSlot.heroHeight || 0) / 2 : Infinity;
        const heroUiOwnerBlock = (blocks, centerX, centerY) => {
          let best = null;
@@ -2807,7 +2910,17 @@
          children.push(item);
          truthChildrenByParentId.set(parentId, children);
        }
-       const interactionAttrs = suppressInteractions ? new Map() : interactionBridge(rawList || list);
+       for (const item of (rawList || list)) attachPlatformVariantGraph(item);
+       const interactionAttrs = suppressInteractions
+         ? (() => {
+             const attrs = interactionBridge(rawList || list);
+             for (const [id, rec] of [...attrs.entries()]) {
+               if (rec && rec['data-btn-variant'] === 'true') continue;
+               attrs.delete(id);
+             }
+             return attrs;
+           })()
+         : interactionBridge(rawList || list);
        /* Offline demos cannot import ESM at runtime. The build/onboarding
           boundary may provide the pure adapter payload produced from
           deriveInteractionModel(); it augments only source-validated direct
@@ -3048,7 +3161,7 @@
            not re-drawn UI or inferred carousel state.  Keep the mapping narrow:
            it cannot promote arbitrary unknown/skipped nodes to pixels. */
         const __componentId = String(__u(n && n.componentId) || '');
-        const __indComponentFallback = pfx === 'ind' && ({
+        const __indComponentFallback = pfx === 'ind' && !assetRec && ({
           '397:35947': { file: 'assets/figma-indicator-active-alpha.webp', state: 'highlight', sourceNodeId: '397:35946' },
           '397:35949': { file: 'assets/figma-indicator-normal-alpha.webp', state: 'normal', sourceNodeId: '397:35949' },
         })[__componentId] || null;
@@ -3502,7 +3615,7 @@
         const _rotatedShape = typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4
           && !isText && !assetRec;
         if (_rotatedShape) el.setAttribute('data-renderbox-clip-skipped', 'rotated-shape');
-        const rbInside = !assetRec && !isText && !_rotatedShape
+        const rbInside = !isText && !_rotatedShape
           && typeof rb.x === 'number' && typeof rb.y === 'number'
           && typeof rb.w === 'number' && typeof rb.h === 'number'
           && typeof box.x === 'number' && typeof box.y === 'number'
@@ -3512,6 +3625,21 @@
           && rb.y + rb.h <= box.y + box.h + 0.01
           && (Math.abs(rb.x - box.x) > 0.01 || Math.abs(rb.y - box.y) > 0.01
             || Math.abs(rb.w - box.w) > 0.01 || Math.abs(rb.h - box.h) > 0.01);
+        /* Adjacent switch cards keep a full owner box so the next/prev page
+           can peek. Figma's visible ink is only the overlapping strip
+           (renderBox). A DROP_SHADOW can push that strip a few px outside
+           the layout box, so the strict inside test misses and the whole
+           card paints. Clip each axis independently: keep the overlapping
+           strip, leave shadow bleed on the visible edge. */
+        const rbAxisOverlap = !isText && !_rotatedShape && !rbInside
+          && typeof rb.x === 'number' && typeof rb.y === 'number'
+          && typeof rb.w === 'number' && typeof rb.h === 'number'
+          && typeof box.x === 'number' && typeof box.y === 'number'
+          && typeof box.w === 'number' && typeof box.h === 'number'
+          && rb.w > 0 && rb.h > 0 && box.w > 0 && box.h > 0
+          && (rb.x + rb.w > box.x + 0.5) && (rb.x < box.x + box.w - 0.5)
+          && (rb.y + rb.h > box.y + 0.5) && (rb.y < box.y + box.h - 0.5)
+          && (rb.w + 1 < box.w * 0.55 || rb.h + 1 < box.h * 0.55);
         /* A source scroll viewport is captured in its resting position. Its
            overflowing track, and groups inside that track, can inherit a
            renderBox clipped exactly at that viewport edge. Keeping those
@@ -3539,7 +3667,7 @@
         const hscrollTrackClipRelease = !!(hscrollHostRecord && rbInside && hscrollTrackOverflow
           && (Math.abs(rb.x - parentBox.x) <= 0.75
             || Math.abs(rb.x + rb.w - (parentBox.x + parentBox.w)) <= 0.75));
-        if (rbInside) {
+        if (rbInside || rbAxisOverlap) {
           const insetTop = Math.max(0, rb.y - box.y);
           const insetRight = Math.max(0, (box.x + box.w) - (rb.x + rb.w));
           const insetBottom = Math.max(0, (box.y + box.h) - (rb.y + rb.h));
@@ -3598,6 +3726,7 @@
           } else {
             el.style.clipPath = `inset(${insetTop}px ${insetRight}px ${insetBottom}px ${insetLeft}px)`;
             el.setAttribute('data-renderbox-clip', [insetTop, insetRight, insetBottom, insetLeft].map((v) => v.toFixed(3)).join(','));
+            if (rbAxisOverlap && !rbInside) el.setAttribute('data-renderbox-clip-policy', 'axis-overlap-peek');
           }
         }
         if (exportBox) {
@@ -4762,7 +4891,7 @@
             });
           }
         }
-        if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-btn-variant'] === 'true') {
+        if (evidenceAttrs && evidenceAttrs['data-btn-variant'] === 'true') {
           attachPlatformVariantGraph(n);
           const rawGraph = __plain((n && n.componentVariantGraph)
             || (rawList && rawList[ni] && rawList[ni].componentVariantGraph));
@@ -4945,6 +5074,10 @@
         const ownerBox = __plain(owner.ownerBox || {});
         const ownerWidth = Number(ownerBox.w);
         const ownerHeight = Number(ownerBox.h);
+        const variantNames = variants.map((variant) => String(__u(variant && variant.name) || '').toLowerCase());
+        const sizeSwap = owner.el.getAttribute('data-btn-variant-size-swap') === 'true'
+          || (variantNames.some((name) => /(^|[=\s])highlight(\b|$)/.test(name))
+            && variantNames.some((name) => /(^|[=\s])normal(\b|$)/.test(name)));
         let mountBlocked = false;
         const layers = [];
         const ownerId = String(owner.el.getAttribute('data-node') || '');
@@ -4967,8 +5100,15 @@
           const rootBox = __plain(root && root.box || tree && tree.box || {});
           const variantName = String(__u(variants[index] && variants[index].name) || '').toLowerCase();
           const state = /highlight/.test(variantName) ? 'highlight' : (/disable/.test(variantName) ? 'disable' : 'normal');
-          if (!root || !Number.isFinite(Number(rootBox.w)) || !Number.isFinite(Number(rootBox.h))
-            || !Number.isFinite(ownerWidth) || Math.abs(Number(rootBox.w) - ownerWidth) > 0.5) {
+          if (!root || !Number.isFinite(Number(rootBox.w)) || !Number.isFinite(Number(rootBox.h))) {
+            mountBlocked = true;
+            owner.el.setAttribute('data-btn-variant-mount-status', 'blocked-owner-extent-mismatch');
+            owner.el.setAttribute('data-btn-variant-mount-detail', JSON.stringify({
+              wantedId, rootW: rootBox.w, rootH: rootBox.h, ownerWidth, ownerHeight,
+            }));
+            break;
+          }
+          if (!sizeSwap && (!Number.isFinite(ownerWidth) || Math.abs(Number(rootBox.w) - ownerWidth) > 0.5)) {
             mountBlocked = true;
             owner.el.setAttribute('data-btn-variant-mount-status', 'blocked-owner-extent-mismatch');
             owner.el.setAttribute('data-btn-variant-mount-detail', JSON.stringify({
@@ -4983,7 +5123,10 @@
               sibling.setAttribute('data-btn-variant-index', String(index));
               hideInPlace(sibling, false);
             }
-            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true });
+            layers.push({
+              index, state, el: owner.el, externals: baseExternals, isBase: true,
+              box: { w: Number(rootBox.w), h: Number(rootBox.h) },
+            });
             continue;
           }
           const layer = document.createElement('div');
@@ -5006,7 +5149,10 @@
             suppressInteractions: true,
           });
           hideInPlace(layer, true);
-          layers.push({ index, state, el: layer, externals: [], isBase: false });
+          layers.push({
+            index, state, el: layer, externals: [], isBase: false,
+            box: { w: Number(rootBox.w), h: Number(rootBox.h) },
+          });
         }
         if (!mountBlocked && layers.length === trees.length) {
           if (!owner.el.style.overflow || owner.el.style.overflow === 'visible') owner.el.style.overflow = 'hidden';
@@ -5301,8 +5447,7 @@
               const isKvRoot = /^kv(?:\/|$)/i.test(rootName);
               if (isKvRoot && heroSlot && pageStageScale > 0) {
                 const kvRatio = heroVisualScale / pageStageScale;
-                const firstMeta = sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta;
-                const kvClipH = Number(firstMeta && firstMeta.height) || Number(heroSlot.heroHeight) || 0;
+                const kvClipH = Number(heroSlot.designHeight) || Number(heroSlot.heroHeight) || 0;
                 layer.style.zoom = String(kvRatio);
                 layer.style.left = heroVisualCropLeft + 'px';
                 layer.style.top = '0';
@@ -5328,8 +5473,24 @@
               });
             }
             if (chrome) {
-              const chromeIsHeroPlane = layer && layer.getAttribute('data-hero-crop-window') === 'visual-root';
-              paint(chrome.nodes, chrome.raw, layer || fixedStage, chromeIsHeroPlane ? { heroVisualPlane: true } : {});
+              /* A page-paint root with live sectionIds is the content container.
+                 Its designer-export composite already bakes every section title
+                 and card. Painting that export plus the live section TEXT stack
+                 draws the same glyphs twice and keeps a full-page bitmap on the
+                 GPU. Keep the layer as a stacking context; skip the root's own
+                 baked file. */
+              const liveSectionRoot = asArr(entry.sectionIds).length > 0;
+              const chromeNodes = liveSectionRoot
+                ? chrome.nodes.filter((node) => String(__u(node && node.id)) !== String(rootId))
+                : chrome.nodes;
+              const chromeRaw = liveSectionRoot
+                ? chrome.raw.filter((node) => String(__u(node && node.id)) !== String(rootId))
+                : chrome.raw;
+              if (liveSectionRoot && layer) layer.setAttribute('data-content-root-bake', 'skipped-live-sections');
+              if (chromeNodes.length) {
+                const chromeIsHeroPlane = layer && layer.getAttribute('data-hero-crop-window') === 'visual-root';
+                paint(chromeNodes, chromeRaw, layer || fixedStage, chromeIsHeroPlane ? { heroVisualPlane: true } : {});
+              }
             }
             const orderedSections = asArr(entry.sectionIds);
             for (const sectionId of orderedSections) sectionLayerById.set(__u(sectionId), layer);
@@ -5390,15 +5551,15 @@
         const host = document.createElement('div');
         host.className = 'fx-stage fx-named-modals';
         host.setAttribute('data-node-id', 'named-modals');
-        host.style.position = 'absolute';
+        host.style.position = 'fixed';
         host.style.left = '0';
         host.style.top = '0';
-        host.style.width = designWidth + 'px';
-        host.style.height = (pageScrollHeight || pageMeta.height || 0) + 'px';
+        host.style.width = '100%';
+        host.style.height = '100%';
         host.style.pointerEvents = 'none';
         host.style.zIndex = '40';
         host.style.overflow = 'visible';
-        host.style.zoom = String(pageStageScale || k);
+        host.style.zoom = '1';
         const splitName = (name) => {
           const raw = String(name || '');
           const head = raw.split('@')[0];
@@ -5416,12 +5577,30 @@
         const modalPlatform = (modal) => {
           const raw = modal && (modal.platform || modal.sourcePlatform || modal.meta?.platform);
           const value = String(raw || '').toLowerCase();
-          return value === 'mobile' || value === 'phone' ? 'mobile' : value === 'pc' || value === 'desktop' ? 'pc' : value === 'pad' || value === 'tablet' ? 'pad' : null;
+          if (value === 'mobile' || value === 'phone') return 'mobile';
+          if (value === 'pc' || value === 'desktop') return 'pc';
+          if (value === 'pad' || value === 'tablet') return 'pad';
+          const label = splitName(modal && modal.name).label || String(modal && modal.name || '');
+          if (/^移动端/.test(label) || /移动端视频弹窗$/.test(label)) return 'mobile';
+          if (/^pc/i.test(label)) return 'pc';
+          return null;
         };
         const activeModalPlatform = __normalizedPlat === 'mobile' ? 'mobile' : __normalizedPlat === 'pad' ? 'pad' : 'pc';
         const modalRecords = records.filter((modal) => {
           const platform = modalPlatform(modal);
-          return !platform || platform === activeModalPlatform;
+          /* Missing platform stays inert. A nameless/unplatformed modal must
+             not mount on every device. Label tokens pc/移动端 count as platform. */
+          return platform === activeModalPlatform;
+        }).map((modal) => {
+          const parsed = splitName(modal && modal.name);
+          const isVideo = parsed.role === 'modal' && /^(?:pc|移动端)?视频弹窗$/.test(parsed.label);
+          if (!isVideo || modal.triggerStatus === 'determined') return modal;
+          const playOpeners = openers
+            .filter((el) => el && el.getAttribute('data-btn-name') === '播放按钮' && !el.closest('.fx-named-modal'))
+            .map((el) => String(el.getAttribute('data-node') || ''))
+            .filter(Boolean);
+          if (!playOpeners.length) return modal;
+          return { ...modal, triggerStatus: 'determined', triggerFrom: playOpeners };
         });
         const modalLabels = new Map();
         for (const modal of modalRecords) {
@@ -5460,6 +5639,7 @@
           layer.style.top = ((Number(box.y) || 0) - pageY) + 'px';
           layer.style.width = Number(box.w) + 'px';
           layer.style.height = Number(box.h) + 'px';
+          layer.setAttribute('data-modal-source-box', [box.x, box.y, box.w, box.h].map((v) => Number(v || 0)).join(','));
           layer.style.pointerEvents = 'auto';
           layer.style.zIndex = '41';
           hideInPlace(layer, true);
@@ -5474,6 +5654,15 @@
             });
           } catch (err) {
             layer.setAttribute('data-modal-paint-error', String(err && err.message || err));
+          }
+          if (/多语言按钮弹窗$/.test(parsed.label)) {
+            const rows = Array.from(layer.querySelectorAll('[data-btn-name], [data-node-name]')).filter((row) => /多语言切换按钮/.test(row.getAttribute('data-btn-name') || row.getAttribute('data-node-name') || ''));
+            rows.forEach((row, index) => {
+              row.style.overflow = 'hidden';
+              if (row.getAttribute('data-btn-variant') === 'true') {
+                row.setAttribute('data-btn-variant-state', index === 0 ? 'highlight' : 'normal');
+              }
+            });
           }
           const authorizedFrom = new Set(
             asArr(modal.triggerFrom).map((id) => String(id || '')).filter(Boolean)
@@ -5493,7 +5682,7 @@
             id: String(modal.id || ''),
             name: parsed.label,
             layer,
-            exclusive: parsed.label !== '视频弹窗',
+            exclusive: !/^(?:pc|移动端)?视频弹窗$/.test(parsed.label),
             openerEls,
             closeEls: Array.from(layer.querySelectorAll('[data-btn-name="关闭按钮"]') || []),
           });
@@ -5502,9 +5691,50 @@
           frame.setAttribute('data-named-modal-count', '0');
           return;
         }
+        /* Overlay host stays inside `.frame` so close clicks hit the same
+           listener. Host pointer-events stay none; the layer is the hit target.
+           A full-bleed video modal would otherwise cover the scrim. */
         frame.appendChild(host);
         frame.__fxNamedModals = wired;
         frame.setAttribute('data-named-modal-count', String(wired.length));
+        const doc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
+        if (doc && !frame.__fxNamedModalDocBound) {
+          frame.__fxNamedModalDocBound = true;
+          const onDocClick = (ev) => {
+            const namedModals = frame.__fxNamedModals || [];
+            const closeNamedModal = frame.__fxCloseNamedModal;
+            if (typeof closeNamedModal !== 'function') return;
+            const closeBtn = ev.target && ev.target.closest
+              ? (ev.target.closest('[data-btn-name="关闭按钮"]')
+                || ev.target.closest('[data-node-name="img/关闭按钮"]')
+                || ev.target.closest('[data-name="img/关闭按钮"]'))
+              : null;
+            if (closeBtn) {
+              const hostModal = namedModals.find((entry) => entry.layer && entry.layer.contains(closeBtn));
+              if (hostModal) {
+                closeNamedModal(hostModal);
+                ev.preventDefault();
+                ev.stopPropagation();
+              }
+              return;
+            }
+            const openVideo = namedModals.find((entry) => entry && entry.layer
+              && entry.layer.getAttribute('data-modal-open') === 'true'
+              && /视频弹窗$/.test(entry.name || ''));
+            if (openVideo && openVideo.layer.contains(ev.target)) {
+              const playInside = ev.target.closest && ev.target.closest('[data-btn-name="播放按钮"]');
+              if (playInside && openVideo.layer.contains(playInside)) return;
+              closeNamedModal(openVideo);
+              ev.preventDefault();
+              ev.stopPropagation();
+            }
+          };
+          doc.addEventListener('click', onDocClick, true);
+          frame.__fxNamedModalDocCleanup = () => {
+            doc.removeEventListener('click', onDocClick, true);
+            frame.__fxNamedModalDocBound = false;
+          };
+        }
         } catch (err) {
           frame.setAttribute('data-named-modal-error', String(err && err.message || err));
         }
@@ -5670,6 +5900,20 @@
           }
           owner.setAttribute('data-btn-variant-state', next.state);
           owner.setAttribute('data-btn-variant-index', String(next.index));
+          const nextBox = next.box || {};
+          if (Number.isFinite(Number(nextBox.w)) && Number.isFinite(Number(nextBox.h))
+            && owner.getAttribute('data-btn-variant-size-swap') === 'true') {
+            const left = Number.parseFloat(owner.style.left) || 0;
+            const top = Number.parseFloat(owner.style.top) || 0;
+            const prevW = Number.parseFloat(owner.style.width) || 0;
+            const prevH = Number.parseFloat(owner.style.height) || 0;
+            const dw = Number(nextBox.w) - prevW;
+            const dh = Number(nextBox.h) - prevH;
+            owner.style.width = Number(nextBox.w) + 'px';
+            owner.style.height = Number(nextBox.h) + 'px';
+            if (dw) owner.style.left = (left - dw / 2) + 'px';
+            if (dh) owner.style.top = (top - dh / 2) + 'px';
+          }
           if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
             const target = next.isBase ? owner : next.el;
             frame.__fxAssetScheduler.prime(target);
@@ -5862,35 +6106,52 @@
           const indicators = [...frame.querySelectorAll('[data-switch][data-indicator]')]
             .filter((el) => el.getAttribute('data-switch') === sid);
           if (!indicators.length) return;
-          const fallbackIndicators = indicators.filter((el) => el.hasAttribute('data-source-component-fallback')
-            || el.querySelector('[data-source-component-fallback]'));
-          /* Component-context fallback already mounted the two exact source
-             PNGs (highlight / normal, matte stripped). Swap those files in
-             place so the marks follow the active page. Do not clone children:
-             that path used to copy a still-empty deferred img and blank every
-             mark. */
-          if (fallbackIndicators.length) {
-            const activeFile = 'assets/figma-indicator-active-alpha.webp';
-            const normalFile = 'assets/figma-indicator-normal-alpha.webp';
-            for (const el of fallbackIndicators) {
+          const fileOf = (el) => {
+            const img = el && el.querySelector && el.querySelector('img.fx-img');
+            return img && (img.getAttribute('data-asset-src') || img.getAttribute('src')) || null;
+          };
+          /* Snapshot the two source-backed files already painted on this switch.
+             Do not rewrite them to a hardcoded fallback path: that file may not
+             exist on the served page, and the marks would vanish after the first
+             applySwitch. */
+          if (!frame.__fxIndSourceFiles) frame.__fxIndSourceFiles = Object.create(null);
+          if (!frame.__fxIndSourceFiles[sid]) {
+            const files = { active: null, normal: null };
+            for (const el of indicators) {
+              const variant = el.getAttribute('data-indicator-variant')
+                || (el.getAttribute('data-source-component-state') === 'highlight' ? 'active'
+                  : el.getAttribute('data-source-component-state') === 'normal' ? 'normal' : '');
+              const src = fileOf(el);
+              if ((variant === 'active' || variant === 'normal') && src && !files[variant]) files[variant] = src;
+            }
+            if (files.active && files.normal) frame.__fxIndSourceFiles[sid] = files;
+          }
+          const files = frame.__fxIndSourceFiles[sid];
+          if (files && files.active && files.normal) {
+            for (const el of indicators) {
               const active = Number(el.getAttribute('data-swpage')) === idx;
-              const file = active ? activeFile : normalFile;
+              const file = active ? files.active : files.normal;
               const host = el.hasAttribute('data-source-component-fallback')
                 ? el
                 : el.querySelector('[data-source-component-fallback]');
               const img = (host && host.querySelector('img.fx-img')) || el.querySelector('img.fx-img');
-              if (host) {
-                host.setAttribute('data-source-component-state', active ? 'highlight' : 'normal');
-                host.setAttribute('data-source-component-id', active ? '397:35947' : '397:35949');
-                host.setAttribute('data-source-component-node', active ? '397:35946' : '397:35949');
-              }
-              if (img) {
+              if (host) host.setAttribute('data-source-component-state', active ? 'highlight' : 'normal');
+              if (img && file) {
                 img.setAttribute('data-asset-src', file);
                 if (img.getAttribute('src') !== file) img.setAttribute('src', file);
               }
-              el.setAttribute('data-indicator-visual', 'source-component-fallback');
+              el.setAttribute('data-indicator-visual', 'source-backed-swap');
               el.setAttribute('data-indicator-variant', active ? 'active' : 'normal');
             }
+            return;
+          }
+          const fallbackIndicators = indicators.filter((el) => el.hasAttribute('data-source-component-fallback')
+            || el.querySelector('[data-source-component-fallback]'));
+          if (fallbackIndicators.length) {
+            /* Fallback files were the pixels actually mounted. Swap those in
+               place so the marks follow the active page. Do not clone children:
+               that path used to copy a still-empty deferred img and blank every
+               mark. Do not invent a filename that is not already on the nodes. */
             return;
           }
           const activeSource = indicators.find((el) => el.getAttribute('data-indicator-variant') === 'active');
@@ -5925,6 +6186,9 @@
             const active = Number(control.getAttribute('data-swpage')) === idx;
             control.setAttribute('data-switch-identity-preserved', 'true');
             control.setAttribute('aria-selected', active ? 'true' : 'false');
+            if (control.getAttribute('data-btn-variant') === 'true') {
+              applyIndependentButtonVariant(control, active ? 'highlight' : 'normal');
+            }
           }
         };
         const applySwitch = (sid, requested, assetsPrepared = false) => {
@@ -6085,6 +6349,16 @@
                is a language option; btn/English whose TEXT is 香港+852 is a
                region option. Fall back to the button name only when there is
                no visible copy. */
+            const languageRows = [...dropmenuOwner.querySelectorAll('[data-btn-variant="true"]')]
+              .filter((row) => /多语言切换按钮/.test(row.getAttribute('data-btn-name') || row.getAttribute('data-node-name') || ''));
+            if (languageRows.length) {
+              const hitRow = languageRows.find((row) => row === innerBtn || row.contains(innerBtn)) || null;
+              if (hitRow) {
+                for (const row of languageRows) {
+                  applyIndependentButtonVariant(row, row === hitRow ? 'highlight' : 'normal');
+                }
+              }
+            }
             const visible = String((innerBtn.textContent || '')).replace(/\s+/g, ' ').trim();
             const named = String(innerBtn.getAttribute('data-btn-name') || '').trim();
             const lang = dropmenuLangFromSelfLabel(visible || named);
@@ -6119,9 +6393,13 @@
               ? [...frame.querySelectorAll(`[data-btn-variant="true"][data-btn-variant-group="${group}"]`)]
               : [btnVariantEarly];
             for (const sibling of siblings) applyIndependentButtonVariant(sibling, sibling === btnVariantEarly ? 'highlight' : 'normal');
-            ev.preventDefault();
-            ev.stopPropagation();
-            return;
+            /* Avatar tabs also drive switch/角色立绘模块. Do not swallow that
+               click; only independent directory-style buttons return here. */
+            if (btnVariantEarly.getAttribute('data-tab') !== 'true') {
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
           }
           const hscrollHost = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll]') : null;
           const swipeOwnerHost = ev.target && ev.target.closest
@@ -6204,25 +6482,119 @@
             }
           }
           const namedModals = frame.__fxNamedModals || [];
+          const ensureModalScrim = () => {
+            const doc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
+            if (!doc) return null;
+            let scrim = doc.getElementById('fx-named-modal-scrim');
+            if (!scrim) {
+              scrim = doc.createElement('div');
+              scrim.id = 'fx-named-modal-scrim';
+              scrim.setAttribute('data-fx-modal-scrim', 'true');
+              scrim.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2147483000;display:none;pointer-events:auto;';
+              (doc.body || frame).appendChild(scrim);
+              scrim.addEventListener('click', () => {
+                for (const entry of (frame.__fxNamedModals || [])) closeNamedModal(entry);
+              });
+            }
+            return scrim;
+          };
+          const syncModalScrim = () => {
+            const scrim = ensureModalScrim();
+            if (!scrim) return;
+            const open = (frame.__fxNamedModals || []).some((entry) => entry && entry.layer && entry.layer.getAttribute('data-modal-open') === 'true');
+            scrim.style.display = open ? 'block' : 'none';
+            scrim.setAttribute('data-open', open ? 'true' : 'false');
+          };
+          const pinModalToViewport = (entry) => {
+            if (!entry || !entry.layer) return;
+            const layer = entry.layer;
+            const host = layer.parentElement;
+            const frameRect = frame.getBoundingClientRect();
+            if (!frameRect.width || !frameRect.height) return;
+            const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
+            const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base] || 3840;
+            const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1624 : 2160);
+            const pageZoom = Number.parseFloat(frame.style.zoom) || 1;
+            const visibleW = frameRect.width / (pageZoom || 1);
+            const visibleH = frameRect.height / (pageZoom || 1);
+            /* Keep the Figma box. Uniform scale to the visible frame; a 1624-tall
+               nav must not be squash-fitted into 1334, and must not overflow the
+               phone slot either. */
+            const scale = Math.min(visibleW / designW, visibleH / designH);
+            if (host) {
+              host.style.position = 'fixed';
+              host.style.left = frameRect.left + 'px';
+              host.style.top = frameRect.top + 'px';
+              host.style.width = designW + 'px';
+              host.style.height = Math.max(Number.parseFloat(host.style.height) || 0, designH) + 'px';
+              host.style.transformOrigin = '0 0';
+              host.style.transform = 'scale(' + scale + ')';
+              host.style.pointerEvents = 'none';
+              host.style.zIndex = '2147483001';
+              host.style.overflow = 'visible';
+            }
+            layer.style.left = '0px';
+            layer.style.top = '0px';
+            layer.style.width = designW + 'px';
+            layer.style.height = designH + 'px';
+            layer.style.maxWidth = 'none';
+            layer.style.maxHeight = 'none';
+            layer.style.transform = 'none';
+            layer.style.pointerEvents = 'auto';
+            layer.style.zIndex = '41';
+            layer.style.overflow = 'visible';
+          };
           const closeNamedModal = (entry) => {
             if (!entry || !entry.layer) return;
             hideInPlace(entry.layer, true);
             entry.layer.removeAttribute('data-modal-open');
+            const host = entry.layer.parentElement;
+            if (host && host.classList && host.classList.contains('fx-named-modals')) {
+              host.style.pointerEvents = 'none';
+            }
+            syncModalScrim();
           };
           const openNamedModal = (entry) => {
             if (!entry || !entry.layer) return;
             for (const other of namedModals) {
               if (other === entry) continue;
-              if (entry.exclusive && other.exclusive) closeNamedModal(other);
+              /* Mobile nav / language overlays are mutually exclusive. A video
+                 overlay also yields when those open so two sheets never stack. */
+              if (entry.exclusive || other.exclusive) closeNamedModal(other);
             }
             hideInPlace(entry.layer, false);
             entry.layer.setAttribute('data-modal-open', 'true');
+            pinModalToViewport(entry);
+            if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
+              frame.__fxAssetScheduler.prime(entry.layer);
+            }
+            const host = entry.layer.parentElement;
+            if (host) host.style.pointerEvents = 'none';
+            syncModalScrim();
           };
-          const closeBtn = ev.target && ev.target.closest ? ev.target.closest('[data-btn-name="关闭按钮"]') : null;
+          frame.__fxCloseNamedModal = closeNamedModal;
+          frame.__fxOpenNamedModal = openNamedModal;
+          const closeBtn = ev.target && ev.target.closest
+            ? (ev.target.closest('[data-btn-name="关闭按钮"]')
+              || ev.target.closest('[data-node-name="img/关闭按钮"]')
+              || ev.target.closest('[data-name="img/关闭按钮"]'))
+            : null;
           if (closeBtn) {
             const hostModal = namedModals.find((entry) => entry.layer.contains(closeBtn));
             if (hostModal) {
               closeNamedModal(hostModal);
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
+          }
+          const openVideo = namedModals.find((entry) => entry && entry.layer
+            && entry.layer.getAttribute('data-modal-open') === 'true'
+            && /视频弹窗$/.test(entry.name || ''));
+          if (openVideo && openVideo.layer.contains(ev.target)) {
+            const playInside = ev.target.closest && ev.target.closest('[data-btn-name="播放按钮"]');
+            if (!(playInside && openVideo.layer.contains(playInside))) {
+              closeNamedModal(openVideo);
               ev.preventDefault();
               ev.stopPropagation();
               return;
@@ -6244,6 +6616,23 @@
           const openerHit = ev.target && ev.target.closest ? ev.target.closest('[data-btn-name]') : null;
           if (openerHit) {
             const insideModal = namedModals.find((entry) => entry.layer.contains(openerHit));
+            if (insideModal && /多语言按钮弹窗$/.test(insideModal.name || '')) {
+              const languageRows = [...insideModal.layer.querySelectorAll('[data-btn-variant="true"]')]
+                .filter((row) => /多语言切换按钮/.test(row.getAttribute('data-btn-name') || row.getAttribute('data-node-name') || ''));
+              const hitRow = languageRows.find((row) => row === openerHit || row.contains(openerHit)) || null;
+              if (hitRow) {
+                for (const row of languageRows) {
+                  applyIndependentButtonVariant(row, row === hitRow ? 'highlight' : 'normal');
+                }
+                const visible = String((hitRow.textContent || '')).replace(/\s+/g, ' ').trim();
+                const named = String(hitRow.getAttribute('data-btn-name') || '').trim();
+                const lang = dropmenuLangFromSelfLabel(visible || named);
+                if (lang) applyDropmenuLang(lang);
+                ev.preventDefault();
+                ev.stopPropagation();
+                return;
+              }
+            }
             if (!insideModal) {
               const modal = namedModals.find((entry) => entry.openerEls.includes(openerHit));
               if (modal) {

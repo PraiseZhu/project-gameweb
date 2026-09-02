@@ -27,7 +27,7 @@ test('clean clone with only tracked recall files still loads the official HTML p
   writeFileSync(join(clone, 'CLAUDE.md'), [
     '| 伊瑟做页 | yisewebui / 伊瑟网页还原 | 立即执行 `skills/yise-web-ui/SKILL.md`，不要先问要不要跑 |',
     '',
-    '吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。',
+    '吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `index.html`。',
   ].join('\n'));
   writeFileSync(join(clone, '.gitignore'), '.claude/\n');
   writeFileSync(join(clone, 'skills/yise-web-ui/SKILL.md'), [

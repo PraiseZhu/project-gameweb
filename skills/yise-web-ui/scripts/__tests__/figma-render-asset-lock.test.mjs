@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const renderer = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
 const assetPipeline = readFileSync(new URL('../figma-assets.mjs', import.meta.url), 'utf8');
+const slicePlanner = readFileSync(new URL('../lib/figma-slice-nodes.mjs', import.meta.url), 'utf8');
 const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.url), 'utf8');
 
 test('asset locking is based on ownerPath when DOM parent stack is incomplete', () => {
@@ -174,7 +175,7 @@ test('multi-image fills resolve each imageRef instead of reusing the first file'
   assert.match(renderer, /data-image-ref/);
   assert.match(renderer, /data-image-fill-index/);
   assert.match(renderer, /data-solid-base-fill/);
-  assert.match(assetPipeline, /imageRefs: imageRefs\.length \? imageRefs : undefined/);
+  assert.match(slicePlanner, /imageRefs: imageRefs\.length \? imageRefs : undefined/);
   assert.match(assetPipeline, /Array\.isArray\(m\.imageRefs\) && m\.imageRefs\.length \? \{ imageRefs: m\.imageRefs \}/);
 });
 
@@ -221,11 +222,13 @@ test('section stage clip is sourced from Figma clipsContent, not a global defaul
 });
 
 test('baked image render spill exports and verifies the render canvas, never the layout box', () => {
-  assert.match(assetPipeline, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
-  assert.match(assetPipeline, /const listedRenderSlice = listedSlice && String\(n\.sliceExport\?\.bounds \|\| ''\)\.toLowerCase\(\) === 'render'/);
-  assert.match(assetPipeline, /const exportBounds = \(listedRenderSlice \|\| \(\(hasSoftSpillEffect \|\| isBakedImageOwner\) && spillBox\(b, rb\)\)\) \? 'render' : 'box'/);
-  assert.match(assetPipeline, /roundBox\(n\.inkBox \|\| rb\)/);
-  assert.match(assetPipeline, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner/);
+  assert.match(slicePlanner, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
+  assert.match(slicePlanner, /const listedRenderSlice = listedSlice && String\(n\.sliceExport\?\.bounds \|\| ''\)\.toLowerCase\(\) === 'render'/);
+  assert.match(slicePlanner, /const exportBounds = \(listedRenderSlice \|\| \(\(hasSoftSpillEffect \|\| isBakedImageOwner\) && spillBox\(b, rb\)\)\) \? 'render' : 'box'/);
+  assert.match(slicePlanner, /roundBox\(n\.inkBox \|\| rb\)/);
+  assert.match(slicePlanner, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner/);
+  assert.match(assetPipeline, /owner-relative-render-canvas/);
+  assert.match(assetPipeline, /cropX = Math\.round\(\(exportX - ownerX\) \* p\.scale\)/);
   assert.match(coverageGate, /if \(rec\?\.exportBounds !== 'render'\) problems\.push/);
   assert.match(coverageGate, /exportBox!=renderBox/);
 });
@@ -264,6 +267,13 @@ test('hscroll gutter expands host box and survives the generic box.h height over
   assert.match(renderer, /curH \+ gT \+ gB/);
   assert.match(renderer, /data-hscroll-gutter-h/);
   assert.match(renderer, /\(box\.h \?\? 0\) \+ \(Number\(el\.getAttribute\('data-hscroll-gutter-h'\)\)/);
+});
+
+test('adjacent switch peek clips each axis of a shadow-spilled renderBox', () => {
+  assert.match(renderer, /rbAxisOverlap/);
+  assert.match(renderer, /axis-overlap-peek/);
+  assert.match(renderer, /if \(rbInside \|\| rbAxisOverlap\)/);
+  assert.doesNotMatch(renderer, /const rbInside = !assetRec && !isText/);
 });
 
 test('fx-img follows the owner box instead of intrinsic pixels', () => {

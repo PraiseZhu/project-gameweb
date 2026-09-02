@@ -98,6 +98,7 @@ function syntheticReport(dir, spec, workflowId) {
   const gateC = { name: 'interaction', status: 'limited', pass: false, checks: [{ id: 'no-clip', pass: true, failures: [] }], failures: [], detail: 'no-clip only' };
   const gateD = { name: 'binding', status: 'not-claimed', pass: false, total: 0, passed: 0, failures: [], detail: 'no bindings' };
   const gateF = { name: 'adaptive', status: 'not-claimed', pass: false, total: 0, passed: 0, failures: [], detail: 'no adaptive' };
+  const gateL = { name: '独立翻译', status: 'not-claimed', pass: false, total: 0, passed: 0, failures: [], detail: 'zh-CN-only-matrix' };
   const gateX = { name: 'custom', status: 'not-claimed', pass: false, total: 0, passed: 0, failures: [], detail: 'no custom gates' };
   return {
     ok: workflowId === 'figma-showcase',
@@ -112,13 +113,14 @@ function syntheticReport(dir, spec, workflowId) {
     gateC,
     gateD,
     gateF,
+    gateL,
     gateX,
     outcome: {
       workflow: workflowId,
       status: 'limited',
       passed: ['gateA'],
       limited: ['gateB', 'gateC'],
-      notClaimed: ['gateD', 'gateF', 'gateX'],
+      notClaimed: ['gateD', 'gateF', 'gateL', 'gateX'],
       blocked: [],
       skipped: [],
       workflowAcceptable: workflowId === 'figma-showcase',
@@ -164,7 +166,7 @@ test('targeted verify --gate A ignores unrelated skipped gates for command succe
   assert.equal(report.outcome.status, 'passed');
   assert.equal(report.outcome.productPrComplete, false);
   assert.deepEqual(report.outcome.passed, ['gateA']);
-  assert.deepEqual(report.outcome.skipped.sort(), ['gateB', 'gateC', 'gateD', 'gateF', 'gateX']);
+  assert.deepEqual(report.outcome.skipped.sort(), ['gateB', 'gateC', 'gateD', 'gateF', 'gateL', 'gateX']);
 });
 
 test('verify reports limited and not-claimed gates instead of thin green pass', { timeout: 240000 }, (t) => {
@@ -180,15 +182,17 @@ test('verify reports limited and not-claimed gates instead of thin green pass', 
   assert.equal(report.ok, false);
   assert.equal(report.outcome.status, 'limited');
   assert.deepEqual(report.outcome.limited.sort(), ['gateB', 'gateC']);
-  assert.deepEqual(report.outcome.notClaimed.sort(), ['gateD', 'gateF', 'gateX']);
+  assert.deepEqual(report.outcome.notClaimed.sort(), ['gateD', 'gateF', 'gateL', 'gateX']);
   assert.equal(report.outcome.productPrComplete, false);
   assert.equal(report.gateB.status, 'limited');
   assert.equal(report.gateC.status, 'limited');
   assert.equal(report.gateD.status, 'not-claimed');
   assert.equal(report.gateF.status, 'not-claimed');
   assert.equal(report.gateX.status, 'not-claimed');
+  assert.equal(report.gateL.status, 'not-claimed');
   assert.equal(report.gateD.pass, false);
   assert.equal(report.gateF.pass, false);
+  assert.equal(report.gateL.pass, false);
   assert.equal(report.gateX.pass, false);
 });
 
@@ -221,6 +225,7 @@ test('page capability declaration refuses forged translation and adaptive greens
       gateC: { status: 'limited', pass: false },
       gateD: { status: 'not-claimed', pass: false },
       gateF: { status: 'not-claimed', pass: false },
+      gateL: { status: 'not-claimed', pass: false },
       gateX: { status: 'not-claimed', pass: false },
     },
   });

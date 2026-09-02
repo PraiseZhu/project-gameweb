@@ -66,7 +66,11 @@ function productViewUrl(indexPath) {
   return `${pathToFileURL(indexPath).href}?${PRODUCT_QUERY}`;
 }
 
-function openProductViewCommand(url) {
+function qaShellUrl(indexPath) {
+  return pathToFileURL(indexPath).href;
+}
+
+function openViewCommand(url) {
   if (process.platform === 'win32') return `start "" "${url}"`;
   if (process.platform === 'darwin') return `open "${url}"`;
   return `xdg-open "${url}"`;
@@ -192,17 +196,22 @@ function previewPayload({ demoDir, screenshot, result, session, spec, truth, ind
 }
 
 function candidateCompletion({ ok, spec, truth, indexPath }) {
-  const url = productViewUrl(indexPath);
+  const probeUrl = productViewUrl(indexPath);
+  const humanUrl = qaShellUrl(indexPath);
   const evidence = sourcePlatformEvidence(spec, truth);
   const productView = ok
-    ? { url, command: openProductViewCommand(url) }
-    : { url: null, command: null, blocked: true, reason: 'preview:first red; do not open product view' };
+    ? { url: probeUrl, command: null, role: 'internal-probe' }
+    : { url: null, command: null, blocked: true, role: 'internal-probe', reason: 'preview:first red; do not open QA shell' };
+  const humanView = ok
+    ? { url: humanUrl, command: openViewCommand(humanUrl), path: 'index.html', role: 'qa-shell' }
+    : { url: null, command: null, blocked: true, role: 'qa-shell', reason: 'preview:first red; do not open QA shell' };
   return {
     legalCandidateCompletionPath: spec?.workflow?.id === 'figma-showcase' ? 'figma-showcase.preview-first.candidate' : 'preview-first.candidate',
     evidenceLevel: ok ? 'candidate' : 'none',
     sourcePlatformEvidence: evidence,
     productView,
-    ...internalCandidatePreview(productView, { presentPage: ok }),
+    humanView,
+    ...internalCandidatePreview(productView, { presentPage: ok, humanView }),
     unclaimedCapabilities: unclaimedCapabilitiesFor(spec, truth),
     humanReview: humanReviewStopAfterPreviewFirst({ spec, truth, previewOk: ok }),
   };
@@ -304,4 +313,4 @@ if (isCli) {
   await runPreviewFirst({ demoDir, outDir, protocol });
 }
 
-export { PREVIEW_THRESHOLDS, explainMeaningfulContract, candidateCompletion, productViewUrl };
+export { PREVIEW_THRESHOLDS, explainMeaningfulContract, candidateCompletion, productViewUrl, qaShellUrl };
