@@ -780,9 +780,10 @@ test('init.mjs 生成四件套且拒绝覆盖', () => {
     assert.ok(existsSync(join(dir, f)), `缺 ${f}`);
   }
   const html = readFileSync(join(dir, 'index.html'), 'utf8');
-  assert.match(html, /QA_CHROME_BEGIN/);
+  assert.match(html, /FIGMA_CHROME_BEGIN/);
   assert.match(html, /window\.__qaDemo/);
   assert.match(html, /id="qa-truth"/);
+  assert.match(html, /id="qa-design-policy"/);
   // spec 骨架能过 states.mjs 静态校验
   const st = run(STATES, ['--demo', dir]);
   assert.equal(st.status, 0, st.stdout + st.stderr);

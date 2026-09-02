@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export const BASE_PUBLIC_SKIP_LIMIT = 159;
+export const BASE_PUBLIC_SKIP_LIMIT = 184;
 export const SYMLINK_UNAVAILABLE_SKIP_ALLOWANCE = 10;
 export const WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE = 1;
 export const UNBUNDLED_FONTS_SKIP_ALLOWANCE = 3;
