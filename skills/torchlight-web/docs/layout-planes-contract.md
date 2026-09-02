@@ -1,5 +1,7 @@
 # Layout planes contract
 
+政策数字听本包 `DESIGN.md` 第 5 章，本文件不另定数字。
+
 This is a source-only contract for seasonal Figma pages where the large background or KV artwork and the foreground UI composition are separate sibling structures.
 
 The detector must prove the split from the Figma owner tree, sibling paint order, source geometry, clips and masks, and descendant profiles. Layer names are hints only for this layout-plane contract. They cannot create a two-plane claim by themselves.
