@@ -1,5 +1,6 @@
 import { createSafeStaticServer } from './safe-server.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
+import { withQaShell } from './replay.mjs';
 
 export async function runHeroBrowserCheck({ demoDir, timeoutMs = 180000 } = {}) {
   let server = null;
@@ -11,7 +12,7 @@ export async function runHeroBrowserCheck({ demoDir, timeoutMs = 180000 } = {}) 
     const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e?.message || e)));
-    await page.goto(base + '/index.html', { waitUntil: 'load', timeout: timeoutMs });
+    await page.goto(withQaShell(base + '/index.html'), { waitUntil: 'load', timeout: timeoutMs });
     await page.waitForFunction(() => window.__qa && typeof window.__qa.inspect === 'function', null, { timeout: timeoutMs });
     await page.waitForTimeout(120);
 

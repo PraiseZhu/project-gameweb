@@ -8,13 +8,13 @@ export const HUMAN_REVIEW_STOPS = Object.freeze([
     id: 'static-and-translation',
     after: Object.freeze(['Main static', 'Translation']),
     presentPage: true,
-    prompt: '静态（有翻译表才带翻译）完成。打开 index.html QA 壳给人看（含切换器）。没问题再说继续，才做交互和拉伸。',
+    prompt: '静态（有翻译表才带翻译）完成。打开产品视图给人看。没问题再说继续，才做交互和拉伸。',
   },
   {
     id: 'interaction-and-resize',
     after: Object.freeze(['Interaction', 'Resize']),
     presentPage: true,
-    prompt: '交互和自适应完成。再次打开 index.html QA 壳给人看（含切换器）。没问题再说继续，才 Pack。',
+    prompt: '交互和自适应完成。再次打开产品视图给人看。没问题再说继续，才 Pack。',
   },
 ]);
 
@@ -23,7 +23,7 @@ export const WORKFLOW_DECLARATIONS = {
     id: 'figma-showcase',
     title: 'Figma showcase preview-first',
     completion: 'candidate-product-view-preview',
-    productViewPath: 'index.html?product=1',
+    productViewPath: 'index.html',
     requires: { productRepo: false, trueSandbox: false, pullRequest: false },
     sourcePlatforms: ['desktop'],
     claimedCapabilities: {

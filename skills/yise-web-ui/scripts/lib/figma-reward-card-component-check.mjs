@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { createSafeStaticServer } from './safe-server.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
 import { buildTruthIndex, compareGeometry, expectedRenderedBox, expectedRelativeBox } from './figma-source-geometry-browser-check.mjs';
+import { withQaShell } from './replay.mjs';
 
 const unwrap = (v) => {
   if (v && typeof v === 'object' && !Array.isArray(v) && 'value' in v && v.provenance) return v.value;
@@ -143,7 +144,7 @@ export async function runRewardCardComponentCheck({ demoDir, viewport = { w: 384
     ({ browser } = await launchChromium(directory, { headless: true }));
     const page = await browser.newPage({ viewport: { width: viewport.w, height: viewport.h } });
     const errors = []; page.on('pageerror', (error) => errors.push(String(error?.message || error)));
-    await page.goto(base + '/index.html', { waitUntil: 'load', timeout: timeoutMs });
+    await page.goto(withQaShell(base + '/index.html'), { waitUntil: 'load', timeout: timeoutMs });
     await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: timeoutMs });
     await page.evaluate(({ w, h, sid }) => { window.__qa.resize(w, h); document.querySelector('.frame [data-node-id="section-' + CSS.escape(sid) + '"]')?.scrollIntoView({ block: 'start' }); }, { ...viewport, sid: REWARD_CARD_COMPONENT.sectionId });
     /* Same static-geometry contract as the shared source-geometry gate: the

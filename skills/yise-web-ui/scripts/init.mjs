@@ -309,7 +309,7 @@ console.log(JSON.stringify({
           '3. node scripts/figma-lib-sync.mjs --demo <dir>(同步通用提取库副本)',
           '4. extract.mjs 用 lib/figma-geo.mjs extractGeometry 读 fixtures 出 truth(空 truth 会 fail-closed)',
           '5. node scripts/truth.mjs --demo <dir> --embed && node scripts/figma-inline.mjs --demo <dir> --check',
-          '6. npm run figma:preview:first -- --demo <dir>(产出 candidate evidence、product-view 截图与 index.html?product=1 打开命令)',
+          '6. npm run figma:preview:first -- --demo <dir>(产出 candidate evidence、product-view 截图与 index.html 打开命令)',
           '7. preview-first 与清单对账都绿之后才打开 product-view 给人看;未声明能力(如 mobile/responsive/PR/真沙盒)保持 not-claimed',
         ]
       : [

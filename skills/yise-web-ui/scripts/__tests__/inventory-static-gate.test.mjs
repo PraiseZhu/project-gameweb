@@ -121,7 +121,7 @@ test('matching DOM pageBox + fontSize + slice is green', () => {
 test('probe script is a shipped skill file, not an optional local extra', () => {
   const probe = join(fileURLToPath(new URL('../lib/inventory-static-gate-probe.mjs', import.meta.url)));
   const src = readFileSync(probe, 'utf8');
-  assert.match(src, /inventory-static-gate=1/);
+  assert.match(src, /withQaShell\(`\$\{base\}\/index\.html\?inventory-static-gate=1`\)/);
   assert.match(src, /platform === 'mobile' \? 'mobile' : 'desktop'/);
 });
 

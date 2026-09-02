@@ -39,16 +39,17 @@
   if (!cfg) throw new Error('figma-chrome: 缺 window.__qaDemo 配置');
   if (typeof cfg.renderApp !== 'function') throw new Error('figma-chrome: __qaDemo.renderApp 必填');
 
-  /* ── 产品视图纯净入口（?product=1）──
+  /* ── 产品视图是默认入口（裸 index.html）──
      QA 壳(控制栏/切换器/状态补齐 tab/拉伸手柄/读数/__qa API)与产品视图彻底分离:
-     product 模式下只渲染 stage + 产品帧,不建任何调试 UI、不暴露 __qa、不读深链。
+     默认只渲染 stage + 产品帧,不建任何调试 UI、不暴露 __qa、不读深链。
+     要 QA 壳显式加 ?qa=1。旧链接 ?product=1 仍当产品页(默认就是)。
      验收/交付截图一律走这条路径(文件名 *-product.png);QA 壳截图只是 candidate 级证据。
      实现约束:PRODUCT_VIEW 在同步代码最前面算好,后面所有 UI 挂载点共用同一开关。 */
   var PRODUCT_VIEW = (function () {
     try {
-      var q = new URLSearchParams(window.location.search).get('product');
-      return q === '1' || q === 'true' || q === 'yes';
-    } catch (e) { return false; }
+      var qa = new URLSearchParams(window.location.search).get('qa');
+      return qa !== '1' && qa !== 'true' && qa !== 'yes';
+    } catch (e) { return true; }
   })();
   if (PRODUCT_VIEW) document.documentElement.setAttribute('data-product-view', '1');
 
@@ -2136,7 +2137,7 @@
   }
 
   /* ── 老师的 __qa 合约：verify.mjs 靠它驱动门 B/C/D/F，必须保住 ──
-     产品视图(?product=1)不暴露 __qa:QA 壳 = 工具区 + __qa API 所在的整个 chrome 运行时,
+     产品视图(默认 index.html)不暴露 __qa:QA 壳 = 工具区 + __qa API 所在的整个 chrome 运行时,
      纯净渲染路径里两者都不该存在。 */
   if (!PRODUCT_VIEW) window.__qa = {
     current: function () { return S.state; },
