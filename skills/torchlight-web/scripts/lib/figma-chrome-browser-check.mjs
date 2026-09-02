@@ -24,6 +24,7 @@ import { launchChromium } from './resolve-playwright.mjs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadNavRailTruth, probeNavRailContinuity } from './figma-nav-rail-browser-check.mjs';
+import { withQaShell } from './replay.mjs';
 
 export async function runChromeBrowserCheck({ demoDir, timeoutMs = 180000 } = {}) {
   const results = [];   // [name, pass, why]
@@ -38,7 +39,7 @@ export async function runChromeBrowserCheck({ demoDir, timeoutMs = 180000 } = {}
     const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
     page.on('pageerror', (e) => pageErrors.push(String(e && e.message || e).slice(0, 200)));
 
-    await page.goto(base + '/index.html', { waitUntil: 'load', timeout: timeoutMs });
+    await page.goto(withQaShell(base + '/index.html'), { waitUntil: 'load', timeout: timeoutMs });
     await page.waitForFunction(() => typeof window.__qa === 'object' && window.__qa !== null, null, { timeout: timeoutMs }).catch(() => {});
     /* Interactive review intentionally defers far-off/inactive proof images.
        This gate audits the deterministic acceptance state instead: force the

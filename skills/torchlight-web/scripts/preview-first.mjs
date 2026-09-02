@@ -14,8 +14,6 @@ const PREVIEW_THRESHOLDS = {
   maxSingleNodeCoverage: 0.98,
 };
 
-const PRODUCT_QUERY = 'product=1';
-
 function argOf(args, flag) {
   const i = args.indexOf(flag);
   return i >= 0 ? args[i + 1] : null;
@@ -63,7 +61,7 @@ export function decodeJsonBytes(input, file = '<buffer>') {
 }
 
 function productViewUrl(indexPath) {
-  return `${pathToFileURL(indexPath).href}?${PRODUCT_QUERY}`;
+  return pathToFileURL(indexPath).href;
 }
 
 function openProductViewCommand(url) {
@@ -220,7 +218,7 @@ async function openPreviewSession({ demoDir, indexPath, protocol, externalTruth 
   if (useHttp) {
     server = createSafeStaticServer(demoDir);
     const base = await server.listen('127.0.0.1');
-    url = `${base}/index.html?${PRODUCT_QUERY}`;
+    url = `${base}/index.html`;
   } else {
     url = productViewUrl(indexPath);
   }

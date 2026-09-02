@@ -36,6 +36,7 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { launchChromium } from './resolve-playwright.mjs';
+import { withQaShell } from './replay.mjs';
 
 /* ── truth 叶子解包：{value, provenance} → 裸值（与 render-check 同款语义）── */
 function unwrap(n) {
@@ -141,7 +142,7 @@ export async function runRegionVerify({ demoDir, regions, viewport = { w: 1920, 
     const consoleErrs = [];
     page.on('console', (m) => { if (m.type() === 'error') consoleErrs.push(m.text().slice(0, 300)); });
     page.on('pageerror', (e) => consoleErrs.push('pageerror:' + String(e).slice(0, 300)));
-    await page.goto('file://' + indexHtml.replace(/\\/g, '/'));
+    await page.goto(withQaShell('file://' + indexHtml.replace(/\\/g, '/')));
     await page.waitForFunction(() => window.__qa && window.__qa.resize, null, { timeout: 20000 });
     await page.evaluate(({ w, h, prefs }) => {
       window.__qa.resize(w, h);

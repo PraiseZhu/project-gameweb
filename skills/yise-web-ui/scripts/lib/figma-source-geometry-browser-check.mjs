@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createSafeStaticServer } from './safe-server.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
+import { withQaShell } from './replay.mjs';
 
 const arrOf = (v) => Array.isArray(v) ? v : Object.values(v || {});
 const unwrap = (v) => {
@@ -211,7 +212,7 @@ export async function runSourceGeometryBrowserCheck({
     const page = await browser.newPage({ viewport: { width: viewport.w, height: viewport.h } });
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(String(error?.message || error)));
-    await page.goto(base + '/index.html', { waitUntil: 'load', timeout: timeoutMs });
+    await page.goto(withQaShell(base + '/index.html'), { waitUntil: 'load', timeout: timeoutMs });
     await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: timeoutMs });
     await page.evaluate(({ w, h }) => window.__qa.resize(w, h), viewport);
     await page.waitForTimeout(250);

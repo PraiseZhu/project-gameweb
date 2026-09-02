@@ -14,11 +14,11 @@ This is the Torchlight public Skill identity. Local Torch demo output is a verif
 
 **Recall:** 仓根 `CLAUDE.md` 触发表命中 `torchlightweb` / `火炬网页还原` 后立即执行本文件，不要先问。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
 
-**完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
+**完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 才给人 `index.html`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
 | 情况 | 走哪条 |
 |---|---|
-| 人说 `torchlightweb` **且已有 ready 交接包** | 官方：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`，设计视口简中 + `?inventory-static-gate=1`）→ 才给人 `?product=1`。Main 静态停下来等人验收。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
+| 人说 `torchlightweb` **且已有 ready 交接包** | 官方：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`，设计视口简中 + `?inventory-static-gate=1&qa=1`）→ 才给人 `index.html`。Main 静态停下来等人验收。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
 | 人说 `torchlightweb` **只有 Figma 链接、没有包** | **停下来要包**。不要默默走 live showcase。若用户明确说「先看稿、没有清单」，才允许 `figma-showcase` 九步，且必须标明 `latest-Figma local extract baseline`。 |
 | `figma:from-handoff` 单独跑 | 只验包、打印消费计划，**不写 HTML**。触发词 `torchlightweb` 不能再暗示「说了就会出 HTML」，除非后面接了 `figma:html-from-handoff`。 |
 
@@ -29,7 +29,7 @@ cd skills/torchlight-web
 npm run figma:html-from-handoff -- --handoff <handoff-dir> --demo <demo-dir>
 ```
 
-Do not open the product view, and do not start Interaction / Resize, while `preview:first` is red or the inventory static gate is red. `preview:first` uses HTTP only for the internal check; the URL given to humans is the durable `file://...?product=1` path, which must still open after the command exits. Inventory static gate measures `index.html?inventory-static-gate=1` over HTTP — never `file://`, never the product-view hero. Missing `inventory-static-gate-probe.mjs`, missing `index.html`, or missing Chrome is fail-closed red. Do not hand-edit inventory `status`. Do not treat a local adapter page as Skill acceptance.
+Do not open the product view, and do not start Interaction / Resize, while `preview:first` is red or the inventory static gate is red. `preview:first` uses HTTP only for the internal check; the URL given to humans is the durable `file://.../index.html` path, which must still open after the command exits. Inventory static gate measures `index.html?inventory-static-gate=1&qa=1` over HTTP — never `file://`, never the product-view hero. Missing `inventory-static-gate-probe.mjs`, missing `index.html`, or missing Chrome is fail-closed red. Do not hand-edit inventory `status`. Do not treat a local adapter page as Skill acceptance.
 
 ## Handoff package entry
 
@@ -66,7 +66,7 @@ There are two explicit workflow declarations:
 
 - `figma-showcase` is the Figma-only preview-first workflow. It has a legal
   candidate completion path after `npm run figma:preview:first -- --demo <dir>`
-  passes: open the reported `index.html?product=1` product-view URL immediately
+  passes: open the reported `index.html` product-view URL immediately
   for human review. It must not assume a product repo, true sandbox, PR, full
   verify gates, mobile, responsive acceptance, or pixel-grid comparison; any
   unsupported capability stays `not-claimed` in the preview output.
@@ -78,7 +78,7 @@ There are two explicit workflow declarations:
 → Interaction → Resize, but humans see **two** review stops, not four:
 
 1. After Main static (and Translation **only if a copy table is present**):
-   `preview:first` must be green, then open `?product=1` and stop. That is
+   `preview:first` must be green, then open `index.html` and stop. That is
    the first human review stop, not confirmed-final delivery
    (`userPreviewAllowed` stays false; `humanStopPreviewAllowed` is true).
    Tell the user this axis is done. Do not start Interaction / Resize until
@@ -88,7 +88,7 @@ There are two explicit workflow declarations:
    then after the user says continue
    `node scripts/human-review.mjs accept --demo <dir> --stop static-and-translation`.
    `can-start` must be green before Interaction / Resize.
-2. After Interaction and Resize: open `?product=1` again and stop. Tell the
+2. After Interaction and Resize: open `index.html` again and stop. Tell the
    user this axis is done. Do not Pack until they say continue.
    `node scripts/human-review.mjs present --demo <dir> --stop interaction-and-resize --preview-ok`,
    then `accept`. `pack-allowed` / Pack itself fail-close without that accept.
@@ -1238,14 +1238,14 @@ proposal 点名维护者看 EVOLUTION.md；全是 isNew=false 时整组省略。
 
 ### QA 壳 vs 产品视图
 
-默认打开 `index.html` 是 QA 壳（控制栏、切换器、状态补齐 tab、拉伸手柄、__qa API），
-供验收/调试用。**纯产品视图**用 `index.html?product=1`：只渲染 stage + 产品帧，
-不建任何调试 UI、不暴露 `window.__qa`。验收/交付截图一律走产品视图路径，
+默认打开 `index.html` 就是产品视图：只渲染 stage + 产品帧，
+不建任何调试 UI、不暴露 `window.__qa`。验收/交付截图一律走这条路径，
 文件名按 `*-product.png`（产品视图）vs `*-qa-shell.png`（QA 壳）区分。
 QA 壳截图只能支撑 candidate 级证据，不能报"视觉还原完成"。
 
+要 QA 壳（控制栏、切换器、状态补齐 tab、拉伸手柄、`__qa` API）显式打开 `index.html?qa=1`。
 验收自动化（verify.mjs、门 B/C/D/F）依赖 QA 壳的 `__qa` API 和 `data-qa-*` 合约，
-因此**默认入口必须是 QA 壳**，产品视图只是用于人眼验收和交付截图的第二条路径。
+走 `?qa=1`，不占用给人看的默认入口。旧链接 `?product=1` 仍当产品页。
 
 ## spec.json 字段规范
 

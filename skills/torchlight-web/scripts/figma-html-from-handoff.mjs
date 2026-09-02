@@ -5,7 +5,7 @@
  *
  *   node scripts/figma-html-from-handoff.mjs --handoff <dir> --demo <dir>
  *
- * Preview-first is required before showing `?product=1`. Tests may pass
+ * Preview-first is required before showing `index.html`. Tests may pass
  * `skipPreview: true` to `buildHtmlFromHandoff`; the CLI never skips it.
  * After HTML is written, `figma-fonts` copies registered source families into
  * the demo. Consume already fail-closes when a source family is missing from
@@ -273,7 +273,7 @@ export function buildHtmlFromHandoff({
     consume,
     htmlVolume,
     note: 'unknown 只画不接线。skipped 不画。preview-first 与清单对账绿之前禁止给人打开产品视图，禁止开 Interaction / Resize。',
-    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → then show ?product=1. Stop at Main static.',
+    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → then show index.html. Stop at Main static.',
   };
 
   if (skipPreview) {
@@ -411,7 +411,7 @@ function attachPreviewFirst(payload, demoDir) {
   payload.nextHumanStep = previewJson?.nextHumanStep
     || (payload.ok
       ? 'preview:first 已绿。第一次给人看：Main 静态。等人说继续，才做交互和拉伸。'
-      : 'preview:first 红了不许给人打开 ?product=1，也不许开 Interaction / Resize。');
+      : 'preview:first 红了不许给人打开 index.html，也不许开 Interaction / Resize。');
   if (!payload.ok) {
     payload.problems = [
       'preview-first red; do not open product view, do not start Interaction / Resize',

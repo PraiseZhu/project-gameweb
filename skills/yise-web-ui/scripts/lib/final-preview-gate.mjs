@@ -46,8 +46,7 @@ export function evaluateFinalPreviewGate({ staticAcceptance = null, visualAssetA
 /**
  * preview-first is never confirmed-final delivery (`userPreviewAllowed` stays
  * false). After it is green, the first human review stop may open `index.html`
- * QA shell (`humanStopPreviewAllowed` / `previewDisposition: 'human-review-stop'`).
- * `?product=1` stays an internal probe, not the human URL.
+ * (`humanStopPreviewAllowed` / `previewDisposition: 'human-review-stop'`).
  */
 export function internalCandidatePreview(productView, { presentPage = false, humanView = null } = {}) {
   const humanStop = presentPage === true;
@@ -56,12 +55,12 @@ export function internalCandidatePreview(productView, { presentPage = false, hum
   if (!humanStop && view && typeof view === 'object') {
     view.command = null;
     view.blocked = true;
-    view.reason = view.reason || 'preview:first red; do not open QA shell';
+    view.reason = view.reason || 'preview:first red; do not open product view';
   }
   if (!humanStop && human && typeof human === 'object') {
     human.command = null;
     human.blocked = true;
-    human.reason = human.reason || 'preview:first red; do not open QA shell';
+    human.reason = human.reason || 'preview:first red; do not open product view';
   }
   return {
     userPreviewAllowed: false,

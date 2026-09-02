@@ -169,7 +169,7 @@ export function runChromeCheck({ demoDir, expectedSelects = 2 }) {
   globalThis.window = globalThis;
   globalThis.addEventListener = () => {};
   globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-  globalThis.location = { hash: '', href: 'file:///index.html' };
+  globalThis.location = { hash: '', href: 'file:///index.html?qa=1', search: '?qa=1' };
   globalThis.history = { replaceState: () => {} };
   // Node 里 navigator 是只读的 getter，只能用 defineProperty 覆盖
   Object.defineProperty(globalThis, 'navigator', {

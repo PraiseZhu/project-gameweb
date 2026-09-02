@@ -11,7 +11,7 @@ is complete without a Figma prototype snapshot; prototype evidence is an audit
 that may be requested when a claim needs it.
 
 Workflow declarations are explicit and separate. `figma-showcase` is a Figma-only
-candidate path: `preview-first` must inspect `index.html?product=1`, produce a
+candidate path: `preview-first` must inspect `index.html`, produce a
 candidate evidence level, screenshot, URL/command, source-platform evidence, and
 `not-claimed` capabilities, then the product view is opened immediately for
 human review. Opening the page does not mean gates, Switch clicks, Resize, or
@@ -20,7 +20,7 @@ an inventory/handoff baseline. `product-qa` is the later product-repo /
 sandbox / PR evidence workflow and must not be silently assumed by a Figma-only
 showcase. `figma:from-handoff` remains consume-only. The official HTML command
 is `figma:html-from-handoff`. Completion standard: eat ready pack → write
-demo/`index.html` → `preview:first` must be green → then show `?product=1`.
+demo/`index.html` → `preview:first` must be green → then show `index.html`.
 Stop at Main static.
 
 ```mermaid
@@ -53,7 +53,7 @@ stretch stays in Resize. Do not split the directory into a fourth Skill.
 Translation → Interaction → Resize. Humans get two review stops: (1) Main
 static, plus Translation only when a copy table exists; (2) Interaction and
 Resize together. `preview:first` must be green before stop 1 presents
-`?product=1`. A red payload must not include `productView.command`. No copy
+`index.html`. A red payload must not include `productView.command`. No copy
 table keeps Translation `not-claimed`; zh-CN font
 load is not a translation pass. The script gate is
 `scripts/human-review.mjs` / `human-review.json`:

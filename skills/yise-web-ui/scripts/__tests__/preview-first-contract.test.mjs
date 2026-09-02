@@ -72,7 +72,14 @@ test('preview-first red never ships an open command', () => {
   assert.match(output.humanReview.nextHumanStep, /preview:first 红了不许给人打开/);
 });
 
-test('preview-first candidate output always uses a durable file:// QA shell URL', () => {
+test('chrome default is product view; only ?qa=1 opens the QA shell', () => {
+  const chrome = readFileSync(join(SKILL_ROOT, 'templates/figma-chrome.js'), 'utf8');
+  assert.match(chrome, /var qa = new URLSearchParams\(window\.location\.search\)\.get\('qa'\)/);
+  assert.match(chrome, /return qa !== '1' && qa !== 'true' && qa !== 'yes'/);
+  assert.doesNotMatch(chrome, /q\.get\('product'\)/);
+});
+
+test('preview-first candidate output always uses a durable file:// product URL', () => {
   const spec = { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] } };
   const indexPath = join(tmpdir(), 'demo', 'index.html');
   const output = candidateCompletion({
@@ -87,8 +94,10 @@ test('preview-first candidate output always uses a durable file:// QA shell URL'
   assert.doesNotMatch(output.humanView.url, /product=1/);
   assert.doesNotMatch(output.humanView.url, /^http:/);
   assert.equal(output.productView.url, productViewUrl(indexPath));
-  assert.match(output.productView.url, /product=1/);
-  assert.equal(output.productView.command, null);
+  assert.match(output.productView.url, /^file:/);
+  assert.match(output.productView.url, /index\.html$/);
+  assert.doesNotMatch(output.productView.url, /product=1/);
+  assert.doesNotMatch(output.productView.url, /^http:/);
   assert.equal(output.humanReview.presentPage, true);
   assert.equal(output.humanReview.id, 'static-and-translation');
   assert.equal(output.userPreviewAllowed, false);
@@ -103,7 +112,7 @@ test('ephemeral HTTP check URL dies after the server closes; file:// QA shell UR
   writeFileSync(indexPath, '<html><body>durable</body></html>');
   const server = createSafeStaticServer(dir);
   const base = await server.listen('127.0.0.1');
-  const checkUrl = `${base}/index.html?product=1`;
+  const checkUrl = `${base}/index.html`;
   const live = await fetch(checkUrl);
   assert.equal(live.status, 200);
   await server.close();
@@ -122,7 +131,8 @@ test('preview-first candidate output carries product-view path and unclaimed cap
   const output = candidateCompletion({ ok: true, spec, truth, indexPath: '/tmp/demo/index.html' });
 
   assert.equal(output.evidenceLevel, 'candidate');
-  assert.match(output.productView.url, /product=1/);
+  assert.match(output.productView.url, /index\.html$/);
+  assert.doesNotMatch(output.productView.url, /product=1/);
   assert.match(output.humanView.url, /index\.html$/);
   assert.doesNotMatch(output.humanView.url, /product=1/);
   assert.deepEqual(output.sourcePlatformEvidence.claimed, ['desktop']);
@@ -144,7 +154,7 @@ test('figma-showcase schema accepts mobile only when workflow or figma sourcePla
     workflow: {
       id: 'figma-showcase',
       completion: 'candidate-product-view-preview',
-      productViewPath: 'index.html?product=1',
+      productViewPath: 'index.html',
       requires: { productRepo: false, trueSandbox: false, pullRequest: false },
     },
     matrix: {

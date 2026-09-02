@@ -45,7 +45,7 @@ export function evaluateFinalPreviewGate({ staticAcceptance = null, visualAssetA
 
 /**
  * preview-first is never confirmed-final delivery (`userPreviewAllowed` stays
- * false). After it is green, the first human review stop may open `?product=1`
+ * false). After it is green, the first human review stop may open `index.html`
  * (`humanStopPreviewAllowed` / `previewDisposition: 'human-review-stop'`).
  */
 export function internalCandidatePreview(productView, { presentPage = false } = {}) {

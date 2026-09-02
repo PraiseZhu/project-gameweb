@@ -244,7 +244,7 @@ export function buildHtmlFromHandoff({
     consume,
     htmlVolume,
     note: 'unknown 只画不接线。skipped 不画。preview-first 与清单对账绿之前禁止给人打开产品视图，禁止开 Interaction / Resize。',
-    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → then show ?product=1. Stop at Main static.',
+    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → then show index.html. Stop at Main static.',
   };
 
   if (skipPreview) {

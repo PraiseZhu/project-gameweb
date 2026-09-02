@@ -4,6 +4,7 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSafeStaticServer } from './safe-server.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
+import { withQaShell } from './replay.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
@@ -346,7 +347,7 @@ export async function measureRenderedAssets({ demoDir, viewport = { w: 1920, h: 
     ({ browser } = await launchChromium(demoDir, { headless: true }));
     const page = await browser.newPage({ viewport: { width: viewport.w, height: viewport.h } });
     page.on('pageerror', (e) => report.pageErrors.push(String(e?.message || e).slice(0, 500)));
-    await page.goto(base + '/index.html', { waitUntil: 'load', timeout: timeoutMs });
+    await page.goto(withQaShell(base + '/index.html'), { waitUntil: 'load', timeout: timeoutMs });
     await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: Math.min(timeoutMs, OPTIONAL_QA_READY_TIMEOUT_MS) }).catch(() => {});
     await page.evaluate(({ w, h }) => window.__qa?.resize?.(w, h), viewport).catch(() => {});
     await page.evaluate(() => typeof window.__fxAssetsReady === 'function' ? window.__fxAssetsReady() : Promise.resolve()).catch(() => {});

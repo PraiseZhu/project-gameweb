@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { createSafeStaticServer } from './safe-server.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
+import { withQaShell } from './replay.mjs';
 
 const frameWait = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
@@ -20,7 +21,7 @@ export async function runMotionBrowserCheck({ demoDir, artifactDir = join(demoDi
       const page = await browser.newPage({ viewport: expected });
       const pageErrors = [];
       page.on('pageerror', (e) => pageErrors.push(String(e?.message || e)));
-      await page.goto(base + '/index.html', { waitUntil: 'load', timeout: timeoutMs });
+      await page.goto(withQaShell(base + '/index.html'), { waitUntil: 'load', timeout: timeoutMs });
       await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: timeoutMs });
       await page.evaluate(({ width, height }) => window.__qa.resize(width, height), expected);
       /* Desktop starts in the preview's native PC state. Re-clicking that

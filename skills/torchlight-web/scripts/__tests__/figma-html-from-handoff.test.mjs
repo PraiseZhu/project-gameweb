@@ -79,7 +79,7 @@ test('from-handoff still does not write HTML after a ready pack', () => {
 });
 
 test('parsePreviewJson reads pretty-printed preview-first stdout', () => {
-  const pretty = JSON.stringify({ ok: true, productView: { url: 'http://127.0.0.1:9/index.html?product=1' } }, null, 2);
+  const pretty = JSON.stringify({ ok: true, productView: { url: 'http://127.0.0.1:9/index.html' } }, null, 2);
   assert.equal(parsePreviewJson(pretty).ok, true);
   assert.equal(parsePreviewJson(`noise\n${pretty}\n`).ok, true);
   assert.equal(parsePreviewJson(''), null);
@@ -284,7 +284,7 @@ test('official static gate probe is shipped and missing probe/index is fail-clos
   assert.match(src, /inventory-static-gate-probe\.mjs missing; cannot mark green without DOM/);
   assert.match(src, /demo index.html missing; cannot measure DOM/);
   const probeSrc = readFileSync(join(skillRoot, 'scripts/lib/inventory-static-gate-probe.mjs'), 'utf8');
-  assert.match(probeSrc, /inventory-static-gate=1/);
+  assert.match(probeSrc, /withQaShell\(`\$\{base\}\/index\.html\?inventory-static-gate=1`\)/);
 });
 
 test('html-from-handoff fails when index.html stays over the HTML volume gate', () => {
