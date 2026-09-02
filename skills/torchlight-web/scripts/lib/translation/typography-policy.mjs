@@ -180,6 +180,17 @@ export function computeSourceAnchoredInlineFit({ sourceWidths = [], targetWidths
     return { status: 'fits-source-safe-width', scale: null, safeInlineWidth, sourceMax, slotLimit, targetMax, requiredScale: 100 };
   }
   const orderedSteps = [...new Set(finite(steps))].sort((a, b) => b - a);
+  if (!orderedSteps.length || (orderedSteps.length === 1 && orderedSteps[0] === 1)) {
+    return {
+      status: 'integer-ratio',
+      scale: requiredScale,
+      safeInlineWidth,
+      sourceMax,
+      slotLimit,
+      targetMax,
+      requiredScale,
+    };
+  }
   const scale = orderedSteps.find((step) => step <= requiredScale + 0.5) || orderedSteps[orderedSteps.length - 1] || null;
   return {
     status: scale != null && scale > requiredScale + 0.5 ? 'floor-exceeded' : 'step-fit',
@@ -332,10 +343,15 @@ export function assessLocaleVisualLevel({ role = 'unknown', language = 'zh-CN', 
   const zoom = Number(stageZoom);
   if (!Number.isFinite(src) || src <= 0) return { status: 'unverified', reason: 'no-source-font-size', kind, ratio };
   if (!Number.isFinite(zoom) || zoom <= 0) return { status: 'unmeasured', reason: 'no-stage-zoom', kind, ratio, sourceFontSize: src };
-  /* group-fit 二次缩放：renderer 对有界溢出组做最严格统一（data-fit-scale<100），这是合法的容器适配，
-     不是排版错。expected 必须把它算进去，否则 ja/ko 长译文触发的组级统一会被误判 off-target。 */
+  /* group-fit 二次缩放：6.1 后 data-fit-px 是缩完的整数 px（相对 locale 基准字号）。
+     旧调用若仍传 0–1 比例也认。不要把 16px 当成 16%。 */
   const __fit = Number(fitScale);
-  const fitFactor = (Number.isFinite(__fit) && __fit > 0 && __fit < 100) ? __fit / 100 : 1;
+  const localeBase = src * ratio;
+  let fitFactor = 1;
+  if (Number.isFinite(__fit) && __fit > 0) {
+    if (__fit <= 1) fitFactor = __fit;
+    else if (Number.isFinite(localeBase) && localeBase > 0) fitFactor = Math.min(1, __fit / localeBase);
+  }
   const expectedVisual = src * ratio * fitFactor * zoom;
   const actual = Number(visualFontPx);
   if (!Number.isFinite(actual)) return { status: 'unmeasured', reason: 'no-visual', kind, ratio, sourceFontSize: src, stageZoom: zoom, expectedVisual: Math.round(expectedVisual * 10) / 10 };
@@ -391,7 +407,7 @@ export function buildLocaleTranslationLayoutContract({
         : resize.horizontalHug || resize.verticalHug
           ? { mode: 'hug-owner-growth', preserveOwnerStructure: true, groupFit: 'shared-required-scale' }
           : bounded
-            ? { mode: 'bounded-group-step-fit', floorPercent: SHRINK_FLOOR, groupFit: 'shared-required-scale' }
+            ? { mode: DESIGN_POLICY.shrinkMode === 'integer-px' ? 'bounded-group-integer-px' : 'bounded-group-step-fit', groupFit: 'shared-required-scale' }
             : { mode: 'wrap-review-required', groupFit: 'shared-required-scale' };
   const zoom = Number(stageZoom);
   const visual = target && Number.isFinite(zoom) && zoom > 0

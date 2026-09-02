@@ -7,7 +7,13 @@ import {
   classifyTextContainerConstraint,
   normalizeLanguage,
   summarizeTypography,
+  findAutoLayoutMaxOwner,
+  integerPxFit,
+  unifyGroupIntegerFontSizes,
+  fitAuthorization,
+  isIntegerPxShrinkEvidence,
 } from '../lib/figma-typography.mjs';
+import { extractGeometry } from '../lib/figma-geo.mjs';
 
 test('语言与语义分类不依赖节点 ID', () => {
   assert.equal(normalizeLanguage('zh_tw'), 'zh-TW');
@@ -29,10 +35,9 @@ test('按 Figma autoResize 区分正常换行、溢出和允许截断', () => {
     text: 'メニュー', rect: { width: 100, height: 40 }, clientWidth: 100, scrollWidth: 100, clientHeight: 40, scrollHeight: 60,
     wrapped: true, font: { loaded: true, availableWeights: [700], computedWeight: 700, glyphsMissing: 0 },
   } });
-  /* fixed-nav is an authorized bounded frame, so wrapped growth is fit-managed
-     evidence (the renderer step-fits it), not a hard overflow and not the
-     open-flow "natural growth" bucket. It must still pass. */
-  assert.equal(wrapped.rangeStatus, 'wrapped');
+  /* DESIGN.md 6.1 B: no written Auto Layout max → do not shrink. Extra HEIGHT
+     lines are natural growth evidence, not a framed step-fit. */
+  assert.equal(wrapped.rangeStatus, 'natural-vertical-growth');
   assert.equal(wrapped.ok, true);
 
   const overflow = classifyTypographyRange({ truth: { text: { ...base.text, autoResize: 'WIDTH_AND_HEIGHT' } }, language: 'ko', browser: {
@@ -53,7 +58,7 @@ test('按 Figma autoResize 区分正常换行、溢出和允许截断', () => {
 test('缺字形和 step-fit overflow 独立报出，copy 状态不参与判定', () => {
   const result = classifyTypographyRange({ truth: { text: { fontWeight: 700, autoResize: 'FIXED' } }, language: 'zh-CN', semanticClass: 'calendar-table', browser: {
     text: '中文', rect: { width: 100, height: 20 }, clientWidth: 100, scrollWidth: 100, clientHeight: 20, scrollHeight: 30,
-    fitScale: 75, fitOverflow: true, font: { loaded: true, availableWeights: [400], computedWeight: 700, glyphsMissing: 2 },
+    fitPx: 18, localeBaseFontSize: 24, fitOverflow: true, font: { loaded: true, availableWeights: [400], computedWeight: 700, glyphsMissing: 2 },
   } });
   assert.equal(result.glyphStatus, 'missing-glyphs');
   assert.equal(result.weight.status, 'synthetic-weight');
@@ -103,11 +108,10 @@ test('framed fixed text still reports horizontal/vertical overflow', () => {
     font: { loaded: true, availableWeights: [400], computedWeight: 400, glyphsMissing: 0 },
   } });
   assert.equal(result.openFlow, false);
-  /* A bounded card frame is an authorized max range, so a wrapped overflow is
-     fit-managed (the renderer shrinks it toward the floor), never a silent
-     hard overflow; it passes while it fits, and only a floor-exceeded spill is
-     a human-review failure. Horizontal overflow would still fail. */
-  assert.equal(result.rangeStatus, 'wrapped');
+  /* DESIGN.md 6.1 B: a framed card without a written Auto Layout max does not
+     authorize shrink. Extra HEIGHT is natural growth. Horizontal overflow
+     would still fail. */
+  assert.equal(result.rangeStatus, 'natural-vertical-growth');
   assert.equal(result.ok, true);
 });
 
@@ -233,7 +237,9 @@ test('single-line browser line-height drift is natural growth, not overflow', ()
      max(2, lh*0.09)=3.6px here, and 2px is within it. */
   assert.equal(result.singleLineHeightDrift, true);
   assert.equal(result.verticalOverflow, false);
-  assert.equal(result.rangeStatus, 'fit');
+  /* No written Auto Layout max → not fit-authorized, so the same 2px slack is
+     recorded as natural growth rather than a silent fit. Still a pass. */
+  assert.equal(result.rangeStatus, 'natural-vertical-growth');
   assert.equal(result.ok, true);
 });
 
@@ -252,14 +258,23 @@ test('multi-line HEIGHT frame real overflow still fails', () => {
     rect: { x: 0, y: 0, width: 200, height: 96 }, range: { x: 0, y: 0, width: 200, height: 144 }, visible: true,
     font: { loaded: true, availableWeights: [400], computedWeight: 400, glyphsMissing: 0 },
   } });
-  /* Multi-line box: no single-line rounding slack, so the excess IS measured as
-     a vertical overflow (drift=false, verticalOverflow=true). In the real pipeline
-     the renderer step-fits framed-fixed HEIGHT text against its bounded owner, so
-     the browser would normally carry a fitScale here; this fixture isolates the
-     classifier's measurement, which must not be silenced by the single-line rule. */
+  /* DESIGN.md 6.1 B: without a written Auto Layout max the renderer does not
+     shrink, so extra lines are natural growth, not a hard overflow. With a
+     written max the same excess is still a real overflow (covered below). */
   assert.equal(result.singleLineHeightDrift, false);
-  assert.equal(result.verticalOverflow, true);
-  assert.equal(result.rangeStatus, 'wrapped');
+  assert.equal(result.verticalOverflow, false);
+  assert.equal(result.rangeStatus, 'natural-vertical-growth');
+  assert.equal(result.ok, true);
+  const withMax = classifyTypographyRange({
+    truth: { ...truth, autoLayoutMax: { maxWidth: 200 } },
+    browser: {
+      clientWidth: 200, scrollWidth: 200, clientHeight: 96, scrollHeight: 144, wrapped: true,
+      rect: { x: 0, y: 0, width: 200, height: 96 }, range: { x: 0, y: 0, width: 200, height: 144 }, visible: true,
+      font: { loaded: true, availableWeights: [400], computedWeight: 400, glyphsMissing: 0 },
+    },
+  });
+  assert.equal(withMax.verticalOverflow, true);
+  assert.equal(withMax.rangeStatus, 'wrapped');
 });
 
 test('explicit truncate keeps hard overflow semantics', () => {
@@ -385,4 +400,221 @@ test('routed requested weight: genuine synthetic still detected when routed weig
   assert.equal(out.weight.requested, 500);
   assert.equal(out.weight.synthetic, true, '500 genuinely missing from [400,700] -> synthetic');
   assert.equal(out.weight.status, 'synthetic-weight');
+});
+
+function geoFixture(root) {
+  const snap = { nodes: { root: { document: root } } };
+  const at = (pointer) => pointer.slice(1).split('/').reduce((v, k) => v[k], snap);
+  const fig = (pointer) => ({ value: at(pointer), provenance: { source: 'fixture', locator: pointer } });
+  return { snap, at, fig };
+}
+const box = (x = 0, y = 0, w = 100, h = 40) => ({ x, y, width: w, height: h });
+const empty = (id, name, type = 'FRAME', children = []) => ({
+  id, name, type, absoluteBoundingBox: box(), fills: [], strokes: [], effects: [], children,
+});
+
+function nodesByIdFromExtract(root) {
+  const out = extractGeometry({ ...geoFixture(root), sectionId: 'root' });
+  const map = {};
+  for (const n of out.nodes) map[n.id.value] = n;
+  return map;
+}
+
+test('6.1 B nearest Auto Layout max: outer 400 when near layer has none', () => {
+  const copy = empty('copy', 'txt/a', 'TEXT');
+  const near = { ...empty('near', 'spacer', 'FRAME', [copy]), layoutMode: 'VERTICAL' };
+  const outer = { ...empty('outer', 'al/copy', 'FRAME', [near]), layoutMode: 'VERTICAL', maxWidth: 400 };
+  const root = empty('root', 'sec/test', 'FRAME', [outer]);
+  const byId = nodesByIdFromExtract(root);
+  const hit = findAutoLayoutMaxOwner({ textId: 'copy', nodesById: byId });
+  assert.equal(hit.ownerId, 'outer');
+  assert.equal(hit.maxWidth, 400);
+  assert.equal(hit.maxHeight, null);
+});
+
+test('6.1 B nearest 200 beats outer 400', () => {
+  const copy = empty('copy', 'txt/a', 'TEXT');
+  const near = { ...empty('near', 'al/near', 'FRAME', [copy]), layoutMode: 'HORIZONTAL', maxWidth: 200 };
+  const outer = { ...empty('outer', 'al/outer', 'FRAME', [near]), layoutMode: 'VERTICAL', maxWidth: 400 };
+  const root = empty('root', 'sec/test', 'FRAME', [outer]);
+  const byId = nodesByIdFromExtract(root);
+  const hit = findAutoLayoutMaxOwner({ textId: 'copy', nodesById: byId });
+  assert.equal(hit.ownerId, 'near');
+  assert.equal(hit.maxWidth, 200);
+});
+
+test('6.1 B TEXT self max 120 beats outer AL 400', () => {
+  const copy = { ...empty('copy', 'txt/a', 'TEXT'), maxWidth: 120 };
+  const outer = { ...empty('outer', 'al/outer', 'FRAME', [copy]), layoutMode: 'VERTICAL', maxWidth: 400 };
+  const root = empty('root', 'sec/test', 'FRAME', [outer]);
+  const byId = nodesByIdFromExtract(root);
+  const hit = findAutoLayoutMaxOwner({ textId: 'copy', nodesById: byId });
+  assert.equal(hit.ownerId, 'copy');
+  assert.equal(hit.maxWidth, 120);
+  assert.notEqual(hit.maxWidth, 400);
+});
+
+test('6.1 B missing axis is not borrowed from an outer layer', () => {
+  const copy = empty('copy', 'txt/a', 'TEXT');
+  const near = { ...empty('near', 'al/near', 'FRAME', [copy]), layoutMode: 'HORIZONTAL', maxWidth: 200 };
+  const outer = { ...empty('outer', 'al/outer', 'FRAME', [near]), layoutMode: 'VERTICAL', maxHeight: 80 };
+  const root = empty('root', 'sec/test', 'FRAME', [outer]);
+  const byId = nodesByIdFromExtract(root);
+  const hit = findAutoLayoutMaxOwner({ textId: 'copy', nodesById: byId });
+  assert.equal(hit.ownerId, 'near');
+  assert.equal(hit.maxWidth, 200);
+  assert.equal(hit.maxHeight, null);
+});
+
+test('6.1 B skipped pure-container wrapper still finds outer Auto Layout max', () => {
+  const copy = empty('copy', 'txt/a', 'TEXT');
+  const wrapper = empty('wrapper', 'spacer', 'FRAME', [copy]);
+  const outer = { ...empty('outer', 'al/copy', 'FRAME', [wrapper]), layoutMode: 'VERTICAL', maxWidth: 400 };
+  const root = empty('root', 'sec/test', 'FRAME', [outer]);
+  const extracted = extractGeometry({ ...geoFixture(root), sectionId: 'root' });
+  assert.ok(!extracted.nodes.some((n) => n.id.value === 'wrapper'));
+  assert.equal(extracted.nodes.find((n) => n.id.value === 'copy').parentId.value, 'outer');
+  const byId = nodesByIdFromExtract(root);
+  const hit = findAutoLayoutMaxOwner({ textId: 'copy', nodesById: byId });
+  assert.equal(hit.ownerId, 'outer');
+  assert.equal(hit.maxWidth, 400);
+  assert.equal(hit.reason, 'nearest-auto-layout-max');
+});
+
+test('6.1 B no written max → do not invent a box', () => {
+  const copy = empty('copy', 'txt/a', 'TEXT');
+  const wrap = { ...empty('wrap', 'al/copy', 'FRAME', [copy]), layoutMode: 'HORIZONTAL' };
+  const root = empty('root', 'sec/test', 'FRAME', [wrap]);
+  const byId = nodesByIdFromExtract(root);
+  const hit = findAutoLayoutMaxOwner({ textId: 'copy', nodesById: byId });
+  assert.equal(hit.ownerId, null);
+  assert.equal(hit.reason, 'no-auto-layout-max');
+});
+
+test('6.1 C integer px shrinks 24 until width fits; height-only growth does not shrink', () => {
+  const shrink = integerPxFit({
+    baseFontSize: 24,
+    baseLineHeight: 30,
+    maxWidth: 100,
+    measure: ({ fontSize }) => ({ width: fontSize * 6, height: fontSize }),
+  });
+  assert.equal(shrink.fontSize, 16);
+  assert.equal(shrink.reason, 'integer-px');
+  const tall = integerPxFit({
+    baseFontSize: 24,
+    baseLineHeight: 30,
+    maxWidth: 400,
+    measure: ({ fontSize }) => ({ width: 80, height: fontSize * 8 }),
+  });
+  assert.equal(tall.fontSize, 24);
+  assert.equal(tall.shrunk, false);
+});
+
+test('6.1 C keeps shrinking past 75% of the locale base', () => {
+  const out = integerPxFit({
+    baseFontSize: 24,
+    baseLineHeight: 30,
+    maxWidth: 10,
+    measure: ({ fontSize }) => ({ width: fontSize * 2, height: 10 }),
+  });
+  assert.ok(out.fontSize < 24 * 0.75);
+  assert.notEqual(out.reason, 'floor-exceeded');
+});
+
+test('6.1 C siblings share the smallest integer size, not a percent ladder', () => {
+  const unified = unifyGroupIntegerFontSizes([
+    { id: 'a', fontSize: 18 },
+    { id: 'b', fontSize: 24 },
+  ]);
+  assert.equal(unified[0].fontSize, 18);
+  assert.equal(unified[1].fontSize, 18);
+});
+
+test('6.1 HUG with written maxWidth is authorized to shrink', () => {
+  const hug = fitAuthorization({
+    autoResize: 'HEIGHT',
+    layoutSizingVertical: 'HUG',
+    autoLayoutMax: { maxWidth: 200 },
+  });
+  assert.equal(hug.authorized, true);
+  assert.equal(hug.reason, 'auto-layout-max');
+});
+
+test('6.1 C width overflow against ancestor maxWidth shrinks; height growth without maxHeight does not', () => {
+  const byWidth = integerPxFit({
+    baseFontSize: 24,
+    baseLineHeight: 30,
+    maxWidth: 400,
+    measure: ({ fontSize }) => ({ width: fontSize * 20, height: fontSize * 8 }),
+  });
+  assert.equal(byWidth.fontSize, 20);
+  assert.equal(byWidth.reason, 'integer-px');
+  const heightOnly = integerPxFit({
+    baseFontSize: 24,
+    baseLineHeight: 30,
+    maxWidth: 400,
+    measure: ({ fontSize }) => ({ width: 80, height: fontSize * 12 }),
+  });
+  assert.equal(heightOnly.fontSize, 24);
+  assert.equal(heightOnly.shrunk, false);
+});
+
+test('6.1 B framed owner without Auto Layout max does not authorize shrink', () => {
+  assert.deepEqual(
+    fitAuthorization({ autoResize: 'HEIGHT', boundedOwner: true }),
+    { authorized: false, reason: 'preserve-source-metrics' },
+  );
+});
+
+test('6.1 D data-fit-px 110 vs locale base 120 is step-fit, not percent', () => {
+  assert.equal(isIntegerPxShrinkEvidence({ fitPx: 110, localeBaseFontSize: 120 }), true);
+  assert.equal(isIntegerPxShrinkEvidence({ fitScale: 110, localeBaseFontSize: 120 }), true);
+  assert.equal(isIntegerPxShrinkEvidence({ fitScale: 110 }), false);
+  const result = classifyTypographyRange({
+    language: 'ja',
+    semanticClass: 'card-frame',
+    truth: {
+      box: { x: 0, y: 0, w: 200, h: 40 },
+      text: { autoResize: 'HEIGHT', fontWeight: 700, fontSize: 16, lineHeight: 20 },
+      autoLayoutMax: { maxWidth: 200 },
+    },
+    browser: {
+      text: 'タイトル',
+      rect: { width: 200, height: 40 },
+      range: { width: 200 },
+      clientWidth: 200, scrollWidth: 200,
+      clientHeight: 40, scrollHeight: 40,
+      fitPx: 110, localeBaseFontSize: 120, fitMaxWidth: 200,
+      font: { loaded: true, computedWeight: 700, availableWeights: [700], glyphsMissing: false },
+    },
+  });
+  assert.equal(result.rangeStatus, 'step-fit');
+  assert.equal(result.ok, true);
+});
+
+test('renderer enqueue requires written Auto Layout max, not semanticBreak or ownerWidth', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  assert.match(src, /hasAlCaps && !semanticBreak/);
+  assert.doesNotMatch(src, /hasAlCaps \|\| semanticBreak/);
+  assert.doesNotMatch(src, /widthFit: _ownerW/);
+  assert.match(src, /boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner && hasAlCaps/);
+  assert.match(src, /if \(!c\.groupKey \|\| c\.semanticBreak\) continue;/);
+});
+
+test('ellipsis or clip is not a fit pass', () => {
+  const result = classifyTypographyRange({
+    truth: { text: { fontWeight: 400, autoResize: 'HEIGHT', fontSize: 20, lineHeight: 24 } },
+    language: 'en',
+    semanticClass: 'card-frame',
+    browser: {
+      text: 'long copy',
+      rect: { width: 100, height: 24 },
+      clientWidth: 100, scrollWidth: 100, clientHeight: 24, scrollHeight: 24,
+      textOverflow: 'ellipsis',
+      font: { loaded: true, availableWeights: [400], computedWeight: 400, glyphsMissing: 0 },
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.ellipsis, true);
 });

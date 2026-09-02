@@ -101,6 +101,12 @@ export function renderShrinkFromSource(source) {
     && /for \(const s of stepsW\)/.test(text)) {
     return { fromPolicy: true };
   }
+  if (/designPolicy\(\)\.shrinkMode/.test(text)
+    && /integer-px/.test(text)
+    && /_applyIntegerPxShrink/.test(text)
+    && /data-fit-px/.test(text)) {
+    return { fromPolicy: true };
+  }
   const floor = parseNumericAssign(text, 'FLOOR');
   const steps = parseNumberList(text, /for \(const s of \[([^\]]+)\]\)/);
   if (floor == null || !steps) return null;
@@ -232,6 +238,7 @@ export function implementationSnapshotFromModules({
     shrinkFloorPercent: policy.shrinkFloorPercent,
     hugNoShrink: policy.hugNoShrink,
     openFlowNoShrink: policy.openFlowNoShrink,
+    shrinkMode: policy.shrinkMode,
     chromeOfficialRootFontVw: chromeVw,
   };
 }

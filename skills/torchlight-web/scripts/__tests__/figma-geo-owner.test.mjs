@@ -28,6 +28,32 @@ test('keeps unnamed SOLID paint under ind/ instead of baking it away', () => {
   assert.equal(out.nodes.find((n) => n.id.value === 'fill').parentId.value, 'ind');
 });
 
+test('nested passthrough wrapper rewrites parentId onto the nearest kept ancestor', () => {
+  const copy = empty('copy', 'txt/a', 'TEXT');
+  const inner = empty('inner', 'spacer-inner', 'FRAME', [copy]);
+  const wrapper = empty('wrapper', 'spacer', 'FRAME', [inner]);
+  const outer = {
+    ...empty('outer', 'al/copy', 'FRAME', [wrapper]),
+    layoutMode: 'VERTICAL',
+    maxWidth: 400,
+    fills: [{ type: 'SOLID', visible: true, color: { r: 0, g: 0, b: 0, a: 1 } }],
+  };
+  const root = empty('root', 'sec/test', 'FRAME', [outer]);
+  const f = fixture(root);
+  const out = extractGeometry({ ...f, sectionId: 'root' });
+  assert.ok(out.skipped.some((x) => x.nodeId === 'wrapper' && /纯容器/.test(x.why)));
+  assert.ok(out.skipped.some((x) => x.nodeId === 'inner' && /纯容器/.test(x.why)));
+  assert.ok(!out.nodes.some((n) => n.id.value === 'wrapper'));
+  assert.ok(!out.nodes.some((n) => n.id.value === 'inner'));
+  const text = out.nodes.find((n) => n.id.value === 'copy');
+  const owner = out.nodes.find((n) => n.id.value === 'outer');
+  assert.ok(text);
+  assert.ok(owner);
+  assert.equal(text.parentId.value, 'outer');
+  assert.equal(owner.layout.layoutMode.value, 'VERTICAL');
+  assert.equal(owner.layout.maxWidth.value, 400);
+});
+
 test('keeps empty structural owners while passing generic containers through', () => {
   const root = empty('root', 'sec/test', 'FRAME', [
     empty('switch', 'switch/role', 'INSTANCE', [empty('leaf', 'txt/value', 'TEXT')]),
@@ -220,4 +246,65 @@ test('extractPageScope still accepts a page-keyed snapshot document', () => {
   });
   assert.equal(out.meta.id.provenance.locator, '/nodes/page/document/id');
   assert.deepEqual(out.pagePaintOrder.map((entry) => entry.id.value), ['kv', 'content']);
+});
+
+test('default section extract writes layout.maxWidth and parentId without emitStructural', () => {
+  const copy = {
+    ...empty('copy', 'txt/a', 'TEXT'),
+    maxWidth: 400,
+    minWidth: 80,
+    maxHeight: 80,
+    minHeight: 20,
+  };
+  const wrap = {
+    ...empty('wrap', 'al/copy', 'FRAME', [copy]),
+    layoutMode: 'VERTICAL',
+    maxWidth: 400,
+  };
+  const root = empty('root', 'sec/test', 'FRAME', [wrap]);
+  const f = fixture(root);
+  const out = extractGeometry({ ...f, sectionId: 'root' });
+  const text = out.nodes.find((n) => n.id.value === 'copy');
+  const owner = out.nodes.find((n) => n.id.value === 'wrap');
+  assert.ok(text, 'TEXT leaf must remain');
+  assert.equal(text.parentId.value, 'wrap');
+  assert.equal(text.layout.maxWidth.value, 400);
+  assert.equal(text.layout.minWidth.value, 80);
+  assert.equal(text.layout.maxHeight.value, 80);
+  assert.equal(text.layout.minHeight.value, 20);
+  assert.equal(text.layout.maxWidth.provenance.locator, '/nodes/root/document/children/0/children/0/maxWidth');
+  assert.ok(owner);
+  assert.equal(owner.layout.layoutMode.value, 'VERTICAL');
+  assert.equal(owner.layout.maxWidth.value, 400);
+});
+
+test('layout max keys stay absent when the file did not write them', () => {
+  const copy = empty('copy', 'txt/a', 'TEXT');
+  const wrap = {
+    ...empty('wrap', 'al/copy', 'FRAME', [copy]),
+    layoutMode: 'HORIZONTAL',
+  };
+  const root = empty('root', 'sec/test', 'FRAME', [wrap]);
+  const f = fixture(root);
+  const out = extractGeometry({ ...f, sectionId: 'root' });
+  const text = out.nodes.find((n) => n.id.value === 'copy');
+  const owner = out.nodes.find((n) => n.id.value === 'wrap');
+  assert.equal(text.parentId.value, 'wrap');
+  assert.equal(text.layout, undefined);
+  assert.ok(owner.layout);
+  assert.equal(owner.layout.layoutMode.value, 'HORIZONTAL');
+  assert.equal(Object.hasOwn(owner.layout, 'maxWidth'), false);
+  assert.equal(Object.hasOwn(owner.layout, 'maxHeight'), false);
+  assert.equal(owner.layout.maxWidth, undefined);
+  assert.notEqual(owner.box?.w ?? owner.box?.width, 0);
+});
+
+test('FIELD_DISPOSITION lists Auto Layout max keys as extracted, not todo', async () => {
+  const { FIELD_DISPOSITION } = await import('../lib/figma-geo.mjs');
+  assert.equal(FIELD_DISPOSITION.extracted.maxWidth, 'layout.maxWidth');
+  assert.equal(FIELD_DISPOSITION.extracted.maxHeight, 'layout.maxHeight');
+  assert.equal(FIELD_DISPOSITION.extracted.minWidth, 'layout.minWidth');
+  assert.equal(FIELD_DISPOSITION.extracted.minHeight, 'layout.minHeight');
+  assert.equal(Object.hasOwn(FIELD_DISPOSITION.todo, 'maxWidth'), false);
+  assert.equal(Object.hasOwn(FIELD_DISPOSITION.todo, 'maxHeight'), false);
 });
