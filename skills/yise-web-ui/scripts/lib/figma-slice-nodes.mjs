@@ -172,15 +172,23 @@ function considerSliceNode(n, { sid, minDim, seenNodeIds, out }) {
   const hasSoftSpillEffect = allEffectTypes.some((type) =>
     type === 'DROP_SHADOW' || type === 'LAYER_BLUR' || type === 'BACKGROUND_BLUR');
   const isBakedImageOwner = pfx === 'img' && (n.type === 'INSTANCE' || n.type === 'COMPONENT');
-  const exportBounds = ((hasSoftSpillEffect || isBakedImageOwner) && spillBox(b, rb)) ? 'render' : 'box';
-  const exportBox = exportBounds === 'render' ? roundBox(rb) : null;
+  const listedRenderSlice = listedSlice && String(n.sliceExport?.bounds || '').toLowerCase() === 'render';
+  const exportBounds = (listedRenderSlice || ((hasSoftSpillEffect || isBakedImageOwner) && spillBox(b, rb))) ? 'render' : 'box';
+  const clippedVisible = rb && b && Number(rb.w) > 0 && Number(rb.h) > 0
+    && (Number(rb.w) + 0.5 < Number(b.w) || Number(rb.h) + 0.5 < Number(b.h));
+  const exportBox = exportBounds === 'render'
+    ? roundBox(n.inkBox || rb)
+    : roundBox(clippedVisible ? rb : b);
+  const outW = Math.round((exportBox?.w ?? w) || 0);
+  const outH = Math.round((exportBox?.h ?? h) || 0);
   const imageRefs = [...new Set(fills
     .filter((f) => f && f.type === 'IMAGE' && f.imageRef)
     .map((f) => String(f.imageRef)))];
   out.push({
     sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
     reason: listedSlice ? '清单 sliceExport' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
-    w, h, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
+    w: outW, h: outH, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
+    cropToVisibleBox: exportBounds === 'box' && clippedVisible,
     imageRefs: imageRefs.length ? imageRefs : undefined,
     renderCropPolicy: exportBounds === 'render' && isBakedImageOwner ? 'owner-relative-render-canvas' : null,
     effectTypes: [...new Set(allEffectTypes)],

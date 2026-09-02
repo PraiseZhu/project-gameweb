@@ -48,6 +48,13 @@ test('selected component tree keeps inner btn @go live', () => {
   assert.doesNotMatch(paintCall, /suppressInteractions:\s*true/);
 });
 
+test('only language dropmenus consume inner btn as setPref lang', () => {
+  assert.match(renderer, /isLanguageDropmenu/);
+  assert.match(renderer, /\/多语言\|语言\|language\/i/);
+  assert.match(renderer, /Region \/ other dropmenus keep @go \/ @link/);
+  assert.match(renderer, /typeof frame\.__fxDropmenuCleanup === 'function'/);
+});
+
 test('renderer consumes pure direct-child interaction payload without raw switch classification', () => {
   assert.match(renderer, /ctx\.interactionPayload \|\| ctx\.renderInteractionPayload/);
   assert.match(renderer, /interactionPayload\.attributes/);

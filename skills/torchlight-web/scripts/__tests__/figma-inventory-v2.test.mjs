@@ -274,6 +274,23 @@ test("lang-shell multi-btn @go in variant trees becomes determined openers", () 
   assert.ok(!byId.get("m-apple").triggerFrom.includes("cal"), "page lang-shell instance stays unlifted");
 });
 
+test("same-label viewport fix overlays keep one pin", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:90", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:2", status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
+    { id: "100:91", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: PAGE_ID, status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
+  );
+  inv.overlays = [
+    { id: "100:4", role: "fix", label: "nav", pin: "viewport" },
+    { id: "100:90", role: "fix", label: "顶部信息", pin: "viewport" },
+    { id: "100:91", role: "fix", label: "顶部信息", pin: "viewport" },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const tops = adapted.fixedOverlays.nodes.filter((entry) => entry.label === "顶部信息" || /顶部信息/.test(String(entry.name || "")));
+  assert.equal(tops.length, 1);
+  assert.equal(tops[0].id, "100:90");
+});
+
 test("@go stays unwired when the modal name is missing or duplicated", () => {
   const missing = fixture();
   missing.nodes.push({ id: "100:70", scope: "page", type: "FRAME", name: "btn/播放@go=modal/没有这扇窗", parentId: PAGE_ID, status: "determined", role: "btn", params: { go: "modal/没有这扇窗" } });
@@ -620,6 +637,42 @@ test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as pain
   assert.equal(triangle.paintAsFragment, true);
   assert.equal(triangle.status, "skipped");
   assert.equal(restored.some((node) => node.id === "mask-group"), false);
+});
+
+test("restoreOwnerComposites keeps unknown IMAGE under a skipped Mask group", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "kv",
+      type: "FRAME",
+      name: "kv",
+      status: "unknown",
+      box: { x: 0, y: 0, w: 750, h: 1334 },
+    },
+    {
+      id: "mask-group",
+      type: "GROUP",
+      name: "Mask group",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "kv",
+      box: { x: 0, y: 0, w: 751, h: 1175 },
+    },
+    {
+      id: "0:1792",
+      type: "RECTANGLE",
+      name: "赛季kv-0623-整理 2",
+      status: "unknown",
+      parentId: "mask-group",
+      box: { x: -425, y: 112, w: 1771, h: 992 },
+      pageBox: { x: -425, y: 112, w: 1771, h: 992 },
+      renderBox: { x: 0, y: 112, w: 750, h: 992 },
+      style: { fills: [{ type: "IMAGE", visible: true, imageRef: "kv" }] },
+    },
+  ]);
+  assert.equal(restored.some((node) => node.id === "mask-group"), false);
+  const kv = restored.find((node) => node.id === "0:1792");
+  assert.equal(kv.status, "unknown");
+  assert.deepEqual(kv.box, kv.pageBox);
 });
 
 test("calendar identity keeps today and marks missing return-today unread instead of synthesizing", () => {

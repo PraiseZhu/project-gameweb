@@ -294,7 +294,25 @@ async function main() {
         (p.renderCropPolicy === 'owner-relative-render-canvas' || p.renderCropPolicy === 'top-left-render-canvas') &&
         pxW != null && pxW >= wantW && pxH >= wantH &&
         (pxW !== wantW || pxH !== wantH);
-      if (shouldCropBakedRenderCanvas) {
+      const shouldCropVisibleBox =
+        p.cropToVisibleBox &&
+        p.box && p.exportBox &&
+        pxW != null && pxH != null &&
+        (pxW !== wantW || pxH !== wantH);
+      if (shouldCropVisibleBox) {
+        const scaleX = pxW / Number(p.box.w);
+        const scaleY = pxH / Number(p.box.h);
+        const cropX = Math.round((Number(p.exportBox.x) - Number(p.box.x)) * scaleX);
+        const cropY = Math.round((Number(p.exportBox.y) - Number(p.box.y)) * scaleY);
+        const cropW = Math.min(wantW, pxW - Math.max(0, cropX));
+        const cropH = Math.min(wantH, pxH - Math.max(0, cropY));
+        if (cropX >= 0 && cropY >= 0 && cropW > 0 && cropH > 0) {
+          const sourcePixelSize = `${pxW}x${pxH}`;
+          buf = cropPng(buf, cropX, cropY, cropW, cropH);
+          renderCrop = { sourcePixelSize, crop: `${cropX},${cropY},${cropW},${cropH}`, policy: 'visible-box' };
+          ({ pxW, pxH } = pngSize(buf));
+        }
+      } else if (shouldCropBakedRenderCanvas) {
         const sourcePixelSize = `${pxW}x${pxH}`;
         /* Figma's default images export is the unclipped ink canvas (owner +
            shadow). Adjacent switch cards only keep a peek strip, so that

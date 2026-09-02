@@ -252,7 +252,9 @@ test('section stage clip is sourced from Figma clipsContent, not a global defaul
 
 test('baked image render spill exports and verifies the render canvas, never the layout box', () => {
   assert.match(assetPipeline, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
-  assert.match(assetPipeline, /const exportBounds = \(\(hasSoftSpillEffect \|\| isBakedImageOwner\) && spillBox\(b, rb\)\) \? 'render' : 'box'/);
+  assert.match(assetPipeline, /const listedRenderSlice = listedSlice && String\(n\.sliceExport\?\.bounds \|\| ''\)\.toLowerCase\(\) === 'render'/);
+  assert.match(assetPipeline, /const exportBounds = \(listedRenderSlice \|\| \(\(hasSoftSpillEffect \|\| isBakedImageOwner\) && spillBox\(b, rb\)\)\) \? 'render' : 'box'/);
+  assert.match(assetPipeline, /roundBox\(n\.inkBox \|\| rb\)/);
   assert.match(assetPipeline, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner/);
   assert.match(coverageGate, /if \(rec\?\.exportBounds !== 'render'\) problems\.push/);
   assert.match(coverageGate, /exportBox!=renderBox/);
@@ -305,9 +307,10 @@ test('fx-img follows the owner box instead of intrinsic pixels', () => {
 });
 
 test('render-bound slice prefers sliceExport.box over owner pageBox', () => {
-  assert.match(renderer, /if \(this\._geomReady\(slicePageBox\)\) return slicePageBox/);
+  assert.match(renderer, /if \(this\._geomReady\(extraBox\)\) return extraBox/);
+  assert.match(renderer, /n\.inkBox \|\| \(n\.sliceExport && n\.sliceExport\.box\) \|\| null/);
   assert.doesNotMatch(renderer, /if \(ownerReady\) return ownerBox/);
-  assert.match(renderer, /Owner layout box stays the clip, never the PNG size/);
+  assert.match(renderer, /Owner layout box stays the clip/);
 });
 
 test('zh-CN static images must not stretch with object-fit fill', () => {

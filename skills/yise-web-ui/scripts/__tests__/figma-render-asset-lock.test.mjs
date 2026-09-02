@@ -223,8 +223,10 @@ test('section stage clip is sourced from Figma clipsContent, not a global defaul
 
 test('baked image render spill exports and verifies the render canvas, never the layout box', () => {
   assert.match(slicePlanner, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
-  assert.match(slicePlanner, /const exportBounds = \(\(hasSoftSpillEffect \|\| isBakedImageOwner\) && spillBox\(b, rb\)\) \? 'render' : 'box'/);
-  assert.match(slicePlanner, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner \? 'owner-relative-render-canvas'/);
+  assert.match(slicePlanner, /const listedRenderSlice = listedSlice && String\(n\.sliceExport\?\.bounds \|\| ''\)\.toLowerCase\(\) === 'render'/);
+  assert.match(slicePlanner, /const exportBounds = \(listedRenderSlice \|\| \(\(hasSoftSpillEffect \|\| isBakedImageOwner\) && spillBox\(b, rb\)\)\) \? 'render' : 'box'/);
+  assert.match(slicePlanner, /roundBox\(n\.inkBox \|\| rb\)/);
+  assert.match(slicePlanner, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner/);
   assert.match(assetPipeline, /owner-relative-render-canvas/);
   assert.match(assetPipeline, /cropX = Math\.round\(\(exportX - ownerX\) \* p\.scale\)/);
   assert.match(coverageGate, /if \(rec\?\.exportBounds !== 'render'\) problems\.push/);

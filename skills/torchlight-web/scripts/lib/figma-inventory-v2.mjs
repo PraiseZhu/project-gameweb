@@ -151,10 +151,29 @@ function keepLivePaintNode(node, skippedChildren) {
   return [paintBoxOf(liftOwnerComposite(node, skippedChildren))];
 }
 
+function hasVisibleImageFill(node) {
+  return visibleFillsOf(node).some((fill) => String(fill.type || '') === 'IMAGE');
+}
+
+/** Unknown IMAGE leaves under a skipped Mask group / art-fragment still paint. */
+function keepUnknownImageUnderSkipped(node, byId) {
+  if (!isPlainObject(node) || node.status !== 'unknown' || !hasVisibleImageFill(node)) return false;
+  let parent = byId.get(node.parentId);
+  while (parent) {
+    if (isSkipped(parent) && (parent.why === 'art-fragment' || parent.why === 'slice-child')) return true;
+    parent = byId.get(parent.parentId);
+  }
+  return false;
+}
+
 /** Flat inventory/v2 page nodes: lift owner composites without painting skipped ids. */
 export function restoreOwnerComposites(nodes) {
   const list = asArray(nodes);
-  return list.flatMap((node) => keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped)));
+  const byId = new Map(list.filter((node) => node?.id).map((node) => [node.id, node]));
+  return list.flatMap((node) => {
+    if (keepUnknownImageUnderSkipped(node, byId)) return [paintBoxOf(node)];
+    return keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped));
+  });
 }
 
 const TODAY_NAME = /^dyn\/今日日期/;
@@ -348,10 +367,24 @@ function liveRecord(byId, entry) {
 
 function classifyPageDirectChildren(inv, byId) {
   const overlayFromById = new Map(asArray(inv.overlays).map((entry) => [entry.id, entry.from]));
+  const seenPinnedLabels = new Set();
+  const overlayFrom = (entry, record) => (
+    Number.isFinite(entry.from) ? entry.from : fromParamOf(record)
+  );
+  const isDuplicateViewportPin = (entry, record, from) => {
+    if (from != null) return false;
+    const pin = String(entry.pin || record.pin || 'viewport');
+    if (pin !== 'viewport') return false;
+    const label = String(entry.label || record.label || splitInventoryName(record.name).label || record.id);
+    if (seenPinnedLabels.has(label)) return true;
+    seenPinnedLabels.add(label);
+    return false;
+  };
   const fixedOverlays = asArray(inv.overlays).map((entry) => {
     const record = liveRecord(byId, entry);
     if (!record) return null;
-    const from = Number.isFinite(entry.from) ? entry.from : fromParamOf(record);
+    const from = overlayFrom(entry, record);
+    if (isDuplicateViewportPin(entry, record, from)) return null;
     return from != null ? { ...record, from } : record;
   }).filter(Boolean);
   for (const overlay of fixedOverlays) {

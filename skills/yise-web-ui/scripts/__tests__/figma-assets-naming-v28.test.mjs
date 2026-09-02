@@ -31,6 +31,25 @@ test('unlabelled image fill can still be exported by fill evidence without becom
   assert.match(picks[0].reason, /image/);
 });
 
+test('clipped unknown IMAGE fill exports the visible box, not the overflowing layout box', () => {
+  const picks = pickSliceNodes(truthWith([
+    {
+      id: '0:1788',
+      type: 'RECTANGLE',
+      name: '赛季kv-最终 1',
+      box: { x: -823, y: -46, w: 2443, h: 1380 },
+      renderBox: { x: 0, y: 0, w: 750, h: 1334 },
+      style: { fills: [{ type: 'IMAGE', visible: true }, { type: 'SOLID', visible: true }] },
+    },
+  ]));
+  assert.equal(picks[0].nodeId, '0:1788');
+  assert.equal(picks[0].exportBounds, 'box');
+  assert.deepEqual(picks[0].exportBox, { x: 0, y: 0, w: 750, h: 1334 });
+  assert.equal(picks[0].w, 750);
+  assert.equal(picks[0].h, 1334);
+  assert.equal(picks[0].cropToVisibleBox, true);
+});
+
 test('BOOLEAN btn with sliceExport is sliced without an img/ prefix', () => {
   const picks = pickSliceNodes(truthWith([
     {

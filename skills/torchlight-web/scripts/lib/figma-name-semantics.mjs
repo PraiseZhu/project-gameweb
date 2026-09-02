@@ -28,6 +28,7 @@ export const ROLE_KIND = Object.freeze({
   btn: 'widget',
   hot: 'widget',
   modal: 'widget',
+  dropmenu: 'widget',
   dyn: 'widget',
   mix: 'widget',
 });

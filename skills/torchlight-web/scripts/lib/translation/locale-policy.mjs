@@ -100,6 +100,40 @@ export function isLegalImgLangSet(set = {}) {
   return imgPrefixOf(set.name) === 'img' && legalImgLangValuesOfSet(set).size >= 2;
 }
 
+const IMG_VARIANT_TO_PAGE_LANG = Object.freeze({
+  cn: 'zh-CN',
+  tw: 'zh-TW',
+  en: 'en',
+  jp: 'ja',
+  kr: 'ko',
+});
+
+const PAGE_LANG_LABEL = Object.freeze({
+  'zh-CN': '简体中文',
+  'zh-TW': '繁體中文',
+  en: 'English',
+  ja: '日本語',
+  ko: '한국어',
+});
+
+/** Page-language keys present on used img/ + lang sets. Order follows IMG_LANG_VALUES. */
+export function pageLangsFromImgLangSets(componentSets = []) {
+  const values = new Set();
+  for (const set of Array.isArray(componentSets) ? componentSets : []) {
+    if (!isLegalImgLangSet(set)) continue;
+    for (const value of legalImgLangValuesOfSet(set)) values.add(value);
+  }
+  return IMG_LANG_VALUES
+    .filter((value) => values.has(value))
+    .map((value) => IMG_VARIANT_TO_PAGE_LANG[value])
+    .filter(Boolean);
+}
+
+export function languageMatrixOptions(pageLangs) {
+  const langs = Array.isArray(pageLangs) && pageLangs.length ? pageLangs : ['zh-CN'];
+  return langs.map((lang) => ({ v: lang, label: PAGE_LANG_LABEL[lang] || lang }));
+}
+
 /**
  * Resolve the img/ + lang variant that must follow page language.
  * Missing languages stay missing — never fall back to cn / the Figma-selected tree.

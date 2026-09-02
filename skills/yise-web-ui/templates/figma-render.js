@@ -5622,9 +5622,11 @@
           if (modal.triggerStatus !== 'determined') continue;
           const parsed = splitName(modal && modal.name);
           if (parsed.role !== 'modal') continue;
-          const box = __plain((modal.pageBox && Number.isFinite(Number(modal.pageBox.w)) && Number.isFinite(Number(modal.pageBox.h)))
-            ? modal.pageBox
-            : (modal.box || {}));
+          const rootNode = asArr(modal.nodes).find((node) => String(node && node.id) === String(modal.id)) || asArr(modal.nodes)[0];
+          const box = __plain((rootNode && (rootNode.pageBox || rootNode.box))
+            || ((modal.pageBox && Number.isFinite(Number(modal.pageBox.w)) && Number.isFinite(Number(modal.pageBox.h)))
+              ? modal.pageBox
+              : (modal.box || {})));
           const nodes = asArr(modal.nodes);
           if (!nodes.length || !Number.isFinite(Number(box.w)) || !Number.isFinite(Number(box.h))) continue;
           const layer = document.createElement('div');

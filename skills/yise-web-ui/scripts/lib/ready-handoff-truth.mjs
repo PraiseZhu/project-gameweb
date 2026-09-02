@@ -18,6 +18,13 @@ function descendantsOf(node, sectionId) {
   return asArray(node?.ancestorIds).map(String).includes(String(sectionId));
 }
 
+function underDroppedFix(node, droppedFixIds) {
+  if (!droppedFixIds.size) return false;
+  const id = String(node?.id || '');
+  if (droppedFixIds.has(id)) return true;
+  return asArray(node?.ancestorIds).some((ancestor) => droppedFixIds.has(String(ancestor)));
+}
+
 function ordered(nodes) {
   return [...nodes].sort((a, b) => String(a.orderKey || '').localeCompare(String(b.orderKey || ''), undefined, { numeric: true }));
 }
@@ -77,6 +84,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
   const fixed = new Set(asArray(adapted.fixedOverlays?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
   const roots = new Set(asArray(adapted.pagePaintOrder).map((entry) => String(entry?.id || '')).filter(Boolean));
   const liveNodes = restoreOwnerComposites(asArray(inventory.nodes));
+  const droppedFixIds = new Set(asArray(inventory.overlays).map((entry) => String(entry?.id || '')).filter((id) => id && !fixed.has(id)));
   const sections = {};
   for (const section of asArray(inventory.sections)) {
     if (!section?.id) continue;
@@ -84,8 +92,9 @@ export function platformTruthFromInventory(inventory, options = {}) {
       meta: { id: section.id, ...drawMeta(section) },
       nodes: ordered(liveNodes.filter((node) => (
         !fixed.has(String(node?.id || ''))
+        && !underDroppedFix(node, droppedFixIds)
         && descendantsOf(node, section.id)
-      ))),
+      )).map(paintWithPageBox)),
     };
   }
 
