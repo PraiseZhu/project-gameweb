@@ -21,11 +21,13 @@ import { EMPTY_PLATFORM_SCOPE, platformTruthFromInventory, readyPlatformTruth } 
 import { DEFAULT_MAX_HTML_BYTES, QA_TRUTH_RE, externalizeQaTruthIfOverLimit } from './lib/html-volume.mjs';
 import { safeJsonForScript } from './lib/fs-utils.mjs';
 import { workflowDeclaration } from './lib/workflows.mjs';
+import { runInventoryStaticGate } from './lib/inventory-static-gate.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const INIT = join(SKILL_ROOT, 'scripts/init.mjs');
 const INLINE = join(SKILL_ROOT, 'scripts/figma-inline.mjs');
 const FONTS = join(SKILL_ROOT, 'scripts/figma-fonts.mjs');
+const ASSETS = join(SKILL_ROOT, 'scripts/figma-assets.mjs');
 const PREVIEW = join(SKILL_ROOT, 'scripts/preview-first.mjs');
 
 function fail(message, extra = {}) {
@@ -38,12 +40,12 @@ function argOf(argv, flag) {
   return i >= 0 ? argv[i + 1] : null;
 }
 
-function runNode(script, args) {
+function runNode(script, args, extra = {}) {
   const res = spawnSync(process.execPath, [script, ...args], {
     cwd: SKILL_ROOT,
     encoding: 'utf8',
     env: process.env,
-    timeout: 180000,
+    timeout: extra.timeout ?? 180000,
   });
   if (res.status !== 0) {
     const output = `${res.stdout || ''}\n${res.stderr || ''}`.trim();
@@ -100,6 +102,22 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
      PingFang/YaHei as if the page matched the file. */
   runNode(FONTS, ['--demo', demoDir]);
   return { indexPath, htmlVolume: assertHtmlVolume(demoDir, htmlLimitBytes) };
+}
+
+function attachSliceAssets(payload, demoDir) {
+  try {
+    runNode(ASSETS, ['--demo', demoDir], { timeout: 900000 });
+    payload.sliceAssets = { ok: true };
+    return payload;
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    payload.sliceAssets = { ok: false, error: message };
+    return blockProductView(
+      payload,
+      'figma-assets red; product preview still has missing slices',
+      [message],
+    );
+  }
 }
 
 function endsOfConsume(consume) {
@@ -199,6 +217,7 @@ export function buildHtmlFromHandoff({
   demoDir,
   skipPreview = false,
   htmlLimitBytes = DEFAULT_MAX_HTML_BYTES,
+  staticGateProbe = null,
 }) {
   const loaded = consumeReadyPack(handoffDir);
   if (loaded.error) return loaded.error;
@@ -224,21 +243,120 @@ export function buildHtmlFromHandoff({
     fingerprint: consume.fingerprint,
     consume,
     htmlVolume,
-    note: 'unknown 只画不接线。skipped 不画。preview-first 绿之前禁止给人打开产品视图，禁止开 Interaction / Resize。',
-    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → then show ?product=1. Stop at Main static.',
+    note: 'unknown 只画不接线。skipped 不画。preview-first 与清单对账绿之前禁止给人打开产品视图，禁止开 Interaction / Resize。',
+    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → then show ?product=1. Stop at Main static.',
   };
 
   if (skipPreview) {
-    payload.ok = false;
     payload.previewFirst = { skipped: true, ok: false };
-    payload.productViewAllowed = false;
-    payload.humanStopPreviewAllowed = false;
-    payload.productView = { url: null, command: null, blocked: true, reason: 'preview-first skipped; product view not allowed' };
+    payload.ok = false;
     payload.problems = ['preview-first skipped; product view not allowed'];
-    return payload;
+  } else {
+    attachSliceAssets(payload, demoDir);
+    if (payload.ok === true) attachPreviewFirst(payload, demoDir);
   }
+  return attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, staticGateProbe });
+}
 
-  return attachPreviewFirst(payload, demoDir);
+function blockProductView(payload, reason, extraProblems = []) {
+  payload.ok = false;
+  payload.productViewAllowed = false;
+  payload.humanStopPreviewAllowed = false;
+  payload.productView = { url: null, command: null, blocked: true, reason };
+  payload.problems = [...new Set([...(payload.problems || []), reason, ...extraProblems])];
+  return payload;
+}
+
+function attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, staticGateProbe }) {
+  const ends = endsOfConsume(payload.consume).filter((end) => end === 'pc' || end === 'mobile');
+  const platforms = ends.length ? ends : ['pc'];
+  const gates = platforms.map((platform) => runInventoryStaticGate({
+    handoffDir,
+    platform,
+    lang: 'zh-CN',
+    viewportKind: 'design',
+    probe: staticGateProbe || (skipPreview
+      ? failClosedStaticGateProbe(demoDir)
+      : defaultStaticGateProbe(demoDir, handoffDir, platform)),
+  }));
+  const gate = {
+    ok: gates.every((item) => item?.ok === true),
+    skipped: gates.some((item) => item?.skipped === true),
+    platforms: Object.fromEntries(platforms.map((platform, index) => [platform, gates[index]])),
+    problems: gates.flatMap((item, index) => asArray(item?.problems).map((problem) => `${platforms[index]}: ${problem}`)),
+    failureCount: gates.reduce((sum, item) => sum + Number(item?.failureCount || 0), 0),
+  };
+  payload.inventoryStaticGate = gate;
+  if (gate?.skipped === true && skipPreview) {
+    return blockProductView(payload, 'preview-first skipped; product view not allowed; static gate not skipped-ok');
+  }
+  if (!gate || gate.ok !== true) {
+    return blockProductView(
+      payload,
+      'inventory-static-gate red; do not open product view, do not start Interaction / Resize',
+      asArray(gate?.problems),
+    );
+  }
+  if (skipPreview) {
+    return blockProductView(payload, 'preview-first skipped; product view not allowed');
+  }
+  if (payload.ok !== true) {
+    return blockProductView(
+      payload,
+      payload.productView?.reason || 'preview-first red; do not open product view, do not start Interaction / Resize',
+    );
+  }
+  payload.productViewAllowed = true;
+  payload.humanStopPreviewAllowed = true;
+  return payload;
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function failClosedStaticGateProbe(demoDir) {
+  return () => {
+    if (!existsSync(join(demoDir, 'index.html'))) {
+      throw new Error('demo index.html missing; cannot measure DOM');
+    }
+    throw new Error('DOM probe required; refusing to mark inventory-static-gate green from JSON-only truth');
+  };
+}
+
+function defaultStaticGateProbe(demoDir, handoffDir, platform) {
+  return () => {
+    if (!existsSync(join(demoDir, 'index.html'))) {
+      throw new Error('demo index.html missing; cannot measure DOM');
+    }
+    const probeScript = join(SKILL_ROOT, 'scripts/lib/inventory-static-gate-probe.mjs');
+    if (!existsSync(probeScript)) {
+      throw new Error('inventory-static-gate-probe.mjs missing; cannot mark green without DOM');
+    }
+    const res = spawnSync(process.execPath, [
+      probeScript,
+      '--demo', demoDir,
+      '--handoff', handoffDir,
+      '--platform', platform || 'pc',
+      '--lang', 'zh-CN',
+    ], {
+      cwd: SKILL_ROOT,
+      encoding: 'utf8',
+      env: process.env,
+      timeout: 120000,
+    });
+    if (res.status !== 0) {
+      const output = `${res.stdout || ''}\n${res.stderr || ''}`.trim();
+      throw new Error(output || 'DOM probe required; Chromium measurement failed');
+    }
+    const text = String(res.stdout || '').trim();
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start < 0 || end <= start) {
+      throw new Error('DOM probe required; refusing to mark inventory-static-gate green from JSON-only truth');
+    }
+    return JSON.parse(text.slice(start, end + 1));
+  };
 }
 
 function attachPreviewFirst(payload, demoDir) {

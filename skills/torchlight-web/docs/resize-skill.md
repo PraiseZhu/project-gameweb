@@ -17,6 +17,8 @@ into Main, Translation, or Interaction.
 
 1. **Main Skill** owns Figma fetch, truth, static geometry, and the default
    demo shell. A green static PC/mobile render is layer 1, not resize.
+   清单对账必须在设计视口 zh-CN 绿，且人说继续之后，才跑 Resize。拉伸从同一份
+   `pageBox` + `layout.constraints` 出发。任意窗口 DOM 不必仍等于 `pageBox`。
 2. **Translation Skill** owns locale, copy, font, and text range. Stretch must
    not change requested font size to hide a layout problem.
 3. **Interaction Skill** (formerly Motion) owns click, switch, tab, scrollspy,

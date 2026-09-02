@@ -50,7 +50,7 @@ Project Gameweb/
 
 ## 协作约定
 
-- **本仓链路**：已规范设计稿 → 脚本抓 inventory/v2 ready → agent 按 skill 核前缀/结构并打 ready 交接包。做页完成标准：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。`figma:from-handoff` 只验包、不写 HTML；出页用 `figma:html-from-handoff`。
+- **本仓链路**：已规范设计稿 → 脚本抓 inventory/v2 ready → agent 按 skill 核前缀/结构并打 ready 交接包。做页完成标准：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。`figma:from-handoff` 只验包、不写 HTML；出页用 `figma:html-from-handoff`。
 - **Figma 命名稿交接**：命中 `出清单` 后，执行 `standards/figma-naming/SKILL.md`。默认 `npm run inventory` 出 `status: ready`。agent 核一遍后 `handoff:pack` 打 ready 包。核前缀时：页上用到的 `img/` 组件集若变体属性是 `lang`、且至少有两个不同的精确小写 `cn/tw/en/jp/kr`，这些合法变体根必须带切图；没有 `lang` 轴、只有一个变体、或值不是精确小写五码的 `img/` 不跟语言。`dropmenu/` 点根切开合，精确小写 `on/off`，PC / 手机都认；稿上是 `btn/` + `modal/` 的仍走弹窗，词表不得把组件集根打成 `btn/`。对人只交交接包路径，不要把 inventory JSON 或核对页链接当交付物。稿上只有一端时，`handoff:pack` 只传那一端。不写回 Figma，不用插件交接。命中 `yisewebui` 后，执行 `skills/yise-web-ui/SKILL.md`：有 ready 包走出页命令；没有包就停下来要包。命中 `torchlightweb` 后，执行 `skills/torchlight-web/SKILL.md`：有 ready 包走出页命令；没有包就停下来要包。
 - **做页消费边界**：做页只吃 ready。unknown 只画不赋交互。拉伸与外文字号政策听对应做页包的 `DESIGN.md`。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
 - **未规范稿**：丢未规范链接时停，去 `projects/project-unnamed-inventory`。本仓 CLI 拒绝 `--status draft` / `inventory-unnamed-*` / `--allow-green-draft`。

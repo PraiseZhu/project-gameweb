@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { runFromHandoff } from '../figma-from-handoff.mjs';
 import { buildHtmlFromHandoff, parsePreviewJson } from '../figma-html-from-handoff.mjs';
 import { writeHandoffPack } from '../../../../standards/figma-naming/tool/src/handoff.mjs';
@@ -192,6 +193,53 @@ test('html-from-handoff fail-closes before HTML when a source font is not in the
   assert.equal(result.wroteHtml, false);
   assert.equal(existsSync(join(demoDir, 'index.html')), false);
   assert.match((result.problems || []).join('\n'), /Missing Face|fonts:register|登记册/);
+});
+
+test('skipPreview still runs inventory static gate and never marks skipped-ok', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-static-gate-'));
+  const pack = packedReady(dir);
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir: join(dir, 'demo'),
+    skipPreview: true,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.productViewAllowed, false);
+  assert.equal(result.productView.blocked, true);
+  assert.ok(result.inventoryStaticGate);
+  assert.notEqual(result.inventoryStaticGate.skipped, true);
+  assert.equal(result.inventoryStaticGate.ok, false);
+  const src = readFileSync(new URL('../figma-html-from-handoff.mjs', import.meta.url), 'utf8');
+  assert.match(src, /attachInventoryStaticGate/);
+  assert.match(src, /runInventoryStaticGate/);
+  assert.match(src, /attachSliceAssets/);
+  assert.match(src, /figma-assets\.mjs/);
+  assert.doesNotMatch(src, /\|\| true/);
+  assert.doesNotMatch(src, /--skip-preview/);
+});
+
+test('preview green + static gate red still blocks product view', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-gate-red-'));
+  const pack = packedReady(dir);
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir: join(dir, 'demo'),
+    skipPreview: true,
+    staticGateProbe: () => ({ nodes: { mismatch: { x: 0, y: 0, w: 1, h: 1 } } }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.productViewAllowed, false);
+  assert.match((result.problems || []).join('\n'), /inventory-static-gate red|missing-dom|pageBox-mismatch|probe missing|DOM probe required/);
+});
+
+test('official static gate probe is shipped and missing probe/index is fail-closed in source', () => {
+  const skillRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
+  assert.equal(existsSync(join(skillRoot, 'scripts/lib/inventory-static-gate-probe.mjs')), true);
+  const src = readFileSync(new URL('../figma-html-from-handoff.mjs', import.meta.url), 'utf8');
+  assert.match(src, /inventory-static-gate-probe\.mjs missing; cannot mark green without DOM/);
+  assert.match(src, /demo index.html missing; cannot measure DOM/);
+  const probeSrc = readFileSync(join(skillRoot, 'scripts/lib/inventory-static-gate-probe.mjs'), 'utf8');
+  assert.match(probeSrc, /inventory-static-gate=1/);
 });
 
 test('html-from-handoff fails when index.html stays over the HTML volume gate', () => {
