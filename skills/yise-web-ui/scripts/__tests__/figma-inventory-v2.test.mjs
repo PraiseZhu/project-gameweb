@@ -274,6 +274,23 @@ test("lang-shell multi-btn @go in variant trees becomes determined openers", () 
   assert.ok(!byId.get("m-apple").triggerFrom.includes("cal"), "page lang-shell instance stays unlifted");
 });
 
+test("same-label viewport fix overlays keep one pin", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:90", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:2", status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
+    { id: "100:91", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: PAGE_ID, status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
+  );
+  inv.overlays = [
+    { id: "100:4", role: "fix", label: "nav", pin: "viewport" },
+    { id: "100:90", role: "fix", label: "顶部信息", pin: "viewport" },
+    { id: "100:91", role: "fix", label: "顶部信息", pin: "viewport" },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const tops = adapted.fixedOverlays.nodes.filter((entry) => entry.label === "顶部信息" || /顶部信息/.test(String(entry.name || "")));
+  assert.equal(tops.length, 1);
+  assert.equal(tops[0].id, "100:90");
+});
+
 test("@go stays unwired when the modal name is missing or duplicated", () => {
   const missing = fixture();
   missing.nodes.push({ id: "100:70", scope: "page", type: "FRAME", name: "btn/播放@go=modal/没有这扇窗", parentId: PAGE_ID, status: "determined", role: "btn", params: { go: "modal/没有这扇窗" } });

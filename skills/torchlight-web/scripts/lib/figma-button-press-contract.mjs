@@ -63,6 +63,8 @@ export function buttonPressCss({
     `@media (hover: hover){${withPseudo(sel, ':hover')}{filter:brightness(var(--fx-hover-brightness))}}`,
     `${withPseudo(sel, ':active')}{filter:brightness(var(--fx-press-brightness))}`,
     '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
+    '[data-dropmenu="true"]:hover,[data-dropmenu="true"]:active{filter:none}',
+    '[data-dropmenu-state="on"] [data-prefix="img"]{filter:none}',
   ].join('');
 }
 
@@ -92,7 +94,9 @@ function hasNamedAction(parsed) {
 export function attachButtonPressAttrs(attrs = {}, { role = null, controlState = null, parsed = null } = {}) {
   const next = { ...attrs };
   const disabled = controlState === 'disabled'
+    || controlState === 'invalid'
     || next['data-btn-press'] === 'inert'
+    || next['data-dropmenu-state'] === 'invalid'
     || /disable/.test(String(next['data-btn-variant-state'] || ''))
     || (next['data-calendar-now'] === 'true' && next['data-calendar-now-state'] !== 'return-today');
   const actionable = INTERACTIVE_ATTRS.some((key) => next[key] != null && next[key] !== '')
@@ -100,7 +104,8 @@ export function attachButtonPressAttrs(attrs = {}, { role = null, controlState =
     || role === 'btn'
     || role === 'tab'
     || role === 'ind'
-    || role === 'hot';
+    || role === 'hot'
+    || role === 'dropmenu';
   if (!actionable) return next;
   if (disabled) {
     next['data-btn-press'] = 'inert';

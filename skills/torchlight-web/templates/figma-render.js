@@ -654,17 +654,19 @@
   },
 
   /* Owner-slice geometry used by the main img paint path and by img/ lang remount.
-     Prefer a delivered page-relative sliceExport.box; otherwise a converted
-     render/export canvas. Owner layout box stays the clip, never the PNG size. */
+     Prefer a delivered page-relative sliceExport.box / unclipped inkBox; otherwise
+     a converted render/export canvas. Owner layout box stays the clip. */
   _geomReady(box) {
     return !!(box
       && [box.x, box.y, box.w, box.h].every((v) => Number.isFinite(Number(v)))
       && Number(box.w) > 0 && Number(box.h) > 0);
   },
-  _ownerSliceBox(assetRec, ownerBox, renderBox, slicePageBox = null) {
-    if (this._geomReady(slicePageBox)) return slicePageBox;
+  _ownerSliceBox(assetRec, ownerBox, renderBox, extraBox = null) {
+    if (this._geomReady(extraBox)) return extraBox;
     const delivered = assetRec && assetRec.exportBox;
     if (this._geomReady(delivered)) return delivered;
+    const renderBound = String(assetRec?.sliceExport?.bounds || assetRec?.exportBounds || '').toLowerCase() === 'render';
+    if (renderBound && this._geomReady(renderBox)) return renderBox;
     if (this._geomReady(renderBox) && this._geomReady(ownerBox)
       && (Number(renderBox.w) > Number(ownerBox.w) + 0.5
         || Number(renderBox.h) > Number(ownerBox.h) + 0.5
@@ -683,22 +685,34 @@
     const lang = String((this.ctx && this.ctx.prefs && this.ctx.prefs.lang) || (typeof ctx !== 'undefined' && ctx.prefs && ctx.prefs.lang) || 'zh-CN');
     const zhStatic = lang === 'zh-CN';
     const placedBox = exportBox || sliceBox;
+    const fillOwnerCanvas = (objectFit, policy, extra = {}) => {
+      img.style.left = '0';
+      img.style.top = '0';
+      img.style.width = '100%';
+      img.style.height = '100%';
+      img.style.objectFit = objectFit;
+      Object.assign(img.style, extra);
+      el.setAttribute('data-asset-bounds-resolved', policy);
+    };
+    /* Unclipped Figma ink (bounds=render) can be much larger than the owner
+       frame. Prefer exportBox/inkBox (owner-relative) so carnival art that sits
+       in the lower-left of a 7086×4734 PNG is not center-cropped into black. */
+    const placeExportBox = (placed, policy) => {
+      const ownerX = Number(box.x ?? 0);
+      const ownerY = Number(box.y ?? 0);
+      const exportX = Number(placed.x ?? ownerX);
+      const exportY = Number(placed.y ?? ownerY);
+      const exportW = Number(placed.w ?? box.w ?? 0);
+      const exportH = Number(placed.h ?? box.h ?? 0);
+      img.style.left = (exportX - ownerX) + 'px';
+      img.style.top = (exportY - ownerY) + 'px';
+      img.style.width = exportW + 'px';
+      img.style.height = exportH + 'px';
+      img.style.objectFit = 'fill';
+      el.setAttribute('data-asset-bounds-resolved', policy);
+    };
     if (placedBox) {
-      img.style.left = ((placedBox.x ?? box.x ?? 0) - (box.x ?? 0)) + 'px';
-      img.style.top = ((placedBox.y ?? box.y ?? 0) - (box.y ?? 0)) + 'px';
-      img.style.width = (placedBox.w ?? box.w ?? 0) + 'px';
-      img.style.height = (placedBox.h ?? box.h ?? 0) + 'px';
-      img.style.objectFit = 'none';
-      el.setAttribute('data-asset-bounds-resolved', exportBox ? 'export-box' : 'slice-export');
-      const fillOwnerCanvas = (objectFit, policy, extra = {}) => {
-        img.style.left = '0';
-        img.style.top = '0';
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = objectFit;
-        Object.assign(img.style, extra);
-        el.setAttribute('data-asset-bounds-resolved', policy);
-      };
+      placeExportBox(placedBox, exportBox ? 'owner-ink-from-unclipped-png' : 'slice-export');
       const fitDeliveredCanvas = () => {
         if (!exportBox || zhStatic) return;
         const nw = Number(img.naturalWidth), nh = Number(img.naturalHeight);
@@ -712,7 +726,7 @@
         if (ownerDistance <= 0.035 && ownerDistance + 0.08 < renderDistance) {
           fillOwnerCanvas('fill', 'owner-canvas-from-delivered-png');
         } else {
-          el.setAttribute('data-asset-bounds-resolved', 'render-canvas-from-delivered-png');
+          placeExportBox(placedBox, 'owner-ink-from-unclipped-png');
         }
       };
       img.addEventListener('load', fitDeliveredCanvas, { once: true });
@@ -1494,6 +1508,8 @@
           '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
           'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
           '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
+          '[data-dropmenu="true"]:hover,[data-dropmenu="true"]:active{filter:none}',
+          '[data-dropmenu-state="on"] [data-prefix="img"]{filter:none}',
         ].join('');
       const style = doc.createElement('style');
       style.setAttribute('data-fx-button-press', 'figma-button-press-contract/v1');
@@ -1965,6 +1981,87 @@
       const normalizeFigmaLineBreaks = (value) => String(value ?? '')
         .replace(/\r\n?|\u2028|\u2029/g, '\n');
       const nodeParentId = (n) => String(__u(n && n.parentId) || '');
+      /* dropmenu open/close is exact lowercase on/off only. Do not reuse
+         indicatorVariant's i-flag: On/OFF/true must fail-visible, not open.
+         Axis name is unlocked. Multi-axis variants keep Lang=en; only the
+         unique {on,off} axis counts. Variant names are comma-separated k=v.
+         These helpers live next to paint, not inside interactionBridge:
+         paint mounts dropmenu owners and would ReferenceError otherwise. */
+      const dropmenuParsePairs = (name) => {
+        const pairs = {};
+        for (const part of String(name || '').split(',')) {
+          const cut = part.indexOf('=');
+          if (cut <= 0) continue;
+          const key = part.slice(0, cut).trim();
+          const val = part.slice(cut + 1).trim();
+          if (key) pairs[key] = val;
+        }
+        return pairs;
+      };
+      const dropmenuPropertyMap = (n) => {
+        const raw = n && (n.componentProperties || n.properties || n.prototype?.componentProperties) || {};
+        const props = __plain(raw) || {};
+        const out = {};
+        for (const [key, item] of Object.entries(props)) {
+          const current = __u(item && typeof item === 'object' && item && 'value' in item ? item.value : item);
+          if (typeof current === 'string') out[key] = current;
+        }
+        return out;
+      };
+      const dropmenuAxisName = (variants, nameOf) => {
+        const byAxis = new Map();
+        for (const variant of variants || []) {
+          const pairs = dropmenuParsePairs(nameOf(variant));
+          for (const [key, val] of Object.entries(pairs)) {
+            if (!byAxis.has(key)) byAxis.set(key, new Set());
+            byAxis.get(key).add(val);
+          }
+        }
+        const matches = [];
+        for (const [key, values] of byAxis) {
+          if (values.size === 2 && values.has('on') && values.has('off')) matches.push(key);
+        }
+        if (matches.length === 1) return matches[0];
+        if (matches.length > 1) return null;
+        const tokens = (variants || []).map((variant) => {
+          const raw = String(nameOf(variant) || '').trim();
+          const values = Object.values(dropmenuParsePairs(raw));
+          if (values.length === 1) return values[0];
+          if (raw === 'on' || raw === 'off') return raw;
+          return null;
+        });
+        const unique = [...new Set(tokens)];
+        return unique.length === 2 && unique.includes('on') && unique.includes('off') && !unique.includes(null)
+          ? '*'
+          : null;
+      };
+      const dropmenuExactState = (n) => {
+        attachPlatformVariantGraph(n);
+        const graph = n && n.componentVariantGraph;
+        const variants = Array.isArray(graph && graph.variants) ? graph.variants : [];
+        const axis = dropmenuAxisName(variants, (variant) => __u(variant && variant.name));
+        if (!axis) return 'invalid';
+        const props = dropmenuPropertyMap(n);
+        if (axis !== '*' && Object.prototype.hasOwnProperty.call(props, axis)) {
+          const current = props[axis];
+          return current === 'on' || current === 'off' ? current : 'invalid';
+        }
+        if (axis === '*') {
+          const onOff = Object.entries(props).filter(([, current]) => current === 'on' || current === 'off');
+          if (onOff.length === 1) return onOff[0][1];
+        }
+        return 'invalid';
+      };
+      const dropmenuOnOffTokens = (variants, nameOf) => Boolean(dropmenuAxisName(variants, nameOf));
+      const dropmenuVariantToken = (name, axis) => {
+        const raw = String(name || '').trim();
+        const pairs = dropmenuParsePairs(raw);
+        if (axis && axis !== '*' && Object.prototype.hasOwnProperty.call(pairs, axis)) return pairs[axis];
+        const values = Object.values(pairs);
+        if (values.length === 1) return values[0];
+        if (raw === 'on' || raw === 'off') return raw;
+        return '';
+      };
       /* Main Skill interaction bridge: derive evidence attributes from the
          source-backed owner path/name contract. No page IDs or selectors. */
       const interactionBridge = (items) => {
@@ -2405,6 +2502,25 @@
             attrs['data-calendar-now-evidence'] = 'dyn-today-date-runtime-swap';
             attrs['data-btn-press'] = 'inert';
           }
+          if (p.role === 'dropmenu') {
+            const menuState = dropmenuExactState(n);
+            attrs['data-dropmenu'] = 'true';
+            attrs['data-dropmenu-state'] = menuState;
+            const menuLabel = String(value(n && n.name) || '').replace(/^dropmenu\s*[\/／]\s*/i, '').split('@')[0].trim();
+            if (menuLabel) attrs['data-dropmenu-name'] = menuLabel;
+            if (menuState === 'invalid') {
+              attrs['data-dropmenu-invalid'] = 'true';
+              attrs['data-btn-press'] = 'inert';
+              attrs['aria-disabled'] = 'true';
+            } else {
+              attachPlatformVariantGraph(n);
+              const graph = n && n.componentVariantGraph;
+              const variants = Array.isArray(graph && graph.variants) ? graph.variants : [];
+              if (dropmenuOnOffTokens(variants, (variant) => value(variant && variant.name))) {
+                attrs['data-dropmenu-set'] = String(value(graph.componentSetId) || '');
+              }
+            }
+          }
           /* Independent btn/ with a real normal+highlight COMPONENT_SET is not a
              missing switch. Directory `btn/导航状态` is that family. Static still
              owns 切换按钮 / 角色头像 and draw-only controls. */
@@ -2588,6 +2704,7 @@
             }
           }
           const pressable = p.role === 'btn' || p.role === 'tab' || p.role === 'ind' || p.role === 'hot'
+            || p.role === 'dropmenu'
             || attrs['data-sec-target'] != null
             || attrs['data-switch-action'] != null
             || attrs['data-hscroll-action'] != null
@@ -2595,7 +2712,9 @@
             || attrs['data-nav-item'] === 'true'
             || attrs['data-btn-variant'] === 'true'
             || attrs['data-calendar-now-state'] === 'return-today';
-          const disabledPress = indicatorVariant(n) === 'disabled'
+          const disabledPress = (p.role === 'dropmenu'
+            ? attrs['data-dropmenu-state'] === 'invalid'
+            : indicatorVariant(n) === 'disabled')
             || /disable/i.test(String(attrs['data-btn-variant-state'] || ''));
           if (attrs['data-calendar-now'] === 'true' && attrs['data-calendar-now-state'] !== 'return-today') {
             attrs['data-btn-press'] = 'inert';
@@ -3000,6 +3119,7 @@
        }
        const componentInstanceOwners = [];
        const independentButtonOwners = [];
+       const dropmenuOwners = [];
        const seqOf = (i) => {
          const r = rawList[i];
          const fromOrderKey = this._seqFromOrderKey(r && r.orderKey);
@@ -3019,6 +3139,17 @@
            显式跳过确保渐变实心块不会糊住兄弟。 */
         if (n.notPainted === true || n.isMask === true) continue;
         const nid = n.id;
+        const prefLangCode = (() => {
+          const raw = String((ctx.prefs && ctx.prefs.lang) || 'zh-CN').replace('_', '-').toLowerCase();
+          if (raw.startsWith('zh-tw') || raw.startsWith('zh-hk')) return 'tw';
+          if (raw.startsWith('zh')) return 'cn';
+          if (raw.startsWith('ja')) return 'jp';
+          if (raw.startsWith('ko')) return 'kr';
+          if (raw.startsWith('en')) return 'en';
+          return null;
+        })();
+        const nodeLangCodes = Array.isArray(n.langs) ? n.langs.map(String) : [];
+        if (nodeLangCodes.length && prefLangCode && !nodeLangCodes.includes(prefLangCode)) continue;
         const box = (n.pageBox && Number.isFinite(Number(n.pageBox.x)) && Number.isFinite(Number(n.pageBox.y)))
           ? n.pageBox
           : (n.box || {});
@@ -3076,6 +3207,7 @@
           || evidenceAttrs['data-nav-item'] === 'true'
           || evidenceAttrs['data-btn-press'] === 'true'
           || evidenceAttrs['data-btn-variant'] === 'true'
+          || evidenceAttrs['data-dropmenu'] === 'true'
         );
         /* The rendered-parent stack is only a convenience for DOM nesting.  It
            can be incomplete when a pure Figma container is passed through or a
@@ -3226,6 +3358,10 @@
           const btnLabel = String(n.name || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
           if (btnLabel) el.setAttribute('data-btn-name', btnLabel);
         }
+        if (pfx === 'dropmenu') {
+          const menuLabel = String(n.name || '').replace(/^dropmenu\s*[\/／]\s*/i, '').split('@')[0].trim();
+          if (menuLabel) el.setAttribute('data-dropmenu-name', menuLabel);
+        }
         /* Named `bg/` owners are page/section backdrops. They retain their
            source geometry, but must sit below the sibling paint tree even if
            Figma's exported child order places the backdrop after its content.
@@ -3295,7 +3431,7 @@
             el.style.pointerEvents = 'auto';
             el.style.cursor = 'pointer';
           }
-          if (evidenceAttrs['data-btn-variant'] === 'true') {
+          if (evidenceAttrs['data-btn-variant'] === 'true' || evidenceAttrs['data-dropmenu'] === 'true') {
             el.style.pointerEvents = 'auto';
             el.style.cursor = 'pointer';
           }
@@ -3349,7 +3485,12 @@
            geometry remains untouched, and non-render/page-bound assets keep
            the original owner-box behavior. */
         const renderBox = n.renderBox || {};
-        const exportBox = this._ownerSliceBox(assetRec, box, renderBox, n.sliceExport && n.sliceExport.box);
+        const exportBox = this._ownerSliceBox(
+          assetRec,
+          box,
+          renderBox,
+          n.inkBox || (n.sliceExport && n.sliceExport.box) || null,
+        );
         /* 消费 truth 的 auto-layout（layoutMode HORIZONTAL/VERTICAL）。这些 frame
            的子节点在 truth 里被穿透成顶层 sibling（children=[]，靠 ownerPath 关联），
            若仍按源坐标绝对定位，译文变宽后：按钮 icon 被顶出框、跟随标签压住文字、
@@ -4820,6 +4961,26 @@
             componentVariantOwners.push({ el, trees, initialIndex: variantIndex, switchId: evidenceAttrs['data-switch'], ownerBox: box });
           }
         }
+        if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-dropmenu'] === 'true'
+          && evidenceAttrs['data-dropmenu-state'] !== 'invalid') {
+          attachPlatformVariantGraph(n);
+          const rawGraph = __plain((n && n.componentVariantGraph)
+            || (rawList && rawList[ni] && rawList[ni].componentVariantGraph));
+          const selectedComponentId = String(__u(n.componentId) || '');
+          const variants = Array.isArray(rawGraph && rawGraph.variants) ? rawGraph.variants : [];
+          const trees = Array.isArray(rawGraph && rawGraph.variantTrees) ? rawGraph.variantTrees : [];
+          const variantIndex = variants.findIndex((variant) => String(variant && variant.componentId) === selectedComponentId);
+          if (variantIndex >= 0 && trees.length === variants.length
+            && dropmenuOnOffTokens(variants, (variant) => __u(variant && variant.name))) {
+            dropmenuOwners.push({
+              el,
+              trees,
+              variants,
+              initialIndex: variantIndex,
+              ownerBox: box,
+            });
+          }
+        }
         if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-btn-variant'] === 'true') {
           attachPlatformVariantGraph(n);
           const rawGraph = __plain((n && n.componentVariantGraph)
@@ -5049,7 +5210,10 @@
             langAsset,
             rootBox,
             (root && root.renderBox) || langAsset.renderBox,
-            (root && root.sliceExport && root.sliceExport.box) || langAsset.sliceExport?.box,
+            (root && root.inkBox)
+              || (root && root.sliceExport && root.sliceExport.box)
+              || langAsset.sliceExport?.box
+              || null,
           );
           const exportBox = rawExport ? {
             x: Number(rawExport.x) - Number(rootBox.x || 0) + Number(mountBox.x || 0),
@@ -5171,6 +5335,93 @@
               layerTexts[i].textContent = ownTexts[i].textContent;
             }
           }
+        }
+      }
+      for (const owner of dropmenuOwners) {
+        if (owner.el.getAttribute('data-dropmenu-mount-status')) continue;
+        const variants = owner.variants || [];
+        const trees = owner.trees || [];
+        const ownerBox = __plain(owner.ownerBox || {});
+        const ownerWidth = Number(ownerBox.w);
+        const ownerHeight = Number(ownerBox.h);
+        let mountBlocked = false;
+        const layers = [];
+        const hideInPlace = (node, hidden) => {
+          if (!node || node.nodeType !== 1) return;
+          if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
+          node.hidden = hidden;
+          node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
+          node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
+        };
+        const ownerId = String(owner.el.getAttribute('data-node') || '');
+        const instancePrefix = ownerId ? `I${ownerId};` : '';
+        const host = owner.el.parentElement;
+        const baseExternals = [];
+        if (host && instancePrefix) {
+          for (const sibling of [...host.children]) {
+            if (sibling === owner.el) continue;
+            const siblingId = sibling.getAttribute && sibling.getAttribute('data-node');
+            if (!siblingId || !String(siblingId).startsWith(instancePrefix)) continue;
+            sibling.setAttribute('data-dropmenu-external', 'instance-sibling');
+            baseExternals.push(sibling);
+          }
+        }
+        for (const [index, tree] of trees.entries()) {
+          const treeNodes = tree && tree.nodes || [];
+          const wantedId = String(__u(tree && tree.componentId) || '');
+          const root = treeNodes.find((node) => String(__u(node && node.id)) === wantedId && String(node && node.type || '') === 'COMPONENT') || null;
+          const rootBox = __plain(root && root.box || tree && tree.box || {});
+          const axis = dropmenuAxisName(variants, (variant) => __u(variant && variant.name));
+          const token = dropmenuVariantToken(__u(variants[index] && variants[index].name), axis);
+          const state = token === 'on' || token === 'off' ? token : 'invalid';
+          if (state === 'invalid' || !root || !Number.isFinite(Number(rootBox.w)) || !Number.isFinite(Number(rootBox.h))
+            || !Number.isFinite(ownerWidth) || Math.abs(Number(rootBox.w) - ownerWidth) > 0.5) {
+            mountBlocked = true;
+            owner.el.setAttribute('data-dropmenu-mount-status', 'blocked-owner-extent-or-axis');
+            owner.el.setAttribute('data-dropmenu-state', 'invalid');
+            break;
+          }
+          if (index === owner.initialIndex) {
+            owner.el.setAttribute('data-dropmenu-index', String(index));
+            owner.el.setAttribute('data-dropmenu-state', state);
+            owner.el.__fxDropmenuOwnerH = ownerHeight;
+            for (const sibling of baseExternals) {
+              sibling.setAttribute('data-dropmenu-index', String(index));
+              hideInPlace(sibling, false);
+            }
+            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true, rootH: Number(rootBox.h) });
+            continue;
+          }
+          const layer = document.createElement('div');
+          layer.setAttribute('data-dropmenu-layer', 'true');
+          layer.setAttribute('data-dropmenu-index', String(index));
+          layer.setAttribute('data-dropmenu-state', state);
+          layer.setAttribute('aria-hidden', 'true');
+          layer.style.position = 'absolute';
+          layer.style.left = '0';
+          layer.style.top = '0';
+          layer.style.width = '100%';
+          layer.style.height = Number(rootBox.h) + 'px';
+          layer.style.overflow = 'visible';
+          layer.hidden = true;
+          owner.el.appendChild(layer);
+          const menuName = String(owner.el.getAttribute('data-dropmenu-name') || owner.el.getAttribute('data-name') || '');
+          paint(treeNodes, treeNodes, layer, {
+            originX: Number(rootBox.x) || 0,
+            originY: Number(rootBox.y) || 0,
+            skipNodeIds: new Set([String(__u(root.id))]),
+            /* Language menus need live option labels. Region / other menus keep
+               inner @go / @link on the selected tree, not on the on-layer clone. */
+            suppressInteractions: /多语言|语言|language/i.test(menuName) ? false : true,
+          });
+          hideInPlace(layer, true);
+          layers.push({ index, state, el: layer, externals: [], isBase: false, rootH: Number(rootBox.h) });
+        }
+        if (!mountBlocked && layers.length === trees.length) {
+          owner.el.style.overflow = 'visible';
+          owner.el.setAttribute('data-dropmenu-mount-status', 'owner-local-mutually-exclusive');
+          owner.el.setAttribute('data-dropmenu-count', String(layers.length));
+          owner.el.__fxDropmenuLayers = layers;
         }
       }
       };   /* paint complete: subsequent page-stage assembly is renderApp scope */
@@ -5495,7 +5746,7 @@
         const activeModalPlatform = __normalizedPlat === 'mobile' ? 'mobile' : __normalizedPlat === 'pad' ? 'pad' : 'pc';
         const modalRecords = records.filter((modal) => {
           const platform = modalPlatform(modal);
-          return platform === activeModalPlatform;
+          return !platform || platform === activeModalPlatform;
         });
         const modalLabels = new Map();
         for (const modal of modalRecords) {
@@ -5517,10 +5768,15 @@
           if (modal.triggerStatus !== 'determined') continue;
           const parsed = splitName(modal && modal.name);
           if (parsed.role !== 'modal') continue;
-          const box = __plain((modal.pageBox && Number.isFinite(Number(modal.pageBox.w)) && Number.isFinite(Number(modal.pageBox.h)))
-            ? modal.pageBox
-            : (modal.box || {}));
-          const nodes = asArr(modal.nodes);
+          const rootNode = asArr(modal.nodes).find((node) => String(node && node.id) === String(modal.id)) || asArr(modal.nodes)[0];
+          const box = __plain((rootNode && (rootNode.pageBox || rootNode.box))
+            || ((modal.pageBox && Number.isFinite(Number(modal.pageBox.w)) && Number.isFinite(Number(modal.pageBox.h)))
+              ? modal.pageBox
+              : (modal.box || {})));
+          const nodes = asArr(modal.nodes).map((node) => {
+            if (!node || !node.pageBox) return node;
+            return { ...node, box: node.pageBox };
+          });
           if (!nodes.length || !Number.isFinite(Number(box.w)) || !Number.isFinite(Number(box.h))) continue;
           const layer = document.createElement('div');
           layer.className = 'fx-named-modal';
@@ -5528,12 +5784,13 @@
           layer.setAttribute('data-modal-name', parsed.label);
           layer.setAttribute('data-node', String(modal.id || ''));
           layer.style.position = 'absolute';
-          layer.style.left = ((Number(box.x) || 0) - pageX) + 'px';
-          layer.style.top = ((Number(box.y) || 0) - pageY) + 'px';
-          layer.style.width = Number(box.w) + 'px';
-          layer.style.height = Number(box.h) + 'px';
+          layer.style.left = '0';
+          layer.style.top = '0';
+          layer.style.width = designWidth + 'px';
+          layer.style.height = (pageScrollHeight || pageMeta.height || Number(box.h) || 0) + 'px';
           layer.style.pointerEvents = 'auto';
           layer.style.zIndex = '41';
+          layer.style.background = 'rgba(0,0,0,.72)';
           hideInPlace(layer, true);
           host.appendChild(layer);
           try {
@@ -5753,6 +6010,74 @@
             frame.__fxAssetScheduler.prime(target);
           }
           return true;
+        };
+        const DROPMENU_SELF_LABELS = Object.freeze({
+          '简体中文': 'zh-CN',
+          '繁體中文': 'zh-TW',
+          'English': 'en',
+          '日本語': 'ja',
+          '한국어': 'ko',
+        });
+        const normalizeDropmenuSelfLabel = (raw) => String(raw || '').replace(/\s+/g, '').toLowerCase();
+        const isLanguageDropmenu = (owner) => {
+          const name = String(
+            (owner && owner.getAttribute && (owner.getAttribute('data-dropmenu-name') || owner.getAttribute('data-name'))) || '',
+          );
+          return /多语言|语言|language/i.test(name);
+        };
+        const dropmenuLangFromSelfLabel = (raw) => {
+          const key = normalizeDropmenuSelfLabel(raw);
+          if (!key) return null;
+          for (const [label, lang] of Object.entries(DROPMENU_SELF_LABELS)) {
+            if (normalizeDropmenuSelfLabel(label) === key) return lang;
+          }
+          return null;
+        };
+        const applyDropmenuLang = (lang) => {
+          if (!lang) return false;
+          const qa = typeof window !== 'undefined' ? window.__qa : null;
+          const setPref = typeof ctx.setPref === 'function'
+            ? ctx.setPref
+            : (qa && typeof qa.setPref === 'function' ? qa.setPref.bind(qa) : null);
+          if (typeof setPref !== 'function') return false;
+          setPref('lang', lang);
+          return true;
+        };
+        const applyDropmenuVariant = (owner, nextState) => {
+          if (!owner || owner.getAttribute('data-dropmenu-mount-status') !== 'owner-local-mutually-exclusive') return false;
+          if (nextState !== 'on' && nextState !== 'off') return false;
+          const layers = owner.__fxDropmenuLayers;
+          if (!Array.isArray(layers) || !layers.length) return false;
+          const next = layers.find((layer) => layer.state === nextState) || null;
+          if (!next) return false;
+          for (const layer of layers) {
+            const active = layer === next;
+            hideBtnLayer(layer.el, layer.isBase ? false : !active);
+            if (layer.isBase) {
+              for (const child of [...layer.el.children]) {
+                if (child.getAttribute && child.getAttribute('data-dropmenu-layer') === 'true') continue;
+                hideBtnLayer(child, !active);
+              }
+            }
+            for (const sibling of layer.externals || []) hideBtnLayer(sibling, !active);
+          }
+          owner.setAttribute('data-dropmenu-state', next.state);
+          owner.setAttribute('data-dropmenu-index', String(next.index));
+          const nextH = Number(next.rootH);
+          if (Number.isFinite(nextH) && nextH > 0) owner.style.height = nextH + 'px';
+          return true;
+        };
+        const toggleDropmenu = (owner) => {
+          if (!owner) return false;
+          const current = owner.getAttribute('data-dropmenu-state');
+          if (current !== 'on' && current !== 'off') return false;
+          return applyDropmenuVariant(owner, current === 'on' ? 'off' : 'on');
+        };
+        const closeDropmenuOwners = (root) => {
+          const scope = root && typeof root.querySelectorAll === 'function' ? root : frame;
+          for (const owner of [...scope.querySelectorAll('[data-dropmenu="true"][data-dropmenu-mount-status="owner-local-mutually-exclusive"]')]) {
+            applyDropmenuVariant(owner, 'off');
+          }
         };
         const applyNavigationVariant = (group, activeIndex) => {
           const items = group && group.items || [];
@@ -6000,6 +6325,31 @@
         };
         frame.__fxSyncFixedNavigation = syncFixedNavigation;
         frame.addEventListener('click', (ev) => {
+          const innerBtn = ev.target && ev.target.closest ? ev.target.closest('[data-prefix="btn"], [data-btn-name]') : null;
+          const dropmenuOwner = ev.target && ev.target.closest ? ev.target.closest('[data-dropmenu="true"]') : null;
+          if (innerBtn && dropmenuOwner && dropmenuOwner.contains(innerBtn)
+            && dropmenuOwner.getAttribute('data-dropmenu-state') === 'on') {
+            if (isLanguageDropmenu(dropmenuOwner)) {
+              const visible = String((innerBtn.textContent || '')).replace(/\s+/g, ' ').trim();
+              const named = String(innerBtn.getAttribute('data-btn-name') || innerBtn.getAttribute('data-name') || '').trim();
+              const lang = dropmenuLangFromSelfLabel(visible || named);
+              if (lang) applyDropmenuLang(lang);
+              closeDropmenuOwners(frame);
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
+            closeDropmenuOwners(frame);
+            /* Region / other dropmenus keep @go / @link on the inner btn. */
+          }
+          if (dropmenuOwner && dropmenuOwner.getAttribute('data-dropmenu-mount-status') === 'owner-local-mutually-exclusive'
+            && !(innerBtn && dropmenuOwner.contains(innerBtn) && dropmenuOwner.getAttribute('data-dropmenu-state') === 'on'
+              && !isLanguageDropmenu(dropmenuOwner))) {
+            toggleDropmenu(dropmenuOwner);
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
           const btnVariantEarly = ev.target && ev.target.closest ? ev.target.closest('[data-btn-variant="true"]') : null;
           if (btnVariantEarly && btnVariantEarly.getAttribute('data-btn-variant-mount-status') === 'owner-local-mutually-exclusive'
             && btnVariantEarly.getAttribute('data-nav-item') !== 'true') {
@@ -6192,6 +6542,22 @@
             return;
           }
         });
+        const closeDropmenuOutside = (ev) => {
+          const hit = ev && ev.target && ev.target.closest ? ev.target.closest('[data-dropmenu="true"]') : null;
+          if (hit && frame.contains(hit)) return;
+          for (const owner of [...frame.querySelectorAll('[data-dropmenu="true"][data-dropmenu-state="on"]')]) {
+            applyDropmenuVariant(owner, 'off');
+          }
+        };
+        const dropmenuDoc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
+        if (dropmenuDoc) {
+          if (typeof frame.__fxDropmenuCleanup === 'function') frame.__fxDropmenuCleanup();
+          dropmenuDoc.addEventListener('click', closeDropmenuOutside);
+          frame.__fxDropmenuCleanup = () => {
+            dropmenuDoc.removeEventListener('click', closeDropmenuOutside);
+            frame.__fxDropmenuCleanup = null;
+          };
+        }
         const switchSwipeOwner = (target) => {
           if (!target || !target.closest) return null;
           let owner = target.closest('[data-switch-owner][data-switch-page-source="component-set-variant"]');

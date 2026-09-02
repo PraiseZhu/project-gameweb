@@ -42,10 +42,6 @@ function hasAncestorRole(node, role, byId) {
   return false;
 }
 
-function dropmenuAxisValues(node) {
-  return Object.values(dropmenuPropertyMap(node));
-}
-
 function parseVariantPairs(name) {
   const pairs = {};
   for (const part of String(name || '').split(',')) {
@@ -116,9 +112,8 @@ function dropmenuCurrentState(node) {
 }
 
 function componentState(node) {
-  const rawValues = dropmenuAxisValues(node);
   if (interactionRole(node) === 'dropmenu') return dropmenuCurrentState(node);
-  const values = rawValues.map((value) => value.toLowerCase());
+  const values = Object.values(dropmenuPropertyMap(node)).map((value) => value.toLowerCase());
   if (!values.length) return null;
   if (values.some((value) => /^(disabled?|disable|unavailable|off)$/.test(value))) return 'disabled';
   if (values.some((value) => /^(active|highlight|selected|on)$/.test(value))) return 'active';
