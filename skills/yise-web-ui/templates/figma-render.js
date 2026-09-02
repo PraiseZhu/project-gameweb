@@ -5632,15 +5632,11 @@
           layer.setAttribute('data-modal-id', String(modal.id || ''));
           layer.setAttribute('data-modal-name', parsed.label);
           layer.setAttribute('data-node', String(modal.id || ''));
-          const isVideoModal = /^(?:pc|移动端)?视频弹窗$/.test(parsed.label);
-          layer.style.position = isVideoModal ? 'absolute' : 'absolute';
-          layer.style.left = isVideoModal ? '0px' : '50%';
-          layer.style.top = isVideoModal ? '0px' : '50%';
+          layer.style.position = 'absolute';
+          layer.style.left = ((Number(box.x) || 0) - pageX) + 'px';
+          layer.style.top = ((Number(box.y) || 0) - pageY) + 'px';
           layer.style.width = Number(box.w) + 'px';
           layer.style.height = Number(box.h) + 'px';
-          layer.style.transform = isVideoModal ? 'none' : 'translate(-50%, -50%)';
-          layer.style.maxWidth = '100%';
-          layer.style.maxHeight = '100%';
           layer.setAttribute('data-modal-source-box', [box.x, box.y, box.w, box.h].map((v) => Number(v || 0)).join(','));
           layer.style.pointerEvents = 'auto';
           layer.style.zIndex = '41';

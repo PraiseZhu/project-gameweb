@@ -13,6 +13,32 @@ const PYTHON_CANDIDATES = ['python', 'python3', 'py'];
 
 export const WEBP_QUALITY = 90;
 
+/** Dedup identical PNG sha before encoding. No pngjs. */
+export function planWebpDelivery(manifest, { assetsDir, demoDir }) {
+  const seen = new Map();
+  const jobs = [];
+  const aliases = [];
+  for (const [id, rec] of Object.entries(manifest || {})) {
+    if (!rec?.file) continue;
+    const sha = rec.pngSha256 || rec.sha256;
+    if (!sha) continue;
+    if (seen.has(sha)) {
+      aliases.push({ nodeId: id, duplicateOf: seen.get(sha) });
+      continue;
+    }
+    seen.set(sha, id);
+    const pngName = rec.pngFile || rec.file;
+    const webpRel = String(pngName).replace(/\.png$/i, '.webp');
+    jobs.push({
+      nodeId: id,
+      src: join(assetsDir || join(demoDir, 'assets'), String(pngName).replace(/^assets\//, '')),
+      dest: join(demoDir, webpRel),
+      webpRel,
+    });
+  }
+  return { jobs, aliases };
+}
+
 function pythonCmd() {
   for (const bin of PYTHON_CANDIDATES) {
     const r = spawnSync(bin, ['-c', 'from PIL import Image'], {

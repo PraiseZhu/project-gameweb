@@ -44,10 +44,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
-import { encodeWebpBatch } from './lib/encode-webp.mjs';
+import { encodeWebpBatch, planWebpDelivery } from './lib/encode-webp.mjs';
 import { pickSliceNodes } from './lib/figma-slice-nodes.mjs';
 
-export { pickSliceNodes };
+export { pickSliceNodes, planWebpDelivery };
 
 const API = 'https://api.figma.com/v1';
 const BATCH = 40;               // Figma images 接口一次给太多 id 会超时，分批
@@ -129,32 +129,6 @@ async function figmaGet(url, token) {
 /** nodeId → 文件名。带上 nodeId 保证唯一，不靠图层名（图层名会重复、会带斜杠） */
 export function assetFileName(nodeId, ext = 'png') {
   return nodeId.replace(/[:;]/g, '-') + '.' + ext;
-}
-
-/** 按 PNG 源 sha 去重后再转 WebP。页面引用 WebP；PNG 留盘做几何校对。 */
-export function planWebpDelivery(manifest, { assetsDir, demoDir }) {
-  const seen = new Map();
-  const jobs = [];
-  const aliases = [];
-  for (const [id, rec] of Object.entries(manifest || {})) {
-    if (!rec?.file) continue;
-    const sha = rec.pngSha256 || rec.sha256;
-    if (!sha) continue;
-    if (seen.has(sha)) {
-      aliases.push({ nodeId: id, duplicateOf: seen.get(sha) });
-      continue;
-    }
-    seen.set(sha, id);
-    const pngName = rec.pngFile || rec.file;
-    const webpRel = String(pngName).replace(/\.png$/i, '.webp');
-    jobs.push({
-      nodeId: id,
-      src: join(assetsDir || join(demoDir, 'assets'), String(pngName).replace(/^assets\//, '')),
-      dest: join(demoDir, webpRel),
-      webpRel,
-    });
-  }
-  return { jobs, aliases };
 }
 
 function cropPng(buf, sx, sy, sw, sh) {

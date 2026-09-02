@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const renderer = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
 const assetPipeline = readFileSync(new URL('../figma-assets.mjs', import.meta.url), 'utf8');
+const slicePlanner = readFileSync(new URL('../lib/figma-slice-nodes.mjs', import.meta.url), 'utf8');
 const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.url), 'utf8');
 
 test('asset locking is based on ownerPath when DOM parent stack is incomplete', () => {
@@ -174,7 +175,7 @@ test('multi-image fills resolve each imageRef instead of reusing the first file'
   assert.match(renderer, /data-image-ref/);
   assert.match(renderer, /data-image-fill-index/);
   assert.match(renderer, /data-solid-base-fill/);
-  assert.match(assetPipeline, /imageRefs: imageRefs\.length \? imageRefs : undefined/);
+  assert.match(slicePlanner, /imageRefs: imageRefs\.length \? imageRefs : undefined/);
   assert.match(assetPipeline, /Array\.isArray\(m\.imageRefs\) && m\.imageRefs\.length \? \{ imageRefs: m\.imageRefs \}/);
 });
 
@@ -221,9 +222,9 @@ test('section stage clip is sourced from Figma clipsContent, not a global defaul
 });
 
 test('baked image render spill exports and verifies the render canvas, never the layout box', () => {
-  assert.match(assetPipeline, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
-  assert.match(assetPipeline, /const exportBounds = \(\(hasSoftSpillEffect \|\| isBakedImageOwner\) && spillBox\(b, rb\)\) \? 'render' : 'box'/);
-  assert.match(assetPipeline, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner \? 'owner-relative-render-canvas'/);
+  assert.match(slicePlanner, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
+  assert.match(slicePlanner, /const exportBounds = \(\(hasSoftSpillEffect \|\| isBakedImageOwner\) && spillBox\(b, rb\)\) \? 'render' : 'box'/);
+  assert.match(slicePlanner, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner \? 'owner-relative-render-canvas'/);
   assert.match(assetPipeline, /owner-relative-render-canvas/);
   assert.match(assetPipeline, /cropX = Math\.round\(\(exportX - ownerX\) \* p\.scale\)/);
   assert.match(coverageGate, /if \(rec\?\.exportBounds !== 'render'\) problems\.push/);
