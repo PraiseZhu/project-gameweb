@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { packageManagerCommand, normalizePathForComparison } from './nightly-health.mjs';
+import { packageManagerCommand, normalizePathForComparison, TRUSTED_TAP_MAX_BUFFER } from './nightly-health.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./nightly-health.mjs', import.meta.url));
 const WORKFLOW = fileURLToPath(new URL('../workflows/nightly-health.yml', import.meta.url));
@@ -423,6 +423,15 @@ test('任意 exclude 失败公开测试必须红', () => {
   rmSync(root, { recursive: true, force: true });
   assert.notEqual(res.status, 0);
   assert.match(`${res.stdout}\n${res.stderr}`, /排除项缺原因|排除项类别不受控|bad\.test\.mjs/);
+});
+
+test('trusted TAP spawn uses a 32MB maxBuffer and names ENOBUFS', () => {
+  const src = readFileSync(SCRIPT, 'utf8');
+  assert.equal(TRUSTED_TAP_MAX_BUFFER, 32 * 1024 * 1024);
+  assert.match(src, /maxBuffer: TRUSTED_TAP_MAX_BUFFER/);
+  assert.match(src, /result\.error\.code === 'ENOBUFS'/);
+  assert.match(src, /TAP 输出超过 \$\{TRUSTED_TAP_MAX_BUFFER\} 字节被截断/);
+  assert.match(src, /timeout: 300000,\n    maxBuffer: TRUSTED_TAP_MAX_BUFFER,/);
 });
 
 test('存在失败测试但 npm test 是 fake-runner 必须红', () => {
