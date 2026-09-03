@@ -13,13 +13,13 @@ test('generic hero scroll-slot state machine locks, exits progressively, then re
     followingSections: [{ id: 'synthetic-next', y: 2200 }],
     contentRootId: 'synthetic-root',
   });
-  assert.equal(slot.extra, 0);
-  assert.equal(slot.layoutOffsetDesign, 0);
-  assert.equal(slot.releaseDistance, 0);
+  assert.equal(slot.extra, 1400);
+  assert.equal(slot.layoutOffsetDesign, 1400);
+  assert.equal(slot.releaseDistance, 350);
   assert.equal(slot.revealSectionId, null);
   assert.equal(slot.revealDistance, 0);
   assert.deepEqual(slot.stateAt(0), { state: 'HERO_LOCKED', progress: 0, scrollTop: 0 });
-  assert.equal(slot.stateAt(175).state, 'CONTENT_RELEASED');
+  assert.equal(slot.stateAt(175).state, 'HERO_EXITING');
   assert.equal(slot.stateAt(350).state, 'CONTENT_RELEASED');
   assert.equal(slot.stateAt(99999).progress, 1);
   assert.ok(assertHeroScrollSlotState(slot.stateAt(0)));

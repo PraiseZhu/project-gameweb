@@ -46,12 +46,9 @@ export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, fi
     && Number.isFinite(firstY);
   if (!valid) return null;
   const designHeight = viewport / factor;
-  /* Season-1 stretch is uniform width-scale k. Do not invent a 100vh
-     first-screen slot that shoves later sections down when the hero
-     is shorter than the window (narrow PC / phone preview). */
-  const extra = 0;
-  const layoutOffsetDesign = 0;
-  const releaseDistance = 0;
+  const extra = Math.max(0, designHeight - heroHeight);
+  const layoutOffsetDesign = extra;
+  const releaseDistance = extra * factor;
   const startsAtPageOrigin = Math.abs(firstY - Number(pageOriginY || 0)) <= 0.5;
   if (!startsAtPageOrigin || contentRootId == null) return null;
   return {

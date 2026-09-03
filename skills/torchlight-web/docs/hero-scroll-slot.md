@@ -34,7 +34,7 @@ identity transform and full opacity; returning to the top restores both.
   只有一个 sibling 且未重复列出 `sectionIds`（SS6 手机稿常见），该 sibling
   仍是内容 root，不得因此关掉 100vh 槽。
 
-首 section 作为 hero。阶段一 KV/bg 跟页共用宽度尺 `k`，不左右裁切填满视口；后续 section 统一增加
+首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 统一增加
 `max(0, slotDesignHeight - heroDesignHeight)` 的设计坐标偏移（`layoutOffsetDesign`），
 因此它们从实际 viewport 高度之后开始；长 `bg/*` 被裁掉的尾巴以 `bg-tail` 续画在
 偏移之后，页面背景跟着走，不会露出空带。KV/page chrome 与 fixed overlay 仍按

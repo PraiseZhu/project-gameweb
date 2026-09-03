@@ -284,7 +284,7 @@ test('resize skill names its own axis and refuses translation/interaction owners
   assert.equal(intent.plat, 'pc');
   assert.equal(intent.composition.key, 'pc');
   assert.equal(intent.lightDrag, true);
-  assert.ok(resizeOwns().some((item) => item.includes('width-scale k')));
+  assert.ok(resizeOwns().some((item) => item.includes('cover-crop')));
   assert.ok(resizeOwns().some((item) => item.includes('10vw')));
   assert.ok(resizeOwns().some((item) => item.includes('100vh')));
   assert.ok(resizeOwns().some((item) => /hero UI/i.test(item)));
@@ -326,7 +326,7 @@ test('classifyResizeIntent hands k + columnWidth + composition in one shot', () 
   assert.equal(phone.columnWidth, 1126);
 });
 
-test('season-1 stretch keeps KV/bg on width-scale k, no left-right cover-crop', () => {
+test('PC cover crop belongs to the KV plane, not homepage UI width-scale', () => {
   const wide = heroCoverCrop({
     viewportW: 1920,
     viewportH: 1080,
@@ -337,20 +337,19 @@ test('season-1 stretch keeps KV/bg on width-scale k, no left-right cover-crop', 
   assert.equal(wide.applied, false);
   assert.equal(wide.scale, 0.5);
   assert.equal(wide.cropLeft, 0);
-  assert.equal(wide.plane, 'width-scale');
   assert.equal(wide.uiPlane, 'source-ui-scale');
 
   const tall = heroCoverCrop({
-    viewportW: 1138,
-    viewportH: 1080,
+    viewportW: 2130,
+    viewportH: 2160,
     designWidth: 3840,
     heroDesignHeight: 2160,
-    pageScale: 1138 / 3840,
+    pageScale: 2130 / 3840,
   });
-  assert.equal(tall.applied, false);
-  assert.equal(tall.scale, 1138 / 3840);
-  assert.equal(tall.cropLeft, 0);
-  assert.equal(tall.plane, 'width-scale');
+  assert.equal(tall.applied, true);
+  assert.equal(tall.scale, 1);
+  assert.equal(tall.cropLeft, (2130 - 3840) / 2);
+  assert.equal(tall.plane, 'kv-visual');
   assert.equal(tall.uiPlane, 'source-ui-scale');
 });
 
