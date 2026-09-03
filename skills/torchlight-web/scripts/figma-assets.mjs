@@ -158,17 +158,22 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
     for (const [platform, root] of Object.entries(truth.platforms || {})) {
       if (root?.componentVariantGraph) platformGraphs.push(root.componentVariantGraph);
       let first = true;
+      const modalNodes = nodesOf(root.modals).flatMap(withChildNodes);
       for (const [sid, sec] of Object.entries(root.sections || {})) {
         const nodes = first
           ? [
             ...nodesOf(root.pageBackground && root.pageBackground.nodes),
             ...nodesOf(root.pageChrome && root.pageChrome.nodes),
             ...nodesOf(root.fixedOverlays && root.fixedOverlays.nodes),
+            ...modalNodes,
             ...nodesOf(sec.nodes),
           ]
           : nodesOf(sec.nodes);
         merged.sections[`${platform}:${sid}`] = { ...sec, nodes };
         first = false;
+      }
+      if (first && modalNodes.length) {
+        merged.sections[`${platform}:__modals__`] = { nodes: modalNodes };
       }
     }
     if (!merged.componentVariantGraph && platformGraphs.length) {

@@ -50,6 +50,33 @@ test('clipped unknown IMAGE fill exports the visible box, not the overflowing la
   assert.equal(picks[0].cropToVisibleBox, true);
 });
 
+test('named modal sliceExport nodes are collected from platform.modals', () => {
+  const picks = pickSliceNodes({
+    platforms: {
+      pc: {
+        sections: { '721:7867': { nodes: [] } },
+        modals: [{
+          id: '721:8449',
+          name: 'modal/pc_cn订阅赛季日程',
+          nodes: [
+            { id: '721:8449', type: 'FRAME', name: 'modal/pc_cn订阅赛季日程', box: { x: 0, y: 0, w: 3840, h: 2160 }, style: { fills: [] } },
+            {
+              id: '721:8464',
+              type: 'FRAME',
+              name: 'img/弹窗背景',
+              box: { x: 0, y: 410, w: 3840, h: 1340 },
+              sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '721-8464.png' },
+              style: { fills: [] },
+            },
+          ],
+        }],
+      },
+    },
+  });
+  assert.equal(picks.some((pick) => pick.nodeId === '721:8464'), true);
+  assert.match(picks.find((pick) => pick.nodeId === '721:8464').reason, /sliceExport/);
+});
+
 test('BOOLEAN btn with sliceExport is sliced without an img/ prefix', () => {
   const picks = pickSliceNodes(truthWith([
     {

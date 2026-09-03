@@ -85,7 +85,6 @@ export function platformTruthFromInventory(inventory, options = {}) {
 
   const fixed = new Set(asArray(adapted.fixedOverlays?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
   const chromeIds = new Set(asArray(adapted.pageChrome?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
-  const bgIds = new Set(asArray(inventory.backgrounds).map((entry) => String(entry?.id || '')).filter(Boolean));
   const roots = new Set(asArray(adapted.pagePaintOrder).map((entry) => String(entry?.id || '')).filter(Boolean));
   const liveNodes = restoreOwnerComposites(asArray(inventory.nodes));
   const liveById = new Map(liveNodes.filter((node) => node && node.id).map((node) => [String(node.id), node]));
@@ -93,10 +92,10 @@ export function platformTruthFromInventory(inventory, options = {}) {
   const skipChromePaint = (node) => {
     const id = String(node?.id || '');
     if (!id) return false;
-    if (chromeIds.has(id) || bgIds.has(id)) return true;
-    const role = String(node?.role || '').toLowerCase();
-    if (role === 'bg' || role === 'kv') return true;
-    return /^bg(?:\/|$)/i.test(String(node?.name || ''));
+    /* Page-chrome bg/kv stay out of section trees so they paint once.
+       A section-owned bg/ that never entered pageChrome must stay in
+       that section — otherwise it is dropped from both trees. */
+    return chromeIds.has(id);
   };
   const sections = {};
   for (const section of asArray(inventory.sections)) {

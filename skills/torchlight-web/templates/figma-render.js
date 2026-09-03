@@ -942,6 +942,59 @@
     const values = new Set(variants.map((variant) => this._langValueOfImgVariant(variant)).filter((value) => allowed.has(value)));
     return values.size >= 2;
   },
+  _setNamePrefix(set) {
+    const name = String((set && set.name) || '').trim();
+    return ((/^([A-Za-z]+)\s*[\/／]/.exec(name) || [])[1] || '').toLowerCase();
+  },
+  /* A8: img/ + lang axis → swap PNG. A10: unprefixed lang shell → swap the
+     whole variant tree (download vs reserve, social, calendar). Prefix img
+     stays on the slice path; a named btn/ set is not a language shell. */
+  _isLegalImgLangAssetSet(set) {
+    return this._setNamePrefix(set) === 'img' && this._isLegalImgLangSet(set);
+  },
+  _isLegalLangShellSet(set) {
+    return !this._setNamePrefix(set) && this._isLegalImgLangSet(set);
+  },
+  _isModalOverlayArt(name) {
+    const raw = String(name || '');
+    return /弹窗装饰/.test(raw) || /img\s*[\/／]\s*装饰$/.test(raw);
+  },
+  _isNamedCloseControl(name) {
+    return /^(?:btn|img)\s*[\/／]\s*关闭按钮(?:@|$)/i.test(String(name || '').trim());
+  },
+  _closeControlNameOf(el) {
+    if (!el || !el.getAttribute) return '';
+    const named = el.getAttribute('data-name') || el.getAttribute('data-node-name') || '';
+    if (named) return named;
+    const btn = el.getAttribute('data-btn-name') || '';
+    if (!btn) return '';
+    return el.getAttribute('data-prefix') === 'btn' ? `btn/${btn}` : btn;
+  },
+  _closeControlEls(root) {
+    if (!root || !root.querySelectorAll) return [];
+    return [...root.querySelectorAll('[data-btn-name], [data-node-name], [data-name]')]
+      .filter((el) => this._isNamedCloseControl(this._closeControlNameOf(el)));
+  },
+  _closeControlFromEvent(ev) {
+    const hit = ev && ev.target && ev.target.closest
+      ? ev.target.closest('[data-btn-name], [data-node-name], [data-name]')
+      : null;
+    if (!hit) return null;
+    return this._isNamedCloseControl(this._closeControlNameOf(hit)) ? hit : null;
+  },
+  _punchModalOverlayHits(layer) {
+    if (!layer || !layer.querySelectorAll) return;
+    for (const overlay of layer.querySelectorAll('[data-prefix="img"]')) {
+      if (this._isModalOverlayArt(overlay.getAttribute('data-name'))) {
+        overlay.style.pointerEvents = 'none';
+      }
+    }
+    for (const closeEl of this._closeControlEls(layer)) {
+      closeEl.style.zIndex = '50';
+      closeEl.style.pointerEvents = 'auto';
+      closeEl.style.cursor = 'pointer';
+    }
+  },
   _resolveImgLangVariant(componentSets, componentId, language) {
     const value = this._imgLangVariantValue(language);
     const id = String(componentId || '');
@@ -3320,10 +3373,13 @@
           never share slices. */
        const componentInstanceTrees = new Map();
        const imgLangSetsByMemberId = new Map();
+       const langShellSetsByMemberId = new Map();
        const activeComponentSets = asArr(__activeTruth && __activeTruth.componentVariantGraph
          && __activeTruth.componentVariantGraph.componentSets);
        for (const set of activeComponentSets) {
-         const legalImgLang = this._isLegalImgLangSet(set);
+         const legalImgLang = this._isLegalImgLangAssetSet(set);
+         const legalLangShell = this._isLegalLangShellSet(set);
+         const legalLangFollow = legalImgLang || legalLangShell;
          for (const variant of asArr(set && set.variants)) {
            const componentId = String(__u(variant && (variant.componentId || variant.id)) || '');
            const nodes = asArr(variant && variant.nodes);
@@ -3331,7 +3387,7 @@
              && String(node && node.type || '') === 'COMPONENT');
            const hasLangSlice = legalImgLang && !!(variant.sliceExport || this._assetRec(componentId, __base));
            const root = roots.length === 1 ? roots[0]
-             : ((legalImgLang && (variant.box || hasLangSlice)) ? {
+             : ((legalLangFollow && (variant.box || hasLangSlice)) ? {
                id: componentId,
                type: 'COMPONENT',
                name: variant.name,
@@ -3341,10 +3397,12 @@
              } : null);
            if (!componentId || componentInstanceTrees.has(componentId)) {
              if (legalImgLang && componentId) imgLangSetsByMemberId.set(componentId, set);
+             if (legalLangShell && componentId) langShellSetsByMemberId.set(componentId, set);
              continue;
            }
-           if (!legalImgLang && (roots.length !== 1 || nodes.length < 2 || !root)) continue;
+           if (!legalLangFollow && (roots.length !== 1 || nodes.length < 2 || !root)) continue;
            if (legalImgLang) imgLangSetsByMemberId.set(componentId, set);
+           if (legalLangShell) langShellSetsByMemberId.set(componentId, set);
            if (!root) continue;
            componentInstanceTrees.set(componentId, {
              componentId,
@@ -3459,7 +3517,7 @@
           || evidenceAttrs['data-btn-variant'] === 'true'
           || evidenceAttrs['data-dropmenu'] === 'true'
         );
-        const liveCloseBtn = /^(?:btn|img)\s*[\/／]\s*关闭按钮(?:@|$)/i.test(String(n.name || '').trim());
+        const liveCloseBtn = this._isNamedCloseControl(n.name);
         /* The rendered-parent stack is only a convenience for DOM nesting.  It
            can be incomplete when a pure Figma container is passed through or a
            flattened list loses one locator level.  Asset locking is a truth
@@ -3628,6 +3686,13 @@
            otherwise a legitimate full-height background with a dark top band
            masks the KV and makes an apparently "missing" first screen. */
         el.style.zIndex = pfx === 'bg' ? '0' : '1';
+        /* Modal close sits under later full-bleed overlay art in DFS order.
+           Keep geometry, raise only the named close hit target. */
+        if (liveCloseBtn) {
+          el.style.zIndex = '50';
+          el.style.pointerEvents = 'auto';
+          el.style.cursor = 'pointer';
+        }
         /* owner-model 结构证据（切片 2，lead 决策落地）。
            truth 叶子纪律：scope/assetPolicy/role 是派生值不进 truth；renderer 从
            owner 原值（name 前缀 / 类型 / parentId）渲染期重推并落 DOM 证据，
@@ -5163,12 +5228,17 @@
               el.title = String(n.name ?? '');
             }
           } else if (kind === 'solid') {
-            /* ?????SOLID+SOLID ???Figma fills ????????
-               CSS background ??????????? ?? ?????????????
-               ? SOLID ???? background ?????? IMAGE/GRADIENT ???
-               ? figma-assets ??????????????????? ? ???? */
+            /* Modal roots are sheets that host overlay art. A solid white
+               fill on that root paints over the page and reads as a blank
+               phone sheet. Keep the fill off; the named overlay art is the
+               visible background. */
+            const isNamedModalRoot = pfx === 'modal'
+              || (container && container.classList && container.classList.contains('fx-named-modal')
+                && String(__u(n && n.id) || '') === String(container.getAttribute('data-node') || ''));
             const visFills = (st.fills || []).filter((f) => f && f.visible !== false);
-            if (visFills.length > 1 && visFills.every((f) => f.type === 'SOLID')) {
+            if (isNamedModalRoot) {
+              el.setAttribute('data-modal-root-fill', 'suppressed-for-overlay-art');
+            } else if (visFills.length > 1 && visFills.every((f) => f.type === 'SOLID')) {
               const cols = visFills.map((f) => this._solidFill([f]));
               el.style.background = cols.join(', ');
               el.setAttribute('data-multifill', String(visFills.length));
@@ -5233,12 +5303,17 @@
         const imgLangChoice = imgLangSetsByMemberId.has(componentId)
           ? this._resolveImgLangVariant(activeComponentSets, componentId, ctx.prefs && ctx.prefs.lang)
           : { status: 'not-applicable' };
+        const langShellChoice = langShellSetsByMemberId.has(componentId)
+          ? this._resolveImgLangVariant(activeComponentSets, componentId, ctx.prefs && ctx.prefs.lang)
+          : { status: 'not-applicable' };
         const wantedComponentId = imgLangChoice.status === 'matched'
           ? imgLangChoice.componentId
-          : componentId;
+          : (langShellChoice.status === 'matched' ? langShellChoice.componentId : componentId);
         const componentTree = wantedComponentId ? componentInstanceTrees.get(wantedComponentId) : null;
         if (!suppressInteractions && pfx !== 'switch'
-          && (componentTree || imgLangChoice.status === 'missing' || imgLangChoice.status === 'matched')) {
+          && (componentTree
+            || imgLangChoice.status === 'missing' || imgLangChoice.status === 'matched'
+            || langShellChoice.status === 'missing' || langShellChoice.status === 'matched')) {
           componentInstanceOwners.push({
             el,
             tree: componentTree,
@@ -5247,6 +5322,7 @@
             prefix: pfx,
             selectedComponentId: componentId,
             imgLang: imgLangChoice,
+            langShell: langShellChoice,
           });
         }
         if (!suppressInteractions && evidenceAttrs && evidenceAttrs['data-switch-page-source'] === 'component-set-variant'
@@ -5439,11 +5515,26 @@
           continue;
         }
         const imgLang = owner.imgLang || { status: 'not-applicable' };
+        const langShell = owner.langShell || { status: 'not-applicable' };
         const imgLangFollow = imgLang.status === 'matched';
+        const langShellFollow = langShell.status === 'matched';
         const alreadyPainted = !!(owner.el && (owner.el.querySelector('[data-node]') || owner.el.querySelector('img.fx-img')));
         const sameSelectedSlice = imgLangFollow
           && String(owner.selectedComponentId || '') === String(imgLang.componentId || '');
+        const sameSelectedShell = langShellFollow
+          && String(owner.selectedComponentId || '') === String(langShell.componentId || '');
         const stripOwnerPixels = () => {
+          const ownerId = String(owner.ownerId || owner.el.getAttribute('data-node') || '');
+          const instancePrefix = ownerId ? `I${ownerId};` : '';
+          const host = owner.el.parentElement;
+          if (host && instancePrefix) {
+            for (const sibling of [...host.children]) {
+              if (sibling === owner.el) continue;
+              const siblingId = sibling.getAttribute && sibling.getAttribute('data-node');
+              if (!siblingId || !String(siblingId).startsWith(instancePrefix)) continue;
+              sibling.remove();
+            }
+          }
           for (const child of [...owner.el.querySelectorAll('[data-node], img.fx-img')]) child.remove();
         };
         const markImgLang = (status) => {
@@ -5471,11 +5562,28 @@
           continue;
         }
         if (!owner.el) continue;
+        if (langShell.status === 'missing') {
+          stripOwnerPixels();
+          owner.el.setAttribute('data-component-instance-mount-status', 'lang-shell-missing');
+          owner.el.setAttribute('data-lang-shell-missing', String(langShell.language || (ctx.prefs && ctx.prefs.lang) || ''));
+          continue;
+        }
         if (imgLangFollow && !owner.tree) {
           failImgLang('img-lang-missing');
           continue;
         }
-        if (!imgLangFollow && alreadyPainted) continue;
+        if (langShellFollow && !owner.tree) {
+          stripOwnerPixels();
+          owner.el.setAttribute('data-component-instance-mount-status', 'lang-shell-missing');
+          continue;
+        }
+        if (langShellFollow && sameSelectedShell && alreadyPainted) {
+          owner.el.setAttribute('data-component-instance-mount-status', 'lang-shell-selected-tree');
+          owner.el.setAttribute('data-lang-shell-value', String(langShell.value || ''));
+          if (langShell.componentId) owner.el.setAttribute('data-lang-shell-component-id', String(langShell.componentId));
+          continue;
+        }
+        if (!imgLangFollow && !langShellFollow && alreadyPainted) continue;
         if (imgLangFollow && sameSelectedSlice && alreadyPainted) {
           markImgLang('img-lang-variant-tree');
           clearImgPlaceholder();
@@ -5488,9 +5596,14 @@
         const rootW = Number(rootBox.w), rootH = Number(rootBox.h);
         const widthOk = Number.isFinite(ownerW) && Number.isFinite(rootW) && Math.abs(ownerW - rootW) <= 0.5;
         const heightOk = Number.isFinite(ownerH) && Number.isFinite(rootH) && Math.abs(ownerH - rootH) <= 0.5;
+        /* A10 shells swap the whole variant tree. Foreign-language social /
+           calendar roots may be narrower or wider than the page instance.
+           Keep width lock for img/ PNG and ordinary component mounts; a
+           language shell follows the variant root box instead of staying
+           on the Figma-selected cn width. */
         if (!root || !Number.isFinite(ownerW) || !Number.isFinite(ownerH)
           || !Number.isFinite(rootW) || !Number.isFinite(rootH)
-          || !widthOk || (!imgLangFollow && !heightOk)) {
+          || (!langShellFollow && !widthOk) || (!imgLangFollow && !langShellFollow && !heightOk)) {
           if (imgLangFollow) failImgLang('blocked-owner-root-mismatch');
           else owner.el.setAttribute('data-component-instance-mount-status', 'blocked-owner-root-mismatch');
           continue;
@@ -5529,6 +5642,31 @@
           owner.el.setAttribute('data-owner-asset-policy', 'slice');
           markImgLang('img-lang-variant-tree');
           clearImgPlaceholder();
+          continue;
+        }
+        if (langShellFollow) {
+          stripOwnerPixels();
+          if (!widthOk) {
+            const dx = (ownerW - rootW) / 2;
+            owner.el.style.width = rootW + 'px';
+            owner.el.style.left = ((Number.parseFloat(owner.el.style.left) || 0) + dx) + 'px';
+            owner.el.setAttribute('data-lang-shell-width', 'variant-root');
+          }
+          if (!heightOk) {
+            const dy = (ownerH - rootH) / 2;
+            owner.el.style.height = rootH + 'px';
+            owner.el.style.top = ((Number.parseFloat(owner.el.style.top) || 0) + dy) + 'px';
+            owner.el.setAttribute('data-lang-shell-height', 'variant-root');
+          }
+          paint(owner.tree.nodes, owner.tree.nodes, owner.el, {
+            originX: Number(rootBox.x) || 0,
+            originY: Number(rootBox.y) || 0,
+            skipNodeIds: new Set([String(__u(root.id))]),
+            suppressInteractions: false,
+          });
+          owner.el.setAttribute('data-component-instance-mount-status', 'lang-shell-variant-tree');
+          owner.el.setAttribute('data-lang-shell-value', String(langShell.value || ''));
+          if (langShell.componentId) owner.el.setAttribute('data-lang-shell-component-id', String(langShell.componentId));
           continue;
         }
         if (alreadyPainted) continue;
@@ -6099,6 +6237,13 @@
           layer.setAttribute('data-modal-source-box', [box.x, box.y, box.w, box.h].map((v) => Number(v || 0)).join(','));
           layer.style.pointerEvents = 'auto';
           layer.style.zIndex = '41';
+          /* Paint the modal sheet, not a second nested root. Keep the Figma
+             clip on this layer so overflowing overlay art stays inside the
+             phone / 3840 sheet without the root's solid white fill. */
+          if (rootNode && rootNode.clipsContent === true) {
+            layer.style.overflow = 'hidden';
+            layer.setAttribute('data-modal-clip', 'source');
+          }
           hideInPlace(layer, true);
           host.appendChild(layer);
           try {
@@ -6106,9 +6251,12 @@
             namedModalPaint(nodes, nodes, layer, {
               originX: Number(box.x) || 0,
               originY: Number(box.y) || 0,
-              skipNodeIds: new Set(),
+              skipNodeIds: new Set([String(modal.id || '')].filter(Boolean)),
               suppressInteractions: true,
             });
+            /* Full-bleed overlay art is painted after the close button in
+               DFS. Keep the pixels, punch hits through to btn/关闭按钮. */
+            this._punchModalOverlayHits(layer);
           } catch (err) {
             layer.setAttribute('data-modal-paint-error', String(err && err.message || err));
           }
@@ -6132,7 +6280,7 @@
             layer,
             exclusive: parsed.label !== '视频弹窗',
             openerEls,
-            closeEls: Array.from(layer.querySelectorAll('[data-btn-name="关闭按钮"], [data-node-name="img/关闭按钮"], [data-name="img/关闭按钮"]') || []),
+            closeEls: this._closeControlEls(layer),
           });
         }
         if (!wired.length) {
@@ -6151,11 +6299,7 @@
             const namedModals = frame.__fxNamedModals || [];
             const closeNamedModal = frame.__fxCloseNamedModal;
             if (typeof closeNamedModal !== 'function') return;
-            const closeBtn = ev.target && ev.target.closest
-              ? (ev.target.closest('[data-btn-name="关闭按钮"]')
-                || ev.target.closest('[data-node-name="img/关闭按钮"]')
-                || ev.target.closest('[data-name="img/关闭按钮"]'))
-              : null;
+            const closeBtn = this._closeControlFromEvent(ev);
             if (closeBtn) {
               const hostModal = namedModals.find((entry) => entry.layer && entry.layer.contains(closeBtn));
               if (hostModal) {
@@ -6851,7 +6995,8 @@
             layer.style.transform = 'none';
             layer.style.pointerEvents = 'auto';
             layer.style.zIndex = '41';
-            layer.style.overflow = 'visible';
+            if (layer.getAttribute('data-modal-clip') === 'source') layer.style.overflow = 'hidden';
+            else layer.style.overflow = 'visible';
           };
           const closeNamedModal = (entry) => {
             if (!entry || !entry.layer) return;
@@ -6881,11 +7026,7 @@
           };
           frame.__fxCloseNamedModal = closeNamedModal;
           frame.__fxOpenNamedModal = openNamedModal;
-          const closeBtn = ev.target && ev.target.closest
-            ? (ev.target.closest('[data-btn-name="关闭按钮"]')
-              || ev.target.closest('[data-node-name="img/关闭按钮"]')
-              || ev.target.closest('[data-name="img/关闭按钮"]'))
-            : null;
+          const closeBtn = this._closeControlFromEvent(ev);
           if (closeBtn) {
             const hostModal = namedModals.find((entry) => entry.layer.contains(closeBtn));
             if (hostModal) {

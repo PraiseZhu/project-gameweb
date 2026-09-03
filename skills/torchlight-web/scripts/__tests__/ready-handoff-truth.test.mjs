@@ -143,7 +143,7 @@ test('section meta keeps clipsContent from the live section node', () => {
   assert.equal(truth.sections['100:2'].meta.clipsContent, true);
 });
 
-test('section paint omits bg/kv already in pageChrome', () => {
+test('section-owned bg paints in its section once, not pageChrome', () => {
   const inv = fixture();
   inv.sections.push({
     id: '100:12',
@@ -185,9 +185,10 @@ test('section paint omits bg/kv already in pageChrome', () => {
   );
   const truth = platformTruthFromInventory(inv);
   assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
-  assert.ok(truth.pageChrome.nodes.some((node) => node.id === '100:13'));
+  assert.equal(truth.pageChrome.nodes.some((node) => node.id === '100:13'), false);
   const sectionNodes = (truth.sections['100:12'] && truth.sections['100:12'].nodes) || [];
-  assert.equal(sectionNodes.some((node) => node.id === '100:13'), false);
+  assert.equal(sectionNodes.filter((node) => node.id === '100:13').length, 1);
+  assert.ok(truth.pageChrome.nodes.some((node) => node.id === '100:3'));
 });
 
 test('adapter source must not fall back to box ?? pageBox', () => {
