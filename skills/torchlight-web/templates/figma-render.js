@@ -738,6 +738,8 @@
     const bw = Number(box.w);
     const bh = Number(box.h);
     if (Math.abs(px.w - bw) <= 1.5 && Math.abs(px.h - bh) <= 1.5) return true;
+    /* Downscaled Figma PNG (PC bg 6138×4101 from 11787×7875) still belongs
+       to that design box when both axes share one scale. */
     const sx = px.w / bw;
     const sy = px.h / bh;
     return sx > 0.05 && sy > 0.05 && Math.abs(sx - sy) <= 0.02;
@@ -813,14 +815,16 @@
       img.style.top = (exportY - ownerY) + 'px';
       img.style.width = exportW + 'px';
       img.style.height = exportH + 'px';
-      /* zh-CN keeps sliceExport pixel size. Never fill a spill canvas (188)
-         into a smaller owner (124). Non-zh still fill so downscaled PNGs cover. */
-      img.style.objectFit = zhStatic ? 'none' : 'fill';
+      /* Downscaled Figma PNG (pixelSize < designSize) must still cover the
+         design exportBox. object-fit:none keeps intrinsic pixels and leaves
+         a hole in the owner clip — later sections then leak the hero KV.
+         zh-CN without a placed exportBox still uses none (owner-box-zh-cn). */
+      img.style.objectFit = 'fill';
       el.setAttribute('data-asset-bounds-resolved', policy);
     };
     const applyPlacement = () => {
       if (placedBox) {
-        placeExportBox(placedBox, exportBox ? 'export-box' : 'slice-export');
+        placeExportBox(placedBox, exportBox ? 'owner-ink-from-unclipped-png' : 'slice-export');
       } else if (zhStatic) {
         img.style.top = '0';
         img.style.left = '0';
@@ -845,16 +849,7 @@
     img.setAttribute('alt', alt);
     img.setAttribute('loading', 'eager');
     img.setAttribute('decoding', 'async');
-    /* A render-bound slice (188 around a 124 owner) must paint its glow.
-       Clip belongs on the clipsContent parent (228), not this owner. */
-    const placed = placedBox || null;
-    const sliceSpillsOwner = !!(placed && this._geomReady(placed) && this._geomReady(box)
-      && (Number(placed.w) > Number(box.w) + 0.5
-        || Number(placed.h) > Number(box.h) + 0.5
-        || Number(placed.x) < Number(box.x) - 0.5
-        || Number(placed.y) < Number(box.y) - 0.5));
-    if (!sliceSpillsOwner && (!el.style.overflow || el.style.overflow === 'visible')) el.style.overflow = 'hidden';
-    if (sliceSpillsOwner) el.setAttribute('data-owner-slice-spill', 'visible');
+    if (!el.style.overflow || el.style.overflow === 'visible') el.style.overflow = 'hidden';
     if (!el.style.position) el.style.position = 'relative';
     el.appendChild(img);
     return img;

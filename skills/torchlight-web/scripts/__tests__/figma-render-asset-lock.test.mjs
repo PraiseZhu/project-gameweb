@@ -344,7 +344,6 @@ test('owner-tree consumption: page/fixed roots keep paint order, placement origi
   assert.match(renderer, /fixedStage\.style\.transform = 'scale\(' \+ k \+ '\)'/);
   assert.match(renderer, /fx-fixed-zoom/);
   assert.match(renderer, /first-section-pagebox/);
-  assert.match(renderer, /data-owner-slice-spill/);
   assert.doesNotMatch(renderer, /fixedHost\.style\.position = 'fixed'/);
   assert.doesNotMatch(renderer, /fixedHost\.style\.zoom = String\(k\)/);
   assert.doesNotMatch(renderer, /fixedStage\.style\.position = 'sticky'/);
@@ -366,7 +365,8 @@ test('fx-img follows the owner box instead of intrinsic pixels', () => {
   assert.match(renderer, /img\.style\.position = 'absolute'/);
   assert.match(renderer, /const placedBox = exportBox \|\| sliceBox/);
   assert.match(renderer, /owner-box-zh-cn/);
-  assert.match(renderer, /img\.style\.objectFit = zhStatic \? 'none' : 'fill'/);
+  assert.match(renderer, /img\.style\.objectFit = 'fill'/);
+  assert.match(renderer, /img\.style\.objectFit = 'none'/);
   assert.match(renderer, /el\.style\.overflow = 'hidden'/);
   assert.match(renderer, /el\.style\.position = 'relative'/);
 });
