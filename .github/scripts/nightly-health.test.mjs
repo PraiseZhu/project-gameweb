@@ -5,9 +5,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { packageManagerCommand, normalizePathForComparison } from './nightly-health.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./nightly-health.mjs', import.meta.url));
 const WORKFLOW = fileURLToPath(new URL('../workflows/nightly-health.yml', import.meta.url));
+
+test('跨平台路径比较统一分隔符且 Windows 不区分盘符大小写', () => {
+  assert.equal(normalizePathForComparison('C:\\Repo\\Package\\', 'win32'), 'c:/repo/package');
+  assert.equal(normalizePathForComparison('c:/repo/package/test', 'win32'), 'c:/repo/package/test');
+});
+
+test('npm 命令在 Windows 通过 cmd shell 启动，在 POSIX 直接启动', () => {
+  assert.equal(packageManagerCommand('win32'), 'npm.cmd');
+  assert.equal(packageManagerCommand('linux'), 'npm');
+});
 
 function makeRoot() {
   const root = mkdtempSync(join(tmpdir(), 'nightly-health-'));
