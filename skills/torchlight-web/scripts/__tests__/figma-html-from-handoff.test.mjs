@@ -124,6 +124,37 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   assert.match(html, /window\.__qaDemo/);
 });
 
+test('html-from-handoff writes a fresh shell when spec.json exists but index.html is missing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-fresh-shell-'));
+  const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo');
+  mkdirSync(demoDir, { recursive: true });
+  writeFileSync(join(demoDir, 'spec.json'), JSON.stringify({
+    meta: { name: 'stale-demo' },
+    figma: { fileKey: 'OLD', exportScale: 1 },
+    matrix: { langs: ['zh-CN'] },
+    workflow: { claimedCapabilities: {} },
+  }, null, 2));
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  assert.equal(existsSync(join(demoDir, 'index.html')), true);
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  assert.match(html, /id="qa-design-policy"/);
+  assert.match(html, /window\.__designPolicy/);
+  assert.match(html, /window\.__qaDemo/);
+  assert.match(html, /FIGMA_RENDER_BEGIN/);
+  const src = readFileSync(new URL('../figma-html-from-handoff.mjs', import.meta.url), 'utf8');
+  assert.match(src, /function writeFreshShowcaseIndex/);
+  assert.match(src, /existsSync\(join\(demoDir, 'spec\.json'\)\)/);
+  assert.match(src, /writeFreshShowcaseIndex\(demoDir, consume\)/);
+  assert.match(src, /runNode\(INIT,/);
+  assert.ok(src.indexOf("existsSync(join(demoDir, 'spec.json'))") < src.indexOf('runNode(INIT,'));
+});
+
 test('html-from-handoff inserts a closed design-policy block into a legacy shell', () => {
   const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-policy-'));
   const pack = packedReady(dir);

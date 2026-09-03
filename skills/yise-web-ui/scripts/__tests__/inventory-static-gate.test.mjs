@@ -130,8 +130,35 @@ test('ordinary whole-frame img/ empty or wrong-size PNG is red even when DOM mat
     inventory: { schema: 'inventory/v2', nodes: [node] },
     measurements: { nodes: { 'img-title': { ...matchingDom, assetEmpty: false, assetW: 50, assetH: 50 } } },
   });
-  assert.equal(wrongSize.ok, false);
-  assert.ok(wrongSize.problems.some((line) => line.includes('whole-frame-png-size-mismatch')), (wrongSize.problems || []).join('\n'));
+  assert.equal(wrongSize.ok, true, (wrongSize.problems || []).join('\n'));
+  assert.ok(!(wrongSize.problems || []).some((line) => line.includes('whole-frame-png-size-mismatch')));
+});
+
+test('full-bleed bg PNG size mismatch is red', () => {
+  const pageBox = { x: 0, y: 0, w: 3840, h: 2160 };
+  const red = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'bg-1',
+        status: 'determined',
+        role: 'bg',
+        name: 'bg/首屏',
+        pageBox,
+        sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'bg.png', bounds: 'render' },
+      }],
+    },
+    measurements: {
+      nodes: {
+        'bg-1': {
+          x: 0, y: 0, w: 3840, h: 2160, hasImg: true, imgBox: pageBox,
+          assetEmpty: false, assetW: 1920, assetH: 1080,
+        },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('whole-frame-png-size-mismatch')), (red.problems || []).join('\n'));
 });
 
 test('matching DOM pageBox + fontSize + slice is green', () => {

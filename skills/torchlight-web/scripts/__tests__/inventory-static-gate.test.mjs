@@ -756,6 +756,33 @@ test('shared INSTANCE ids under a dropped overlay clone are not untagged-fix-clo
   assert.ok(!(green.problems || []).some((line) => line.includes('untagged-fix-clone-in-dom')));
 });
 
+test('full-bleed bg PNG size mismatch is red', () => {
+  const pageBox = { x: 0, y: 0, w: 3840, h: 2160 };
+  const red = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'bg-1',
+        status: 'determined',
+        role: 'bg',
+        name: 'bg/首屏',
+        pageBox,
+        sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'bg.png', bounds: 'render' },
+      }],
+    },
+    measurements: {
+      nodes: {
+        'bg-1': {
+          x: 0, y: 0, w: 3840, h: 2160, hasImg: true, imgBox: pageBox,
+          assetEmpty: false, assetW: 1920, assetH: 1080,
+        },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('whole-frame-png-size-mismatch')), (red.problems || []).join('\n'));
+});
+
 test('soft-spill img/ PNG larger than pageBox is not whole-frame-png-size-mismatch', () => {
   const pageBox = { x: 1858, y: 852, w: 124, h: 124 };
   const green = evaluateInventoryStaticGate({

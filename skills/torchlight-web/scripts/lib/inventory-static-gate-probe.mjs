@@ -12,7 +12,7 @@ import { PNG } from 'pngjs';
 import { createSafeStaticServer } from './safe-server.mjs';
 /* Callers: figma-html-from-handoff defaultStaticGateProbe.
    Adds firstKv PNG meta so the gate can fail empty first-screen KV.
-   User: 「闸门验整框 PNG 非空且尺寸正确」. */
+   User: 「闸门验整框 PNG 非空；满铺板尺寸正确」. */
 import { laterKvMeasureIds, laterKvPaintNode, firstKvMeasureId } from './inventory-static-gate.mjs';
 import { isWholeFrameSliceNode } from '../../../../standards/figma-naming/spec/inventory.mjs';
 import { launchChromium } from './resolve-playwright.mjs';

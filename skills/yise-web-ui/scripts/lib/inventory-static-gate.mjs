@@ -47,8 +47,22 @@ function flattenInventoryNodes(inventory) {
   return asArray(inventory?.nodes).filter((node) => node && node.id && node.status !== 'skipped');
 }
 
+function isFullBleedWholeFrame(node) {
+  if (!isWholeFrameSliceNode(node)) return false;
+  const role = String(node.role || '');
+  const name = String(node.name || '');
+  if (role === 'bg' || role === 'kv' || /^kv(?:\/|$)/i.test(name) || /^bg(?:\/|$)/i.test(name)) return true;
+  return /时间背景/.test(name);
+}
+
 function shouldGateWholeFramePng(node) {
+  /* Empty PNG still fails every whole-frame owner. Size mismatch only locks
+     full-bleed plates: a 188 BOOLEAN glow around a 124 btn is legal ink. */
   return isWholeFrameSliceNode(node);
+}
+
+function shouldGateWholeFramePngSize(node) {
+  return isFullBleedWholeFrame(node);
 }
 
 /** Descendants of a delivered baked owner are inside that PNG, not independent DOM. */
@@ -166,7 +180,7 @@ export function evaluateInventoryStaticGate({
       if (actual.assetEmpty === true) {
         failures.push({ id: node.id, reason: 'whole-frame-png-empty' });
       }
-      if (expectedPaint && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
+      if (shouldGateWholeFramePngSize(node) && expectedPaint && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
         if (Math.abs(Number(actual.assetW) - expectedPaint.w) > 1
           || Math.abs(Number(actual.assetH) - expectedPaint.h) > 1) {
           failures.push({

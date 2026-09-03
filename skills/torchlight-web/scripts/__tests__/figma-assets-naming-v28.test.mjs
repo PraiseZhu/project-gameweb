@@ -424,6 +424,12 @@ test('reuse-existing skips Figma fetch when the PNG is already on disk', () => {
   assert.match(src, /Figma API 超时/);
 });
 
+test('reuse-existing fail-closes when any listed PNG is missing', () => {
+  const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
+  assert.match(src, /reuseExisting && fetchPicks\.length/);
+  assert.match(src, /--reuse-existing 缺 PNG，拒绝打 Figma/);
+});
+
 test('collapsed webp under 2KB keeps serving pngFile', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
   assert.match(src, /webpCollapsed/);

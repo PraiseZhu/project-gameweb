@@ -529,8 +529,8 @@ function isLegalBakedOwner(owner) {
 }
 
 /** Full-bleed section plates: bg/, kv, unnamed kv, time-bg. Not every img/.
- *  Used only to bake IMAGE children into the owner PNG. PNG empty/size
- *  still gates every isWholeFrameSliceNode, including ordinary img/. */
+ *  IMAGE children bake into these owners. Empty PNG still fails every
+ *  isWholeFrameSliceNode; size mismatch only these plates. */
 function isFullBleedWholeFrame(node) {
   if (!isWholeFrameSliceNode(node)) return false;
   const role = String(node.role || '');
