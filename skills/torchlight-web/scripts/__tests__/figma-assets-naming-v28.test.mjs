@@ -33,6 +33,52 @@ test('unlabelled image fill can still be exported by fill evidence without becom
   assert.match(picks[0].reason, /image/);
 });
 
+test('clipped unknown IMAGE fill exports the visible box, not the overflowing layout box', () => {
+  const picks = pickSliceNodes(truthWith([
+    {
+      id: '0:1788',
+      type: 'RECTANGLE',
+      name: '赛季kv-最终 1',
+      box: { x: -823, y: -46, w: 2443, h: 1380 },
+      renderBox: { x: 0, y: 0, w: 750, h: 1334 },
+      style: { fills: [{ type: 'IMAGE', visible: true }, { type: 'SOLID', visible: true }] },
+    },
+  ]));
+  assert.equal(picks[0].nodeId, '0:1788');
+  assert.equal(picks[0].exportBounds, 'box');
+  assert.deepEqual(picks[0].exportBox, { x: 0, y: 0, w: 750, h: 1334 });
+  assert.equal(picks[0].w, 750);
+  assert.equal(picks[0].h, 1334);
+  assert.equal(picks[0].cropToVisibleBox, true);
+});
+
+test('named modal sliceExport nodes are collected from platform.modals', () => {
+  const picks = pickSliceNodes({
+    platforms: {
+      pc: {
+        sections: { '721:7867': { nodes: [] } },
+        modals: [{
+          id: '721:8449',
+          name: 'modal/pc_cn订阅赛季日程',
+          nodes: [
+            { id: '721:8449', type: 'FRAME', name: 'modal/pc_cn订阅赛季日程', box: { x: 0, y: 0, w: 3840, h: 2160 }, style: { fills: [] } },
+            {
+              id: '721:8464',
+              type: 'FRAME',
+              name: 'img/弹窗背景',
+              box: { x: 0, y: 410, w: 3840, h: 1340 },
+              sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '721-8464.png' },
+              style: { fills: [] },
+            },
+          ],
+        }],
+      },
+    },
+  });
+  assert.equal(picks.some((pick) => pick.nodeId === '721:8464'), true);
+  assert.match(picks.find((pick) => pick.nodeId === '721:8464').reason, /sliceExport/);
+});
+
 test('BOOLEAN btn with sliceExport is sliced without an img/ prefix', () => {
   const picks = pickSliceNodes(truthWith([
     {

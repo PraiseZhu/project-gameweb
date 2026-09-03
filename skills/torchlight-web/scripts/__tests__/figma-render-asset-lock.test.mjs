@@ -12,7 +12,7 @@ test('asset locking is based on ownerPath when DOM parent stack is incomplete', 
   assert.match(renderer, /for \(const id of ancestorIds\.map\(\(raw\) => String\(__u\(raw\)\)\)\.reverse\(\)\) pushBakedOwner\(id\)/);
   assert.match(renderer, /const bakedOwnerId = bakedOwnerChain\.find\(\(id\) => listedSliceOwner\(id\)\)/);
   assert.match(renderer, /parent && parent\.assetLock \|\| \(bakedOwnerId && !bakedOwnerReleased\)/);
-  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill\) continue/);
+  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease\) continue/);
 });
 
 test('heroUi stretch never moves pin=viewport fix descendants', () => {
@@ -82,7 +82,7 @@ test('section height is inventory pageBox.h, never ceil-snapped', () => {
 
 test('play triangle art-fragment still paints above a baked owner', () => {
   assert.match(renderer, /const paintAsFragment = n\.paintAsFragment === true/);
-  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill\) continue/);
+  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease\) continue/);
 });
 
 test('only explicit interaction descendants remain renderable under baked assets', () => {
@@ -101,8 +101,9 @@ test('live nested hscroll releases an ancestor designer-export bake instead of s
      any ancestor with an asset record under a live data-hscroll host, never a
      product node id. */
   assert.match(renderer, /liveHscrollBakeRelease/);
+  assert.match(renderer, /forEachBakedAncestor/);
   assert.match(renderer, /data-asset-lock-released', 'live-hscroll-descendant'/);
-  assert.match(renderer, /const bakeReleasedForLiveHscroll = liveHscrollBakeRelease\.has\(String\(__u\(nid\)\)\)/);
+  assert.match(renderer, /const bakeReleasedForLiveHscroll = liveHscrollBakeRelease\.has\(nidKey\)/);
   assert.match(renderer, /assetRec && !bakeReleasedForLiveHscroll/);
   assert.match(renderer, /ancestorPfx === 'mix' \|\| ancestorPfx === 'scroll' \|\| ancestorClips/);
   assert.doesNotMatch(renderer, /__calendarOwnerAssetLock/);
@@ -359,20 +360,40 @@ test('hscroll gutter expands host box and survives the generic box.h height over
 });
 
 test('fx-img follows the owner box instead of intrinsic pixels', () => {
-  /* 有 exportBox/sliceExport：按导出框像素摆。简中无导出框：按 owner box 像素，禁止 100%+fill。 */
+  /* 有 exportBox/sliceExport：按导出框像素摆。缩小导出的 PNG 必须 fill 铺满
+     设计框，禁止 object-fit:none 把 intrinsic 像素钉死。简中无导出框：按
+     owner box 像素，禁止 100%+fill。 */
   assert.match(renderer, /img\.style\.position = 'absolute'/);
   assert.match(renderer, /const placedBox = exportBox \|\| sliceBox/);
   assert.match(renderer, /owner-box-zh-cn/);
-  assert.match(renderer, /img\.style\.objectFit = 'none'/);
+  assert.match(renderer, /img\.style\.objectFit = zhStatic \? 'none' : 'fill'/);
   assert.match(renderer, /el\.style\.overflow = 'hidden'/);
   assert.match(renderer, /el\.style\.position = 'relative'/);
 });
 
 test('listed img/bg/kv owners keep pageBox clip when ink slice is shorter', () => {
-  assert.match(renderer, /Listed img\/bg\/kv owners clip to pageBox/);
-  assert.match(renderer, /Number\(slicePageBox\.h\) <= Number\(ownerBox\.h\) \+ 0\.5/);
-  assert.match(renderer, /if \(this\._geomReady\(slicePageBox\) && this\._sameCoordinateSpace\(slicePageBox, ownerBox\)\) return slicePageBox/);
-  assert.match(renderer, /Owner layout box stays the clip, never the PNG size/);
+  assert.match(renderer, /Whole-frame img\/bg\/kv clip to pageBox/);
+  assert.match(renderer, /Number\(sliceExportBox\.h\) <= Number\(ownerBox\.h\) \+ 0\.5/);
+  assert.match(renderer, /if \(this\._geomReady\(sliceExportBox\) && this\._sameCoordinateSpace\(sliceExportBox, ownerBox\)\) return sliceExportBox/);
+});
+
+test('sticky overlay host uses overlay root height, not descendant pageBoxes', () => {
+  assert.match(renderer, /Only read the overlay root itself/);
+  assert.match(renderer, /Array\.isArray\(__activeTruth\.fixedOverlays\.nodes\)/);
+  assert.doesNotMatch(renderer, /asArr\(__activeTruth\.fixedOverlays\.nodes\)\.map\(\(node\) => \{/);
+});
+
+test('legal lang-axis instances still paint under a baked ancestor', () => {
+  assert.match(renderer, /imgLangRelease/);
+  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease\) continue/);
+  assert.match(renderer, /liveImgLangBakeRelease/);
+  assert.match(renderer, /data-asset-lock-released', 'live-img-lang-descendant'/);
+  assert.match(renderer, /if \(ancestorPfx === 'img' \|\| ancestorPfx === 'bg' \|\| ancestorPfx === 'kv'\) return/);
+});
+
+test('zh-CN hugging CENTER text stays on the Figma leaf box', () => {
+  assert.match(renderer, /data-text-hug-policy', 'zh-cn-source-box'/);
+  assert.match(renderer, /Keep the Figma leaf box\. CENTER\/RIGHT are already in pageBox/);
 });
 
 test('zh-CN static images must not stretch with object-fit fill', () => {
@@ -415,6 +436,8 @@ test('compact HUG label behavior remains geometry-authorized only', () => {
   assert.match(renderer, /const compactHugLabelEvidence = \(\{ role, align, autoResize, ownerNode, ownerBox, directOwner, sourceBox \}\) =>/);
   assert.match(renderer, /verticalSlack <= sourceH \* 0\.6 \+ 0\.5/);
   assert.match(renderer, /sourceW >= ownerW \* 0\.55/);
-  assert.match(renderer, /const boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner/);
-  assert.match(renderer, /if \(boundedHugLabel\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*fitCandidates\.push\(\{ el, tx, box, widthFit: _ownerW/);
+  assert.match(renderer, /const boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner && hasAlCaps/);
+  assert.match(renderer, /if \(boundedHugLabel\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*maxWidth: alOwner\.maxWidth/);
+  assert.doesNotMatch(renderer, /hasAlCaps \|\| semanticBreak/);
+  assert.doesNotMatch(renderer, /widthFit: _ownerW/);
 });

@@ -137,6 +137,28 @@ test("handoff：BOOLEAN btn 的 sliceExport 进入切图计划", () => {
   assert.ok(sliceIdsOf(pc).includes("395:35371"));
 });
 
+test("handoff：unknown IMAGE 填充层进切图计划，只画不接线", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  pc.nodes.push({
+    id: "0:1788",
+    type: "RECTANGLE",
+    name: "赛季kv-最终 1",
+    status: "unknown",
+    role: null,
+    behavior: "none",
+    parentId: "1:1-sec",
+    box: { x: 0, y: 0, w: 2443, h: 1380 },
+    pageBox: { x: -823, y: -46, w: 2443, h: 1380 },
+    style: { fills: [{ type: "IMAGE", visible: true, imageRef: "kv" }] },
+  });
+  rebuildInventoryIndexes(pc);
+  fixtureJudgment(pc);
+  const result = validateHandoffPair(pc, mobile);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  assert.ok(sliceIdsOf(pc).includes("0:1788"));
+});
+
 test("handoff：via=structure 的 mix 自动拆 img 默认名可通过 ready 装箱并进切图计划", () => {
   const pc = sample("1:1");
   const mobile = sample("2:2");

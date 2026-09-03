@@ -114,9 +114,54 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   assert.equal(spec.figma.pcPageId, '1:1');
   assert.equal(spec.figma.mobilePageId, '2:2');
   assert.equal(spec.figma.exportScale, 1);
+  assert.deepEqual(spec.matrix.langs, ['zh-CN']);
+  assert.match(html, /lang:\s*\{\s*label:\s*'Language',\s*options:\s*\[\{"v":"zh-CN","label":"简体中文"\}\]/);
   assert.equal(existsSync(join(pack.outDir, 'index.html')), false);
   assert.equal(result.htmlVolume.ok, true);
   assert.equal(existsSync(join(demoDir, 'fonts-manifest.json')), true);
+});
+
+test('html-from-handoff language matrix follows img/ langs and does not invent ja', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-langs-'));
+  const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920 });
+  const mobileDoc = sample('2:2', { roles: GOLD_MOBILE_PREFIX_CLASSES, pageWidth: 750 });
+  const langSet = {
+    id: 'img-lang-set',
+    name: 'img/模块2可替换素材',
+    componentPropertyDefinitions: {
+      lang: { type: 'VARIANT', defaultValue: 'cn', variantOptions: ['cn', 'tw', 'en', 'kr'] },
+    },
+    variants: [
+      { id: 'img-cn', type: 'COMPONENT', name: 'lang=cn', componentProperties: { lang: { type: 'VARIANT', value: 'cn' } } },
+      { id: 'img-tw', type: 'COMPONENT', name: 'lang=tw', componentProperties: { lang: { type: 'VARIANT', value: 'tw' } } },
+      { id: 'img-en', type: 'COMPONENT', name: 'lang=en', componentProperties: { lang: { type: 'VARIANT', value: 'en' } } },
+      { id: 'img-kr', type: 'COMPONENT', name: 'lang=kr', componentProperties: { lang: { type: 'VARIANT', value: 'kr' } } },
+    ],
+  };
+  pcDoc.attachments.componentSets.push(langSet);
+  mobileDoc.attachments.componentSets.push(langSet);
+  rebuildInventoryIndexes(pcDoc);
+  rebuildInventoryIndexes(mobileDoc);
+  fixtureJudgment(pcDoc);
+  fixtureJudgment(mobileDoc);
+  const pcPath = join(dir, 'pc.json');
+  const mobilePath = join(dir, 'mo.json');
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: 'ready', outDir: join(dir, 'out'),
+  });
+  const demoDir = join(dir, 'demo');
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const spec = JSON.parse(readFileSync(join(demoDir, 'spec.json'), 'utf8'));
+  assert.deepEqual(spec.matrix.langs, ['zh-CN', 'zh-TW', 'en', 'ko']);
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  assert.match(html, /lang:\s*\{\s*label:\s*'Language',\s*options:\s*\[\{"v":"zh-CN","label":"简体中文"\},\{"v":"zh-TW","label":"繁體中文"\},\{"v":"en","label":"English"\},\{"v":"ko","label":"한국어"\}\]/);
 });
 
 test('html-from-handoff writes a pc-only ready pack without claiming mobile', () => {
@@ -212,12 +257,18 @@ test('skipPreview still runs inventory static gate and never marks skipped-ok', 
   const src = readFileSync(new URL('../figma-html-from-handoff.mjs', import.meta.url), 'utf8');
   assert.match(src, /attachInventoryStaticGate/);
   assert.match(src, /runInventoryStaticGate/);
+  assert.match(src, /attachDesignPolicyMirror/);
   assert.match(src, /attachSliceAssets/);
   assert.match(src, /figma-assets\.mjs/);
   assert.match(src, /reuseExistingAssets/);
   assert.match(src, /--reuse-existing/);
   assert.doesNotMatch(src, /\|\| true/);
   assert.doesNotMatch(src, /--skip-preview/);
+  assert.doesNotMatch(src, /design-policy-dom-probe/);
+  assert.match(src, /chromeSource/);
+  assert.match(src, /renderSource/);
+  assert.match(src, /shellSource/);
+  assert.doesNotMatch(src, /chromeOfficialRootFontVw: policy\.officialRootFontVw/);
 });
 
 test('preview green + static gate red still blocks product view', () => {

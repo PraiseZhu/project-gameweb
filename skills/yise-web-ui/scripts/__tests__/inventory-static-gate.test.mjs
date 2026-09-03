@@ -105,6 +105,35 @@ test('missing pageBox on a live node is red, never skipped-ok', () => {
   assert.ok(red.problems.some((line) => line.includes('missing-pageBox')));
 });
 
+test('ordinary whole-frame img/ empty or wrong-size PNG is red even when DOM matches pageBox', () => {
+  const pageBox = { x: 0, y: 0, w: 100, h: 100 };
+  const node = {
+    id: 'img-title',
+    status: 'determined',
+    role: 'img',
+    name: 'img/标题',
+    pageBox,
+    sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'img-title.png', bounds: 'render' },
+  };
+  const matchingDom = {
+    x: 0, y: 0, w: 100, h: 100, hasImg: true, imgBox: pageBox,
+    fontSize: 16, fontFamily: 'Source Han Sans', fontWeight: 400,
+  };
+  const empty = evaluateInventoryStaticGate({
+    inventory: { schema: 'inventory/v2', nodes: [node] },
+    measurements: { nodes: { 'img-title': { ...matchingDom, assetEmpty: true, assetW: 0, assetH: 0 } } },
+  });
+  assert.equal(empty.ok, false);
+  assert.ok(empty.problems.some((line) => line.includes('whole-frame-png-empty')), (empty.problems || []).join('\n'));
+
+  const wrongSize = evaluateInventoryStaticGate({
+    inventory: { schema: 'inventory/v2', nodes: [node] },
+    measurements: { nodes: { 'img-title': { ...matchingDom, assetEmpty: false, assetW: 50, assetH: 50 } } },
+  });
+  assert.equal(wrongSize.ok, false);
+  assert.ok(wrongSize.problems.some((line) => line.includes('whole-frame-png-size-mismatch')), (wrongSize.problems || []).join('\n'));
+});
+
 test('matching DOM pageBox + fontSize + slice is green', () => {
   const green = evaluateInventoryStaticGate({
     inventory: inventory(),
@@ -123,6 +152,8 @@ test('probe script is a shipped skill file, not an optional local extra', () => 
   const src = readFileSync(probe, 'utf8');
   assert.match(src, /inventory-static-gate=1/);
   assert.match(src, /platform === 'mobile' \? 'mobile' : 'desktop'/);
+  assert.match(src, /isWholeFrameSliceNode/);
+  assert.match(src, /assetEmpty/);
 });
 
 test('descendants baked into an ancestor PNG are not missing-dom', () => {

@@ -5,7 +5,7 @@
  *
  *   node scripts/figma-html-from-handoff.mjs --handoff <dir> --demo <dir>
  *
- * Preview-first is required before showing `?product=1`. Tests may pass
+ * Preview-first is required before showing `index.html`. Tests may pass
  * `skipPreview: true` to `buildHtmlFromHandoff`; the CLI never skips it.
  * After HTML is written, `figma-fonts` copies registered source families into
  * the demo. Consume already fail-closes when a source family is missing from
@@ -22,6 +22,11 @@ import { DEFAULT_MAX_HTML_BYTES, QA_TRUTH_RE, externalizeQaTruthIfOverLimit } fr
 import { safeJsonForScript } from './lib/fs-utils.mjs';
 import { workflowDeclaration } from './lib/workflows.mjs';
 import { runInventoryStaticGate } from './lib/inventory-static-gate.mjs';
+import { parseDesignPolicyFile } from '../../../standards/design-policy/tool/src/parse-design-policy.mjs';
+import { mirrorDesignPolicy } from '../../../standards/design-policy/tool/src/mirror-design-policy.mjs';
+import { implementationSnapshotFromModules } from '../../../standards/design-policy/tool/src/implementation-snapshot.mjs';
+import * as resizePolicy from './lib/resize/index.mjs';
+import * as typographyPolicy from './lib/translation/typography-policy.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const INIT = join(SKILL_ROOT, 'scripts/init.mjs');
@@ -93,6 +98,7 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
     runNode(INIT, ['--dir', demoDir, '--name', slug, '--workflow', 'figma-showcase']);
   }
   if (!existsSync(indexPath)) throw new Error(`init did not write ${indexPath}`);
+  embedDesignPolicy(indexPath);
   const truth = readyPlatformTruth({ fingerprint: consume.fingerprint, source: pc.source, pc, mobile });
   assertHtmlVolume(demoDir, htmlLimitBytes, embedOrExternalizeTruth(demoDir, truth, htmlLimitBytes));
   patchShowcaseSpec(demoDir, consume);
@@ -244,7 +250,7 @@ export function buildHtmlFromHandoff({
     consume,
     htmlVolume,
     note: 'unknown 只画不接线。skipped 不画。preview-first 与清单对账绿之前禁止给人打开产品视图，禁止开 Interaction / Resize。',
-    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → then show ?product=1. Stop at Main static.',
+    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → policy mirror must be green → then show ?product=1. Stop at Main static.',
   };
 
   if (skipPreview) {
@@ -255,7 +261,51 @@ export function buildHtmlFromHandoff({
     attachSliceAssets(payload, demoDir);
     if (payload.ok === true) attachPreviewFirst(payload, demoDir);
   }
-  return attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, staticGateProbe });
+  const afterInventory = attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, staticGateProbe });
+  return attachDesignPolicyMirror(afterInventory);
+}
+
+const DESIGN_POLICY_RE = /<script id="qa-design-policy" type="application\/json">[\s\S]*?<\/script>/;
+
+function loadSkillDesignPolicy() {
+  return parseDesignPolicyFile(join(SKILL_ROOT, 'DESIGN.md'));
+}
+
+function embedDesignPolicy(indexPath) {
+  const html = readFileSync(indexPath, 'utf8');
+  if (!DESIGN_POLICY_RE.test(html)) {
+    throw new Error('index.html missing #qa-design-policy');
+  }
+  const policy = loadSkillDesignPolicy();
+  const next = html.replace(
+    DESIGN_POLICY_RE,
+    `<script id="qa-design-policy" type="application/json">${safeJsonForScript(policy)}</script>`,
+  );
+  writeFileSync(indexPath, next);
+}
+
+function attachDesignPolicyMirror(payload) {
+  try {
+    const policy = loadSkillDesignPolicy();
+    const implementation = implementationSnapshotFromModules({
+      resize: resizePolicy,
+      typography: typographyPolicy,
+      chromeSource: readFileSync(join(SKILL_ROOT, 'templates/figma-chrome.js'), 'utf8'),
+      renderSource: readFileSync(join(SKILL_ROOT, 'templates/figma-render.js'), 'utf8'),
+      shellSource: readFileSync(join(SKILL_ROOT, 'templates/demo-shell.html'), 'utf8'),
+    });
+    const result = mirrorDesignPolicy({ policy, implementation, path: join(SKILL_ROOT, 'DESIGN.md') });
+    payload.designPolicyMirror = { ok: true, schema: result.schema };
+    return payload;
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    payload.designPolicyMirror = { ok: false, error: message };
+    return blockProductView(
+      payload,
+      'design-policy-mirror red; do not open product view, do not start Interaction / Resize',
+      [message],
+    );
+  }
 }
 
 function blockProductView(payload, reason, extraProblems = []) {
@@ -382,7 +432,7 @@ function attachPreviewFirst(payload, demoDir) {
   payload.nextHumanStep = previewJson?.nextHumanStep
     || (payload.ok
       ? 'preview:first 已绿。第一次给人看：Main 静态。等人说继续，才做交互和拉伸。'
-      : 'preview:first 红了不许给人打开 ?product=1，也不许开 Interaction / Resize。');
+      : 'preview:first 红了不许给人打开 index.html，也不许开 Interaction / Resize。');
   if (!payload.ok) {
     payload.problems = [
       'preview-first red; do not open product view, do not start Interaction / Resize',

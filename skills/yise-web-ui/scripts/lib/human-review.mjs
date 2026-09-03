@@ -126,14 +126,24 @@ export function assertStopAccepted(demoDir, id) {
   return { ok: false, reason: `${id}-not-accepted`, record };
 }
 
-export function canStartLaterAxis(demoDir) {
+export function canStartLaterAxis(demoDir, { inventoryLock = null } = {}) {
   const result = assertStopAccepted(demoDir, 'static-and-translation');
-  if (result.ok) return { ok: true, next: 'Interaction / Resize' };
-  return {
-    ok: false,
-    reason: 'first-stop-not-accepted',
-    nextHumanStep: '静态（有翻译表才带翻译）还没人点头。不许开 Interaction / Resize。',
-  };
+  if (!result.ok) {
+    return {
+      ok: false,
+      reason: 'first-stop-not-accepted',
+      nextHumanStep: '静态（有翻译表才带翻译）还没人点头。不许开 Interaction / Resize。',
+    };
+  }
+  if (inventoryLock && inventoryLock.ok !== true) {
+    return {
+      ok: false,
+      reason: 'static-inventory-not-locked',
+      nextHumanStep: '静态页还没锁死清单数据。不许拿清单当验收分去凑，也不许开自适应。',
+      lock: inventoryLock,
+    };
+  }
+  return { ok: true, next: 'Interaction / Resize' };
 }
 
 export function packAllowedAfterSecondStop(demoDir) {

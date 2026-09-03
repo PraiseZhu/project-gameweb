@@ -191,6 +191,13 @@ export function fingerprintInventories(pcDoc, mobileDoc) {
 
 const PACKED_ASSETS_REDIRECT = "切图 PNG 不进交接包。清单只写 sliceExport（整框 pageBox 1 倍 png）；做页按 node id 自己导出。";
 
+function isUnknownImageSlice(node) {
+  if (node?.status !== "unknown" || typeof node.id !== "string" || !node.id) return false;
+  const fills = node.style?.fills;
+  if (!Array.isArray(fills)) return false;
+  return fills.some((fill) => fill && fill.visible !== false && fill.type === "IMAGE");
+}
+
 function isSliceNode(node) {
   /* Callers: pageSliceIds / collectAttachmentSlices / sliceIdsOf.
      Schema: inventory/v2 node.sliceExport. Unknown unnamed kv now needs a
@@ -198,6 +205,7 @@ function isSliceNode(node) {
      User: 「补无名 kv 切图规则」. */
   if (typeof node.id !== "string" || !node.id) return false;
   if (node.status === "skipped") return false;
+  if (isUnknownImageSlice(node)) return true;
   return needsSliceExport(node) || sliceExportMatches(node.sliceExport);
 }
 

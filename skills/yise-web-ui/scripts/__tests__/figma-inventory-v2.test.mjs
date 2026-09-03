@@ -9,6 +9,7 @@ import {
   adaptInventoryToTruthShape,
   inventoryAcceptanceReport,
   inventoryBacklinkReport,
+  staticInventoryLockReport,
   collectSkippedNodeIds,
   restoreOwnerComposites,
   calendarIdentityFromNodes,
@@ -140,6 +141,19 @@ test("componentSets become variantTrees with renderable geometry", () => {
   assert.deepEqual(adapted.componentVariantGraph.variantTrees["100:30"].map((v) => v.componentId), ["100:31", "100:32"]);
   assert.ok(set.variants.every((v) => v.box));
   assert.ok(set.variants.every((v) => v.type === "COMPONENT" && v.id === v.componentId));
+});
+
+test("section-owned bg stays out of pageChrome", () => {
+  const inv = fixture();
+  inv.sections.push({ id: "100:5", number: 2, label: "2", box: { x: 0, y: 2160, w: 3840, h: 2000 } });
+  inv.backgrounds.push({ id: "100:6", role: "bg", label: "sec2" });
+  inv.nodes.push(
+    { id: "100:5", scope: "page", type: "FRAME", name: "sec/2", parentId: PAGE_ID, orderKey: "0.2", status: "determined", role: "sec" },
+    { id: "100:6", scope: "page", type: "RECTANGLE", name: "bg/sec2", parentId: "100:5", ancestorIds: ["100:5"], orderKey: "0.2.0", status: "determined", role: "bg", behavior: "slice" },
+  );
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(adapted.pageChrome.nodes.some((node) => node.id === "100:6"), false);
+  assert.equal(adapted.pageChrome.nodes.some((node) => node.id === "100:3"), true);
 });
 
 test("modals own a hidden layer excluded from scroll", () => {
@@ -274,6 +288,23 @@ test("lang-shell multi-btn @go in variant trees becomes determined openers", () 
   assert.ok(!byId.get("m-apple").triggerFrom.includes("cal"), "page lang-shell instance stays unlifted");
 });
 
+test("same-label viewport fix overlays keep one pin", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:90", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:2", status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
+    { id: "100:91", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: PAGE_ID, status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
+  );
+  inv.overlays = [
+    { id: "100:4", role: "fix", label: "nav", pin: "viewport" },
+    { id: "100:90", role: "fix", label: "顶部信息", pin: "viewport" },
+    { id: "100:91", role: "fix", label: "顶部信息", pin: "viewport" },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const tops = adapted.fixedOverlays.nodes.filter((entry) => entry.label === "顶部信息" || /顶部信息/.test(String(entry.name || "")));
+  assert.equal(tops.length, 1);
+  assert.equal(tops[0].id, "100:90");
+});
+
 test("@go stays unwired when the modal name is missing or duplicated", () => {
   const missing = fixture();
   missing.nodes.push({ id: "100:70", scope: "page", type: "FRAME", name: "btn/播放@go=modal/没有这扇窗", parentId: PAGE_ID, status: "determined", role: "btn", params: { go: "modal/没有这扇窗" } });
@@ -288,6 +319,83 @@ test("@go stays unwired when the modal name is missing or duplicated", () => {
   ];
   const dupAdapted = adaptInventoryToTruthShape(dup, { platformScopeInput: { nodes: [], platformRoots: [] } });
   assert.ok(dupAdapted.modals.every((modal) => modal.triggerStatus === "unknown"));
+});
+
+test("template-naming determines a unique pc-labelled video modal from a pc play button", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:50", scope: "page", type: "FRAME", name: "btn/播放按钮", parentId: PAGE_ID, status: "determined", role: "btn", platform: "pc" },
+  );
+  inv.attachments.modals = [
+    { id: "100:20", name: "modal/pc视频弹窗", nodes: [{ id: "100:20", name: "modal/pc视频弹窗" }] },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const modal = adapted.modals.find((entry) => entry.id === "100:20");
+  assert.equal(modal.platform, "pc");
+  assert.equal(modal.triggerStatus, "determined");
+  assert.deepEqual(modal.triggerFrom, ["100:50"]);
+});
+
+test("template-naming leaves an unplatformed opener inert against a pc-labelled modal", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:50", scope: "page", type: "FRAME", name: "btn/播放按钮", parentId: PAGE_ID, status: "determined", role: "btn" },
+  );
+  inv.attachments.modals = [
+    { id: "100:20", name: "modal/pc视频弹窗", nodes: [{ id: "100:20", name: "modal/pc视频弹窗" }] },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const modal = adapted.modals.find((entry) => entry.id === "100:20");
+  assert.equal(modal.platform, "pc");
+  assert.equal(modal.triggerStatus, "unknown");
+});
+
+test("template-naming determines a unique unplatformed video modal on one inventory", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:50", scope: "page", type: "FRAME", name: "btn/播放按钮", parentId: PAGE_ID, status: "determined", role: "btn" },
+  );
+  inv.attachments.modals = [
+    { id: "100:20", name: "modal/视频弹窗", nodes: [{ id: "100:20", name: "modal/视频弹窗" }] },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const modal = adapted.modals.find((entry) => entry.id === "100:20");
+  assert.equal(modal.platform, null);
+  assert.equal(modal.triggerStatus, "determined");
+  assert.deepEqual(modal.triggerFrom, ["100:50"]);
+});
+
+test("template-naming determines mobile 移动端视频弹窗 from page play buttons", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "753:7710", scope: "page", type: "FRAME", name: "btn/播放按钮", parentId: PAGE_ID, status: "determined", role: "btn", platform: "mobile" },
+  );
+  inv.attachments.modals = [
+    { id: "392:27645", name: "modal/移动端视频弹窗", platform: "mobile", nodes: [{ id: "392:27645", name: "modal/移动端视频弹窗" }] },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const modal = adapted.modals.find((entry) => entry.id === "392:27645");
+  assert.equal(modal.triggerStatus, "determined");
+  assert.deepEqual(modal.triggerFrom, ["753:7710"]);
+});
+
+test("static inventory lock fails when the painted page drops a determined inventory node", () => {
+  const inv = fixture();
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const pageTruth = {
+    pageChrome: { nodes: [] },
+    fixedOverlays: { nodes: [] },
+    sections: [],
+    modals: [],
+  };
+  const report = staticInventoryLockReport(inv, pageTruth, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(report.ok, false);
+  assert.equal(report.locked, false);
+  assert.equal(report.reason, "static-page-not-equal-inventory");
+  assert.ok(report.mismatches.length > 0);
+  const locked = staticInventoryLockReport(inv, adapted, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(locked.ok, true);
+  assert.equal(locked.locked, true);
 });
 
 test("template-naming stays unknown when two video modals share a platform", () => {
@@ -310,6 +418,19 @@ test("adapted modal truth preserves platform for renderer isolation", () => {
   const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
   assert.equal(adapted.modals.find((modal) => modal.id === "pc-video").platform, "pc");
   assert.equal(adapted.modals.find((modal) => modal.id === "mobile-video").platform, "mobile");
+});
+
+test("pc/移动端 modal labels fill missing platform; unnamed modal stays null", () => {
+  const inv = fixture();
+  inv.attachments.modals = [
+    { id: "pc-named", name: "modal/pc视频弹窗", nodes: [{ id: "pc-named", name: "modal/pc视频弹窗" }] },
+    { id: "mobile-named", name: "modal/移动端视频弹窗", nodes: [{ id: "mobile-named", name: "modal/移动端视频弹窗" }] },
+    { id: "bare", name: "modal/视频弹窗", nodes: [{ id: "bare", name: "modal/视频弹窗" }] },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(adapted.modals.find((modal) => modal.id === "pc-named").platform, "pc");
+  assert.equal(adapted.modals.find((modal) => modal.id === "mobile-named").platform, "mobile");
+  assert.equal(adapted.modals.find((modal) => modal.id === "bare").platform, null);
 });
 test("determined modal-trigger wires while unknown stays pending", () => {
   const inv = fixture();

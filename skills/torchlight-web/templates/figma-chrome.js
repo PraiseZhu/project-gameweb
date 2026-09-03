@@ -52,6 +52,21 @@
   })();
   if (PRODUCT_VIEW) document.documentElement.setAttribute('data-product-view', '1');
 
+  function designPolicy() {
+    var policy = window.__designPolicy;
+    if (!policy || typeof policy !== 'object') {
+      throw new Error('figma-chrome: missing window.__designPolicy');
+    }
+    return policy;
+  }
+  function officialRootFontVw() {
+    var value = Number(designPolicy().officialRootFontVw);
+    if (!isFinite(value) || value <= 0) {
+      throw new Error('figma-chrome: officialRootFontVw missing from DESIGN.md YAML');
+    }
+    return value;
+  }
+
   /* ── truth ──
      默认内嵌在 #qa-truth。index.html 超过 10MB 时 truth.mjs 会把块改成
      data-src="truth.json"（外置，页面需本地预览服务，不能再当纯 file:// 单文件）。 */
@@ -124,12 +139,13 @@
   /* Device picker buckets come from the shared kit. A page may separately
      declare the layout tree observed on its official site; this must never be
      inferred from whether a pad Figma tree happens to exist. */
-  /* Official torchlight tree switch is max-width 1126px, not the kit 750/1024
-     device-picker buckets. Missing cfg must not fall back to BREAKPOINTS. */
-  var TORCHLIGHT_COMPOSITION_BREAKPOINTS = [
-    { key: 'mobile', min: 0, max: 1126 },
-    { key: 'desktop', min: 1127, max: null },
-  ];
+  /* Official torchlight tree switch comes from DESIGN.md composition YAML,
+     not the kit 750/1024 device-picker buckets. Missing cfg must not fall
+     back to BREAKPOINTS. */
+  var TORCHLIGHT_COMPOSITION_BREAKPOINTS = designPolicy().composition;
+  if (!Array.isArray(TORCHLIGHT_COMPOSITION_BREAKPOINTS) || !TORCHLIGHT_COMPOSITION_BREAKPOINTS.length) {
+    throw new Error('figma-chrome: composition missing from DESIGN.md YAML');
+  }
   var COMPOSITION_BREAKPOINTS = Array.isArray(cfg.compositionBreakpoints) && cfg.compositionBreakpoints.length
     ? cfg.compositionBreakpoints
     : TORCHLIGHT_COMPOSITION_BREAKPOINTS;
@@ -335,7 +351,7 @@
     '.frame{background:transparent;overflow:visible;transform-origin:0 0;border-radius:6px;',
     'box-shadow:0 0 0 1px #000}',
     '[data-product-view="1"] .frame{background:transparent;border-radius:0;box-shadow:none;overflow-x:hidden}',
-    'html[data-product-view="1"]{--fx-official-root:calc(10vw * var(--fx-root-scale, 1));overflow-x:hidden}',
+    'html[data-product-view="1"]{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1));overflow-x:hidden}',
     /* Keep the official 10vw number as a reported ruler. Do not apply it as the
        document font-size: Figma stages size in px, and a 10vw html font-size
        makes Chromium treat the product stage as a zoomed rem tree. */
@@ -681,7 +697,7 @@
 
   }
 
-  /* Official poster: `@media (max-width: 1126px)` swaps PC vs mobile controls.
+  /* Official poster swaps PC vs mobile controls at DESIGN.md composition max.
      Product view matches that width cutoff. UA is-pc / is-mobile is not the tree.
      No pad tree. */
   function productViewportPlatform() {
@@ -707,6 +723,24 @@
     };
   }
 
+  /* DESIGN.md §5.0: 产品页 PC 列在 1127–1920（含 1920）冻 1920，overflow-x hidden 裁掉。
+     切树仍 1126。>1920 列随视口。QA fit/bezel 不得走这把尺。 */
+  function productColumnWidth(viewportW, plat) {
+    var w = Number(viewportW);
+    if (!PRODUCT_VIEW || !isFinite(w) || w <= 0) return w;
+    if (plat === 'mobile' || w <= 1126) return w;
+    if (w <= 1920) return 1920;
+    return w;
+  }
+
+  function productUiScaleK(viewportW, plat) {
+    var w = Number(viewportW);
+    if (!PRODUCT_VIEW || !isFinite(w) || w <= 0) return null;
+    if (plat === 'mobile' || w <= 1126) return w / 750;
+    if (w <= 1920) return 0.5;
+    return w / 3840;
+  }
+
   function renderInto(container, state) {
     var renderPrefs = cp(S.prefs);
     var productPlatform = productViewportPlatform();
@@ -714,7 +748,8 @@
     var vp = viewport();
     cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
-      interactionPayload: cfg.interactionPayload || null });
+      interactionPayload: cfg.interactionPayload || null,
+      productView: !!PRODUCT_VIEW });
   }
 
   /* 字体就绪回调：渲染层重量完缩字号后调这里，让读数（缩字号条数/字宽对账/缺字形）
@@ -1073,8 +1108,18 @@
     stage.classList.remove('tiled');
     wrap.style.display = '';
 
-    frame.style.width = vp.w + 'px';
-    if (PRODUCT_VIEW) frame.setAttribute('data-product-viewport-src', vp.src || 'product-view');
+    var productPlat = PRODUCT_VIEW ? productViewportPlatform() : null;
+    var columnW = PRODUCT_VIEW ? productColumnWidth(vp.w, productPlat) : vp.w;
+    frame.style.width = columnW + 'px';
+    if (PRODUCT_VIEW) {
+      frame.setAttribute('data-product-viewport-src', vp.src || 'product-view');
+      frame.setAttribute('data-product-column-width', String(columnW));
+      if (columnW !== vp.w) frame.setAttribute('data-product-column-frozen', '1920');
+      else frame.removeAttribute('data-product-column-frozen');
+    } else {
+      frame.removeAttribute('data-product-column-width');
+      frame.removeAttribute('data-product-column-frozen');
+    }
     /* screen 即独立模拟 viewport（2026-08-05 用户红框：页面不能上下顶天立地）。
        frame 固定可视尺寸 = viewport（宽 vp.w、高 vp.h），全页多分区内容在 frame **内部纵向滚动**
        （overflow-y:auto），外层 stage 只装一屏高的屏幕容器、四周留黑色呼吸空间 —— 不再被整页
@@ -1200,7 +1245,9 @@
         var ps = document.querySelector('.frame .fx-stage[data-node="__page__"]') || document.querySelector('.frame .fx-stage');
         var pz = ps ? parseFloat(getComputedStyle(ps).zoom) : 1;
         if (!isFinite(pz) || pz <= 0) pz = 1;
-        var effK = scale * pz;
+        /* 产品页像素对齐按有效 k×3840；1127–1920 用冻尺 k=0.5，不得用未冻结 viewportW/3840。 */
+        var productK = PRODUCT_VIEW ? productUiScaleK(vp.w, productViewportPlatform()) : null;
+        var effK = (productK != null && isFinite(productK) && productK > 0) ? productK : (scale * pz);
         var phys = effK * 3840;   /* 1 设计 px → 物理 CSS px（designWidth 3840 为 PC 基线） */
         window.__fxPixelAlign = {
           effectiveK: +effK.toFixed(6),
@@ -1484,8 +1531,14 @@
   function compositionKeyForViewport(vp) {
     var composition = compositionBpOf(vp && vp.w).key;
     var platforms = (TRUTH && TRUTH.platforms) || {};
+    var policy = designPolicy();
     if (composition === 'mobile' && platforms.mobile) return 'mobile';
     if ((composition === 'tablet' || composition === 'pad') && platforms.pad) return 'pad';
+    if ((composition === 'tablet' || composition === 'pad') && !platforms.pad) {
+      if (policy.inventPadTree) return 'pad';
+      if (policy.padUsesPcTree) return 'pc';
+      return 'pc';
+    }
     return 'pc';
   }
   function beginResizeDrag() {
@@ -2192,7 +2245,7 @@
         copyMissing: document.querySelectorAll('.frame [data-copy-missing]').length,
         textEmpty: document.querySelectorAll('.frame [data-text-empty]').length,
         assetPending: document.querySelectorAll('.frame [data-asset-pending]').length,
-        fitScaled: document.querySelectorAll('.frame [data-fit-scale]').length,
+        fitScaled: document.querySelectorAll('.frame [data-fit-px], .frame [data-fit-scale]').length,
         fitOverflow: document.querySelectorAll('.frame [data-fit-overflow]').length,
         lineBreakLost: document.querySelectorAll('.frame [data-copy-lb-lost]').length,
         designVersion: (TRUTH.design && TRUTH.design.fileVersion) || null,
@@ -2217,7 +2270,7 @@
       }
       var idx = window.__fxTextIndex || {};
       var items = [];
-      var els = document.querySelectorAll('.frame [data-fit-scale]');
+      var els = document.querySelectorAll('.frame [data-fit-px], .frame [data-fit-scale]');
       for (var i = 0; i < els.length; i++) {
         var el = els[i];
         var nid = el.getAttribute('data-node');
@@ -2230,7 +2283,8 @@
           designText: rec.chars != null ? rec.chars : null,   // 稿内原文（简中）
           shownText: el.textContent,                          // 当前实际显示的文字
           boxH: boxH,                                         // 稿框高（设计 px）
-          fitScale: Number(el.getAttribute('data-fit-scale')),// 缩到了哪一档（%）
+          fitPx: el.getAttribute('data-fit-px') ? Number(el.getAttribute('data-fit-px')) : null,
+          fitScale: el.getAttribute('data-fit-scale') ? Number(el.getAttribute('data-fit-scale')) : null,
           stillOverflow: el.getAttribute('data-fit-overflow') === '1',
           // 还超多少（缩放后 px；仍溢出的条目才有意义）。现测，不是推算
           overflowPx: (boxH != null && typeof el.scrollHeight === 'number')
@@ -2238,7 +2292,7 @@
         });
       }
       return {
-        _note: '超框缩字号清单（运行时实测，给本地化/设计裁决）。fitScale<100=已按档收进；stillOverflow=到下限 75% 仍溢出，要改文案或改稿',
+        _note: '超框缩字号清单（运行时实测，给本地化/设计裁决）。fitPx=相对 locale 基准的整数字号；stillOverflow=整数缩完仍溢出，要改文案或改稿',
         designVersion: (TRUTH.design && TRUTH.design.fileVersion) || null,
         lang: S.prefs.lang,
         count: items.length,

@@ -77,7 +77,8 @@ test('sc-mobile-scale: product view uses real browser size and native mobile tre
   assert.match(chromeSrc, /src: 'product-view'/);
   assert.match(chromeSrc, /Using the PC 1920 lock on a 412-wide/);
   assert.match(renderSrc, /native 20:2205 tree at designWidth 750/);
-  assert.match(renderSrc, /mobile: 750/);
+  assert.match(renderSrc, /designPolicy\(\)\.designWidths/);
+  assert.match(renderSrc, /mobile: Number\(widths\.mobile\)/);
   assert.match(staticDoc, /native `20:2205` tree/);
   assert.match(staticDoc, /data-plat-fallback="mobile-uses-pc-tree"/);
 });
@@ -115,13 +116,27 @@ test('sc-static-text-baseline: source renderBox is retained without a cross-page
 test('sc-ready-consume-contracts: legal owner mapping without invented visuals', () => {
   assert.match(renderSrc, /paintRootId/);
   assert.match(renderSrc, /fixedDescendantIds/);
-  assert.match(renderSrc, /owner-canvas-from-delivered-png/);
+  assert.match(renderSrc, /owner-ink-from-unclipped-png/);
+  assert.match(renderSrc, /n\.inkBox/);
+  assert.match(renderSrc, /isLanguageDropmenu/);
+  assert.match(renderSrc, /data-dropmenu/);
   assert.match(renderSrc, /hasDeliveredComposite/);
   assert.match(renderSrc, /coordinateGridText/);
   assert.match(renderSrc, /n\.layout\?\.layoutMode \?\? n\.layoutMode/);
   assert.match(renderSrc, /normalizeFigmaLineBreaks/);
   assert.match(renderSrc, /selected-component-tree/);
   assert.match(renderSrc, /img-lang-variant-tree/);
+  assert.match(renderSrc, /lang-shell-variant-tree/);
+  assert.match(renderSrc, /_isLegalLangShellSet/);
+  assert.match(renderSrc, /_isLegalImgLangAssetSet/);
+  assert.match(renderSrc, /data-modal-clip/);
+  assert.match(renderSrc, /suppressed-for-overlay-art/);
+  assert.match(renderSrc, /_isNamedCloseControl/);
+  assert.match(renderSrc, /_closeControlFromEvent/);
+  assert.match(renderSrc, /_closeControlEls/);
+  assert.match(renderSrc, /关闭按钮\(\?:@\|\$\)/);
+  assert.doesNotMatch(renderSrc, /closest\('\[data-btn-name="关闭按钮"\]'/);
+  assert.match(renderSrc, /_isModalOverlayArt/);
   assert.match(renderSrc, /data-img-lang-missing/);
   assert.match(renderSrc, /_resolveImgLangVariant/);
   assert.match(renderSrc, /_imgLangAxisOfSet/);

@@ -6,6 +6,7 @@ import { buildRendererInteractionPayload } from '../lib/figma-render-interaction
 import { deriveInteractionModel } from '../lib/figma-interaction-contract.mjs';
 import { launchChromium } from '../lib/resolve-playwright.mjs';
 import { playwrightBrowserSkipMessage, probePlaywrightCapability } from '../lib/runtime-capabilities.mjs';
+import { DESIGN_POLICY } from '../lib/design-policy.generated.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const PLAYWRIGHT_PROBE = probePlaywrightCapability(root);
 const HAS_BROWSER_DEPS = PLAYWRIGHT_PROBE.available;
@@ -23,6 +24,7 @@ async function setup(viewport = { width: 400, height: 300 }, pageOpts = {}) {
   const { browser } = await launchChromium(root, { headless: true });
   const page = await browser.newPage({ viewport, ...pageOpts });
   await page.setContent('<!doctype html><body><div class="frame"></div></body>');
+  await page.evaluate((policy) => { window.__designPolicy = policy; }, DESIGN_POLICY);
   await page.addScriptTag({ path: rendererPath });
   return { browser, page };
 }
@@ -44,7 +46,8 @@ function browserTest(name, fn) {
     }
   });
 }
-async function render(page, payload) { await page.evaluate(({ truth, payload }) => window.__figmaRender.renderApp({ truth, rawTruth: truth, prefs: { plat: 'pc', lang: 'zh-CN' }, state: 'default', frame: document.querySelector('.frame'), viewport: { w: 400, h: 300, dpr: 1 }, interactionPayload: payload }), { truth: truth(), payload }); }
+async function render(page, payload) { await page.evaluate(({ truth, payload }) => window.__figmaRender.renderApp({
+      enablePageInteraction: true, truth, rawTruth: truth, prefs: { plat: 'pc', lang: 'zh-CN' }, state: 'default', frame: document.querySelector('.frame'), viewport: { w: 400, h: 300, dpr: 1 }, interactionPayload: payload }), { truth: truth(), payload }); }
 const state = (page) => page.evaluate(() => Object.fromEntries(['switch', 'page-a', 'page-b', 'tab-a', 'tab-b', 'ind-a', 'ind-b'].map((id) => { const el = document.querySelector('[data-node="' + id + '"]'); return [id, { hidden: !!el.hidden, selected: el.getAttribute('aria-selected'), index: el.getAttribute('data-switch-index') }]; })));
 const click = (page, id) => page.evaluate((id) => document.querySelector('[data-node="' + id + '"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })), id);
 browserTest('browser direct-child source state, tabs, indicators, prev and next', async () => { const { browser, page } = await setup(); try { await render(page, buildRendererInteractionPayload(model())); let s = await state(page); assert.equal(s['page-a'].hidden, true); assert.equal(s['page-b'].hidden, false); assert.equal(s['tab-b'].selected, 'true'); await click(page, 'tab-a'); s = await state(page); assert.equal(s['page-a'].hidden, false); await click(page, 'next'); s = await state(page); assert.equal(s['page-b'].hidden, false); await click(page, 'prev'); s = await state(page); assert.equal(s['page-a'].hidden, false); await click(page, 'ind-b'); s = await state(page); assert.equal(s['ind-b'].selected, 'true'); } finally { await browser.close(); } });
@@ -84,6 +87,7 @@ browserTest('browser same-name unauthorized opener stays inert', async () => {
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -114,10 +118,70 @@ browserTest('browser same-name unauthorized opener stays inert', async () => {
     await click(page, 'play-ok');
     const afterOk = await page.evaluate(() => {
       const modal = document.querySelector('[data-modal-name="视频弹窗"]');
-      return { hidden: modal.hidden, open: modal.getAttribute('data-modal-open') };
+      const host = modal && modal.parentElement;
+      return {
+        hidden: modal.hidden,
+        open: modal.getAttribute('data-modal-open'),
+        hostParent: host && host.parentElement && (host.parentElement.className || host.parentElement.tagName),
+        hostPe: host && getComputedStyle(host).pointerEvents,
+      };
     });
     assert.equal(afterOk.hidden, false);
     assert.equal(afterOk.open, 'true');
+    assert.notEqual(String(afterOk.hostParent || '').toUpperCase(), 'BODY');
+    await page.evaluate(() => {
+      const modal = document.querySelector('[data-modal-name="视频弹窗"]');
+      modal.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    });
+    const afterLayerClick = await page.evaluate(() => {
+      const modal = document.querySelector('[data-modal-name="视频弹窗"]');
+      return { hidden: modal.hidden, open: modal.getAttribute('data-modal-open') };
+    });
+    assert.equal(afterLayerClick.hidden, true);
+    assert.equal(afterLayerClick.open, null);
+  } finally {
+    await browser.close();
+  }
+});
+browserTest('browser unplatformed modal stays inert on pc', async () => {
+  const { browser, page } = await setup();
+  try {
+    const modalTruth = {
+      platforms: {
+        pc: {
+          pageChrome: { meta: { x: 0, y: 0, width: 400, height: 300 }, nodes: [] },
+          sections: {
+            section: {
+              meta: { x: 0, y: 0, width: 400, height: 300 },
+              nodes: [node('play-ok', 'btn/播放按钮@go=modal/视频弹窗', 'section', 10, 10, 80, 24, { params: { go: 'modal/视频弹窗' } })],
+            },
+          },
+          modals: [{
+            id: 'modal-video',
+            name: 'modal/视频弹窗',
+            triggerStatus: 'determined',
+            triggerFrom: ['play-ok'],
+            box: { x: 40, y: 80, w: 200, h: 120 },
+            nodes: [node('modal-video', 'modal/视频弹窗', null, 40, 80, 200, 120)],
+          }],
+        },
+      },
+    };
+    await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
+      truth,
+      rawTruth: truth,
+      prefs: { plat: 'pc', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 400, h: 300, dpr: 1 },
+    }), modalTruth);
+    const state = await page.evaluate(() => ({
+      count: document.querySelector('.frame').getAttribute('data-named-modal-count'),
+      modal: document.querySelector('[data-modal-name="视频弹窗"]'),
+    }));
+    assert.equal(state.count, '0');
+    assert.equal(state.modal, null);
   } finally {
     await browser.close();
   }
@@ -151,6 +215,7 @@ browserTest('browser canvas-offset modal mounts from pageBox, not canvas box', a
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -225,6 +290,7 @@ browserTest('browser render-bound slice keeps spill PNG larger than owner pageBo
     await page.evaluate((truth) => {
       window.__figmaRender.__assetCache = null;
       window.__figmaRender.renderApp({
+      enablePageInteraction: true,
         truth,
         rawTruth: truth,
         prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -292,6 +358,7 @@ browserTest('browser calendar today/return swaps on hscroll and restores on clic
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -443,6 +510,7 @@ browserTest('browser mobile dropmenu opens, replaces dyn region code, then close
       textNode('dyn-page-txt', 'dyn-page', '+886', 16, 16, 80, 24),
     ]);
     await page.evaluate((payload) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth: payload,
       rawTruth: payload,
       prefs: { plat: 'mobile', lang: 'zh-CN' },
@@ -515,6 +583,7 @@ browserTest('browser mobile dropmenu language click uses visible copy and record
     await page.evaluate((payload) => {
       const prefs = { plat: 'mobile', lang: 'zh-TW' };
       const ctx = {
+        enablePageInteraction: true,
         truth: payload,
         rawTruth: payload,
         prefs,
@@ -575,6 +644,7 @@ browserTest('browser mobile dropmenu visible region copy beats a language button
       const prefs = { plat: 'mobile', lang: 'zh-CN' };
       window.__dropmenuPrefs = prefs;
       window.__figmaRender.renderApp({
+      enablePageInteraction: true,
         truth: payload,
         rawTruth: payload,
         prefs,
@@ -619,6 +689,7 @@ browserTest('browser mobile dropmenu option without dyn still closes and marks m
       dropmenuInstance('plain', 'dropmenu/选项', 'plain-off', graph),
     ]);
     await page.evaluate((payload) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth: payload,
       rawTruth: payload,
       prefs: { plat: 'mobile', lang: 'zh-CN' },

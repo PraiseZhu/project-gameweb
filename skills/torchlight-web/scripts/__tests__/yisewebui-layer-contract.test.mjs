@@ -35,7 +35,7 @@ test('sc-61-recall: CLAUDE.md trigger table loads torchlight-web SKILL.md', () =
 });
 
 test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence', () => {
-  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿 → 才给人 `\?product=1`/;
+  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿(?:（整框 `img\/` `bg\/` `kv` \/ 无名 `kv` 的 PNG 非空且宽高等于 `pageBox`）)?\s*→ 政策镜像必须绿 → 才给人 `\?product=1`/;
   const skill = read('SKILL.md');
   const readme = read('README.md');
   const claude = readClaude();
@@ -43,7 +43,11 @@ test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence',
   assert.match(skill, sentence);
   assert.match(readme, sentence);
   assert.match(claude, sentence);
-  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green → then show `\?product=1`/);
+  assert.match(skill, /政策镜像必须绿/);
+  assert.match(readme, /政策镜像必须绿/);
+  assert.doesNotMatch(skill, /DOM 已验 10vw|整份 DESIGN\.md 已上屏/);
+  assert.doesNotMatch(readme, /DOM 已验 10vw|整份 DESIGN\.md 已上屏/);
+  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green → policy mirror must be green → then show `\?product=1`/);
   assert.match(skill, /figma:html-from-handoff/);
   assert.match(readme, /figma:html-from-handoff/);
   assert.match(skill, /停下来要包/);
@@ -117,11 +121,16 @@ test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not po
   const lib = read('scripts/lib/resize/index.mjs');
   const render = read('templates/figma-render.js');
   const chrome = read('templates/figma-chrome.js');
-  assert.match(resize, /k = viewportW \/ designWidth/);
   assert.match(resize, /10vw/);
   assert.match(resize, /100vh/);
-  assert.match(lib, /OFFICIAL_ROOT_FONT_VW = 10/);
+  assert.match(resize, /1127–1920/);
+  assert.match(lib, /OFFICIAL_ROOT_FONT_VW = DESIGN_POLICY\.officialRootFontVw/);
+  assert.match(lib, /PC_COLUMN_FREEZE_MAX = 1920/);
+  assert.doesNotMatch(lib, /continuous width scale k = viewportW \/ designWidth/);
   assert.match(lib, /pageOverflowPolicy/);
+  assert.doesNotMatch(render, /const DW = \{ pc: 3840, pad: 3840, mobile: 750 \}/);
+  assert.doesNotMatch(render, /const FLOOR = 75/);
+  assert.doesNotMatch(render, /\[92, 85, 78, FLOOR\]/);
   assert.match(render, /pagePaintOrder.length === 1/);
   assert.match(render, /data-hero-crop-window/);
   assert.match(render, /heroVisualPlane/);
@@ -135,7 +144,9 @@ test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not po
   assert.match(chrome, /source-y-scale/);
   assert.doesNotMatch(chrome, /I52:3263;17:53006/);
   assert.match(chrome, /PRODUCT_VIEW \? 'hidden' : 'auto'/);
-  assert.match(chrome, /10vw \* var\(--fx-root-scale, 1\)/);
+  assert.match(chrome, /function officialRootFontVw\(\)/);
+  assert.match(chrome, /designPolicy\(\)\.officialRootFontVw/);
+  assert.doesNotMatch(chrome, /officialRootFontVw\) \|\| 10/);
   assert.match(chrome, /html\[data-product-view="1"\]\{font-size:16px\}/);
   assert.match(chrome, /BEZEL = PRODUCT_VIEW \? 0 : 22/);
   assert.match(chrome, /fit: !PRODUCT_VIEW/);

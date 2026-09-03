@@ -52,6 +52,21 @@
   })();
   if (PRODUCT_VIEW) document.documentElement.setAttribute('data-product-view', '1');
 
+  function designPolicy() {
+    var policy = window.__designPolicy;
+    if (!policy || typeof policy !== 'object') {
+      throw new Error('figma-chrome: missing window.__designPolicy');
+    }
+    return policy;
+  }
+  function officialRootFontVw() {
+    var value = Number(designPolicy().officialRootFontVw);
+    if (!isFinite(value) || value <= 0) {
+      throw new Error('figma-chrome: officialRootFontVw missing from DESIGN.md YAML');
+    }
+    return value;
+  }
+
   /* ── truth ──
      默认内嵌在 #qa-truth。index.html 超过 10MB 时 truth.mjs 会把块改成
      data-src="truth.json"（外置，页面需本地预览服务，不能再当纯 file:// 单文件）。 */
@@ -126,7 +141,9 @@
      inferred from whether a pad Figma tree happens to exist. */
   var COMPOSITION_BREAKPOINTS = Array.isArray(cfg.compositionBreakpoints) && cfg.compositionBreakpoints.length
     ? cfg.compositionBreakpoints
-    : BREAKPOINTS;
+    : (Array.isArray(designPolicy().composition) && designPolicy().composition.length
+      ? designPolicy().composition
+      : BREAKPOINTS);
   var FREE = { name: '自由状态', free: true };
 
   /* ── 状态 ── */
@@ -329,7 +346,7 @@
     '.frame{background:transparent;overflow:visible;transform-origin:0 0;border-radius:6px;',
     'box-shadow:0 0 0 1px #000}',
     '[data-product-view="1"] .frame{background:transparent;border-radius:0;box-shadow:none;overflow-x:hidden}',
-    'html[data-product-view="1"]{--fx-official-root:calc(10vw * var(--fx-root-scale, 1));overflow-x:hidden}',
+    'html[data-product-view="1"]{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1));overflow-x:hidden}',
     /* Keep the official 10vw number as a reported ruler. Do not apply it as the
        document font-size: Figma stages size in px, and a 10vw html font-size
        makes Chromium treat the product stage as a zoomed rem tree. */
@@ -981,7 +998,8 @@
        （2026-08-11 实测拖拽每 pointermove 重建 2.7 万条 DOM、长帧 230ms）。
        拖拽中只更新 frame 几何 + 读数；松手（endResizeDrag）或断点切换时
        _forceFullRender 置位，强制一次精确完整 render。
-       非拖拽的 resize（窗口拉伸、W/H 数字框）仍走完整 render —— 它们是低频离散事件。 */
+       产品视图的窗口拉伸同构图也走这条轻路径：只更新已有节点的位置/缩放，
+       不把整页 DOM 拆掉重画。构图变了或 QA 数字框仍走完整 render。 */
     var _skipContentRebuild = !!_resizeDragActive && !_forceFullRender && !S.grid;
     /* A breakpoint label is not itself a composition boundary: pad may reuse
        the PC truth, while a native mobile tree is structurally different.
@@ -1458,8 +1476,8 @@
        （render 跳过 renderInto，只更新几何+读数，锚点天然保持）。
      endResizeDrag：pointerup/pointercancel 时调用，置 _forceFullRender 并
        立即做一次精确完整 render（含锚点按比例恢复），保证松手即终态精确。
-     两者幂等；非拖拽路径（窗口拉伸、W/H 数字框、语言/状态/设备切换）不经过这里，
-     始终完整 render。 */
+     两者幂等。QA 数字框 / 语言 / 状态 / 设备切换仍完整 render。
+     产品视图窗口拉伸在同构图下复用这条轻路径，停稳后再 endResizeDrag 精确一次。 */
   var _resizeDragActive = false;
   var _forceFullRender = false;
   var _lastCompositionKey = null; /* 上次完整 render 的 truth composition base */
@@ -1482,8 +1500,14 @@
   function compositionKeyForViewport(vp) {
     var composition = compositionBpOf(vp && vp.w).key;
     var platforms = (TRUTH && TRUTH.platforms) || {};
+    var policy = designPolicy();
     if (composition === 'mobile' && platforms.mobile) return 'mobile';
     if ((composition === 'tablet' || composition === 'pad') && platforms.pad) return 'pad';
+    if ((composition === 'tablet' || composition === 'pad') && !platforms.pad) {
+      if (policy.inventPadTree) return 'pad';
+      if (policy.padUsesPcTree) return 'pc';
+      return 'pc';
+    }
     return 'pc';
   }
   function beginResizeDrag() {
@@ -2252,15 +2276,41 @@
 
   if (!PRODUCT_VIEW) readHash();   // 深链(g=/d=/w=/h=/state=)是 QA 功能,产品视图不消费
   syncAll();
-  /* 窗口 resize 与 slider 同理：RAF 合并，同帧多次 resize 只重渲染一次。 */
+  /* 窗口 resize 与 slider 同理：RAF 合并，同帧多次 resize 只重渲染一次。
+     产品视图同构图走拖拽轻路径：只更新已有节点的位置/缩放，停稳后再精确 render。
+     构图变了立刻完整重建。 */
   var winResizeScheduled = false;
+  var winResizeIdleTimer = 0;
   window.addEventListener('resize', function () {
-    if (winResizeScheduled) return;
+    if (PRODUCT_VIEW && !_resizeDragActive && _lastCompositionKey) {
+      var nextKey = compositionKeyForViewport(viewport());
+      if (nextKey === _lastCompositionKey) beginResizeDrag();
+    }
+    if (winResizeScheduled) {
+      if (PRODUCT_VIEW && _resizeDragActive) {
+        if (winResizeIdleTimer) clearTimeout(winResizeIdleTimer);
+        winResizeIdleTimer = setTimeout(function () {
+          winResizeIdleTimer = 0;
+          endResizeDrag();
+        }, 140);
+      }
+      return;
+    }
     winResizeScheduled = true;
     var raf = typeof window.requestAnimationFrame === 'function'
       ? window.requestAnimationFrame.bind(window)
       : function (fn) { return setTimeout(fn, 0); };
-    raf(function () { winResizeScheduled = false; render(); });
+    raf(function () {
+      winResizeScheduled = false;
+      render();
+      if (PRODUCT_VIEW && _resizeDragActive) {
+        if (winResizeIdleTimer) clearTimeout(winResizeIdleTimer);
+        winResizeIdleTimer = setTimeout(function () {
+          winResizeIdleTimer = 0;
+          endResizeDrag();
+        }, 140);
+      }
+    });
   });
   } // continueChromeBoot
 })();

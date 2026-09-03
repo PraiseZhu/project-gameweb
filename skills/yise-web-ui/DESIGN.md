@@ -1,6 +1,69 @@
+---
+schema: gameweb-design-policy/v1
+designWidths:
+  mobile: 750
+  pad: 3840
+  pc: 3840
+officialRootFontVw: 10
+heroViewportFillVh: 100
+composition:
+  - key: mobile
+    min: 0
+    max: 750
+  - key: tablet
+    min: 751
+    max: 1023
+  - key: desktop
+    min: 1024
+    max: null
+qaBuckets:
+  - key: mobile
+    min: 0
+    max: 750
+  - key: tablet
+    min: 751
+    max: 1023
+  - key: desktop
+    min: 1024
+    max: null
+inventPadTree: false
+padUsesPcTree: true
+localeFontScale:
+  body:
+    zh-CN: 1
+    en: 0.8
+    ja: 0.8
+    ko: 0.8
+    zh-TW: 1
+  card-title:
+    zh-CN: 1
+    en: 1
+    ja: 0.833
+    ko: 1
+    zh-TW: 0.833
+  heading:
+    zh-CN: 1
+    en: 1
+    ja: 1
+    ko: 1
+    zh-TW: 1
+tierRules:
+  bodyMaxWeightExclusive: 600
+  cardTitleMinSourcePxExclusive: 40
+shrinkSteps:
+  - 100
+  - 92
+  - 85
+  - 78
+  - 75
+shrinkFloorPercent: 75
+hugNoShrink: true
+openFlowNoShrink: true
+---
+
 # 伊瑟宣发页 DESIGN.md
 
-本文件是伊瑟做页的**政策入口**。清单仍是数据入口：它回答这一稿画了什么。本文件回答窗口怎么切、尺子怎么量、外文怎么缩。数字写在这里，不焊进 inventory JSON，也不替代 `figma:from-handoff`。
+本文件是伊瑟做页的**政策入口**。清单仍是数据入口：它回答这一稿画了什么。本文件回答窗口怎么切、尺子怎么量、外文怎么缩。数字写在这里，不焊进 inventory JSON，也不替代 `figma:from-handoff`。政策数字以文首 YAML 为准；第 5、6 章只解释，不再另写一套可漂的数。
 
 ## 1. 权威边界
 
@@ -16,7 +79,7 @@
 
 ## 2. 正式产品入口
 
-完成标准原句不能改口径：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 才给人 `?product=1`。
+完成标准原句不能改口径：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 政策镜像必须绿 → 才给人 `?product=1`。
 
 - `preview:first` 红：不许给人打开 `?product=1`，不许开 Interaction / Resize。
 - 给人的地址是命令结束后仍可打开的 `file://...?product=1`。内部检查可以走 HTTP。
@@ -103,6 +166,8 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 3. `preview:first` 必须绿，才给人 `?product=1`。
 4. 拉伸主张要带视口 `w×h`、实际用的 composition key、light path 还是全量重建、view-fit scale。
 5. 外文主张要带档位 × 语言比例，以及是否踩到 `75%` 地板。HUG / open-flow 被缩了即失败。
+
+6. 政策镜像闸保证 YAML 与 resize / 字号 / chrome / render 数字同源。它不保证三平面、Hero 钉底边、HUG / open-flow 不缩、或缺文案不许拿简中顶上已经在页面上成立。镜像绿不是页面对。
 
 绿的 Main 静态截图、QA 壳拖拽、或「页面能打开」都不能单独关掉拉伸 / 外文主张。
 

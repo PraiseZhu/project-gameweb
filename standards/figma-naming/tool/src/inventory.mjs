@@ -87,22 +87,43 @@ function isDirectSecChild(node) {
   return node?.type === "FRAME" && parseName(node.name).prefix === "sec";
 }
 
+function numberedDirectSecFrames(node) {
+  const secs = [];
+  for (const child of node?.children || []) {
+    if (!isDirectSecChild(child)) continue;
+    const match = /^(\d+)/.exec(String(parseName(child.name).body || ""));
+    if (match) secs.push(child);
+  }
+  return secs;
+}
+
+/** Side-by-side numbered sec/ on the same workboard (y aligned, x staggered). */
+function secsAreHorizontal(secs) {
+  if (!Array.isArray(secs) || secs.length < 2) return false;
+  const boxes = secs.map((sec) => sec.absoluteBoundingBox).filter((box) => box
+    && Number.isFinite(box.x) && Number.isFinite(box.y)
+    && Number.isFinite(box.width) && Number.isFinite(box.height));
+  if (boxes.length < 2) return false;
+  const ys = boxes.map((box) => box.y);
+  const xs = boxes.map((box) => box.x);
+  const ySpan = Math.max(...ys) - Math.min(...ys);
+  const xSpan = Math.max(...xs) - Math.min(...xs);
+  const minH = Math.min(...boxes.map((box) => box.height));
+  return xSpan > 1 && ySpan <= Math.max(8, minH * 0.25);
+}
+
 /**
- * 工作区画板：sec/ 直接挂在框上，旁边还堆着 modal/ 或组件集，没有内层叠页框。
- * 不能只靠「组件集占比」当货架，否则阶段一 cn_pc 这种简中 PC 编不了清单。
+ * 工作区画板：编号 sec/ 直接挂在框上，没有内层叠页框。
+ * 横排无组件集的稿、或旁边堆着 modal/ 组件集的竖排稿，都叠成滚动页。
+ * 内层竖排「页面内容」（sec/ 之间有空档、无组件集）不按工作区吃空档。
  */
 function isWorkboardPage(node) {
   if (!node || node.type !== "FRAME") return false;
   const kids = node.children || [];
-  const secs = kids.filter(isDirectSecChild);
+  const secs = numberedDirectSecFrames(node);
   if (secs.length < 2) return false;
-  const numbered = new Set();
-  for (const sec of secs) {
-    const match = /^(\d+)/.exec(String(parseName(sec.name).body || ""));
-    if (match) numbered.add(Number(match[1]));
-  }
-  if (numbered.size < 2) return false;
-  return kids.some((child) => isDefinitionNode(child) || isModalName(child));
+  if (kids.some((child) => isDefinitionNode(child) || isModalName(child))) return true;
+  return secsAreHorizontal(secs);
 }
 
 function isShelfFrame(node) {
@@ -158,13 +179,12 @@ function numberedDirectSecs(page) {
 function stackedWorkboardLayout(page) {
   const secs = numberedDirectSecs(page);
   if (!secs.length) return null;
-  const left = Math.min(...secs.map((item) => item.box.x));
-  const width = Math.max(...secs.map((item) => item.box.x + item.box.w)) - left;
+  const width = Math.max(...secs.map((item) => item.box.w));
   let y = 0;
   const byId = new Map();
   for (const item of secs) {
     byId.set(item.node.id, {
-      pageBox: { x: item.box.x - left, y, w: item.box.w, h: item.box.h },
+      pageBox: { x: 0, y, w: item.box.w, h: item.box.h },
       canvasBox: item.box,
     });
     y += item.box.h;
@@ -200,13 +220,29 @@ function offsetBox(origin, local) {
   };
 }
 
-function stackedPageBoxOf(node, ancestors, stackedSecPageBox) {
-  if (!stackedSecPageBox?.size) return null;
+function stackedRelativeBox(innerBox, node, ancestors, stackedSecPageBox) {
+  if (!innerBox || !stackedSecPageBox?.size) return null;
   const stackedSelf = stackedSecPageBox.get(node.id);
-  if (stackedSelf?.pageBox) return stackedSelf.pageBox;
+  if (stackedSelf) {
+    return offsetBox(stackedSelf.pageBox, relativeBox(innerBox, stackedSelf.canvasBox));
+  }
   const stackedAncestorId = [...ancestors].reverse().map((item) => item.id).find((id) => stackedSecPageBox.has(id));
   const stackedAncestor = stackedSecPageBox.get(stackedAncestorId);
-  return offsetBox(stackedAncestor?.pageBox, relativeBox(boxOf(node), stackedAncestor?.canvasBox));
+  return offsetBox(stackedAncestor?.pageBox, relativeBox(innerBox, stackedAncestor?.canvasBox));
+}
+
+function stackedPageBoxOf(node, ancestors, stackedSecPageBox) {
+  const stackedSelf = stackedSecPageBox?.get(node.id);
+  if (stackedSelf?.pageBox) return stackedSelf.pageBox;
+  return stackedRelativeBox(boxOf(node), node, ancestors, stackedSecPageBox);
+}
+
+function stackedRenderBoxOf(node, ancestors, stackedSecPageBox, origin) {
+  const rb = renderBoxOf(node);
+  if (!rb) return undefined;
+  return stackedRelativeBox(rb, node, ancestors, stackedSecPageBox)
+    || relativeBox(rb, origin)
+    || rb;
 }
 
 function percentOf(part, whole) {
@@ -218,6 +254,30 @@ function renderBoxOf(node) {
   const b = node.absoluteRenderBounds;
   if (!b || b.width == null) return undefined;
   return { x: b.x, y: b.y, w: b.width, h: b.height };
+}
+
+function unionBox(a, b) {
+  if (!a) return b || null;
+  if (!b) return a;
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
+/** Unclipped ink of a slice owner: union of visible descendant layout boxes.
+ *  Figma REST clips `absoluteRenderBounds` to ancestor clipsContent, so a
+ *  bounds=render PNG (7086×4734) cannot be recovered from renderBox. */
+function unclippedInkBoxOf(node) {
+  if (!node) return null;
+  let union = boxOf(node);
+  const visit = (cur) => {
+    if (!cur || cur.visible === false) return;
+    const box = boxOf(cur);
+    if (box) union = unionBox(union, box);
+    for (const child of cur.children || []) visit(child);
+  };
+  for (const child of node.children || []) visit(child);
+  return union;
 }
 
 const LAYOUT_FIELDS = [
@@ -695,7 +755,11 @@ function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = 
     } else if (setVariantRole) {
       status = "determined"; role = setVariantRole; via = "structure";
     } else if (!prefix && namePatternOf(node.name) === "figma-default" && node.type !== "TEXT") {
-      status = "skipped"; why = "art-fragment";
+      if (hasImageFill(node)) {
+        status = "unknown";
+      } else {
+        status = "skipped"; why = "art-fragment";
+      }
     } else {
       status = "unknown";
     }
@@ -732,8 +796,17 @@ function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = 
       entry.ancestorNames = ctx.ancestors.map((a) => a.name ?? "");
       entry.ancestorTypes = ctx.ancestors.map((a) => a.type);
     }
-    const rb = renderBoxOf(node);
-    if (rb) entry.renderBox = rb;
+    const stackedRb = stackedRenderBoxOf(node, ctx.ancestors, stackedSecPageBox, origin);
+    if (stackedRb) entry.renderBox = stackedRb;
+    if (status === "determined" && needsSliceExport({ type: node.type, role })) {
+      const ink = unclippedInkBoxOf(node);
+      const stackedInk = stackedRelativeBox(ink, node, ctx.ancestors, stackedSecPageBox)
+        || relativeBox(ink, origin);
+      if (stackedInk && (stackedInk.w > (pageRel?.w ?? box?.w ?? 0) + 0.5
+        || stackedInk.h > (pageRel?.h ?? box?.h ?? 0) + 0.5)) {
+        entry.inkBox = stackedInk;
+      }
+    }
     entry.rotation = node.rotation ?? 0;
     if (node.clipsContent === true) entry.clipsContent = true;
     if (node.isMask !== undefined) entry.isMask = node.isMask;

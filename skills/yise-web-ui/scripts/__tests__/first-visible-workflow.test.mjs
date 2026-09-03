@@ -186,6 +186,8 @@ test('figma:preview:first proves a visible Figma-derived source node when browse
   assert.equal(out.result.placeholder, false);
   assert.equal(out.evidenceLevel, 'candidate');
   assert.match(out.productView.url, /product=1/);
+  assert.match(out.humanView.url, /index\.html$/);
+  assert.doesNotMatch(out.humanView.url, /product=1/);
   assert.equal(out.result.hasQa, false, 'preview-first must inspect product view, not QA shell');
   assert.ok(out.unclaimedCapabilities.includes('mobileSourcePlatform'));
   assert.ok(existsSync(out.screenshot));
@@ -235,6 +237,8 @@ test('figma:preview:first serves external truth over HTTP and fails file:// (iss
   assert.match(httpOut.checkUrl, /^http:\/\/127\.0\.0\.1:\d+\/index\.html\?product=1/);
   assert.match(httpOut.productView.url, /^file:/);
   assert.match(httpOut.productView.url, /product=1/);
+  assert.match(httpOut.humanView.url, /^file:/);
+  assert.doesNotMatch(httpOut.humanView.url, /product=1/);
 
   const fileRes = run(PREVIEW, ['--demo', dir, '--protocol', 'file'], { timeout: 180000 });
   assert.equal(fileRes.status, 2, fileRes.stderr || fileRes.stdout);

@@ -1,9 +1,4 @@
 {
   "demo": [],
-  "broken": {
-    "scripts/__tests__/comp-fix-r7.test.mjs": "tailwind 内部 API / 钉版契约与现实现脱节",
-    "scripts/__tests__/qa-hifi-demo.test.mjs": "init 输出已换壳，旧四件套断言失效",
-    "scripts/__tests__/figma-from-handoff.test.mjs": "老师仓 standards 只打 ready 交接包；green-draft 写回已转到 unnamed-inventory",
-    "scripts/__tests__/figma-inventory-check.test.mjs": "老师仓 standards 只打 ready 交接包；green-draft 写回已转到 unnamed-inventory"
-  }
+  "broken": {}
 }

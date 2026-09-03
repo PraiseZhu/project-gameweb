@@ -142,6 +142,19 @@ test("componentSets become variantTrees with renderable geometry", () => {
   assert.ok(set.variants.every((v) => v.type === "COMPONENT" && v.id === v.componentId));
 });
 
+test("section-owned bg stays out of pageChrome", () => {
+  const inv = fixture();
+  inv.sections.push({ id: "100:5", number: 2, label: "2", box: { x: 0, y: 2160, w: 3840, h: 2000 } });
+  inv.backgrounds.push({ id: "100:6", role: "bg", label: "sec2" });
+  inv.nodes.push(
+    { id: "100:5", scope: "page", type: "FRAME", name: "sec/2", parentId: PAGE_ID, orderKey: "0.2", status: "determined", role: "sec" },
+    { id: "100:6", scope: "page", type: "RECTANGLE", name: "bg/sec2", parentId: "100:5", ancestorIds: ["100:5"], orderKey: "0.2.0", status: "determined", role: "bg", behavior: "slice" },
+  );
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(adapted.pageChrome.nodes.some((node) => node.id === "100:6"), false);
+  assert.equal(adapted.pageChrome.nodes.some((node) => node.id === "100:3"), true);
+});
+
 test("modals own a hidden layer excluded from scroll", () => {
   const adapted = adaptInventoryToTruthShape(fixture(), { platformScopeInput: { nodes: [], platformRoots: [] } });
   assert.equal(adapted.modals.length, 1);
@@ -272,6 +285,46 @@ test("lang-shell multi-btn @go in variant trees becomes determined openers", () 
   assert.equal(byId.get("m-ms").triggerStatus, "determined");
   assert.deepEqual(byId.get("m-ms").triggerFrom, ["ms"]);
   assert.ok(!byId.get("m-apple").triggerFrom.includes("cal"), "page lang-shell instance stays unlifted");
+});
+
+test("same-label viewport fix overlays keep one pin", () => {
+  const inv = fixture();
+  inv.nodes.push(
+    { id: "100:90", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:2", status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
+    { id: "100:91", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: PAGE_ID, status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
+    { id: "100:92", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:2", status: "determined", role: "fix", label: "顶部信息", behavior: "none", ancestorIds: [PAGE_ID, "100:2"] },
+  );
+  inv.overlays = [
+    { id: "100:4", role: "fix", label: "nav", pin: "viewport" },
+    { id: "100:90", role: "fix", label: "顶部信息", pin: "viewport" },
+    { id: "100:91", role: "fix", label: "顶部信息", pin: "viewport" },
+    { id: "100:92", role: "fix", label: "顶部信息", pin: "viewport" },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const tops = adapted.fixedOverlays.nodes.filter((entry) => entry.label === "顶部信息" || /顶部信息/.test(String(entry.name || "")));
+  assert.equal(tops.length, 1);
+  assert.equal(tops[0].id, "100:90");
+});
+
+test("same-label viewport fix overlays in different sections keep one pin", () => {
+  const inv = fixture();
+  inv.sections = [
+    { id: "100:2", number: 1, label: "1", box: { x: 0, y: 0, w: 3840, h: 2160 } },
+    { id: "100:12", number: 2, label: "2", box: { x: 0, y: 2160, w: 3840, h: 2160 } },
+  ];
+  inv.nodes.push(
+    { id: "100:12", scope: "page", type: "FRAME", name: "sec/2", parentId: PAGE_ID, orderKey: "0.2", status: "unknown", role: "sec" },
+    { id: "100:90", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:2", status: "determined", role: "fix", label: "顶部信息", behavior: "none", ancestorIds: [PAGE_ID, "100:2"] },
+    { id: "100:91", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:12", status: "determined", role: "fix", label: "顶部信息", behavior: "none", ancestorIds: [PAGE_ID, "100:12"] },
+  );
+  inv.overlays = [
+    { id: "100:90", role: "fix", label: "顶部信息", pin: "viewport" },
+    { id: "100:91", role: "fix", label: "顶部信息", pin: "viewport" },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const tops = adapted.fixedOverlays.nodes.filter((entry) => /顶部信息/.test(String(entry.name || entry.label || "")));
+  assert.equal(tops.length, 1);
+  assert.equal(tops[0].id, "100:90");
 });
 
 test("@go stays unwired when the modal name is missing or duplicated", () => {
@@ -645,6 +698,108 @@ test("restoreOwnerComposites does not restore skipped IMAGE slice-children under
   ]);
   assert.equal(restored.some((node) => node.id === "kv-2"), false);
   assert.equal(restored.find((node) => node.id === "bg-2")?.role, "bg");
+});
+
+test("dropmenu variant trees lift sibling art-fragment gradients onto the btn owner", () => {
+  const inv = fixture({
+    attachments: {
+      ...fixture().attachments,
+      componentSets: [
+        {
+          id: "set-lang",
+          name: "dropmenu/多语言",
+          componentPropertyDefinitions: {
+            "Property 1": { type: "VARIANT", defaultValue: "on", variantOptions: ["on", "off"] },
+          },
+          variants: [
+            {
+              id: "var-on",
+              type: "COMPONENT",
+              name: "Property 1=on",
+              order: 0,
+              box: { x: 0, y: 0, w: 254, h: 417 },
+              componentProperties: { "Property 1": { type: "VARIANT", value: "on" } },
+              nodes: [
+                {
+                  id: "btn-lang",
+                  type: "INSTANCE",
+                  name: "btn/切换语言",
+                  status: "determined",
+                  role: "btn",
+                  parentId: "var-on",
+                  box: { x: 52, y: 151, w: 190, h: 52 },
+                  style: { fills: [] },
+                },
+                {
+                  id: "btn-lang-plate",
+                  type: "VECTOR",
+                  name: "Rectangle 5",
+                  status: "skipped",
+                  why: "art-fragment",
+                  parentId: "btn-lang",
+                  box: { x: 53, y: 152, w: 188, h: 50 },
+                  style: { fills: [{ type: "GRADIENT_LINEAR", visible: true, gradientStops: [{ color: { r: 1, g: 1, b: 1, a: 1 }, position: 0 }] }] },
+                },
+                {
+                  id: "btn-lang-copy",
+                  type: "TEXT",
+                  name: "语言",
+                  status: "determined",
+                  role: "copy",
+                  parentId: "btn-lang",
+                  box: { x: 80, y: 160, w: 98, h: 34 },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const variants = adapted.componentVariantGraph.variantTrees["set-lang"];
+  const on = variants.find((entry) => entry.id === "var-on");
+  const btn = on.nodes.find((node) => node.id === "btn-lang");
+  assert.equal(on.nodes.some((node) => node.id === "btn-lang-plate"), false);
+  assert.equal(btn.style.fills[0].type, "GRADIENT_LINEAR");
+  assert.equal(btn.ownerComposite.sourceId, "btn-lang-plate");
+  assert.equal(on.nodes.find((node) => node.id === "btn-lang-copy").status, "determined");
+});
+
+test("restoreOwnerComposites keeps unknown IMAGE under a skipped Mask group", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "kv",
+      type: "FRAME",
+      name: "kv",
+      status: "unknown",
+      box: { x: 0, y: 0, w: 750, h: 1334 },
+    },
+    {
+      id: "mask-group",
+      type: "GROUP",
+      name: "Mask group",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "kv",
+      box: { x: 0, y: 0, w: 751, h: 1175 },
+    },
+    {
+      id: "0:1792",
+      type: "RECTANGLE",
+      name: "赛季kv-0623-整理 2",
+      status: "unknown",
+      parentId: "mask-group",
+      box: { x: -425, y: 112, w: 1771, h: 992 },
+      pageBox: { x: -425, y: 112, w: 1771, h: 992 },
+      renderBox: { x: 0, y: 112, w: 750, h: 992 },
+      style: { fills: [{ type: "IMAGE", visible: true, imageRef: "kv" }] },
+    },
+  ]);
+  assert.equal(restored.some((node) => node.id === "mask-group"), false);
+  const kv = restored.find((node) => node.id === "0:1792");
+  assert.equal(kv.status, "unknown");
+  assert.deepEqual(kv.box, kv.pageBox);
 });
 
 test("calendar identity keeps today and marks missing return-today unread instead of synthesizing", () => {

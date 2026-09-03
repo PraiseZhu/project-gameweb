@@ -4,6 +4,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../../standards/figma-naming/spec/inventory.mjs';
 
 export const POSITION_TOLERANCE_PX = 1;
 export const FONT_SIZE_TOLERANCE_PX = 0.05;
@@ -44,6 +45,10 @@ export function compareRect(expected, actual, tolerance = POSITION_TOLERANCE_PX)
 
 function flattenInventoryNodes(inventory) {
   return asArray(inventory?.nodes).filter((node) => node && node.id && node.status !== 'skipped');
+}
+
+function shouldGateWholeFramePng(node) {
+  return isWholeFrameSliceNode(node);
 }
 
 /** Descendants of a delivered baked owner are inside that PNG, not independent DOM. */
@@ -154,6 +159,23 @@ export function evaluateInventoryStaticGate({
       } else {
         const slice = compareRect(expectedSlice, geom(actual.imgBox));
         if (!slice.ok) failures.push({ id: node.id, reason: 'sliceExport-mismatch', ...slice });
+      }
+    }
+    if (shouldGateWholeFramePng(node) && (actual.assetEmpty != null || actual.assetW != null || actual.assetH != null)) {
+      const expectedPaint = geom(sliceExportPaintBox(node)) || expected;
+      if (actual.assetEmpty === true) {
+        failures.push({ id: node.id, reason: 'whole-frame-png-empty' });
+      }
+      if (expectedPaint && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
+        if (Math.abs(Number(actual.assetW) - expectedPaint.w) > 1
+          || Math.abs(Number(actual.assetH) - expectedPaint.h) > 1) {
+          failures.push({
+            id: node.id,
+            reason: 'whole-frame-png-size-mismatch',
+            expected: { w: expectedPaint.w, h: expectedPaint.h },
+            actual: { w: actual.assetW, h: actual.assetH },
+          });
+        }
       }
     }
   }

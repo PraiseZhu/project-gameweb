@@ -80,7 +80,7 @@ function firstGradientFill(node) {
   return visibleFillsOf(node).find((fill) => String(fill.type || '').startsWith('GRADIENT')) || null;
 }
 
-function sameBox(a, b, epsilon = 0.75) {
+function sameBox(a, b, epsilon = 2.5) {
   if (!a || !b) return false;
   return Math.abs(Number(a.x) - Number(b.x)) <= epsilon
     && Math.abs(Number(a.y) - Number(b.y)) <= epsilon
@@ -166,11 +166,29 @@ function keepLivePaintNode(node, skippedChildren, byId = null) {
   return [paintBoxOf(liftOwnerComposite(node, skippedChildren))];
 }
 
+function hasVisibleImageFill(node) {
+  return visibleFillsOf(node).some((fill) => String(fill.type || '') === 'IMAGE');
+}
+
+/** Unknown IMAGE leaves under a skipped Mask group / art-fragment still paint. */
+function keepUnknownImageUnderSkipped(node, byId) {
+  if (!isPlainObject(node) || node.status !== 'unknown' || !hasVisibleImageFill(node)) return false;
+  let parent = byId.get(node.parentId);
+  while (parent) {
+    if (isSkipped(parent) && (parent.why === 'art-fragment' || parent.why === 'slice-child')) return true;
+    parent = byId.get(parent.parentId);
+  }
+  return false;
+}
+
 /** Flat inventory/v2 page nodes: lift owner composites without painting skipped ids. */
 export function restoreOwnerComposites(nodes) {
   const list = asArray(nodes);
   const byId = new Map(list.filter((node) => node && node.id != null).map((node) => [String(node.id), node]));
-  return list.flatMap((node) => keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped), byId));
+  return list.flatMap((node) => {
+    if (keepUnknownImageUnderSkipped(node, byId)) return [paintBoxOf(node)];
+    return keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped), byId);
+  });
 }
 
 const TODAY_NAME = /^dyn\/今日日期/;
@@ -199,9 +217,17 @@ export function calendarIdentityFromNodes(nodes) {
   };
 }
 
-/** Drop skipped records from a paint tree. Keep determined, unknown, and CSS-paintable fragments. */
+/** Drop skipped records from a paint tree. Keep determined, unknown, and CSS-paintable fragments.
+ *  Variant trees are often a flat sibling list keyed by parentId (dropmenu on-state
+ *  language rows). Lift skipped gradient plates onto their parent the same way
+ *  restoreOwnerComposites does for page nodes. */
 function omitSkippedNodes(nodes) {
-  return asArray(nodes).flatMap((node) => keepLivePaintNode(node, asArray(node.nodes).filter(isSkipped)));
+  const list = asArray(nodes);
+  return list.flatMap((node) => {
+    const nestedSkipped = asArray(node.nodes).filter(isSkipped);
+    const siblingSkipped = childrenOf(list, node.id).filter(isSkipped);
+    return keepLivePaintNode(node, [...nestedSkipped, ...siblingSkipped]);
+  });
 }
 
 function visitNodeTree(nodes, visit) {
@@ -364,34 +390,52 @@ function liveRecord(byId, entry) {
 
 function classifyPageDirectChildren(inv, byId) {
   const overlayFromById = new Map(asArray(inv.overlays).map((entry) => [entry.id, entry.from]));
+  const sectionIds = new Set(asArray(inv.sections).map((section) => String(section.id)));
+  const seenPinnedLabels = new Set();
+  const overlayFrom = (entry, record) => (
+    Number.isFinite(entry.from) ? entry.from : fromParamOf(record)
+  );
+  const isDuplicateViewportPin = (entry, record, from) => {
+    if (from != null) return false;
+    const pin = String(entry.pin || record.pin || 'viewport');
+    if (pin !== 'viewport') return false;
+    const label = String(entry.label || record.label || splitInventoryName(record.name).label || record.id);
+    /* Same-label viewport pins (fix/顶部信息 in every sec) are one sticky bar.
+       Keep the first live record; later copies would stack in a height:0 sticky. */
+    if (seenPinnedLabels.has(label)) return true;
+    seenPinnedLabels.add(label);
+    return false;
+  };
   const fixedOverlays = asArray(inv.overlays).map((entry) => {
     const record = liveRecord(byId, entry);
     if (!record) return null;
-    const from = Number.isFinite(entry.from) ? entry.from : fromParamOf(record);
+    const from = overlayFrom(entry, record);
+    if (isDuplicateViewportPin(entry, record, from)) return null;
     return from != null ? { ...record, from } : record;
   }).filter(Boolean);
   for (const overlay of fixedOverlays) {
     if (overlay.from == null && overlayFromById.get(overlay.id) != null) overlay.from = overlayFromById.get(overlay.id);
   }
   const fixedIds = new Set(fixedOverlays.map((n) => n.id));
-  const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
 
   const pageChrome = [];
+  const inSectionTree = (record) => {
+    if (!record) return false;
+    if (sectionIds.has(String(record.id)) || sectionIds.has(String(record.parentId))) return true;
+    return asArray(record.ancestorIds).some((id) => sectionIds.has(String(id)));
+  };
   for (const child of pageDirectChildren(inv)) {
     const record = liveRecord(byId, child);
     if (!record || fixedIds.has(child.id) || record.role === 'sec' || sectionIds.has(child.id)) continue;
     pageChrome.push(record);
   }
-  // Declared kv/bg that live *inside* a section stay in that section's paint
-  // tree. Lifting them to pageChrome made later-section bg/* cover-crop onto
-  // the first screen and vanish from sec/2–3. Only a kv/bg that is not under
-  // any section (true page-level chrome) is kept here.
+  // Keep declared kv/bg as page chrome only when they are not already in a
+  // section tree. A bg/ sitting inside sec/2 would otherwise paint twice
+  // and later-section bg/* would cover-crop onto the first screen.
   for (const entry of asArray(inv.backgrounds)) {
     const record = liveRecord(byId, entry);
     if (!record || fixedIds.has(record.id) || pageChrome.some((n) => n.id === record.id)) continue;
-    const underSection = asArray(record.ancestorIds).some((id) => sectionIds.has(String(id)))
-      || sectionIds.has(String(record.parentId || ''));
-    if (underSection) continue;
+    if (inSectionTree(record)) continue;
     pageChrome.push(record);
   }
   return { pageChrome, fixedOverlays };

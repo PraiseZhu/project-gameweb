@@ -49,10 +49,27 @@ class El {
     const rec = t[this.attrs['data-node']];
     if (!rec) return 0;
     const cur = parseFloat(this.style.fontSize) || rec.fs;
-    const step = Math.round(cur / rec.fs * 100);
-    const lines = rec.lines[step] != null ? rec.lines[step] : rec.lines[100];
     const lh = parseFloat(this.style.lineHeight) || rec.lh;
-    return lines * lh;
+    /* Integer-px shrink: look up by current fontSize, then interpolate by
+       remaining size vs the locale base. Old 100/92/85/78/75 percent keys
+       still work if a fixture supplies them. */
+    if (rec.lines && rec.lines[cur] != null) return rec.lines[cur] * lh;
+    const step = Math.round(cur / rec.fs * 100);
+    if (rec.lines && rec.lines[step] != null) return rec.lines[step] * lh;
+    const baseLines = rec.lines && rec.lines[rec.fs] != null
+      ? rec.lines[rec.fs]
+      : (rec.lines && rec.lines[100] != null ? rec.lines[100] : 1);
+    const scale = rec.fs > 0 ? cur / rec.fs : 1;
+    return Math.max(1, Math.round(baseLines * scale)) * lh;
+  }
+  get scrollWidth() {
+    const t = globalThis.__smokeFitLines;
+    if (!t) return this.clientWidth || 0;
+    const rec = t[this.attrs['data-node']];
+    if (!rec) return this.clientWidth || 0;
+    const cur = parseFloat(this.style.fontSize) || rec.fs;
+    if (Number.isFinite(rec.widthAtBase) && rec.fs > 0) return rec.widthAtBase * (cur / rec.fs);
+    return this.clientWidth || 0;
   }
   *walk() {
     if (this._movedIntoBase) return;
@@ -523,7 +540,15 @@ export function runRenderCheck({ demoDir, langs, frameWidth = 1200, prefs = {}, 
   }
 
   if (fitProbe?.nodeId) {
-    globalThis.__smokeFitLines = { [fitProbe.nodeId]: { fs: fitProbe.fs, lh: fitProbe.lh, lines: { 100: 3, 92: 3, 85: 2, 78: 2, 75: 2 } } };
+    const baseFs = Number(fitProbe.fs);
+    globalThis.__smokeFitLines = {
+      [fitProbe.nodeId]: {
+        fs: baseFs,
+        lh: fitProbe.lh,
+        widthAtBase: Number.isFinite(Number(fitProbe.widthAtBase)) ? Number(fitProbe.widthAtBase) : baseFs * 8,
+        lines: fitProbe.lines || { [baseFs]: 3, 100: 3, 92: 3, 85: 2, 78: 2, 75: 2 },
+      },
+    };
     const f1 = renderFrame(demo, truth, rawTruth, prefs, langs[0], frameWidth);
     const e1 = [...f1.walk()].find((e) => e.attrs?.['data-node'] === fitProbe.nodeId);
     if (!e1) { ok = false; console.log(`fit probe missing=${fitProbe.nodeId}`); }
@@ -531,14 +556,14 @@ export function runRenderCheck({ demoDir, langs, frameWidth = 1200, prefs = {}, 
       // Open-flow text must preserve source metrics and grow naturally;
       // shrinking is a regression even when the old fixed-frame probe would
       // have expected a fit scale.
-      if (e1.attrs['data-fit-scale'] || e1.attrs['data-fit-overflow']
+      if (e1.attrs['data-fit-px'] || e1.attrs['data-fit-scale'] || e1.attrs['data-fit-overflow']
         || e1.style.fontSize !== fitProbe.fs + 'px' || e1.style.lineHeight !== fitProbe.lh + 'px') {
         ok = false;
         console.log(`fit probe open-flow mismatch=${fitProbe.nodeId}`);
       }
     } else if (e1.attrs['data-fit-overflow']) {
       ok = false;
-      console.log(`fit probe overflow=${fitProbe.nodeId} scale=${e1.attrs['data-fit-scale'] || 'none'}`);
+      console.log(`fit probe overflow=${fitProbe.nodeId} px=${e1.attrs['data-fit-px'] || 'none'}`);
     }
     globalThis.__smokeFitLines = null;
   }

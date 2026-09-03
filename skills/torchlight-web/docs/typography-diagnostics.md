@@ -29,7 +29,7 @@ node scripts/lib/figma-typography-browser-check.mjs \
   --out artifacts/typography-coverage.json
 ```
 
-采集结果必须保留 language、node provenance 对应的 Figma style、computed family/weight、字体 readiness、glyph gap、Range/scroll/client 尺寸、clip/ellipsis 和 fitScale。没有 Chrome 时命令退出阻塞码，不伪造视觉通过。
+采集结果必须保留 language、node provenance 对应的 Figma style、computed family/weight、字体 readiness、glyph gap、Range/scroll/client 尺寸、clip/ellipsis 和 fitPx（相对 locale 基准的整数字号；旧 fitScale 百分比不再当通过证据）。没有 Chrome 时命令退出阻塞码，不伪造视觉通过。
 
 ## Language + role font routing (source truth)
 
@@ -68,4 +68,4 @@ weights do not silently become synthetic weight.
 
 `node scripts/figma-fonts.mjs --demo demos/yise-ss5-preview --dry-run` 应报告 `missingCount: 0`。如未来新增语言字体文件缺失，继续按缺字体清单暴露，不静默替换、不修改 Figma style，也不声称字重保真。
 
-step-fit 只是一条带语言和节点的适配记录；`data-fit-scale`/`data-fit-overflow` 不能被隐藏。没有明确 Figma truncation 语义时不添加 ellipsis，不用固定字号掩盖缺字体或缺字形。
+integer-px 适配记录必须带语言和节点；`data-fit-px` / `data-fit-overflow` 不能被隐藏。旧 `data-fit-scale` 百分比和 75% 地板不再当通过证据。没有明确 Figma truncation 语义时不添加 ellipsis，不用固定字号掩盖缺字体或缺字形。

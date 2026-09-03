@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_MAX_HTML_BYTES, externalizeQaTruthIfOverLimit } from '../lib/html-volume.mjs';
 import { detectWebpEncoder, encodeWebpBatch } from '../lib/encode-webp.mjs';
-import { planWebpDelivery } from '../figma-assets.mjs';
+import { planWebpDelivery } from '../lib/encode-webp.mjs';
 
 function tmpDemo() {
   return mkdtempSync(join(tmpdir(), 'yise-html-volume-'));

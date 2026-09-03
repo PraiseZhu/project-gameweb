@@ -337,6 +337,55 @@ test('generic modal button names map to their named Etheria modal contracts', ()
   assert.equal(byId.get('nav')['data-go'], 'modal/顶部导航-1624尺寸');
   assert.equal(byId.get('lang')['data-go'], 'modal/多语言按钮弹窗');
 });
+
+test('dropmenu exact on/off is not disabled and stays pressable', () => {
+  const graph = {
+    componentSetId: 'dropmenu-set',
+    variants: [
+      { componentId: 'menu-off', name: 'Property 1=off', interactions: [] },
+      { componentId: 'menu-on', name: 'Property 1=on', interactions: [] },
+    ],
+  };
+  const offModel = deriveInteractionModel([
+    {
+      id: 'menu-off',
+      type: 'INSTANCE',
+      name: 'dropmenu/多语言',
+      componentProperties: { 'Property 1': { value: 'off', type: 'VARIANT' } },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const dropmenuOff = offModel.attributes.find((entry) => entry.id === 'menu-off')?.attrs;
+  assert.equal(dropmenuOff['data-dropmenu'], 'true');
+  assert.equal(dropmenuOff['data-dropmenu-state'], 'off');
+  assert.equal(dropmenuOff['data-dropmenu-name'], '多语言');
+  assert.equal(dropmenuOff['data-btn-press'], 'true');
+});
+
+test('dropmenu/切换地区 stays pressable and keeps @go', () => {
+  const graph = {
+    componentSetId: 'region-set',
+    variants: [
+      { componentId: 'region-off', name: 'Property 1=off', interactions: [] },
+      { componentId: 'region-on', name: 'Property 1=on', interactions: [] },
+    ],
+  };
+  const model = deriveInteractionModel([
+    {
+      id: 'region-off',
+      type: 'INSTANCE',
+      name: 'dropmenu/切换地区@go=modal/地区',
+      componentProperties: { 'Property 1': { value: 'off', type: 'VARIANT' } },
+      componentVariantGraph: graph,
+    },
+  ]);
+  const attrs = model.attributes.find((entry) => entry.id === 'region-off')?.attrs;
+  assert.equal(attrs['data-dropmenu'], 'true');
+  assert.equal(attrs['data-dropmenu-name'], '切换地区');
+  assert.equal(attrs['data-go'], 'modal/地区');
+  assert.equal(attrs['data-btn-press'], 'true');
+});
+
 test('fix/@from emits a scroll-gated pin and @go copies the modal name', () => {
   const model = deriveInteractionModel([
     { id: 'sec-1', type: 'FRAME', name: 'sec/1-首屏' },

@@ -151,10 +151,28 @@ function keepLivePaintNode(node, skippedChildren) {
   return [paintBoxOf(liftOwnerComposite(node, skippedChildren))];
 }
 
+function hasVisibleImageFill(node) {
+  return visibleFillsOf(node).some((fill) => String(fill.type || '') === 'IMAGE');
+}
+
+function keepUnknownImageUnderSkipped(node, byId) {
+  if (!isPlainObject(node) || node.status !== 'unknown' || !hasVisibleImageFill(node)) return false;
+  let parent = byId.get(node.parentId);
+  while (parent) {
+    if (isSkipped(parent) && (parent.why === 'art-fragment' || parent.why === 'slice-child')) return true;
+    parent = byId.get(parent.parentId);
+  }
+  return false;
+}
+
 /** Flat inventory/v2 page nodes: lift owner composites without painting skipped ids. */
 export function restoreOwnerComposites(nodes) {
   const list = asArray(nodes);
-  return list.flatMap((node) => keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped)));
+  const byId = new Map(list.filter((node) => node?.id).map((node) => [node.id, node]));
+  return list.flatMap((node) => {
+    if (keepUnknownImageUnderSkipped(node, byId)) return [paintBoxOf(node)];
+    return keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped));
+  });
 }
 
 const TODAY_NAME = /^dyn\/今日日期/;
@@ -348,10 +366,24 @@ function liveRecord(byId, entry) {
 
 function classifyPageDirectChildren(inv, byId) {
   const overlayFromById = new Map(asArray(inv.overlays).map((entry) => [entry.id, entry.from]));
+  const seenPinnedLabels = new Set();
+  const overlayFrom = (entry, record) => (
+    Number.isFinite(entry.from) ? entry.from : fromParamOf(record)
+  );
+  const isDuplicateViewportPin = (entry, record, from) => {
+    if (from != null) return false;
+    const pin = String(entry.pin || record.pin || 'viewport');
+    if (pin !== 'viewport') return false;
+    const label = String(entry.label || record.label || splitInventoryName(record.name).label || record.id);
+    if (seenPinnedLabels.has(label)) return true;
+    seenPinnedLabels.add(label);
+    return false;
+  };
   const fixedOverlays = asArray(inv.overlays).map((entry) => {
     const record = liveRecord(byId, entry);
     if (!record) return null;
-    const from = Number.isFinite(entry.from) ? entry.from : fromParamOf(record);
+    const from = overlayFrom(entry, record);
+    if (isDuplicateViewportPin(entry, record, from)) return null;
     return from != null ? { ...record, from } : record;
   }).filter(Boolean);
   for (const overlay of fixedOverlays) {
@@ -361,16 +393,23 @@ function classifyPageDirectChildren(inv, byId) {
   const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
 
   const pageChrome = [];
+  const inSectionTree = (record) => {
+    if (!record) return false;
+    if (sectionIds.has(String(record.id)) || sectionIds.has(String(record.parentId))) return true;
+    return asArray(record.ancestorIds).some((id) => sectionIds.has(String(id)));
+  };
   for (const child of pageDirectChildren(inv)) {
     const record = liveRecord(byId, child);
     if (!record || fixedIds.has(child.id) || record.role === 'sec' || sectionIds.has(child.id)) continue;
     pageChrome.push(record);
   }
-  // Also keep the inventory's declared kv/bg role records as page chrome even
-  // when they are not a direct page child (some kv layers sit inside kv/*).
+  // Keep declared kv/bg as page chrome only when they are not already in a
+  // section tree. A bg/ sitting inside sec/2 would otherwise paint twice
+  // and later-section bg/* would cover-crop onto the first screen.
   for (const entry of asArray(inv.backgrounds)) {
     const record = liveRecord(byId, entry);
     if (!record || fixedIds.has(record.id) || pageChrome.some((n) => n.id === record.id)) continue;
+    if (inSectionTree(record)) continue;
     pageChrome.push(record);
   }
   return { pageChrome, fixedOverlays };
@@ -462,15 +501,40 @@ const NAMING_MODAL_CONTRACTS = Object.freeze([
   { openerLabel: '多语言按钮', modalLabel: '多语言按钮弹窗' },
 ]);
 
-function platformOf(value) {
-  const raw = value && typeof value === 'object'
-    ? value.platform ?? value.sourcePlatform ?? value.meta?.platform
-    : value;
+function modalLabelMatchesContract(label, contractLabel) {
+  const raw = String(label || '').trim();
+  const wanted = String(contractLabel || '').trim();
+  if (!raw || !wanted) return false;
+  if (raw === wanted) return true;
+  if (wanted === '视频弹窗' && /^(?:pc|移动端)?视频弹窗$/.test(raw)) return true;
+  if (wanted === '多语言按钮弹窗' && /多语言按钮弹窗$/.test(raw)) return true;
+  return false;
+}
+
+function isVideoModalLabel(label) {
+  return modalLabelMatchesContract(label, '视频弹窗');
+}
+
+function platformToken(raw) {
   const normalized = String(raw || '').toLowerCase();
   if (normalized === 'mobile' || normalized === 'phone') return 'mobile';
   if (normalized === 'pc' || normalized === 'desktop') return 'pc';
   if (normalized === 'pad' || normalized === 'tablet') return 'pad';
   return null;
+}
+
+function platformFromModalLabel(name) {
+  const label = splitInventoryName(name).label || String(name || '');
+  if (/^移动端/.test(label) || /移动端视频弹窗$/.test(label)) return 'mobile';
+  if (/^pc/i.test(label) || /^PC/.test(label)) return 'pc';
+  return null;
+}
+
+function platformOf(value) {
+  const raw = value && typeof value === 'object'
+    ? value.platform ?? value.sourcePlatform ?? value.meta?.platform
+    : value;
+  return platformToken(raw) || (value && typeof value === 'object' ? platformFromModalLabel(value.name) : null);
 }
 
 function collectNamedGoOpeners(nodes, { byName, modalIds, byId, requirePlatform }) {
@@ -555,7 +619,7 @@ function templateNamingModalTriggers(inv) {
     const matchedOpeners = openers.filter((node) => splitInventoryName(node.name).label === contract.openerLabel);
     const matchedModals = modals.filter((modal) => {
       const parsed = splitInventoryName(modal.name);
-      return parsed.role === 'modal' && parsed.label === contract.modalLabel;
+      return parsed.role === 'modal' && modalLabelMatchesContract(parsed.label, contract.modalLabel);
     });
     if (!matchedOpeners.length || !matchedModals.length) continue;
     for (const opener of matchedOpeners) {
@@ -565,7 +629,9 @@ function templateNamingModalTriggers(inv) {
         if (contract.openerLabel === '导航按钮' || contract.openerLabel === '多语言按钮') {
           return openerPlatform === 'mobile' && modalPlatform === 'mobile';
         }
-        return openerPlatform && modalPlatform && openerPlatform === modalPlatform;
+        if (openerPlatform && modalPlatform) return openerPlatform === modalPlatform;
+        if (!openerPlatform && !modalPlatform && matchedModals.length === 1) return true;
+        return false;
       });
       if (candidates.length !== 1) continue;
       extra.push({
@@ -834,7 +900,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
     return {
       id: modal.id,
       name: modal.name ?? '',
-      platform: modal.platform ?? modal.sourcePlatform ?? modal.meta?.platform ?? null,
+      platform: platformOf(modal),
       box: modal.box ?? null,
       ...passthroughDrawFields(modal),
       hidden: true,
@@ -1075,4 +1141,143 @@ export function inventoryBacklinkReport(inv, options = {}) {
     resolved: seen.size - unresolved.length,
     unresolved,
   };
+}
+
+/**
+ * Static page must equal the inventory/handoff records. Inventory is the lock,
+ * not a score to fudge. Interaction / Resize stay closed until this report is
+ * green. Compare determined ids, boxes, and names only — never invent missing
+ * nodes to make the page look closer.
+ */
+export function staticInventoryLockReport(inv, pageTruth, options = {}) {
+  const gate = validateInventory(inv, options);
+  if (!gate.ok) {
+    return {
+      schema: 'yise-static-inventory-lock/v1',
+      ok: false,
+      locked: false,
+      reason: 'inventory-not-ready',
+      problems: gate.problems,
+      mismatches: [],
+    };
+  }
+  const adapted = adaptInventoryToTruthShape(inv, options);
+  if (!adapted || adapted.ok === false) {
+    return {
+      schema: 'yise-static-inventory-lock/v1',
+      ok: false,
+      locked: false,
+      reason: adapted?.error || 'adapt-failed',
+      problems: adapted?.problems || [],
+      mismatches: [],
+    };
+  }
+  const mismatches = [];
+  const push = (kind, id, field, expected, actual) => {
+    mismatches.push({ kind, id, field, expected, actual });
+  };
+  const expectedIds = new Set();
+  const collect = (nodes, kind) => {
+    for (const node of asArray(nodes)) {
+      if (!node || typeof node.id !== 'string') continue;
+      expectedIds.add(node.id);
+      const live = findPageNode(pageTruth, node.id);
+      if (!live) {
+        push(kind, node.id, 'present', true, false);
+        continue;
+      }
+      const expectedName = String(node.name || '');
+      const actualName = String(live.name || live.nodeName || '');
+      if (expectedName && actualName && expectedName !== actualName) {
+        push(kind, node.id, 'name', expectedName, actualName);
+      }
+      const expectedBox = node.box;
+      const actualBox = live.box || live.parentBox;
+      if (expectedBox && actualBox) {
+        for (const axis of ['x', 'y', 'w', 'h']) {
+          const exp = Number(expectedBox[axis]);
+          const act = Number(actualBox[axis] ?? actualBox[axis === 'w' ? 'width' : axis === 'h' ? 'height' : axis]);
+          if (Number.isFinite(exp) && Number.isFinite(act) && Math.abs(exp - act) > 0.5) {
+            push(kind, node.id, `box.${axis}`, exp, act);
+          }
+        }
+      }
+    }
+  };
+  collect(adapted.pageChrome?.nodes, 'pageChrome');
+  collect(adapted.fixedOverlays?.nodes, 'fixedOverlay');
+  collect(adapted.sections, 'section');
+  collect(adapted.modals, 'modal');
+  const liveIds = collectPageNodeIds(pageTruth);
+  for (const id of liveIds) {
+    if (id && !expectedIds.has(id) && !String(id).startsWith('named-modals')) {
+      /* Extra painted nodes that the inventory never owned stay fail-closed. */
+      if (isDeterminedPaintedId(pageTruth, id)) push('extra', id, 'present', false, true);
+    }
+  }
+  return {
+    schema: 'yise-static-inventory-lock/v1',
+    ok: mismatches.length === 0,
+    locked: mismatches.length === 0,
+    reason: mismatches.length ? 'static-page-not-equal-inventory' : null,
+    expectedCount: expectedIds.size,
+    mismatchCount: mismatches.length,
+    mismatches,
+  };
+}
+
+function findPageNode(pageTruth, id) {
+  if (!pageTruth || !id) return null;
+  const stack = [];
+  const pushRoot = (value) => {
+    if (!value) return;
+    if (Array.isArray(value)) stack.push(...value);
+    else if (typeof value === 'object') stack.push(value);
+  };
+  pushRoot(pageTruth.nodes);
+  pushRoot(pageTruth.pageChrome?.nodes);
+  pushRoot(pageTruth.fixedOverlays?.nodes);
+  pushRoot(pageTruth.modals);
+  pushRoot(pageTruth.sections);
+  if (pageTruth.sections && typeof pageTruth.sections === 'object' && !Array.isArray(pageTruth.sections)) {
+    for (const section of Object.values(pageTruth.sections)) {
+      pushRoot(section);
+      pushRoot(section?.nodes);
+    }
+  }
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== 'object') continue;
+    if (String(node.id || '') === String(id)) return node;
+    if (Array.isArray(node.nodes)) stack.push(...node.nodes);
+    if (Array.isArray(node.children)) stack.push(...node.children);
+  }
+  return null;
+}
+
+function collectPageNodeIds(pageTruth) {
+  const ids = new Set();
+  const walk = (nodes) => {
+    for (const node of asArray(nodes)) {
+      if (node && typeof node.id === 'string' && node.id) ids.add(node.id);
+      if (node && Array.isArray(node.nodes)) walk(node.nodes);
+      if (node && Array.isArray(node.children)) walk(node.children);
+    }
+  };
+  walk(pageTruth?.nodes);
+  walk(pageTruth?.pageChrome?.nodes);
+  walk(pageTruth?.fixedOverlays?.nodes);
+  walk(pageTruth?.modals);
+  if (Array.isArray(pageTruth?.sections)) walk(pageTruth.sections);
+  else if (pageTruth?.sections && typeof pageTruth.sections === 'object') {
+    for (const section of Object.values(pageTruth.sections)) walk(section?.nodes || [section]);
+  }
+  return ids;
+}
+
+function isDeterminedPaintedId(pageTruth, id) {
+  const node = findPageNode(pageTruth, id);
+  if (!node) return false;
+  const status = String(node.status || node.inventoryStatus || '');
+  return status === 'determined' || status === '';
 }

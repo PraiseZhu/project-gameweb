@@ -68,6 +68,7 @@ import { validateSpec, validateTruth, validateCustomGateFiles, truthAt, buildVer
 import { designPxScaleFactor, resolveAssetShaTruth } from './lib/binding-resolver.mjs';
 import { aggregateEvidenceLevel } from './lib/report.mjs';
 import { workflowDeclaration } from './lib/workflows.mjs';
+import { translationAxisClaim, assessLanguageCompleteness } from './lib/translation/index.mjs';
 /* 门字母的唯一真相源(r7 条目 7a):不许在本文件再手写一份门列表 —— 门 E 那个 CRITICAL
    的根因就是 verify 与 pr-block 各写了一份、两份都漏了 E。 */
 import { lettersFor } from './lib/gates.mjs';
@@ -917,6 +918,45 @@ try {
     }
   }
 
+  // ---------- 门 L:独立翻译（分界线前，只读 spec/truth，不执行 demo 代码） ----------
+  let gateL;
+  if (!runGate('L')) gateL = skippedGate('独立翻译');
+  else {
+    gateL = makeGate('独立翻译', 0);
+    const claim = translationAxisClaim({ spec, truth: truthObj });
+    gateL.languages = claim.languages;
+    gateL.claim = claim;
+    if (!claim.claimed) {
+      gateL.detail = claim.note || claim.reason;
+      gateL.coverageCounts = { languages: (claim.languages || []).length, claimed: false };
+      setGateStatus(gateL, 'not-claimed');
+    } else {
+      const copy = truthObj?.copy || spec?.copy || {};
+      const byNode = copy.byNode || truthObj?.copy?.byNode || {};
+      const sourceTexts = Array.isArray(copy.sourceTexts) ? copy.sourceTexts
+        : Object.keys(byNode).map((nodeId) => ({ nodeId }));
+      const completeness = assessLanguageCompleteness({
+        sourceTexts,
+        byNode,
+        languages: claim.languages,
+        unresolvedNodeIds: copy.unresolvedNodeIds || [],
+      });
+      gateL.total = completeness.sourceTextCount * Math.max(1, (claim.languages || []).length);
+      gateL.passed = completeness.ok ? gateL.total : Math.max(0, gateL.total - completeness.missingCount - completeness.invalidCount);
+      if (!completeness.ok) {
+        gateL.failures.push({ check: 'completeness', missing: completeness.missingCount, invalid: completeness.invalidCount });
+        gateL.detail = `翻译表不完整 missing=${completeness.missingCount} invalid=${completeness.invalidCount}`;
+      }
+      gateL.coverageCounts = {
+        languages: claim.languages,
+        sourceTexts: completeness.sourceTextCount,
+        missing: completeness.missingCount,
+        invalid: completeness.invalidCount,
+      };
+      setGateStatus(gateL, completeness.ok ? 'passed' : 'blocked');
+    }
+  }
+
   /* ── r11 P0:把「当时被观察的字节」搬进父进程内存并冻结,**必须在执行任何 demo 侧代码之前** ──
      成因:snapshot 与 exec 树同处用户可枚举、可写的 os.tmpdir();custom gate 是任意 Node 代码,
      枚举 `qa-hifi-snapshot-*` + 按 spec.json 的 meta.name 认出本次快照,再把 snapshot 与 disk
@@ -1123,7 +1163,7 @@ try {
   if (!gateA.skipped) setGateStatus(gateA, gateA.pass === true ? 'passed' : 'blocked');
   const workflow = spec.workflow?.id || spec.meta?.workflow || spec.meta?.qaWorkflow || 'product-qa';
   const workflowDecl = workflowDeclaration(workflow) ?? workflowDeclaration('product-qa');
-  const gateEntries = [['gateA', gateA], ['gateB', gateB], ['gateC', gateC], ['gateD', gateD], ['gateF', gateF], ['gateX', gateX]];
+  const gateEntries = [['gateA', gateA], ['gateB', gateB], ['gateC', gateC], ['gateD', gateD], ['gateF', gateF], ['gateL', gateL], ['gateX', gateX]];
   const outcome = makeOutcome(workflow, gateEntries, { partial });
   const reportOk = outcome.workflowAcceptable;
   /* 视觉证据分级(2026-08-14,与 pr-block 共用 aggregateEvidenceLevel 一份实现):
@@ -1163,6 +1203,7 @@ try {
     gateC,
     gateD,
     gateF,
+    gateL,
     gateX,
     evidenceLevel,
     generatedAt: new Date().toISOString(),

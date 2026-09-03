@@ -24,6 +24,15 @@ import {
 const chromeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/figma-chrome.js'), 'utf8');
 const navRailCheckSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/figma-nav-rail-browser-check.mjs'), 'utf8');
 
+test('composition numbers come from DESIGN.md YAML', () => {
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/resize/index.mjs'), 'utf8');
+  assert.match(src, /design-policy\.generated\.mjs/);
+  assert.match(src, /COMPOSITION_BREAKPOINTS = DESIGN_POLICY\.composition/);
+  assert.match(src, /PAD_USES_PC_TREE = DESIGN_POLICY\.padUsesPcTree/);
+  assert.match(chromeSrc, /function officialRootFontVw\(\)/);
+  assert.doesNotMatch(chromeSrc, /officialRootFontVw\) \|\| 10/);
+});
+
 test('width maps to plat without page IDs', () => {
   assert.equal(platOfWidth(390), 'mobile');
   assert.equal(platOfWidth(750), 'mobile');
@@ -36,6 +45,17 @@ test('tablet without a pad tree reuses PC instead of inventing a layout', () => 
   const padFallback = compositionKeyForViewport({ width: 768, platforms: {} });
   assert.equal(padFallback.key, 'pc');
   assert.equal(padFallback.fallback, 'pad-uses-pc-tree');
+  assert.equal(compositionKeyForViewport({
+    width: 768,
+    platforms: {},
+    padUsesPcTree: false,
+  }).fallback, null);
+  assert.equal(compositionKeyForViewport({
+    width: 768,
+    platforms: {},
+    inventPadTree: true,
+    padUsesPcTree: false,
+  }).fallback, 'invent-pad-tree');
   const nativeMobile = compositionKeyForViewport({ width: 390, platforms: { mobile: true } });
   assert.equal(nativeMobile.key, 'mobile');
   assert.equal(nativeMobile.fallback, null);
@@ -127,7 +147,7 @@ test('width scale is one formula, same ruler as official 10vw', () => {
   assert.equal(widthScale({ viewportW: 430, designWidth: 750 }).k, 430 / 750);
 });
 
-test('hero fill uses max(k, viewportH / heroDesignHeight) so later sections leave the first screen', () => {
+test('hero fill uses YAML fillVh of the viewport so later sections leave the first screen', () => {
   const fill = heroViewportFill({ viewportH: 844, widthScaleK: 390 / 750, heroDesignHeight: 1334 });
   assert.equal(fill.slotScale, 844 / 1334);
   assert.ok(fill.slotScale > 390 / 750);
@@ -143,6 +163,11 @@ test('hero fill uses max(k, viewportH / heroDesignHeight) so later sections leav
   assert.ok(tabletFill.uiYRatio > 2);
   const fullWidth = heroViewportFill({ viewportH: 1080, widthScaleK: 1920 / 3840, heroDesignHeight: 2160 });
   assert.equal(fullWidth.uiYRatio, 1);
+  const ninety = heroViewportFill({
+    viewportH: 844, widthScaleK: 390 / 750, heroDesignHeight: 1334, fillVh: 90,
+  });
+  assert.equal(ninety.slotScale, (844 * 0.9) / 1334);
+  assert.notEqual(ninety.slotScale, 844 / 1334);
 });
 
 test('product view clips page X; QA keeps X auto for no-clip probes', () => {
@@ -253,4 +278,11 @@ test('directory browser check locates the rail by name and source box, not a sea
   assert.doesNotMatch(navRailCheckSrc, /I52-3263-17-53006/);
   assert.doesNotMatch(navRailCheckSrc, /targetRect\.width \/ 727/);
   assert.doesNotMatch(navRailCheckSrc, /targetRect\.height \/ 2376/);
+});
+
+test('product-view window resize keeps the same composition on the light path', () => {
+  assert.match(chromeSrc, /产品视图同构图走拖拽轻路径/);
+  assert.match(chromeSrc, /if \(PRODUCT_VIEW && !_resizeDragActive && _lastCompositionKey\)/);
+  assert.match(chromeSrc, /if \(nextKey === _lastCompositionKey\) beginResizeDrag\(\)/);
+  assert.match(chromeSrc, /winResizeIdleTimer = setTimeout\(function \(\) \{\s*winResizeIdleTimer = 0;\s*endResizeDrag\(\);/s);
 });

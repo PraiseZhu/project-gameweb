@@ -26,6 +26,16 @@ const GATE_ROWS = {
   /* 门 X 的降准表述(r7 条目 10,审核人裁定):canonical verify 亲自执行注册脚本并记真实
      exit code,但**脚本本身是 demo 代码** —— 可信的只有「精确 hash 的注册脚本由可信 runner
      执行并 exit 0」这个**执行事件**,不证明脚本实现了正确的业务 oracle。文案不许暗示后者。 */
+  L: (v) => {
+    const g = v.gateL;
+    if (!g || g.skipped || (g.status !== 'passed' && g.status !== 'blocked')) {
+      return '| 独立翻译 | ⚠️ 未启用（矩阵仅 zh-CN 或无翻译表；中文字体加载不等于翻译通过） |';
+    }
+    if (g.status === 'passed') {
+      return `| 独立翻译（${(g.languages || []).join('/')}） | ✅ |`;
+    }
+    return `| 独立翻译 | ❌ ${g.detail || g.status} |`;
+  },
   X: (v) => (v.gateX?.total > 0
     ? `| 自定义门（${v.gateX.gates.map((g) => g.id).join(' / ')}） | ✅ 已由可信 runner 执行且 exit 0`
       + '（注册脚本 hash 入链；脚本本身是 demo 代码，其业务判断是否正确需人工审查） |'
@@ -86,7 +96,7 @@ export function renderPrBlock({ spec, trustedVerify, trustedPixel = null, truste
 
   /* 门行只按 TRUSTED_GATES 遍历(条目 7a)。渲染顺序固定为 A→F(人读习惯),
      但**集合**取自映射:漏一个门字母在这里就会漏一行,而下面那句断言会立刻发现。 */
-  const ORDER = ['A', 'B', 'C', 'D', 'F', 'X', 'E'];
+  const ORDER = ['A', 'B', 'C', 'D', 'F', 'L', 'X', 'E'];
   const missing = GATE_LETTERS.filter((l) => !ORDER.includes(l));
   if (missing.length)
     throw new Error(`PR 门表渲染漏了门 ${missing.join(',')}——TRUSTED_GATES 加了新门字母就必须同步这里(r7 条目 7a)`);
@@ -95,7 +105,7 @@ export function renderPrBlock({ spec, trustedVerify, trustedPixel = null, truste
     if (!runner) throw new Error(`门 ${letter} 不在 TRUSTED_GATES 里`);
     // 数据对象只可能是 v(verify 可信产出)或 px(pixel 可信产出),按映射取
     const source = runner === 'verify' ? v : px;
-    if (runner === 'verify' && !source[gateKey(letter)] && letter !== 'X')
+    if (runner === 'verify' && !source[gateKey(letter)] && letter !== 'X' && letter !== 'L')
       throw new Error(`可信 verify 产出里缺 ${gateKey(letter)}——不许拿缺字段的结果出块`);
     const row = GATE_ROWS[letter](v, px);
     if (row) lines.push(row);

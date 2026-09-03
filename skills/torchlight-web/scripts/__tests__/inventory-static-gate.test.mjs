@@ -343,7 +343,7 @@ test('listed img/ time-bg with shorter ink box expects pageBox, not sliceExport.
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
 
-  const red = evaluateInventoryStaticGate({
+  const redInk = evaluateInventoryStaticGate({
     inventory: {
       schema: 'inventory/v2',
       nodes: [
@@ -363,8 +363,8 @@ test('listed img/ time-bg with shorter ink box expects pageBox, not sliceExport.
       },
     },
   });
-  assert.equal(red.ok, false);
-  assert.ok(red.problems.some((line) => line.includes('sliceExport-mismatch')), (red.problems || []).join('\n'));
+  assert.equal(redInk.ok, false);
+  assert.ok(redInk.problems.some((line) => line.includes('sliceExport-mismatch')), (redInk.problems || []).join('\n'));
 });
 
 test('whole-frame PNG empty or wrong size is red when probe reports asset meta', () => {

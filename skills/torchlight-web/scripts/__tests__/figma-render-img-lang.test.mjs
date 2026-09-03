@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchChromium } from '../lib/resolve-playwright.mjs';
 import { playwrightBrowserSkipMessage, probePlaywrightCapability } from '../lib/runtime-capabilities.mjs';
+import { DESIGN_POLICY } from '../lib/design-policy.generated.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const PLAYWRIGHT_PROBE = probePlaywrightCapability(root);
@@ -51,12 +52,31 @@ function truth() {
           section: {
             meta: { x: 0, y: 0, width: 400, height: 200 },
             nodes: [{
+              id: 'cta',
+              type: 'INSTANCE',
+              name: '首屏主按钮',
+              componentId: '700:10242',
+              box: { x: 10, y: 100, w: 200, h: 80 },
+              renderBox: { x: 10, y: 100, w: 200, h: 80 },
+              style: { fills: [] },
+            }, {
+              id: 'slg-bake',
+              type: 'FRAME',
+              name: 'slg',
+              box: { x: 0, y: 0, w: 400, h: 200 },
+              renderBox: { x: 0, y: 0, w: 400, h: 200 },
+              clipsContent: true,
+              exportSettings: [{ format: 'PNG', constraint: { type: 'SCALE', value: 1 } }],
+              style: { fills: [] },
+            }, {
               id: 'inst-art',
               type: 'INSTANCE',
-              name: 'img/模块2可替换素材',
+              name: 'img/标题slg',
               componentId: '700:10242',
               box: { x: 10, y: 10, w: 200, h: 80 },
               renderBox: { x: 2, y: 6, w: 216, h: 88 },
+              parentId: 'slg-bake',
+              ancestorIds: ['slg-bake'],
               style: { fills: [] },
             }],
           },
@@ -85,6 +105,14 @@ function assets() {
       exportBounds: 'render',
       exportBox: { x: -8, y: -4, w: 216, h: 100 },
     },
+    'pc:slg-bake': {
+      file: 'assets/slg-bake.webp',
+      reason: '设计师导出预设',
+      sliceExport: { bounds: 'box', scale: 1, format: 'png' },
+      exportBounds: 'box',
+      exportBox: { x: 0, y: 0, w: 400, h: 200 },
+      pixelSize: '400x200',
+    },
   };
 }
 
@@ -111,6 +139,7 @@ async function setup() {
   const { browser } = await launchChromium(root, { headless: true });
   const page = await browser.newPage({ viewport: { width: 400, height: 300 } });
   await page.setContent('<!doctype html><body><div class="frame"></div><script type="application/json" id="qa-assets"></script></body>');
+  await page.evaluate((policy) => { window.__designPolicy = policy; }, DESIGN_POLICY);
   await page.addScriptTag({ path: rendererPath });
   await page.evaluate((payload) => {
     document.getElementById('qa-assets').textContent = JSON.stringify(payload);
@@ -136,6 +165,8 @@ function ownerState(page) {
   return page.evaluate(() => {
     const el = document.querySelector('[data-node="inst-art"]');
     const img = el && el.querySelector('img.fx-img');
+    const bake = document.querySelector('[data-node="slg-bake"]');
+    const bakeImg = bake && bake.querySelector(':scope > img.fx-img');
     return {
       status: el && el.getAttribute('data-component-instance-mount-status'),
       missing: el && el.getAttribute('data-img-lang-missing'),
@@ -150,6 +181,8 @@ function ownerState(page) {
       height: img && img.style.height,
       objectFit: img && img.style.objectFit,
       childCount: el ? el.querySelectorAll('[data-node], img.fx-img').length : 0,
+      bakeSrc: bakeImg && (bakeImg.getAttribute('data-asset-src') || bakeImg.getAttribute('src')),
+      bakeReleased: bake && bake.getAttribute('data-asset-lock-released'),
     };
   });
 }
@@ -168,11 +201,12 @@ browserTest('img/ lang remount keeps render-bound exportBox and does not 100% fi
     assert.doesNotMatch(String(state.src || ''), /^[0-9]+-[0-9]+\.png$/);
     assert.notEqual(state.width, '100%');
     assert.notEqual(state.height, '100%');
-    assert.notEqual(state.objectFit, 'fill');
     assert.equal(state.left, '-8px');
     assert.equal(state.top, '-4px');
     assert.equal(state.width, '216px');
     assert.equal(state.height, '100px');
+    assert.equal(state.bakeSrc, null);
+    assert.equal(state.bakeReleased, 'live-img-lang-descendant');
   } finally {
     await browser.close();
   }

@@ -18,6 +18,13 @@ function descendantsOf(node, sectionId) {
   return asArray(node?.ancestorIds).map(String).includes(String(sectionId));
 }
 
+function underDroppedFix(node, droppedFixIds) {
+  if (!droppedFixIds.size) return false;
+  const id = String(node?.id || '');
+  if (droppedFixIds.has(id)) return true;
+  return asArray(node?.ancestorIds).some((ancestor) => droppedFixIds.has(String(ancestor)));
+}
+
 function ordered(nodes) {
   return [...nodes].sort((a, b) => String(a.orderKey || '').localeCompare(String(b.orderKey || ''), undefined, { numeric: true }));
 }
@@ -39,9 +46,9 @@ function pageBoxOf(entry) {
   return geomOf(entry?.pageBox);
 }
 
-function drawMeta(entry, sourceNode = null) {
+function drawMeta(entry, liveRecord = null) {
   const pageBox = pageBoxOf(entry);
-  const src = sourceNode || entry;
+  const record = liveRecord && typeof liveRecord === 'object' ? liveRecord : entry;
   return {
     ...pageBox,
     width: pageBox.w,
@@ -49,7 +56,7 @@ function drawMeta(entry, sourceNode = null) {
     pageBox: entry?.pageBox ?? null,
     parentBox: entry?.parentBox ?? null,
     box: entry?.box ?? null,
-    clipsContent: src?.clipsContent === true,
+    clipsContent: record?.clipsContent === true,
   };
 }
 
@@ -195,12 +202,26 @@ export function platformTruthFromInventory(inventory, options = {}) {
     return true;
   });
   const fixed = new Set(fixedRoots.map((node) => String(node?.id || '')).filter(Boolean));
+  const inventoryOverlayIds = new Set(asArray(inventory.overlays).map((entry) => String(entry?.id || '')).filter(Boolean));
+  for (const id of inventoryOverlayIds) {
+    if (!fixed.has(id)) droppedCloneRoots.add(id);
+  }
   const droppedClones = new Set([
     ...droppedCloneRoots,
     ...liveNodes
-      .filter((node) => asArray(node?.ancestorIds).some((id) => droppedCloneRoots.has(String(id))))
+      .filter((node) => droppedCloneRoots.has(String(node?.id || ''))
+        || asArray(node?.ancestorIds).some((id) => droppedCloneRoots.has(String(id))))
       .map((node) => String(node.id)),
   ]);
+  const chromeIds = new Set(asArray(adapted.pageChrome?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
+  const skipChromePaint = (node) => {
+    const id = String(node?.id || '');
+    if (!id) return false;
+    /* Page-chrome bg/kv stay out of section trees so they paint once.
+       A section-owned bg/ that never entered pageChrome must stay in
+       that section — otherwise it is dropped from both trees. */
+    return chromeIds.has(id);
+  };
   const roots = new Set(asArray(adapted.pagePaintOrder).map((entry) => String(entry?.id || '')).filter(Boolean));
   const ownerOf = (node) => {
     if (fixed.has(String(node?.id || ''))) return node;
@@ -214,6 +235,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
     const owned = ordered(liveNodes.filter((node) => (
       !underFixedOwner(node, fixed)
       && !droppedClones.has(String(node?.id || ''))
+      && !skipChromePaint(node)
       && descendantsOf(node, section.id)
     )));
     const folded = foldSectionOntoPage(section, owned);
@@ -226,8 +248,9 @@ export function platformTruthFromInventory(inventory, options = {}) {
       nodes: folded.nodes,
     };
   }
-  const fixedNodes = ordered(liveNodes.filter((node) => underFixedOwner(node, fixed)))
-    .map((node) => paintFixedNode(node, ownerOf(node)));
+  const fixedNodes = ordered(liveNodes.filter((node) => (
+    underFixedOwner(node, fixed) && !droppedClones.has(String(node?.id || ''))
+  ))).map((node) => paintFixedNode(node, ownerOf(node)));
 
   const pageMeta = drawMeta(inventory.page);
   const chromeNodes = asArray(adapted.pageChrome?.nodes).map((node) => {

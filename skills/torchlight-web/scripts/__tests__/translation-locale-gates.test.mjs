@@ -14,6 +14,8 @@ import {
   translationAxisClaim,
   imgLangVariantValue,
   isLegalImgLangSet,
+  languageMatrixOptions,
+  pageLangsFromImgLangSets,
   resolveImgLangVariant,
 } from '../lib/translation/index.mjs';
 
@@ -231,7 +233,17 @@ test('img/ lang variants follow page language and never fall back to cn', () => 
   };
 
   assert.equal(isLegalImgLangSet(set), true);
+  assert.equal(isLegalImgLangSet({
+    name: '首屏主按钮',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['cn', 'tw', 'en', 'kr'] } },
+    variants: [
+      { componentId: 'cta-cn', name: 'lang=cn', componentProperties: { lang: { type: 'VARIANT', value: 'cn' } } },
+      { componentId: 'cta-en', name: 'lang=en', componentProperties: { lang: { type: 'VARIANT', value: 'en' } } },
+    ],
+  }), true);
   assert.equal(isLegalImgLangSet(prize), false);
+  assert.deepEqual(pageLangsFromImgLangSets([set, prize]), ['zh-CN', 'zh-TW', 'en', 'ko']);
+  assert.deepEqual(languageMatrixOptions(['zh-CN', 'zh-TW', 'en', 'ko']).map((item) => item.v), ['zh-CN', 'zh-TW', 'en', 'ko']);
   assert.equal(resolveImgLangVariant({ componentSets: [set], componentId: 'pc-cn', language: 'en' }).componentId, 'pc-en');
   assert.equal(resolveImgLangVariant({ componentSets: [set], componentId: 'pc-cn', language: 'ja' }).status, 'missing');
   assert.equal(resolveImgLangVariant({ componentSets: [set], componentId: 'pc-cn', language: 'ja' }).componentId, null);

@@ -2,7 +2,7 @@
 
 触发词：`torchlightweb`（也可说 `torchlight-web` / `火炬网页还原`）。召回机制与「出清单」相同：仓根 `CLAUDE.md` 触发表命中后立即执行 `skills/torchlight-web/SKILL.md`。本包不装进 `.claude/skills/`（gitignore + 夜间健康检查会红）。没有触发表那一行，说 `torchlightweb` 不会加载本 Skill。
 
-**完成标准（与 SKILL.md、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 `img/` `bg/` `kv` / 无名 `kv` 的 PNG 非空且宽高等于 `pageBox`）→ 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
+**完成标准（与 SKILL.md、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 `img/` `bg/` `kv` / 无名 `kv` 的 PNG 非空且宽高等于 `pageBox`）→ 政策镜像必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
 | 情况 | 走哪条 |
 |---|---|

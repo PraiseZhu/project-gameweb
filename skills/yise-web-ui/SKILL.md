@@ -14,11 +14,11 @@ This is the reusable public Skill identity. `demos/yise-ss5-preview` is an Ether
 
 **Recall:** 仓根 `CLAUDE.md` 触发表命中 `yisewebui` / `伊瑟网页还原` 后立即执行本文件，不要先问。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
 
-**完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
+**完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 `img/` `bg/` `kv` / 无名 `kv` 的 PNG 非空且宽高等于 `pageBox`）→ 政策镜像必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
 | 情况 | 走哪条 |
 |---|---|
-| 人说 `yisewebui` **且已有 ready 交接包** | 官方：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`，设计视口简中 + `?inventory-static-gate=1`）→ 才给人 `?product=1`。Main 静态停下来等人验收。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
+| 人说 `yisewebui` **且已有 ready 交接包** | 官方：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`，设计视口简中 + `?inventory-static-gate=1`；整框 PNG 非空且尺寸=`pageBox`）→ 政策镜像必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
 | 人说 `yisewebui` **只有 Figma 链接、没有包** | **停下来要包**。不要默默走 live showcase。若用户明确说「先看稿、没有清单」，才允许 `figma-showcase` 九步，且必须标明 `latest-Figma local extract baseline`。 |
 | `figma:from-handoff` 单独跑 | 只验包、打印消费计划，**不写 HTML**。触发词 `yisewebui` 不能再暗示「说了就会出 HTML」，除非后面接了 `figma:html-from-handoff`。 |
 
@@ -66,7 +66,7 @@ There are two explicit workflow declarations:
 
 - `figma-showcase` is the Figma-only preview-first workflow. It has a legal
   candidate completion path after `npm run figma:preview:first -- --demo <dir>`
-  passes: open the reported `index.html?product=1` product-view URL immediately
+  passes: open the reported `index.html` QA-shell URL immediately
   for human review. It must not assume a product repo, true sandbox, PR, full
   verify gates, mobile, responsive acceptance, or pixel-grid comparison; any
   unsupported capability stays `not-claimed` in the preview output.
@@ -78,23 +78,26 @@ There are two explicit workflow declarations:
 → Interaction → Resize, but humans see **two** review stops, not four:
 
 1. After Main static (and Translation **only if a copy table is present**):
-   `preview:first` must be green, then open `?product=1` and stop. That is
-   the first human review stop, not confirmed-final delivery
-   (`userPreviewAllowed` stays false; `humanStopPreviewAllowed` is true).
-   Tell the user this axis is done. Do not start Interaction / Resize until
-   they say continue. No copy table → Translation stays `not-claimed`. zh-CN
-   font load is not a translation pass. Script gate:
-   `node scripts/human-review.mjs present --demo <dir> --stop static-and-translation --preview-ok`,
+   `preview:first` must be green, then open `index.html` (QA shell with
+   switchers) and stop. That is the first human review stop, not
+   confirmed-final delivery (`userPreviewAllowed` stays false;
+   `humanStopPreviewAllowed` is true). `?product=1` is an internal probe,
+   not the human URL. Tell the user this axis is done. Do not start
+   Interaction / Resize until they say continue. No copy table → Translation
+   stays `not-claimed`. zh-CN font load is not a translation pass. Script
+   gate: `node scripts/human-review.mjs present --demo <dir> --stop static-and-translation --preview-ok`,
    then after the user says continue
    `node scripts/human-review.mjs accept --demo <dir> --stop static-and-translation`.
-   `can-start` must be green before Interaction / Resize.
-2. After Interaction and Resize: open `?product=1` again and stop. Tell the
+   `can-start` must be green before Interaction / Resize. Static page must
+   equal the inventory lock (`staticInventoryLockReport`); do not start
+   adaptive work while the page and the list disagree.
+2. After Interaction and Resize: open `index.html` again and stop. Tell the
    user this axis is done. Do not Pack until they say continue.
    `node scripts/human-review.mjs present --demo <dir> --stop interaction-and-resize --preview-ok`,
    then `accept`. `pack-allowed` / Pack itself fail-close without that accept.
 
 Do not open or present the page while `preview:first` is red. A red payload
-must set `productView.command` to null and must not include an open command.
+must set `humanView.command` to null and must not include an open command.
 Do not open the next human stop until the previous one is accepted
 (`human-review.json`). Later axes must not mutate accepted static geometry,
 assets, or zh-CN copy. Directory static stays in Main; directory
@@ -757,6 +760,7 @@ extractor / 自定义门放进 OS 级 sandbox —— 跨平台可靠性与成本
 | D 渲染绑定 | ✅ 进（computed-style 条数；未配置则降级声明） | 同 B | |
 | E 像素基准 | ✅ 进（`compared/declared` + 最大 diff + WARN 的裁决人与理由） | **pr-block 亲自 spawn canonical `pixel-compare --report-out <demo 外>`**，真实解码/截图/odiff；trusted report 出块、自报只对账；**门 E 也从同一种整树 snapshot 观察（含 baseline PNG，r8 条目 A）**并做自己的双向 manifest；artifact 三图被 trusted 运行覆盖（manifest 通过后落盘），WARN 裁决必须绑定这三图的 sha256 + 本次现算的 `key`/`diffRatio`/`threshold`（r8） | 排在可信 verify **之前**（verify 末段会执行 demo 代码）；**未声明 baseline 时 pr-block 硬阻断 exit 2 拒绝出块**（candidate 级不再放行，2026-08-14） |
 | F 适配还原 | ✅ 进（点数；未配置则降级声明） | 同 B | |
+| L 独立翻译 | ✅ 进（非仅 zh-CN 矩阵 + 翻译表完整性；未宣称则降级声明） | canonical verify 在分界线前读 spec/truth 翻译表，不执行 demo 代码。中文字体加载不等于翻译通过 | 矩阵只有 zh-CN 或没有翻译表 → `not-claimed`，从能力清单拿掉独立翻译。有表且矩阵含非中文才宣称并验完整性 |
 | X 自定义门 | ✅ 进（gate id 列表，**降准表述**） | canonical verify 亲自执行注册脚本、记真实 exit code；执行前就地算脚本 sha256 并与观察前入链的那份比对 | **只能声称「精确 hash 的注册脚本被可信 runner 执行且 exit 0」这个执行事件** —— 脚本本身是 demo 代码，不证明它实现了正确的业务 oracle（r7 条目 10）。排在 A-D/F/E 核心观察之后；执行完整组回收子进程；隔离程度见下方残余风险 |
 | 资产体积闸门（非字母门） | ⚠️ 仅抬闸时进（抬闸理由 + 可信侧现算体积） | pr-block **自己**枚举 `assets/` 现算体积并与阀值比对；`report-assets.json` 自报数字仅对账 | 抬闸阀与理由是**作者的政策输入**、不是测量证据（见「资产抬闸的定性」） |
 | 部署一致性（`--require-deployed`） | ❌ 不进附贴块（只作为出块前置条件） | pr-block 自己 fetch 线上字节与本地逐文件 sha256 全等比对（可信侧直接观察） | |
@@ -1238,13 +1242,16 @@ proposal 点名维护者看 EVOLUTION.md；全是 isNew=false 时整组省略。
 ### QA 壳 vs 产品视图
 
 默认打开 `index.html` 是 QA 壳（控制栏、切换器、状态补齐 tab、拉伸手柄、__qa API），
-供验收/调试用。**纯产品视图**用 `index.html?product=1`：只渲染 stage + 产品帧，
-不建任何调试 UI、不暴露 `window.__qa`。验收/交付截图一律走产品视图路径，
-文件名按 `*-product.png`（产品视图）vs `*-qa-shell.png`（QA 壳）区分。
-QA 壳截图只能支撑 candidate 级证据，不能报"视觉还原完成"。
+供验收/调试用。给人看的地址停在 `index.html`，不要带 `?product=1`。
+**纯产品视图**用 `index.html?product=1`：只渲染 stage + 产品帧，
+不建任何调试 UI、不暴露 `window.__qa`。这条路径只给脚本探测和无壳截图，
+不是给人切换 PC/手机的入口。文件名按 `*-product.png`（产品视图）vs
+`*-qa-shell.png`（QA 壳）区分。QA 壳截图只能支撑 candidate 级证据，
+不能报"视觉还原完成"。
 
-验收自动化（verify.mjs、门 B/C/D/F）依赖 QA 壳的 `__qa` API 和 `data-qa-*` 合约，
-因此**默认入口必须是 QA 壳**，产品视图只是用于人眼验收和交付截图的第二条路径。
+验收自动化（verify.mjs、门 B/C/D/F、preview:first）依赖 QA 壳的 `__qa` API
+或产品视口探测；**给人看的默认入口必须是 QA 壳**，产品视图只是内部探测
+和交付截图的第二条路径。
 
 ## spec.json 字段规范
 

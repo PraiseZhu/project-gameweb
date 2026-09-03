@@ -29,6 +29,13 @@ test('renderer consumes @go modal names and fix/@from scroll-gated pin', () => {
   assert.match(renderer, /name-param:@go|data-go/);
 });
 
+test('Main static leaves page clicks inert until Interaction opts in', () => {
+  assert.match(renderer, /enablePageInteraction === true/);
+  assert.match(renderer, /data-page-interaction/);
+  assert.match(renderer, /enablePageInteraction && !__motionCarouselOptIn && !frame\.__fxInteractionBridgeInstalled/);
+  assert.match(renderer, /if \(!enablePageInteraction\) return;/);
+});
+
 test('named modal runtime only wires openers listed in triggerFrom', () => {
   assert.match(renderer, /authorizedFrom/);
   assert.match(renderer, /modal.triggerFrom/);
@@ -37,6 +44,16 @@ test('named modal runtime only wires openers listed in triggerFrom', () => {
   assert.match(renderer, /entry\.openerEls\.includes\(openerHit\)/);
   assert.doesNotMatch(renderer, /entry\.name === wanted/);
   assert.doesNotMatch(renderer, /entry\.name === '视频弹窗' && name === '播放按钮'/);
+  assert.match(renderer, /Overlay host stays inside/);
+  assert.match(renderer, /frame\.appendChild\(host\)/);
+  assert.doesNotMatch(renderer, /Overlay lives on document\.body/);
+  assert.match(renderer, /host\.style\.pointerEvents = 'none'/);
+  assert.match(renderer, /openVideo && openVideo\.layer\.contains\(ev\.target\)/);
+  assert.match(renderer, /source-backed-swap/);
+  assert.doesNotMatch(renderer, /const activeFile = 'assets\/figma-indicator-active-alpha\.webp'/);
+  assert.match(renderer, /Missing platform stays inert/);
+  assert.match(renderer, /return platform === activeModalPlatform/);
+  assert.doesNotMatch(renderer, /return !platform \|\| platform === activeModalPlatform/);
 });
 
 test('selected component tree keeps inner btn @go live', () => {
@@ -68,6 +85,12 @@ test('direct-child payload carries the runtime contract for initial state, click
   assert.match(renderer, /el\.hidden = !active/);
   assert.match(renderer, /el\.setAttribute\('aria-selected', active \? 'true' : 'false'\)/);
   assert.match(renderer, /const next = action === 'prev' \? active - 1 : action === 'next' \? active \+ 1 : current/);
+});
+
+test('component variant index accepts inventory variants[].nodes when variantTrees map is absent', () => {
+  assert.match(renderer, /treeFromVariantNodes/);
+  assert.match(renderer, /data-btn-variant-size-swap/);
+  assert.match(renderer, /variants\[\]\.nodes/);
 });
 
 test('left/right switch arrows are commands and do not wait on deferred assets', () => {
@@ -164,7 +187,9 @@ test('dropmenu off/on fixtures stay pressable and do not reuse indicatorVariant'
   assert.doesNotMatch(renderer, /indicatorVariant\(n\) === 'on'/);
   assert.match(renderer, /On\/OFF\/true must fail-visible/);
   assert.match(renderer, /data-btn-name="多语言按钮"/);
-  assert.doesNotMatch(renderer, /data-btn-name="多语言切换按钮"/);
+  assert.match(renderer, /languageSwitchBtn/);
+  assert.match(renderer, /多语言切换按钮/);
+  assert.match(renderer, /Keep the Figma box/);
 });
 
 test('dropmenu multi-axis k=v variants stay pressable and mountable', () => {

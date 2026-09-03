@@ -38,7 +38,7 @@ export function resolveHeroContentRoot({
 export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, firstSection = {}, followingSections = [], contentRootId = null } = {}) {
   const viewport = Number(viewportHeight);
   const factor = Number(scale);
-  const heroHeight = Number(firstSection.height);
+  const heroHeight = Number(firstSection.height ?? firstSection.h);
   const firstY = Number(firstSection.y);
   const valid = Number.isFinite(viewport) && viewport > 0
     && Number.isFinite(factor) && factor > 0

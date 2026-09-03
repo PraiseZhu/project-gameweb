@@ -21,7 +21,7 @@ User-visible behavior after the static Figma page is already on screen:
 
 - directory click-to-section and scrollspy
 - switch / tab / component-set immediate replacement
-- independent `btn/` normal ↔ highlight instance replacement
+- independent `btn/` normal ↔ highlight instance replacement, including size-different COMPONENT trees such as `btn/角色头像` highlight 220 / normal 180
 - programmatic button hover / pressdown (`scripts/lib/figma-button-press-contract.mjs`)
 - named modal openers: play → video, mobile nav / language overlays
 - horizontal scroll / carousel only when Main has a source-backed graph
@@ -131,7 +131,8 @@ still receive programmatic hover/press. Do not invent highlight variants or
 links for them.
 
 `ind/进度条` is still a switch indicator: swap the two source-backed
-highlight/normal assets in place. It is not an independent `btn/`.
+highlight/normal assets already painted on that switch. Do not rewrite
+them to a hardcoded fallback filename. It is not an independent `btn/`.
 
 ### Named modal contracts
 
@@ -146,19 +147,24 @@ btn/多语言按钮@go=modal/多语言按钮弹窗
 These are generic Etheria button contracts and apply on every platform where
 the named source modal exists:
 
-1. `btn/播放按钮` opens the same-platform `modal/视频弹窗`.
+1. `btn/播放按钮` opens the same-platform video modal. The inventory label may be `modal/视频弹窗`, `modal/pc视频弹窗`, or `modal/移动端视频弹窗`; the suffix `视频弹窗` is enough when that match is unique on the platform.
 2. On mobile, `btn/导航按钮` opens `modal/顶部导航-1624尺寸`.
-3. On mobile, `btn/多语言按钮` opens `modal/多语言按钮弹窗`.
+3. On mobile, `btn/多语言按钮` opens the unique `modal/…多语言按钮弹窗` (including `modal/移动端多语言按钮弹窗`).
 
 Language on a given platform follows the source naming: `dropmenu/` on/off
 as above, or `btn/多语言按钮` → `modal/多语言按钮弹窗` when that is what the
-page named. Do not rewrite one path into the other. Do not treat a
-`dropmenu/` as `btn/多语言切换按钮` plus highlight.
+page named. Do not rewrite one path into the other. The `dropmenu/` owner
+is still on/off. Rows named `btn/多语言切换按钮` inside that menu (and
+inside the mobile language modal) keep their own highlight/normal
+COMPONENT_SET; clicking a row swaps that instance, it does not restyle
+the globe.
 
 Several openers may share one unique `modal/`. Zero hits or two same-name
 modals stay unresolved. In-modal play/close must not write `@go`. A mounted
 modal only opens from nodes listed in `triggerFrom`; a same-name or same
-`@go` button that was never determined stays inert.
+`@go` button that was never determined stays inert. A modal without an
+explicit platform field or a `pc` / `移动端` label token stays inert on
+every device; it is not mounted on PC, phone, and pad together.
 
 Empty prototype does not keep a uniquely named opener inert. Inventory names are
 enough when the match is unique on that platform:
@@ -176,17 +182,37 @@ scroll-gated visibility, not Resize stretch. Do not put `@from` on `btn/`.
 
 A play control that already lives inside the video modal is the in-modal
 player, not a second opener. The two mobile overlays are mutually exclusive.
-`btn/关闭按钮` closes the modal that contains it. Runtime only toggles
-visibility of the extracted modal layer; it does not move modal nodes into
-the homepage tree or change Figma coordinates.
+`btn/关闭按钮` closes the modal that contains it, including a click on the
+inner `img/关闭按钮`. A video modal also closes on a click anywhere on its
+own layer except the in-modal play control; the 70% black scrim
+(`#fx-named-modal-scrim`) is the same close. Overlay host stays inside
+`.frame` with `pointer-events: none` so the full-bleed video box cannot
+cover the scrim. Runtime only toggles visibility of the extracted modal
+layer; it does not move modal nodes into the homepage tree or change
+Figma coordinates.
+
+`tab/角色头像切换` plus sibling `switch/角色立绘模块` is a left/right switch:
+clicking `btn/角色头像` selects that index and replaces the art/name/rules
+tree. Hover brightness only; do not enlarge on hover. `disable` stays inert.
+
+Asset slicing follows the same modal tree. `pickSliceNodes` in
+`scripts/lib/figma-slice-nodes.mjs` runs an independent page-scope
+pass over `truth.modals` and each flattened `platforms.*.modals`
+tree. That pass does not wait for `truth.sections`. `img/弹窗背景`
+and other sliceExport / img/ leaves must enter `#qa-assets`. A named
+modal that never reached the slice scan stays missing on the overlay,
+not invented. The planner has no pngjs import, so the no-section
+regression can run in a clean review pack.
 
 Missing modal tree, missing unique opener, or a PC page with no mobile
 overlay stays fail-closed.
 
 Renderer wiring for left/right switch, named modal openers, independent
-`btn/` highlight, and directory scrollspy is live in
-`templates/figma-render.js`. It must not rewrite accepted static geometry
-or assets to make a click work. Incomplete graphs stay unresolved.
+`btn/` highlight, and directory scrollspy lives in
+`templates/figma-render.js`, but Main static does not turn it on.
+Clicks stay inert until Interaction passes `enablePageInteraction: true`.
+It must not rewrite accepted static geometry or assets to make a click
+work. Incomplete graphs stay unresolved.
 
 ## What this Skill does not own yet
 

@@ -146,6 +146,8 @@ export const FIELD_DISPOSITION = {
     layoutSizingVertical: 'layout.layoutSizingVertical',
     layoutAlign: 'layout.layoutAlign', layoutGrow: 'layout.layoutGrow',
     uniformScaleFactor: 'layout.uniformScaleFactor',
+    minWidth: 'layout.minWidth', maxWidth: 'layout.maxWidth',
+    minHeight: 'layout.minHeight', maxHeight: 'layout.maxHeight',
     children: '（结构，从 id 叶子 locator 的 children 索引序列推）',
     visible: '（判定用，不出叶子：visible:false 整棵跳过记 skipped）',
     isMask: '（判定用，不出叶子；遮罩节点不画并进 unread）',
@@ -224,8 +226,6 @@ export const FIELD_DISPOSITION = {
     counterAxisSizingMode: '5 个。同上',
     primaryAxisSizingMode: '3 个。同上',
     strokesIncludedInLayout: '5 个。描边是否参与自动布局尺寸，消费 layoutMode 时需要',
-    maxWidth: '6 个。自动布局尺寸上限，同上',
-    maxHeight: '3 个。同上',
   },
 };
 
@@ -457,7 +457,11 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
     /* 结构锚点全部复用 fixture 的 id 叶子：parentId 是直接父节点；ownerPath 保留
        root→当前节点路径；orderKey 的 locator 内 /children/N/ 序列就是 sibling 顺序。
        不把任何派生裸值塞进 truth，Gate A 仍可逐叶复核。 */
-    if (emitStructural && parentPtr) entry.parentId = fig(`${parentPtr}/id`);
+    /* DESIGN.md 6.1 B 沿 parentId 往上找 Auto Layout 上限。默认 section extract
+       （emitStructural=false）也必须写下直接父节点，不能只在 page chrome 测试夹具上绿。
+       纯容器自身不出节点：parentPtr 必须是最近仍进 nodes 的祖先，不能指向 skipped
+       wrapper，否则 owner 查找在缺失节点处 break，外层 max 永远走不到。 */
+    if (parentPtr) entry.parentId = fig(`${parentPtr}/id`);
     /* ownerPath 只在 page/fixed owner 子树写全。普通 section 的 parentId + orderKey 已足以
        机械重建；把完整 provenance path 复制到每一条叶子会令超长页面 truth 指数膨胀。 */
     if (emitOwnerPath && ownerPtrs.length) entry.ownerPath = ownerPtrs.map((ownerPtr) => fig(`${ownerPtr}/id`));
@@ -579,7 +583,9 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
          renderer 的 auto-layout flex 已读它们决定 justifyContent/alignItems，但此前不进 truth，
          导致 align 永远回退 flex-start。补齐后 renderer 才能消费真实对齐（Figma 省略=MIN 默认）。 */
       'counterAxisAlignItems', 'primaryAxisAlignItems',
-      'uniformScaleFactor']) {
+      'uniformScaleFactor',
+      /* DESIGN.md 6.1 A：Auto Layout 上限与清单 inventory/v2 同键。稿上没写则整键缺席。 */
+      'minWidth', 'maxWidth', 'minHeight', 'maxHeight']) {
       if (node[f] !== undefined) layout[f] = fig(`${ptr}/${f}`);
     }
     if (Object.keys(layout).length) entry.layout = layout;
@@ -698,12 +704,15 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
     return CONTAINER_TYPES.has(String(child.type || '').toUpperCase());
   }
 
-  /** DFS 先序遍历 = Figma 绘制序（后面的盖前面的）。 */
+  /** DFS 先序遍历 = Figma 绘制序（后面的盖前面的）。
+      keptParentPtr 是最近仍进 nodes 的祖先指针。纯容器穿过时继续把这个指针
+      传给子级，子级 parentId 挂到可遍历的祖先，而不是 skipped wrapper。 */
   const preservedRoots = new Set(preserveOwnerRootIds.filter(Boolean));
-  function walk(node, ptr, ownerPtrs = [ptr], ownerNode = null) {
+  function walk(node, ptr, ownerPtrs = [ptr], ownerNode = null, keptParentPtr = null) {
     (node.children || []).forEach((child, i) => {
       const cptr = `${ptr}/children/${i}`;
       const childOwnerPtrs = [...ownerPtrs, cptr];
+      const parentPtrForChild = keptParentPtr;
       if (ptr === rootPtr && includeRootChild && !includeRootChild(child, i, cptr)) {
         const childPrefix = parsePrefix(child.name);
         const semantic = childPrefix && SEMANTIC_CONTAINER_PREFIXES.has(childPrefix);
@@ -711,7 +720,7 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
           /* Page scope filters are render-scope filters, not semantic inventory
              filters. Keep an interaction container and its descendants in the
              owning section; only the page-level paint scope is excluded. */
-          walk(child, cptr, childOwnerPtrs, child);
+          walk(child, cptr, childOwnerPtrs, child, parentPtrForChild);
           return;
         }
         if (reportRootFilters) skipSubtree(child, 'page-scope root sibling filter');
@@ -793,7 +802,7 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
         || hasDirectMask
         || (Array.isArray(child.exportSettings) && child.exportSettings.length > 0));
       if (sliceWhole) {
-        nodes.push(makeNode(child, cptr, { parentPtr: ptr, ownerPtrs: childOwnerPtrs }));
+        nodes.push(makeNode(child, cptr, { parentPtr: parentPtrForChild, ownerPtrs: childOwnerPtrs }));
         /* Exported pixels remain atomic, but an exported owner may still carry
            structural interaction descendants (for example Slider -> ind/*).
            Walk those descendants so controls are not erased by the asset guard;
@@ -802,7 +811,7 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
            keep the existing baked-subtree skip. */
         const ownerRole = deriveRole(child).role;
         const keepIndPaint = (node.children || []).some((leaf) => isIndProgressPaint(leaf, { ownerRole }));
-        if (hasStructuralDescendant(child) || hasBlendDescendant(child) || keepIndPaint) walk(child, cptr, childOwnerPtrs, child);
+        if (hasStructuralDescendant(child) || hasBlendDescendant(child) || keepIndPaint) walk(child, cptr, childOwnerPtrs, child, cptr);
         else for (const c of child.children || []) skipSubtree(c, (prefix || 'export') + '/ baked-subtree');
         return;
       }
@@ -861,8 +870,8 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
       };
       const ownerRole = deriveRole(ownerNode).role;
       if (isIndProgressPaint(child, { ownerRole })) {
-        nodes.push(makeNode(child, cptr, { parentPtr: ptr, ownerPtrs: childOwnerPtrs }));
-        walk(child, cptr, childOwnerPtrs, child);
+        nodes.push(makeNode(child, cptr, { parentPtr: parentPtrForChild, ownerPtrs: childOwnerPtrs }));
+        walk(child, cptr, childOwnerPtrs, child, cptr);
         return;
       }
       if (isPureContainer(child) && !preserveOwnerRoot && !isStructuralOwner(child) && !isSwitchPageOwner(ownerNode, child) && !clipsDescendant(child) && !isCompositeVisualGroup(child) && !isZeroAxisVectorGroup(child)) {
@@ -879,11 +888,11 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
           clipsContent: child.clipsContent === true,
           why: '纯容器（无可见 fill/stroke/effect 且 clipsContent≠true），按规则穿过：自身不出节点，子节点照常处理（box/renderBox 保留供 renderer 消费其 clipsContent 边界）',
         });
-        walk(child, cptr, childOwnerPtrs, ownerNode);
+        walk(child, cptr, childOwnerPtrs, ownerNode, parentPtrForChild);
         return;
       }
-      nodes.push(makeNode(child, cptr, { parentPtr: ptr, ownerPtrs: childOwnerPtrs }));
-      walk(child, cptr, childOwnerPtrs, child);
+      nodes.push(makeNode(child, cptr, { parentPtr: parentPtrForChild, ownerPtrs: childOwnerPtrs }));
+      walk(child, cptr, childOwnerPtrs, child, cptr);
     });
   }
 
@@ -892,8 +901,8 @@ export function extractGeometry({ snap, at, fig, sectionId, rootPointer = null, 
       /* Most existing callers use includeRoot to capture one atomic owner
          (for example a baked page background). Variant replacement is the
          distinct case that needs the owner's full child tree as well. */
-      if (includeRootChildren) walk(root, rootPtr, [rootPtr], root);
-    } else walk(root, rootPtr, [rootPtr], root);
+      if (includeRootChildren) walk(root, rootPtr, [rootPtr], root, rootPtr);
+    } else walk(root, rootPtr, [rootPtr], root, rootPtr);
 
   return {
     meta: {

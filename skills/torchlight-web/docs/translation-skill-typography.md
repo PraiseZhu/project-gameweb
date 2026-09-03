@@ -1,6 +1,6 @@
 ﻿# Translation Skill: Typography and Range
 
-本文件不再当政策数字权威。外文档位比例、缩字阶梯与地板听本包 `DESIGN.md` **第 6 章**。
+本文件不再当政策数字权威。外文档位比例、Auto Layout 上限与整像素缩字听本包 `DESIGN.md` **第 6 章**。
 
 This is a reusable translation-skill contract. The Etheria demo is only a
 fixture consumer; no rule in this directory may depend on Etheria node IDs,
@@ -31,32 +31,26 @@ names or node IDs; it reads Figma `autoResize` semantics plus truth structure:
 - `TRUNCATE` / `textTruncation=ENDING` -> authorized (`truncation`)
 - `clipsContent` / `isMask`            -> authorized (`clip-or-mask`)
 - `truth.fit === true`                 -> authorized (`explicit-fit-grant`)
-- a bounded framed owner range         -> authorized (`framed-bounded-owner`)
+- written Auto Layout `maxWidth` / `maxHeight` -> authorized (`auto-layout-max`)
+- a framed owner box without a written max -> NOT authorized (`preserve-source-metrics`)
 - open-flow / unbounded `HEIGHT`       -> NOT authorized (`preserve-source-metrics`),
   keeps source font size/line-height and grows vertically as evidence
 
-The fit itself is a discrete, floor-bounded ladder in the renderer
-(100 -> 92 -> 85 -> 78 -> 75): font size and line height scale together so
-leading and vertical centering are preserved, and 75% is a hard floor. A node
-that still spills at the floor stops there and is stamped
-`data-fit-overflow` + `data-fit-needs-review="floor-exceeded"` (surfaced in
-browser evidence as `fitOverflow` / `fitFloor` / `fitNeedsReview`) for human
-review; it is never shrunk further and never reported as a pass. Hugging text
-(`WIDTH` / `WIDTH_AND_HEIGHT`) is never fit-shrunk, and its few-px
-browser-vs-Figma line-height rounding stays `natural-vertical-growth`.
+Policy for who may shrink and how far is in `DESIGN.md` 第 6 章: the wrapping
+Auto Layout `maxWidth` (and `maxHeight` when written) is the hard cap. After
+the locale ratio, overflow shrinks font-size by whole CSS pixels with
+proportional line-height until the translated text fits those caps in full.
+There is no 75% floor and no `100→92→85→78→75` ladder. Sibling nodes in a
+group share the strictest integer size. Ellipsis or clipping is not a pass.
 
-### Vertical-HUG text grows, never step-fit shrinks
+### Auto Layout caps beat HUG growth
 
-A Figma text node with `autoResize:HEIGHT` AND `layoutSizingVertical:HUG`
-is designed to grow vertically with its content. The official-site behavior
-reference confirms the same rule across every locale: the reward-card body
-group keeps one shared font size, line count grows 2/3/4 per card, and the
-container height follows. `fitAuthorization` therefore returns
-`hug-vertical-natural-growth` (not authorized) for `layoutSizingVertical:HUG`
-text, so it keeps its source font size and grows; the HUG owner container is
-released to follow content height (`min-height` keeps the source height as a
-floor). Shrinking such a node would give the longest sibling a visibly smaller
-font than its group, which is the defect this rule removes.
+Most copy in the current Torchlight file sits in a wrapping Auto Layout
+frame. That frame's `maxWidth` is a hard width cap; `maxHeight` is a hard
+height cap only when the file wrote one. After the locale ratio, translated
+copy must fit those written caps in full. Overflow shrinks font-size by whole
+CSS pixels. An axis with no written max is not a shrink reason and must not
+invent a box. Sibling nodes in a group still share one integer size.
 
 ### Component-group typography fit (uniform size across a sibling group)
 
@@ -299,7 +293,7 @@ check.
 
 2. **open-flow 改为显式资格**：只有 `truth.openFlow === true`（或 text style 显式标记）才进入 open-flow。原先 `HEIGHT && !framedHint` 的启发式会把固定卡/多列/滑块里有界文本误判成 open-flow 并扩到 section 宽。HEIGHT/FIXED 无显式 openFlow 时保持 framed-fixed，用最近 owner 框或源框宽。
 
-3. **step-fit 改为授权制**：只有 Figma 显式固定高+裁剪/截断/授权（`TRUNCATE`、`truncation: ENDING`、`clipsContent`、显式 `fit:true`）才允许缩字号。无显式截断的 HEIGHT 译文文本保留源 fontSize/lineHeight，可纵向生长；若影响兄弟节点则 human-review，不再一律压到 75%。
+3. **step-fit 改为授权制**：DESIGN.md 6.1 后，只有写了 Auto Layout `maxWidth`/`maxHeight`（以及显式 `TRUNCATE` / `clipsContent` / `fit:true`）才允许缩字号。无书面 max 的 framed owner 不缩。无显式截断的 HEIGHT 译文文本保留源 fontSize/lineHeight，可纵向生长。
 
 ### 范围判定新增
 - `natural-vertical-growth`：未授权缩放的折行文本纵向生长（HEIGHT），或 WIDTH_AND_HEIGHT 单行因浏览器与 Figma 行高取整产生的 ≤25% 行高的微小漂移（`hugMetricDrift`）。记为证据、非失败。

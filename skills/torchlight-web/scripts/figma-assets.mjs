@@ -197,17 +197,22 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
     for (const [platform, root] of Object.entries(truth.platforms || {})) {
       if (root?.componentVariantGraph) platformGraphs.push(root.componentVariantGraph);
       let first = true;
+      const modalNodes = nodesOf(root.modals).flatMap(withChildNodes);
       for (const [sid, sec] of Object.entries(root.sections || {})) {
         const nodes = first
           ? [
             ...nodesOf(root.pageBackground && root.pageBackground.nodes),
             ...nodesOf(root.pageChrome && root.pageChrome.nodes),
             ...nodesOf(root.fixedOverlays && root.fixedOverlays.nodes),
+            ...modalNodes,
             ...nodesOf(sec.nodes),
           ]
           : nodesOf(sec.nodes);
         merged.sections[`${platform}:${sid}`] = { ...sec, nodes };
         first = false;
+      }
+      if (first && modalNodes.length) {
+        merged.sections[`${platform}:__modals__`] = { nodes: modalNodes };
       }
     }
     if (!merged.componentVariantGraph && platformGraphs.length) {
@@ -341,7 +346,15 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const listedBounds = listedInkBox ? 'box' : n.sliceExport?.bounds;
       const exportBounds = listedBounds
         || (((hasSoftSpillEffect || isBakedImageOwner) && spillBox(n.pageBox || b, rb)) ? 'render' : 'box');
-      const exportBox = pageAlignedExportBox(n, { exportBounds, renderBox: rb });
+      const clippedVisible = !listedInkBox && rb && b && Number(rb.w) > 0 && Number(rb.h) > 0
+        && (Number(rb.w) + 0.5 < Number(b.w) || Number(rb.h) + 0.5 < Number(b.h));
+      const exportBox = listedInkBox
+        ? pageAlignedExportBox(n, { exportBounds, renderBox: rb })
+        : (exportBounds === 'render'
+          ? roundBox(n.inkBox || rb)
+          : roundBox(clippedVisible ? rb : b));
+      const outW = Math.round((exportBox?.w ?? w) || 0);
+      const outH = Math.round((exportBox?.h ?? h) || 0);
       // ⚠️ truth 里的键是 w/h，不是 width/height。之前写成 b.width，清单里
       //    designSize 一直是 "0x0" —— 一份本该当证据的清单，记了一路空数。
       const imageRefs = [...new Set(fills
@@ -350,7 +363,8 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       out.push({
         sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
         reason: n.sliceExport ? '清单 sliceExport' : isWholeFrameSliceNode(n) ? '整框 pageBox' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
-        w, h, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
+        w: outW, h: outH, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
+        cropToVisibleBox: !listedInkBox && exportBounds === 'box' && clippedVisible,
         imageRefs: imageRefs.length ? imageRefs : undefined,
         renderCropPolicy: exportBounds === 'render' && isBakedImageOwner ? 'top-left-render-canvas' : null,
         effectTypes: [...new Set(allEffectTypes)],
@@ -617,7 +631,25 @@ async function main() {
         p.renderCropPolicy === 'top-left-render-canvas' &&
         pxW != null && pxW >= wantW && pxH >= wantH &&
         (pxW !== wantW || pxH !== wantH);
-      if (shouldCropBakedRenderCanvas) {
+      const shouldCropVisibleBox =
+        p.cropToVisibleBox &&
+        p.box && p.exportBox &&
+        pxW != null && pxH != null &&
+        (pxW !== wantW || pxH !== wantH);
+      if (shouldCropVisibleBox) {
+        const scaleX = pxW / Number(p.box.w);
+        const scaleY = pxH / Number(p.box.h);
+        const cropX = Math.round((Number(p.exportBox.x) - Number(p.box.x)) * scaleX);
+        const cropY = Math.round((Number(p.exportBox.y) - Number(p.box.y)) * scaleY);
+        const cropW = Math.min(wantW, pxW - Math.max(0, cropX));
+        const cropH = Math.min(wantH, pxH - Math.max(0, cropY));
+        if (cropX >= 0 && cropY >= 0 && cropW > 0 && cropH > 0) {
+          const sourcePixelSize = `${pxW}x${pxH}`;
+          buf = cropPng(buf, cropX, cropY, cropW, cropH);
+          renderCrop = { sourcePixelSize, crop: `${cropX},${cropY},${cropW},${cropH}`, policy: 'visible-box' };
+          ({ pxW, pxH } = pngSize(buf));
+        }
+      } else if (shouldCropBakedRenderCanvas) {
         const sourcePixelSize = `${pxW}x${pxH}`;
         buf = cropPng(buf, 0, 0, wantW, wantH);
         renderCrop = { sourcePixelSize, crop: `0,0,${wantW},${wantH}`, policy: p.renderCropPolicy };
@@ -763,6 +795,7 @@ async function main() {
           file: m.file,
           ...(m.exportBounds ? { exportBounds: m.exportBounds } : {}),
           ...(m.exportBox ? { exportBox: m.exportBox } : {}),
+          ...(m.pixelSize ? { pixelSize: m.pixelSize } : {}),
           ...(Array.isArray(m.imageRefs) && m.imageRefs.length ? { imageRefs: m.imageRefs } : {}),
           ...(m.kind ? { kind: m.kind } : {}),
         }

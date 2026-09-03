@@ -135,6 +135,62 @@ test('live nodes keep inventory pageBox/parentBox/text/sliceExport/constraints',
   assert.deepEqual(kv.layout.constraints, LAYOUT.constraints);
 });
 
+test('section meta keeps clipsContent from the live section node', () => {
+  const inv = fixture();
+  inv.nodes[1].clipsContent = true;
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  assert.equal(truth.sections['100:2'].meta.clipsContent, true);
+});
+
+test('section-owned bg paints in its section once, not pageChrome', () => {
+  const inv = fixture();
+  inv.sections.push({
+    id: '100:12',
+    number: 2,
+    label: '2',
+    box: { x: 9000, y: 9080, w: 1920, h: 1080 },
+    pageBox: { x: 0, y: 1080, w: 1920, h: 1080 },
+    parentBox: { ...PAGE_BOX },
+  });
+  inv.backgrounds.push({ id: '100:13', role: 'bg', label: 'pc背景1' });
+  inv.nodes.push(
+    {
+      id: '100:12',
+      scope: 'page',
+      type: 'FRAME',
+      name: 'sec/2',
+      parentId: PAGE_ID,
+      orderKey: '0.2',
+      status: 'unknown',
+      role: 'sec',
+      ancestorIds: [PAGE_ID],
+      box: { x: 9000, y: 9080, w: 1920, h: 1080 },
+      pageBox: { x: 0, y: 1080, w: 1920, h: 1080 },
+    },
+    {
+      id: '100:13',
+      scope: 'page',
+      type: 'RECTANGLE',
+      name: 'bg/pc背景1',
+      parentId: '100:12',
+      orderKey: '0.2.0',
+      status: 'determined',
+      role: 'bg',
+      behavior: 'slice',
+      ancestorIds: [PAGE_ID, '100:12'],
+      box: { x: 9000, y: 9080, w: 1920, h: 1080 },
+      pageBox: { x: 0, y: 1080, w: 1920, h: 1080 },
+    },
+  );
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  assert.equal(truth.pageChrome.nodes.some((node) => node.id === '100:13'), false);
+  const sectionNodes = (truth.sections['100:12'] && truth.sections['100:12'].nodes) || [];
+  assert.equal(sectionNodes.filter((node) => node.id === '100:13').length, 1);
+  assert.ok(truth.pageChrome.nodes.some((node) => node.id === '100:3'));
+});
+
 test('adapter source must not fall back to box ?? pageBox', () => {
   const src = readFileSync(fileURLToPath(new URL('../lib/ready-handoff-truth.mjs', import.meta.url)), 'utf8');
   assert.equal(/entry\?\.box\s*\?\?\s*entry\?\.pageBox/.test(src), false);
