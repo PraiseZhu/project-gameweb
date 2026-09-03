@@ -42,11 +42,11 @@ export function recallTorchlightweb(repoRoot = DEFAULT_REPO_ROOT) {
     ok: true,
     trigger: 'torchlightweb',
     aliases: ['torchlight-web', '火炬网页还原'],
-    action: '立即执行 skills/torchlight-web/SKILL.md',
+    action: '立即执行 skills/torchlight-web/SKILL.md，只跑 npm run torchlightweb 状态机',
     skillPath,
     slashCommandInstalled: false,
     claudeDirIgnored,
-    note: '不装进 .claude/skills/。拉仓后靠 Agent 读仓根 CLAUDE.md 触发表。没有 ready 包就停下来要包。preview:first 红了不许给人打开 ?product=1。',
+    note: '不装进 .claude/skills/。拉仓后靠 Agent 读仓根 CLAUDE.md 触发表。只跑 npm run torchlightweb。没有 ready 包就停下来要包。禁止 showcase / 跳过人核。preview:first 红了不许给人打开 ?product=1。',
   };
 }
 

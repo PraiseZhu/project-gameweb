@@ -15,9 +15,12 @@ import {
   packBudgetBreakdown,
   removeUnreferencedPackedFiles,
   rewritePackedRefs,
+  slimPackedTruth,
 } from '../lib/pack-demo.mjs';
 import { probeSymlinkCapability } from '../lib/runtime-capabilities.mjs';
 import { detectWebpEncoder } from '../lib/encode-webp.mjs';
+import { mintOrchestratorTicket } from '../lib/orchestrator-ticket.mjs';
+import { greenLaterAxesProbeFixture } from '../lib/later-axes-probe.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const CLI = join(ROOT, 'scripts/pack-demo.mjs');
@@ -39,13 +42,25 @@ function acceptedStops() {
   };
 }
 
+function writeGreenLaterAxesProbe(dir) {
+  writeFileSync(join(dir, 'later-axes-probe.json'), JSON.stringify(greenLaterAxesProbeFixture({
+    at: '2026-08-27T00:00:00.000Z',
+    demoDir: dir,
+  })));
+}
+
+function packEnv() {
+  const ticket = mintOrchestratorTicket({ script: 'scripts/pack-demo.mjs', parentPid: process.pid });
+  return { ...process.env, ...ticket.env };
+}
+
 function validDemo() {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-cli-'));
   mkdirSync(join(dir, 'assets'));
-  writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
   writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/a.png">');
   writeFileSync(join(dir, 'assets/a.png'), PNG);
+  writeGreenLaterAxesProbe(dir);
   return dir;
 }
 
@@ -53,14 +68,33 @@ test('pack budget is 15MB on the served folder', () => {
   assert.equal(DEFAULT_PACK_BUDGET_BYTES, 15 * 1024 * 1024);
 });
 
-test('pack refuses before mutation when the second human stop is not accepted', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-no-stop-'));
+test('pack refuses empty later-axes samples even when ok/probed are true', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-empty-probe-'));
   mkdirSync(join(dir, 'assets'));
-  writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
+  writeFileSync(join(dir, 'later-axes-probe.json'), JSON.stringify({
+    schema: 'torchlightweb-later-axes-probe/v1',
+    ok: true,
+    probed: true,
+    samples: [],
+    problems: [],
+  }));
+  writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/a.png">');
   writeFileSync(join(dir, 'assets/a.png'), PNG);
   const before = readFileSync(join(dir, 'index.html'), 'utf8');
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /later-axes probe not green/);
+  assert.equal(readFileSync(join(dir, 'index.html'), 'utf8'), before);
+});
+
+test('pack refuses before mutation when the second human stop is not accepted', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-no-stop-'));
+  mkdirSync(join(dir, 'assets'));
+  writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/a.png">');
+  writeFileSync(join(dir, 'assets/a.png'), PNG);
+  const before = readFileSync(join(dir, 'index.html'), 'utf8');
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /second human review stop not accepted/);
   assert.equal(readFileSync(join(dir, 'index.html'), 'utf8'), before);
@@ -73,6 +107,31 @@ test('indicator fallback files are keep-list, audit json is not', () => {
   assert.equal(isPackKeepFile('index.html'), true);
 });
 
+test('packed truth drops failClosed and componentSet.nodes, keeps variant trees', () => {
+  const slim = slimPackedTruth({
+    schema: 'ready-handoff-truth/v1',
+    platforms: {
+      pc: {
+        failClosed: { unknownNodes: [{ id: 'x' }] },
+        componentVariantGraph: {
+          componentSets: [{
+            componentSetId: '1:1',
+            variants: [{ componentId: '1:2', nodes: [{ id: '1:2' }] }],
+            nodes: [{ id: '1:1', type: 'COMPONENT_SET' }],
+          }],
+          variantTrees: { '1:1': [{ componentId: '1:2', nodes: [{ id: '1:2' }] }] },
+        },
+        sections: { 'sec/1': { nodes: [{ id: '9:9', ancestorIds: ['1:0'] }] } },
+      },
+    },
+  });
+  assert.equal(slim.platforms.pc.failClosed, undefined);
+  assert.equal(slim.platforms.pc.componentVariantGraph.componentSets[0].nodes, undefined);
+  assert.deepEqual(slim.platforms.pc.componentVariantGraph.componentSets[0].variants[0].nodes, [{ id: '1:2' }]);
+  assert.deepEqual(slim.platforms.pc.componentVariantGraph.variantTrees['1:1'][0].nodes, [{ id: '1:2' }]);
+  assert.deepEqual(slim.platforms.pc.sections['sec/1'].nodes[0].ancestorIds, ['1:0']);
+});
+
 test('missing figma-indicator fallback fails closed', () => {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-'));
   const html = "file: 'figma-indicator-active-alpha.png'";
@@ -80,6 +139,24 @@ test('missing figma-indicator fallback fails closed', () => {
   assert.deepEqual(missingFallbackFiles(dir, html), ['figma-indicator-active-alpha.png']);
   writeFileSync(join(dir, 'figma-indicator-active-alpha.png'), 'x');
   assert.deepEqual(missingFallbackFiles(dir, html), []);
+});
+
+test('invalid webp bytes on figma-indicator fallback fail closed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-fake-webp-'));
+  mkdirSync(join(dir, 'assets'));
+  const html = "file: 'assets/figma-indicator-active-alpha.webp'";
+  writeFileSync(join(dir, 'assets/figma-indicator-active-alpha.webp'), 'not-a-webp');
+  assert.deepEqual(missingFallbackFiles(dir, html), ['assets/figma-indicator-active-alpha.webp']);
+});
+
+test('stale later-axes probe digest fails before mutation', () => {
+  const dir = validDemo();
+  writeFileSync(join(dir, 'index.html'), `${readFileSync(join(dir, 'index.html'), 'utf8')}\n<!-- changed -->`);
+  const before = readFileSync(join(dir, 'index.html'), 'utf8');
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /later-axes probe not green/);
+  assert.equal(readFileSync(join(dir, 'index.html'), 'utf8'), before);
 });
 
 test('root-relative assets resolve under demo root', () => {
@@ -121,7 +198,8 @@ test('pack compacts qa-assets but keeps assets/ paths and exportBox', () => {
     '</script>',
     '<img src="assets/a.png">',
   ].join(''));
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  writeGreenLaterAxesProbe(dir);
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const html = readFileSync(join(dir, 'index.html'), 'utf8');
   const block = html.match(/<script[^>]*id=["']qa-assets["'][^>]*>([\s\S]*?)<\/script>/i);
@@ -150,18 +228,20 @@ test('pack drops extract-only lib and assets-manifest from the served folder', (
   writeFileSync(join(dir, 'assets-manifest.json'), JSON.stringify({ assets: { a: { file: 'assets/a.png' } } }));
   writeFileSync(join(dir, 'spec.json'), '{}');
   writeFileSync(join(dir, '.env'), 'FIGMA_TOKEN=secret\n');
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(existsSync(join(dir, 'lib')), false);
   assert.equal(existsSync(join(dir, 'assets-manifest.json')), false);
   assert.equal(existsSync(join(dir, 'spec.json')), false);
   assert.equal(existsSync(join(dir, '.env')), false);
+  assert.equal(existsSync(join(dir, 'later-axes-probe.json')), false);
+  assert.equal(existsSync(join(dir, 'torchlightweb-machine.json')), false);
   assert.equal(existsSync(join(dir, 'index.html')), true);
 });
 
 test('real Pack rewrites references, moves PNG proof, and leaves source demo committed', () => {
   const dir = validDemo();
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(readFileSync(join(dir, 'index.html'), 'utf8'), /assets\/a\.webp/);
   assert.equal(existsSync(join(dir, 'assets/a.webp')), true);
@@ -173,7 +253,7 @@ test('Pack failure preserves original demo', () => {
   const dir = validDemo();
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/a.png"><img src="assets/missing.png">');
   const before = readFileSync(join(dir, 'index.html'), 'utf8');
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 1);
   assert.equal(readFileSync(join(dir, 'index.html'), 'utf8'), before);
   assert.equal(existsSync(join(dir, 'assets/a.png')), true);
@@ -201,7 +281,7 @@ test('dry-run reports current oversize without failing the pre-mutation budget',
   const dir = validDemo();
   writeFileSync(join(dir, 'large.bin'), Buffer.alloc(20 * 1024 * 1024));
   const before = readFileSync(join(dir, 'index.html'), 'utf8');
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--dry-run', '--budget-mb', '15'], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--dry-run', '--budget-mb', '15'], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, true);
@@ -216,11 +296,11 @@ test('dry-run reports current oversize without failing the pre-mutation budget',
 test('font manifest path traversal fails before mutation', () => {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-font-escape-'));
   mkdirSync(join(dir, 'fonts'));
-  writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
   writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script>');
+  writeGreenLaterAxesProbe(dir);
   writeFileSync(join(dir, 'fonts-manifest.json'), JSON.stringify({ fonts: { Evil: { file: '../outside.woff2' } } }));
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.equal(existsSync(join(dir, '..', 'outside.woff2')), false);
 });
@@ -228,11 +308,24 @@ test('font manifest path traversal fails before mutation', () => {
 test('runtime references recurse JS and JSON local assets', () => {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-js-json-'));
   mkdirSync(join(dir, 'assets'));
-  writeFileSync(join(dir, 'index.html'), '<script src="assets/app.js"></script>');
-  writeFileSync(join(dir, 'assets/app.js'), 'const file = "missing.webp"; fetch("ok.json")');
-  writeFileSync(join(dir, 'assets/ok.json'), '{"file":"nested-missing.webp"}');
+  writeFileSync(join(dir, 'index.html'), '<script src="app.js"></script>');
+  writeFileSync(join(dir, 'app.js'), 'const file = "assets/missing.webp"; fetch("assets/ok.json")');
+  writeFileSync(join(dir, 'assets/ok.json'), '{"file":"../assets/nested-missing.webp"}');
   writeFileSync(join(dir, 'assets/ok.webp'), 'ok');
-  assert.deepEqual(new Set(missingRuntimeReferences(dir, readFileSync(join(dir, 'index.html'), 'utf8'))), new Set(['missing.webp', 'nested-missing.webp']));
+  assert.deepEqual(
+    new Set(missingRuntimeReferences(dir, readFileSync(join(dir, 'index.html'), 'utf8'))),
+    new Set(['assets/missing.webp', '../assets/nested-missing.webp']),
+  );
+});
+
+test('bare image names in JS are not served runtime refs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-bare-js-'));
+  mkdirSync(join(dir, 'assets'));
+  const html = '<script>const file = "399-42188.png"; const lib = "scripts/lib/motion-role.mjs";</script><img src="assets/ok.webp">';
+  writeFileSync(join(dir, 'index.html'), html);
+  writeFileSync(join(dir, 'assets/ok.webp'), 'ok');
+  writeFileSync(join(dir, 'assets/399-42188.png'), 'slice');
+  assert.deepEqual(missingRuntimeReferences(dir, html), []);
 });
 
 test('CSS relative assets stay relative to the stylesheet, not the demo root', () => {
@@ -279,9 +372,9 @@ test('symlink image, CSS, and font targets fail closed before mutation', (t) => 
   const dir = join(parent, 'demo');
   mkdirSync(join(dir, 'assets'), { recursive: true });
   mkdirSync(join(dir, 'fonts'), { recursive: true });
-  writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
   writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><link href="assets/main.css"><img src="assets/a.png">');
+  writeGreenLaterAxesProbe(dir);
   writeFileSync(join(dir, 'assets/a.png'), PNG);
   symlinkSync(join(outside, 'sentinel.png'), join(dir, 'assets/linked.png'));
   symlinkSync(join(outside, 'sentinel.css'), join(dir, 'assets/main.css'));
@@ -290,7 +383,7 @@ test('symlink image, CSS, and font targets fail closed before mutation', (t) => 
   const beforePng = readFileSync(join(outside, 'sentinel.png'));
   const beforeCss = readFileSync(join(outside, 'sentinel.css'), 'utf8');
   const beforeFont = readFileSync(join(outside, 'sentinel.woff2'));
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stdout + result.stderr, /symlink|reparse\/junction|realpath escapes pack root/i);
   assert.deepEqual(readFileSync(join(outside, 'sentinel.png')), beforePng);
@@ -324,14 +417,14 @@ test('PNG that does not shrink keeps the original path instead of a missing webp
   const source = maker.stdout.trim();
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-png-skip-'));
   mkdirSync(join(dir, 'assets'));
-  writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
   writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'assets/keep.png'), readFileSync(source));
   writeFileSync(join(dir, 'assets/keep-copy.png'), readFileSync(source));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/keep.png"><img src="assets/keep-copy.png">');
+  writeGreenLaterAxesProbe(dir);
   const before = readFileSync(join(dir, 'assets/keep.png')).length;
   assert.ok(before > 1024);
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--quality', '40'], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--quality', '40'], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const payload = JSON.parse(result.stdout);
   const html = readFileSync(join(dir, 'index.html'), 'utf8');
@@ -390,13 +483,13 @@ test('large alpha art is packed lossy instead of staying slice-time lossless', (
   const source = maker.stdout.trim();
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-alpha-lossy-'));
   mkdirSync(join(dir, 'assets'));
-  writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
   writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'assets/hero.webp'), readFileSync(source));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/hero.webp">');
+  writeGreenLaterAxesProbe(dir);
   const before = readFileSync(join(dir, 'assets/hero.webp')).length;
   assert.ok(before > 1024);
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--quality', '40'], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--quality', '40'], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.ok(payload.images.reencodedWebp >= 1, result.stdout);
@@ -424,12 +517,12 @@ test('existing WebP is re-encoded at pack quality and HTML still points at it', 
   const noisy = maker.stdout.trim();
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-webp-reencode-'));
   mkdirSync(join(dir, 'assets'));
-  writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
   writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'assets/b.webp'), readFileSync(noisy));
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/b.webp">');
+  writeGreenLaterAxesProbe(dir);
   const before = readFileSync(join(dir, 'assets/b.webp')).length;
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--quality', '40'], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--quality', '40'], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.ok(payload.images.reencodedWebp >= 1, result.stdout);
@@ -442,12 +535,12 @@ test('existing WebP is re-encoded at pack quality and HTML still points at it', 
 test('unreferenced images are not encoded and are deleted after rewrite', () => {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-unref-skip-'));
   mkdirSync(join(dir, 'assets'));
-  writeFileSync(join(dir, 'resize-acceptance.json'), JSON.stringify({ schema: 'yise-resize-acceptance/v1', status: 'accepted' }));
   writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
   writeFileSync(join(dir, 'assets/used.png'), PNG);
   writeFileSync(join(dir, 'assets/orphan.png'), PNG);
   writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/used.png">');
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  writeGreenLaterAxesProbe(dir);
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.images.attempted, 1, result.stdout);
@@ -475,9 +568,10 @@ test('live over-budget after mutation rolls back and prints a breakdown', () => 
   const dir = validDemo();
   writeFileSync(join(dir, 'truth.json'), JSON.stringify({ pad: 'x'.repeat(4000) }));
   writeFileSync(join(dir, 'index.html'), `<script id="qa-truth" type="application/json">${'{}'.padEnd(200, ' ')}</script><img src="assets/a.png">`);
+  writeGreenLaterAxesProbe(dir);
   const beforeHtml = readFileSync(join(dir, 'index.html'), 'utf8');
   const beforePng = existsSync(join(dir, 'assets/a.png'));
-  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--budget-mb', '0.001'], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir, '--budget-mb', '0.001'], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
   assert.equal(result.status, 1, result.stdout + result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.ok, false);

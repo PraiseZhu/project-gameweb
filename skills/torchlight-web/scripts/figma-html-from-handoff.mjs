@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Ready handoff pack → demo/index.html (Main static candidate).
- * `figma:from-handoff` stays consume-only. This command is the official HTML path.
+ * `figma:from-handoff` stays consume-only. Direct CLI is locked; only
+ * `npm run torchlightweb` may call this (one-shot ticket, not an env var).
  *
  *   node scripts/figma-html-from-handoff.mjs --handoff <dir> --demo <dir>
  *
@@ -12,7 +13,7 @@
  * fonts/registry.json — Figma REST cannot download font binaries. Register
  * with `npm run fonts:register` once; later restores copy it automatically.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -26,10 +27,12 @@ import { languageMatrixOptions, pageLangsFromImgLangSets } from './lib/translati
 import { parseDesignPolicyFile } from '../../../standards/design-policy/tool/src/parse-design-policy.mjs';
 import { mirrorDesignPolicy } from '../../../standards/design-policy/tool/src/mirror-design-policy.mjs';
 import { implementationSnapshotFromModules } from '../../../standards/design-policy/tool/src/implementation-snapshot.mjs';
+import { requireOrchestratorTicket } from './lib/orchestrator-ticket.mjs';
 import * as resizePolicy from './lib/resize/index.mjs';
 import * as typographyPolicy from './lib/translation/typography-policy.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const CHILD_DIR = join(resolve(SKILL_ROOT, '../..'), '_tmp', 'html-from-handoff-child');
 const INIT = join(SKILL_ROOT, 'scripts/init.mjs');
 const INLINE = join(SKILL_ROOT, 'scripts/figma-inline.mjs');
 const FONTS = join(SKILL_ROOT, 'scripts/figma-fonts.mjs');
@@ -47,17 +50,32 @@ function argOf(argv, flag) {
 }
 
 function runNode(script, args, extra = {}) {
-  const res = spawnSync(process.execPath, [script, ...args], {
-    cwd: SKILL_ROOT,
-    encoding: 'utf8',
-    env: process.env,
-    timeout: extra.timeout ?? 180000,
-  });
+  mkdirSync(CHILD_DIR, { recursive: true });
+  const work = mkdtempSync(join(CHILD_DIR, 'run-'));
+  const stdoutPath = join(work, 'stdout.txt');
+  const stderrPath = join(work, 'stderr.txt');
+  const outFd = openSync(stdoutPath, 'w');
+  const errFd = openSync(stderrPath, 'w');
+  let res;
+  try {
+    res = spawnSync(process.execPath, [script, ...args], {
+      cwd: SKILL_ROOT,
+      env: process.env,
+      timeout: extra.timeout ?? 180000,
+      stdio: ['ignore', outFd, errFd],
+    });
+  } finally {
+    closeSync(outFd);
+    closeSync(errFd);
+  }
+  const stdout = readFileSync(stdoutPath, 'utf8');
+  const stderr = readFileSync(stderrPath, 'utf8');
+  rmSync(work, { recursive: true, force: true });
   if (res.status !== 0) {
-    const output = `${res.stdout || ''}\n${res.stderr || ''}`.trim();
+    const output = `${stdout}\n${stderr}`.trim();
     throw new Error(`${script} failed (${res.status}): ${output || res.error?.message || 'no output'}`);
   }
-  return res;
+  return { ...res, stdout, stderr };
 }
 
 function failBuild(consume, problems, extra = {}) {
@@ -138,7 +156,7 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
 
 function attachSliceAssets(payload, demoDir, { reuseExisting = false } = {}) {
   try {
-    runNode(ASSETS, ['--demo', demoDir, ...(reuseExisting ? ['--reuse-existing'] : [])], { timeout: 900000 });
+    runNode(ASSETS, ['--demo', demoDir, ...(reuseExisting ? ['--reuse-existing'] : [])], { timeout: 3600000 });
     payload.sliceAssets = { ok: true };
     return payload;
   } catch (err) {
@@ -443,22 +461,12 @@ function defaultStaticGateProbe(demoDir, handoffDir, platform) {
     if (!existsSync(probeScript)) {
       throw new Error('inventory-static-gate-probe.mjs missing; cannot mark green without DOM');
     }
-    const res = spawnSync(process.execPath, [
-      probeScript,
+    const res = runNode(probeScript, [
       '--demo', demoDir,
       '--handoff', handoffDir,
       '--platform', platform || 'pc',
       '--lang', 'zh-CN',
-    ], {
-      cwd: SKILL_ROOT,
-      encoding: 'utf8',
-      env: process.env,
-      timeout: 180000,
-    });
-    if (res.status !== 0) {
-      const output = `${res.stdout || ''}\n${res.stderr || ''}`.trim();
-      throw new Error(output || 'DOM probe required; Chromium measurement failed');
-    }
+    ], { timeout: 180000 });
     const text = String(res.stdout || '').trim();
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
@@ -504,6 +512,10 @@ function attachPreviewFirst(payload, demoDir) {
 }
 
 function main(argv = process.argv.slice(2)) {
+  const ticket = requireOrchestratorTicket('scripts/figma-html-from-handoff.mjs', { argv: process.argv, env: process.env });
+  if (ticket.ok !== true) {
+    fail(`html-from-handoff CLI is locked; ${ticket.hint || 'run npm run torchlightweb -- --handoff <dir> --demo <dir>'} (${ticket.error})`);
+  }
   const handoff = argOf(argv, '--handoff') || argv.find((arg) => !arg.startsWith('--'));
   const demo = argOf(argv, '--demo');
   if (!handoff || !demo) {

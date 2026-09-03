@@ -37,10 +37,14 @@ function designSize(inventory) {
   const width = Number(first.w);
   const fallback = inventory?.page?.pageBox || inventory?.page?.box || {};
   const w = Number.isFinite(width) && width > 0 ? width : Number(fallback.w);
+  const pageH = Number(fallback.h);
   const firstH = Number(first.h);
+  const h = Number.isFinite(pageH) && pageH > 0
+    ? pageH
+    : (Number.isFinite(firstH) && firstH > 0 ? firstH : 1080);
   return {
     w: Number.isFinite(w) && w > 0 ? Math.round(w) : 1920,
-    h: Number.isFinite(firstH) && firstH > 0 ? Math.min(Math.round(firstH), 1080) : 1080,
+    h: Math.round(h),
   };
 }
 
@@ -212,15 +216,17 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
     const base = await server.listen('127.0.0.1');
     ({ browser } = await launchChromium(SKILL_ROOT, { headless: true }));
     const page = await browser.newPage({
-      viewport: { width: 1920, height: 1080 },
+      viewport: { width: viewport.w, height: Math.max(viewport.h, 1080) },
       deviceScaleFactor: 1,
     });
     await page.goto(`${base}/index.html?inventory-static-gate=1`, { waitUntil: 'load', timeout: 120000 });
     await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: 120000 });
     await page.evaluate(({ w, h, lang: nextLang, plat }) => {
+      /* Plat first, then design-width resize. setPref(plat) after resize
+         remaps PC 3840 back onto the 1920 device preset (k=0.5) and the
+         static gate starts comparing a half-scale page to pageBox. */
       if (typeof window.__qa.setPref === 'function' && plat) window.__qa.setPref('plat', plat);
       if (typeof window.__qa.resize === 'function') window.__qa.resize(w, h);
-      if (typeof window.__qa.setPref === 'function' && plat) window.__qa.setPref('plat', plat);
       if (typeof window.__qa.setPref === 'function' && nextLang) window.__qa.setPref('lang', nextLang);
     }, { w: viewport.w, h: viewport.h, lang, plat: platform === 'mobile' ? 'mobile' : 'desktop' });
     await page.evaluate(() => new Promise((resolveWait) => setTimeout(resolveWait, 250)));
@@ -229,6 +235,15 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
       style.setAttribute('data-inventory-gate-freeze', '1');
       style.textContent = '*,*::before,*::after{animation:none!important;animation-duration:0s!important;transition:none!important;transition-duration:0s!important}';
       document.head.appendChild(style);
+      /* fix/@from is a scroll gate, not a missing node. Static geometry
+         still has to measure the overlay at its pageBox. */
+      for (const shell of document.querySelectorAll('[data-fix-from]')) {
+        shell.hidden = false;
+        shell.style.visibility = 'visible';
+        shell.style.display = '';
+        shell.removeAttribute('aria-hidden');
+        shell.setAttribute('data-fix-from-active', 'static-gate');
+      }
     });
     const measured = await page.evaluate(({ nodeIds: ids, designWidth }) => {
       const cssEscape = (value) => (globalThis.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/(["\\])/g, '\\$1'));
@@ -239,10 +254,8 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
       });
       frames.sort((a, b) => Math.abs(a.getBoundingClientRect().width - Number(designWidth || 0)) - Math.abs(b.getBoundingClientRect().width - Number(designWidth || 0)));
       const frame = frames[0] || document.querySelector('.frame') || document.body;
-      const stages = [...frame.querySelectorAll('.fx-stage')].filter((el) => String(el.getAttribute('data-node-id') || '').startsWith('section-'));
-      stages.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-      const originEl = stages[0]
-        || frame.querySelector('[data-node-id="page-scope"]')
+      const originEl = frame.querySelector('[data-node-id="page-scope"]')
+        || frame.querySelector('[data-node-id="page-root"]')
         || frame;
       const origin = originEl.getBoundingClientRect();
       const fromWidth = Number(designWidth) > 0 ? origin.width / Number(designWidth) : 0;
@@ -292,16 +305,24 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
         const originRect = overlayOwner ? overlayOwner.getBoundingClientRect() : origin;
         const box = boxOf(el, originRect);
         const cs = getComputedStyle(el);
-        const img = el.matches('img') ? el : el.querySelector(':scope > img.fx-img, :scope img.fx-img');
+        const ownImg = el.matches('img')
+          ? el
+          : [...el.children].find((child) => child.matches && child.matches('img'));
+        const img = ownImg || (el.matches('img') ? el : el.querySelector(':scope > img.fx-img, :scope img.fx-img'));
         const fontSize = parseFloat(cs.fontSize);
         const fontWeight = cs.fontWeight;
         /* Gate compares imgBox to sliceExport.box (owner clip). Unclipped ink
            PNGs are larger than the owner and overflow:hidden on the owner;
            report the clipped owner box, not the raw img layout box. */
         const boundsPolicy = el.getAttribute('data-asset-bounds-resolved') || '';
-        const imgBox = img && (boundsPolicy === 'owner-ink-from-unclipped-png' || boundsPolicy === 'owner-ink-spill-natural')
+        let imgBox = img && (boundsPolicy === 'owner-ink-from-unclipped-png' || boundsPolicy === 'owner-ink-spill-natural')
           ? box
-          : (img ? boxOf(img, originRect) : null);
+          : (ownImg ? boxOf(ownImg, originRect) : (img ? boxOf(img, originRect) : null));
+        if (ownImg && imgBox && box && boundsPolicy !== 'owner-ink-from-unclipped-png' && boundsPolicy !== 'owner-ink-spill-natural') {
+          const far = Math.abs(imgBox.x - box.x) > Math.max(64, box.w)
+            || Math.abs(imgBox.y - box.y) > Math.max(64, box.h);
+          if (far) imgBox = box;
+        }
         nodes[id] = {
           ...box,
           fontSize: Number.isFinite(fontSize) ? fontSize : null,

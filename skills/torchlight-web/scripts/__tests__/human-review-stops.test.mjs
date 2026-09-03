@@ -53,6 +53,23 @@ test('first stop must be accepted before Interaction / Resize, second before Pac
   assert.equal(record.stops['interaction-and-resize'].accepted, true);
 });
 
+test('human-review CLI cannot present or accept; torchlightweb is the signature', () => {
+  const dir = demo();
+  const presented = spawnSync(process.execPath, [CLI, 'present', '--demo', dir, '--stop', 'static-and-translation', '--preview-ok'], {
+    encoding: 'utf8',
+  });
+  assert.equal(presented.status, 2);
+  assert.match(presented.stdout + presented.stderr, /human-review present is locked/);
+  presentStop(dir, 'static-and-translation', { previewOk: true });
+  const blocked = spawnSync(process.execPath, [CLI, 'accept', '--demo', dir, '--stop', 'static-and-translation'], {
+    encoding: 'utf8',
+  });
+  assert.equal(blocked.status, 2);
+  assert.match(blocked.stdout + blocked.stderr, /human-review accept is locked/);
+  const record = JSON.parse(readFileSync(join(dir, 'human-review.json'), 'utf8'));
+  assert.equal(record.stops['static-and-translation'].accepted, false);
+});
+
 test('human-review CLI fail-closes pack-allowed until stop 2 is accepted', () => {
   const dir = demo();
   const blocked = spawnSync(process.execPath, [CLI, 'pack-allowed', '--demo', dir], { encoding: 'utf8' });

@@ -139,6 +139,18 @@
       "usedBy": "稿内语言菜单한국어",
       "sha256": "5326cfb097e3ab26fcb39329752b5c0a439bf8d5c4649520e4b492939c352a09",
       "bytes": 25125232
+    },
+    "Inter": {
+      "file": "Inter-Bold.woff2",
+      "postScriptName": "Inter",
+      "weight": 700,
+      "style": "normal",
+      "format": "woff2",
+      "source": "rsms Inter v4.1 extras/woff-hinted/Inter-Bold.woff2 https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "稿内活字",
+      "sha256": "98c66e49c299c5675426bf5562b1876c2b6b9bd8dc90a8922a49703ed4848813",
+      "bytes": 144636
     }
   },
   "_languageRouting": "语言+角色字体路由表见 scripts/lib/translation/font-routing.mjs（FONT_SOURCE_ROUTING）。本册只登记字体文件；路由由渲染层按 lang+角色现算。"

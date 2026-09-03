@@ -19,7 +19,8 @@ handoff passed. Direct Figma extract is labelled a local extract baseline, not
 an inventory/handoff baseline. `product-qa` is the later product-repo /
 sandbox / PR evidence workflow and must not be silently assumed by a Figma-only
 showcase. `figma:from-handoff` remains consume-only. The official HTML command
-is `figma:html-from-handoff`. Completion standard: eat ready pack → write
+is `figma:html-from-handoff`, but only `npm run torchlightweb` may call it.
+Completion standard: eat ready pack → write
 demo/`index.html` → `preview:first` must be green → inventory static gate must be green →
 policy mirror must be green → then show `?product=1`. The policy mirror proves YAML
 numbers match code. It does not prove the whole DESIGN.md is on-page.
@@ -51,16 +52,18 @@ Main Skill owns Figma extraction and the static page, including directory
 static restore. Directory click/scrollspy stays in Interaction; directory
 stretch stays in Resize. Do not split the directory into a fourth Skill.
 
-`torchlightweb` is a stop-layer workflow. Axis order stays Main static →
+`torchlightweb` is the orchestrator state machine. Axis order stays Main static →
 Translation → Interaction → Resize. Humans get two review stops: (1) Main
 static, plus Translation only when a copy table exists; (2) Interaction and
 Resize together. `preview:first` must be green before stop 1 presents
 `?product=1`. A red payload must not include `productView.command`. No copy
 table keeps Translation `not-claimed`; zh-CN font
 load is not a translation pass. The script gate is
-`scripts/human-review.mjs` / `human-review.json`:
-stop 1 unaccepted blocks Interaction / Resize; stop 2 unaccepted blocks
-Pack. A later axis must not rewrite accepted static owners, fills, copy, or
+`npm run torchlightweb`: `start` only presents; `accept` is the human
+signature after the user says continue (`human-review.json`); `continue` never writes accepted.
+Stop 1 unaccepted blocks Interaction / Resize; later-axes Chrome probe
+(`scripts/lib/later-axes-probe.mjs`) must be green before stop 2;
+stop 2 unaccepted blocks Pack. Direct `figma-showcase` is not a torchlightweb path. A later axis must not rewrite accepted static owners, fills, copy, or
 platform trees. After stop 2 is accepted, Pack compresses the served folder
 to ≤15MB. Pack is delivery, not a fourth Skill. Do not pack before those
 two human stops. Recall is the repo-root `CLAUDE.md` trigger table

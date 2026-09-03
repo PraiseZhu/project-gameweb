@@ -36,13 +36,21 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+// Importers: html-volume.test.mjs (planWebpDelivery), figma-render-asset-lock.test.mjs (installIndicatorFallbacks), figma-html-from-handoff.mjs (CLI). API: cachedPngReusable / safeRelativeAssetPath / planWebpDelivery.
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { encodeWebpBatch } from './lib/encode-webp.mjs';
 import { deriveRole } from './lib/figma-name-semantics.mjs';
 import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../standards/figma-naming/spec/inventory.mjs';
+import { requireFigmaToken } from './lib/figma-token.mjs';
+import {
+  inspectPackPath,
+  inspectPlannedPackPath,
+  isWebpFile,
+  packRoot,
+} from './lib/pack-demo.mjs';
 
 const API = 'https://api.figma.com/v1';
 const SLICE_PREFIXES = new Set(['img', 'bg', 'kv']);
@@ -72,20 +80,11 @@ function parseArgs(argv) {
 }
 
 function readToken(startDir) {
-  if (process.env.FIGMA_TOKEN) return process.env.FIGMA_TOKEN.trim();
-  if (process.env.FIGMA_ACCESS_TOKEN) return process.env.FIGMA_ACCESS_TOKEN.trim();
-  let dir = resolve(startDir);
-  for (let i = 0; i < 8; i++) {
-    const p = join(dir, '.env');
-    if (existsSync(p)) {
-      const m = readFileSync(p, 'utf8').match(/^\s*FIGMA_TOKEN\s*=\s*(.+?)\s*$/m);
-      if (m) return m[1].trim();
-    }
-    const up = dirname(dir);
-    if (up === dir) break;
-    dir = up;
+  try {
+    return requireFigmaToken(startDir);
+  } catch (error) {
+    fail(error && error.message ? error.message : String(error));
   }
-  fail('找不到 FIGMA_TOKEN（环境变量或工作区根 .env）');
 }
 
 /** 解包 provenance 叶子（与渲染层 unwrap 同语义） */
@@ -394,7 +393,7 @@ async function figmaGet(url, token, timeoutMs = FIGMA_GET_TIMEOUT_MS) {
   const text = await res.text();
   let json;
   try { json = JSON.parse(text); } catch { fail(`Figma 返回非 JSON（HTTP ${res.status}）：${text.slice(0, 200)}`); }
-  if (!res.ok || Number(json.status) >= 400) fail(`Figma API 失败 HTTP ${res.status}：${json.err || ''}`);
+  if (!res.ok || Number(json.status) >= 400) fail(`Figma API 失败 HTTP ${res.status}：${json.err || json.message || ''}`);
   return json;
 }
 
@@ -403,11 +402,84 @@ export function assetFileName(nodeId, ext = 'png') {
   return nodeId.replace(/[:;]/g, '-') + '.' + ext;
 }
 
+function isUnsafeAssetRel(rel) {
+  const raw = String(rel || '').replace(/\\/g, '/').trim();
+  if (!raw || raw.startsWith('/') || raw.startsWith('//') || /^[a-zA-Z]:/.test(raw)) return true;
+  return raw.split('/').some((seg) => seg === '' || seg === '.' || seg === '..');
+}
+
+/**
+ * Manifest / encoder paths must stay inside the demo root.
+ * Absolute, `..`, empty segments, and root-escaping realpaths are rejected.
+ */
+export function safeRelativeAssetPath(demoDir, rel, { mustExist = true } = {}) {
+  const raw = String(rel || '').replace(/\\/g, '/').trim();
+  if (isUnsafeAssetRel(raw)) {
+    return { ok: false, path: raw, error: `unsafe asset path: ${rel}` };
+  }
+  const root = packRoot(demoDir);
+  const candidate = join(root, raw);
+  const inspected = mustExist
+    ? inspectPackPath(root, candidate)
+    : inspectPlannedPackPath(root, candidate);
+  if (!inspected.ok) return inspected;
+  if (mustExist && inspected.stat && !inspected.stat.isFile()) {
+    return { ok: false, path: inspected.path, error: `not a file: ${raw}` };
+  }
+  return inspected;
+}
+
+function boxKey(box) {
+  const rounded = roundBox(box);
+  if (!rounded) return '';
+  return `${rounded.x},${rounded.y},${rounded.w},${rounded.h}`;
+}
+
+function expectedExportPx(pick) {
+  const expectBox = pick?.exportBounds === 'render' && pick.exportBox ? pick.exportBox : pick;
+  return {
+    w: Math.round((expectBox?.w ?? pick?.w ?? 0) * Number(pick?.scale || 0)),
+    h: Math.round((expectBox?.h ?? pick?.h ?? 0) * Number(pick?.scale || 0)),
+  };
+}
+
+/**
+ * Reuse a previous PNG only when this demo's designVersion, export params,
+ * geometry, file containment, PNG magic/size, and sha256 all still match.
+ */
+export function cachedPngReusable({ previous, rec, pick, demoDir, designVersion } = {}) {
+  if (!previous || !rec || !pick || designVersion == null || previous.designVersion == null) return null;
+  if (String(previous.designVersion) !== String(designVersion)) return null;
+  if (Number(rec.exportScale) !== Number(pick.scale)) return null;
+  if (String(rec.designSize || '') !== `${pick.w}x${pick.h}`) return null;
+  if (String(rec.exportBounds || '') !== String(pick.exportBounds || '')) return null;
+  if (boxKey(rec.exportBox) !== boxKey(pick.exportBox)) return null;
+  const pngRel = rec.pngFile
+    || (rec.file && String(rec.file).replace(/\\/g, '/').endsWith('.png') ? rec.file : `assets/${assetFileName(pick.nodeId, 'png')}`);
+  const inspected = safeRelativeAssetPath(demoDir, pngRel, { mustExist: true });
+  if (!inspected.ok) return null;
+  let buf;
+  try { buf = readFileSync(inspected.path); }
+  catch { return null; }
+  const sha = createHash('sha256').update(buf).digest('hex');
+  const expectedSha = rec.pngSha256 || (String(pngRel).replace(/\\/g, '/').endsWith('.png') ? rec.sha256 : null);
+  if (!expectedSha || sha !== expectedSha) return null;
+  const { pxW, pxH } = pngSize(buf);
+  const want = expectedExportPx(pick);
+  if (pxW == null || Math.abs(pxW - want.w) > 1 || Math.abs(pxH - want.h) > 1) return null;
+  return inspected.path;
+}
+
 /** 按 PNG 源 sha 去重后再转 WebP。页面引用 WebP；PNG 留盘做几何校对。 */
 export function planWebpDelivery(manifest, { assetsDir, demoDir }) {
   const seen = new Map();
   const jobs = [];
   const aliases = [];
+  const root = packRoot(demoDir);
+  const assetsRel = relative(root, resolve(assetsDir || join(root, 'assets'))).replace(/\\/g, '/') || 'assets';
+  if (isUnsafeAssetRel(assetsRel) || assetsRel.startsWith('..')) {
+    throw new Error(`unsafe asset path: ${assetsDir}`);
+  }
   for (const [id, rec] of Object.entries(manifest || {})) {
     if (!rec?.file) continue;
     const sha = rec.pngSha256 || rec.sha256;
@@ -417,16 +489,80 @@ export function planWebpDelivery(manifest, { assetsDir, demoDir }) {
       continue;
     }
     seen.set(sha, id);
-    const pngName = rec.pngFile || rec.file;
-    const webpRel = String(pngName).replace(/\.png$/i, '.webp');
+    const pngName = String(rec.pngFile || rec.file).replace(/\\/g, '/');
+    const srcRel = pngName.startsWith('assets/') ? pngName : `${assetsRel}/${pngName.replace(/^assets\//, '')}`;
+    const webpRel = srcRel.replace(/\.png$/i, '.webp');
+    const src = safeRelativeAssetPath(root, srcRel, { mustExist: false });
+    if (!src.ok) throw new Error(src.error);
+    const dest = safeRelativeAssetPath(root, webpRel, { mustExist: false });
+    if (!dest.ok) throw new Error(dest.error);
     jobs.push({
       nodeId: id,
-      src: join(assetsDir || join(demoDir, 'assets'), String(pngName).replace(/^assets\//, '')),
-      dest: join(demoDir, webpRel),
+      src: src.path,
+      dest: dest.path,
       webpRel,
     });
   }
   return { jobs, aliases };
+}
+
+const INDICATOR_FALLBACKS = Object.freeze([
+  { nodeId: '397:35947', dest: 'figma-indicator-active-alpha.webp' },
+  { nodeId: '397:35949', dest: 'figma-indicator-normal-alpha.webp' },
+]);
+
+function indicatorSourceFile(assetsDir, manifest, nodeId) {
+  const rec = manifest?.[nodeId];
+  const demoDir = resolve(assetsDir, '..');
+  const candidates = [
+    rec?.webpFile,
+    rec?.file,
+    `assets/${assetFileName(nodeId, 'webp')}`,
+    `assets/${assetFileName(nodeId, 'png')}`,
+  ];
+  const resolveCandidate = (rel, ext) => {
+    const raw = String(rel || '').replace(/\\/g, '/');
+    if (!raw || !new RegExp(`\\.${ext}$`, 'i').test(raw)) return null;
+    const contained = raw.startsWith('assets/') ? raw : `assets/${raw.replace(/^assets\//, '')}`;
+    const inspected = safeRelativeAssetPath(demoDir, contained, { mustExist: true });
+    return inspected.ok ? inspected.path : null;
+  };
+  for (const rel of candidates) {
+    const path = resolveCandidate(rel, 'webp');
+    if (path && isWebpFile(path)) return path;
+  }
+  for (const rel of candidates) {
+    const path = resolveCandidate(rel, 'png');
+    if (path) return path;
+  }
+  return null;
+}
+
+export function installIndicatorFallbacks(assetsDir, manifest) {
+  mkdirSync(assetsDir, { recursive: true });
+  const missing = [];
+  for (const item of INDICATOR_FALLBACKS) {
+    const dest = join(assetsDir, item.dest);
+    if (isWebpFile(dest)) continue;
+    const src = indicatorSourceFile(assetsDir, manifest, item.nodeId);
+    if (!src) {
+      missing.push(item.dest);
+      continue;
+    }
+    if (/\.webp$/i.test(src) && isWebpFile(src)) {
+      copyFileSync(src, dest);
+      continue;
+    }
+    const encoded = encodeWebpBatch([{ src, dest, lossless: true }]);
+    if (!encoded.ok || !isWebpFile(dest)) {
+      missing.push(item.dest);
+      continue;
+    }
+  }
+  if (missing.length) {
+    throw new Error(`missing figma-indicator fallback sources: ${missing.join(', ')}`);
+  }
+  return { ok: true, missing };
 }
 
 function cropPng(buf, sx, sy, sw, sh) {
@@ -480,16 +616,6 @@ async function main() {
   const assetsDir = join(demoDir, 'assets');
   mkdirSync(assetsDir, { recursive: true });
   const reuseExisting = a.reuseExisting === true;
-  const existingPick = (p) => reuseExisting && existsSync(join(assetsDir, assetFileName(p.nodeId)));
-  const fetchPicks = picks.filter((p) => !existingPick(p));
-  const reusedPicks = picks.filter((p) => existingPick(p));
-  out.reused = reusedPicks.length;
-  /* --reuse-existing means "do not hit Figma". Missing PNGs fail loud so a
-     hung images API cannot stall html-from-handoff after local extract. */
-  if (reuseExisting && fetchPicks.length) {
-    fail(`--reuse-existing 缺 PNG，拒绝打 Figma：${fetchPicks.map((p) => p.nodeId).join(',')}`);
-  }
-  const token = fetchPicks.length ? readToken(demoDir) : null;
 
   /* ═══ 逐节点定导出倍率 ═══
    * 稿是 3840 宽、对应 1920 的视口 —— 稿本身已经是 2 倍图（2026-08-04 起 exportScale=1，
@@ -511,6 +637,35 @@ async function main() {
     p.scale = Math.min(baseScale, pixelSafeScale);
   }
   out.scaleByNode = picks.reduce((m, p) => ((m['x' + p.scale] = (m['x' + p.scale] || 0) + 1), m), {});
+
+  const manifestPath = join(demoDir, 'assets-manifest.json');
+  const previous = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : null;
+  const previousAssets = previous?.assets && typeof previous.assets === 'object' ? previous.assets : {};
+  const cachedPaths = new Map();
+  for (const p of picks) {
+    if (reuseExisting) {
+      const local = join(assetsDir, assetFileName(p.nodeId));
+      if (existsSync(local)) cachedPaths.set(p.nodeId, local);
+      continue;
+    }
+    const hit = cachedPngReusable({
+      previous,
+      rec: previousAssets[p.nodeId],
+      pick: p,
+      demoDir,
+      designVersion,
+    });
+    if (hit) cachedPaths.set(p.nodeId, hit);
+  }
+  const reusedPicks = picks.filter((p) => cachedPaths.has(p.nodeId));
+  const fetchPicks = picks.filter((p) => !cachedPaths.has(p.nodeId));
+  out.reused = reusedPicks.length;
+  /* --reuse-existing means "do not hit Figma". Missing PNGs fail loud so a
+     hung images API cannot stall html-from-handoff after local extract. */
+  if (reuseExisting && fetchPicks.length) {
+    fail(`--reuse-existing 缺 PNG，拒绝打 Figma：${fetchPicks.map((p) => p.nodeId).join(',')}`);
+  }
+  const token = fetchPicks.length ? readToken(demoDir) : null;
 
   // 1) 分批向 Figma 要图片 URL（按倍率分组，一批只能用一个 scale）
   const urlMap = {};
@@ -553,15 +708,22 @@ async function main() {
   }
 
   // 2) 下载 + 记 sha256（清单是资产的可校验替代品：二进制没有 JSON locator）
-  const manifestPath = join(demoDir, 'assets-manifest.json');
-  const previous = a.only && existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : null;
   const onlySet = new Set(a.only || []);
-  const manifest = previous ? { ...(previous.assets || {}) } : {};
+  const manifest = previous ? { ...previousAssets } : {};
   for (const id of onlySet) delete manifest[id];
   let bytes = previous ? Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0) : 0;
   const failed = [];
   const clampedList = [];
+  const reused = [];
   for (const p of reusedPicks) {
+    if (!reuseExisting) {
+      const rec = previousAssets[p.nodeId];
+      if (rec) {
+        manifest[p.nodeId] = { ...rec, reused: true };
+        reused.push(p.nodeId);
+      }
+      continue;
+    }
     const file = assetFileName(p.nodeId);
     const buf = readFileSync(join(assetsDir, file));
     const { pxW, pxH } = pngSize(buf);
@@ -599,6 +761,7 @@ async function main() {
       clamped: clamped || undefined,
       reused: true,
     };
+    reused.push(p.nodeId);
   }
   for (const p of fetchPicks) {
     const u = urlMap[p.nodeId];
@@ -757,6 +920,7 @@ async function main() {
     }
     bytes = Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0);
   }
+  installIndicatorFallbacks(assetsDir, manifest);
   out.webp = webp;
 
   const mergedNoUrl = previous ? (previous.noUrl || []).filter((x) => !onlySet.has(x.nodeId)).concat(noUrl) : noUrl;

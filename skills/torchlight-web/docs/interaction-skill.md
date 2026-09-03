@@ -3,6 +3,10 @@
 This is the rename of the former Motion Skill. The code is unchanged in this
 pass. The Etheria demo is only a fixture consumer.
 
+The torchlightweb orchestrator later-axes phase calls
+`scripts/lib/later-axes-probe.mjs`: source wiring exists / unresolved stays
+inert. That probe does not replace this Skill.
+
 The public runtime is still:
 
 - `scripts/lib/figma-interaction-contract.mjs` — click, switch/page, tab,

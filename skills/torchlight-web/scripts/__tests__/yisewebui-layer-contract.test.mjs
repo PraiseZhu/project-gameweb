@@ -93,14 +93,14 @@ test('sc-yisewebui-layer-stop: two human review stops, Translation not-claimed w
   assert.match(finalGate, /humanStopPreviewAllowed/);
   assert.match(finalGate, /human review stop may open/);
   assert.match(finalGate, /productView\.command/);
-  assert.match(arch, /stop-layer workflow/);
+  assert.match(arch, /orchestrator state machine|stop-layer workflow/);
   assert.match(arch, /two review stops/);
   assert.match(arch, /zh-CN font\s+load is not a translation pass/s);
-  assert.match(readme, /two human review stops/);
+  assert.match(readme, /two human review stops|①静态±翻译 ②交互\+拉伸/);
   assert.match(readme, /zh-CN font load is not a translation pass/);
   assert.match(arch, /Do not invent a fourth Skill|Do not split the directory into a fourth Skill/);
   assert.match(arch, /human-review\.json/);
-  assert.match(readme, /human-review\.mjs/);
+  assert.match(readme, /torchlightweb -- accept/);
   assert.match(readme, /recall-torchlightweb/);
 });
 
@@ -159,12 +159,12 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   const pack = read('docs/pack-skill.md');
   const lib = read('scripts/lib/pack-demo.mjs');
   assert.match(skill, /Main static → Translation/);
-  assert.match(skill, /After the second\n?human stop is accepted, run the Pack delivery/s);
+  assert.match(skill, /After the second\n?human stop is accepted, the orchestrator Pack phase runs/s);
   assert.match(skill, /Pack is not a restore axis/);
   assert.match(arch, /Pack delivery/);
   assert.match(arch, /not a restore axis/);
   assert.match(pack, /not a fourth restore axis/);
-  assert.match(pack, /after Resize is accepted/);
+  assert.match(pack, /after Resize is accepted|later-axes Chrome probe is green/);
   assert.match(lib, /DEFAULT_PACK_BUDGET_BYTES = 15 \* 1024 \* 1024/);
   assert.match(lib, /figma-indicator/);
 });

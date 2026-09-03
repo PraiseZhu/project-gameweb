@@ -1,35 +1,23 @@
 # torchlight-web
 
-触发词：`torchlightweb`（也可说 `torchlight-web` / `火炬网页还原`）。召回机制与「出清单」相同：仓根 `CLAUDE.md` 触发表命中后立即执行 `skills/torchlight-web/SKILL.md`。本包不装进 `.claude/skills/`（gitignore + 夜间健康检查会红）。没有触发表那一行，说 `torchlightweb` 不会加载本 Skill。
+触发词：`torchlightweb`（也可说 `torchlight-web` / `火炬网页还原`）。召回机制与「出清单」相同：仓根 `CLAUDE.md` 触发表命中后立即执行 `skills/torchlight-web/SKILL.md`，只跑 `npm run torchlightweb` 状态机。本包不装进 `.claude/skills/`（gitignore + 夜间健康检查会红）。没有触发表那一行，说 `torchlightweb` 不会加载本 Skill。禁止 showcase、跳过人核、直连出页。
 
 **完成标准（与 SKILL.md、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`）→ 政策镜像必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
 | 情况 | 走哪条 |
 |---|---|
-| 已有 ready 交接包 | `cd skills/torchlight-web && npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。`figma:from-handoff` 只验包、不写 HTML。 |
-| 只有 Figma 链接、没有包 | 停下来要包。用户明确说「先看稿、没有清单」才允许下面的 `figma-showcase` 九步，且必须标明 `latest-Figma local extract baseline`。 |
+| 已有 ready 交接包 | `cd skills/torchlight-web && npm run torchlightweb -- --handoff <dir> --demo <dir>`。`figma:from-handoff` 只验包、不写 HTML。`figma:html-from-handoff` 只许编排器调用。 |
+| 只有 Figma 链接、没有包 | 停下来要包。禁止 `figma-showcase` 九步，即使用户说「先看稿、没有清单」。 |
 | `preview:first` 红 | 不许给人打开 `?product=1`，不许开 Interaction / Resize。红 payload 的 `productView.command` 必须是 `null`。外置 truth 的内部检查必须走 HTTP；给人的地址是命令结束后仍可打开的 `file://...?product=1`。 |
-| 清单对账红 | 不许给人打开 `?product=1`。对账认设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景 / 整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`（`scripts/lib/inventory-static-gate-probe.mjs`）。缺 probe 脚本、缺 `index.html`、缺 Chrome、缺 `productScroll` 一律红。按钮/logo 软溢出不按尺寸红。 |
-| 两次给人看 | ①静态±翻译 ②交互+拉伸。脚本闸：`node scripts/human-review.mjs present/accept/can-start/pack-allowed --demo <dir>`。第一次没接受不许开后轴；第二次没接受 Pack 失败。 |
+| 清单对账红 | 不许给人打开 `?product=1`。对账认设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景 / 整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`（`scripts/lib/inventory-static-gate-probe.mjs`）。缺 probe 脚本、缺 `index.html`、缺 Chrome、缺 `productScroll` 一律红。按钮/logo 软溢出不按尺寸红。不要拿普通产品预览去对 inventory。 |
+| 两次给人看 | ①静态±翻译 ②交互+拉伸。人说继续后 Lead 跑 `npm run torchlightweb -- accept --demo <dir>`，再 `continue`。`continue` 不会自己签字。第一次没接受不许开后轴；第二次没接受 Pack 失败。禁止跳过人核。脚本闸仍是 `node scripts/human-review.mjs present/accept/can-start/pack-allowed --demo <dir>`。 |
 | 拉仓后说 `torchlightweb` | `node scripts/recall-torchlightweb.mjs`：靠仓根 `CLAUDE.md` 触发表，不装进 `.claude/skills/`。 |
 
-## First visible Figma page
+## 非 torchlightweb 维护路径（figma-showcase 本地抽稿，触发词禁用）
 
-Do not call a new season built until Chrome shows a meaningful Figma-derived product view. The `figma-showcase` preview-first path is smaller than full-page acceptance: it proves URL/token readiness, creates a renderer-connected Figma shell, embeds source-only device presets, and checks candidate-level browser coverage in `index.html?product=1`. It is legal to finish as a candidate showcase without product repo, true sandbox, PR, mobile, responsive, or pixel-grid claims; those capabilities must stay `not-claimed` unless source evidence declares them. Missing translation is a warning for single-language preview and a hard failure only for multi-locale acceptance.
+Do not call a new season built until Chrome shows a meaningful Figma-derived product view. `torchlightweb` does not run `figma-showcase`. Direct Figma extract of Torch `2:1987` / `196:9509` / `272:21937` remains a labelled `latest-Figma local extract baseline`, not an inventory/handoff baseline, and is not a legal substitute for the orchestrator. Missing translation is a warning for single-language preview and a hard failure only for multi-locale acceptance.
 
-Commands (each step must succeed; `truth.mjs` refuses to emit an empty `{}` shell):
-
-1. `npm run figma:onboard -- --url <figma-design-or-frame-url> --token-env FIGMA_TOKEN --check` — validates URL/token before anything else.
-2. `node scripts/init.mjs --dir <demo-dir> --name <slug> --workflow figma-showcase` — scaffolds the explicit Figma-only candidate workflow; it does not default mobile or product-qa assumptions.
-3. Add a `figma` section to `spec.json`: `fileKey`, `fetchNodes` (the page frame + its siblings), and `sections`. `figma-fetch` fails with the exact missing field otherwise.
-4. `node scripts/figma-fetch.mjs --demo <demo-dir>` — the ONLY network step: pulls the design into `fixtures/` snapshots.
-5. `node scripts/figma-lib-sync.mjs --demo <demo-dir>` — copies the generic extraction libs into the demo.
-6. Write `extract.mjs` to read the fixtures and emit truth — the init scaffold ships a `{}` TODO on purpose; use `lib/figma-geo.mjs`'s `extractGeometry` for the geometry layer.
-7. `node scripts/truth.mjs --demo <demo-dir> --embed` — normalized `truth.json` + embedded into `index.html`.
-8. `node scripts/figma-inline.mjs --demo <demo-dir> --check` — syncs the renderer + chrome into the page.
-9. `npm run figma:preview:first -- --demo <demo-dir>` — opens `index.html?product=1` in headless Chrome and fails unless meaningful Figma-derived content covers enough of the product frame (not a placeholder, QA-only shell, or one flat source image over a blank page). The JSON output includes `evidenceLevel:"candidate"`, screenshot path, product-view URL/command, source-platform evidence, and unclaimed capabilities.
-
-Steps 4-8 can also run as one command: `node scripts/figma-build.mjs --demo <demo-dir> --fetch` (build only, never acceptance; run step 9 after it). As soon as step 9 passes, immediately open the reported `index.html?product=1` product-view URL for human review; do not wait for product repo/sandbox/PR setup unless you are switching to the separate `product-qa` workflow. A page that opens is still a candidate: Switch names in truth are extraction recognition only; unresolved relations stay inert; reused copy/status/asset fixtures do not prove the inventory/handoff chain ran. Direct Figma extract of Torch `2:1987` / `196:9509` / `272:21937` is a `latest-Figma local extract baseline`, not an inventory/handoff baseline. `torchlightweb` has two human review stops: (1) Main static, plus Translation only when a copy table exists; (2) Interaction and Resize. `preview:first` must be green before stop 1 presents `?product=1`. No copy table → Translation stays `not-claimed`; zh-CN font load is not a translation pass. After stop 2 is accepted, `node scripts/pack-demo.mjs --demo <dir>` packs the served folder to ≤15MB (`docs/pack-skill.md`). Pack is not a restore axis.
+The local-extract recipe is **not** the `torchlightweb` trigger path. Do not run `figma-showcase` nine steps, `later-axes:probe`, `human:review`, or `pack:demo` when the user says `torchlightweb`. Those CLIs stay locked unless spawned by `npm run torchlightweb`. A page that opens is still a candidate: Switch names in truth are extraction recognition only; unresolved relations stay inert; reused copy/status/asset fixtures do not prove the inventory/handoff chain ran. Direct Figma extract of Torch `2:1987` / `196:9509` / `272:21937` is a `latest-Figma local extract baseline`, not an inventory/handoff baseline. `torchlightweb` has two human review stops: (1) Main static, plus Translation only when a copy table exists; (2) Interaction and Resize. `preview:first` must be green before stop 1 presents `?product=1`. No copy table → Translation stays `not-claimed`; zh-CN font load is not a translation pass. After stop 2 is accepted, `npm run torchlightweb -- continue --demo <dir>` packs the served folder to ≤15MB (`docs/pack-skill.md`). Direct `pack-demo` CLI is locked. Pack is not a restore axis.
 
 Full asset export, full-page Chrome gates, pixel comparison, multilingual acceptance, and project/private demo checks remain explicit later phases. Asset export writes WebP delivery files (lossless for alpha) while keeping PNG sources; `index.html` itself is gated at 10MB — over that, `#qa-truth` becomes `data-src="truth.json"` instead of inlining the whole truth. The assets folder is allowed to be larger than the HTML file.
 Reusable Figma-to-Web UI verification Skill. The Torchlight page under a local demo directory is a verification example only; this repository is not an AppStore app.

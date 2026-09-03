@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_MAX_HTML_BYTES, externalizeQaTruthIfOverLimit } from '../lib/html-volume.mjs';
 import { detectWebpEncoder, encodeWebpBatch } from '../lib/encode-webp.mjs';
-import { planWebpDelivery } from '../figma-assets.mjs';
+import { cachedPngReusable, planWebpDelivery, safeRelativeAssetPath } from '../figma-assets.mjs';
+// Importers: node:test via npm test / test:public. API: cachedPngReusable, planWebpDelivery, safeRelativeAssetPath.
+const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
 function tmpDemo() {
   return mkdtempSync(join(tmpdir(), 'yise-html-volume-'));
@@ -47,6 +50,50 @@ test('planWebpDelivery dedupes identical PNG sha and keeps pngFile', () => {
   assert.equal(plan.aliases.length, 1);
   assert.equal(plan.aliases[0].duplicateOf, '1:1');
   assert.equal(plan.jobs[0].webpRel, 'assets/a.webp');
+});
+
+test('planWebpDelivery and safeRelativeAssetPath refuse escaping manifest paths', () => {
+  const dir = tmpDemo();
+  mkdirSync(join(dir, 'assets'));
+  assert.equal(safeRelativeAssetPath(dir, '../secret.png').ok, false);
+  assert.equal(safeRelativeAssetPath(dir, '/tmp/x.png').ok, false);
+  assert.equal(safeRelativeAssetPath(dir, 'assets/../../escape.png').ok, false);
+  assert.throws(
+    () => planWebpDelivery({
+      '1:1': { file: '../escape.png', pngFile: '../escape.png', pngSha256: 'aaa', sha256: 'aaa' },
+    }, { demoDir: dir, assetsDir: join(dir, 'assets') }),
+    /unsafe asset path|path escapes pack root/,
+  );
+});
+
+test('cachedPngReusable refuses stale designVersion or resized nodes', () => {
+  const dir = tmpDemo();
+  const assets = join(dir, 'assets');
+  mkdirSync(assets);
+  const pngRel = 'assets/1-1.png';
+  writeFileSync(join(dir, pngRel), PNG1);
+  const sha = createHash('sha256').update(PNG1).digest('hex');
+  const rec = {
+    file: pngRel,
+    pngFile: pngRel,
+    pngSha256: sha,
+    sha256: sha,
+    designSize: '1x1',
+    exportScale: 1,
+    exportBounds: 'box',
+    pixelSize: '1x1',
+  };
+  const pick = { nodeId: '1:1', w: 1, h: 1, scale: 1, exportBounds: 'box', exportBox: null };
+  const previous = { designVersion: '111', assets: { '1:1': rec } };
+  assert.ok(cachedPngReusable({ previous, rec, pick, demoDir: dir, designVersion: '111' }));
+  assert.equal(cachedPngReusable({ previous, rec, pick, demoDir: dir, designVersion: '222' }), null);
+  assert.equal(cachedPngReusable({
+    previous,
+    rec,
+    pick: { ...pick, w: 80, h: 80 },
+    demoDir: dir,
+    designVersion: '111',
+  }), null);
 });
 
 test('encodeWebpBatch writes a real webp when Pillow is available', (t) => {

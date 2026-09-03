@@ -2,9 +2,10 @@
 
 This is a **delivery step**, not a fourth restore axis. Main static,
 Translation, Interaction, and Resize still stop for human acceptance on
-source-fidelity assets. Pack runs only after Resize is accepted **and** the
+source-fidelity assets. Pack runs only after the later-axes Chrome probe is green **and** the
 second human review stop (`interaction-and-resize` in `human-review.json`)
-is accepted. Missing either fails before mutation.
+is accepted by `npm run torchlightweb -- accept`. The machine must not write
+`resize-acceptance.json`. Missing either fails before mutation.
 
 SS6 4173 / `yise-ss6-web` is a fixture consumer. No rule here may depend on
 Etheria node IDs. Indicator fallback files are a generic runtime contract:
@@ -52,7 +53,9 @@ export to pack quality so static review happens on crushed art.
    and `missing.family` so chrome font authenticity checks still work.
 4. Compact `truth.json` and always externalize `#qa-truth` for the packed
    demo (HTTP preview / XD Sites). file:// single-file is no longer the pack
-   target. Compact `#qa-assets` JSON (drop default `exportBounds`, collapse
+   target. Drop extract-only `failClosed` and duplicate `componentSets[].nodes`
+   (the renderer mounts `variants[].nodes` + `variantTrees`). Keep ancestor
+   fields. Compact `#qa-assets` JSON (drop default `exportBounds`, collapse
    file-only records) but keep `assets/` paths and `exportBox`.
 5. Keep runtime fallback files (`figma-indicator-*.png` / `.webp`, calendar
    fallback slices). After rewrite, delete unreferenced image files. Move

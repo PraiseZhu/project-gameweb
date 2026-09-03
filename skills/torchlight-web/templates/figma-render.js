@@ -3847,19 +3847,14 @@
           el.setAttribute('data-motion-navigation', 'true');
         }
 
-        /* 相对偏移 = 节点绝对坐标 − **父级**绝对坐标（没有父级时减分区坐标）。
-           两个操作数都是 truth 里的原值，纯减法；门 D 用同一份原值对账。
-           嵌套之后必须减父级：否则子元素会按分区坐标定位在父容器内部，整个跑飞。 */
-        /* A passed-through Figma owner can be absent from the rendered list.
-           In that case ownerPath may find a more distant visual ancestor, but
-           direct parentId remains the true coordinate-system origin. Retain
-           that source box for x/y subtraction without pretending it is a DOM
-           parent, which fixes expanded-instance children that otherwise jump
-           by their missing owner's absolute coordinates. */
+        /* 相对偏移 = 节点绝对坐标 − **DOM 父级**绝对坐标（没有已渲染父级时减分区坐标）。
+           left/top 相对的是真正挂上去的 CSS containing block。未画出来的
+           unknown/skipped parentId 不能当原点：减了它的 pageBox、节点却挂在
+           section 上，整组会平移父层的 x/y（日历 −748.5、Slider −1795）。
+           已渲染的 parentId 仍优先；否则用 locator stack 上那个真实 DOM 祖先。 */
         const directParentNode = directParentId ? truthNodeById.get(directParentId) : null;
-        const coordinateOwnerBox = directParentRecord?.pageBox || directParentRecord?.box
-          || directParentNode?.pageBox || directParentNode?.box
-          || parent?.pageBox || parent?.box || null;
+        const coordinateOwner = directParentRecord || parent || null;
+        const coordinateOwnerBox = coordinateOwner?.pageBox || coordinateOwner?.box || null;
         const originX = coordinateOwnerBox ? (coordinateOwnerBox.x ?? 0) : paintOriginX;
         const originY = coordinateOwnerBox ? (coordinateOwnerBox.y ?? 0) : paintOriginY;
         /* A ready handoff's declared slice is exported on the bounds named by
@@ -3914,7 +3909,13 @@
           /* A TEXT/art overlay inside a row frame has no layoutAlign. If the
              unknown row is skipped as a paint parent, that overlay must not
              inherit the ancestor mix/ VERTICAL flow and slide off its source x. */
-          const participatesInAutoLayout = inAutoLayout && childLayoutAlign === 'INHERIT' && sourceParticipatesInFlow;
+          /* zh-CN static gate measures authored pageBox. Auto Layout flex
+             restacks mixed-size children (vertical CENTER / overlapping
+             horizontal CENTER) and walks them off the inventory box. Keep
+             source x/y for zh-CN; later Translation still uses flex. */
+          const zhSourceExactLayout = String(ctx.prefs && ctx.prefs.lang || '') === 'zh-CN';
+          const participatesInAutoLayout = inAutoLayout && childLayoutAlign === 'INHERIT'
+            && sourceParticipatesInFlow && !zhSourceExactLayout;
           if (participatesInAutoLayout) {
           const pel = parent.el;
           /* A horizontal HUG owner with a FILL text track between fixed flow
@@ -3978,7 +3979,10 @@
             /* Figma omits axis-alignment fields when they retain their MIN
                default. CSS must not invent `center`: it moves every child of a
                HUG owner, including overlapping card columns and fixed side-nav
-               rows, away from their source x/y relationship. */
+               rows, away from their source x/y relationship. Vertical CENTER
+               on mixed-width children (switch 708 vs row 700) also shifts the
+               narrower row by half the leftover (4px). zh-CN static keeps the
+               authored pageBox, so counter-axis CENTER stays start. */
             pel.style.justifyContent = jc[prim] || 'flex-start';
             pel.style.alignItems = ai[counter] || 'flex-start';
             /* CSS gap rejects negative values, while Figma itemSpacing permits
@@ -5041,6 +5045,14 @@
             el.setAttribute('data-fit-policy', 'zh-cn-figma-exact');
             el.setAttribute('data-text-layout-policy',
               el.getAttribute('data-text-layout-policy') || 'figma-exact');
+            /* Inventory static gate measures the text leaf against pageBox.
+               CSS line-height (fontSize × lineHeightPercent) can be taller than
+               Figma's authored box (30×120%=36 vs pageBox.h=34.15). zh-CN keeps
+               the source box; overflow stays visible so glyphs are not clipped. */
+            if (!inlineHugs && box.h != null) {
+              el.style.height = box.h + 'px';
+              el.style.overflow = el.style.overflow || 'visible';
+            }
           }
           const hasAlCaps = alOwner.maxWidth != null || alOwner.maxHeight != null;
           /* DESIGN.md 6.1 B/C and semantic line-break: no written Auto Layout

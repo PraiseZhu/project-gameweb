@@ -1,6 +1,6 @@
 {
   "name": "torchlight-web",
-  "description": "火炬之光宣发页：figma:from-handoff 只验包；figma:html-from-handoff 写出 demo HTML 并必须过 preview-first。",
+  "description": "火炬之光宣发页：torchlightweb 是总编排状态机；figma:from-handoff 只验包；figma:html-from-handoff 只许编排器调用。",
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,11 +24,10 @@
     "inventory:check": "node scripts/figma-inventory-check.mjs",
     "figma:from-handoff": "node scripts/figma-from-handoff.mjs",
     "figma:html-from-handoff": "node scripts/figma-html-from-handoff.mjs",
+    "torchlightweb": "node scripts/torchlightweb.mjs",
     "fonts:check": "node scripts/fonts-install.mjs --check",
     "fonts:register": "node scripts/fonts-register.mjs",
-    "human:review": "node scripts/human-review.mjs",
-    "recall:torchlightweb": "node scripts/recall-torchlightweb.mjs",
-    "pack:demo": "node scripts/pack-demo.mjs"
+    "recall:torchlightweb": "node scripts/recall-torchlightweb.mjs"
   },
   "dependencies": {
     "css-to-react-native": "^3.2.0",
