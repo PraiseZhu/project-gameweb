@@ -934,7 +934,7 @@
      because this renderer is a self-contained inlined artifact. A fixed UI
      frame may shrink translated copy to fit its maximum owner/content range;
      open-flow / unbounded HEIGHT text keeps source metrics and grows instead. */
-  _fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null } = {}) {
+  _fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null, autoLayoutMax = null } = {}) {
     const truncating = String(autoResize || 'FIXED').toUpperCase() === 'TRUNCATE' || truncation === 'ENDING';
     if (openFlow) return { authorized: false, reason: 'open-flow-natural-growth' };
     if (explicitFit) return { authorized: true, reason: 'explicit-fit-grant' };
@@ -942,6 +942,9 @@
     if (clipsContent === true || isMask === true) return { authorized: true, reason: 'clip-or-mask' };
     // mirrored from scripts/lib/figma-typography.mjs#fitAuthorization
     if (String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
+    const cap = (value) => Number.isFinite(Number(value)) && Number(value) > 0;
+    const hasAlMax = autoLayoutMax && (cap(autoLayoutMax.maxWidth) || cap(autoLayoutMax.maxHeight));
+    if (hasAlMax) return { authorized: true, reason: 'auto-layout-max' };
     if (boundedOwner) return { authorized: true, reason: 'framed-bounded-owner' };
     return { authorized: false, reason: 'preserve-source-metrics' };
   },
@@ -3076,7 +3079,45 @@
          const itemId = __u(item && item.id);
          if (itemId != null) truthNodeById.set(String(itemId), item);
        }
-       const truthChildrenByParentId = new Map();
+       const layoutCap = (layout, key) => {
+         const n = Number(__u(layout && layout[key]));
+         return Number.isFinite(n) && n > 0 ? n : null;
+       };
+       /* DESIGN.md 6.1 B — mirrored from findAutoLayoutMaxOwner. Renderer is
+          inlined, so it cannot import the ESM helper. */
+       const findAlMaxOwner = (textNode, nodesById) => {
+         const none = { ownerId: null, maxWidth: null, maxHeight: null, reason: 'no-auto-layout-max' };
+         if (!textNode || !nodesById) return none;
+         const textId = String(__u(textNode.id) || '');
+         const capsOf = (node) => ({
+           maxWidth: layoutCap(node && node.layout, 'maxWidth'),
+           maxHeight: layoutCap(node && node.layout, 'maxHeight'),
+         });
+         const hasMax = (node) => {
+           const caps = capsOf(node);
+           return caps.maxWidth != null || caps.maxHeight != null;
+         };
+         const isAl = (node) => {
+           const mode = String(__u(node && node.layout && node.layout.layoutMode) || '').toUpperCase();
+           return mode === 'HORIZONTAL' || mode === 'VERTICAL';
+         };
+         if (hasMax(textNode)) return { ownerId: textId, ...capsOf(textNode), reason: 'text-self-max' };
+         const seen = new Set([textId]);
+         let current = textNode;
+         while (current) {
+           const parentId = String(__u(current.parentId) || '');
+           if (!parentId || seen.has(parentId)) break;
+           seen.add(parentId);
+           const parent = nodesById.get(parentId);
+           if (!parent) break;
+           if (isAl(parent) && hasMax(parent)) {
+             return { ownerId: parentId, ...capsOf(parent), reason: 'nearest-auto-layout-max' };
+           }
+           current = parent;
+         }
+         return none;
+       };
+
        for (const item of list) {
          const parentId = nodeParentId(item);
          if (!parentId) continue;
@@ -4653,6 +4694,10 @@
              (mirrored _fitAuthorization): a bounded framed owner is an
              authorized fixed-UI range, so translated copy fits it instead of
              overflowing; open-flow / unbounded HEIGHT keeps source metrics. */
+          const alOwner = findAlMaxOwner(n, truthNodeById);
+          const alMax = (alOwner.maxWidth != null || alOwner.maxHeight != null)
+            ? { maxWidth: alOwner.maxWidth, maxHeight: alOwner.maxHeight }
+            : null;
           const fitAuth = this._fitAuthorization({
             autoResize: ar,
             truncation: tx.truncation,
@@ -4664,6 +4709,7 @@
             layoutSizingVertical: sourceWidthHugText
               ? 'HUG'
               : __u(n.layout && n.layout.layoutSizingVertical),
+            autoLayoutMax: alMax,
           });
           const fitAuthorized = fitAuth.authorized;
           el.setAttribute('data-fit-policy', fitAuth.reason);
@@ -4757,7 +4803,10 @@
             if (alOwner.ownerId) el.setAttribute('data-fit-owner', String(alOwner.ownerId));
             if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
             if (alOwner.maxHeight != null) el.setAttribute('data-fit-max-height', String(alOwner.maxHeight));
-            fitCandidates.push({ el, tx, box, widthFit: _ownerW, heightFit: _ownerH, maxWidth: alOwner.maxWidth, maxHeight: alOwner.maxHeight });
+            fitCandidates.push({
+              el, tx, box, widthFit: Number(_ownerW), heightFit: _ownerH,
+              maxWidth: alOwner.maxWidth, maxHeight: alOwner.maxHeight,
+            });
           }
         } else {
           el.style.height = ((box.h ?? 0) + (Number(el.getAttribute('data-hscroll-gutter-h')) || 0)) + 'px';
