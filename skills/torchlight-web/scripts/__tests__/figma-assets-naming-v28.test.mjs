@@ -412,6 +412,38 @@ test('exportBox is page-aligned, never canvas renderBox', () => {
   assert.notEqual(box.x, canvas.x);
 });
 
+test('whole-frame box export requests use_absolute_bounds=true', () => {
+  const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
+  assert.match(src, /listedInkBox \? 'box'/);
+  assert.match(src, /if \(chunk\[0\]\.exportBounds !== 'render'\) q\.set\('use_absolute_bounds', 'true'\)/);
+  const timeBg = pickSliceNodes({
+    schema: 'yise-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    platforms: {
+      pc: {
+        sections: {
+          'sec:1': {
+            nodes: [{
+              id: 'img-hero',
+              type: 'FRAME',
+              name: 'img/标题',
+              status: 'determined',
+              role: 'img',
+              pageBox: { x: 10, y: 20, w: 200, h: 300 },
+              box: { x: 10, y: 20, w: 200, h: 300 },
+              renderBox: { x: 0, y: 0, w: 240, h: 340 },
+              sliceExport: { bounds: 'render', scale: 1, format: 'png', file: 'img-hero.png' },
+              style: { fills: [] },
+            }],
+          },
+        },
+      },
+    },
+  }).find((pick) => pick.nodeId === 'img-hero');
+  assert.equal(timeBg?.exportBounds, 'box');
+  assert.deepEqual(timeBg?.exportBox, { x: 10, y: 20, w: 200, h: 300 });
+});
+
 test('reuse-existing skips Figma fetch when the PNG is already on disk', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
   assert.match(src, /--reuse-existing/);

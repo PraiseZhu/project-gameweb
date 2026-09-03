@@ -150,7 +150,7 @@ function pngMeta(file) {
   for (let y = 0; y < png.height; y += stepY) {
     for (let x = 0; x < png.width; x += stepX) {
       const i = (png.width * y + x) * 4;
-      if (png.data[i + 3] > 8 && png.data[i] + png.data[i + 1] + png.data[i + 2] > 24) opaque += 1;
+      if (png.data[i + 3] > 8) opaque += 1;
     }
   }
   return { assetW: png.width, assetH: png.height, assetEmpty: opaque < 8 };
@@ -566,4 +566,4 @@ if (process.argv[1] && process.argv[1].endsWith('inventory-static-gate-probe.mjs
   });
 }
 
-export { measureDemo };
+export { measureDemo, pngMeta };

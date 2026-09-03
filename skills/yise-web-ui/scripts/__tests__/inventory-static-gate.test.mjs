@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { PNG } from 'pngjs';
+import { pngMeta } from '../lib/inventory-static-gate-probe.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -172,6 +174,23 @@ test('matching DOM pageBox + fontSize + slice is green', () => {
   });
   assert.equal(green.ok, true);
   assert.equal(green.expectationSource, 'handoff-inventory');
+});
+
+test('opaque black PNG is not assetEmpty', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'png-meta-black-'));
+  const file = join(dir, 'black.png');
+  const png = new PNG({ width: 16, height: 16 });
+  for (let i = 0; i < png.data.length; i += 4) {
+    png.data[i] = 0;
+    png.data[i + 1] = 0;
+    png.data[i + 2] = 0;
+    png.data[i + 3] = 255;
+  }
+  writeFileSync(file, PNG.sync.write(png));
+  const meta = pngMeta(file);
+  assert.equal(meta.assetEmpty, false);
+  assert.equal(meta.assetW, 16);
+  assert.equal(meta.assetH, 16);
 });
 
 test('probe script is a shipped skill file, not an optional local extra', () => {

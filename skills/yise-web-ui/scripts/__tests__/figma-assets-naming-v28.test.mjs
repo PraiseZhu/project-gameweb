@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { pickSliceNodes } from '../lib/figma-slice-nodes.mjs';
 
 function truthWith(nodes) {
@@ -54,6 +56,13 @@ test('whole-frame img/ with sliceExport bounds=render exports pageBox, not canva
   assert.equal(picks[0].w, 200);
   assert.equal(picks[0].h, 300);
   assert.equal(picks[0].cropToVisibleBox, false);
+});
+
+test('whole-frame box export requests use_absolute_bounds=true', () => {
+  const assets = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
+  const slice = readFileSync(fileURLToPath(new URL('../lib/figma-slice-nodes.mjs', import.meta.url)), 'utf8');
+  assert.match(slice, /listedInkBox \? 'box'/);
+  assert.match(assets, /if \(chunk\[0\]\.exportBounds !== 'render'\) q\.set\('use_absolute_bounds', 'true'\)/);
 });
 
 test('clipped unknown IMAGE fill exports the visible box, not the overflowing layout box', () => {
