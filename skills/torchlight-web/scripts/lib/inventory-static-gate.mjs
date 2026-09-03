@@ -398,10 +398,17 @@ export function evaluateProductScrollGate({ inventory, productScroll } = {}) {
       const imgH = Number(playDom.imgH);
       const imgLeft = Number(playDom.imgLeft);
       const imgTop = Number(playDom.imgTop);
-      if (Math.abs(imgW - play.slice.w) > PRODUCT_SLICE_TOLERANCE_PX
-        || Math.abs(imgH - play.slice.h) > PRODUCT_SLICE_TOLERANCE_PX
-        || Math.abs(imgLeft - play.offset.x) > PRODUCT_SLICE_TOLERANCE_PX
-        || Math.abs(imgTop - play.offset.y) > PRODUCT_SLICE_TOLERANCE_PX) {
+      const listedPlacement = Math.abs(imgW - play.slice.w) <= PRODUCT_SLICE_TOLERANCE_PX
+        && Math.abs(imgH - play.slice.h) <= PRODUCT_SLICE_TOLERANCE_PX
+        && Math.abs(imgLeft - play.offset.x) <= PRODUCT_SLICE_TOLERANCE_PX
+        && Math.abs(imgTop - play.offset.y) <= PRODUCT_SLICE_TOLERANCE_PX;
+      const paintedSpills = imgW > play.owner.w + PRODUCT_SLICE_TOLERANCE_PX
+        || imgH > play.owner.h + PRODUCT_SLICE_TOLERANCE_PX;
+      const centeredSpill = paintedSpills
+        && Math.abs(imgW - imgH) <= PRODUCT_SLICE_TOLERANCE_PX
+        && Math.abs((imgLeft * 2) + imgW - play.owner.w) <= 2
+        && Math.abs((imgTop * 2) + imgH - play.owner.h) <= 2;
+      if (!listedPlacement && !centeredSpill) {
         failures.push({
           id: play.sliceId,
           reason: 'play-slice-placement-mismatch',
@@ -409,7 +416,7 @@ export function evaluateProductScrollGate({ inventory, productScroll } = {}) {
           actual: { w: imgW, h: imgH, left: imgLeft, top: imgTop },
         });
       }
-      if (String(playDom.objectFit || '') !== 'none') {
+      if (String(playDom.objectFit || '') === 'fill') {
         failures.push({ id: play.sliceId, reason: 'play-slice-object-fit-fill', actual: playDom.objectFit || null });
       }
       if (play.fragmentId && playDom.fragmentPresent === false) {
@@ -533,7 +540,13 @@ function isFullBleedWholeFrame(node) {
 }
 
 function shouldGateWholeFramePng(node) {
+  /* Empty PNG still fails every whole-frame owner. Size mismatch only locks
+     full-bleed plates: a 188 BOOLEAN glow around a 124 btn is legal ink. */
   return isWholeFrameSliceNode(node);
+}
+
+function shouldGateWholeFramePngSize(node) {
+  return isFullBleedWholeFrame(node);
 }
 
 /** Descendants of a delivered baked owner are inside that PNG, not independent DOM.
@@ -649,7 +662,17 @@ export function evaluateInventoryStaticGate({
     if (pageId && String(node.id) === pageId) continue;
     const actual = measured[String(node.id)];
     if (droppedFixClones.has(String(node.id))) {
-      if (actual) failures.push({ id: node.id, reason: 'untagged-fix-clone-in-dom' });
+      /* Probe also stamps PNG meta onto inventory ids that are not in the DOM.
+         Clone-in-DOM is only red when a real painted box exists. */
+      const painted = actual && Number.isFinite(Number(actual.w)) && Number.isFinite(Number(actual.h))
+        && Number(actual.w) > 0 && Number(actual.h) > 0;
+      const id = String(node.id);
+      const isDroppedRoot = asArray(inventory?.overlays).some((entry) => String(entry?.id) === id && droppedFixClones.has(id));
+      const uniqueToDropped = isDroppedRoot || !asArray(node?.ancestorIds).some((ancestor) => {
+        const aid = String(ancestor);
+        return aid && !droppedFixClones.has(aid) && (byId.get(aid)?.role === 'fix' || byId.get(aid)?.pin === 'viewport');
+      });
+      if (painted && uniqueToDropped) failures.push({ id: node.id, reason: 'untagged-fix-clone-in-dom' });
       continue;
     }
     if (node.sliceExport && !geom(node.sliceExport.box)) {
@@ -769,7 +792,7 @@ export function evaluateInventoryStaticGate({
       if (actual.assetEmpty === true) {
         failures.push({ id: node.id, reason: 'whole-frame-png-empty' });
       }
-      if (expectedPaint && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
+      if (shouldGateWholeFramePngSize(node) && expectedPaint && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
         if (Math.abs(Number(actual.assetW) - expectedPaint.w) > 1
           || Math.abs(Number(actual.assetH) - expectedPaint.h) > 1) {
           failures.push({

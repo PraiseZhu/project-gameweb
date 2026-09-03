@@ -298,7 +298,8 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
         /* Gate compares imgBox to sliceExport.box (owner clip). Unclipped ink
            PNGs are larger than the owner and overflow:hidden on the owner;
            report the clipped owner box, not the raw img layout box. */
-        const imgBox = img && el.getAttribute('data-asset-bounds-resolved') === 'owner-ink-from-unclipped-png'
+        const boundsPolicy = el.getAttribute('data-asset-bounds-resolved') || '';
+        const imgBox = img && (boundsPolicy === 'owner-ink-from-unclipped-png' || boundsPolicy === 'owner-ink-spill-natural')
           ? box
           : (img ? boxOf(img, originRect) : null);
         nodes[id] = {
@@ -327,8 +328,8 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
     for (const node of asArray(inventory?.nodes)) {
       if (!isWholeFrameSliceNode(node)) continue;
       const id = String(node.id);
-      const rec = nodes[id] || {};
-      nodes[id] = { ...rec, ...pngMeta(assetFile(absDemo, node)) };
+      if (!nodes[id]) continue;
+      nodes[id] = { ...nodes[id], ...pngMeta(assetFile(absDemo, node)) };
     }
     return { ...measured, nodes, productScroll };
   } finally {

@@ -215,6 +215,7 @@ test('probe script is a shipped skill file, not an optional local extra', () => 
   assert.match(src, /fontWeight/);
   assert.match(src, /laterKvMeasureIds/);
   assert.match(src, /laterKvPaintNode/);
+  assert.match(src, /owner-ink-spill-natural/);
 });
 
 test('descendants baked into an ancestor PNG are not missing-dom', () => {
@@ -423,8 +424,8 @@ test('ordinary whole-frame img/ empty or wrong-size PNG is red even when DOM mat
     inventory: { schema: 'inventory/v2', nodes: [node] },
     measurements: { nodes: { 'img-title': { ...matchingDom, assetEmpty: false, assetW: 50, assetH: 50 } } },
   });
-  assert.equal(wrongSize.ok, false);
-  assert.ok(wrongSize.problems.some((line) => line.includes('whole-frame-png-size-mismatch')), (wrongSize.problems || []).join('\n'));
+  assert.equal(wrongSize.ok, true, (wrongSize.problems || []).join('\n'));
+  assert.ok(!(wrongSize.problems || []).some((line) => line.includes('whole-frame-png-size-mismatch')));
 });
 
 test('listed sliceExport child is missing-dom even if unprefixed parent is baked', () => {
@@ -685,6 +686,103 @@ test('untagged duplicate fix clones still in DOM are red', () => {
   assert.ok(red.problems.some((line) => line.includes('fix-2-btn: untagged-fix-clone-in-dom')), (red.problems || []).join('\n'));
 });
 
+test('PNG meta alone does not count as untagged-fix-clone-in-dom', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      overlays: [
+        { id: 'fix-1', role: 'fix', label: '顶部信息', pin: 'viewport' },
+        { id: 'fix-2', role: 'fix', label: '顶部信息', pin: 'viewport' },
+      ],
+      nodes: [
+        { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', pageBox: { x: 0, y: 0, w: 3793, h: 493 } },
+        { id: 'fix-2', status: 'determined', role: 'fix', pin: 'viewport', pageBox: { x: 0, y: 2143, w: 3793, h: 493 } },
+        {
+          id: 'fix-2-logo',
+          status: 'determined',
+          role: 'img',
+          name: 'img/logo',
+          ancestorIds: ['fix-2'],
+          pageBox: { x: 0, y: 2143, w: 1020, h: 360 },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        'fix-1': { x: 0, y: 0, w: 3793, h: 493, inSection: false },
+        'fix-2-logo': { assetEmpty: false, assetW: 1020, assetH: 360 },
+      },
+      productScroll: stickyProductScroll(['fix-1']),
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('shared INSTANCE ids under a dropped overlay clone are not untagged-fix-clone-in-dom', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      overlays: [
+        { id: 'fix-1', role: 'fix', label: '顶部信息', pin: 'viewport' },
+        { id: 'fix-2', role: 'fix', label: '顶部信息', pin: 'viewport' },
+      ],
+      nodes: [
+        { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', pageBox: { x: 0, y: 0, w: 3793, h: 493 } },
+        { id: 'fix-2', status: 'determined', role: 'fix', pin: 'viewport', pageBox: { x: 0, y: 2143, w: 3793, h: 493 } },
+        {
+          id: 'I758:1693;758:1675',
+          status: 'determined',
+          role: 'img',
+          name: 'img/按钮背景',
+          ancestorIds: ['fix-2', 'fix-1'],
+          pageBox: { x: 2764, y: 70, w: 402, h: 84 },
+          sliceExport: { box: { x: 2764, y: 70, w: 402, h: 84 }, file: 'btn.png' },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        'fix-1': { x: 0, y: 0, w: 3793, h: 493, inSection: false },
+        'I758:1693;758:1675': {
+          x: 2764, y: 70, w: 402, h: 84, inSection: false,
+          hasImg: true, imgBox: { x: 2764, y: 70, w: 402, h: 84 },
+          assetEmpty: false, assetW: 468, assetH: 150,
+        },
+      },
+      productScroll: stickyProductScroll(['fix-1']),
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+  assert.ok(!(green.problems || []).some((line) => line.includes('untagged-fix-clone-in-dom')));
+});
+
+test('soft-spill img/ PNG larger than pageBox is not whole-frame-png-size-mismatch', () => {
+  const pageBox = { x: 1858, y: 852, w: 124, h: 124 };
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'btn-bg',
+        status: 'determined',
+        role: 'img',
+        name: 'img/按钮背景',
+        type: 'RECTANGLE',
+        pageBox,
+        sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'btn.png', bounds: 'render' },
+      }],
+    },
+    measurements: {
+      nodes: {
+        'btn-bg': {
+          x: 1858, y: 852, w: 124, h: 124, hasImg: true, imgBox: pageBox,
+          assetEmpty: false, assetW: 188, assetH: 188,
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
 test('kept fix descendants measured inside a section are red', () => {
   const red = evaluateInventoryStaticGate({
     inventory: {
@@ -919,6 +1017,50 @@ test('play button 188 filling 228 is red', () => {
   assert.ok(red.problems.some((line) => line.includes('play-slice-placement-mismatch')), (red.problems || []).join('\n'));
   assert.ok(red.problems.some((line) => line.includes('play-slice-object-fit-fill')), (red.problems || []).join('\n'));
   assert.ok(red.problems.some((line) => line.includes('play-triangle-not-right')), (red.problems || []).join('\n'));
+});
+
+test('play slice listed as pageBox but painted larger keeps object-fit none', () => {
+  const green = evaluateProductScrollGate({
+    inventory: {
+      schema: 'inventory/v2',
+      sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+      nodes: [
+        { id: 'play', status: 'determined', role: 'btn', name: 'btn/播放按钮', pageBox: { x: 1806, y: 800, w: 228, h: 228 } },
+        {
+          id: 'play-bg',
+          status: 'determined',
+          role: 'img',
+          name: 'img/按钮背景',
+          parentId: 'play',
+          pageBox: { x: 1858, y: 852, w: 124, h: 124 },
+          sliceExport: { box: { x: 1858, y: 852, w: 124, h: 124 }, file: 'play-bg.png' },
+        },
+      ],
+    },
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: {
+        'sec-1': { cropWindow: 'first-section-pagebox', height: 2143, overflow: 'hidden' },
+      },
+      play: {
+        playHasDirectImg: false,
+        ownerW: 124,
+        ownerH: 124,
+        ownerOverflow: 'hidden',
+        imgW: 188,
+        imgH: 188,
+        imgLeft: -32,
+        imgTop: -32,
+        objectFit: 'none',
+        fragmentPresent: true,
+        polygonVertex: 'right',
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
 });
 
 test('later-section sample of the transparent bg/ plate is red when a KV child exists', () => {

@@ -811,15 +811,22 @@
         exportH = Number(box.h);
         policy = 'owner-png-matches-clip';
       }
+      if (natW > 0 && natH > 0 && Number(box.w) > 0 && Number(box.h) > 0
+        && (natW > Number(box.w) + 1.5 || natH > Number(box.h) + 1.5)) {
+        exportX = ownerX - (natW - Number(box.w)) / 2;
+        exportY = ownerY - (natH - Number(box.h)) / 2;
+        exportW = natW;
+        exportH = natH;
+        policy = 'owner-ink-spill-natural';
+      }
       img.style.left = (exportX - ownerX) + 'px';
       img.style.top = (exportY - ownerY) + 'px';
       img.style.width = exportW + 'px';
       img.style.height = exportH + 'px';
-      /* Downscaled Figma PNG (pixelSize < designSize) must still cover the
-         design exportBox. object-fit:none keeps intrinsic pixels and leaves
-         a hole in the owner clip — later sections then leak the hero KV.
-         zh-CN without a placed exportBox still uses none (owner-box-zh-cn). */
-      img.style.objectFit = 'fill';
+      /* Downscaled Figma PNG must fill the design box. A larger spill PNG
+         (188 around 124) keeps intrinsic pixels with object-fit:none. */
+      const spillsOwner = natW > Number(box.w) + 1.5 || natH > Number(box.h) + 1.5;
+      img.style.objectFit = spillsOwner ? 'none' : 'fill';
       el.setAttribute('data-asset-bounds-resolved', policy);
     };
     const applyPlacement = () => {

@@ -365,7 +365,7 @@ test('fx-img follows the owner box instead of intrinsic pixels', () => {
   assert.match(renderer, /img\.style\.position = 'absolute'/);
   assert.match(renderer, /const placedBox = exportBox \|\| sliceBox/);
   assert.match(renderer, /owner-box-zh-cn/);
-  assert.match(renderer, /img\.style\.objectFit = 'fill'/);
+  assert.match(renderer, /img\.style\.objectFit = spillsOwner \? 'none' : 'fill'/);
   assert.match(renderer, /img\.style\.objectFit = 'none'/);
   assert.match(renderer, /el\.style\.overflow = 'hidden'/);
   assert.match(renderer, /el\.style\.position = 'relative'/);

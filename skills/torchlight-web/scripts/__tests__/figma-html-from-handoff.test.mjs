@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -119,6 +119,40 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   assert.equal(existsSync(join(pack.outDir, 'index.html')), false);
   assert.equal(result.htmlVolume.ok, true);
   assert.equal(existsSync(join(demoDir, 'fonts-manifest.json')), true);
+  assert.match(html, /id="qa-design-policy"/);
+  assert.match(html, /window\.__designPolicy/);
+  assert.match(html, /window\.__qaDemo/);
+});
+
+test('html-from-handoff inserts a closed design-policy block into a legacy shell', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-policy-'));
+  const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo');
+  mkdirSync(demoDir, { recursive: true });
+  writeFileSync(join(demoDir, 'index.html'), `<!doctype html>
+<body>
+<script id="qa-truth" type="application/json">{}</script>
+<script id="qa-devices" type="application/json">{}</script>
+<script>
+window.__qaDemo = { name: 'legacy' };
+</script>
+</body>`);
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  const policyOpen = html.indexOf('<script id="qa-design-policy"');
+  const policyClose = html.indexOf('</script>', policyOpen);
+  const loaderClose = html.indexOf('</script>', policyClose + 1);
+  const qaDemo = html.indexOf('window.__qaDemo');
+  assert.ok(policyOpen >= 0);
+  assert.ok(policyClose > policyOpen);
+  assert.ok(loaderClose > policyClose);
+  assert.ok(qaDemo > loaderClose);
+  assert.match(html.slice(policyClose, loaderClose + 9), /window\.__designPolicy/);
 });
 
 test('html-from-handoff language matrix follows img/ langs and does not invent ja', () => {
