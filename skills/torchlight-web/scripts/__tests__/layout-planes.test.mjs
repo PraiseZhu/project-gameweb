@@ -19,7 +19,7 @@ test('detects verified two-plane only from sibling source tree, geometry, and UI
   assert.equal(result.schema, LAYOUT_PLANES_SCHEMA);
   assert.equal(result.status, 'verified-two-plane');
   assert.equal(result.planes.background.nodeId, 'bg:1');
-  assert.equal(result.planes.background.responsivePolicy.scaleMode, 'cover-crop');
+  assert.equal(result.planes.background.responsivePolicy.scaleMode, 'width-scale');
   assert.equal(result.planes.foreground.nodeId, 'ui:1');
   assert.equal(result.planes.foreground.responsivePolicy.scaleMode, 'source-ui-scale');
   assert.equal(result.planes.foreground.responsivePolicy.implementation.pcSeasonal, 'width-scale');

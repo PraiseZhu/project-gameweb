@@ -78,11 +78,6 @@ export function langValueOfImgVariant(variant = {}) {
   return fromName ? fromName.value : '';
 }
 
-function imgPrefixOf(name) {
-  const match = /^([A-Za-z]+)\s*[\/／]/.exec(String(name || ''));
-  return match ? match[1].toLowerCase() : '';
-}
-
 export function legalImgLangValuesOfSet(set = {}) {
   const axis = imgLangAxisOfSet(set);
   const values = new Set();
@@ -97,7 +92,9 @@ export function legalImgLangValuesOfSet(set = {}) {
 }
 
 export function isLegalImgLangSet(set = {}) {
-  return imgPrefixOf(set.name) === 'img' && legalImgLangValuesOfSet(set).size >= 2;
+  /* Page-used COMPONENT_SET with a real lang axis follows prefs.lang.
+     Prefix may be img/, or unprefixed art such as 首屏主按钮 / 日历 / 社媒. */
+  return legalImgLangValuesOfSet(set).size >= 2;
 }
 
 const IMG_VARIANT_TO_PAGE_LANG = Object.freeze({

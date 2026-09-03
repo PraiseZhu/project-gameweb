@@ -8,7 +8,7 @@
 //   node .github/scripts/nightly-health.mjs --list    # 只打印将检查的包
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative as pathRelative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -25,6 +25,10 @@ const GRADE_TONIGHT = 'tonight';
 const GRADE_DEBT = 'debt';
 const GRADE_GAP = 'gap';
 const GRADE_GONE = 'gone';
+
+function relative(from, to) {
+  return pathRelative(from, to).replaceAll('\\', '/');
+}
 
 function die(message) {
   console.error(message);
@@ -197,12 +201,28 @@ function countRealTapCases(output, files = []) {
 
 function realInside(root, abs) {
   try {
-    const base = realpathSync(root);
-    const target = realpathSync(abs);
-    return target === base || target.startsWith(base + '/');
+    const base = normalizePathForComparison(realpathSync(root));
+    const target = normalizePathForComparison(realpathSync(abs));
+    return target === base || target.startsWith(`${base}/`);
   } catch {
     return false;
   }
+}
+
+function normalizePathForComparison(value, platform = process.platform) {
+  const normalized = String(value).replaceAll('\\', '/').replace(/\/+$/, '');
+  return platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function runNpm(label, cwd, args) {
+  const bundledCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const npmCli = process.env.npm_execpath || (existsSync(bundledCli) ? bundledCli : null);
+  if (!npmCli) return run(label, cwd, 'npm', args);
+  return run(label, cwd, process.execPath, [npmCli, ...args]);
+}
+
+function packageManagerCommand(platform = process.platform) {
+  return platform === 'win32' ? 'npm.cmd' : 'npm';
 }
 
 function argValue(name) {
@@ -781,19 +801,19 @@ function main() {
   const failures = [...discoveryProblems, ...proofFailures];
   for (const target of targets) {
     const install = existsSync(join(target.packageDir, 'package-lock.json'))
-      ? run(`${target.name} npm ci`, target.packageDir, 'npm', ['ci'])
-      : run(`${target.name} npm install`, target.packageDir, 'npm', ['install']);
+      ? runNpm(`${target.name} npm ci`, target.packageDir, ['ci'])
+      : runNpm(`${target.name} npm install`, target.packageDir, ['install']);
     if (install) {
       failures.push(install);
       continue;
     }
-    const npmTest = run(`${target.name} npm test`, target.packageDir, 'npm', ['test']);
+    const npmTest = runNpm(`${target.name} npm test`, target.packageDir, ['test']);
     if (npmTest) failures.push(npmTest);
     const tapFail = runTrustedTests(target.name, target.packageDir);
     if (tapFail) failures.push(tapFail);
     for (const extra of ['release:audit', 'fonts:check']) {
       if (!target.scripts[extra]) continue;
-      const extraFail = run(`${target.name} npm run ${extra}`, target.packageDir, 'npm', ['run', extra]);
+      const extraFail = runNpm(`${target.name} npm run ${extra}`, target.packageDir, ['run', extra]);
       if (extraFail) failures.push(extraFail);
     }
   }
@@ -823,6 +843,8 @@ export {
   exclusionItems,
   renderReport,
   stripRunnerNoise,
+  packageManagerCommand,
+  normalizePathForComparison,
 };
 
 if (process.argv[1] && resolve(process.argv[1]) === HERE) main();

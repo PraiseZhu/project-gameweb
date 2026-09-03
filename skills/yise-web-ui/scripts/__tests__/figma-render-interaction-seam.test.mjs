@@ -29,6 +29,13 @@ test('renderer consumes @go modal names and fix/@from scroll-gated pin', () => {
   assert.match(renderer, /name-param:@go|data-go/);
 });
 
+test('Main static leaves page clicks inert until Interaction opts in', () => {
+  assert.match(renderer, /enablePageInteraction === true/);
+  assert.match(renderer, /data-page-interaction/);
+  assert.match(renderer, /enablePageInteraction && !__motionCarouselOptIn && !frame\.__fxInteractionBridgeInstalled/);
+  assert.match(renderer, /if \(!enablePageInteraction\) return;/);
+});
+
 test('named modal runtime only wires openers listed in triggerFrom', () => {
   assert.match(renderer, /authorizedFrom/);
   assert.match(renderer, /modal.triggerFrom/);

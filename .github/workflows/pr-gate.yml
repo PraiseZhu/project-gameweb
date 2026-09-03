@@ -44,6 +44,42 @@ jobs:
           node .github/scripts/nightly-health.mjs > health.log 2>&1
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
+      - name: Keep health.log visible on failure
+        if: always()
+        continue-on-error: true
+        run: |
+          if [ ! -f health.log ]; then
+            echo "health.log missing"
+            exit 0
+          fi
+          echo "## health.log" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          from pathlib import Path
+          text = Path("health.log").read_text(encoding="utf-8", errors="replace")
+          keep = []
+          for line in text.splitlines():
+              if any(token in line for token in (
+                  "今晚红", "夜间健康检查失败", "TAP 失败", "npm test:", "漏了包内",
+                  "排除项不合法", "包外路径", "not ok", "挂的用例",
+              )) or line.startswith("- [") or line.startswith("- skills/") or line.startswith("- standards/"):
+                  keep.append(line)
+          if not keep:
+              keep = text.splitlines()[-80:]
+          print("\n".join(keep[:200]))
+          PY
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload health.log
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-gate-health-log
+          path: health.log
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Write PR summary
         id: summary
         if: always()

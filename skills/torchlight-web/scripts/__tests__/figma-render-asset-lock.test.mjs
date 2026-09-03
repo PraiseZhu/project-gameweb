@@ -10,7 +10,7 @@ test('asset locking is based on ownerPath when DOM parent stack is incomplete', 
   assert.match(renderer, /const bakedOwnerChain = \[\]/);
   assert.match(renderer, /ancestorIds still\s+names those passed-through parents/);
   assert.match(renderer, /for \(const id of ancestorIds\.map\(\(raw\) => String\(__u\(raw\)\)\)\.reverse\(\)\) pushBakedOwner\(id\)/);
-  assert.match(renderer, /const bakedOwnerId = bakedOwnerChain\.find\(\(id\) => !!this\._assetRec\(id\)\)/);
+  assert.match(renderer, /const bakedOwnerId = bakedOwnerChain\.find\(\(id\) => !!this\._assetRec\(id, __base\)\)/);
   assert.match(renderer, /parent && parent\.assetLock \|\| \(bakedOwnerId && !bakedOwnerReleased\)/);
 });
 
@@ -47,8 +47,9 @@ test('live nested hscroll releases an ancestor designer-export bake instead of s
      any ancestor with an asset record under a live data-hscroll host, never a
      product node id. */
   assert.match(renderer, /liveHscrollBakeRelease/);
+  assert.match(renderer, /forEachBakedAncestor/);
   assert.match(renderer, /data-asset-lock-released', 'live-hscroll-descendant'/);
-  assert.match(renderer, /const bakeReleasedForLiveHscroll = liveHscrollBakeRelease\.has\(String\(__u\(nid\)\)\)/);
+  assert.match(renderer, /const bakeReleasedForLiveHscroll = liveHscrollBakeRelease\.has\(nidKey\)/);
   assert.match(renderer, /assetRec && !bakeReleasedForLiveHscroll/);
   assert.match(renderer, /ancestorPfx === 'mix' \|\| ancestorPfx === 'scroll' \|\| ancestorClips/);
   assert.doesNotMatch(renderer, /__calendarOwnerAssetLock/);
@@ -297,20 +298,46 @@ test('hscroll gutter expands host box and survives the generic box.h height over
 });
 
 test('fx-img follows the owner box instead of intrinsic pixels', () => {
-  /* 有 exportBox/sliceExport：按导出框像素摆。简中无导出框：按 owner box 像素，禁止 100%+fill。 */
+  /* 有 exportBox/sliceExport：按导出框像素摆。缩小导出的 PNG 必须 fill 铺满
+     设计框，禁止 object-fit:none 把 intrinsic 像素钉死。简中无导出框：按
+     owner box 像素，禁止 100%+fill。 */
   assert.match(renderer, /img\.style\.position = 'absolute'/);
   assert.match(renderer, /const placedBox = exportBox \|\| sliceBox/);
   assert.match(renderer, /owner-box-zh-cn/);
-  assert.match(renderer, /img\.style\.objectFit = 'none'/);
+  assert.match(renderer, /Downscaled Figma PNG/);
+  assert.match(renderer, /img\.style\.objectFit = 'fill'/);
   assert.match(renderer, /el\.style\.overflow = 'hidden'/);
   assert.match(renderer, /el\.style\.position = 'relative'/);
 });
 
-test('render-bound slice prefers sliceExport.box over owner pageBox', () => {
-  assert.match(renderer, /if \(this\._geomReady\(extraBox\)\) return extraBox/);
-  assert.match(renderer, /n\.inkBox \|\| \(n\.sliceExport && n\.sliceExport\.box\) \|\| null/);
+test('sticky overlay host uses overlay root height, not descendant pageBoxes', () => {
+  assert.match(renderer, /Only read the overlay root itself/);
+  assert.match(renderer, /Array\.isArray\(__activeTruth\.fixedOverlays\.nodes\)/);
+  assert.doesNotMatch(renderer, /asArr\(__activeTruth\.fixedOverlays\.nodes\)\.map\(\(node\) => \{/);
+});
+
+test('legal lang-axis instances still paint under a baked ancestor', () => {
+  assert.match(renderer, /imgLangRelease/);
+  assert.match(renderer, /!imgLangRelease\) continue/);
+  assert.match(renderer, /liveImgLangBakeRelease/);
+  assert.match(renderer, /data-asset-lock-released', 'live-img-lang-descendant'/);
+  assert.match(renderer, /if \(ancestorPfx === 'img' \|\| ancestorPfx === 'bg' \|\| ancestorPfx === 'kv'\) return/);
+});
+
+test('render-bound slice prefers unclipped ink over owner-sized sliceExport.box', () => {
+  assert.match(renderer, /Unclipped Figma ink \(LAYER_BLUR \/ overflow\) is the PNG canvas/);
+  assert.match(renderer, /n\.inkBox \|\| null/);
+  assert.match(renderer, /\(n\.sliceExport && n\.sliceExport\.box\) \|\| null/);
   assert.doesNotMatch(renderer, /if \(ownerReady\) return ownerBox/);
   assert.match(renderer, /Owner layout box stays the clip/);
+  assert.match(renderer, /_pngMatchesBox\(assetRec, ownerBox\)/);
+  assert.match(renderer, /already matches the owner\/sliceExport box must not be stretched/);
+  assert.match(renderer, /owner-png-matches-clip/);
+});
+
+test('zh-CN hugging CENTER text stays on the Figma leaf box', () => {
+  assert.match(renderer, /data-text-hug-policy', 'zh-cn-source-box'/);
+  assert.match(renderer, /Keep the Figma leaf box\. CENTER\/RIGHT are already in pageBox/);
 });
 
 test('zh-CN static images must not stretch with object-fit fill', () => {

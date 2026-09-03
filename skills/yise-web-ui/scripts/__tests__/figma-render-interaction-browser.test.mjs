@@ -46,7 +46,8 @@ function browserTest(name, fn) {
     }
   });
 }
-async function render(page, payload) { await page.evaluate(({ truth, payload }) => window.__figmaRender.renderApp({ truth, rawTruth: truth, prefs: { plat: 'pc', lang: 'zh-CN' }, state: 'default', frame: document.querySelector('.frame'), viewport: { w: 400, h: 300, dpr: 1 }, interactionPayload: payload }), { truth: truth(), payload }); }
+async function render(page, payload) { await page.evaluate(({ truth, payload }) => window.__figmaRender.renderApp({
+      enablePageInteraction: true, truth, rawTruth: truth, prefs: { plat: 'pc', lang: 'zh-CN' }, state: 'default', frame: document.querySelector('.frame'), viewport: { w: 400, h: 300, dpr: 1 }, interactionPayload: payload }), { truth: truth(), payload }); }
 const state = (page) => page.evaluate(() => Object.fromEntries(['switch', 'page-a', 'page-b', 'tab-a', 'tab-b', 'ind-a', 'ind-b'].map((id) => { const el = document.querySelector('[data-node="' + id + '"]'); return [id, { hidden: !!el.hidden, selected: el.getAttribute('aria-selected'), index: el.getAttribute('data-switch-index') }]; })));
 const click = (page, id) => page.evaluate((id) => document.querySelector('[data-node="' + id + '"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })), id);
 browserTest('browser direct-child source state, tabs, indicators, prev and next', async () => { const { browser, page } = await setup(); try { await render(page, buildRendererInteractionPayload(model())); let s = await state(page); assert.equal(s['page-a'].hidden, true); assert.equal(s['page-b'].hidden, false); assert.equal(s['tab-b'].selected, 'true'); await click(page, 'tab-a'); s = await state(page); assert.equal(s['page-a'].hidden, false); await click(page, 'next'); s = await state(page); assert.equal(s['page-b'].hidden, false); await click(page, 'prev'); s = await state(page); assert.equal(s['page-a'].hidden, false); await click(page, 'ind-b'); s = await state(page); assert.equal(s['ind-b'].selected, 'true'); } finally { await browser.close(); } });
@@ -86,6 +87,7 @@ browserTest('browser same-name unauthorized opener stays inert', async () => {
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -166,6 +168,7 @@ browserTest('browser unplatformed modal stays inert on pc', async () => {
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -212,6 +215,7 @@ browserTest('browser canvas-offset modal mounts from pageBox, not canvas box', a
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -286,6 +290,7 @@ browserTest('browser render-bound slice keeps spill PNG larger than owner pageBo
     await page.evaluate((truth) => {
       window.__figmaRender.__assetCache = null;
       window.__figmaRender.renderApp({
+      enablePageInteraction: true,
         truth,
         rawTruth: truth,
         prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -353,6 +358,7 @@ browserTest('browser calendar today/return swaps on hscroll and restores on clic
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -504,6 +510,7 @@ browserTest('browser mobile dropmenu opens, replaces dyn region code, then close
       textNode('dyn-page-txt', 'dyn-page', '+886', 16, 16, 80, 24),
     ]);
     await page.evaluate((payload) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth: payload,
       rawTruth: payload,
       prefs: { plat: 'mobile', lang: 'zh-CN' },
@@ -576,6 +583,7 @@ browserTest('browser mobile dropmenu language click uses visible copy and record
     await page.evaluate((payload) => {
       const prefs = { plat: 'mobile', lang: 'zh-TW' };
       const ctx = {
+        enablePageInteraction: true,
         truth: payload,
         rawTruth: payload,
         prefs,
@@ -636,6 +644,7 @@ browserTest('browser mobile dropmenu visible region copy beats a language button
       const prefs = { plat: 'mobile', lang: 'zh-CN' };
       window.__dropmenuPrefs = prefs;
       window.__figmaRender.renderApp({
+      enablePageInteraction: true,
         truth: payload,
         rawTruth: payload,
         prefs,
@@ -680,6 +689,7 @@ browserTest('browser mobile dropmenu option without dyn still closes and marks m
       dropmenuInstance('plain', 'dropmenu/选项', 'plain-off', graph),
     ]);
     await page.evaluate((payload) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth: payload,
       rawTruth: payload,
       prefs: { plat: 'mobile', lang: 'zh-CN' },

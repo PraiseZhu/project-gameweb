@@ -688,19 +688,83 @@
   },
 
   /* Owner-slice geometry used by the main img paint path and by img/ lang remount.
-     Prefer a delivered page-relative sliceExport.box / unclipped inkBox; otherwise
-     a converted render/export canvas. Owner layout box stays the clip. */
+     Prefer a delivered page-relative sliceExport.box; unclipped inkBox only when
+     it is the same canvas the gate measures. Otherwise a converted render/export
+     canvas. Owner layout box stays the clip. */
   _geomReady(box) {
     return !!(box
       && [box.x, box.y, box.w, box.h].every((v) => Number.isFinite(Number(v)))
       && Number(box.w) > 0 && Number(box.h) > 0);
   },
-  _ownerSliceBox(assetRec, ownerBox, renderBox, extraBox = null) {
-    if (this._geomReady(extraBox)) return extraBox;
+  _sameGeom(a, b, slop = 0.5) {
+    if (!this._geomReady(a) || !this._geomReady(b)) return false;
+    return Math.abs(Number(a.x) - Number(b.x)) <= slop
+      && Math.abs(Number(a.y) - Number(b.y)) <= slop
+      && Math.abs(Number(a.w) - Number(b.w)) <= slop
+      && Math.abs(Number(a.h) - Number(b.h)) <= slop;
+  },
+  _pixelSizeOf(assetRec) {
+    const raw = String(assetRec && assetRec.pixelSize || '');
+    const match = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/i.exec(raw);
+    if (!match) return null;
+    const w = Number(match[1]);
+    const h = Number(match[2]);
+    if (!(w > 0 && h > 0)) return null;
+    return { w, h };
+  },
+  _pngMatchesBox(assetRec, box) {
+    const px = this._pixelSizeOf(assetRec);
+    if (!px || !this._geomReady(box)) return false;
+    const bw = Number(box.w);
+    const bh = Number(box.h);
+    if (Math.abs(px.w - bw) <= 1.5 && Math.abs(px.h - bh) <= 1.5) return true;
+    /* Downscaled Figma PNG (PC bg 6138×4101 from 11787×7875) still belongs
+       to that design box when both axes share one scale. */
+    const sx = px.w / bw;
+    const sy = px.h / bh;
+    return sx > 0.05 && sy > 0.05 && Math.abs(sx - sy) <= 0.02;
+  },
+  _ownerSliceBox(assetRec, ownerBox, renderBox, extraBox = null, sliceExportBox = null) {
+    /* Delivered PNG pixels are the paint canvas. A clamped/cropped file that
+       already matches the owner/sliceExport box must not be stretched into a
+       larger inkBox — that shifts logo art (mobile img/标题slg 364×173 PNG
+       into a 431×198 ink frame). */
+    if (this._pngMatchesBox(assetRec, ownerBox)) return ownerBox;
+    if (this._pngMatchesBox(assetRec, sliceExportBox)) return sliceExportBox;
+    /* Unclipped Figma ink (LAYER_BLUR / overflow) is the PNG canvas. Prefer
+       that over a page-relative sliceExport.box that only names the owner
+       clip — otherwise object-fit:none shows the blur fringe as a tiny bg. */
+    if (this._geomReady(extraBox)
+      && this._pngMatchesBox(assetRec, extraBox)
+      && (!this._geomReady(sliceExportBox) || !this._sameGeom(extraBox, sliceExportBox))) {
+      return extraBox;
+    }
     const delivered = assetRec && assetRec.exportBox;
-    if (this._geomReady(delivered)) return delivered;
+    if (this._geomReady(delivered)
+      && this._pngMatchesBox(assetRec, delivered)
+      && (!this._geomReady(sliceExportBox) || !this._sameGeom(delivered, sliceExportBox))) {
+      return delivered;
+    }
+    if (this._geomReady(extraBox)
+      && (!this._geomReady(sliceExportBox) || !this._sameGeom(extraBox, sliceExportBox))
+      && !this._pixelSizeOf(assetRec)) {
+      return extraBox;
+    }
+    if (this._geomReady(delivered)
+      && (!this._geomReady(sliceExportBox) || !this._sameGeom(delivered, sliceExportBox))
+      && !this._pixelSizeOf(assetRec)) {
+      return delivered;
+    }
+    if (this._geomReady(sliceExportBox)
+      && this._geomReady(ownerBox)
+      && !this._sameGeom(sliceExportBox, ownerBox)) {
+      return sliceExportBox;
+    }
     const renderBound = String(assetRec?.sliceExport?.bounds || assetRec?.exportBounds || '').toLowerCase() === 'render';
-    if (renderBound && this._geomReady(renderBox)) return renderBox;
+    if (renderBound && this._geomReady(renderBox)
+      && (!this._geomReady(ownerBox) || !this._sameGeom(renderBox, ownerBox))) {
+      return renderBox;
+    }
     if (this._geomReady(renderBox) && this._geomReady(ownerBox)
       && (Number(renderBox.w) > Number(ownerBox.w) + 0.5
         || Number(renderBox.h) > Number(ownerBox.h) + 0.5
@@ -708,6 +772,7 @@
         || Number(renderBox.y) < Number(ownerBox.y) - 0.5)) {
       return renderBox;
     }
+    if (this._geomReady(sliceExportBox)) return sliceExportBox;
     return this._geomReady(ownerBox) ? ownerBox : null;
   },
   _mountOwnerSliceImg(el, url, ownerBox, exportBox, { alt = '', eager = false, sliceBox = null } = {}) {
@@ -725,34 +790,54 @@
     const placeExportBox = (placed, policy) => {
       const ownerX = Number(box.x ?? 0);
       const ownerY = Number(box.y ?? 0);
-      const exportX = Number(placed.x ?? ownerX);
-      const exportY = Number(placed.y ?? ownerY);
-      const exportW = Number(placed.w ?? box.w ?? 0);
-      const exportH = Number(placed.h ?? box.h ?? 0);
+      let exportX = Number(placed.x ?? ownerX);
+      let exportY = Number(placed.y ?? ownerY);
+      let exportW = Number(placed.w ?? box.w ?? 0);
+      let exportH = Number(placed.h ?? box.h ?? 0);
+      const natW = Number(img.naturalWidth || 0);
+      const natH = Number(img.naturalHeight || 0);
+      /* Delivered PNG already matching the owner clip must sit in the owner
+         box. Stretching a 364×173 crop into a 431×198 inkBox shifts logos. */
+      if (natW > 0 && natH > 0 && Number(box.w) > 0 && Number(box.h) > 0
+        && Math.abs(natW - Number(box.w)) <= 1.5 && Math.abs(natH - Number(box.h)) <= 1.5
+        && (Math.abs(exportW - Number(box.w)) > 1.5 || Math.abs(exportH - Number(box.h)) > 1.5)) {
+        exportX = ownerX;
+        exportY = ownerY;
+        exportW = Number(box.w);
+        exportH = Number(box.h);
+        policy = 'owner-png-matches-clip';
+      }
       img.style.left = (exportX - ownerX) + 'px';
       img.style.top = (exportY - ownerY) + 'px';
       img.style.width = exportW + 'px';
       img.style.height = exportH + 'px';
-      img.style.objectFit = 'none';
+      /* Downscaled Figma PNG (pixelSize < designSize) must still cover the
+         design exportBox. object-fit:none keeps intrinsic pixels and leaves
+         a hole in the owner clip — later sections then leak the hero KV. */
+      img.style.objectFit = 'fill';
       el.setAttribute('data-asset-bounds-resolved', policy);
     };
-    if (placedBox) {
-      placeExportBox(placedBox, exportBox ? 'owner-ink-from-unclipped-png' : 'slice-export');
-    } else if (zhStatic) {
-      img.style.top = '0';
-      img.style.left = '0';
-      img.style.width = (box.w ?? 0) + 'px';
-      img.style.height = (box.h ?? 0) + 'px';
-      img.style.objectFit = 'none';
-      el.setAttribute('data-asset-bounds-resolved', 'owner-box-zh-cn');
-    } else {
-      img.style.top = '0';
-      img.style.left = '0';
-      img.style.width = '100%';
-      img.style.height = '100%';
-      img.style.objectFit = 'fill';
-      el.setAttribute('data-asset-bounds-resolved', 'owner-fill-non-zh');
-    }
+    const applyPlacement = () => {
+      if (placedBox) {
+        placeExportBox(placedBox, exportBox ? 'owner-ink-from-unclipped-png' : 'slice-export');
+      } else if (zhStatic) {
+        img.style.top = '0';
+        img.style.left = '0';
+        img.style.width = (box.w ?? 0) + 'px';
+        img.style.height = (box.h ?? 0) + 'px';
+        img.style.objectFit = 'none';
+        el.setAttribute('data-asset-bounds-resolved', 'owner-box-zh-cn');
+      } else {
+        img.style.top = '0';
+        img.style.left = '0';
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'fill';
+        el.setAttribute('data-asset-bounds-resolved', 'owner-fill-non-zh');
+      }
+    };
+    img.addEventListener('load', applyPlacement);
+    applyPlacement();
     img.setAttribute('data-asset-src', url);
     img.setAttribute('data-asset-state', eager ? 'eager' : 'deferred');
     if (eager) img.setAttribute('src', url);
@@ -779,10 +864,7 @@
     if (lang === 'zh-CN') return null;
     const src = Number(sourceFontSize);
     if (!Number.isFinite(src) || src <= 0) return null;
-    const policy = (typeof window !== 'undefined' && window.__designPolicy) || null;
-    if (!policy || typeof policy !== 'object') {
-      throw new Error('figma-render: missing window.__designPolicy');
-    }
+    const policy = designPolicy();
     const tierRules = policy.tierRules || {};
     const bodyMax = Number(tierRules.bodyMaxWeightExclusive);
     const cardMin = Number(tierRules.cardTitleMinSourcePxExclusive);
@@ -852,9 +934,6 @@
     return null;
   },
   _isLegalImgLangSet(set) {
-    const name = String((set && set.name) || '');
-    const pfx = ((/^([A-Za-z]+)\s*[\/／]/.exec(name) || [])[1] || '').toLowerCase();
-    if (pfx !== 'img') return false;
     const axis = this._imgLangAxisOfSet(set);
     if (!axis) return false;
     const allowed = new Set(axis.options.filter((value) => value === 'cn' || value === 'tw' || value === 'en' || value === 'jp' || value === 'kr'));
@@ -894,10 +973,7 @@
      frame may shrink translated copy to fit its maximum owner/content range;
      open-flow / unbounded HEIGHT text keeps source metrics and grows instead. */
   _fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null, hugNoShrink, openFlowNoShrink, autoLayoutMax = null } = {}) {
-    const policy = (typeof window !== 'undefined' && window.__designPolicy) || null;
-    if (!policy || typeof policy !== 'object') {
-      throw new Error('figma-render: missing window.__designPolicy');
-    }
+    const policy = designPolicy();
     const hugOff = hugNoShrink == null ? policy.hugNoShrink === true : hugNoShrink === true;
     const openOff = openFlowNoShrink == null ? policy.openFlowNoShrink === true : openFlowNoShrink === true;
     const truncating = String(autoResize || 'FIXED').toUpperCase() === 'TRUNCATE' || truncation === 'ENDING';
@@ -908,7 +984,6 @@
     if (explicitFit) return { authorized: true, reason: 'explicit-fit-grant' };
     if (truncating) return { authorized: true, reason: 'truncation' };
     if (clipsContent === true || isMask === true) return { authorized: true, reason: 'clip-or-mask' };
-    // mirrored from scripts/lib/figma-typography.mjs#fitAuthorization; flags from DESIGN.md YAML
     if (hugOff && String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
     void boundedOwner;
     return { authorized: false, reason: 'preserve-source-metrics' };
@@ -959,6 +1034,14 @@
     return false;
   },
 
+  /* 超框自动缩字号（2026-08-04 欣仪需求，lead 定的档）：
+     定宽折行文字换语言后实测超出稿框高度 → 按档缩：100% → 92% → 85% → 78% → 75%（下限）。
+     到下限仍溢出 → 停在下限、打 data-fit-overflow 标红交人裁决，**不再缩也不回弹**。
+     按档不连续缩：连续缩会让每种语言字号都不同，开发实现不出来，
+     也没法写成交付给开发的适配规则。字距不缩（同理），后备方案记在 knownGaps。
+     行高与字号同比例缩 —— 只缩字号不缩行高，三行变两行之前高度一点省不出来。
+     判定全部靠运行时实测（scrollHeight），Node 冒烟桩没有布局测不了 → 直接跳过，
+     机制由冒烟里的模拟探针验证（不许在无布局环境装样子）。 */
   _fitText(el, tx, box, opts = {}) {
     /* An approved semantic line layout is content truth. It must retain the
        shared locale base size and its authored line count, never be squeezed
@@ -971,10 +1054,7 @@
     const fs = (Number.isFinite(_lbFs) && _lbFs > 0) ? _lbFs : (tx && tx.fontSize);
     const lh = (Number.isFinite(_lbLh) && _lbLh > 0) ? _lbLh : (tx && tx.lineHeight);
     if (typeof fs !== 'number' || typeof lh !== 'number' || !lh) return;
-    const policy = (typeof window !== 'undefined' && window.__designPolicy) || null;
-    if (!policy || typeof policy !== 'object') {
-      throw new Error('figma-render: missing window.__designPolicy');
-    }
+    const policy = designPolicy();
     const cap = (n) => { const v = Number(n); return Number.isFinite(v) && v > 0 ? v : null; };
     /* DESIGN.md 6.1 C: widthFit may only tighten a written maxWidth.
        A parent box width is not a cap. Missing axis is not borrowed. */
@@ -1571,9 +1651,14 @@
     const motionAdapter = ctx.motionAdapter || ctx.motion || null;
     const __rawRoot = (ctx.rawTruth && ctx.rawTruth.platforms && ctx.rawTruth.platforms[__base])
       || ctx.rawTruth || {};
+    /* Main static paints the page. Clicks stay inert until Interaction
+       explicitly opts in (`ctx.enablePageInteraction === true`). */
+    const enablePageInteraction = ctx.enablePageInteraction === true;
+    frame.setAttribute('data-page-interaction', enablePageInteraction ? 'live' : 'inert');
     /* Programmatic hover/press is Interaction Skill owned. It is not a Figma
        variant and must not replace source-backed highlight COMPONENT_SET trees. */
     (function installButtonPressFeel() {
+      if (!enablePageInteraction) return;
       const doc = frame && (frame.ownerDocument || (typeof document !== 'undefined' ? document : null));
       if (!doc || !doc.head || doc.querySelector('style[data-fx-button-press]')) return;
       const payload = ctx.interactionPayload || ctx.renderInteractionPayload
@@ -2000,7 +2085,19 @@
         fixedStage.style.left = '0';
         fixedStage.style.top = '0';
         fixedStage.style.width = designWidth + 'px';
-        fixedStage.style.height = '0';
+        /* Sticky needs a real height or the bar cannot pin. Use the first
+           overlay's Figma height; overflow stays visible for hanging art.
+           Only read the overlay root itself — asArr() on a truth object
+           would also pick descendant pageBoxes (hero 2143) and stretch
+           the sticky host to a full first-screen. */
+        const overlayRoots = Array.isArray(__activeTruth.fixedOverlays.nodes)
+          ? __activeTruth.fixedOverlays.nodes
+          : [];
+        const overlayHeights = overlayRoots.map((node) => {
+          const box = node && (node.pageBox || node.box);
+          return Number(box && (box.h ?? box.height));
+        }).filter((h) => Number.isFinite(h) && h > 0);
+        fixedStage.style.height = (overlayHeights[0] || 1) + 'px';
         fixedStage.style.overflow = 'visible';
         fixedStage.style.pointerEvents = 'none';
         fixedStage.style.zIndex = '20';
@@ -3174,6 +3271,7 @@
           that covers the host; a random img/ ancestor stays baked. Named by
           structure, not by a product node id. */
        const liveHscrollBakeRelease = new Set();
+       const liveImgLangBakeRelease = new Set();
        const paintNodeById = (id) => {
          if (!id) return null;
          if (truthNodeById.has(id)) return truthNodeById.get(id);
@@ -3182,29 +3280,33 @@
          }
          return null;
        };
+       const forEachBakedAncestor = (item, visit) => {
+         const seen = new Set([String(__u(item && item.id) || '')]);
+         const climb = [];
+         if (Array.isArray(item.ownerPath)) climb.push(...item.ownerPath);
+         if (Array.isArray(item.ancestorIds)) climb.push(...item.ancestorIds);
+         climb.push(item.parentId);
+         for (const rawId of climb) {
+           const ancestorId = String(__u(rawId) || '');
+           if (!ancestorId || seen.has(ancestorId)) continue;
+           seen.add(ancestorId);
+           if (!this._assetRec(ancestorId, __base)) continue;
+           const ancestor = paintNodeById(ancestorId);
+           const ancestorName = String(__u(ancestor && ancestor.name) || '');
+           const ancestorPfx = ((/^([a-z]+)\//.exec(ancestorName) || [])[1] || '');
+           visit({ ancestorId, ancestor, ancestorPfx, ancestorClips: ancestor && ancestor.clipsContent === true });
+         }
+       };
        if (!suppressInteractions) {
          for (const item of (rawList || list)) {
            const itemId = String(__u(item && item.id) || '');
            const hostAttrs = interactionAttrs.get(itemId);
            if (!itemId || !hostAttrs || hostAttrs['data-hscroll'] == null) continue;
-           const seen = new Set([itemId]);
-           const climb = [];
-           if (Array.isArray(item.ownerPath)) climb.push(...item.ownerPath);
-           if (Array.isArray(item.ancestorIds)) climb.push(...item.ancestorIds);
-           climb.push(item.parentId);
-           for (const rawId of climb) {
-             const ancestorId = String(__u(rawId) || '');
-             if (!ancestorId || seen.has(ancestorId)) continue;
-             seen.add(ancestorId);
-             if (!this._assetRec(ancestorId, __base)) continue;
-             const ancestor = paintNodeById(ancestorId);
-             const ancestorName = String(__u(ancestor && ancestor.name) || '');
-             const ancestorPfx = ((/^([a-z]+)\//.exec(ancestorName) || [])[1] || '');
-             const ancestorClips = ancestor && ancestor.clipsContent === true;
+           forEachBakedAncestor(item, ({ ancestorId, ancestorPfx, ancestorClips }) => {
              if (ancestorPfx === 'mix' || ancestorPfx === 'scroll' || ancestorClips) {
                liveHscrollBakeRelease.add(ancestorId);
              }
-           }
+           });
          }
        }
        const componentVariantOwners = [];
@@ -3251,6 +3353,19 @@
              sliceExport: variant.sliceExport || null,
            });
          }
+       }
+       /* Designer-export ancestors (unnamed slg / 标题 frames) bake the
+          Figma-selected cn slogan. Legal img/+lang instances still paint on
+          top. Drop only that ancestor bake so the live language art is the
+          only slogan; sibling slices (play/time/subtitle) keep their own
+          files. Named by structure, not by a product node id. */
+       for (const item of (rawList || list)) {
+         const componentId = String(__u(item && item.componentId) || '');
+         if (!componentId || !imgLangSetsByMemberId.has(componentId)) continue;
+         forEachBakedAncestor(item, ({ ancestorId, ancestorPfx }) => {
+           if (ancestorPfx === 'img' || ancestorPfx === 'bg' || ancestorPfx === 'kv') return;
+           liveImgLangBakeRelease.add(ancestorId);
+         });
        }
        const componentInstanceOwners = [];
        const independentButtonOwners = [];
@@ -3344,6 +3459,7 @@
           || evidenceAttrs['data-btn-variant'] === 'true'
           || evidenceAttrs['data-dropmenu'] === 'true'
         );
+        const liveCloseBtn = /^(?:btn|img)\s*[\/／]\s*关闭按钮(?:@|$)/i.test(String(n.name || '').trim());
         /* The rendered-parent stack is only a convenience for DOM nesting.  It
            can be incomplete when a pure Figma container is passed through or a
            flattened list loses one locator level.  Asset locking is a truth
@@ -3367,7 +3483,7 @@
         for (const id of ownerPath.slice(0, -1).map((raw) => String(__u(raw))).reverse()) pushBakedOwner(id);
         const ancestorIds = Array.isArray(n.ancestorIds) ? n.ancestorIds : [];
         for (const id of ancestorIds.map((raw) => String(__u(raw))).reverse()) pushBakedOwner(id);
-        const bakedOwnerId = bakedOwnerChain.find((id) => !!this._assetRec(id));
+        const bakedOwnerId = bakedOwnerChain.find((id) => !!this._assetRec(id, __base));
         /* Non-default blend layers (SOFT_LIGHT/OVERLAY/…) punched through by the
            extractor: a baked export rasterizes them on a transparent canvas, so the
            blend loses its page backdrop and flattens to a near-white fill (06 barcode
@@ -3384,12 +3500,20 @@
            already flattened at export, which is the documented approximation). */
         const __blendHasSolidBase = (st.fills || []).some((fl) => fl && fl.visible !== false && fl.type === 'SOLID');
         const __blendLiftable = __blendLift && __blendHasSolidBase;
-        const bakedOwnerReleased = !!(bakedOwnerId && liveHscrollBakeRelease.has(String(bakedOwnerId)));
+        const nidKey = String(__u(nid));
+        const bakeReleasedForLiveHscroll = liveHscrollBakeRelease.has(nidKey)
+          || liveImgLangBakeRelease.has(nidKey);
+        const bakedOwnerReleased = !!(bakedOwnerId && (
+          liveHscrollBakeRelease.has(String(bakedOwnerId))
+          || liveImgLangBakeRelease.has(String(bakedOwnerId))
+        ));
         const underHscrollSurface = !!(parent && parent.hscrollSurface)
           || evidenceAttrs?.['data-hscroll-overflow-child'] === 'true'
           || (parent && parent.el && parent.el.closest && parent.el.closest('[data-hscroll-surface="true"]'));
+        const componentIdEarly = String(__u(n.componentId) || '');
+        const imgLangRelease = !!(componentIdEarly && imgLangSetsByMemberId.has(componentIdEarly));
         if ((parent && parent.assetLock || (bakedOwnerId && !bakedOwnerReleased))
-          && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable) continue;
+          && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable && !imgLangRelease) continue;
         /* Direct-owner fallback for text constraint. The locator-stack parent is
            often the SECTION layer for a deeply nested text leaf; it must not win
            over a tighter truth owner. Accept a rendered direct parent only when
@@ -3443,7 +3567,6 @@
         const SLICE = { img: 1, bg: 1, kv: 1 };
         const needsAsset = !isText && (SLICE[pfx] || kind === 'gradient' || kind === 'image');
         const assetRec = this._assetRecForNode(n, __base);
-        const bakeReleasedForLiveHscroll = liveHscrollBakeRelease.has(String(__u(nid)));
         /* `ind/进度条` is a source component set whose two *component roots*
            intentionally have no page-level slice.  The ready truth does retain
            their exact component ids; the selected child has an IMAGE fill, but
@@ -3463,7 +3586,7 @@
            or a genuinely CSS-rebuildable blend layer may remain above baked pixels;
            every other baked-subtree paint node is skipped to avoid double-draw. */
         const __inBakedSubtree = !!(bakedOwnerId) && !assetRec;
-        if (__inBakedSubtree && !bakedOwnerReleased && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable) continue;
+        if (__inBakedSubtree && !bakedOwnerReleased && !hasStructuralInteraction && !liveCloseBtn && !underHscrollSurface && !__blendLiftable) continue;
         const assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
           : (__indComponentFallback && __indComponentFallback.file);
@@ -3488,7 +3611,8 @@
           el.setAttribute('data-node-name', layerName);
         }
         if (pfx) el.setAttribute('data-prefix', pfx);
-        if (bakeReleasedForLiveHscroll) el.setAttribute('data-asset-lock-released', 'live-hscroll-descendant');
+        if (liveHscrollBakeRelease.has(nidKey)) el.setAttribute('data-asset-lock-released', 'live-hscroll-descendant');
+        if (liveImgLangBakeRelease.has(nidKey)) el.setAttribute('data-asset-lock-released', 'live-img-lang-descendant');
         if (pfx === 'btn') {
           const btnLabel = String(n.name || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
           if (btnLabel) el.setAttribute('data-btn-name', btnLabel);
@@ -3624,7 +3748,8 @@
           assetRec,
           box,
           renderBox,
-          n.inkBox || (n.sliceExport && n.sliceExport.box) || null,
+          n.inkBox || null,
+          (n.sliceExport && n.sliceExport.box) || null,
         );
         /* 消费 truth 的 auto-layout（layoutMode HORIZONTAL/VERTICAL）。这些 frame
            的子节点在 truth 里被穿透成顶层 sibling（children=[]，靠 ownerPath 关联），
@@ -3657,6 +3782,9 @@
           const sourceParticipatesInFlow = parentAutoLayoutMode === 'HORIZONTAL'
             || (Number.isFinite(mainAxisOffset) && mainAxisOffset <= 0.5
               && (mainAxisOffset >= -0.5 || childLayoutGrow > 0 || childLayoutSizing === 'FILL'));
+          /* A TEXT/art overlay inside a row frame has no layoutAlign. If the
+             unknown row is skipped as a paint parent, that overlay must not
+             inherit the ancestor mix/ VERTICAL flow and slide off its source x. */
           const participatesInAutoLayout = inAutoLayout && childLayoutAlign === 'INHERIT' && sourceParticipatesInFlow;
           if (participatesInAutoLayout) {
           const pel = parent.el;
@@ -4328,11 +4456,25 @@
              Preserve the source box as a minimum anchor while allowing the
              rendered leaf to expand; WIDTH_AND_HEIGHT also hugs vertically. */
           if (inlineHugs && box.w != null) {
-            el.style.width = 'max-content';
-            el.style.minWidth = box.w + 'px';
-            if (ar === 'WIDTH_AND_HEIGHT' && box.h != null) {
-              el.style.height = 'auto';
-              el.style.minHeight = box.h + 'px';
+            const zhSourceExact = String(ctx.prefs && ctx.prefs.lang || '') === 'zh-CN';
+            /* zh-CN static gate measures the leaf against pageBox. Growing a
+               hugging CENTER label with max-content then translateX(-50%)
+               moves the left edge even when the Figma box is unchanged. */
+            if (zhSourceExact) {
+              el.style.width = box.w + 'px';
+              el.style.minWidth = box.w + 'px';
+              if (ar === 'WIDTH_AND_HEIGHT' && box.h != null) {
+                el.style.height = box.h + 'px';
+                el.style.minHeight = box.h + 'px';
+              }
+              el.setAttribute('data-text-hug-policy', 'zh-cn-source-box');
+            } else {
+              el.style.width = 'max-content';
+              el.style.minWidth = box.w + 'px';
+              if (ar === 'WIDTH_AND_HEIGHT' && box.h != null) {
+                el.style.height = 'auto';
+                el.style.minHeight = box.h + 'px';
+              }
             }
           }
           if (sourceWidthHugText && box.w != null) {
@@ -4457,7 +4599,10 @@
              left 抵消，标签/标题装饰又错位。只对非 auto-layout 的 hugging 文本保留。 */
           if (inlineHugs && !grad && box.w != null && tx.align && !inAutoLayout) {
             const align = String(tx.align).toUpperCase();
-            if (align === 'CENTER') {
+            const zhSourceExact = String(ctx.prefs && ctx.prefs.lang || '') === 'zh-CN';
+            if (zhSourceExact) {
+              /* Keep the Figma leaf box. CENTER/RIGHT are already in pageBox. */
+            } else if (align === 'CENTER') {
               el.style.left = (((box.x ?? 0) - originX) + (box.w ?? 0) / 2) + 'px';
               tf.push('translateX(-50%)');
             } else if (align === 'RIGHT') {
@@ -4712,6 +4857,7 @@
             isMask: n.isMask === true,
             explicitFit: tx.fit === true || n.fit === true,
             openFlow: constraint.openFlow === true,
+            boundedOwner: constraint.openFlow !== true && constraint.ownerWidth != null,
             layoutSizingVertical: sourceWidthHugText
               ? 'HUG'
               : __u(n.layout && n.layout.layoutSizingVertical),
@@ -5365,8 +5511,8 @@
             langAsset,
             rootBox,
             (root && root.renderBox) || langAsset.renderBox,
-            (root && root.inkBox)
-              || (root && root.sliceExport && root.sliceExport.box)
+            (root && root.inkBox) || null,
+            (root && root.sliceExport && root.sliceExport.box)
               || langAsset.sliceExport?.box
               || null,
           );
@@ -5564,7 +5710,9 @@
           paint(treeNodes, treeNodes, layer, {
             originX: Number(rootBox.x) || 0,
             originY: Number(rootBox.y) || 0,
-            skipNodeIds: new Set([String(__u(root.id))]),
+            /* Keep the COMPONENT root: Property 1=on carries the panel
+               Rectangle fill. Skipping it left only option TEXT. */
+            skipNodeIds: new Set(),
             /* Language menus need live option labels. Region / other menus keep
                inner @go / @link on the selected tree, not on the on-layer clone. */
             suppressInteractions: /多语言|语言|language/i.test(menuName) ? false : true,
@@ -5853,6 +6001,11 @@
          every page/section stage exists, using each modal's own Figma box.
          Visibility is interaction-owned; geometry stays source-backed. */
       const mountNamedModals = () => {
+        if (!enablePageInteraction) {
+          frame.setAttribute('data-named-modal-count', '0');
+          frame.setAttribute('data-named-modal-source-count', String(asArr(__activeTruth && __activeTruth.modals).length));
+          return;
+        }
         const records = asArr(__activeTruth && __activeTruth.modals);
         try {
         frame.setAttribute('data-named-modal-source-count', String(records.length));
@@ -5943,6 +6096,7 @@
           layer.style.top = ((Number(box.y) || 0) - pageY) + 'px';
           layer.style.width = Number(box.w) + 'px';
           layer.style.height = Number(box.h) + 'px';
+          layer.setAttribute('data-modal-source-box', [box.x, box.y, box.w, box.h].map((v) => Number(v || 0)).join(','));
           layer.style.pointerEvents = 'auto';
           layer.style.zIndex = '41';
           hideInPlace(layer, true);
@@ -5978,16 +6132,45 @@
             layer,
             exclusive: parsed.label !== '视频弹窗',
             openerEls,
-            closeEls: Array.from(layer.querySelectorAll('[data-btn-name="关闭按钮"]') || []),
+            closeEls: Array.from(layer.querySelectorAll('[data-btn-name="关闭按钮"], [data-node-name="img/关闭按钮"], [data-name="img/关闭按钮"]') || []),
           });
         }
         if (!wired.length) {
           frame.setAttribute('data-named-modal-count', '0');
           return;
         }
+        /* Overlay host stays inside `.frame` so close clicks hit the same
+           listener. Host pointer-events stay none; the layer is the hit target. */
         frame.appendChild(host);
         frame.__fxNamedModals = wired;
         frame.setAttribute('data-named-modal-count', String(wired.length));
+        const doc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
+        if (doc && !frame.__fxNamedModalDocBound) {
+          frame.__fxNamedModalDocBound = true;
+          const onDocClick = (ev) => {
+            const namedModals = frame.__fxNamedModals || [];
+            const closeNamedModal = frame.__fxCloseNamedModal;
+            if (typeof closeNamedModal !== 'function') return;
+            const closeBtn = ev.target && ev.target.closest
+              ? (ev.target.closest('[data-btn-name="关闭按钮"]')
+                || ev.target.closest('[data-node-name="img/关闭按钮"]')
+                || ev.target.closest('[data-name="img/关闭按钮"]'))
+              : null;
+            if (closeBtn) {
+              const hostModal = namedModals.find((entry) => entry.layer && entry.layer.contains(closeBtn));
+              if (hostModal) {
+                closeNamedModal(hostModal);
+                ev.preventDefault();
+                ev.stopPropagation();
+              }
+            }
+          };
+          doc.addEventListener('click', onDocClick, true);
+          frame.__fxNamedModalDocCleanup = () => {
+            doc.removeEventListener('click', onDocClick, true);
+            frame.__fxNamedModalDocBound = false;
+          };
+        }
         } catch (err) {
           frame.setAttribute('data-named-modal-error', String(err && err.message || err));
         }
@@ -6012,7 +6195,7 @@
         || motionAdapter?.interaction?.carousel
         || motionAdapter?.template?.interaction?.carousel)
         && __motionCarouselHosts.some((host) => host.querySelector('[data-motion-carousel-page]'));
-      if (!__motionCarouselOptIn && !frame.__fxInteractionBridgeInstalled
+      if (enablePageInteraction && !__motionCarouselOptIn && !frame.__fxInteractionBridgeInstalled
         && typeof frame.addEventListener === 'function' && typeof frame.querySelectorAll === 'function') {
         frame.__fxInteractionBridgeInstalled = true;
         let drag = null;
@@ -6206,12 +6389,17 @@
           if (!next) return false;
           for (const layer of layers) {
             const active = layer === next;
-            hideBtnLayer(layer.el, layer.isBase ? false : !active);
+            /* Keep the owner host visible. Off-state children stay on the host;
+               on-state paints its own cloned tree (including Rectangle). Hiding
+               the host would leave only TEXT from the on-layer. */
             if (layer.isBase) {
+              hideBtnLayer(layer.el, false);
               for (const child of [...layer.el.children]) {
                 if (child.getAttribute && child.getAttribute('data-dropmenu-layer') === 'true') continue;
                 hideBtnLayer(child, !active);
               }
+            } else {
+              hideBtnLayer(layer.el, !active);
             }
             for (const sibling of layer.externals || []) hideBtnLayer(sibling, !active);
           }
@@ -6219,6 +6407,20 @@
           owner.setAttribute('data-dropmenu-index', String(next.index));
           const nextH = Number(next.rootH);
           if (Number.isFinite(nextH) && nextH > 0) owner.style.height = nextH + 'px';
+          /* Open panel must sit above later sticky siblings (mobile 首充双倍).
+             Restore the captured z-index when the menu closes. */
+          if (next.state === 'on') {
+            if (owner.__fxDropmenuPrevZ === undefined) owner.__fxDropmenuPrevZ = owner.style.zIndex;
+            owner.style.zIndex = '50';
+          } else if (owner.__fxDropmenuPrevZ !== undefined) {
+            owner.style.zIndex = owner.__fxDropmenuPrevZ;
+          }
+          /* Hidden on-state trees keep data-asset-src without src. Prime them
+             when the menu opens so panel art is not left as broken-image alt. */
+          if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
+            const target = next.isBase ? owner : next.el;
+            frame.__fxAssetScheduler.prime(target);
+          }
           return true;
         };
         const toggleDropmenu = (owner) => {
@@ -6605,10 +6807,64 @@
             node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
             node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
           };
+          const unpinModalHost = (entry) => {
+            const host = entry && entry.layer && entry.layer.parentElement;
+            if (!host || !host.classList || !host.classList.contains('fx-named-modals')) return;
+            host.style.position = 'absolute';
+            host.style.left = '0';
+            host.style.top = '0';
+            host.style.transform = '';
+            host.style.pointerEvents = 'none';
+            host.style.zIndex = '40';
+          };
+          const pinModalToViewport = (entry) => {
+            if (!entry || !entry.layer) return;
+            const layer = entry.layer;
+            const host = layer.parentElement;
+            const frameRect = frame.getBoundingClientRect();
+            if (!frameRect.width || !frameRect.height) return;
+            const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
+            const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
+            const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
+            const pageZoom = Number.parseFloat(frame.style.zoom) || 1;
+            const visibleW = frameRect.width / (pageZoom || 1);
+            const visibleH = frameRect.height / (pageZoom || 1);
+            const scale = Math.min(visibleW / designW, visibleH / designH);
+            if (host) {
+              host.style.position = 'fixed';
+              host.style.left = frameRect.left + 'px';
+              host.style.top = frameRect.top + 'px';
+              host.style.width = designW + 'px';
+              host.style.height = Math.max(Number.parseFloat(host.style.height) || 0, designH) + 'px';
+              host.style.transformOrigin = '0 0';
+              host.style.transform = 'scale(' + scale + ')';
+              host.style.pointerEvents = 'none';
+              host.style.zIndex = '2147483001';
+              host.style.overflow = 'visible';
+            }
+            layer.style.left = '0px';
+            layer.style.top = '0px';
+            layer.style.width = designW + 'px';
+            layer.style.height = designH + 'px';
+            layer.style.maxWidth = 'none';
+            layer.style.maxHeight = 'none';
+            layer.style.transform = 'none';
+            layer.style.pointerEvents = 'auto';
+            layer.style.zIndex = '41';
+            layer.style.overflow = 'visible';
+          };
           const closeNamedModal = (entry) => {
             if (!entry || !entry.layer) return;
             hideInPlace(entry.layer, true);
             entry.layer.removeAttribute('data-modal-open');
+            unpinModalHost(entry);
+            const stillOpen = namedModals.some((other) => other && other.layer && other.layer.getAttribute('data-modal-open') === 'true');
+            if (!stillOpen) {
+              const host = entry.layer.parentElement;
+              if (host && host.classList && host.classList.contains('fx-named-modals')) {
+                host.style.pointerEvents = 'none';
+              }
+            }
           };
           const openNamedModal = (entry) => {
             if (!entry || !entry.layer) return;
@@ -6618,8 +6874,18 @@
             }
             hideInPlace(entry.layer, false);
             entry.layer.setAttribute('data-modal-open', 'true');
+            pinModalToViewport(entry);
+            if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
+              frame.__fxAssetScheduler.prime(entry.layer);
+            }
           };
-          const closeBtn = ev.target && ev.target.closest ? ev.target.closest('[data-btn-name="关闭按钮"]') : null;
+          frame.__fxCloseNamedModal = closeNamedModal;
+          frame.__fxOpenNamedModal = openNamedModal;
+          const closeBtn = ev.target && ev.target.closest
+            ? (ev.target.closest('[data-btn-name="关闭按钮"]')
+              || ev.target.closest('[data-node-name="img/关闭按钮"]')
+              || ev.target.closest('[data-name="img/关闭按钮"]'))
+            : null;
           if (closeBtn) {
             const hostModal = namedModals.find((entry) => entry.layer.contains(closeBtn));
             if (hostModal) {
@@ -7069,19 +7335,12 @@
           const safeWidth = Math.min(slotLimit, sourceMax);
           if (!Number.isFinite(safeWidth) || safeWidth <= 0) continue;
           for (const c of members) {
-            if (c.maxWidth == null && c.maxHeight == null) continue;
-            c.widthFit = c.maxWidth != null ? Math.min(c.maxWidth, safeWidth) : safeWidth;
-            c.el.setAttribute('data-fit-inline-safe-width', String(c.widthFit));
+            c.widthFit = safeWidth;
+            c.el.setAttribute('data-fit-inline-safe-width', String(safeWidth));
             c.el.setAttribute('data-fit-inline-source-max', String(sourceMax));
           }
         }
-        for (const c of fitCandidates) this._fitText(c.el, c.tx, c.box, {
-          widthFit: c.widthFit,
-          sourceTitleInlineSafe: c.sourceTitleInlineSafe,
-          semanticBreak: c.semanticBreak,
-          maxWidth: c.maxWidth,
-          maxHeight: c.maxHeight,
-        });
+        for (const c of fitCandidates) this._fitText(c.el, c.tx, c.box, { widthFit: c.widthFit, heightFit: c.heightFit, sourceTitleInlineSafe: c.sourceTitleInlineSafe, semanticBreak: c.semanticBreak });
         /* 组级最小统一字号（required-scale prepass，官网实证：同一组件组标题/正文
            统一字号，最严格成员定全组等级，其余兄弟跟随，最长项折行也不单独缩）。
            逐成员 step-fit 后读取各自"所需 scale"（未缩=100）；组内取 min，若确有成员
@@ -7091,29 +7350,23 @@
         const groups = new Map();
         for (const c of fitCandidates) {
           if (!c.groupKey || c.semanticBreak) continue;
-          if (c.maxWidth == null && c.maxHeight == null) continue;
-          const _gFs = Number(c.el.getAttribute('data-locale-base-fontsize'));
-          const base = Number.isFinite(_gFs) && _gFs > 0 ? _gFs : Number(c.tx.fontSize);
-          const pxAttr = c.el.getAttribute('data-fit-px');
-          const required = pxAttr == null ? base : Number(pxAttr);
+          const sAttr = c.el.getAttribute('data-fit-scale');
+          const required = sAttr == null ? 100 : Number(sAttr);
           if (!groups.has(c.groupKey)) groups.set(c.groupKey, []);
-          groups.get(c.groupKey).push({ c, required, base });
+          groups.get(c.groupKey).push({ c, required });
         }
         for (const members of groups.values()) {
           if (members.length < 2) continue;
-          const minPx = Math.min(...members.map((m) => m.required).filter((n) => Number.isFinite(n) && n > 0));
-          if (!Number.isFinite(minPx)) continue;
-          const allAtBase = members.every((m) => m.required >= m.base - 0.5);
-          if (allAtBase) continue;
+          const minScale = Math.min(...members.map((m) => m.required));
+          if (minScale >= 100) continue; // all fit at source size: keep source
           for (const m of members) {
-            if (m.required === minPx) continue;
+            if (m.required === minScale) continue; // already at strictest
+            const _gFs = Number(m.c.el.getAttribute('data-locale-base-fontsize'));
             const _gLh = Number(m.c.el.getAttribute('data-locale-base-lineheight'));
-            const lh0 = Number.isFinite(_gLh) && _gLh > 0 ? _gLh : m.c.tx.lineHeight;
-            const ratio = m.base > 0 && Number.isFinite(lh0) ? lh0 / m.base : 1;
-            m.c.el.style.fontSize = minPx + 'px';
-            m.c.el.style.lineHeight = (minPx * ratio) + 'px';
-            m.c.el.setAttribute('data-fit-px', String(minPx));
-            m.c.el.setAttribute('data-fit-group-unified', String(m.required) + '->' + String(minPx));
+            m.c.el.style.fontSize = ((Number.isFinite(_gFs) && _gFs > 0 ? _gFs : m.c.tx.fontSize) * minScale / 100) + 'px';
+            m.c.el.style.lineHeight = ((Number.isFinite(_gLh) && _gLh > 0 ? _gLh : m.c.tx.lineHeight) * minScale / 100) + 'px';
+            m.c.el.setAttribute('data-fit-scale', String(minScale));
+            m.c.el.setAttribute('data-fit-group-unified', String(m.required) + '->' + String(minScale));
           }
         }
       };
@@ -7130,7 +7383,6 @@
             const _lbLh = Number(c.el.getAttribute('data-locale-base-lineheight'));
             c.el.style.fontSize = (Number.isFinite(_lbFs) && _lbFs > 0 ? _lbFs : c.tx.fontSize) + 'px';
             c.el.style.lineHeight = (Number.isFinite(_lbLh) && _lbLh > 0 ? _lbLh : c.tx.lineHeight) + 'px';
-            c.el.removeAttribute('data-fit-px');
             c.el.removeAttribute('data-fit-scale');
             c.el.removeAttribute('data-fit-overflow');
           }

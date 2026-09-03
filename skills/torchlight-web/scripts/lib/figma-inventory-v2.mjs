@@ -80,7 +80,7 @@ function firstGradientFill(node) {
   return visibleFillsOf(node).find((fill) => String(fill.type || '').startsWith('GRADIENT')) || null;
 }
 
-function sameBox(a, b, epsilon = 0.75) {
+function sameBox(a, b, epsilon = 2.5) {
   if (!a || !b) return false;
   return Math.abs(Number(a.x) - Number(b.x)) <= epsilon
     && Math.abs(Number(a.y) - Number(b.y)) <= epsilon
@@ -202,9 +202,17 @@ export function calendarIdentityFromNodes(nodes) {
   };
 }
 
-/** Drop skipped records from a paint tree. Keep determined, unknown, and CSS-paintable fragments. */
+/** Drop skipped records from a paint tree. Keep determined, unknown, and CSS-paintable fragments.
+ *  Variant trees are often a flat sibling list keyed by parentId (dropmenu on-state
+ *  language rows). Lift skipped gradient plates onto their parent the same way
+ *  restoreOwnerComposites does for page nodes. */
 function omitSkippedNodes(nodes) {
-  return asArray(nodes).flatMap((node) => keepLivePaintNode(node, asArray(node.nodes).filter(isSkipped)));
+  const list = asArray(nodes);
+  return list.flatMap((node) => {
+    const nestedSkipped = asArray(node.nodes).filter(isSkipped);
+    const siblingSkipped = childrenOf(list, node.id).filter(isSkipped);
+    return keepLivePaintNode(node, [...nestedSkipped, ...siblingSkipped]);
+  });
 }
 
 function visitNodeTree(nodes, visit) {
@@ -367,6 +375,7 @@ function liveRecord(byId, entry) {
 
 function classifyPageDirectChildren(inv, byId) {
   const overlayFromById = new Map(asArray(inv.overlays).map((entry) => [entry.id, entry.from]));
+  const sectionIds = new Set(asArray(inv.sections).map((section) => String(section.id)));
   const seenPinnedLabels = new Set();
   const overlayFrom = (entry, record) => (
     Number.isFinite(entry.from) ? entry.from : fromParamOf(record)
@@ -376,6 +385,8 @@ function classifyPageDirectChildren(inv, byId) {
     const pin = String(entry.pin || record.pin || 'viewport');
     if (pin !== 'viewport') return false;
     const label = String(entry.label || record.label || splitInventoryName(record.name).label || record.id);
+    /* Same-label viewport pins (fix/顶部信息 in every sec) are one sticky bar.
+       Keep the first live record; later copies would stack in a height:0 sticky. */
     if (seenPinnedLabels.has(label)) return true;
     seenPinnedLabels.add(label);
     return false;
@@ -391,7 +402,6 @@ function classifyPageDirectChildren(inv, byId) {
     if (overlay.from == null && overlayFromById.get(overlay.id) != null) overlay.from = overlayFromById.get(overlay.id);
   }
   const fixedIds = new Set(fixedOverlays.map((n) => n.id));
-  const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
 
   const pageChrome = [];
   for (const child of pageDirectChildren(inv)) {
