@@ -4896,17 +4896,26 @@
             el.setAttribute('data-text-layout-policy',
               el.getAttribute('data-text-layout-policy') || 'figma-exact');
           }
-          if (!_zhSourceExact && !inlineHugs && !constraint.openFlow && (fitAuthorized || _localizedSourceTitle || semanticBreak)) {
+          const hasAlCaps = alOwner.maxWidth != null || alOwner.maxHeight != null;
+          /* DESIGN.md 6.1 B/C and semantic line-break: no written Auto Layout
+             max → do not enqueue. semanticBreak keeps authored size; it must
+             not join fitCandidates or a sibling minPx would crush it. */
+          if (!_zhSourceExact && !inlineHugs && !constraint.openFlow && hasAlCaps && !semanticBreak) {
             el.setAttribute('data-fit-group', _fitGroupKey);
-            if (_localizedSourceTitle) {
+            if (_localizedSourceTitle && hasAlCaps) {
               el.setAttribute('data-fit-inline-policy', 'source-title-group-glyph-safe-width');
               el.setAttribute('data-fit-inline-slot-width', String(Number(box.w)));
             }
+            if (alOwner.ownerId) el.setAttribute('data-fit-owner', String(alOwner.ownerId));
+            if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
+            if (alOwner.maxHeight != null) el.setAttribute('data-fit-max-height', String(alOwner.maxHeight));
             fitCandidates.push({
               el, tx, box, groupKey: _fitGroupKey,
-              sourceTitleInlineSafe: _localizedSourceTitle,
-              sourceTitleText: _localizedSourceTitle ? String(fallback || '') : '',
+              sourceTitleInlineSafe: !!(hasAlCaps && _localizedSourceTitle),
+              sourceTitleText: (hasAlCaps && _localizedSourceTitle) ? String(fallback || '') : '',
               semanticBreak: !!semanticBreak,
+              maxWidth: alOwner.maxWidth,
+              maxHeight: alOwner.maxHeight,
             });
           }
           else if (!inlineHugs && !constraint.openFlow) {
@@ -4948,7 +4957,6 @@
              fill most of the owner in both axes; headings do not. */
           const _fillsOwner = _ownerW != null && _ownerH != null && _srcW > 0 && _srcH > 0
             && _srcH >= _ownerH * 0.6 && _srcW >= _ownerW * 0.55;
-          const hasAlCaps = alOwner.maxWidth != null || alOwner.maxHeight != null;
           const boundedHugLabel = inlineHugs && !constraint.openFlow && _centered && _fillsOwner && hasAlCaps;
           if (boundedHugLabel) {
             el.setAttribute('data-fit-policy', 'bounded-hug-label');
@@ -4956,8 +4964,9 @@
             if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
             if (alOwner.maxHeight != null) el.setAttribute('data-fit-max-height', String(alOwner.maxHeight));
             fitCandidates.push({
-              el, tx, box, widthFit: Number(_ownerW), heightFit: _ownerH,
-              maxWidth: alOwner.maxWidth, maxHeight: alOwner.maxHeight,
+              el, tx, box,
+              maxWidth: alOwner.maxWidth,
+              maxHeight: alOwner.maxHeight,
             });
           }
         } else {
@@ -7340,7 +7349,7 @@
            保住 zh-CN 保真与本就合适的语言，不盲目统一降组。 */
         const groups = new Map();
         for (const c of fitCandidates) {
-          if (!c.groupKey) continue;
+          if (!c.groupKey || c.semanticBreak) continue;
           const sAttr = c.el.getAttribute('data-fit-scale');
           const required = sAttr == null ? 100 : Number(sAttr);
           if (!groups.has(c.groupKey)) groups.set(c.groupKey, []);

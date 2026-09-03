@@ -58,6 +58,15 @@ test('workflow job stays red when the summary step fails', () => {
   assert.match(yml, /continue-on-error: true/);
 });
 
+test('failed health.log is uploaded and summarized, not only redirected', () => {
+  const yml = readFileSync(YAML, 'utf8');
+  assert.match(yml, /node \.github\/scripts\/nightly-health\.mjs > health\.log 2>&1/);
+  assert.match(yml, /Keep health\.log visible on failure/);
+  assert.match(yml, /Upload health\.log/);
+  assert.match(yml, /name: pr-gate-health-log/);
+  assert.match(yml, /path: health\.log/);
+});
+
 test('#49 exclude-illegal golden uses real die() wrapper and three fields', () => {
   const md = renderPrGateSummary({ logText: DIE_EXCLUDE, exitCode: 2 });
   assert.match(md, /## PR 审核未通过/);
