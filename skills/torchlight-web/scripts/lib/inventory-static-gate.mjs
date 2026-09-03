@@ -61,6 +61,65 @@ function isBakedIntoAncestor(node, byId, measured) {
   return ids.some((id) => measured[id]?.bakedDescendants === true);
 }
 
+function splitName(name) {
+  const raw = String(name || '');
+  const head = raw.split('@')[0];
+  const match = /^([A-Za-z]+)\s*[\/／]\s*(.*)$/.exec(head);
+  return match
+    ? { role: match[1].toLowerCase(), label: match[2].trim() }
+    : { role: null, label: head.trim() };
+}
+
+/** Same-label viewport pins keep one sticky copy. Later inventory copies
+ *  are not in the DOM and must not fail missing-dom. */
+function droppedDuplicateViewportPinIds(inventory, measured) {
+  const overlays = asArray(inventory?.overlays);
+  const byId = new Map(asArray(inventory?.nodes).filter((node) => node && node.id).map((node) => [String(node.id), node]));
+  const seen = new Set();
+  const dropped = new Set();
+  for (const entry of overlays) {
+    const record = byId.get(String(entry?.id || ''));
+    const pin = String(entry?.pin || record?.pin || 'viewport');
+    const from = entry?.from ?? record?.params?.from;
+    if (from != null || pin !== 'viewport') continue;
+    const label = String(entry?.label || record?.label || splitName(record?.name).label || entry?.id);
+    if (seen.has(label)) dropped.add(String(entry.id));
+    else seen.add(label);
+  }
+  /* If a later copy is the one actually measured, keep it and drop the rest. */
+  for (const id of [...dropped]) {
+    if (measured[id]) dropped.delete(id);
+  }
+  const keptLabels = new Set();
+  for (const entry of overlays) {
+    const id = String(entry?.id || '');
+    if (!id || dropped.has(id)) continue;
+    const record = byId.get(id);
+    const pin = String(entry?.pin || record?.pin || 'viewport');
+    const from = entry?.from ?? record?.params?.from;
+    if (from != null || pin !== 'viewport') continue;
+    keptLabels.add(String(entry?.label || record?.label || splitName(record?.name).label || id));
+  }
+  return { dropped, keptLabels };
+}
+
+function underDroppedDuplicatePin(node, droppedIds, byId) {
+  const id = String(node?.id || '');
+  if (droppedIds.has(id)) return true;
+  for (const ancestorId of asArray(node?.ancestorIds)) {
+    if (droppedIds.has(String(ancestorId))) return true;
+  }
+  let parentId = node?.parentId;
+  const seen = new Set();
+  while (parentId && !seen.has(String(parentId))) {
+    const pid = String(parentId);
+    if (droppedIds.has(pid)) return true;
+    seen.add(pid);
+    parentId = byId.get(pid)?.parentId;
+  }
+  return false;
+}
+
 export function evaluateInventoryStaticGate({
   inventory,
   measurements,
@@ -82,6 +141,7 @@ export function evaluateInventoryStaticGate({
   const nodes = flattenInventoryNodes(inventory);
   const measured = measurements.nodes && typeof measurements.nodes === 'object' ? measurements.nodes : {};
   const byId = new Map(asArray(inventory?.nodes).filter((node) => node && node.id).map((node) => [String(node.id), node]));
+  const droppedPinIds = droppedDuplicateViewportPinIds(inventory, measured).dropped;
   const failures = [];
   const pageId = inventory?.page?.id != null ? String(inventory.page.id) : null;
   for (const node of nodes) {
@@ -97,6 +157,7 @@ export function evaluateInventoryStaticGate({
     const actual = measured[String(node.id)];
     if (!actual) {
       if (isBakedIntoAncestor(node, byId, measured)) continue;
+      if (underDroppedDuplicatePin(node, droppedPinIds, byId)) continue;
       failures.push({ id: node.id, reason: 'missing-dom', expected });
       continue;
     }
@@ -152,8 +213,15 @@ export function evaluateInventoryStaticGate({
       if (!actual.imgBox) {
         failures.push({ id: node.id, reason: 'missing-dom-imgBox', expected: expectedSlice });
       } else {
-        const slice = compareRect(expectedSlice, geom(actual.imgBox));
-        if (!slice.ok) failures.push({ id: node.id, reason: 'sliceExport-mismatch', ...slice });
+        const imgBox = geom(actual.imgBox);
+        const slice = compareRect(expectedSlice, imgBox);
+        /* Visual truth is the owner clip. Unclipped ink / LAYER_BLUR can make
+           sliceExport.box larger than pageBox; a DOM img sitting on the owner
+           is the clipped paint the human sees, not a placement bug. */
+        const onOwner = compareRect(expected, imgBox);
+        if (!slice.ok && !onOwner.ok) {
+          failures.push({ id: node.id, reason: 'sliceExport-mismatch', ...slice, owner: onOwner });
+        }
       }
     }
   }

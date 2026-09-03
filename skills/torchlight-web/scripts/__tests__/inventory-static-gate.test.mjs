@@ -163,10 +163,10 @@ test('descendants baked into an ancestor PNG are not missing-dom', () => {
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
 });
 
-test('render-bound slice imgBox is compared to sliceExport.box, not owner pageBox', () => {
+test('render-bound slice imgBox may match sliceExport.box or the owner clip', () => {
   const sliceBox = { x: 0, y: 10, w: 220, h: 320 };
   const ownerBox = { x: 10, y: 20, w: 200, h: 300 };
-  const green = evaluateInventoryStaticGate({
+  const greenSlice = evaluateInventoryStaticGate({
     inventory: {
       schema: 'inventory/v2',
       nodes: [
@@ -185,9 +185,9 @@ test('render-bound slice imgBox is compared to sliceExport.box, not owner pageBo
       },
     },
   });
-  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+  assert.equal(greenSlice.ok, true, (greenSlice.problems || []).join('\n'));
 
-  const red = evaluateInventoryStaticGate({
+  const greenOwner = evaluateInventoryStaticGate({
     inventory: {
       schema: 'inventory/v2',
       nodes: [
@@ -203,6 +203,28 @@ test('render-bound slice imgBox is compared to sliceExport.box, not owner pageBo
     measurements: {
       nodes: {
         'n-spill': { x: 10, y: 20, w: 200, h: 300, imgBox: ownerBox },
+      },
+    },
+  });
+  assert.equal(greenOwner.ok, true, (greenOwner.problems || []).join('\n'));
+
+  const drifted = { x: 80, y: 90, w: 40, h: 40 };
+  const red = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: 'n-spill',
+          status: 'determined',
+          role: 'img',
+          pageBox: ownerBox,
+          sliceExport: { box: sliceBox, scale: 1, format: 'png', file: 'n-spill.png', bounds: 'render' },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        'n-spill': { x: 10, y: 20, w: 200, h: 300, imgBox: drifted },
       },
     },
   });

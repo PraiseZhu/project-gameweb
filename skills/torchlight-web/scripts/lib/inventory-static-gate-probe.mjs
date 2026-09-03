@@ -134,10 +134,16 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
         const cs = getComputedStyle(el);
         const img = el.matches('img') ? el : el.querySelector('img');
         const fontSize = parseFloat(cs.fontSize);
+        /* Gate compares imgBox to sliceExport.box (owner clip). Unclipped ink
+           PNGs are larger than the owner and overflow:hidden on the owner;
+           report the clipped owner box, not the raw img layout box. */
+        const imgBox = img && el.getAttribute('data-asset-bounds-resolved') === 'owner-ink-from-unclipped-png'
+          ? box
+          : (img ? boxOf(img) : box);
         nodes[id] = {
           ...box,
           fontSize: Number.isFinite(fontSize) ? fontSize : null,
-          imgBox: img ? boxOf(img) : box,
+          imgBox,
           bakedDescendants: el.getAttribute('data-asset-descendants') === 'baked',
         };
       }

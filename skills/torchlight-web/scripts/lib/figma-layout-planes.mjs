@@ -199,7 +199,7 @@ function buildVerified(frame, children, background, foreground, byParent, method
       background: {
         ...nodeRef(background),
         visualProfile: visualStats(background, bgDesc),
-        responsivePolicy: { scaleMode: 'cover-crop', cropAxes: ['x'], anchor: 'center', reason: 'verified page/frame sibling visual plane covers source viewport' },
+        responsivePolicy: { scaleMode: 'width-scale', cropAxes: [], anchor: 'source-origin', reason: 'season-1 verified sibling visual plane shares width-scale k; no left-right cover-crop' },
       },
       foreground: {
         ...nodeRef(foreground),

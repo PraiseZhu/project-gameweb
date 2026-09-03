@@ -39,6 +39,15 @@ test('named modal runtime only wires openers listed in triggerFrom', () => {
   assert.doesNotMatch(renderer, /entry\.name === '视频弹窗' && name === '播放按钮'/);
 });
 
+test('Main static leaves page clicks inert until Interaction opts in', () => {
+  assert.match(renderer, /enablePageInteraction === true/);
+  assert.match(renderer, /data-page-interaction/);
+  assert.match(renderer, /enablePageInteraction && !__motionCarouselOptIn && !frame\.__fxInteractionBridgeInstalled/);
+  assert.match(renderer, /if \(!enablePageInteraction\) return;/);
+  const shell = readFileSync(new URL('../../templates/demo-shell.html', import.meta.url), 'utf8');
+  assert.match(shell, /if \(ctx && ctx\.enablePageInteraction == null\) ctx\.enablePageInteraction = true;/);
+});
+
 test('selected component tree keeps inner btn @go live', () => {
   const marker = "data-component-instance-mount-status', 'selected-component-tree'";
   const mountAt = renderer.lastIndexOf(marker);
@@ -53,6 +62,12 @@ test('only language dropmenus consume inner btn as setPref lang', () => {
   assert.match(renderer, /\/多语言\|语言\|language\/i/);
   assert.match(renderer, /Region \/ other dropmenus keep @go \/ @link/);
   assert.match(renderer, /typeof frame\.__fxDropmenuCleanup === 'function'/);
+  assert.match(renderer, /Keep the owner host visible/);
+  assert.match(renderer, /Keep the COMPONENT root: Property 1=on carries the panel/);
+  assert.match(renderer, /Hidden on-state trees keep data-asset-src without src/);
+  assert.match(renderer, /frame\.__fxAssetScheduler\.prime\(target\)/);
+  assert.match(renderer, /Open panel must sit above later sticky siblings/);
+  assert.match(renderer, /owner\.style\.zIndex = '50'/);
 });
 
 test('renderer consumes pure direct-child interaction payload without raw switch classification', () => {

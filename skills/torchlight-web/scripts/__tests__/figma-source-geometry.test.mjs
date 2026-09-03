@@ -70,9 +70,10 @@ test('renderer source prefers pageBox for paint placement', () => {
 test('zh-CN image paint uses sliceExport/box pixels, not fill stretch', () => {
   const src = readFileSync(fileURLToPath(new URL('../../templates/figma-render.js', import.meta.url)), 'utf8');
   assert.match(src, /owner-box-zh-cn/);
-  assert.match(src, /objectFit = 'none'/);
+  assert.match(src, /Downscaled Figma PNG/);
   const zh = src.match(/else if \(zhStatic\) \{[\s\S]*?owner-box-zh-cn[\s\S]*?\}/);
   assert.ok(zh);
+  assert.match(zh[0], /objectFit = 'none'/);
   assert.doesNotMatch(zh[0], /objectFit = 'fill'/);
 });
 

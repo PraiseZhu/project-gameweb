@@ -178,9 +178,11 @@ Missing modal tree, missing unique opener, or a PC page with no mobile
 overlay stays fail-closed.
 
 Renderer wiring for left/right switch, named modal openers, independent
-`btn/` highlight, and directory scrollspy is live in
-`templates/figma-render.js`. It must not rewrite accepted static geometry
-or assets to make a click work. Incomplete graphs stay unresolved.
+`btn/` highlight, and directory scrollspy lives in
+`templates/figma-render.js`, but Main static does not turn it on.
+Clicks stay inert until Interaction passes `enablePageInteraction: true`.
+It must not rewrite accepted static geometry or assets to make a click
+work. Incomplete graphs stay unresolved.
 
 ## What this Skill does not own yet
 
