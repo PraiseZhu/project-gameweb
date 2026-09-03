@@ -9,6 +9,7 @@
  * own: they do not wait for truth.sections. A handoff with only
  * truth.modals still yields img/弹窗背景 for #qa-assets.
  */
+import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../../standards/figma-naming/spec/inventory.mjs';
 import { deriveRole } from './figma-name-semantics.mjs';
 
 const SLICE_PREFIXES = new Set(['img', 'bg', 'kv']);
@@ -172,13 +173,20 @@ function considerSliceNode(n, { sid, minDim, seenNodeIds, out }) {
   const hasSoftSpillEffect = allEffectTypes.some((type) =>
     type === 'DROP_SHADOW' || type === 'LAYER_BLUR' || type === 'BACKGROUND_BLUR');
   const isBakedImageOwner = pfx === 'img' && (n.type === 'INSTANCE' || n.type === 'COMPONENT');
-  const listedRenderSlice = listedSlice && String(n.sliceExport?.bounds || '').toLowerCase() === 'render';
-  const exportBounds = (listedRenderSlice || ((hasSoftSpillEffect || isBakedImageOwner) && spillBox(b, rb))) ? 'render' : 'box';
-  const clippedVisible = rb && b && Number(rb.w) > 0 && Number(rb.h) > 0
+  /* Inventory bounds:"render" on whole-frame img/bg/kv means owner pageBox,
+     never Figma unclipped canvas ink. Soft-spill BOOLEAN/ind still use ink. */
+  const listedInkBox = isWholeFrameSliceNode(n);
+  const listedBounds = listedInkBox ? 'box' : n.sliceExport?.bounds;
+  const exportBounds = listedBounds
+    || (((hasSoftSpillEffect || isBakedImageOwner) && spillBox(n.pageBox || b, rb)) ? 'render' : 'box');
+  const clippedVisible = !listedInkBox && rb && b && Number(rb.w) > 0 && Number(rb.h) > 0
     && (Number(rb.w) + 0.5 < Number(b.w) || Number(rb.h) + 0.5 < Number(b.h));
-  const exportBox = exportBounds === 'render'
-    ? roundBox(n.inkBox || rb)
-    : roundBox(clippedVisible ? rb : b);
+  const exportBox = listedInkBox
+    ? roundBox(sliceExportPaintBox(n) || n.pageBox || b)
+    : (exportBounds === 'render'
+      ? roundBox(n.inkBox || rb)
+      : roundBox(clippedVisible ? rb : b));
+  const cropToVisibleBox = !listedInkBox && exportBounds === 'box' && clippedVisible;
   const outW = Math.round((exportBox?.w ?? w) || 0);
   const outH = Math.round((exportBox?.h ?? h) || 0);
   const imageRefs = [...new Set(fills
@@ -188,7 +196,7 @@ function considerSliceNode(n, { sid, minDim, seenNodeIds, out }) {
     sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
     reason: listedSlice ? '清单 sliceExport' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
     w: outW, h: outH, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
-    cropToVisibleBox: exportBounds === 'box' && clippedVisible,
+    cropToVisibleBox,
     imageRefs: imageRefs.length ? imageRefs : undefined,
     renderCropPolicy: exportBounds === 'render' && isBakedImageOwner ? 'owner-relative-render-canvas' : null,
     effectTypes: [...new Set(allEffectTypes)],

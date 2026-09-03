@@ -87,6 +87,9 @@ function explainMeaningfulContract(metrics, pageErrors = []) {
   if (metrics.largestNodeCoverage > PREVIEW_THRESHOLDS.maxSingleNodeCoverage && metrics.meaningfulSourceNodes <= PREVIEW_THRESHOLDS.minMeaningfulNodes) {
     failures.push(`single flat source region dominates ${(metrics.largestNodeCoverage * 100).toFixed(1)}% of frame`);
   }
+  if (Number(metrics.bodyCoverage || 0) < PREVIEW_THRESHOLDS.minMeaningfulCoverage) {
+    failures.push(`body coverage ${Number(metrics.bodyCoverage || 0).toFixed(4)} < ${PREVIEW_THRESHOLDS.minMeaningfulCoverage}; chrome-only (fix/page-shared) cannot pass preview:first`);
+  }
   return failures;
 }
 
@@ -145,6 +148,9 @@ function collectPreviewMetrics(thresholds) {
     if (r.area < 16) return false;
     return true;
   });
+  const chromeOnly = (r) => r.ownerRole === 'fix' || r.ownerScope === 'page-shared';
+  const body = meaningful.filter((r) => !chromeOnly(r));
+  const bodyArea = body.reduce((sum, r) => sum + r.area, 0);
   const meaningfulArea = meaningful.reduce((sum, r) => sum + r.area, 0);
   const largestArea = meaningful.reduce((max, r) => Math.max(max, r.area), 0);
   return {
@@ -155,6 +161,7 @@ function collectPreviewMetrics(thresholds) {
     visibleSourceNodes: visible.length,
     meaningfulSourceNodes: meaningful.length,
     meaningfulCoverage: Math.min(meaningfulArea, frameArea) / frameArea,
+    bodyCoverage: Math.min(bodyArea, frameArea) / frameArea,
     largestNodeCoverage: largestArea / frameArea,
     firstVisible: visible[0] || null,
     meaningfulSamples: meaningful.slice(0, 8),

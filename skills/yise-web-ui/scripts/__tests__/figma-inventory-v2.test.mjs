@@ -143,6 +143,19 @@ test("componentSets become variantTrees with renderable geometry", () => {
   assert.ok(set.variants.every((v) => v.type === "COMPONENT" && v.id === v.componentId));
 });
 
+test("section-owned bg stays out of pageChrome", () => {
+  const inv = fixture();
+  inv.sections.push({ id: "100:5", number: 2, label: "2", box: { x: 0, y: 2160, w: 3840, h: 2000 } });
+  inv.backgrounds.push({ id: "100:6", role: "bg", label: "sec2" });
+  inv.nodes.push(
+    { id: "100:5", scope: "page", type: "FRAME", name: "sec/2", parentId: PAGE_ID, orderKey: "0.2", status: "determined", role: "sec" },
+    { id: "100:6", scope: "page", type: "RECTANGLE", name: "bg/sec2", parentId: "100:5", ancestorIds: ["100:5"], orderKey: "0.2.0", status: "determined", role: "bg", behavior: "slice" },
+  );
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  assert.equal(adapted.pageChrome.nodes.some((node) => node.id === "100:6"), false);
+  assert.equal(adapted.pageChrome.nodes.some((node) => node.id === "100:3"), true);
+});
+
 test("modals own a hidden layer excluded from scroll", () => {
   const adapted = adaptInventoryToTruthShape(fixture(), { platformScopeInput: { nodes: [], platformRoots: [] } });
   assert.equal(adapted.modals.length, 1);

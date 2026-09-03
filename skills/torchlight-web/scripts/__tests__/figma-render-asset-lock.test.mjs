@@ -10,8 +10,41 @@ test('asset locking is based on ownerPath when DOM parent stack is incomplete', 
   assert.match(renderer, /const bakedOwnerChain = \[\]/);
   assert.match(renderer, /ancestorIds still\s+names those passed-through parents/);
   assert.match(renderer, /for \(const id of ancestorIds\.map\(\(raw\) => String\(__u\(raw\)\)\)\.reverse\(\)\) pushBakedOwner\(id\)/);
-  assert.match(renderer, /const bakedOwnerId = bakedOwnerChain\.find\(\(id\) => !!this\._assetRec\(id, __base\)\)/);
+  assert.match(renderer, /const bakedOwnerId = bakedOwnerChain\.find\(\(id\) => listedSliceOwner\(id\)\)/);
   assert.match(renderer, /parent && parent\.assetLock \|\| \(bakedOwnerId && !bakedOwnerReleased\)/);
+  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease\) continue/);
+});
+
+test('heroUi stretch never moves pin=viewport fix descendants', () => {
+  assert.match(renderer, /data-fix-pin="viewport"/);
+  assert.match(renderer, /!pinViewport/);
+  assert.match(renderer, /listedHeroArt/);
+  assert.match(renderer, /fullBleedHeroArt/);
+  assert.match(renderer, /fixedHost\.style\.position = 'sticky'/);
+  assert.match(renderer, /fx-fixed-zoom/);
+  assert.match(renderer, /isTopBarChrome/);
+  assert.match(renderer, /fixedStage\.style\.transform = 'scale\(' \+ k \+ '\)'/);
+  assert.doesNotMatch(renderer, /fixedHost\.style\.position = 'fixed'/);
+  assert.doesNotMatch(renderer, /fixedStage\.style\.position = 'sticky'/);
+});
+
+test('product sticky overlay stays height 0 after viewport sync', () => {
+  const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
+  assert.match(chrome, /function syncFixedOverlayViewport/);
+  assert.match(chrome, /stage\.style\.height = '0px'/);
+  assert.match(chrome, /data-fix-pin-height', '0'/);
+  assert.doesNotMatch(chrome, /targetDesignHeight \+ 'px'/);
+  assert.match(chrome, /if \(!PRODUCT_VIEW\) syncHeroEntryNavigation/);
+});
+
+test('only listed sliceExport owners bake descendants; canvas exportBox is not placement', () => {
+  assert.match(renderer, /listedSliceOwner/);
+  assert.match(renderer, /ownListedSlice/);
+  assert.match(renderer, /_sameCoordinateSpace/);
+  assert.match(renderer, /maxDim \* 2/);
+  assert.match(renderer, /Canvas renderBox \(x≈-14000\)/);
+  assert.match(renderer, /n\.sliceExport && assetRec/);
+  assert.match(renderer, /assetLock: !!n\.sliceExport && !!assetRec/);
 });
 
 test('platform-prefixed asset records keep bare-id exportBox geometry', () => {
@@ -29,6 +62,27 @@ test('ind/ instances consume the selected componentId slice instead of inventing
 
 test('REGULAR_POLYGON play triangle uses non-rect shadow/clip mapping, not a CSS rectangle', () => {
   assert.match(renderer, /REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1/);
+  assert.match(renderer, /polygon\(86% 50%, 18% 12%, 18% 88%\)/);
+  assert.match(renderer, /data-shape-polygon-vertex', 'right'/);
+  assert.match(renderer, /skipRotationForLocalClip/);
+  assert.match(renderer, /drop-shadow/);
+  assert.doesNotMatch(renderer, /rotate\(90deg\)/);
+  assert.doesNotMatch(renderer, /polygon\(100% 50%, 0% 0%, 0% 100%\)/);
+});
+
+test('collapsed webp under 2KB falls back to pngFile', () => {
+  assert.match(renderer, /_usableAssetFile\(rec\)/);
+  assert.match(renderer, /bytes < 2048 && png && png !== file/);
+});
+
+test('section height is inventory pageBox.h, never ceil-snapped', () => {
+  assert.match(renderer, /const _snapH = _rawH;/);
+  assert.doesNotMatch(renderer, /Math\.ceil\(_rawH \* k\) \/ k/);
+});
+
+test('play triangle art-fragment still paints above a baked owner', () => {
+  assert.match(renderer, /const paintAsFragment = n\.paintAsFragment === true/);
+  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease\) continue/);
 });
 
 test('only explicit interaction descendants remain renderable under baked assets', () => {
@@ -253,9 +307,8 @@ test('section stage clip is sourced from Figma clipsContent, not a global defaul
 
 test('baked image render spill exports and verifies the render canvas, never the layout box', () => {
   assert.match(assetPipeline, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
-  assert.match(assetPipeline, /const listedRenderSlice = listedSlice && String\(n\.sliceExport\?\.bounds \|\| ''\)\.toLowerCase\(\) === 'render'/);
-  assert.match(assetPipeline, /const exportBounds = \(listedRenderSlice \|\| \(\(hasSoftSpillEffect \|\| isBakedImageOwner\) && spillBox\(b, rb\)\)\) \? 'render' : 'box'/);
-  assert.match(assetPipeline, /roundBox\(n\.inkBox \|\| rb\)/);
+  assert.match(assetPipeline, /pageAlignedExportBox/);
+  assert.match(assetPipeline, /listedInkBox \? 'box' : n\.sliceExport\?\.bounds/);
   assert.match(assetPipeline, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner/);
   assert.match(coverageGate, /if \(rec\?\.exportBounds !== 'render'\) problems\.push/);
   assert.match(coverageGate, /exportBox!=renderBox/);
@@ -283,9 +336,17 @@ test('owner-tree consumption: page/fixed roots keep paint order, placement origi
   /* placement origin：子节点坐标相对真实 owner（parentId 优先，ownerPath 回退，stack 最后） */
   assert.match(renderer, /const directParentId = nodeParentId\(n\)/);
   assert.match(renderer, /const coordinateOwnerBox = directParentRecord\?\.pageBox \|\| directParentRecord\?\.box/);
-  /* fixed overlay：sticky + 内部 zoom（owner 自身 zoom=1，相对定位不被重复缩放） */
-  assert.match(renderer, /fixedStage\.style\.position = 'sticky'/);
-  assert.match(renderer, /fixedStage\.style\.zoom = String\(k\)/);
+  /* CONSUMER pin=viewport: sticky on `.frame` (the scrollport). Product
+     `.frame` always has transform:scale, which is a containing block for
+     position:fixed and would pin overlay to the page canvas. zoom=k stays
+     on the inner wrapper so overlay-absolute pageBox stays 1:1. */
+  assert.match(renderer, /fixedHost\.style\.position = 'sticky'/);
+  assert.match(renderer, /fixedStage\.style\.transform = 'scale\(' \+ k \+ '\)'/);
+  assert.match(renderer, /fx-fixed-zoom/);
+  assert.match(renderer, /first-section-pagebox/);
+  assert.doesNotMatch(renderer, /fixedHost\.style\.position = 'fixed'/);
+  assert.doesNotMatch(renderer, /fixedHost\.style\.zoom = String\(k\)/);
+  assert.doesNotMatch(renderer, /fixedStage\.style\.position = 'sticky'/);
 });
 
 test('hscroll gutter expands host box and survives the generic box.h height overwrite', () => {
@@ -304,10 +365,16 @@ test('fx-img follows the owner box instead of intrinsic pixels', () => {
   assert.match(renderer, /img\.style\.position = 'absolute'/);
   assert.match(renderer, /const placedBox = exportBox \|\| sliceBox/);
   assert.match(renderer, /owner-box-zh-cn/);
-  assert.match(renderer, /Downscaled Figma PNG/);
-  assert.match(renderer, /img\.style\.objectFit = 'fill'/);
+  assert.match(renderer, /img\.style\.objectFit = spillsOwner \? 'none' : 'fill'/);
+  assert.match(renderer, /img\.style\.objectFit = 'none'/);
   assert.match(renderer, /el\.style\.overflow = 'hidden'/);
   assert.match(renderer, /el\.style\.position = 'relative'/);
+});
+
+test('listed img/bg/kv owners keep pageBox clip when ink slice is shorter', () => {
+  assert.match(renderer, /Whole-frame img\/bg\/kv clip to pageBox/);
+  assert.match(renderer, /Number\(sliceExportBox\.h\) <= Number\(ownerBox\.h\) \+ 0\.5/);
+  assert.match(renderer, /if \(this\._geomReady\(sliceExportBox\) && this\._sameCoordinateSpace\(sliceExportBox, ownerBox\)\) return sliceExportBox/);
 });
 
 test('sticky overlay host uses overlay root height, not descendant pageBoxes', () => {
@@ -318,21 +385,10 @@ test('sticky overlay host uses overlay root height, not descendant pageBoxes', (
 
 test('legal lang-axis instances still paint under a baked ancestor', () => {
   assert.match(renderer, /imgLangRelease/);
-  assert.match(renderer, /!imgLangRelease\) continue/);
+  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease\) continue/);
   assert.match(renderer, /liveImgLangBakeRelease/);
   assert.match(renderer, /data-asset-lock-released', 'live-img-lang-descendant'/);
   assert.match(renderer, /if \(ancestorPfx === 'img' \|\| ancestorPfx === 'bg' \|\| ancestorPfx === 'kv'\) return/);
-});
-
-test('render-bound slice prefers unclipped ink over owner-sized sliceExport.box', () => {
-  assert.match(renderer, /Unclipped Figma ink \(LAYER_BLUR \/ overflow\) is the PNG canvas/);
-  assert.match(renderer, /n\.inkBox \|\| null/);
-  assert.match(renderer, /\(n\.sliceExport && n\.sliceExport\.box\) \|\| null/);
-  assert.doesNotMatch(renderer, /if \(ownerReady\) return ownerBox/);
-  assert.match(renderer, /Owner layout box stays the clip/);
-  assert.match(renderer, /_pngMatchesBox\(assetRec, ownerBox\)/);
-  assert.match(renderer, /already matches the owner\/sliceExport box must not be stretched/);
-  assert.match(renderer, /owner-png-matches-clip/);
 });
 
 test('zh-CN hugging CENTER text stays on the Figma leaf box', () => {

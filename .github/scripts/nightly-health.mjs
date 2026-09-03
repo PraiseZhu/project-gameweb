@@ -537,6 +537,8 @@ function tapFailureNames(output, limit = 6) {
   return names;
 }
 
+const TRUSTED_TAP_MAX_BUFFER = 32 * 1024 * 1024;
+
 function runTrustedTests(label, packageDir) {
   const listed = listPublicTests(packageDir);
   if (listed && listed.error) return `${label}: ${listed.error}`;
@@ -550,10 +552,16 @@ function runTrustedTests(label, packageDir) {
     encoding: 'utf8',
     env: childEnv,
     timeout: 300000,
+    maxBuffer: TRUSTED_TAP_MAX_BUFFER,
   });
   if (result.stdout) process.stdout.write(result.stdout);
   if (result.stderr) process.stderr.write(result.stderr);
-  if (result.error) return `${label}: 拉不起进程 ${result.error.message}`;
+  if (result.error) {
+    if (result.error.code === 'ENOBUFS') {
+      return `${label}: TAP 输出超过 ${TRUSTED_TAP_MAX_BUFFER} 字节被截断，不能当作有自测`;
+    }
+    return `${label}: 拉不起进程 ${result.error.message}`;
+  }
   const output = `${result.stdout || ''}\n${result.stderr || ''}`;
   const tap = parseTap(output);
   const cases = countRealTapCases(output, files);
@@ -845,6 +853,7 @@ export {
   stripRunnerNoise,
   packageManagerCommand,
   normalizePathForComparison,
+  TRUSTED_TAP_MAX_BUFFER,
 };
 
 if (process.argv[1] && resolve(process.argv[1]) === HERE) main();

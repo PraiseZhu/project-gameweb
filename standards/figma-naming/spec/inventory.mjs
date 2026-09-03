@@ -36,12 +36,26 @@ export const ROLE_BEHAVIOR = {
 
 export const ALLOWED_PARAMS = PARAM_NAMES;
 
-/** 切图导出契约：清单只写谁切、怎么切；PNG 由做页按 node id 自己导出。 */
+/**
+ * 切图导出契约：清单只写谁切、怎么切；PNG 由做页按 node id 自己导出。
+ *
+ * `bounds: "render"` 是清单词：整框切图像素框 = 该节点 `pageBox`（相对页的节点框），
+ * 1 倍 png。不是 Figma REST 省略 `use_absolute_bounds` 时的画布未裁 ink，
+ * 也不是短于 pageBox 的 `absoluteRenderBounds`。做页导出整框时必须带
+ * `use_absolute_bounds=true`，否则会打到画布坐标（如 x=-14764）导出空图。
+ *
+ * 调用方：`standards/figma-naming/tool/src/inventory.mjs` 写 sliceExport；
+ * `handoff.mjs` 装箱切图计划；`skills/torchlight-web/scripts/figma-assets.mjs`
+ * 与 `inventory-static-gate.mjs` 读 `sliceExportPaintBox`。不改 JSON schema 键名。
+ * 用户原文：「统一清单、做页、闸门的 pageBox/整框语义，补无名 kv 切图规则」。
+ */
 export const SLICE_EXPORT = Object.freeze({
   bounds: "render",
   scale: 1,
   format: "png",
 });
+
+const WHOLE_FRAME_SLICE_NAME = /^(?:img|bg|kv)(?:\/|$)/i;
 
 /** 跨端同一模块：只认 determined 前缀 + 剥前缀后的名字，不认图层 id。 */
 export const CROSS_END_MODULE_ROLES = Object.freeze([
@@ -65,9 +79,33 @@ export function sliceExportMatches(sliceExport) {
     && sliceExport?.format === SLICE_EXPORT.format;
 }
 
+/** img/ bg/ kv 前缀，以及无斜杠的整词 `kv` / `bg` / `img`（无名 KV 框）。 */
+export function isWholeFrameSliceName(name) {
+  return WHOLE_FRAME_SLICE_NAME.test(String(name || "").trim());
+}
+
+/**
+ * 整框切图 owner：determined 的 img/bg/kv，或 unknown 无名 `kv`/`bg`/`img` 框。
+ * skipped 子层不是 owner。unknown 仍不得带 role；只发 sliceExport。
+ */
+export function isWholeFrameSliceNode(node) {
+  if (!node || node.status === "skipped") return false;
+  if (isSlicePrefix(node.role)) return true;
+  return isWholeFrameSliceName(node.name);
+}
+
+/** 整框切图像素框 = pageBox。短墨迹 / 画布 renderBox 都不是导出尺寸。 */
+export function sliceExportPaintBox(node) {
+  const page = isGeomBox(node?.pageBox) ? node.pageBox : null;
+  if (isWholeFrameSliceNode(node) && page) return { ...page };
+  const listed = isGeomBox(node?.sliceExport?.box) ? node.sliceExport.box : null;
+  if (listed) return { ...listed };
+  return page ? { ...page } : null;
+}
+
 /** BOOLEAN btn/ 与 ind/ 变体根也要带切图，但不改 click / indicator 行为。 */
 export function needsSliceExport(node) {
-  if (isSlicePrefix(node?.role)) return true;
+  if (isWholeFrameSliceNode(node)) return true;
   if (node?.role === "btn" && node.type === "BOOLEAN_OPERATION") return true;
   if (node?.role === "ind" && node.type === "COMPONENT") return true;
   return false;
@@ -80,7 +118,14 @@ export function determinedReadyFieldProblems(node, { label = "", source = null }
   if (!isGeomBox(node.pageBox)) problems.push(`${prefix} 缺 pageBox`);
   if (!isGeomBox(node.parentBox)) problems.push(`${prefix} 缺 parentBox`);
   if (needsSliceExport(node) && !sliceExportMatches(node.sliceExport)) {
-    problems.push(`${prefix} 切图必须按墨迹框 1 倍 png`);
+    problems.push(`${prefix} 切图必须按整框 pageBox 1 倍 png`);
+  }
+  if (isWholeFrameSliceNode(node) && isGeomBox(node.pageBox) && isGeomBox(node.sliceExport?.box)) {
+    const paint = sliceExportPaintBox(node);
+    const listed = node.sliceExport.box;
+    if (paint && (listed.w !== paint.w || listed.h !== paint.h || listed.x !== paint.x || listed.y !== paint.y)) {
+      problems.push(`${prefix} 整框切图 box 必须等于 pageBox`);
+    }
   }
   if (node.role === "copy" && node.sliceExport) problems.push(`${prefix} 可改字不得带切图`);
   if (isSlicePrefix(node.role) && node.behavior !== "slice") {

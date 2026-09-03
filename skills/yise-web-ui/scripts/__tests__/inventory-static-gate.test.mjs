@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { PNG } from 'pngjs';
+import { pngMeta } from '../lib/inventory-static-gate-probe.mjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -105,6 +107,62 @@ test('missing pageBox on a live node is red, never skipped-ok', () => {
   assert.ok(red.problems.some((line) => line.includes('missing-pageBox')));
 });
 
+test('ordinary whole-frame img/ empty or wrong-size PNG is red even when DOM matches pageBox', () => {
+  const pageBox = { x: 0, y: 0, w: 100, h: 100 };
+  const node = {
+    id: 'img-title',
+    status: 'determined',
+    role: 'img',
+    name: 'img/标题',
+    pageBox,
+    sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'img-title.png', bounds: 'render' },
+  };
+  const matchingDom = {
+    x: 0, y: 0, w: 100, h: 100, hasImg: true, imgBox: pageBox,
+    fontSize: 16, fontFamily: 'Source Han Sans', fontWeight: 400,
+  };
+  const empty = evaluateInventoryStaticGate({
+    inventory: { schema: 'inventory/v2', nodes: [node] },
+    measurements: { nodes: { 'img-title': { ...matchingDom, assetEmpty: true, assetW: 0, assetH: 0 } } },
+  });
+  assert.equal(empty.ok, false);
+  assert.ok(empty.problems.some((line) => line.includes('whole-frame-png-empty')), (empty.problems || []).join('\n'));
+
+  const wrongSize = evaluateInventoryStaticGate({
+    inventory: { schema: 'inventory/v2', nodes: [node] },
+    measurements: { nodes: { 'img-title': { ...matchingDom, assetEmpty: false, assetW: 50, assetH: 50 } } },
+  });
+  assert.equal(wrongSize.ok, true, (wrongSize.problems || []).join('\n'));
+  assert.ok(!(wrongSize.problems || []).some((line) => line.includes('whole-frame-png-size-mismatch')));
+});
+
+test('full-bleed bg PNG size mismatch is red', () => {
+  const pageBox = { x: 0, y: 0, w: 3840, h: 2160 };
+  const red = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'bg-1',
+        status: 'determined',
+        role: 'bg',
+        name: 'bg/首屏',
+        pageBox,
+        sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'bg.png', bounds: 'render' },
+      }],
+    },
+    measurements: {
+      nodes: {
+        'bg-1': {
+          x: 0, y: 0, w: 3840, h: 2160, hasImg: true, imgBox: pageBox,
+          assetEmpty: false, assetW: 1920, assetH: 1080,
+        },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('whole-frame-png-size-mismatch')), (red.problems || []).join('\n'));
+});
+
 test('matching DOM pageBox + fontSize + slice is green', () => {
   const green = evaluateInventoryStaticGate({
     inventory: inventory(),
@@ -118,11 +176,30 @@ test('matching DOM pageBox + fontSize + slice is green', () => {
   assert.equal(green.expectationSource, 'handoff-inventory');
 });
 
+test('opaque black PNG is not assetEmpty', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'png-meta-black-'));
+  const file = join(dir, 'black.png');
+  const png = new PNG({ width: 16, height: 16 });
+  for (let i = 0; i < png.data.length; i += 4) {
+    png.data[i] = 0;
+    png.data[i + 1] = 0;
+    png.data[i + 2] = 0;
+    png.data[i + 3] = 255;
+  }
+  writeFileSync(file, PNG.sync.write(png));
+  const meta = pngMeta(file);
+  assert.equal(meta.assetEmpty, false);
+  assert.equal(meta.assetW, 16);
+  assert.equal(meta.assetH, 16);
+});
+
 test('probe script is a shipped skill file, not an optional local extra', () => {
   const probe = join(fileURLToPath(new URL('../lib/inventory-static-gate-probe.mjs', import.meta.url)));
   const src = readFileSync(probe, 'utf8');
   assert.match(src, /inventory-static-gate=1/);
   assert.match(src, /platform === 'mobile' \? 'mobile' : 'desktop'/);
+  assert.match(src, /isWholeFrameSliceNode/);
+  assert.match(src, /assetEmpty/);
 });
 
 test('descendants baked into an ancestor PNG are not missing-dom', () => {

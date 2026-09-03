@@ -91,11 +91,27 @@ function assertHtmlVolume(demoDir, limitBytes, htmlVolume = externalizeQaTruthIf
   return htmlVolume;
 }
 
+function writeFreshShowcaseIndex(demoDir, consume) {
+  const slug = `handoff-${String(consume.fingerprint || 'pack').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'pack'}`;
+  const inlineSafe = (code) => String(code || '').replaceAll('</script', '<\\/script');
+  const shell = readFileSync(join(SKILL_ROOT, 'templates/demo-shell.html'), 'utf8')
+    .replace(/\r\n/g, '\n')
+    .replaceAll('{{NAME}}', slug)
+    .replaceAll('{{PR}}', 'null')
+    .replace('{{QA_DEVICES}}', inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/default-devices.json'), 'utf8').replace(/\r\n/g, '\n').trim()))
+    .replace('{{FIGMA_RENDER}}', inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/figma-render.js'), 'utf8').replace(/\r\n/g, '\n')))
+    .replace('{{FIGMA_CHROME}}', inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/figma-chrome.js'), 'utf8').replace(/\r\n/g, '\n')));
+  writeFileSync(join(demoDir, 'index.html'), shell);
+}
+
 function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_MAX_HTML_BYTES) {
   const indexPath = join(demoDir, 'index.html');
   if (!existsSync(indexPath)) {
-    const slug = `handoff-${String(consume.fingerprint || 'pack').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'pack'}`;
-    runNode(INIT, ['--dir', demoDir, '--name', slug, '--workflow', 'figma-showcase']);
+    if (existsSync(join(demoDir, 'spec.json'))) writeFreshShowcaseIndex(demoDir, consume);
+    else {
+      const slug = `handoff-${String(consume.fingerprint || 'pack').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'pack'}`;
+      runNode(INIT, ['--dir', demoDir, '--name', slug, '--workflow', 'figma-showcase']);
+    }
   }
   if (!existsSync(indexPath)) throw new Error(`init did not write ${indexPath}`);
   embedDesignPolicy(indexPath);

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { pickSliceNodes } from '../lib/figma-slice-nodes.mjs';
 
 function truthWith(nodes) {
@@ -29,6 +31,38 @@ test('unlabelled image fill can still be exported by fill evidence without becom
   ]));
   assert.deepEqual(picks.map((pick) => pick.nodeId), ['image-fill']);
   assert.match(picks[0].reason, /image/);
+});
+
+test('whole-frame img/ with sliceExport bounds=render exports pageBox, not canvas ink', () => {
+  const pageBox = { x: 10, y: 20, w: 200, h: 300 };
+  const ink = { x: 0, y: 0, w: 240, h: 340 };
+  const picks = pickSliceNodes(truthWith([
+    {
+      id: 'img-hero',
+      type: 'FRAME',
+      name: 'img/hero',
+      role: 'img',
+      pageBox,
+      box: pageBox,
+      renderBox: ink,
+      inkBox: ink,
+      sliceExport: { bounds: 'render', scale: 1, format: 'png', file: 'img-hero.png', box: pageBox },
+      style: { fills: [{ type: 'IMAGE', visible: true }] },
+    },
+  ]));
+  assert.equal(picks[0].nodeId, 'img-hero');
+  assert.equal(picks[0].exportBounds, 'box');
+  assert.deepEqual(picks[0].exportBox, pageBox);
+  assert.equal(picks[0].w, 200);
+  assert.equal(picks[0].h, 300);
+  assert.equal(picks[0].cropToVisibleBox, false);
+});
+
+test('whole-frame box export requests use_absolute_bounds=true', () => {
+  const assets = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
+  const slice = readFileSync(fileURLToPath(new URL('../lib/figma-slice-nodes.mjs', import.meta.url)), 'utf8');
+  assert.match(slice, /listedInkBox \? 'box'/);
+  assert.match(assets, /if \(chunk\[0\]\.exportBounds !== 'render'\) q\.set\('use_absolute_bounds', 'true'\)/);
 });
 
 test('clipped unknown IMAGE fill exports the visible box, not the overflowing layout box', () => {

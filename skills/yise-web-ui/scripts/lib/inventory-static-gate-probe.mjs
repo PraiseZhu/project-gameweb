@@ -7,7 +7,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PNG } from 'pngjs';
 import { createSafeStaticServer } from './safe-server.mjs';
+import { isWholeFrameSliceNode } from '../../../../standards/figma-naming/spec/inventory.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
 
 const SKILL_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -41,6 +43,34 @@ function liveIds(inventory) {
   return (inventory?.nodes || [])
     .filter((node) => node && node.id && node.status !== 'skipped')
     .map((node) => String(node.id));
+}
+
+function pngMeta(file) {
+  if (!file || !existsSync(file)) return { assetW: 0, assetH: 0, assetEmpty: true };
+  const png = PNG.sync.read(readFileSync(file));
+  const stepX = Math.max(1, Math.floor(png.width / 24));
+  const stepY = Math.max(1, Math.floor(png.height / 16));
+  let opaque = 0;
+  for (let y = 0; y < png.height; y += stepY) {
+    for (let x = 0; x < png.width; x += stepX) {
+      const i = (png.width * y + x) * 4;
+      if (png.data[i + 3] > 8) opaque += 1;
+    }
+  }
+  return { assetW: png.width, assetH: png.height, assetEmpty: opaque < 8 };
+}
+
+function assetFile(demoDir, rec) {
+  const names = [
+    rec?.sliceExport?.file,
+    rec?.file,
+    rec?.id ? `${String(rec.id).replace(/:/g, '-')}.png` : null,
+  ].filter(Boolean);
+  for (const name of names) {
+    const path = join(demoDir, 'assets', String(name));
+    if (existsSync(path)) return path;
+  }
+  return null;
 }
 
 async function measureDemo({ demoDir, handoffDir, platform, lang }) {
@@ -143,7 +173,14 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
       }
       return { nodes, scale, origin: { x: origin.left, y: origin.top, w: origin.width, h: origin.height } };
     }, { nodeIds, designWidth: viewport.w });
-    return measured;
+    const nodes = { ...(measured?.nodes || {}) };
+    for (const node of inventory?.nodes || []) {
+      if (!isWholeFrameSliceNode(node)) continue;
+      const id = String(node.id);
+      const rec = nodes[id] || {};
+      nodes[id] = { ...rec, ...pngMeta(assetFile(absDemo, node)) };
+    }
+    return { ...measured, nodes };
   } finally {
     try { await browser?.close(); } catch { /* ignore */ }
     try { await server.close(); } catch { /* ignore */ }
@@ -174,4 +211,4 @@ if (process.argv[1] && process.argv[1].endsWith('inventory-static-gate-probe.mjs
   });
 }
 
-export { measureDemo };
+export { measureDemo, pngMeta };

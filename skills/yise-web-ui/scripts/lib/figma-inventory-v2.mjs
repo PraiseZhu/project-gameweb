@@ -393,16 +393,23 @@ function classifyPageDirectChildren(inv, byId) {
   const sectionIds = new Set(asArray(inv.sections).map((section) => section.id));
 
   const pageChrome = [];
+  const inSectionTree = (record) => {
+    if (!record) return false;
+    if (sectionIds.has(String(record.id)) || sectionIds.has(String(record.parentId))) return true;
+    return asArray(record.ancestorIds).some((id) => sectionIds.has(String(id)));
+  };
   for (const child of pageDirectChildren(inv)) {
     const record = liveRecord(byId, child);
     if (!record || fixedIds.has(child.id) || record.role === 'sec' || sectionIds.has(child.id)) continue;
     pageChrome.push(record);
   }
-  // Also keep the inventory's declared kv/bg role records as page chrome even
-  // when they are not a direct page child (some kv layers sit inside kv/*).
+  // Keep declared kv/bg as page chrome only when they are not already in a
+  // section tree. A bg/ sitting inside sec/2 would otherwise paint twice
+  // and later-section bg/* would cover-crop onto the first screen.
   for (const entry of asArray(inv.backgrounds)) {
     const record = liveRecord(byId, entry);
     if (!record || fixedIds.has(record.id) || pageChrome.some((n) => n.id === record.id)) continue;
+    if (inSectionTree(record)) continue;
     pageChrome.push(record);
   }
   return { pageChrome, fixedOverlays };

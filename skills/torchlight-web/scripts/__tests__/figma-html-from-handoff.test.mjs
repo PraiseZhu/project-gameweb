@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -119,6 +119,71 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   assert.equal(existsSync(join(pack.outDir, 'index.html')), false);
   assert.equal(result.htmlVolume.ok, true);
   assert.equal(existsSync(join(demoDir, 'fonts-manifest.json')), true);
+  assert.match(html, /id="qa-design-policy"/);
+  assert.match(html, /window\.__designPolicy/);
+  assert.match(html, /window\.__qaDemo/);
+});
+
+test('html-from-handoff writes a fresh shell when spec.json exists but index.html is missing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-fresh-shell-'));
+  const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo');
+  mkdirSync(demoDir, { recursive: true });
+  writeFileSync(join(demoDir, 'spec.json'), JSON.stringify({
+    meta: { name: 'stale-demo' },
+    figma: { fileKey: 'OLD', exportScale: 1 },
+    matrix: { langs: ['zh-CN'] },
+    workflow: { claimedCapabilities: {} },
+  }, null, 2));
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  assert.equal(existsSync(join(demoDir, 'index.html')), true);
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  assert.match(html, /id="qa-design-policy"/);
+  assert.match(html, /window\.__designPolicy/);
+  assert.match(html, /window\.__qaDemo/);
+  assert.match(html, /FIGMA_RENDER_BEGIN/);
+  const src = readFileSync(new URL('../figma-html-from-handoff.mjs', import.meta.url), 'utf8');
+  assert.match(src, /function writeFreshShowcaseIndex/);
+  assert.match(src, /existsSync\(join\(demoDir, 'spec\.json'\)\)/);
+  assert.match(src, /writeFreshShowcaseIndex\(demoDir, consume\)/);
+  assert.match(src, /runNode\(INIT,/);
+  assert.ok(src.indexOf("existsSync(join(demoDir, 'spec.json'))") < src.indexOf('runNode(INIT,'));
+});
+
+test('html-from-handoff inserts a closed design-policy block into a legacy shell', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-policy-'));
+  const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo');
+  mkdirSync(demoDir, { recursive: true });
+  writeFileSync(join(demoDir, 'index.html'), `<!doctype html>
+<body>
+<script id="qa-truth" type="application/json">{}</script>
+<script id="qa-devices" type="application/json">{}</script>
+<script>
+window.__qaDemo = { name: 'legacy' };
+</script>
+</body>`);
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  const policyOpen = html.indexOf('<script id="qa-design-policy"');
+  const policyClose = html.indexOf('</script>', policyOpen);
+  const loaderClose = html.indexOf('</script>', policyClose + 1);
+  const qaDemo = html.indexOf('window.__qaDemo');
+  assert.ok(policyOpen >= 0);
+  assert.ok(policyClose > policyOpen);
+  assert.ok(loaderClose > policyClose);
+  assert.ok(qaDemo > loaderClose);
+  assert.match(html.slice(policyClose, loaderClose + 9), /window\.__designPolicy/);
 });
 
 test('html-from-handoff language matrix follows img/ langs and does not invent ja', () => {
@@ -260,6 +325,8 @@ test('skipPreview still runs inventory static gate and never marks skipped-ok', 
   assert.match(src, /attachDesignPolicyMirror/);
   assert.match(src, /attachSliceAssets/);
   assert.match(src, /figma-assets\.mjs/);
+  assert.match(src, /reuseExistingAssets/);
+  assert.match(src, /--reuse-existing/);
   assert.doesNotMatch(src, /\|\| true/);
   assert.doesNotMatch(src, /--skip-preview/);
   assert.doesNotMatch(src, /design-policy-dom-probe/);
@@ -291,6 +358,11 @@ test('official static gate probe is shipped and missing probe/index is fail-clos
   assert.match(src, /demo index.html missing; cannot measure DOM/);
   const probeSrc = readFileSync(join(skillRoot, 'scripts/lib/inventory-static-gate-probe.mjs'), 'utf8');
   assert.match(probeSrc, /inventory-static-gate=1/);
+  assert.match(probeSrc, /product=1/);
+  assert.match(probeSrc, /measureProductScroll/);
+  assert.match(probeSrc, /overlayOwnerOf/);
+  assert.match(probeSrc, /fontWeight/);
+  assert.match(probeSrc, /inSection/);
 });
 
 test('html-from-handoff fails when index.html stays over the HTML volume gate', () => {

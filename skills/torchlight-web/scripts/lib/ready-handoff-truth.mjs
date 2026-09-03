@@ -65,6 +65,103 @@ function paintWithPageBox(node) {
   return { ...node, box: node.pageBox };
 }
 
+function shiftBox(box, dx, dy) {
+  if (!box || typeof box !== 'object') return box;
+  return {
+    ...box,
+    x: Number(box.x || 0) + dx,
+    y: Number(box.y || 0) + dy,
+  };
+}
+
+function shiftPaintNode(node, dx, dy) {
+  if (!node || (dx === 0 && dy === 0)) return node;
+  const next = { ...node };
+  if (next.pageBox) next.pageBox = shiftBox(next.pageBox, dx, dy);
+  if (next.box) next.box = shiftBox(next.box, dx, dy);
+  if (next.parentBox) next.parentBox = shiftBox(next.parentBox, dx, dy);
+  if (next.sliceExport?.box) {
+    next.sliceExport = { ...next.sliceExport, box: shiftBox(next.sliceExport.box, dx, dy) };
+  }
+  return next;
+}
+
+/**
+ * Mobile boards are sibling frames on one wide canvas (sec/2 x=840).
+ * Product tree is 750 wide. Fold each section onto x=0; keep inventory y.
+ * PC already shares x=0 so dx=0 is a no-op.
+ */
+function foldSectionOntoPage(section, nodes) {
+  const originX = Number(section?.pageBox?.x ?? section?.x ?? 0);
+  const originY = Number(section?.pageBox?.y ?? section?.y ?? 0);
+  const dx = -originX;
+  const foldedMetaBox = shiftBox(section?.pageBox || section, dx, 0);
+  return {
+    meta: {
+      id: section.id,
+      ...drawMeta({ ...section, pageBox: foldedMetaBox }, null),
+      x: 0,
+      y: originY,
+      pageBox: { ...(foldedMetaBox || {}), x: 0, y: originY },
+    },
+    nodes: nodes.map((node) => shiftPaintNode(node, dx, 0)),
+    fold: { dx, originX, originY },
+  };
+}
+
+function underFixedOwner(node, fixedIds) {
+  if (fixedIds.has(String(node?.id || ''))) return true;
+  return asArray(node?.ancestorIds).some((id) => fixedIds.has(String(id)));
+}
+
+function overlayLocalBox(node, owner) {
+  const page = node?.pageBox;
+  const ownerPage = owner?.pageBox;
+  if (!page || !ownerPage) return null;
+  return {
+    x: Number(page.x) - Number(ownerPage.x),
+    y: Number(page.y) - Number(ownerPage.y),
+    w: Number(page.w),
+    h: Number(page.h),
+  };
+}
+
+function remapSliceToOverlay(node, owner) {
+  const sliceBox = node?.sliceExport?.box;
+  const ownerPage = owner?.pageBox;
+  if (!sliceBox || !ownerPage) return node?.sliceExport || null;
+  return {
+    ...node.sliceExport,
+    box: {
+      x: Number(sliceBox.x) - Number(ownerPage.x),
+      y: Number(sliceBox.y) - Number(ownerPage.y),
+      w: Number(sliceBox.w),
+      h: Number(sliceBox.h),
+    },
+  };
+}
+
+/** fix/ pins to the viewport. Every descendant uses overlay-absolute
+ *  (pageBox − owner.pageBox). parentBox is relative to the direct parent
+ *  only — using it as overlay origin puts nested img/ at (57,34) on the
+ *  page and clips the slice out of the button. */
+function paintFixedNode(node, owner) {
+  const painted = paintWithPageBox(node);
+  if (!owner) return painted;
+  const ownerLocal = {
+    x: 0,
+    y: 0,
+    w: Number(owner.pageBox?.w ?? owner.box?.w ?? 0),
+    h: Number(owner.pageBox?.h ?? owner.box?.h ?? 0),
+  };
+  if (String(node?.id) === String(owner?.id)) {
+    return { ...painted, box: ownerLocal, pageBox: ownerLocal, pin: owner.pin || 'viewport' };
+  }
+  const local = overlayLocalBox(node, owner);
+  if (!local) return painted;
+  return { ...painted, box: local, pageBox: local, sliceExport: remapSliceToOverlay(node, owner) };
+}
+
 /**
  * Map one inventory/v2 document onto a renderer platform tree.
  * unknown stays drawable; skipped is omitted except CSS-paintable art-fragments.
@@ -83,12 +180,40 @@ export function platformTruthFromInventory(inventory, options = {}) {
     };
   }
 
-  const fixed = new Set(asArray(adapted.fixedOverlays?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
-  const chromeIds = new Set(asArray(adapted.pageChrome?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
-  const roots = new Set(asArray(adapted.pagePaintOrder).map((entry) => String(entry?.id || '')).filter(Boolean));
   const liveNodes = restoreOwnerComposites(asArray(inventory.nodes));
-  const liveById = new Map(liveNodes.filter((node) => node && node.id).map((node) => [String(node.id), node]));
-  const droppedFixIds = new Set(asArray(inventory.overlays).map((entry) => String(entry?.id || '')).filter((id) => id && !fixed.has(id)));
+  const allFixedRoots = asArray(adapted.fixedOverlays?.nodes);
+  const fromOf = (node) => {
+    const raw = node?.from ?? node?.params?.from;
+    return Number.isFinite(Number(raw)) ? Number(raw) : null;
+  };
+  /* CONSUMER: no @from → pin on entry. Multiple untagged copies of the same
+     fix/ label are Figma section clones, not extra viewport bars. Keep the
+     first (page order); later clones would stack at the sticky origin. */
+  const seenUntagged = new Set();
+  const droppedCloneRoots = new Set();
+  const fixedRoots = allFixedRoots.filter((node) => {
+    if (fromOf(node) != null) return true;
+    const key = String(node?.label || node?.name || node?.id || '');
+    if (seenUntagged.has(key)) {
+      droppedCloneRoots.add(String(node?.id || ''));
+      return false;
+    }
+    seenUntagged.add(key);
+    return true;
+  });
+  const fixed = new Set(fixedRoots.map((node) => String(node?.id || '')).filter(Boolean));
+  const inventoryOverlayIds = new Set(asArray(inventory.overlays).map((entry) => String(entry?.id || '')).filter(Boolean));
+  for (const id of inventoryOverlayIds) {
+    if (!fixed.has(id)) droppedCloneRoots.add(id);
+  }
+  const droppedClones = new Set([
+    ...droppedCloneRoots,
+    ...liveNodes
+      .filter((node) => droppedCloneRoots.has(String(node?.id || ''))
+        || asArray(node?.ancestorIds).some((id) => droppedCloneRoots.has(String(id))))
+      .map((node) => String(node.id)),
+  ]);
+  const chromeIds = new Set(asArray(adapted.pageChrome?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
   const skipChromePaint = (node) => {
     const id = String(node?.id || '');
     if (!id) return false;
@@ -97,19 +222,35 @@ export function platformTruthFromInventory(inventory, options = {}) {
        that section — otherwise it is dropped from both trees. */
     return chromeIds.has(id);
   };
+  const roots = new Set(asArray(adapted.pagePaintOrder).map((entry) => String(entry?.id || '')).filter(Boolean));
+  const ownerOf = (node) => {
+    if (fixed.has(String(node?.id || ''))) return node;
+    const ownerId = asArray(node?.ancestorIds).map(String).reverse().find((id) => fixed.has(id));
+    return ownerId ? (fixedRoots.find((entry) => String(entry.id) === ownerId) || liveNodes.find((entry) => String(entry.id) === ownerId) || null) : null;
+  };
+  const liveById = new Map(liveNodes.filter((node) => node?.id).map((node) => [String(node.id), node]));
   const sections = {};
   for (const section of asArray(inventory.sections)) {
     if (!section?.id) continue;
+    const owned = ordered(liveNodes.filter((node) => (
+      !underFixedOwner(node, fixed)
+      && !droppedClones.has(String(node?.id || ''))
+      && !skipChromePaint(node)
+      && descendantsOf(node, section.id)
+    )));
+    const folded = foldSectionOntoPage(section, owned);
+    const liveSource = liveById.get(String(section.id));
     sections[String(section.id)] = {
-      meta: { id: section.id, ...drawMeta(section, liveById.get(String(section.id))) },
-      nodes: ordered(liveNodes.filter((node) => (
-        !fixed.has(String(node?.id || ''))
-        && !underDroppedFix(node, droppedFixIds)
-        && !skipChromePaint(node)
-        && descendantsOf(node, section.id)
-      )).map(paintWithPageBox)),
+      meta: {
+        ...folded.meta,
+        clipsContent: liveSource?.clipsContent === true || section.clipsContent === true,
+      },
+      nodes: folded.nodes,
     };
   }
+  const fixedNodes = ordered(liveNodes.filter((node) => (
+    underFixedOwner(node, fixed) && !droppedClones.has(String(node?.id || ''))
+  ))).map((node) => paintFixedNode(node, ownerOf(node)));
 
   const pageMeta = drawMeta(inventory.page);
   const chromeNodes = asArray(adapted.pageChrome?.nodes).map((node) => {
@@ -133,7 +274,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
     },
     fixedOverlays: {
       ...(adapted.fixedOverlays || {}),
-      nodes: asArray(adapted.fixedOverlays?.nodes).map(paintWithPageBox),
+      nodes: fixedNodes,
     },
     pagePaintOrder: adapted.pagePaintOrder,
     sections,

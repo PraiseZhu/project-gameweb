@@ -35,7 +35,7 @@ test('sc-61-recall: CLAUDE.md trigger table loads torchlight-web SKILL.md', () =
 });
 
 test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence', () => {
-  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿 → 政策镜像必须绿 → 才给人 `\?product=1`/;
+  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg\/` `kv` \/ 无名 `kv` \/ 时间背景宽高等于 `pageBox`）→ 政策镜像必须绿 → 才给人 `\?product=1`/;
   const skill = read('SKILL.md');
   const readme = read('README.md');
   const claude = readClaude();
@@ -56,6 +56,8 @@ test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence',
   assert.match(readme, /inventory-static-gate-probe\.mjs/);
   assert.match(skill, /inventory-static-gate=1/);
   assert.match(readme, /inventory-static-gate=1/);
+  assert.match(skill, /product=1` 滚动后/);
+  assert.match(readme, /product=1` 滚动后/);
 });
 
 test('sc-label-direct-figma: live extract is not inventory/handoff', () => {

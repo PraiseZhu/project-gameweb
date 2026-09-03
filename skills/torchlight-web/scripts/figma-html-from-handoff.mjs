@@ -100,11 +100,27 @@ function pageLangsFromTruth(pc, mobile) {
   return pageLangsFromImgLangSets(sets);
 }
 
+function writeFreshShowcaseIndex(demoDir, consume) {
+  const slug = `handoff-${String(consume.fingerprint || 'pack').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'pack'}`;
+  const inlineSafe = (code) => String(code || '').replaceAll('</script', '<\\/script');
+  const shell = readFileSync(join(SKILL_ROOT, 'templates/demo-shell.html'), 'utf8')
+    .replace(/\r\n/g, '\n')
+    .replaceAll('{{NAME}}', slug)
+    .replaceAll('{{PR}}', 'null')
+    .replace('{{QA_DEVICES}}', inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/default-devices.json'), 'utf8').replace(/\r\n/g, '\n').trim()))
+    .replace('{{FIGMA_RENDER}}', inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/figma-render.js'), 'utf8').replace(/\r\n/g, '\n')))
+    .replace('{{FIGMA_CHROME}}', inlineSafe(readFileSync(join(SKILL_ROOT, 'templates/figma-chrome.js'), 'utf8').replace(/\r\n/g, '\n')));
+  writeFileSync(join(demoDir, 'index.html'), shell);
+}
+
 function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_MAX_HTML_BYTES) {
   const indexPath = join(demoDir, 'index.html');
   if (!existsSync(indexPath)) {
-    const slug = `handoff-${String(consume.fingerprint || 'pack').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'pack'}`;
-    runNode(INIT, ['--dir', demoDir, '--name', slug, '--workflow', 'figma-showcase']);
+    if (existsSync(join(demoDir, 'spec.json'))) writeFreshShowcaseIndex(demoDir, consume);
+    else {
+      const slug = `handoff-${String(consume.fingerprint || 'pack').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'pack'}`;
+      runNode(INIT, ['--dir', demoDir, '--name', slug, '--workflow', 'figma-showcase']);
+    }
   }
   if (!existsSync(indexPath)) throw new Error(`init did not write ${indexPath}`);
   embedDesignPolicy(indexPath);
@@ -120,9 +136,9 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
   return { indexPath, htmlVolume: assertHtmlVolume(demoDir, htmlLimitBytes) };
 }
 
-function attachSliceAssets(payload, demoDir) {
+function attachSliceAssets(payload, demoDir, { reuseExisting = false } = {}) {
   try {
-    runNode(ASSETS, ['--demo', demoDir], { timeout: 900000 });
+    runNode(ASSETS, ['--demo', demoDir, ...(reuseExisting ? ['--reuse-existing'] : [])], { timeout: 900000 });
     payload.sliceAssets = { ok: true };
     return payload;
   } catch (err) {
@@ -253,6 +269,7 @@ export function buildHtmlFromHandoff({
   skipPreview = false,
   htmlLimitBytes = DEFAULT_MAX_HTML_BYTES,
   staticGateProbe = null,
+  reuseExistingAssets = false,
 }) {
   const loaded = consumeReadyPack(handoffDir);
   if (loaded.error) return loaded.error;
@@ -287,30 +304,44 @@ export function buildHtmlFromHandoff({
     payload.ok = false;
     payload.problems = ['preview-first skipped; product view not allowed'];
   } else {
-    attachSliceAssets(payload, demoDir);
+    attachSliceAssets(payload, demoDir, { reuseExisting: reuseExistingAssets });
     if (payload.ok === true) attachPreviewFirst(payload, demoDir);
   }
   const afterInventory = attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, staticGateProbe });
   return attachDesignPolicyMirror(afterInventory);
 }
 
-const DESIGN_POLICY_RE = /<script id="qa-design-policy" type="application\/json">[\s\S]*?<\/script>/;
+const DESIGN_POLICY_RE = /<script id="qa-design-policy" type="application\/json">[\s\S]*?<\/script>(?:\s*<script>\s*\(function \(\) \{[\s\S]*?window\.__designPolicy[\s\S]*?<\/script>)?/;
 
 function loadSkillDesignPolicy() {
   return parseDesignPolicyFile(join(SKILL_ROOT, 'DESIGN.md'));
 }
 
+function designPolicyBlock(policy) {
+  return `<script id="qa-design-policy" type="application/json">${safeJsonForScript(policy)}</script>
+<script>
+(function () {
+  var el = document.getElementById('qa-design-policy');
+  window.__designPolicy = el && el.textContent ? JSON.parse(el.textContent) : {};
+})();
+</script>`;
+}
+
 function embedDesignPolicy(indexPath) {
   const html = readFileSync(indexPath, 'utf8');
-  if (!DESIGN_POLICY_RE.test(html)) {
-    throw new Error('index.html missing #qa-design-policy');
-  }
   const policy = loadSkillDesignPolicy();
-  const next = html.replace(
-    DESIGN_POLICY_RE,
-    `<script id="qa-design-policy" type="application/json">${safeJsonForScript(policy)}</script>`,
-  );
-  writeFileSync(indexPath, next);
+  const block = designPolicyBlock(policy);
+  if (DESIGN_POLICY_RE.test(html)) {
+    writeFileSync(indexPath, html.replace(DESIGN_POLICY_RE, block));
+    return;
+  }
+  const devicesClose = html.indexOf('</script>', html.indexOf('id="qa-devices"'));
+  if (devicesClose >= 0) {
+    const insertAt = devicesClose + '</script>'.length;
+    writeFileSync(indexPath, `${html.slice(0, insertAt)}\n${block}${html.slice(insertAt)}`);
+    return;
+  }
+  throw new Error('index.html missing #qa-design-policy');
 }
 
 function attachDesignPolicyMirror(payload) {
@@ -422,7 +453,7 @@ function defaultStaticGateProbe(demoDir, handoffDir, platform) {
       cwd: SKILL_ROOT,
       encoding: 'utf8',
       env: process.env,
-      timeout: 120000,
+      timeout: 180000,
     });
     if (res.status !== 0) {
       const output = `${res.stdout || ''}\n${res.stderr || ''}`.trim();
@@ -481,6 +512,7 @@ function main(argv = process.argv.slice(2)) {
   const result = buildHtmlFromHandoff({
     handoffDir: resolve(handoff),
     demoDir: resolve(demo),
+    reuseExistingAssets: argv.includes('--reuse-existing'),
   });
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   process.exit(result.ok ? 0 : 1);
