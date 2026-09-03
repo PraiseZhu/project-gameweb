@@ -225,12 +225,13 @@ test('authored multiline text keeps source metrics instead of height step-fit', 
   assert.match(renderer, /authoredLineCount \|\| 0, geometryLineCount/);
 });
 
-test('season-1 stretch keeps KV/bg on width-scale k, not a cover-crop slot', () => {
-  assert.match(renderer, /heroVisualScale = k/);
+test('hero cover scale stays on the hero slot, not the released page stage', () => {
+  assert.match(renderer, /heroVisualScale = slotScale/);
   assert.match(renderer, /scale: pageStageScale/);
   assert.match(renderer, /data-hero-visual-scale/);
+  assert.match(renderer, /heroVisualScale \/ pageStageScale/);
   assert.doesNotMatch(renderer, /pageStageScale = slotScale/);
-  assert.doesNotMatch(renderer, /data-kv-cover-plane/);
+  assert.match(renderer, /data-kv-cover-plane/);
   assert.match(renderer, /data-hero-ui-plane/);
   assert.match(renderer, /stage\.style\.zoom = String\(pageStageMode \? pageStageScale : \(pageScope \? 1 : k\)\)/);
 });

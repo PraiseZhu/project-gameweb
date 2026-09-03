@@ -3974,10 +3974,36 @@
             el.setAttribute('data-hero-ui-anchor', heroUiAnchored ? 'owner-block' : 'slot-ratio');
           }
         }
-        /* First-screen KV/bg follows the same width-scale k as the rest of
-           the page. Do not cover-crop / left-right crop the artwork to fill
-           100vh — that is the season-1 "左右裁切" failure. Inventory still
-           owns one bg/* sheet; later sections stay on platform scale k. */
+        /* Cover-crop the first-screen visual plane (KV + long bg/*) to 100vh.
+           Inventory still owns one bg/* sheet; this only scales the locked
+           first-screen view. Later sections stay on platform scale k. Do not
+           shrink the owner box: that would squash the long sheet and keep the
+           next-screen seam inside the first screen. */
+        if (heroVisualPlane && heroSlot && heroVisualScale > 0 && pageStageScale > 0
+          && !parent && Number.isFinite(Number(box.h)) && Number(box.h) > 0) {
+          const planeRatio = heroVisualScale / pageStageScale;
+          const nodeY = Number(box.y);
+          const isFirstScreenVisual = !Number.isFinite(nodeY) || nodeY <= heroSectionBottomY + 0.5;
+          const layerName = String(n.name || '');
+          const isBg = /^bg(?:\/|$)/i.test(layerName);
+          const isKv = /^kv(?:\/|$)/i.test(layerName);
+          if (isFirstScreenVisual && (isBg || isKv)) {
+            if (planeRatio > 1.001) {
+              const planeLeft = Number.parseFloat(el.style.left || '0') || 0;
+              el.style.left = (planeLeft + heroVisualCropLeft) + 'px';
+              el.style.transformOrigin = '0 0';
+              el.style.transform = ((el.style.transform ? el.style.transform + ' ' : '') + 'scale(' + planeRatio + ')').trim();
+              el.setAttribute('data-hero-visual-plane-scale', String(planeRatio));
+            }
+            const sourceH = Number(box.h);
+            const clipH = heroCropWindowDesign > 0 ? Math.min(sourceH, heroCropWindowDesign) : sourceH;
+            if (isBg && heroLayoutOffsetDesign > 0 && clipH > 0 && clipH < sourceH - 0.5) {
+              el.style.clipPath = 'inset(0 0 ' + (sourceH - clipH) + 'px 0)';
+              el.setAttribute('data-hero-visual-clip', String(clipH));
+            }
+            el.setAttribute('data-hero-visual-plane', isBg ? 'bg' : 'kv');
+          }
+        }
         el.style.width = (box.w ?? 0) + 'px';
         /* absoluteRenderBounds 是 Figma 已经算完 mask/clip/effect 后的可见范围。
            对没有切图的 CSS 节点，如果 renderBox 是 box 的真子集，必须按它裁掉不可见部分；
@@ -5841,8 +5867,20 @@
           layer.style.width = designWidth + 'px';
           layer.style.height = (pageScrollHeight || meta.height || 0) + 'px';
           layer.style.pointerEvents = 'none';
-          /* Season-1 stretch is uniform width-scale k. Do not clip/cover-crop
-             the KV sibling to 100vh; that left-right-crops the artwork. */
+          /* KV is first-screen art only. Clip that sibling to the viewport in
+             page-stage coordinates (designHeight = vh / k), not the raw Figma
+             hero box: cover-scale lives on the node, so a 2160 clip would cut
+             the enlarged portraits. A long bg/* sheet keeps full page height. */
+          const layerName = rootNameById.get(String(rootId)) || '';
+          if (heroSlot && Number(heroSlot.designHeight) > 0 && /^kv(?:\/|$)/i.test(layerName)) {
+            layer.style.height = Number(heroSlot.designHeight) + 'px';
+            layer.style.overflow = 'hidden';
+            layer.setAttribute('data-hero-crop-window', 'visual-root');
+            layer.setAttribute('data-hero-crop-window-design', String(heroSlot.designHeight));
+          } else if (heroSlot && heroCropWindowDesign > 0 && /^bg(?:\/|$)/i.test(layerName)) {
+            layer.setAttribute('data-hero-crop-window', 'visual-root');
+            layer.setAttribute('data-hero-crop-window-design', String(heroCropWindowDesign));
+          }
           stage.appendChild(layer);
           return layer;
         };
@@ -5871,6 +5909,23 @@
               layer.setAttribute('data-paint-node-count', String((bg?.nodes.length || 0) + (chrome?.nodes.length || 0)));
               layer.setAttribute('data-paint-node-ids', [...(bg?.nodes || []), ...(chrome?.nodes || [])]
                 .map((node) => String(__u(node && node.id))).join(' '));
+              const rootName = rootNameById.get(String(rootId)) || '';
+              const isKvRoot = /^kv(?:\/|$)/i.test(rootName);
+              if (isKvRoot && heroSlot && pageStageScale > 0) {
+                const kvRatio = heroVisualScale / pageStageScale;
+                const firstMeta = sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta;
+                const kvClipH = Number(firstMeta && firstMeta.height) || Number(heroSlot.heroHeight) || 0;
+                layer.style.zoom = String(kvRatio);
+                layer.style.left = heroVisualCropLeft + 'px';
+                layer.style.top = '0';
+                layer.style.width = designWidth + 'px';
+                if (kvClipH > 0) layer.style.height = kvClipH + 'px';
+                layer.style.overflow = 'hidden';
+                layer.style.transformOrigin = '0 0';
+                layer.setAttribute('data-kv-cover-plane', 'cover-crop');
+                layer.setAttribute('data-hero-visual-scale', String(heroVisualScale));
+                layer.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
+              }
             }
             if (bg) {
               if (layer && heroLayoutOffsetDesign > 0) {
@@ -5881,10 +5936,12 @@
                 originX: pageX,
                 originY: pageY,
                 backgroundHeroShift: true,
+                heroVisualPlane: true,
               });
             }
             if (chrome) {
-              paint(chrome.nodes, chrome.raw, layer || fixedStage);
+              const chromeIsHeroPlane = layer && layer.getAttribute('data-hero-crop-window') === 'visual-root';
+              paint(chrome.nodes, chrome.raw, layer || fixedStage, chromeIsHeroPlane ? { heroVisualPlane: true } : {});
             }
             const orderedSections = asArr(entry.sectionIds);
             for (const sectionId of orderedSections) sectionLayerById.set(__u(sectionId), layer);
