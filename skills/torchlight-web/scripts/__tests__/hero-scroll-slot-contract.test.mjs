@@ -68,6 +68,14 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /data-hero-ui-anchor/);
   assert.match(render, /owner-block/);
   assert.match(render, /pfx === 'fix'/);
+  assert.match(render, /listedHeroArt/);
+  assert.match(render, /fullBleedHeroArt/);
+  assert.match(render, /fixedHost\.style\.position = 'sticky'/);
+  assert.match(render, /fx-fixed-zoom/);
+  assert.match(render, /isTopBarChrome/);
+  assert.match(render, /first-section-pagebox/);
+  assert.doesNotMatch(render, /fixedHost\.style\.position = 'fixed'/);
+  assert.doesNotMatch(render, /fixedStage\.style\.position = 'sticky'/);
   assert.doesNotMatch(render, /heroVisualRatio/);
   assert.match(render, /data-hero-slot-reveal/);
   assert.match(render, /revealDistance/);

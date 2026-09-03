@@ -622,6 +622,31 @@ test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as pain
   assert.equal(restored.some((node) => node.id === "mask-group"), false);
 });
 
+test("restoreOwnerComposites does not restore skipped IMAGE slice-children under bg/", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "bg-2",
+      type: "FRAME",
+      name: "bg/pc背景1",
+      status: "determined",
+      role: "bg",
+      pageBox: { x: 0, y: 2143, w: 3840, h: 2143 },
+    },
+    {
+      id: "kv-2",
+      type: "RECTANGLE",
+      name: "赛季kv-0623-整理_2 1",
+      status: "skipped",
+      why: "slice-child",
+      parentId: "bg-2",
+      pageBox: { x: 0, y: 2143, w: 4152, h: 2326 },
+      style: { fills: [{ type: "IMAGE", visible: true, imageRef: "ref-later-bg" }] },
+    },
+  ]);
+  assert.equal(restored.some((node) => node.id === "kv-2"), false);
+  assert.equal(restored.find((node) => node.id === "bg-2")?.role, "bg");
+});
+
 test("calendar identity keeps today and marks missing return-today unread instead of synthesizing", () => {
   const identity = calendarIdentityFromNodes([
     { id: "today", name: "dyn/今日日期", status: "determined", role: "dyn" },

@@ -511,9 +511,22 @@
   /* Ready pack slices the selected `ind/` COMPONENT root (`2:2424`), not the
      page INSTANCE. CONSUMER.md: consume by instance componentId. Do not invent
      a CSS diamond, and do not reuse a sibling IMAGE fill as the whole mark. */
+  _usableAssetFile(rec) {
+    if (!rec || typeof rec !== 'object') return null;
+    const file = rec.file ? String(rec.file) : '';
+    const png = rec.pngFile ? String(rec.pngFile) : '';
+    const bytes = Number(rec.bytes);
+    /* A 186-byte webp of a 2443×1380 KV is an encoder collapse (solid plate).
+       Prefer the retained PNG whenever the delivered file is implausibly small. */
+    if (file && Number.isFinite(bytes) && bytes > 0 && bytes < 2048 && png && png !== file) return png;
+    return file || png || null;
+  },
   _assetRecForNode(n, platform = null) {
     const rec = this._assetRec(n && n.id, platform);
-    if (rec) return rec;
+    if (rec) {
+      const file = this._usableAssetFile(rec);
+      return file && file !== rec.file ? { ...rec, file } : rec;
+    }
     const componentId = String((n && n.componentId) || '');
     if (!componentId) return null;
     const pfx = ((/^([a-z]+)\//.exec(String(n && n.name || '')) || [])[1] || '');
@@ -661,11 +674,40 @@
       && [box.x, box.y, box.w, box.h].every((v) => Number.isFinite(Number(v)))
       && Number(box.w) > 0 && Number(box.h) > 0);
   },
+  _sameCoordinateSpace(a, b, limit = 8000) {
+    if (!this._geomReady(a) || !this._geomReady(b)) return false;
+    /* Folded mobile boards shift x by a section origin (840/1680). A leftover
+       canvas exportBox then looks "nearby" under an 8000px limit and places
+       the PNG thousands of px off-screen (left: 4708px). Same-space means
+       the two origins actually sit on the painted page. */
+    const dx = Math.abs(Number(a.x) - Number(b.x));
+    const dy = Math.abs(Number(a.y) - Number(b.y));
+    const maxDim = Math.max(Number(a.w), Number(a.h), Number(b.w), Number(b.h), 1);
+    return dx < Math.min(limit, maxDim * 2) && dy < Math.min(limit, maxDim * 2);
+  },
   _ownerSliceBox(assetRec, ownerBox, renderBox, slicePageBox = null) {
-    if (this._geomReady(slicePageBox)) return slicePageBox;
+    /* Placement is pageBox / sliceExport.box. Canvas renderBox (x≈-14000)
+       must never become the img left/top, or the slice flies off-screen.
+       After fix/ remapping, ownerBox is local; a leftover page-space
+       sliceExport.box would place the PNG thousands of px away and get clipped. */
+    /* Listed img/bg/kv owners clip to pageBox. A shorter ink sliceExport.box
+       (img/时间背景 167 vs owner 260) must not become the PNG size, or copy on
+       the owner box and the decoration PNG sit on different Y. */
+    const ownerReady = this._geomReady(ownerBox);
+    if (ownerReady && this._geomReady(slicePageBox) && this._sameCoordinateSpace(slicePageBox, ownerBox)
+      && Number(slicePageBox.w) <= Number(ownerBox.w) + 0.5
+      && Number(slicePageBox.h) <= Number(ownerBox.h) + 0.5) {
+      return ownerBox;
+    }
+    if (this._geomReady(slicePageBox) && this._sameCoordinateSpace(slicePageBox, ownerBox)) return slicePageBox;
     const delivered = assetRec && assetRec.exportBox;
-    if (this._geomReady(delivered)) return delivered;
-    if (this._geomReady(renderBox) && this._geomReady(ownerBox)
+    if (ownerReady && this._geomReady(delivered) && this._sameCoordinateSpace(delivered, ownerBox)
+      && Number(delivered.w) <= Number(ownerBox.w) + 0.5
+      && Number(delivered.h) <= Number(ownerBox.h) + 0.5) {
+      return ownerBox;
+    }
+    if (this._geomReady(delivered) && this._sameCoordinateSpace(delivered, ownerBox)) return delivered;
+    if (this._geomReady(renderBox) && this._sameCoordinateSpace(renderBox, ownerBox)
       && (Number(renderBox.w) > Number(ownerBox.w) + 0.5
         || Number(renderBox.h) > Number(ownerBox.h) + 0.5
         || Number(renderBox.x) < Number(ownerBox.x) - 0.5
@@ -691,6 +733,9 @@
       img.style.objectFit = 'none';
       el.setAttribute('data-asset-bounds-resolved', exportBox ? 'export-box' : 'slice-export');
       const fillOwnerCanvas = (objectFit, policy, extra = {}) => {
+        /* zh-CN keeps sliceExport pixel size and offset. Never 100% +
+           object-fit:fill a spill canvas (e.g. 188 PNG) into 124/228. */
+        if (zhStatic) return;
         img.style.left = '0';
         img.style.top = '0';
         img.style.width = '100%';
@@ -737,7 +782,16 @@
     img.setAttribute('alt', alt);
     img.setAttribute('loading', 'eager');
     img.setAttribute('decoding', 'async');
-    if (!el.style.overflow || el.style.overflow === 'visible') el.style.overflow = 'hidden';
+    /* A render-bound slice (188 around a 124 owner) must paint its glow.
+       Clip belongs on the clipsContent parent (228), not this owner. */
+    const placed = placedBox || null;
+    const sliceSpillsOwner = !!(placed && this._geomReady(placed) && this._geomReady(box)
+      && (Number(placed.w) > Number(box.w) + 0.5
+        || Number(placed.h) > Number(box.h) + 0.5
+        || Number(placed.x) < Number(box.x) - 0.5
+        || Number(placed.y) < Number(box.y) - 0.5));
+    if (!sliceSpillsOwner && (!el.style.overflow || el.style.overflow === 'visible')) el.style.overflow = 'hidden';
+    if (sliceSpillsOwner) el.setAttribute('data-owner-slice-spill', 'visible');
     if (!el.style.position) el.style.position = 'relative';
     el.appendChild(img);
     return img;
@@ -1750,6 +1804,7 @@
 
     const renderIds = pageScope ? ['__page__', ...ids] : ids;
     let pageStage = null;
+    let fixedHost = null;
     let fixedStage = null;
     /* The ready handoff keeps a fixed owner in fixedOverlays but may keep its
        truth-backed descendants in the section where Figma placed them.  Track
@@ -1834,7 +1889,10 @@
          —— 背景是整页一张、跨分区连续的，缝隙不可见。 */
       const _rawH = meta.height ?? 0;
       const isHeroStage = !pageStageMode && heroSlot && String(sid) === heroSlot.sectionId;
-      const _snapH = k > 0 ? Math.ceil(_rawH * k) / k : _rawH;
+      /* Do not ceil section height in design px. Adjacent Figma pageBoxes
+         already abut (0/2143/4286). Ceil(*k)/k adds up to 1 design px per
+         section and shows as a black seam at every join. */
+      const _snapH = _rawH;
       /* Official first screen is a 100vh crop window. Keep the Figma hero
          height on the visual plane. The UI stage itself must be tall enough
          for source Y × uiYRatio (vh/k), or a lower-hero UI title stays in
@@ -1842,10 +1900,17 @@
       const heroUiHeight = isHeroStage && heroSlot && Number(heroSlot.designHeight) > 0
         ? Number(heroSlot.designHeight)
         : _snapH;
-      stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : heroUiHeight) + 'px';
+      /* First-screen clipsContent must clip to the Figma section pageBox
+         (sec/1 = 2143), not the 100vh designHeight. A taller stage lets
+         first-screen KV leak into later sections. */
+      const heroClipHeight = isHeroStage && Number(_rawH) > 0
+        ? Math.min(heroUiHeight, Number(_rawH))
+        : heroUiHeight;
+      stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : heroClipHeight) + 'px';
       if (isHeroStage) {
         stage.style.overflow = 'hidden';
         stage.setAttribute('data-hero-source-height', String(_rawH));
+        if (Number(_rawH) > 0) stage.setAttribute('data-hero-clip-height', String(heroClipHeight));
       }
       if (pageScope && !pageStageMode) {
         stage.style.position = 'absolute';
@@ -1879,19 +1944,41 @@
       stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? 1 : k));
       if (pageStageMode && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes) {
         frame.style.position = frame.style.position || 'relative';
+        fixedHost = document.createElement('div');
+        fixedHost.className = 'fx-stage fx-fixed-overlays';
+        fixedHost.setAttribute('data-node', '__fixed__');
+        fixedHost.setAttribute('data-node-id', 'page-fixed-overlays');
+        /* CONSUMER: fix/ pins to the viewport. Product `.frame` always has
+           transform:scale (even scale(1)), which is a containing block for
+           position:fixed — that pins to the page canvas, not the scrollport.
+           sticky + top:0 pins to `.frame` itself (the actual viewport).
+           Do not put zoom/transform on this pin layer; inner wrapper takes k
+           so overlay-absolute pageBox stays 1:1. */
+        fixedHost.style.position = 'sticky';
+        fixedHost.style.left = '0';
+        fixedHost.style.top = '0';
+        fixedHost.style.width = designWidth + 'px';
+        fixedHost.style.height = '0';
+        fixedHost.style.overflow = 'visible';
+        fixedHost.style.pointerEvents = 'none';
+        fixedHost.style.zIndex = '20';
+        fixedHost.style.zoom = '1';
         fixedStage = document.createElement('div');
-        fixedStage.className = 'fx-stage fx-fixed-overlays';
-        fixedStage.setAttribute('data-node', '__fixed__');
-        fixedStage.setAttribute('data-node-id', 'page-fixed-overlays');
-        fixedStage.style.position = 'sticky';
+        fixedStage.className = 'fx-fixed-zoom';
+        fixedStage.setAttribute('data-fix-zoom', 'k');
+        fixedStage.style.position = 'absolute';
         fixedStage.style.left = '0';
         fixedStage.style.top = '0';
         fixedStage.style.width = designWidth + 'px';
         fixedStage.style.height = '0';
         fixedStage.style.overflow = 'visible';
-        fixedStage.style.pointerEvents = 'none';
-        fixedStage.style.zIndex = '20';
-        fixedStage.style.zoom = String(k);
+        /* zoom on a sticky descendant subpixel-snaps while .frame scrolls
+           (mobile dTop 3–24px). Scale from 0,0 keeps overlay-absolute pageBox
+           and does not create a containing block on the sticky host. */
+        fixedStage.style.zoom = '1';
+        fixedStage.style.transformOrigin = '0 0';
+        fixedStage.style.transform = 'scale(' + k + ')';
+        fixedHost.appendChild(fixedStage);
       }
 
       /* ═══ 还原 Figma 的父子嵌套 ═══
@@ -2446,7 +2533,13 @@
           /* A fixed navigation item is only targetable later if its complete
              source-ordered set can be paired 1:1 with page sections. */
           const fixedOwner = p.role === 'btn' ? ownerFixed(n) : null;
-          if (fixedOwner) {
+          /* Directory nav-items pair 1:1 with sections. A wide top bar
+             (fix/顶部信息) holding 官方充值/进入官网 is viewport chrome, not a
+             rail; chrome syncHeroEntryNavigation would rewrite those tops. */
+          const navRailOwner = fixedOwner && (fixedById.get(String(fixedOwner)) || byId.get(String(fixedOwner)));
+          const navRailBox = navRailOwner && (navRailOwner.pageBox || navRailOwner.box);
+          const isTopBarChrome = !!(navRailBox && Number(navRailBox.w) > Number(navRailBox.h) * 2);
+          if (fixedOwner && !isTopBarChrome) {
             attrs['data-nav-item'] = 'true';
             attrs['data-nav-owner'] = fixedOwner;
             const variant = indicatorVariant(n);
@@ -3100,7 +3193,15 @@
         for (const id of ownerPath.slice(0, -1).map((raw) => String(__u(raw))).reverse()) pushBakedOwner(id);
         const ancestorIds = Array.isArray(n.ancestorIds) ? n.ancestorIds : [];
         for (const id of ancestorIds.map((raw) => String(__u(raw))).reverse()) pushBakedOwner(id);
-        const bakedOwnerId = bakedOwnerChain.find((id) => !!this._assetRec(id));
+        const listedSliceOwner = (id) => {
+          const rec = this._assetRec(id);
+          if (!rec) return false;
+          const owner = truthNodeById.get(String(id));
+          return !!(owner && owner.sliceExport);
+        };
+        /* Only a清单 sliceExport owner may bake descendants. Unknown / unprefixed
+           parents in #qa-assets must not lock img/ children that have their own contract. */
+        const bakedOwnerId = bakedOwnerChain.find((id) => listedSliceOwner(id));
         /* Non-default blend layers (SOFT_LIGHT/OVERLAY/…) punched through by the
            extractor: a baked export rasterizes them on a transparent canvas, so the
            blend loses its page backdrop and flattens to a near-white fill (06 barcode
@@ -3121,8 +3222,19 @@
         const underHscrollSurface = !!(parent && parent.hscrollSurface)
           || evidenceAttrs?.['data-hscroll-overflow-child'] === 'true'
           || (parent && parent.el && parent.el.closest && parent.el.closest('[data-hscroll-surface="true"]'));
+        const ownListedSlice = !!(n.sliceExport);
+        const paintAsFragment = n.paintAsFragment === true;
+        const ownImageFill = Array.isArray(st.fills)
+          && st.fills.some((f) => f && f.visible !== false && f.type === 'IMAGE');
+        /* A restored IMAGE slice-child (later-section KV) is the real paint.
+           The bg/ owner PNG is often a transparent plate; locking the child
+           under that bake leaves sec/2–3 empty. Art-fragments (play triangle)
+           are CSS-painted and must also stay above the owner.
+           Unknown IMAGE fills (mobile first-screen 814:11948) have no
+           sliceExport / paintAsFragment stamp but still own a delivered file. */
         if ((parent && parent.assetLock || (bakedOwnerId && !bakedOwnerReleased))
-          && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable) continue;
+          && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable
+          && !ownListedSlice && !paintAsFragment && !ownImageFill) continue;
         /* Direct-owner fallback for text constraint. The locator-stack parent is
            often the SECTION layer for a deeply nested text leaf; it must not win
            over a tighter truth owner. Accept a rendered direct parent only when
@@ -3195,7 +3307,7 @@
            the baked PNG. Only a structural interaction (switch/tab/scroll/copy/nav)
            or a genuinely CSS-rebuildable blend layer may remain above baked pixels;
            every other baked-subtree paint node is skipped to avoid double-draw. */
-        const __inBakedSubtree = !!(bakedOwnerId) && !assetRec;
+        const __inBakedSubtree = !!(bakedOwnerId) && !assetRec && !paintAsFragment && !ownImageFill;
         if (__inBakedSubtree && !bakedOwnerReleased && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable) continue;
         const assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
@@ -3536,9 +3648,23 @@
              their button frames. */
           let heroUiTop = sourceTop;
           let heroUiAnchored = false;
-          if (heroUiBlocks && !parent && Number.isFinite(sourceTop)) {
+          const pinViewport = evidenceAttrs?.['data-fix-pin'] === 'viewport'
+            || pfx === 'fix'
+            || !!(parent && parent.el && parent.el.closest && parent.el.closest('[data-fix-pin="viewport"]'));
+          /* Full-bleed first-screen art (kv / img title / play btn) shares the
+             section pageBox origin. heroUiYRatio was written for lower-hero CTA
+             chrome; applying it here slides KV down and exposes --stage. Lock
+             inventory pageBox: only true top/bottom chrome (fix already skipped)
+             may remap Y. A node whose pageBox covers most of the hero stays put. */
+          const sourceH = Number(box.h ?? 0);
+          const heroH = heroSlot ? Number(heroSlot.heroHeight || 0) : 0;
+          const fullBleedHeroArt = !!(heroSlot && Number.isFinite(sourceTop) && Number.isFinite(heroH) && heroH > 0
+            && Math.abs(sourceTop) <= 0.5 && sourceH >= heroH * 0.7);
+          const listedHeroArt = pfx === 'img' || pfx === 'kv' || pfx === 'bg' || pfx === 'btn'
+            || /^kv(?:\/|$)/i.test(String(n.name || ''));
+          if (heroUiBlocks && !parent && Number.isFinite(sourceTop) && !pinViewport
+            && !(fullBleedHeroArt || listedHeroArt)) {
             const localX = (box.x ?? 0) - originX;
-            const sourceH = Number(box.h ?? 0);
             const sourceBottom = sourceTop + sourceH;
             /* Generic split, no node names: blocks whose Figma bottom sits in
                the upper half of the hero are top chrome and keep their top
@@ -3583,7 +3709,10 @@
           const layerName = String(n.name || '');
           const isBg = /^bg(?:\/|$)/i.test(layerName);
           const isKv = /^kv(?:\/|$)/i.test(layerName);
-          if (isFirstScreenVisual && (isBg || isKv)) {
+          /* Later-section bg/* (y=2143 / 4286) is not first-screen cover art.
+             Cover-cropping it on the page chrome plane paints the wrong sheet
+             under sec/2–3. Only the first-screen kv plane may scale. */
+          if (isFirstScreenVisual && isKv) {
             if (planeRatio > 1.001) {
               const planeLeft = Number.parseFloat(el.style.left || '0') || 0;
               el.style.left = (planeLeft + heroVisualCropLeft) + 'px';
@@ -3720,7 +3849,7 @@
           el.setAttribute('data-asset-bounds', (assetRec && assetRec.exportBounds) || 'render');
           el.setAttribute('data-node-box', [box.x, box.y, box.w, box.h].map((v) => Number(v ?? 0).toFixed(3)).join(','));
         }
-        if (assetRec) el.setAttribute('data-asset-descendants', 'baked');
+        if (n.sliceExport && assetRec) el.setAttribute('data-asset-descendants', 'baked');
 
         /* 导出资产已经按 Figma 节点的不透明度合成：再次设置 CSS opacity 会把
            半透明 PNG 再乘一次，导致波形、装饰等资产异常变淡。无资产节点仍需
@@ -4534,8 +4663,11 @@
              盒子 —— 09「更多」右箭头(1:850 REGULAR_POLYGON rotation=90°)因此没有转向。
              box 是未旋转布局框、AABB(absoluteRenderBounds)已是旋转后外框，所以这里
              只对**未切图**的节点施加 rotate 变换（切图 PNG 已烘焙旋转，不可再转）。
-             Figma 弧度逆时针为正、CSS 顺时针，取负。 */
-          if (!assetUrl && typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4) {
+             Figma 弧度逆时针为正、CSS 顺时针，取负。
+             REGULAR_POLYGON 播放三角的朝向由 clip-path 顶点决定，不能再叠
+             rotate：clip-path 在元素本地坐标，旋转会把 ▶ 拧成 ▲。 */
+          const skipRotationForLocalClip = n.type === 'REGULAR_POLYGON';
+          if (!assetUrl && !skipRotationForLocalClip && typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4) {
             el.style.transform = (el.style.transform ? el.style.transform + ' ' : '') + 'rotate(' + (-n.rotation) + 'rad)';
             el.setAttribute('data-rotated-shape', String(n.rotation));
           }
@@ -4557,15 +4689,31 @@
              探针会数。有资产（切了图）的走 <img>，轮廓在 PNG 里是准的，不标。 */
           const NONRECT_T = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1 };
           if (NONRECT_T[n.type] && !assetUrl) el.setAttribute('data-shape-approx', 'rect');
-          /* REGULAR_POLYGON(3 点=三角形)未切图时，用 clip-path 画出真实三角轮廓，
-             而不是外接矩形。Figma 正多边形内接于 box、首顶点朝上，三角形轮廓即
-             上顶点+左下+右下；旋转交给下面的 transform（box 是未旋转布局框，AABB
-             已含旋转），两者正交。这把 09「更多」右侧箭头(1:850, rotation=90°)从
-             白色小方块还原成指向右的三角箭头。pointCount 缺省按 Figma 默认 3。 */
+          /* REGULAR_POLYGON(3 点=三角形)未切图时，用 clip-path 画出稿上的 ▶。
+             Figma 正三角形默认尖朝上；稿 rotation=-30°（-π/6）把它转到尖朝右并
+             略上扬。clip-path 在元素本地坐标，不能再叠 CSS rotate，否则 ▶ 拧成 ▲。
+             圆角/外发光吃 style.radius 与 DROP_SHADOW，禁止直角尖刀。 */
           const _pc = Number(n.pointCount ?? n.pointcount ?? 3);
            if (n.type === 'REGULAR_POLYGON' && !assetUrl && (!Number.isFinite(_pc) || _pc === 3)) {
-             el.style.clipPath = 'polygon(50% 0%, 0% 100%, 100% 100%)';
+             /* Equilateral ▶ with the tip at 86% (not a right-triangle knife). */
+             el.style.clipPath = 'polygon(86% 50%, 18% 12%, 18% 88%)';
+             const radius = Number(st.radius);
+             if (Number.isFinite(radius) && radius > 0) {
+               el.style.borderRadius = radius + 'px';
+             }
+             const glow = (st.effects || []).find((fx) => fx && fx.visible !== false && fx.type === 'DROP_SHADOW');
+             if (glow) {
+               const c = glow.color || {};
+               const a = c.a == null ? 1 : c.a;
+               const blur = Number(glow.radius) || 0;
+               el.style.filter = 'drop-shadow(0 0 ' + blur + 'px rgba('
+                 + Math.round((c.r || 0) * 255) + ','
+                 + Math.round((c.g || 0) * 255) + ','
+                 + Math.round((c.b || 0) * 255) + ',' + a + '))';
+             }
              el.setAttribute('data-shape-polygon', 'triangle');
+             el.setAttribute('data-shape-polygon-vertex', 'right');
+             el.setAttribute('data-shape-polygon-source', 'figma-regular-polygon');
              el.removeAttribute('data-shape-approx');
            }
            /* BOOLEAN/VECTOR btn arrows are composite contours. Inventing CSS
@@ -4704,16 +4852,18 @@
               mountedImageCount += 1;
             }
             if (mountedImageCount) {
-              /* Asset owner must clip its baked image and serve as the containing
-                 block for its absolute-positioned fx-img. Without this, a scaled
-                 page exposes the image's intrinsic edge beyond the owner box.
-                 img/ frames whose PNG is a render-bound spill canvas must still
-                 clip to the layout box so the visible border, not the shadow
-                 canvas, is the frame the rest of the module is measured against. */
-              if (!el.style.overflow || el.style.overflow === 'visible') el.style.overflow = 'hidden';
+              /* Asset owner is the containing block for its absolute fx-img.
+                 A render-bound spill canvas (188 around 124) must stay visible;
+                 clip belongs on the clipsContent parent (228), not this owner. */
+              const sliceSpillsOwner = !!(exportBox && this._geomReady(exportBox) && this._geomReady(box)
+                && (Number(exportBox.w) > Number(box.w) + 0.5
+                  || Number(exportBox.h) > Number(box.h) + 0.5
+                  || Number(exportBox.x) < Number(box.x) - 0.5
+                  || Number(exportBox.y) < Number(box.y) - 0.5));
+              if (!sliceSpillsOwner && (!el.style.overflow || el.style.overflow === 'visible')) el.style.overflow = 'hidden';
               if (!el.style.position) el.style.position = 'relative';
               if (mountedImageCount > 1) el.setAttribute('data-multifill-images', String(mountedImageCount));
-              if (exportBox && pfx === 'img') el.setAttribute('data-owner-box-clip', 'img-frame');
+              if (exportBox && pfx === 'img' && !sliceSpillsOwner) el.setAttribute('data-owner-box-clip', 'img-frame');
             } else {
               // 宁可显示"这里缺一张图"，也不要用纯色糊过去假装做好了
               el.classList.add('fx-img-ph');
@@ -4771,7 +4921,7 @@
           seq,
           el,
           box,
-          assetLock: !!assetRec && !bakeReleasedForLiveHscroll && evidenceAttrs?.['data-hscroll'] == null,
+          assetLock: !!n.sliceExport && !!assetRec && !bakeReleasedForLiveHscroll && evidenceAttrs?.['data-hscroll'] == null,
           nid: String(__u(nid)),
           layout: n.layout || null,
           hscrollSurface: el.getAttribute('data-hscroll-surface') === 'true'
@@ -5322,12 +5472,40 @@
           layer.style.width = designWidth + 'px';
           layer.style.height = (pageScrollHeight || meta.height || 0) + 'px';
           layer.style.pointerEvents = 'none';
-          /* KV is first-screen art only. Clip that sibling to the viewport in
-             page-stage coordinates (designHeight = vh / k), not the raw Figma
-             hero box: cover-scale lives on the node, so a 2160 clip would cut
-             the enlarged portraits. A long bg/* sheet keeps full page height. */
+          /* First-screen pagePaintOrder roots are section frames (sec/1),
+             not a node named kv/. Clip by the first section's pageBox so
+             first-screen KV cannot leak into later sections. Later roots
+             stay full page height from y=0; do not lock them to 2143@top:0
+             or the following section stage (top=sec.y) would clip empty. */
           const layerName = rootNameById.get(String(rootId)) || '';
-          if (heroSlot && Number(heroSlot.designHeight) > 0 && /^kv(?:\/|$)/i.test(layerName)) {
+          const firstSectionId = heroSlot && heroSlot.sectionId != null ? String(heroSlot.sectionId) : '';
+          const firstMeta = firstSectionId && sections[firstSectionId] ? sections[firstSectionId].meta : null;
+          const firstPageH = Number(firstMeta && firstMeta.height) || 0;
+          const isFirstSectionRoot = !!(firstSectionId && String(rootId) === firstSectionId);
+          const sectionMeta = sections[String(rootId)] && sections[String(rootId)].meta;
+          const sectionY = Number(sectionMeta && sectionMeta.y);
+          const sectionH = Number(sectionMeta && sectionMeta.height);
+          if (isFirstSectionRoot && firstPageH > 0) {
+            layer.style.left = '0';
+            layer.style.top = '0';
+            layer.style.width = designWidth + 'px';
+            layer.style.height = firstPageH + 'px';
+            layer.style.overflow = 'hidden';
+            layer.setAttribute('data-hero-crop-window', 'first-section-pagebox');
+            layer.setAttribute('data-hero-crop-window-design', String(firstPageH));
+          } else if (Number.isFinite(sectionY) && Number.isFinite(sectionH) && sectionH > 0 && String(rootId) !== firstSectionId) {
+            /* Later section roots must clip to their own pageBox height, not a
+               full-page layer from y=0. Keep top at 0: children already use
+               page coordinates, and the section stage itself is placed at sec.y.
+               A y=0 full-page layer lets first-screen KV show through a
+               transparent bg PNG. */
+            layer.style.left = '0';
+            layer.style.top = '0';
+            layer.style.width = designWidth + 'px';
+            layer.style.height = (sectionY - pageY + sectionH) + 'px';
+            layer.style.overflow = 'hidden';
+            layer.setAttribute('data-section-layer-box', 'pageBox-clip');
+          } else if (heroSlot && Number(heroSlot.designHeight) > 0 && /^kv(?:\/|$)/i.test(layerName)) {
             layer.style.height = Number(heroSlot.designHeight) + 'px';
             layer.style.overflow = 'hidden';
             layer.setAttribute('data-hero-crop-window', 'visual-root');
@@ -5366,7 +5544,12 @@
                 .map((node) => String(__u(node && node.id))).join(' '));
               const rootName = rootNameById.get(String(rootId)) || '';
               const isKvRoot = /^kv(?:\/|$)/i.test(rootName);
-              if (isKvRoot && heroSlot && pageStageScale > 0) {
+              const firstSectionId = heroSlot && heroSlot.sectionId != null ? String(heroSlot.sectionId) : '';
+              const isFirstSectionRoot = !!(firstSectionId && String(rootId) === firstSectionId);
+              /* Cover-crop only a true kv/ page root. A section frame named
+                 sec/1 must keep its pageBox clip from appendLayer; zooming it
+                 as a cover-crop plane would also scale later-section coords. */
+              if (isKvRoot && !isFirstSectionRoot && heroSlot && pageStageScale > 0) {
                 const kvRatio = heroVisualScale / pageStageScale;
                 const firstMeta = sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta;
                 const kvClipH = Number(firstMeta && firstMeta.height) || Number(heroSlot.heroHeight) || 0;
@@ -5425,7 +5608,7 @@
            cannot become sticky until the user has already reached the bottom. Its
            paint order remains above content through z-index; DOM placement here is
            only the scroll-anchor contract. */
-        if (fixedStage) frame.appendChild(fixedStage);
+        if (fixedHost) frame.appendChild(fixedHost);
         frame.appendChild(stage);
         pageStage = stage;
       } else {

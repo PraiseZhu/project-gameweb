@@ -52,6 +52,8 @@ test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence',
   assert.match(readme, /inventory-static-gate-probe\.mjs/);
   assert.match(skill, /inventory-static-gate=1/);
   assert.match(readme, /inventory-static-gate=1/);
+  assert.match(skill, /product=1` 滚动后/);
+  assert.match(readme, /product=1` 滚动后/);
 });
 
 test('sc-label-direct-figma: live extract is not inventory/handoff', () => {

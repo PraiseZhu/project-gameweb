@@ -104,9 +104,9 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
   return { indexPath, htmlVolume: assertHtmlVolume(demoDir, htmlLimitBytes) };
 }
 
-function attachSliceAssets(payload, demoDir) {
+function attachSliceAssets(payload, demoDir, { reuseExisting = false } = {}) {
   try {
-    runNode(ASSETS, ['--demo', demoDir], { timeout: 900000 });
+    runNode(ASSETS, ['--demo', demoDir, ...(reuseExisting ? ['--reuse-existing'] : [])], { timeout: 900000 });
     payload.sliceAssets = { ok: true };
     return payload;
   } catch (err) {
@@ -218,6 +218,7 @@ export function buildHtmlFromHandoff({
   skipPreview = false,
   htmlLimitBytes = DEFAULT_MAX_HTML_BYTES,
   staticGateProbe = null,
+  reuseExistingAssets = false,
 }) {
   const loaded = consumeReadyPack(handoffDir);
   if (loaded.error) return loaded.error;
@@ -252,7 +253,7 @@ export function buildHtmlFromHandoff({
     payload.ok = false;
     payload.problems = ['preview-first skipped; product view not allowed'];
   } else {
-    attachSliceAssets(payload, demoDir);
+    attachSliceAssets(payload, demoDir, { reuseExisting: reuseExistingAssets });
     if (payload.ok === true) attachPreviewFirst(payload, demoDir);
   }
   return attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, staticGateProbe });
@@ -343,7 +344,7 @@ function defaultStaticGateProbe(demoDir, handoffDir, platform) {
       cwd: SKILL_ROOT,
       encoding: 'utf8',
       env: process.env,
-      timeout: 120000,
+      timeout: 180000,
     });
     if (res.status !== 0) {
       const output = `${res.stdout || ''}\n${res.stderr || ''}`.trim();
@@ -402,6 +403,7 @@ function main(argv = process.argv.slice(2)) {
   const result = buildHtmlFromHandoff({
     handoffDir: resolve(handoff),
     demoDir: resolve(demo),
+    reuseExistingAssets: argv.includes('--reuse-existing'),
   });
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   process.exit(result.ok ? 0 : 1);

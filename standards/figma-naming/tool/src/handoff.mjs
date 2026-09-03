@@ -189,10 +189,15 @@ export function fingerprintInventories(pcDoc, mobileDoc) {
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
 }
 
-const PACKED_ASSETS_REDIRECT = "切图 PNG 不进交接包。清单只写 sliceExport（谁切、墨迹框 1 倍 png）；做页按 node id 自己导出。";
+const PACKED_ASSETS_REDIRECT = "切图 PNG 不进交接包。清单只写 sliceExport（整框 pageBox 1 倍 png）；做页按 node id 自己导出。";
 
 function isSliceNode(node) {
-  if (node?.status !== "determined" || typeof node.id !== "string" || !node.id) return false;
+  /* Callers: pageSliceIds / collectAttachmentSlices / sliceIdsOf.
+     Schema: inventory/v2 node.sliceExport. Unknown unnamed kv now needs a
+     slice id so figma-assets exports the owner pageBox.
+     User: 「补无名 kv 切图规则」. */
+  if (typeof node.id !== "string" || !node.id) return false;
+  if (node.status === "skipped") return false;
   return needsSliceExport(node) || sliceExportMatches(node.sliceExport);
 }
 
@@ -321,7 +326,7 @@ function packedAssetProblems(assets, ends = ["pc", "mobile"]) {
     }
     if (row.exportBy !== "page-build") problems.push(`${end} 切图须由做页按清单自导`);
     if (!sliceExportMatches(row.sliceExport)) {
-      problems.push(`${end} 切图契约必须是墨迹框 1 倍 png`);
+      problems.push(`${end} 切图契约必须是整框 pageBox 1 倍 png`);
     }
     if (!Array.isArray(row.ids)) problems.push(`${end} 缺 slice ids`);
   }

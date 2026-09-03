@@ -43,10 +43,24 @@ test('preview-first meaningful contract rejects one flat blank source region', (
     visibleSourceNodes: 1,
     meaningfulSourceNodes: 1,
     meaningfulCoverage: 1,
+    bodyCoverage: 1,
     largestNodeCoverage: 1,
   });
   assert.ok(failures.some((failure) => /meaningful source nodes/.test(failure)), failures.join('\n'));
   assert.ok(failures.some((failure) => /single flat source region/.test(failure)), failures.join('\n'));
+});
+
+test('preview-first chrome-only coverage is red', () => {
+  const failures = explainMeaningfulContract({
+    hasRenderer: true,
+    placeholder: false,
+    visibleSourceNodes: 8,
+    meaningfulSourceNodes: 8,
+    meaningfulCoverage: 0.4,
+    bodyCoverage: 0,
+    largestNodeCoverage: 0.2,
+  });
+  assert.ok(failures.some((failure) => /chrome-only/.test(failure)), failures.join('\n'));
 });
 
 test('qaTruthIsExternal detects data-src and ignores inlined truth', () => {

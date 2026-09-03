@@ -24,10 +24,9 @@
  * 老师的门 D 有 `asset-sha` 这一类绑定，正是为这种情况准备的。
  *
  * ═══ 切图判定（与渲染层同一套规则，不许两份实现）═══
- *   前缀 img/ bg/ kv/  →  切
- *   清单 sliceExport（含 BOOLEAN btn/、ind/ 变体根）→ 切
- *   BOOLEAN/VECTOR 的 btn/ 左右箭头 → 切（轮廓 CSS 画不出，禁止发明 CSS 箭头）
- *   填充是渐变或 IMAGE →  切
+ *   ready-handoff：切清单 sliceExport，以及可见 IMAGE fill（unknown 只画样子
+ *   也要有像素）。无前缀父层的 exportSettings / 空 FRAME 不切，避免烤图锁死子层。
+ *   非 ready 的 showcase 仍可按前缀 img/bg/kv、BOOLEAN 箭头、IMAGE fill 切。
  *   其余              →  不切（scroll/ 是容器；普通 btn/ 无 sliceExport 不切）
  *
  * ═══ 用法 ═══
@@ -43,11 +42,13 @@ import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { encodeWebpBatch } from './lib/encode-webp.mjs';
 import { deriveRole } from './lib/figma-name-semantics.mjs';
+import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../standards/figma-naming/spec/inventory.mjs';
 
 const API = 'https://api.figma.com/v1';
 const SLICE_PREFIXES = new Set(['img', 'bg', 'kv']);
 const BTN_ARROW_NAME = /(?:左|右)(?:划动|滑动)?(?:按钮|箭头)|(?:prev|next)/i;
 const BATCH = 40;               // Figma images 接口一次给太多 id 会超时，分批
+const FIGMA_GET_TIMEOUT_MS = 120000;
 
 function fail(msg) {
   console.error(JSON.stringify({ ok: false, error: msg }, null, 2));
@@ -63,6 +64,7 @@ function parseArgs(argv) {
     else if (k === '--dry-run') a.dryRun = true;
     else if (k === '--only') a.only = String(argv[++i] || '').split(',').map((s) => s.trim()).filter(Boolean);
     else if (k === '--no-webp') a.noWebp = true;
+    else if (k === '--reuse-existing') a.reuseExisting = true;
     else fail(`未知参数：${k}`);
   }
   if (!a.demo) fail('必须给 --demo <dir>');
@@ -125,6 +127,42 @@ function roundBox(b) {
   };
 }
 
+/** Page-relative boxes live near pageBox. Canvas renderBox is often x≈-14000. */
+export function sameCoordinateSpace(a, b, limit = 8000) {
+  if (!a || !b) return false;
+  return Math.abs(Number(a.x ?? 0) - Number(b.x ?? 0)) < limit
+    && Math.abs(Number(a.y ?? 0) - Number(b.y ?? 0)) < limit;
+}
+
+/**
+ * Manifest exportBox must be page coordinates (sliceExport.box / pageBox).
+ * Never emit canvas `renderBox` as the placement rect.
+ */
+export function pageAlignedExportBox(node, { exportBounds = 'box', renderBox = null } = {}) {
+  const paint = sliceExportPaintBox(node);
+  if (exportBounds === 'box' && paint) return roundBox(paint);
+  const page = node?.pageBox || node?.box || null;
+  const listed = node?.sliceExport?.box;
+  if (listed) return roundBox(listed);
+  if (exportBounds !== 'render') return page ? roundBox(page) : null;
+  if (renderBox && page && sameCoordinateSpace(renderBox, page)) return roundBox(renderBox);
+  if (renderBox && page) {
+    return roundBox({
+      x: page.x,
+      y: page.y,
+      w: renderBox.w ?? page.w,
+      h: renderBox.h ?? page.h,
+    });
+  }
+  return page ? roundBox(page) : (renderBox ? roundBox(renderBox) : null);
+}
+
+export function isReadyHandoffTruth(truth) {
+  return truth?.schema === 'yise-ready-platform-truth/v1'
+    || truth?.source?.schema === 'inventory/v2'
+    || String(truth?.source?.kind || '') === 'ready-handoff';
+}
+
 /** 从 truth 里挑出需要切图的节点 */
 function nodesOf(value) {
   return Array.isArray(value) ? value : Object.values(value || {});
@@ -150,6 +188,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
   /* 非矩形类型（轮廓不是矩形的节点）。渲染层对它们只能按外接矩形画填充，
      够大的方块化一眼可见（第 13 项实测：官网点阵与细三角轮廓成了实心方块）。 */
   const NONRECT = new Set(['VECTOR', 'BOOLEAN_OPERATION', 'STAR', 'POLYGON', 'ELLIPSE', 'LINE']);
+  const listedOnly = isReadyHandoffTruth(truth);
   const out = [];
   const seenNodeIds = new Set();
   if (truth.platforms && Object.keys(truth.platforms).length) {
@@ -209,7 +248,19 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const derived = deriveRole(n);
       if (derived.errors?.length) continue;
       const pfx = SLICE_PREFIXES.has(derived.role) ? derived.role : null;
-      const listedSlice = Boolean(n.sliceExport);
+      const listedSlice = Boolean(n.sliceExport) || isWholeFrameSliceNode(n);
+      const hasImageFill = Array.isArray((n.style || {}).fills)
+        && (n.style || {}).fills.some((f) => f && f.visible !== false && f.type === 'IMAGE');
+      const bakedIntoWholeFrame = !listedSlice && list.some((owner) =>
+        owner && isWholeFrameSliceNode(owner) && String(n.parentId) === String(owner.id));
+      if (listedOnly) {
+        /* Ready handoff: listed sliceExport owners, plus unnamed kv/bg/img
+           even when an older pack omitted sliceExport. IMAGE children under a
+           whole-frame owner stay inside that PNG. */
+        if (n.status === 'skipped') continue;
+        if (bakedIntoWholeFrame) continue;
+        if (!listedSlice && !hasImageFill) continue;
+      }
       if (n.type === 'TEXT' && !pfx) continue;               // unprefixed TEXT is editable copy; visual names can override type
       /* Lead decision (2026-08-10): the page-background owner root (bg/*) is no
          longer baked as one giant PNG — its 233-node subtree is restored in truth
@@ -223,8 +274,6 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       if (isEmptyBgOwnerRoot) continue;
       const fills = ((n.style || {}).fills || []).filter((f) => f && f.visible !== false);
       const kind = fillKind((n.style || {}).fills);
-      const hasImageFill = Array.isArray((n.style || {}).fills)
-        && (n.style || {}).fills.some((f) => f && f.visible !== false && f.type === 'IMAGE');
 
       /* ═══ 「纯渐变不切图」 ═══
        * 单层渐变 CSS 能**精确**画出来（linear-gradient 的角度与色标就是稿里的原值），
@@ -268,7 +317,8 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const onlyGradient = fills.length === 1 && String(fills[0].type).startsWith('GRADIENT');
       if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !booleanBtnArrow && !hasMaskOwner) continue;
 
-      if (!(listedSlice || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
+      const unnamedKvOwner = isWholeFrameSliceNode(n) && !listedSlice;
+      if (!(listedSlice || unnamedKvOwner || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
       const effects = ((n.style || {}).effects || []).filter((e) => e && e.visible !== false);
       const descendantEffects = ((n.style || {}).descendantEffects || []).filter((e) => e && e.effectType);
       const allEffectTypes = [
@@ -286,8 +336,12 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
          the card frame at a section boundary. Other slice types retain the
          conservative effect-backed rule. */
       const isBakedImageOwner = pfx === 'img' && (n.type === 'INSTANCE' || n.type === 'COMPONENT');
-      const exportBounds = ((hasSoftSpillEffect || isBakedImageOwner) && spillBox(b, rb)) ? 'render' : 'box';
-      const exportBox = exportBounds === 'render' ? roundBox(rb) : null;
+      /* Inventory bounds:"render" = pageBox, never Figma unclipped canvas ink. */
+      const listedInkBox = isWholeFrameSliceNode(n);
+      const listedBounds = listedInkBox ? 'box' : n.sliceExport?.bounds;
+      const exportBounds = listedBounds
+        || (((hasSoftSpillEffect || isBakedImageOwner) && spillBox(n.pageBox || b, rb)) ? 'render' : 'box');
+      const exportBox = pageAlignedExportBox(n, { exportBounds, renderBox: rb });
       // ⚠️ truth 里的键是 w/h，不是 width/height。之前写成 b.width，清单里
       //    designSize 一直是 "0x0" —— 一份本该当证据的清单，记了一路空数。
       const imageRefs = [...new Set(fills
@@ -295,7 +349,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
         .map((f) => String(f.imageRef)))];
       out.push({
         sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
-        reason: listedSlice ? '清单 sliceExport' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
+        reason: n.sliceExport ? '清单 sliceExport' : isWholeFrameSliceNode(n) ? '整框 pageBox' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
         w, h, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
         imageRefs: imageRefs.length ? imageRefs : undefined,
         renderCropPolicy: exportBounds === 'render' && isBakedImageOwner ? 'top-left-render-canvas' : null,
@@ -309,8 +363,20 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
   return out;
 }
 
-async function figmaGet(url, token) {
-  const res = await fetch(url, { headers: { 'X-Figma-Token': token } });
+async function figmaGet(url, token, timeoutMs = FIGMA_GET_TIMEOUT_MS) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, { headers: { 'X-Figma-Token': token }, signal: ac.signal });
+  } catch (err) {
+    const aborted = err && (err.name === 'AbortError' || err.code === 'ABORT_ERR');
+    fail(aborted
+      ? `Figma API 超时 ${timeoutMs}ms：${url}`
+      : `Figma API 请求失败：${err && err.message ? err.message : String(err)}`);
+  } finally {
+    clearTimeout(timer);
+  }
   const text = await res.text();
   let json;
   try { json = JSON.parse(text); } catch { fail(`Figma 返回非 JSON（HTTP ${res.status}）：${text.slice(0, 200)}`); }
@@ -397,9 +463,19 @@ async function main() {
     return;
   }
 
-  const token = readToken(demoDir);
   const assetsDir = join(demoDir, 'assets');
   mkdirSync(assetsDir, { recursive: true });
+  const reuseExisting = a.reuseExisting === true;
+  const existingPick = (p) => reuseExisting && existsSync(join(assetsDir, assetFileName(p.nodeId)));
+  const fetchPicks = picks.filter((p) => !existingPick(p));
+  const reusedPicks = picks.filter((p) => existingPick(p));
+  out.reused = reusedPicks.length;
+  /* --reuse-existing means "do not hit Figma". Missing PNGs fail loud so a
+     hung images API cannot stall html-from-handoff after local extract. */
+  if (reuseExisting && fetchPicks.length) {
+    fail(`--reuse-existing 缺 PNG，拒绝打 Figma：${fetchPicks.map((p) => p.nodeId).join(',')}`);
+  }
+  const token = fetchPicks.length ? readToken(demoDir) : null;
 
   /* ═══ 逐节点定导出倍率 ═══
    * 稿是 3840 宽、对应 1920 的视口 —— 稿本身已经是 2 倍图（2026-08-04 起 exportScale=1，
@@ -426,10 +502,10 @@ async function main() {
   const urlMap = {};
   const noUrl = [];
   const groups = [];
-  for (const key of [...new Set(picks.map((p) => `${p.scale}|${p.exportBounds}`))]) {
+  for (const key of [...new Set(fetchPicks.map((p) => `${p.scale}|${p.exportBounds}`))]) {
     const [scText, bounds] = key.split('|');
     const sc = Number(scText);
-    const g = picks.filter((p) => p.scale === sc && p.exportBounds === bounds);
+    const g = fetchPicks.filter((p) => p.scale === sc && p.exportBounds === bounds);
     for (let i = 0; i < g.length; i += BATCH) groups.push(g.slice(i, i + BATCH));
   }
   for (const chunk of groups) {
@@ -471,7 +547,46 @@ async function main() {
   let bytes = previous ? Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0) : 0;
   const failed = [];
   const clampedList = [];
-  for (const p of picks) {
+  for (const p of reusedPicks) {
+    const file = assetFileName(p.nodeId);
+    const buf = readFileSync(join(assetsDir, file));
+    const { pxW, pxH } = pngSize(buf);
+    const expectBox = p.exportBounds === 'render' && p.exportBox ? p.exportBox : p;
+    const wantW = Math.round((expectBox.w ?? p.w) * p.scale), wantH = Math.round((expectBox.h ?? p.h) * p.scale);
+    const clamped = pxW != null && (Math.abs(pxW - wantW) > 1 || Math.abs(pxH - wantH) > 1);
+    if (clamped) {
+      clampedList.push({
+        nodeId: p.nodeId, name: p.name,
+        designSize: `${p.w}x${p.h}`, scale: p.scale,
+        expectedPx: `${wantW}x${wantH}`, actualPx: `${pxW}x${pxH}`,
+        why: '复用已有 PNG 尺寸与「稿内尺寸×倍率」不符',
+        risk: '渲染层拉伸填满节点框，图与节点比例不同 → 内容被压扁/拉长，是静默的几何错误',
+        fix: '删掉该 PNG 后重导，或这个节点不该切图',
+      });
+    }
+    bytes += buf.length;
+    const pngSha = createHash('sha256').update(buf).digest('hex');
+    manifest[p.nodeId] = {
+      file: `assets/${file}`,
+      pngFile: `assets/${file}`,
+      pngSha256: pngSha,
+      sha256: pngSha,
+      bytes: buf.length,
+      name: p.name, reason: p.reason, designSize: `${p.w}x${p.h}`, exportScale: p.scale,
+      pixelSize: pxW != null ? `${pxW}x${pxH}` : null,
+      exportBounds: p.exportBounds,
+      exportBox: p.exportBox || undefined,
+      imageRefs: Array.isArray(p.imageRefs) && p.imageRefs.length ? p.imageRefs : undefined,
+      effectTypes: p.effectTypes,
+      descendantEffectTypes: p.descendantEffectTypes && p.descendantEffectTypes.length ? p.descendantEffectTypes : undefined,
+      renderCropPolicy: p.renderCropPolicy || undefined,
+      dropShadowCount: p.dropShadowCount || undefined,
+      blurCount: p.blurCount || undefined,
+      clamped: clamped || undefined,
+      reused: true,
+    };
+  }
+  for (const p of fetchPicks) {
     const u = urlMap[p.nodeId];
     if (!u) continue;
     try {
@@ -589,6 +704,12 @@ async function main() {
       rec.sha256 = createHash('sha256').update(readFileSync(job.dest)).digest('hex');
       rec.bytes = hit.bytes;
       rec.webp = { bytes: hit.bytes, lossless: hit.lossless, alpha: hit.alpha };
+      /* Encoder collapse: a 186-byte webp of a 2443×1380 KV is a solid plate.
+         Keep serving the PNG so the page does not go blank. */
+      if (Number(hit.bytes) > 0 && Number(hit.bytes) < 2048 && rec.pngFile) {
+        rec.file = rec.pngFile;
+        rec.webpCollapsed = true;
+      }
       webp.converted += 1;
     }
     for (const alias of plan.aliases) {

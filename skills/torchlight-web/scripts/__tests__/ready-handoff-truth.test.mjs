@@ -142,6 +142,286 @@ test('adapter source must not fall back to box ?? pageBox', () => {
   assert.equal(/entry\?\.pageBox/.test(src), true);
 });
 
+test('section-owned bg/ stays in the section tree, not pageChrome', () => {
+  const inv = fixture();
+  inv.backgrounds = [
+    { id: '100:3', role: 'kv', label: 'background' },
+    { id: 'bg-sec2', role: 'bg', label: 'pc背景1' },
+  ];
+  inv.sections.push({
+    id: '100:9',
+    number: 2,
+    label: '2',
+    box: { x: 9000, y: 9080, w: 1920, h: 1080 },
+    pageBox: { x: 0, y: 1080, w: 1920, h: 1080 },
+    parentBox: { ...PAGE_BOX },
+  });
+  inv.nodes.push({
+    id: '100:9',
+    scope: 'page',
+    type: 'FRAME',
+    name: 'sec/2',
+    parentId: PAGE_ID,
+    orderKey: '0.2',
+    status: 'unknown',
+    role: 'sec',
+    ancestorIds: [PAGE_ID],
+    pageBox: { x: 0, y: 1080, w: 1920, h: 1080 },
+    parentBox: { ...PAGE_BOX },
+  }, {
+    id: 'bg-sec2',
+    scope: 'page',
+    type: 'FRAME',
+    name: 'bg/pc背景1',
+    parentId: '100:9',
+    orderKey: '0.2.0',
+    status: 'determined',
+    role: 'bg',
+    ancestorIds: [PAGE_ID, '100:9'],
+    pageBox: { x: 0, y: 1080, w: 1920, h: 1080 },
+    parentBox: { x: 0, y: 0, w: 1920, h: 1080 },
+    sliceExport: { box: { x: 0, y: 1080, w: 1920, h: 1080 }, scale: 1, format: 'png', file: 'bg-sec2.png' },
+  });
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  assert.equal(truth.pageChrome.nodes.some((node) => node.id === 'bg-sec2'), false);
+  assert.equal(truth.sections['100:9'].nodes.some((node) => node.id === 'bg-sec2'), true);
+  assert.equal(truth.pageChrome.nodes.some((node) => node.id === '100:3'), true);
+});
+
+test('section meta keeps clipsContent from the source node', () => {
+  const inv = fixture();
+  inv.nodes[1].clipsContent = true;
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.sections['100:2'].meta.clipsContent, true);
+});
+
+test('untagged duplicate fix/ copies do not all pin at the sticky origin', () => {
+  const inv = fixture();
+  inv.overlays = [
+    { id: 'fix-1', role: 'fix', label: '顶部信息', pin: 'viewport' },
+    { id: 'fix-2', role: 'fix', label: '顶部信息', pin: 'viewport' },
+  ];
+  inv.nodes.push(
+    {
+      id: 'fix-1',
+      scope: 'page',
+      type: 'GROUP',
+      name: 'fix/顶部信息',
+      parentId: '100:2',
+      ancestorIds: [PAGE_ID, '100:2'],
+      orderKey: '0.0.1',
+      status: 'determined',
+      role: 'fix',
+      pin: 'viewport',
+      pageBox: { x: 0, y: 0, w: 3793, h: 493 },
+      parentBox: { x: 0, y: 0, w: 3793, h: 493 },
+    },
+    {
+      id: 'fix-1-btn',
+      scope: 'page',
+      type: 'INSTANCE',
+      name: 'btn/按钮',
+      parentId: 'fix-1',
+      ancestorIds: [PAGE_ID, '100:2', 'fix-1'],
+      orderKey: '0.0.1.0',
+      status: 'determined',
+      role: 'btn',
+      pageBox: { x: 2764, y: 70, w: 516, h: 150 },
+      parentBox: { x: 2764, y: 70, w: 516, h: 150 },
+    },
+    {
+      id: 'fix-2',
+      scope: 'page',
+      type: 'GROUP',
+      name: 'fix/顶部信息',
+      parentId: '100:2',
+      ancestorIds: [PAGE_ID, '100:2'],
+      orderKey: '0.0.2',
+      status: 'determined',
+      role: 'fix',
+      pin: 'viewport',
+      pageBox: { x: 0, y: 2143, w: 3793, h: 493 },
+      parentBox: { x: 0, y: 0, w: 3793, h: 493 },
+    },
+    {
+      id: 'fix-2-btn',
+      scope: 'page',
+      type: 'INSTANCE',
+      name: 'btn/按钮',
+      parentId: 'fix-2',
+      ancestorIds: [PAGE_ID, '100:2', 'fix-2'],
+      orderKey: '0.0.2.0',
+      status: 'determined',
+      role: 'btn',
+      pageBox: { x: 2764, y: 2213, w: 516, h: 150 },
+      parentBox: { x: 2764, y: 70, w: 516, h: 150 },
+    },
+  );
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  assert.deepEqual(truth.fixedOverlays.nodes.map((node) => node.id).sort(), ['fix-1', 'fix-1-btn']);
+  assert.equal(truth.fixedOverlays.nodes.some((node) => node.id === 'fix-2-btn'), false);
+  assert.equal(truth.sections['100:2'].nodes.some((node) => node.id === 'fix-2' || node.id === 'fix-2-btn'), false);
+});
+
+test('fix overlay descendants leave sections and pin with parentBox, not later-section page y', () => {
+  const inv = fixture();
+  inv.overlays = [{ id: 'fix-2', role: 'fix', label: '顶部信息', pin: 'viewport' }];
+  inv.nodes.push(
+    {
+      id: 'fix-2',
+      scope: 'page',
+      type: 'GROUP',
+      name: 'fix/顶部信息',
+      parentId: '100:2',
+      ancestorIds: [PAGE_ID, '100:2'],
+      orderKey: '0.0.1',
+      status: 'determined',
+      role: 'fix',
+      pin: 'viewport',
+      pageBox: { x: 0, y: 2143, w: 3793, h: 493 },
+      parentBox: { x: 0, y: 0, w: 3793, h: 493 },
+      viewportBox: { x: 0, y: 2143, w: 3793, h: 493 },
+    },
+    {
+      id: 'fix-btn',
+      scope: 'page',
+      type: 'INSTANCE',
+      name: 'btn/按钮',
+      parentId: 'fix-2',
+      ancestorIds: [PAGE_ID, '100:2', 'fix-2'],
+      orderKey: '0.0.1.0',
+      status: 'determined',
+      role: 'btn',
+      pageBox: { x: 2764, y: 2213, w: 516, h: 150 },
+      parentBox: { x: 2764, y: 70, w: 516, h: 150 },
+      sliceExport: { bounds: 'render', scale: 1, format: 'png', file: 'fix-btn.png', box: { x: 2764, y: 2213, w: 516, h: 150 } },
+    },
+  );
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  assert.equal(truth.sections['100:2'].nodes.some((node) => node.id === 'fix-btn'), false);
+  const overlay = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-2');
+  const btn = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-btn');
+  assert.ok(overlay);
+  assert.ok(btn);
+  assert.deepEqual(overlay.box, { x: 0, y: 0, w: 3793, h: 493 });
+  assert.deepEqual(btn.box, { x: 2764, y: 70, w: 516, h: 150 });
+  assert.notEqual(btn.box.y, 2213);
+  assert.deepEqual(btn.sliceExport.box, { x: 2764, y: 70, w: 516, h: 150 });
+});
+
+test('fix nested sliceExport stays offset from the local owner box, not page x', () => {
+  const inv = fixture();
+  inv.overlays = [{ id: 'fix-1', role: 'fix', label: '顶部信息', pin: 'viewport' }];
+  inv.nodes.push(
+    {
+      id: 'fix-1',
+      scope: 'page',
+      type: 'GROUP',
+      name: 'fix/顶部信息',
+      parentId: '100:2',
+      ancestorIds: [PAGE_ID, '100:2'],
+      orderKey: '0.0.1',
+      status: 'determined',
+      role: 'fix',
+      pin: 'viewport',
+      pageBox: { x: 0, y: 0, w: 3793, h: 493 },
+      parentBox: { x: 0, y: 0, w: 3793, h: 493 },
+    },
+    {
+      id: 'fix-btn',
+      scope: 'page',
+      type: 'INSTANCE',
+      name: 'btn/按钮',
+      parentId: 'fix-1',
+      ancestorIds: [PAGE_ID, '100:2', 'fix-1'],
+      orderKey: '0.0.1.0',
+      status: 'determined',
+      role: 'btn',
+      pageBox: { x: 2764, y: 70, w: 516, h: 150 },
+      parentBox: { x: 2764, y: 70, w: 516, h: 150 },
+    },
+    {
+      id: 'fix-img',
+      scope: 'page',
+      type: 'GROUP',
+      name: 'img/按钮背景',
+      parentId: 'fix-btn',
+      ancestorIds: [PAGE_ID, '100:2', 'fix-1', 'fix-btn'],
+      orderKey: '0.0.1.0.0',
+      status: 'determined',
+      role: 'img',
+      pageBox: { x: 2821, y: 104, w: 402, h: 84 },
+      parentBox: { x: 57, y: 34, w: 402, h: 84 },
+      sliceExport: {
+        bounds: 'render',
+        scale: 1,
+        format: 'png',
+        file: 'fix-img.png',
+        box: { x: 2788, y: 71, w: 468, h: 149 },
+      },
+    },
+  );
+  const truth = platformTruthFromInventory(inv);
+  const img = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-img');
+  assert.ok(img);
+  assert.deepEqual(img.box, { x: 2821, y: 104, w: 402, h: 84 });
+  assert.deepEqual(img.sliceExport.box, { x: 2788, y: 71, w: 468, h: 149 });
+});
+
+test('horizontally offset mobile sections fold onto x=0 and keep inventory y', () => {
+  const inv = fixture();
+  inv.page = { id: PAGE_ID, name: 'cn_mobile', box: { x: 0, y: 0, w: 2430, h: 2668 }, pageBox: { x: 0, y: 0, w: 2430, h: 2668 } };
+  inv.sections = [
+    { id: 'm1', number: 1, label: '1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+    { id: 'm2', number: 2, label: '2', pageBox: { x: 840, y: 1334, w: 750, h: 1334 } },
+  ];
+  inv.nodes = [
+    { id: PAGE_ID, scope: 'page', type: 'FRAME', name: 'cn_mobile', parentId: null, orderKey: '0', status: 'unknown', pageBox: { x: 0, y: 0, w: 2430, h: 2668 } },
+    { id: 'm1', scope: 'page', type: 'FRAME', name: 'sec/1', parentId: PAGE_ID, ancestorIds: [PAGE_ID], orderKey: '0.0', status: 'determined', role: 'sec', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+    { id: 'm2', scope: 'page', type: 'FRAME', name: 'sec/2', parentId: PAGE_ID, ancestorIds: [PAGE_ID], orderKey: '0.1', status: 'determined', role: 'sec', pageBox: { x: 840, y: 1334, w: 750, h: 1334 } },
+    {
+      id: 'bg-m2',
+      scope: 'page',
+      type: 'FRAME',
+      name: 'bg/移动端背景',
+      parentId: 'm2',
+      ancestorIds: [PAGE_ID, 'm2'],
+      orderKey: '0.1.0',
+      status: 'determined',
+      role: 'bg',
+      pageBox: { x: 840, y: 1334, w: 750, h: 1334 },
+    },
+    {
+      id: 'kv-m2',
+      scope: 'page',
+      type: 'RECTANGLE',
+      name: '赛季kv-0623-整理_竖版_2 1',
+      parentId: 'bg-m2',
+      ancestorIds: [PAGE_ID, 'm2', 'bg-m2'],
+      orderKey: '0.1.0.0',
+      status: 'skipped',
+      why: 'slice-child',
+      pageBox: { x: -344, y: 1334, w: 2404, h: 1347 },
+      style: { fills: [{ type: 'IMAGE', visible: true }] },
+    },
+  ];
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  assert.equal(truth.sections.m2.meta.x, 0);
+  assert.equal(truth.sections.m2.meta.y, 1334);
+  const bg = truth.sections.m2.nodes.find((node) => node.id === 'bg-m2');
+  const kv = truth.sections.m2.nodes.find((node) => node.id === 'kv-m2');
+  assert.ok(bg);
+  /* bg/ is the listed whole-frame export. Skipped IMAGE slice-children stay
+     inside that PNG and must not re-enter the paint tree. */
+  assert.equal(kv, undefined);
+  assert.equal(bg.pageBox.x, 0);
+  assert.equal(bg.pageBox.y, 1334);
+});
+
 test('canvas-offset modal draws from pageBox, never canvas box', () => {
   const inv = fixture();
   const modalCanvas = { x: 9000, y: 8000, w: 400, h: 300 };

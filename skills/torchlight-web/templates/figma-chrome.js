@@ -1525,16 +1525,15 @@
   function syncFixedOverlayViewport(vp) {
     try {
       var overlays = frame.querySelectorAll('.fx-fixed-overlays');
-      var nextH = Number(vp && vp.h) || frame.clientHeight || 0;
       for (var i = 0; i < overlays.length; i++) {
         var stage = overlays[i];
-        var stageZoom = parseZoomValue(stage.style ? stage.style.zoom : null);
-        if (!isFinite(stageZoom) || stageZoom <= 0) stageZoom = 1;
-        var targetDesignHeight = nextH > 0 ? (nextH / stageZoom) : 0;
-        if (targetDesignHeight > 0) {
-          stage.style.height = targetDesignHeight + 'px';
-          stage.style.marginBottom = '-' + targetDesignHeight + 'px';
-        }
+        /* sticky pin layer must stay height:0. Stretching it to 100vh makes
+           the overlay a scroll-box sibling: after scrollIntoView it is
+           clamped to the frame bottom and buttons drift 6–24px. Children
+           already paint overflow:visible from the sticky origin. */
+        stage.style.height = '0px';
+        stage.style.marginBottom = '0px';
+        stage.setAttribute('data-fix-pin-height', '0');
       }
     } catch (e) { /* fixed overlay sizing is a preview affordance; render remains source-backed */ }
   }
@@ -2024,7 +2023,9 @@
         hero.getAttribute('data-hero-source-height') || hero.style.height,
         hero.offsetHeight || 2160
       );
-      syncHeroEntryNavigation(vp, baseHeroH);
+      /* Product view pins fix/ with sticky + inventory pageBox. Stretching
+         overlay buttons to 100vh here is what made mobile dTop 6–24px. */
+      if (!PRODUCT_VIEW) syncHeroEntryNavigation(vp, baseHeroH);
     } catch (e) { /* static chrome sync must fail back to source render */ }
   }
 

@@ -132,9 +132,24 @@ function childrenOf(nodes, parentId) {
   return asArray(nodes).filter((node) => node && node.parentId === parentId);
 }
 
-function keepSkippedPaintNode(node) {
-  if (!isCssPaintableArtFragment(node)) return null;
-  return { ...node, paintAsFragment: true };
+function isSliceChildImageFill(node) {
+  if (!isPlainObject(node) || !isSkipped(node)) return false;
+  if (String(node.why || '') !== 'slice-child' && String(node.why || '') !== 'invisible') return false;
+  return visibleFillsOf(node).some((fill) => String(fill.type || '') === 'IMAGE');
+}
+
+function coversOwnerPageBox(node, owner) {
+  const child = node?.pageBox;
+  const parent = owner?.pageBox;
+  if (!child || !parent) return /kv/i.test(String(node?.name || ''));
+  return Number(child.w) >= Number(parent.w) * 0.8
+    && Number(child.h) >= Number(parent.h) * 0.8;
+}
+
+function keepSkippedPaintNode(node, byId = null) {
+  if (isCssPaintableArtFragment(node)) return { ...node, paintAsFragment: true };
+  /* bg/ is the whole listed export. Do not restore skipped slice-child KV sheets. */
+  return null;
 }
 
 function paintBoxOf(node) {
@@ -143,9 +158,9 @@ function paintBoxOf(node) {
   return { ...node, box: node.pageBox };
 }
 
-function keepLivePaintNode(node, skippedChildren) {
+function keepLivePaintNode(node, skippedChildren, byId = null) {
   if (!isPlainObject(node)) return [];
-  const fragment = keepSkippedPaintNode(node);
+  const fragment = keepSkippedPaintNode(node, byId);
   if (fragment) return [paintBoxOf(fragment)];
   if (isSkipped(node)) return [];
   return [paintBoxOf(liftOwnerComposite(node, skippedChildren))];
@@ -154,7 +169,8 @@ function keepLivePaintNode(node, skippedChildren) {
 /** Flat inventory/v2 page nodes: lift owner composites without painting skipped ids. */
 export function restoreOwnerComposites(nodes) {
   const list = asArray(nodes);
-  return list.flatMap((node) => keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped)));
+  const byId = new Map(list.filter((node) => node && node.id != null).map((node) => [String(node.id), node]));
+  return list.flatMap((node) => keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped), byId));
 }
 
 const TODAY_NAME = /^dyn\/今日日期/;
@@ -366,11 +382,16 @@ function classifyPageDirectChildren(inv, byId) {
     if (!record || fixedIds.has(child.id) || record.role === 'sec' || sectionIds.has(child.id)) continue;
     pageChrome.push(record);
   }
-  // Also keep the inventory's declared kv/bg role records as page chrome even
-  // when they are not a direct page child (some kv layers sit inside kv/*).
+  // Declared kv/bg that live *inside* a section stay in that section's paint
+  // tree. Lifting them to pageChrome made later-section bg/* cover-crop onto
+  // the first screen and vanish from sec/2–3. Only a kv/bg that is not under
+  // any section (true page-level chrome) is kept here.
   for (const entry of asArray(inv.backgrounds)) {
     const record = liveRecord(byId, entry);
     if (!record || fixedIds.has(record.id) || pageChrome.some((n) => n.id === record.id)) continue;
+    const underSection = asArray(record.ancestorIds).some((id) => sectionIds.has(String(id)))
+      || sectionIds.has(String(record.parentId || ''));
+    if (underSection) continue;
     pageChrome.push(record);
   }
   return { pageChrome, fixedOverlays };

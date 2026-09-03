@@ -4,7 +4,7 @@
  * 不写回 Figma；没有原型或命名证据的关系一律标 unknown。
  */
 import { createHash } from "node:crypto";
-import { PREFIXES, PARAMS, SPEC_VERSION, LANG_CODE_SET, parseLangCodes } from "../../spec/spec.mjs";
+import { PREFIXES, PARAMS, SPEC_VERSION, LANG_CODE_SET, parseLangCodes, isSlicePrefix } from "../../spec/spec.mjs";
 import {
   INVENTORY_SCHEMA,
   INVENTORY_ROLES,
@@ -16,6 +16,9 @@ import {
   behaviorOf,
   determinedReadyFieldProblems,
   needsSliceExport,
+  isWholeFrameSliceName,
+  sliceExportPaintBox,
+  sliceExportMatches,
 } from "../../spec/inventory.mjs";
 import { parseName, usesPrefixSyntax } from "./parse.mjs";
 import { hasImageFill, namePatternOf } from "./lint.mjs";
@@ -289,18 +292,29 @@ function sliceFileName(nodeId) {
   return `${String(nodeId).replace(/[:;]/g, "-")}.${SLICE_EXPORT.format}`;
 }
 
-function sliceExportOf(node, role, pageRel) {
-  if (!needsSliceExport({ type: node.type, role })) return undefined;
+function sliceExportOf(node, role, pageRel, { wholeFrame = false } = {}) {
+  if (!needsSliceExport({ type: node.type, role, name: node.name, status: wholeFrame ? "unknown" : "determined" })
+    && !wholeFrame) return undefined;
+  const page = geomBox(pageRel);
+  /* Whole-frame img/bg/kv (and unnamed kv) lock the node pageBox. Shorter
+     absoluteRenderBounds is not the export size. BOOLEAN btn / ind keep ink. */
+  if (wholeFrame || isWholeFrameSliceName(node.name) || isSlicePrefix(role)) {
+    return {
+      ...SLICE_EXPORT,
+      file: sliceFileName(node.id),
+      ...(page ? { box: page } : {}),
+    };
+  }
   const canvas = boxOf(node);
   const inkCanvas = renderBoxOf(node) || canvas;
-  const ink = geomBox(pageRel) && canvas && inkCanvas
+  const ink = page && canvas && inkCanvas
     ? {
-      x: pageRel.x + (inkCanvas.x - canvas.x),
-      y: pageRel.y + (inkCanvas.y - canvas.y),
+      x: page.x + (inkCanvas.x - canvas.x),
+      y: page.y + (inkCanvas.y - canvas.y),
       w: inkCanvas.w,
       h: inkCanvas.h,
     }
-    : geomBox(pageRel);
+    : page;
   return {
     ...SLICE_EXPORT,
     file: sliceFileName(node.id),
@@ -756,7 +770,7 @@ function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = 
       if (langs) entry.langs = langs;
       entry.behavior = behaviorOf(role, params);
       entry.via = via;
-      const sliceExport = sliceExportOf(node, role, pageRel);
+      const sliceExport = sliceExportOf(node, role, pageRel, { wholeFrame: isWholeFrameSliceName(node.name) });
       if (sliceExport) entry.sliceExport = sliceExport;
       if (role === "fix") {
         entry.pin = "viewport";
@@ -765,6 +779,10 @@ function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = 
     } else if (status === "unknown") {
       entry.role = null;
       entry.behavior = "none";
+      if (isWholeFrameSliceName(node.name)) {
+        const sliceExport = sliceExportOf(node, null, pageRel, { wholeFrame: true });
+        if (sliceExport) entry.sliceExport = sliceExport;
+      }
     } else {
       entry.why = why;
       if (role) entry.role = role;
@@ -1388,6 +1406,15 @@ export function validateInventory(inv, document) {
       problems.push(...determinedReadyFieldProblems(node, { source }));
     }
     if (node.status === "unknown" && (node.role != null || node.behavior !== "none")) problems.push(`${node.id} unknown 不得带 role 或 behavior`);
+    if (node.status === "unknown" && isWholeFrameSliceName(node.name)) {
+      if (!sliceExportMatches(node.sliceExport)) problems.push(`${node.id} 无名整框必须按 pageBox 1 倍 png`);
+      const paint = sliceExportPaintBox(node);
+      const listed = node.sliceExport?.box;
+      if (paint && listed
+        && (listed.w !== paint.w || listed.h !== paint.h || listed.x !== paint.x || listed.y !== paint.y)) {
+        problems.push(`${node.id} 无名整框切图 box 必须等于 pageBox`);
+      }
+    }
     if (node.status === "skipped" && !SKIP_REASONS.includes(node.why)) problems.push(`${node.id} skipped.why 非法: ${node.why}`);
   }
   for (const key of Object.keys(actualCounts)) if (inv.counts?.[key] !== actualCounts[key]) problems.push(`counts.${key} 与节点实际数不一致`);

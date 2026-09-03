@@ -544,7 +544,7 @@ test("做页字段：相对页/父层坐标、fix 钉视口、切图墨迹框、
     scale: 1,
     format: "png",
     file: "img-1.png",
-    box: { x: 40, y: 50, w: 220, h: 320 },
+    box: { x: 50, y: 60, w: 200, h: 300 },
   });
   assert.equal(img.rotation, 15);
   assert.equal(img.style.fills.length, 2);
@@ -597,7 +597,7 @@ test("做页字段缺一则校验红：字体三项、切图契约、fix 钉视�
   delete noSlice.nodes.find((n) => n.id === "img:1").sliceExport;
   const noSliceCheck = validateInventory(noSlice, page);
   assert.equal(noSliceCheck.ok, false);
-  assert.match(noSliceCheck.problems.join("\n"), /切图必须按墨迹框 1 倍 png/);
+  assert.match(noSliceCheck.problems.join("\n"), /切图必须按整框 pageBox 1 倍 png/);
 
   const noPin = structuredClone(built);
   delete noPin.nodes.find((n) => n.id === "fix").pin;
@@ -721,7 +721,7 @@ test("做页字段：相对页/父层坐标、fix 钉视口、切图墨迹框、
     scale: 1,
     format: "png",
     file: "img-1.png",
-    box: { x: 40, y: 50, w: 220, h: 320 },
+    box: { x: 50, y: 60, w: 200, h: 300 },
   });
   assert.equal(img.rotation, 15);
   assert.equal(img.style.fills.length, 2);
@@ -774,7 +774,7 @@ test("做页字段缺一则校验红：字体三项、切图契约、fix 钉视�
   delete noSlice.nodes.find((n) => n.id === "img:1").sliceExport;
   const noSliceCheck = validateInventory(noSlice, page);
   assert.equal(noSliceCheck.ok, false);
-  assert.match(noSliceCheck.problems.join("\n"), /切图必须按墨迹框 1 倍 png/);
+  assert.match(noSliceCheck.problems.join("\n"), /切图必须按整框 pageBox 1 倍 png/);
 
   const noPin = structuredClone(built);
   delete noPin.nodes.find((n) => n.id === "fix").pin;

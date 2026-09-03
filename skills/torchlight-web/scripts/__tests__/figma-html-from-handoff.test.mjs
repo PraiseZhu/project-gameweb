@@ -214,6 +214,8 @@ test('skipPreview still runs inventory static gate and never marks skipped-ok', 
   assert.match(src, /runInventoryStaticGate/);
   assert.match(src, /attachSliceAssets/);
   assert.match(src, /figma-assets\.mjs/);
+  assert.match(src, /reuseExistingAssets/);
+  assert.match(src, /--reuse-existing/);
   assert.doesNotMatch(src, /\|\| true/);
   assert.doesNotMatch(src, /--skip-preview/);
 });
@@ -240,6 +242,11 @@ test('official static gate probe is shipped and missing probe/index is fail-clos
   assert.match(src, /demo index.html missing; cannot measure DOM/);
   const probeSrc = readFileSync(join(skillRoot, 'scripts/lib/inventory-static-gate-probe.mjs'), 'utf8');
   assert.match(probeSrc, /inventory-static-gate=1/);
+  assert.match(probeSrc, /product=1/);
+  assert.match(probeSrc, /measureProductScroll/);
+  assert.match(probeSrc, /overlayOwnerOf/);
+  assert.match(probeSrc, /fontWeight/);
+  assert.match(probeSrc, /inSection/);
 });
 
 test('html-from-handoff fails when index.html stays over the HTML volume gate', () => {
