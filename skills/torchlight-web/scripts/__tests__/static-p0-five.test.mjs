@@ -126,6 +126,17 @@ test('sc-ready-consume-contracts: legal owner mapping without invented visuals',
   assert.match(renderSrc, /normalizeFigmaLineBreaks/);
   assert.match(renderSrc, /selected-component-tree/);
   assert.match(renderSrc, /img-lang-variant-tree/);
+  assert.match(renderSrc, /lang-shell-variant-tree/);
+  assert.match(renderSrc, /_isLegalLangShellSet/);
+  assert.match(renderSrc, /_isLegalImgLangAssetSet/);
+  assert.match(renderSrc, /data-modal-clip/);
+  assert.match(renderSrc, /suppressed-for-overlay-art/);
+  assert.match(renderSrc, /_isNamedCloseControl/);
+  assert.match(renderSrc, /_closeControlFromEvent/);
+  assert.match(renderSrc, /_closeControlEls/);
+  assert.match(renderSrc, /关闭按钮\(\?:@\|\$\)/);
+  assert.doesNotMatch(renderSrc, /closest\('\[data-btn-name="关闭按钮"\]'/);
+  assert.match(renderSrc, /_isModalOverlayArt/);
   assert.match(renderSrc, /data-img-lang-missing/);
   assert.match(renderSrc, /_resolveImgLangVariant/);
   assert.match(renderSrc, /_imgLangAxisOfSet/);
