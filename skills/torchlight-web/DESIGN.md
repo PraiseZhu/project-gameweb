@@ -64,7 +64,8 @@ openFlowNoShrink: true
 | 入口 | 回答什么 | 不回答什么 |
 |---|---|---|
 | 交接包 / inventory | 数据：`pageBox`、`fonts`、`role` + `params`、`variants`、`determined` / `unknown` | 断点、`k`、`100vh`、外文比例、Auto Layout 上限 |
-| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限 | 这一稿有哪些图层、哪条关系 determined |
+| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限 | 这一稿有哪些图层、哪条关系 determined、哪句对哪语 |
+| `docs/copy-extraction-adapter.md` | 切语言时怎么取字 | 断点、`k`、外文缩字比例 |
 
 - 做页只吃 `kind=ready` 的交接包。`unknown` 只画不接线。
 - 吃包命令仍是 `figma:from-handoff`（只验包、打印消费计划，不写 HTML）。出页命令是 `figma:html-from-handoff`。
@@ -251,7 +252,7 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 
 溢出就缩：先套档位比例，再按整数 px 减字号（行高同比），直到完整放下。不走 `100→92→85→78→75`，没有 75% 地板。组内兄弟共用同一整数字号，取最严的那档。没有 B 的 owner 就停，不缩。
 
-缺目标文案输出 `unverified-no-locale-copy`，禁止拿简中顶上当通过。
+缺目标文案输出 `unverified-no-locale-copy`，禁止拿简中顶上当通过。切语言、对文案时取字纪律听 [`docs/copy-extraction-adapter.md`](docs/copy-extraction-adapter.md)，本文件不写哪句对哪语。
 
 ### 6.1 执行清单
 
