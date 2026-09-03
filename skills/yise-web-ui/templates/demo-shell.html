@@ -46,6 +46,9 @@ window.__qaDemo = {
     if (!window.__figmaRender || typeof window.__figmaRender.renderApp !== 'function') {
       throw new Error('figma preview shell: __figmaRender.renderApp is missing; run figma-inline');
     }
+    /* Interaction opts in here. Main static still paints first; chrome
+       forwards this flag so dropmenu / modal / switch clicks are live. */
+    if (ctx && ctx.enablePageInteraction == null) ctx.enablePageInteraction = true;
     return window.__figmaRender.renderApp(ctx);
   },
 };

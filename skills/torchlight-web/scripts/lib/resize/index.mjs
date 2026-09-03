@@ -307,9 +307,9 @@ export function planeResizePolicies(layoutPlanes = null) {
     status: 'verified-two-plane',
     background: {
       nodeId: layoutPlanes.planes.background.nodeId,
-      scaleMode: 'cover-crop',
-      cropAxes: ['x'],
-      anchor: 'center',
+      scaleMode: 'width-scale',
+      cropAxes: [],
+      anchor: 'source-origin',
     },
     foreground: {
       nodeId: layoutPlanes.planes.foreground.nodeId,
@@ -343,12 +343,16 @@ export function heroCoverCrop({
   if (![w, h, dw, dh, k].every(Number.isFinite) || w <= 0 || h <= 0 || dw <= 0 || dh <= 0 || k <= 0) {
     return { scale: k, cropLeft: 0, applied: false };
   }
-  const cover = Math.max(k, h / dh);
+  /* Season-1 stretch is uniform width-scale k. Cover-crop left-right-crops
+     the artwork when the viewport is taller than k×hero. Keep the KV/bg
+     plane on the same k as UI until a later axis opts into cover. */
+  void h;
+  void dh;
   return {
-    scale: cover,
-    cropLeft: (w / cover - dw) / 2,
-    applied: cover > k + 1e-6,
-    plane: 'kv-visual',
+    scale: k,
+    cropLeft: 0,
+    applied: false,
+    plane: 'width-scale',
     uiPlane: 'source-ui-scale',
   };
 }
@@ -429,14 +433,14 @@ export function resizeOwns() {
     'product/QA tree from composition width (torchlight official 0–1126 mobile, ≥1127 pc; no pad tree)',
     'device-picker buckets stay 0–750 / 751–1023 / ≥1024 and do not select the Figma tree',
     'continuous width scale k = viewportW / designWidth (official 10vw ruler)',
-    'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; inventory stays one sheet)',
+    'hero first-screen fill of current viewport height (season-1: width-scale k, no KV/bg left-right cover-crop; inventory stays one sheet)',
     'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
     'left directory rail stretches to the current viewport height without SS5 node IDs',
     'product-view page overflow-x clip (official adaptive-width)',
     'light-drag vs full rebuild',
     'preview 1:1 fit scale',
-    'background cover-crop vs UI source-scale vs sea aspect-crop',
-    'KV cover-crop stays on the kv visual plane; homepage title/UI stay on width-scale',
+    'season-1 background/KV/UI share width-scale k; no left-right cover-crop',
+    'homepage title/UI stay on width-scale',
     'fixed directory follows remaining viewport height without inheriting KV cover scale',
     'hero lock / exit / release geometry while the window size changes',
   ];

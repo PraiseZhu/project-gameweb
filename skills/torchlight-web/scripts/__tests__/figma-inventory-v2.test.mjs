@@ -279,14 +279,37 @@ test("same-label viewport fix overlays keep one pin", () => {
   inv.nodes.push(
     { id: "100:90", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:2", status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
     { id: "100:91", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: PAGE_ID, status: "determined", role: "fix", label: "顶部信息", behavior: "none" },
+    { id: "100:92", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:2", status: "determined", role: "fix", label: "顶部信息", behavior: "none", ancestorIds: [PAGE_ID, "100:2"] },
   );
   inv.overlays = [
     { id: "100:4", role: "fix", label: "nav", pin: "viewport" },
     { id: "100:90", role: "fix", label: "顶部信息", pin: "viewport" },
     { id: "100:91", role: "fix", label: "顶部信息", pin: "viewport" },
+    { id: "100:92", role: "fix", label: "顶部信息", pin: "viewport" },
   ];
   const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
   const tops = adapted.fixedOverlays.nodes.filter((entry) => entry.label === "顶部信息" || /顶部信息/.test(String(entry.name || "")));
+  assert.equal(tops.length, 1);
+  assert.equal(tops[0].id, "100:90");
+});
+
+test("same-label viewport fix overlays in different sections keep one pin", () => {
+  const inv = fixture();
+  inv.sections = [
+    { id: "100:2", number: 1, label: "1", box: { x: 0, y: 0, w: 3840, h: 2160 } },
+    { id: "100:12", number: 2, label: "2", box: { x: 0, y: 2160, w: 3840, h: 2160 } },
+  ];
+  inv.nodes.push(
+    { id: "100:12", scope: "page", type: "FRAME", name: "sec/2", parentId: PAGE_ID, orderKey: "0.2", status: "unknown", role: "sec" },
+    { id: "100:90", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:2", status: "determined", role: "fix", label: "顶部信息", behavior: "none", ancestorIds: [PAGE_ID, "100:2"] },
+    { id: "100:91", scope: "page", type: "GROUP", name: "fix/顶部信息", parentId: "100:12", status: "determined", role: "fix", label: "顶部信息", behavior: "none", ancestorIds: [PAGE_ID, "100:12"] },
+  );
+  inv.overlays = [
+    { id: "100:90", role: "fix", label: "顶部信息", pin: "viewport" },
+    { id: "100:91", role: "fix", label: "顶部信息", pin: "viewport" },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const tops = adapted.fixedOverlays.nodes.filter((entry) => /顶部信息/.test(String(entry.name || entry.label || "")));
   assert.equal(tops.length, 1);
   assert.equal(tops[0].id, "100:90");
 });
@@ -637,6 +660,72 @@ test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as pain
   assert.equal(triangle.paintAsFragment, true);
   assert.equal(triangle.status, "skipped");
   assert.equal(restored.some((node) => node.id === "mask-group"), false);
+});
+
+test("dropmenu variant trees lift sibling art-fragment gradients onto the btn owner", () => {
+  const inv = fixture({
+    attachments: {
+      ...fixture().attachments,
+      componentSets: [
+        {
+          id: "set-lang",
+          name: "dropmenu/多语言",
+          componentPropertyDefinitions: {
+            "Property 1": { type: "VARIANT", defaultValue: "on", variantOptions: ["on", "off"] },
+          },
+          variants: [
+            {
+              id: "var-on",
+              type: "COMPONENT",
+              name: "Property 1=on",
+              order: 0,
+              box: { x: 0, y: 0, w: 254, h: 417 },
+              componentProperties: { "Property 1": { type: "VARIANT", value: "on" } },
+              nodes: [
+                {
+                  id: "btn-lang",
+                  type: "INSTANCE",
+                  name: "btn/切换语言",
+                  status: "determined",
+                  role: "btn",
+                  parentId: "var-on",
+                  box: { x: 52, y: 151, w: 190, h: 52 },
+                  style: { fills: [] },
+                },
+                {
+                  id: "btn-lang-plate",
+                  type: "VECTOR",
+                  name: "Rectangle 5",
+                  status: "skipped",
+                  why: "art-fragment",
+                  parentId: "btn-lang",
+                  box: { x: 53, y: 152, w: 188, h: 50 },
+                  style: { fills: [{ type: "GRADIENT_LINEAR", visible: true, gradientStops: [{ color: { r: 1, g: 1, b: 1, a: 1 }, position: 0 }] }] },
+                },
+                {
+                  id: "btn-lang-copy",
+                  type: "TEXT",
+                  name: "语言",
+                  status: "determined",
+                  role: "copy",
+                  parentId: "btn-lang",
+                  box: { x: 80, y: 160, w: 98, h: 34 },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const variants = adapted.componentVariantGraph.variantTrees["set-lang"];
+  const on = variants.find((entry) => entry.id === "var-on");
+  const btn = on.nodes.find((node) => node.id === "btn-lang");
+  assert.equal(on.nodes.some((node) => node.id === "btn-lang-plate"), false);
+  assert.equal(btn.style.fills[0].type, "GRADIENT_LINEAR");
+  assert.equal(btn.ownerComposite.sourceId, "btn-lang-plate");
+  assert.equal(on.nodes.find((node) => node.id === "btn-lang-copy").status, "determined");
 });
 
 test("restoreOwnerComposites keeps unknown IMAGE under a skipped Mask group", () => {

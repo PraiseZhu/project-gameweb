@@ -51,12 +51,31 @@ function truth() {
           section: {
             meta: { x: 0, y: 0, width: 400, height: 200 },
             nodes: [{
+              id: 'cta',
+              type: 'INSTANCE',
+              name: '首屏主按钮',
+              componentId: '700:10242',
+              box: { x: 10, y: 100, w: 200, h: 80 },
+              renderBox: { x: 10, y: 100, w: 200, h: 80 },
+              style: { fills: [] },
+            }, {
+              id: 'slg-bake',
+              type: 'FRAME',
+              name: 'slg',
+              box: { x: 0, y: 0, w: 400, h: 200 },
+              renderBox: { x: 0, y: 0, w: 400, h: 200 },
+              clipsContent: true,
+              exportSettings: [{ format: 'PNG', constraint: { type: 'SCALE', value: 1 } }],
+              style: { fills: [] },
+            }, {
               id: 'inst-art',
               type: 'INSTANCE',
-              name: 'img/模块2可替换素材',
+              name: 'img/标题slg',
               componentId: '700:10242',
               box: { x: 10, y: 10, w: 200, h: 80 },
               renderBox: { x: 2, y: 6, w: 216, h: 88 },
+              parentId: 'slg-bake',
+              ancestorIds: ['slg-bake'],
               style: { fills: [] },
             }],
           },
@@ -84,6 +103,14 @@ function assets() {
       sliceExport: { bounds: 'render', scale: 1, format: 'png' },
       exportBounds: 'render',
       exportBox: { x: -8, y: -4, w: 216, h: 100 },
+    },
+    'pc:slg-bake': {
+      file: 'assets/slg-bake.webp',
+      reason: '设计师导出预设',
+      sliceExport: { bounds: 'box', scale: 1, format: 'png' },
+      exportBounds: 'box',
+      exportBox: { x: 0, y: 0, w: 400, h: 200 },
+      pixelSize: '400x200',
     },
   };
 }
@@ -136,6 +163,8 @@ function ownerState(page) {
   return page.evaluate(() => {
     const el = document.querySelector('[data-node="inst-art"]');
     const img = el && el.querySelector('img.fx-img');
+    const bake = document.querySelector('[data-node="slg-bake"]');
+    const bakeImg = bake && bake.querySelector(':scope > img.fx-img');
     return {
       status: el && el.getAttribute('data-component-instance-mount-status'),
       missing: el && el.getAttribute('data-img-lang-missing'),
@@ -150,6 +179,8 @@ function ownerState(page) {
       height: img && img.style.height,
       objectFit: img && img.style.objectFit,
       childCount: el ? el.querySelectorAll('[data-node], img.fx-img').length : 0,
+      bakeSrc: bakeImg && (bakeImg.getAttribute('data-asset-src') || bakeImg.getAttribute('src')),
+      bakeReleased: bake && bake.getAttribute('data-asset-lock-released'),
     };
   });
 }
@@ -172,6 +203,8 @@ browserTest('img/ lang remount keeps render-bound exportBox and does not 100% fi
     assert.equal(state.top, '-4px');
     assert.equal(state.width, '216px');
     assert.equal(state.height, '100px');
+    assert.equal(state.bakeSrc, null);
+    assert.equal(state.bakeReleased, 'live-img-lang-descendant');
   } finally {
     await browser.close();
   }

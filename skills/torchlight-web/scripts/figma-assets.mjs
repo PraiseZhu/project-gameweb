@@ -668,6 +668,7 @@ async function main() {
           file: m.file,
           ...(m.exportBounds ? { exportBounds: m.exportBounds } : {}),
           ...(m.exportBox ? { exportBox: m.exportBox } : {}),
+          ...(m.pixelSize ? { pixelSize: m.pixelSize } : {}),
           ...(Array.isArray(m.imageRefs) && m.imageRefs.length ? { imageRefs: m.imageRefs } : {}),
           ...(m.kind ? { kind: m.kind } : {}),
         }

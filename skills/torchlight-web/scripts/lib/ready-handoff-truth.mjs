@@ -46,8 +46,9 @@ function pageBoxOf(entry) {
   return geomOf(entry?.pageBox);
 }
 
-function drawMeta(entry) {
+function drawMeta(entry, liveRecord = null) {
   const pageBox = pageBoxOf(entry);
+  const record = liveRecord && typeof liveRecord === 'object' ? liveRecord : entry;
   return {
     ...pageBox,
     width: pageBox.w,
@@ -55,6 +56,7 @@ function drawMeta(entry) {
     pageBox: entry?.pageBox ?? null,
     parentBox: entry?.parentBox ?? null,
     box: entry?.box ?? null,
+    clipsContent: record?.clipsContent === true,
   };
 }
 
@@ -82,17 +84,29 @@ export function platformTruthFromInventory(inventory, options = {}) {
   }
 
   const fixed = new Set(asArray(adapted.fixedOverlays?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
+  const chromeIds = new Set(asArray(adapted.pageChrome?.nodes).map((node) => String(node?.id || '')).filter(Boolean));
+  const bgIds = new Set(asArray(inventory.backgrounds).map((entry) => String(entry?.id || '')).filter(Boolean));
   const roots = new Set(asArray(adapted.pagePaintOrder).map((entry) => String(entry?.id || '')).filter(Boolean));
   const liveNodes = restoreOwnerComposites(asArray(inventory.nodes));
+  const liveById = new Map(liveNodes.filter((node) => node && node.id).map((node) => [String(node.id), node]));
   const droppedFixIds = new Set(asArray(inventory.overlays).map((entry) => String(entry?.id || '')).filter((id) => id && !fixed.has(id)));
+  const skipChromePaint = (node) => {
+    const id = String(node?.id || '');
+    if (!id) return false;
+    if (chromeIds.has(id) || bgIds.has(id)) return true;
+    const role = String(node?.role || '').toLowerCase();
+    if (role === 'bg' || role === 'kv') return true;
+    return /^bg(?:\/|$)/i.test(String(node?.name || ''));
+  };
   const sections = {};
   for (const section of asArray(inventory.sections)) {
     if (!section?.id) continue;
     sections[String(section.id)] = {
-      meta: { id: section.id, ...drawMeta(section) },
+      meta: { id: section.id, ...drawMeta(section, liveById.get(String(section.id))) },
       nodes: ordered(liveNodes.filter((node) => (
         !fixed.has(String(node?.id || ''))
         && !underDroppedFix(node, droppedFixIds)
+        && !skipChromePaint(node)
         && descendantsOf(node, section.id)
       )).map(paintWithPageBox)),
     };

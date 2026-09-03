@@ -1275,9 +1275,14 @@
     const motionAdapter = ctx.motionAdapter || ctx.motion || null;
     const __rawRoot = (ctx.rawTruth && ctx.rawTruth.platforms && ctx.rawTruth.platforms[__base])
       || ctx.rawTruth || {};
+    /* Main static paints the page. Clicks stay inert until Interaction
+       explicitly opts in (`ctx.enablePageInteraction === true`). */
+    const enablePageInteraction = ctx.enablePageInteraction === true;
+    frame.setAttribute('data-page-interaction', enablePageInteraction ? 'live' : 'inert');
     /* Programmatic hover/press is Interaction Skill owned. It is not a Figma
        variant and must not replace source-backed highlight COMPONENT_SET trees. */
     (function installButtonPressFeel() {
+      if (!enablePageInteraction) return;
       const doc = frame && (frame.ownerDocument || (typeof document !== 'undefined' ? document : null));
       if (!doc || !doc.head || doc.querySelector('style[data-fx-button-press]')) return;
       const payload = ctx.interactionPayload || ctx.renderInteractionPayload
@@ -5541,6 +5546,11 @@
          every page/section stage exists, using each modal's own Figma box.
          Visibility is interaction-owned; geometry stays source-backed. */
       const mountNamedModals = () => {
+        if (!enablePageInteraction) {
+          frame.setAttribute('data-named-modal-count', '0');
+          frame.setAttribute('data-named-modal-source-count', String(asArr(__activeTruth && __activeTruth.modals).length));
+          return;
+        }
         const records = asArr(__activeTruth && __activeTruth.modals);
         try {
         frame.setAttribute('data-named-modal-source-count', String(records.length));
@@ -5759,7 +5769,7 @@
         || motionAdapter?.interaction?.carousel
         || motionAdapter?.template?.interaction?.carousel)
         && __motionCarouselHosts.some((host) => host.querySelector('[data-motion-carousel-page]'));
-      if (!__motionCarouselOptIn && !frame.__fxInteractionBridgeInstalled
+      if (enablePageInteraction && !__motionCarouselOptIn && !frame.__fxInteractionBridgeInstalled
         && typeof frame.addEventListener === 'function' && typeof frame.querySelectorAll === 'function') {
         frame.__fxInteractionBridgeInstalled = true;
         let drag = null;

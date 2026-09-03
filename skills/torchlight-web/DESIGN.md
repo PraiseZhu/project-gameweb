@@ -43,7 +43,7 @@
 
 宽度尺子：`k = viewportW / designWidth`，官方口径 `10vw`（`html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`）。设备名是样品，不是额外布局。
 
-首屏：hero 槽填满当前视口高度，官方口径 `100vh` / `--vh`。`scrollTop=0` 时下一 section 在框外。长 `bg/*` 仍是清单里的一整张图，不切开；首屏只把 KV + 该图 cover-crop 进窗口。
+首屏：hero 槽填满当前视口高度，官方口径 `100vh` / `--vh`。`scrollTop=0` 时下一 section 在框外。长 `bg/*` 仍是清单里的一整张图，不切开。阶段一 KV/bg 跟页共用宽度尺 `k`，不左右裁切填满窗口。
 
 产品树（火炬产品页 / `?product=1`）：
 
@@ -56,13 +56,12 @@
 
 不要把官方 media-query 的展示/尺寸补丁（1920 / 1440 / 1024 / 750 / 650、aspect-ratio、`device-vertical`）抄进 chrome 或 render。那些补丁按季节变；1126 只负责选哪棵 Figma 树。
 
-三平面：
+阶段一平面：
 
-- bg / KV：cover-crop，居中。
-- UI（首页标题及其它控件）：按源缩放；PC 季节可用宽度尺。
+- bg / KV / UI 共用宽度尺 `k = viewportW / designWidth`。不要为了填满 `100vh` 把 KV/bg 再放大再左右裁。
 - 海 / K1：按源比例，居中裁。
 
-三平面不得共用一个 transform。Hero UI 大小走宽度尺 `k`；稿里底边落在首屏下半的块按底边比例钉在 `100vh` 槽上，避免 `y×k` 把标题抬到上半屏。
+Hero UI 大小走宽度尺 `k`。稿里底边落在首屏下半的块按底边比例钉在 `100vh` 槽上，避免 `y×k` 把标题抬到上半屏。
 
 ## 6. 语言与字号
 

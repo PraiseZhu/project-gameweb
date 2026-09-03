@@ -38,7 +38,8 @@ function browserTest(name, fn) {
     }
   });
 }
-async function render(page, payload) { await page.evaluate(({ truth, payload }) => window.__figmaRender.renderApp({ truth, rawTruth: truth, prefs: { plat: 'pc', lang: 'zh-CN' }, state: 'default', frame: document.querySelector('.frame'), viewport: { w: 400, h: 300, dpr: 1 }, interactionPayload: payload }), { truth: truth(), payload }); }
+async function render(page, payload) { await page.evaluate(({ truth, payload }) => window.__figmaRender.renderApp({
+      enablePageInteraction: true, truth, rawTruth: truth, prefs: { plat: 'pc', lang: 'zh-CN' }, state: 'default', frame: document.querySelector('.frame'), viewport: { w: 400, h: 300, dpr: 1 }, interactionPayload: payload }), { truth: truth(), payload }); }
 const state = (page) => page.evaluate(() => Object.fromEntries(['switch', 'page-a', 'page-b', 'tab-a', 'tab-b', 'ind-a', 'ind-b'].map((id) => { const el = document.querySelector('[data-node="' + id + '"]'); return [id, { hidden: !!el.hidden, selected: el.getAttribute('aria-selected'), index: el.getAttribute('data-switch-index') }]; })));
 const click = (page, id) => page.evaluate((id) => document.querySelector('[data-node="' + id + '"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })), id);
 browserTest('browser direct-child source state, tabs, indicators, prev and next', async () => { const { browser, page } = await setup(); try { await render(page, buildRendererInteractionPayload(model())); let s = await state(page); assert.equal(s['page-a'].hidden, true); assert.equal(s['page-b'].hidden, false); assert.equal(s['tab-b'].selected, 'true'); await click(page, 'tab-a'); s = await state(page); assert.equal(s['page-a'].hidden, false); await click(page, 'next'); s = await state(page); assert.equal(s['page-b'].hidden, false); await click(page, 'prev'); s = await state(page); assert.equal(s['page-a'].hidden, false); await click(page, 'ind-b'); s = await state(page); assert.equal(s['ind-b'].selected, 'true'); } finally { await browser.close(); } });
@@ -49,6 +50,60 @@ browserTest('browser unresolved direct-child remains inert', async () => { const
     { id: 'page-b', type: 'FRAME', name: 'State B', parentId: 'switch', orderKey: [1] },
     { id: 'tab-a', type: 'FRAME', name: 'tab/a', parentId: 'section' },
   ]); await render(page, buildRendererInteractionPayload(raw)); const s = await page.evaluate(() => ['switch', 'page-a', 'page-b'].map((id) => { const el = document.querySelector('[data-node="' + id + '"]'); return [id, { page: el.getAttribute('data-switch-page'), hidden: el.hidden }]; })); assert.deepEqual(s, [['switch', { page: null, hidden: false }], ['page-a', { page: null, hidden: false }], ['page-b', { page: null, hidden: false }]]); } finally { await browser.close(); } });
+browserTest('browser Main static does not open determined modals', async () => {
+  const { browser, page } = await setup();
+  try {
+    const modalTruth = {
+      platforms: {
+        pc: {
+          pageChrome: { meta: { x: 0, y: 0, width: 400, height: 300 }, nodes: [] },
+          sections: {
+            section: {
+              meta: { x: 0, y: 0, width: 400, height: 300 },
+              nodes: [
+                node('play-ok', 'btn/播放按钮@go=modal/视频弹窗', 'section', 10, 10, 80, 24, { params: { go: 'modal/视频弹窗' } }),
+              ],
+            },
+          },
+          modals: [{
+            id: 'modal-video',
+            name: 'modal/视频弹窗',
+            platform: 'pc',
+            triggerStatus: 'determined',
+            triggerFrom: ['play-ok'],
+            box: { x: 40, y: 80, w: 200, h: 120 },
+            nodes: [node('modal-video', 'modal/视频弹窗', null, 40, 80, 200, 120)],
+          }],
+        },
+      },
+    };
+    await page.evaluate((truth) => window.__figmaRender.renderApp({
+      truth,
+      rawTruth: truth,
+      prefs: { plat: 'pc', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 400, h: 300, dpr: 1 },
+    }), modalTruth);
+    const before = await page.evaluate(() => ({
+      interaction: document.querySelector('.frame')?.getAttribute('data-page-interaction'),
+      count: document.querySelector('.frame')?.getAttribute('data-named-modal-count'),
+      modal: !!document.querySelector('[data-modal-name="视频弹窗"]'),
+    }));
+    assert.equal(before.interaction, 'inert');
+    assert.equal(before.count, '0');
+    assert.equal(before.modal, false);
+    await click(page, 'play-ok');
+    const after = await page.evaluate(() => ({
+      modal: !!document.querySelector('[data-modal-name="视频弹窗"]'),
+      open: document.querySelector('[data-modal-name="视频弹窗"]')?.getAttribute('data-modal-open') || null,
+    }));
+    assert.equal(after.modal, false);
+    assert.equal(after.open, null);
+  } finally {
+    await browser.close();
+  }
+});
 browserTest('browser same-name unauthorized opener stays inert', async () => {
   const { browser, page } = await setup();
   try {
@@ -78,6 +133,7 @@ browserTest('browser same-name unauthorized opener stays inert', async () => {
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -116,6 +172,80 @@ browserTest('browser same-name unauthorized opener stays inert', async () => {
     await browser.close();
   }
 });
+browserTest('browser named close button and img/关闭按钮 close the host modal and unpin it', async () => {
+  const { browser, page } = await setup();
+  try {
+    const modalTruth = {
+      platforms: {
+        pc: {
+          pageChrome: { meta: { x: 0, y: 0, width: 400, height: 300 }, nodes: [] },
+          sections: {
+            section: {
+              meta: { x: 0, y: 0, width: 400, height: 300 },
+              nodes: [
+                node('play-ok', 'btn/播放按钮@go=modal/订阅赛季日程', 'section', 10, 10, 80, 24, { params: { go: 'modal/订阅赛季日程' } }),
+              ],
+            },
+          },
+          modals: [{
+            id: 'modal-cal',
+            name: 'modal/订阅赛季日程',
+            platform: 'pc',
+            triggerStatus: 'determined',
+            triggerFrom: ['play-ok'],
+            pageBox: { x: 0, y: 0, w: 400, h: 300 },
+            box: { x: 0, y: 0, w: 400, h: 300 },
+            nodes: [
+              node('modal-cal', 'modal/订阅赛季日程', null, 0, 0, 400, 300, { pageBox: { x: 0, y: 0, w: 400, h: 300 } }),
+              node('close-btn', 'btn/关闭按钮', 'modal-cal', 360, 8, 24, 24, { pageBox: { x: 360, y: 8, w: 24, h: 24 } }),
+              node('close-img', 'img/关闭按钮', 'close-btn', 360, 8, 24, 24, { pageBox: { x: 360, y: 8, w: 24, h: 24 } }),
+            ],
+          }],
+        },
+      },
+    };
+    await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
+      truth,
+      rawTruth: truth,
+      prefs: { plat: 'pc', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 400, h: 300, dpr: 1 },
+    }), modalTruth);
+    await click(page, 'play-ok');
+    const opened = await page.evaluate(() => {
+      const modal = document.querySelector('[data-modal-name="订阅赛季日程"]');
+      const host = modal && modal.parentElement;
+      return {
+        open: modal && modal.getAttribute('data-modal-open'),
+        hidden: modal && modal.hidden,
+        hostFixed: host && host.style.position,
+        closeBtn: !!document.querySelector('[data-btn-name="关闭按钮"]'),
+        closeImg: !!document.querySelector('[data-name="img/关闭按钮"]'),
+      };
+    });
+    assert.equal(opened.open, 'true');
+    assert.equal(opened.hidden, false);
+    assert.equal(opened.hostFixed, 'fixed');
+    assert.equal(opened.closeBtn, true);
+    await page.evaluate(() => document.querySelector('[data-name="img/关闭按钮"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+    const closed = await page.evaluate(() => {
+      const modal = document.querySelector('[data-modal-name="订阅赛季日程"]');
+      const host = modal && modal.parentElement;
+      return {
+        open: modal && modal.getAttribute('data-modal-open'),
+        hidden: modal && modal.hidden,
+        hostFixed: host && host.style.position,
+      };
+    });
+    assert.equal(closed.open, null);
+    assert.equal(closed.hidden, true);
+    assert.equal(closed.hostFixed, 'absolute');
+  } finally {
+    await browser.close();
+  }
+});
 browserTest('browser canvas-offset modal mounts from pageBox, not canvas box', async () => {
   const { browser, page } = await setup();
   try {
@@ -145,6 +275,7 @@ browserTest('browser canvas-offset modal mounts from pageBox, not canvas box', a
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -219,6 +350,7 @@ browserTest('browser render-bound slice keeps spill PNG larger than owner pageBo
     await page.evaluate((truth) => {
       window.__figmaRender.__assetCache = null;
       window.__figmaRender.renderApp({
+      enablePageInteraction: true,
         truth,
         rawTruth: truth,
         prefs: { plat: 'pc', lang: 'zh-CN' },
@@ -248,7 +380,7 @@ browserTest('browser render-bound slice keeps spill PNG larger than owner pageBo
     assert.equal(geom.top, '-10px');
     assert.equal(geom.width, '220px');
     assert.equal(geom.height, '320px');
-    assert.equal(geom.objectFit, 'none');
+    assert.equal(geom.objectFit, 'fill');
   } finally {
     await browser.close();
   }
@@ -286,6 +418,7 @@ browserTest('browser calendar today/return swaps on hscroll and restores on clic
       },
     };
     await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
       truth,
       rawTruth: truth,
       prefs: { plat: 'pc', lang: 'zh-CN' },
