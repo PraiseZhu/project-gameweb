@@ -1,0 +1,15 @@
+{
+  "name": "gameweb-design-policy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Parse DESIGN.md YAML (gameweb-design-policy/v1) and mirror numbers against page-making code",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "parse": "node src/parse-design-policy.mjs",
+    "mirror": "node src/mirror-design-policy.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -262,7 +262,16 @@ test('--update-chrome 仍只换 chrome 段;--update-adapter 只换 adapter 段',
   assert.equal(json(okChrome).block, 'FIGMA_CHROME');
   const classicHtml = readFileSync(classicIndex, 'utf8');
   assert.ok(!classicHtml.includes('CHROME-DIRTY'), 'figma chrome 段未被替换');
-  assert.equal(classicHtml, classicOrig, 'figma 壳只换 chrome 段,其余字节不动');
+  assert.ok(classicHtml.includes('qa-design-policy'), '--update-chrome 必须保留政策块');
+  assert.match(classicHtml, /<script id="qa-design-policy" type="application\/json">\{.*"schema":"gameweb-design-policy\/v1"/);
+  const withoutPolicy = classicOrig.replace(/<script id="qa-design-policy"[\s\S]*?<\/script>/, '');
+  writeFileSync(classicIndex, withoutPolicy);
+  const missingPolicy = run(INIT, ['--dir', classicDir, '--update-chrome']);
+  assert.notEqual(missingPolicy.status, 0);
+  assert.match(json(missingPolicy).error, /qa-design-policy/);
+  writeFileSync(classicIndex, classicOrig);
+  const restored = run(INIT, ['--dir', classicDir, '--update-chrome']);
+  assert.equal(restored.status, 0, restored.stdout + restored.stderr);
   const classicDevices = classicHtml.match(/<script id="qa-devices"[\s\S]*?<\/script>/);
   const origDevices = classicOrig.match(/<script id="qa-devices"[\s\S]*?<\/script>/);
   assert.ok(classicDevices && origDevices, 'qa-devices 段必须保留');

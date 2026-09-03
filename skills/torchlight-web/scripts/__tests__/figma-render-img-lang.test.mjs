@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchChromium } from '../lib/resolve-playwright.mjs';
 import { playwrightBrowserSkipMessage, probePlaywrightCapability } from '../lib/runtime-capabilities.mjs';
+import { DESIGN_POLICY } from '../lib/design-policy.generated.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const PLAYWRIGHT_PROBE = probePlaywrightCapability(root);
@@ -138,6 +139,7 @@ async function setup() {
   const { browser } = await launchChromium(root, { headless: true });
   const page = await browser.newPage({ viewport: { width: 400, height: 300 } });
   await page.setContent('<!doctype html><body><div class="frame"></div><script type="application/json" id="qa-assets"></script></body>');
+  await page.evaluate((policy) => { window.__designPolicy = policy; }, DESIGN_POLICY);
   await page.addScriptTag({ path: rendererPath });
   await page.evaluate((payload) => {
     document.getElementById('qa-assets').textContent = JSON.stringify(payload);

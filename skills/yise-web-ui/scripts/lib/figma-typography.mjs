@@ -60,9 +60,9 @@ const FRAMED_ROLE_HINTS = /nav|calendar|card|panel|tile|button|btn|tag|label|bad
  * (100 -> 92 -> 85 -> 78 -> 75). This helper only decides WHO may shrink, so the
  * extractor/renderer/browser-check can never drift into two different rules.
  */
-export function fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null } = {}) {
+export function fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null, hugNoShrink, openFlowNoShrink } = {}) {
   const truncating = String(autoResize || 'FIXED').toUpperCase() === 'TRUNCATE' || truncation === 'ENDING';
-  if (openFlow) return { authorized: false, reason: 'open-flow-natural-growth' };
+  if (openFlow && openFlowNoShrink !== false) return { authorized: false, reason: 'open-flow-natural-growth' };
   if (explicitFit) return { authorized: true, reason: 'explicit-fit-grant' };
   if (truncating) return { authorized: true, reason: 'truncation' };
   if (clipsContent === true || isMask === true) return { authorized: true, reason: 'clip-or-mask' };
@@ -73,7 +73,7 @@ export function fitAuthorization({ autoResize = 'FIXED', truncation = null, clip
      字号不一（字多的卡明显更小），违背设计与实测基线。所以 HUG 垂直不授权
      缩字号，保持源字号、垂直自然增长。explicitFit / 截断 / clip / mask 仍
      优先授权（上面已 return）。 */
-  if (String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
+  if (hugNoShrink !== false && String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
   if (boundedOwner) return { authorized: true, reason: 'framed-bounded-owner' };
   return { authorized: false, reason: 'preserve-source-metrics' };
 }

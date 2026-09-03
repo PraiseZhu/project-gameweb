@@ -4750,10 +4750,14 @@
              fill most of the owner in both axes; headings do not. */
           const _fillsOwner = _ownerW != null && _ownerH != null && _srcW > 0 && _srcH > 0
             && _srcH >= _ownerH * 0.6 && _srcW >= _ownerW * 0.55;
-          const boundedHugLabel = inlineHugs && !constraint.openFlow && _centered && _fillsOwner;
+          const hasAlCaps = alOwner.maxWidth != null || alOwner.maxHeight != null;
+          const boundedHugLabel = inlineHugs && !constraint.openFlow && _centered && _fillsOwner && hasAlCaps;
           if (boundedHugLabel) {
             el.setAttribute('data-fit-policy', 'bounded-hug-label');
-            fitCandidates.push({ el, tx, box, widthFit: _ownerW, heightFit: _ownerH });
+            if (alOwner.ownerId) el.setAttribute('data-fit-owner', String(alOwner.ownerId));
+            if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
+            if (alOwner.maxHeight != null) el.setAttribute('data-fit-max-height', String(alOwner.maxHeight));
+            fitCandidates.push({ el, tx, box, widthFit: _ownerW, heightFit: _ownerH, maxWidth: alOwner.maxWidth, maxHeight: alOwner.maxHeight });
           }
         } else {
           el.style.height = ((box.h ?? 0) + (Number(el.getAttribute('data-hscroll-gutter-h')) || 0)) + 'px';

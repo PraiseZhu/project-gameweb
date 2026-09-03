@@ -6,6 +6,7 @@ import { buildRendererInteractionPayload } from '../lib/figma-render-interaction
 import { deriveInteractionModel } from '../lib/figma-interaction-contract.mjs';
 import { launchChromium } from '../lib/resolve-playwright.mjs';
 import { playwrightBrowserSkipMessage, probePlaywrightCapability } from '../lib/runtime-capabilities.mjs';
+import { DESIGN_POLICY } from '../lib/design-policy.generated.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const PLAYWRIGHT_PROBE = probePlaywrightCapability(root);
 const HAS_BROWSER_DEPS = PLAYWRIGHT_PROBE.available;
@@ -19,7 +20,7 @@ const model = (active = 'tab-b') => deriveInteractionModel([
   { id: 'prev', type: 'FRAME', name: 'btn/prev', parentId: 'section' }, { id: 'next', type: 'FRAME', name: 'btn/next', parentId: 'section' },
 ]);
 const truth = () => ({ sections: { section: { meta: { x: 0, y: 0, width: 400, height: 240 }, nodes: [node('switch', 'switch/cards', 'section', 0, 0, 400, 180), ...['a', 'b', 'c', 'd'].map((suffix) => node('page-' + suffix, 'State ' + suffix.toUpperCase(), 'switch', 0, 0, 400, 180)), ...['tab-a', 'tab-b', 'tab-c', 'tab-d', 'ind-a', 'ind-b', 'ind-c', 'ind-d', 'prev', 'next'].map((id, i) => node(id, id.replace('-', '/'), 'section', i * 30, 190, 20, 20))] } } });
-async function setup() { const { browser } = await launchChromium(root, { headless: true }); const page = await browser.newPage({ viewport: { width: 400, height: 300 } }); await page.setContent('<!doctype html><body><div class="frame"></div></body>'); await page.addScriptTag({ path: rendererPath }); return { browser, page }; }
+async function setup() { const { browser } = await launchChromium(root, { headless: true }); const page = await browser.newPage({ viewport: { width: 400, height: 300 } }); await page.setContent('<!doctype html><body><div class="frame"></div></body>'); await page.evaluate((policy) => { window.__designPolicy = policy; }, DESIGN_POLICY); await page.addScriptTag({ path: rendererPath }); return { browser, page }; }
 function browserTest(name, fn) {
   test(name, async (t) => {
     if (!HAS_BROWSER_DEPS) {

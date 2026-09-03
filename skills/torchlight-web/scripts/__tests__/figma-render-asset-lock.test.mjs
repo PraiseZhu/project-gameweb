@@ -379,6 +379,8 @@ test('compact HUG label behavior remains geometry-authorized only', () => {
   assert.match(renderer, /const compactHugLabelEvidence = \(\{ role, align, autoResize, ownerNode, ownerBox, directOwner, sourceBox \}\) =>/);
   assert.match(renderer, /verticalSlack <= sourceH \* 0\.6 \+ 0\.5/);
   assert.match(renderer, /sourceW >= ownerW \* 0\.55/);
-  assert.match(renderer, /const boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner/);
-  assert.match(renderer, /if \(boundedHugLabel\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*fitCandidates\.push\(\{ el, tx, box, widthFit: _ownerW/);
+  assert.match(renderer, /const boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner && hasAlCaps/);
+  assert.match(renderer, /if \(boundedHugLabel\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*maxWidth: alOwner\.maxWidth/);
+  assert.doesNotMatch(renderer, /hasAlCaps \|\| semanticBreak/);
+  assert.doesNotMatch(renderer, /widthFit: _ownerW/);
 });

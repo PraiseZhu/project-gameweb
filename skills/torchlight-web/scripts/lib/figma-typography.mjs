@@ -51,31 +51,141 @@ const FRAMED_ROLE_HINTS = /nav|calendar|card|panel|tile|button|btn|tag|label|bad
  *   - TRUNCATE / textTruncation=ENDING  -> authorized (source explicitly truncates)
  *   - clipsContent / isMask             -> authorized (source explicitly clips)
  *   - truth.fit === true                -> authorized (explicit per-node grant)
- *   - a bounded framed owner            -> authorized (fixed UI frame; translated
- *     copy must fit its maximum owner/content range instead of growing past it)
- *   - open-flow / HEIGHT without a frame -> NOT authorized; keep source metrics
- *     and let the text grow vertically (growth is evidence, not an error).
+ *   - written Auto Layout maxWidth/maxHeight -> authorized (`auto-layout-max`)
+ *   - open-flow / HEIGHT without a written max -> NOT authorized; keep source
+ *     metrics and let the text grow vertically (growth is evidence, not an error).
+ *   - a framed owner box without a written max is NOT a shrink grant (DESIGN.md 6.1 B).
  *
- * The fit itself stays a last-resort, floor-bounded step ladder in the renderer
- * (100 -> 92 -> 85 -> 78 -> 75). This helper only decides WHO may shrink, so the
- * extractor/renderer/browser-check can never drift into two different rules.
+ * DESIGN.md 6.1: Auto Layout maxWidth/maxHeight (when written) is the hard cap.
+ * Overflow shrinks font-size by whole CSS pixels. No 75% floor.
  */
-export function fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null } = {}) {
+function leafValue(raw) {
+  return raw && typeof raw === 'object' && 'value' in raw ? raw.value : raw;
+}
+
+function positiveCap(raw) {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function layoutLeafNumber(layout, key) {
+  if (!layout || typeof layout !== 'object') return null;
+  return positiveCap(leafValue(layout[key]));
+}
+
+export function fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null, hugNoShrink, openFlowNoShrink, autoLayoutMax = null } = {}) {
   const truncating = String(autoResize || 'FIXED').toUpperCase() === 'TRUNCATE' || truncation === 'ENDING';
-  if (openFlow) return { authorized: false, reason: 'open-flow-natural-growth' };
+  const hasAlMax = layoutLeafNumber(autoLayoutMax, 'maxWidth') != null
+    || layoutLeafNumber(autoLayoutMax, 'maxHeight') != null;
+  if (hasAlMax) return { authorized: true, reason: 'auto-layout-max' };
+  if (openFlow && openFlowNoShrink !== false) return { authorized: false, reason: 'open-flow-natural-growth' };
   if (explicitFit) return { authorized: true, reason: 'explicit-fit-grant' };
   if (truncating) return { authorized: true, reason: 'truncation' };
   if (clipsContent === true || isMask === true) return { authorized: true, reason: 'clip-or-mask' };
-  /* 垂直 HUG 的文本/容器随内容增长 —— 真实产品线五语言实测基线（私有证据，见
-     artifacts/；02 奖励卡全部同字号、行数随文案 2/3/4 增长、容器高度跟随，
-     从不对字多的卡缩字号），也正是 Figma autoResize:HEIGHT +
-     layoutSizingVertical:HUG 的本义。对这类文本 step-fit 缩字号会让同组卡片
-     字号不一（字多的卡明显更小），违背设计与实测基线。所以 HUG 垂直不授权
-     缩字号，保持源字号、垂直自然增长。explicitFit / 截断 / clip / mask 仍
-     优先授权（上面已 return）。 */
-  if (String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
-  if (boundedOwner) return { authorized: true, reason: 'framed-bounded-owner' };
+  /* DESIGN.md 6.1 C: written Auto Layout max already returned above. Remaining
+     HUG / open-flow keep source metrics unless YAML explicitly allows shrink. */
+  if (hugNoShrink !== false && String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
+  void boundedOwner;
   return { authorized: false, reason: 'preserve-source-metrics' };
+}
+
+function layoutModeOf(node) {
+  return String(leafValue(node && node.layout && node.layout.layoutMode) || '').toUpperCase();
+}
+
+function nodeHasWrittenMax(node) {
+  const layout = node && node.layout;
+  return layoutLeafNumber(layout, 'maxWidth') != null || layoutLeafNumber(layout, 'maxHeight') != null;
+}
+
+function isAutoLayoutFrame(node) {
+  const mode = layoutModeOf(node);
+  return mode === 'HORIZONTAL' || mode === 'VERTICAL';
+}
+
+export function findAutoLayoutMaxOwner({ textId, nodesById } = {}) {
+  const none = (reason) => ({ ownerId: null, maxWidth: null, maxHeight: null, reason });
+  const byId = nodesById instanceof Map ? nodesById : new Map(Object.entries(nodesById || {}));
+  const start = byId.get(textId);
+  if (!start) return none('missing-text');
+  const capsOf = (node) => ({
+    maxWidth: layoutLeafNumber(node && node.layout, 'maxWidth'),
+    maxHeight: layoutLeafNumber(node && node.layout, 'maxHeight'),
+  });
+  if (nodeHasWrittenMax(start)) {
+    return { ownerId: textId, ...capsOf(start), reason: 'text-self-max' };
+  }
+  const seen = new Set([String(textId)]);
+  let current = start;
+  while (current) {
+    const parentId = leafValue(current.parentId);
+    if (parentId == null || parentId === '' || seen.has(String(parentId))) break;
+    seen.add(String(parentId));
+    const parent = byId.get(parentId) || byId.get(String(parentId));
+    if (!parent) break;
+    if (isAutoLayoutFrame(parent) && nodeHasWrittenMax(parent)) {
+      return { ownerId: String(parentId), ...capsOf(parent), reason: 'nearest-auto-layout-max' };
+    }
+    current = parent;
+  }
+  return none('no-auto-layout-max');
+}
+
+export function integerPxFit({
+  baseFontSize,
+  baseLineHeight,
+  maxWidth = null,
+  maxHeight = null,
+  measure,
+} = {}) {
+  const fs0 = Number(baseFontSize);
+  const lh0 = Number(baseLineHeight);
+  if (!Number.isFinite(fs0) || fs0 <= 0 || typeof measure !== 'function') {
+    return { fontSize: fs0, lineHeight: lh0, shrunk: false, reason: 'unmeasured' };
+  }
+  const capW = positiveCap(maxWidth);
+  const capH = positiveCap(maxHeight);
+  if (capW == null && capH == null) {
+    return { fontSize: fs0, lineHeight: lh0, shrunk: false, reason: 'no-cap' };
+  }
+  const ratio = Number.isFinite(lh0) && lh0 > 0 ? lh0 / fs0 : null;
+  let fs = fs0;
+  let lh = Number.isFinite(lh0) && lh0 > 0 ? lh0 : fs0;
+  const fits = (size, leading) => {
+    const ink = measure({ fontSize: size, lineHeight: leading }) || {};
+    const w = Number(ink.width);
+    const h = Number(ink.height);
+    if (capW != null && Number.isFinite(w) && w > capW + 0.5) return false;
+    if (capH != null && Number.isFinite(h) && h > capH + 0.5) return false;
+    return true;
+  };
+  if (fits(fs, lh)) return { fontSize: fs, lineHeight: lh, shrunk: false, reason: 'fits-base' };
+  while (fs > 1) {
+    fs -= 1;
+    lh = ratio != null ? fs * ratio : lh;
+    if (fits(fs, lh)) return { fontSize: fs, lineHeight: lh, shrunk: true, reason: 'integer-px' };
+  }
+  return { fontSize: fs, lineHeight: lh, shrunk: true, reason: 'min-1px' };
+}
+
+export function unifyGroupIntegerFontSizes(members = []) {
+  const sizes = members.map((m) => Number(m && m.fontSize)).filter((n) => Number.isFinite(n) && n > 0);
+  if (!sizes.length) return members;
+  const min = Math.min(...sizes);
+  return members.map((m) => (m ? { ...m, fontSize: min } : m));
+}
+
+export function isIntegerPxShrinkEvidence(browser = {}) {
+  const fitPx = Number(browser.fitPx);
+  const base = Number(browser.localeBaseFontSize);
+  if (Number.isFinite(fitPx) && fitPx > 0 && Number.isFinite(base) && base > 0) {
+    return fitPx < base - 0.5;
+  }
+  const scale = Number(browser.fitScale);
+  if (!Number.isFinite(scale) || scale <= 0) return false;
+  if (scale <= 1) return scale < 1 - 1e-6;
+  if (Number.isFinite(base) && base > 0) return scale < base - 0.5;
+  return false;
 }
 
 /**
@@ -174,8 +284,12 @@ export function classifyTypographyRange({ truth = {}, browser = {}, language = '
   const openFlow = container.mode === 'open-flow' || container.openFlow === true;
   /* Hugging text is never fit-shrunk, so it is never treated as fit-authorized
      here either; otherwise its natural metric drift would be misread as a hard
-     overflow. Bounded framed owners authorize the (non-hugging) stepped fit. */
+     overflow. DESIGN.md 6.1 B: only a written Auto Layout max authorizes shrink. */
   const huggingText = isTextHugging(autoResize);
+  const autoLayoutMax = truth.autoLayoutMax
+    || (finite(Number(browser.fitMaxWidth)) || finite(Number(browser.fitMaxHeight))
+      ? { maxWidth: browser.fitMaxWidth, maxHeight: browser.fitMaxHeight }
+      : null);
   const fitAuthorized = browser.fitAuthorized === true
     || (!huggingText && fitAuthorization({
       autoResize,
@@ -183,7 +297,7 @@ export function classifyTypographyRange({ truth = {}, browser = {}, language = '
       clipsContent: truth.clipsContent === true,
       isMask: truth.isMask === true,
       openFlow,
-      boundedOwner: container.mode === 'framed-fixed',
+      autoLayoutMax,
     }).authorized);
   const horizontalOverflow = finite(clientWidth) && finite(scrollWidth) && scrollWidth > clientWidth + 0.5;
   const rawVerticalOverflow = !openFlow && finite(clientHeight) && finite(scrollHeight) && scrollHeight > clientHeight + 0.5;
@@ -225,9 +339,9 @@ export function classifyTypographyRange({ truth = {}, browser = {}, language = '
      lh≈32~40px），不会放走真溢出。多行框不变（仍 max(2, lh*0.09)/行）。 */
   const driftPerLine = heightBoxDriftLines <= 1 ? Math.max(9, lineHeight * 0.2) : Math.max(2, lineHeight * 0.09);
   const singleLineHeightDrift = heightBoxDriftLines > 0 && !truncating && !horizontalOverflow
-    && rawVerticalOverflow && !browser.fitScale && !browser.fitOverflow
+    && rawVerticalOverflow && !isIntegerPxShrinkEvidence(browser) && !browser.fitOverflow
     && verticalExcess > 0 && verticalExcess <= 0.5 + driftPerLine * heightBoxDriftLines;
-  const verticalGrowthNatural = rawVerticalOverflow && !fitAuthorized && !browser.fitScale && !browser.fitOverflow
+  const verticalGrowthNatural = rawVerticalOverflow && !fitAuthorized && !isIntegerPxShrinkEvidence(browser) && !browser.fitOverflow
     && !truncating && !horizontalOverflow
     && ((autoResize === 'HEIGHT' && !hugging) || hugMetricDrift);
   const verticalOverflow = rawVerticalOverflow && !verticalGrowthNatural && !singleLineHeightDrift;
@@ -256,7 +370,7 @@ export function classifyTypographyRange({ truth = {}, browser = {}, language = '
   else if (openFlow && verticalGrowth) rangeStatus = 'open-flow-vertical-growth';
   else if (verticalGrowthNatural) rangeStatus = 'natural-vertical-growth';
   else if (browser.fitOverflow) rangeStatus = 'step-fit-overflow';
-  else if (browser.fitScale && Number(browser.fitScale) < 100) rangeStatus = 'step-fit';
+  else if (isIntegerPxShrinkEvidence(browser)) rangeStatus = 'step-fit';
   else if (!hugging && browser.wrapped) rangeStatus = 'wrapped';
   else if (horizontalOverflow || verticalOverflow || rangeOverflow) rangeStatus = hugging ? 'overflow' : 'wrap-or-overflow';
   else if (finite(rect.width) || finite(rect.height)) rangeStatus = 'fit';
@@ -289,7 +403,9 @@ export function classifyTypographyRange({ truth = {}, browser = {}, language = '
     clipped: !!clipped,
     ellipsis,
     status,
-    ok: status.length === 0 || (rangeStatus === 'wrapped' && !clipped),
+    ok: (status.length === 0 || (rangeStatus === 'wrapped' && !clipped))
+      && !(ellipsis && rangeStatus !== 'expected-truncation')
+      && !(clipped && rangeStatus !== 'expected-truncation'),
   };
 }
 

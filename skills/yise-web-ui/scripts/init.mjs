@@ -25,8 +25,9 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { failJson } from './lib/fs-utils.mjs';
+import { failJson, safeJsonForScript } from './lib/fs-utils.mjs';
 import { workflowDeclaration, workflowProblem } from './lib/workflows.mjs';
+import { parseDesignPolicyFile } from '../../../standards/design-policy/tool/src/parse-design-policy.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -61,8 +62,21 @@ function replaceMarkedBlock(marker, code, flag) {
   const re = new RegExp(`(\\/\\* ${marker}_BEGIN[\\s\\S]*?\\*\\/\\r?\\n)[\\s\\S]*?(\\r?\\n\\/\\* ${marker}_END \\*\\/)`);
   if (!re.test(html)) failJson(`index.html 缺 ${marker}_BEGIN/END 标记段——不是 init.mjs 生成的结构(或不是组件模式 demo),手动升级`);
   writeFileSync(indexPath, html.replace(re, `$1${code}$2`));
-  console.log(JSON.stringify({ ok: true, updated: indexPath, block: marker }));
-  process.exit(0);
+  return { ok: true, updated: indexPath, block: marker };
+}
+
+function embedDesignPolicyOnUpdate(indexPath) {
+  const html = readFileSync(indexPath, 'utf8');
+  const DESIGN_POLICY_RE = /<script id="qa-design-policy" type="application\/json">[\s\S]*?<\/script>/;
+  if (!DESIGN_POLICY_RE.test(html)) {
+    failJson('--update-chrome 需要 #qa-design-policy；旧 demo 缺政策块，禁止只升 chrome。请用当前 demo-shell 重建');
+  }
+  const designPolicyJson = safeJsonForScript(parseDesignPolicyFile(join(SKILL_ROOT, 'DESIGN.md')));
+  const next = html.replace(
+    DESIGN_POLICY_RE,
+    `<script id="qa-design-policy" type="application/json">${designPolicyJson}</script>`,
+  );
+  if (next !== html) writeFileSync(indexPath, next);
 }
 
 if (updateChrome) {
@@ -72,11 +86,26 @@ if (updateChrome) {
   // 2026-08-14 修:QA_CHROME 曾无条件 replace —— 经典 figma 壳没有该标记段,升级命令直接失败。
   const hasFigma = html.includes('FIGMA_CHROME_BEGIN');
   const hasQa = html.includes('QA_CHROME_BEGIN');
-  if (hasFigma) replaceMarkedBlock('FIGMA_CHROME', figmaChromeJs, '--update-chrome');
-  if (hasQa) replaceMarkedBlock('QA_CHROME', chromeJs, '--update-chrome');
-  if (!hasFigma && !hasQa) failJson('index.html 没有任何 chrome 标记段(FIGMA_CHROME/QA_CHROME)——不是 init.mjs 生成的壳,手动升级');
+  let result;
+  if (hasFigma) {
+    if (!/<script id="qa-design-policy"/.test(html)) {
+      failJson('--update-chrome 需要 #qa-design-policy；旧 demo 缺政策块，禁止只升 chrome。请用当前 demo-shell 重建');
+    }
+    result = replaceMarkedBlock('FIGMA_CHROME', figmaChromeJs, '--update-chrome');
+    embedDesignPolicyOnUpdate(indexPath);
+  } else if (hasQa) {
+    result = replaceMarkedBlock('QA_CHROME', chromeJs, '--update-chrome');
+  } else {
+    failJson('index.html 没有任何 chrome 标记段(FIGMA_CHROME/QA_CHROME)——不是 init.mjs 生成的壳,手动升级');
+  }
+  console.log(JSON.stringify(result));
+  process.exit(0);
 }
-if (updateAdapter) replaceMarkedBlock('QA_COMPONENT_ADAPTER', adapterJs, '--update-adapter');
+if (updateAdapter) {
+  const result = replaceMarkedBlock('QA_COMPONENT_ADAPTER', adapterJs, '--update-adapter');
+  console.log(JSON.stringify(result));
+  process.exit(0);
+}
 
 const name = argOf('--name');
 if (!name || !/^[a-z0-9][a-z0-9-]{1,63}$/.test(name)) failJson('缺 --name <slug>(小写字母/数字/连字符)');
@@ -257,8 +286,10 @@ if (isComponent) shell = shell.replace('{{QA_COMPONENT_ADAPTER}}', adapterJs);
 if (isComponent) {
   shell = shell.replace('{{QA_CHROME}}', chromeJs);
 } else {
+  const designPolicyJson = safeJsonForScript(parseDesignPolicyFile(join(SKILL_ROOT, 'DESIGN.md')));
   shell = shell
     .replace('{{QA_DEVICES}}', defaultDevicesJson.replaceAll('</script', '<\\/script'))
+    .replace('<script id="qa-design-policy" type="application/json">{}</script>', `<script id="qa-design-policy" type="application/json">${designPolicyJson}</script>`)
     .replace('{{FIGMA_RENDER}}', figmaRenderJs)
     .replace('{{FIGMA_CHROME}}', figmaChromeJs);
 }

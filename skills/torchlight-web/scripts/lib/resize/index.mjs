@@ -10,6 +10,7 @@ import {
   resolveHeroContentRoot,
   HERO_SCROLL_STATES,
 } from '../hero-scroll-slot.mjs';
+import { DESIGN_POLICY } from '../design-policy.generated.mjs';
 
 export const RESIZE_SKILL_SCHEMA = 'yise-resize-skill/v1';
 export {
@@ -21,30 +22,29 @@ export {
   HERO_SCROLL_STATES,
 };
 
-export const DESIGN_WIDTHS = Object.freeze({
-  mobile: 750,
-  pad: 3840,
-  pc: 3840,
-});
+export { DESIGN_POLICY };
+
+export const DESIGN_WIDTHS = DESIGN_POLICY.designWidths;
+
+/* DESIGN.md 第 5.0：PC 列在 inclusive 1920 冻宽；1921 才 stretch。
+   Tree cutoff stays 1126/1127. html 10vw is a separate number. */
+export const PC_COLUMN_FREEZE_MAX = 1920;
+export const PC_COLUMN_FREEZE_K = PC_COLUMN_FREEZE_MAX / DESIGN_WIDTHS.pc;
 
 /* Official poster uses `html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`
-   so 10rem = 100vw. Resize owns the same ruler as a number, not that CSS. */
-export const OFFICIAL_ROOT_FONT_VW = 10;
+   so 10rem = 100vw. Numbers come from DESIGN.md YAML, not a second table. */
+export const OFFICIAL_ROOT_FONT_VW = DESIGN_POLICY.officialRootFontVw;
+export const HERO_VIEWPORT_FILL_VH = DESIGN_POLICY.heroViewportFillVh;
+export const PAD_USES_PC_TREE = DESIGN_POLICY.padUsesPcTree;
+export const INVENT_PAD_TREE = DESIGN_POLICY.inventPadTree;
 
-const DEFAULT_BREAKPOINTS = Object.freeze([
-  { key: 'mobile', min: 0, max: 750 },
-  { key: 'tablet', min: 751, max: 1023 },
-  { key: 'desktop', min: 1024, max: null },
-]);
+const DEFAULT_BREAKPOINTS = DESIGN_POLICY.qaBuckets;
+export const QA_BREAKPOINTS = DESIGN_POLICY.qaBuckets;
 
-/* Official torchlight poster: `@media (max-width: 1126px)` hides PC controls
-   and shows the mobile ones. Inclusive 1126 → mobile tree; 1127 → pc.
-   Device-picker buckets stay on DEFAULT_BREAKPOINTS. This list is composition
-   only — do not copy the season media-query size patches. */
-export const TORCHLIGHT_COMPOSITION_BREAKPOINTS = Object.freeze([
-  { key: 'mobile', min: 0, max: 1126 },
-  { key: 'desktop', min: 1127, max: null },
-]);
+/* Product tree is YAML composition (0–1126 / ≥1127). QA buckets stay on
+   DEFAULT_BREAKPOINTS and must not be merged into the product tree. */
+export const TORCHLIGHT_COMPOSITION_BREAKPOINTS = DESIGN_POLICY.composition;
+export const COMPOSITION_BREAKPOINTS = DESIGN_POLICY.composition;
 
 function finite(value) {
   return Number.isFinite(Number(value));
@@ -98,6 +98,8 @@ export function compositionKeyForViewport({
   platforms = {},
   breakpoints = DEFAULT_BREAKPOINTS,
   compositionBreakpoints = TORCHLIGHT_COMPOSITION_BREAKPOINTS,
+  padUsesPcTree = PAD_USES_PC_TREE,
+  inventPadTree = INVENT_PAD_TREE,
 } = {}) {
   const requested = platOfWidth(width, breakpoints);
   const composition = compositionBucketForWidth(width, compositionBreakpoints);
@@ -108,7 +110,13 @@ export function compositionKeyForViewport({
     return { requested, key: 'pad', fallback: null };
   }
   if (composition === 'pad' && !platforms.pad) {
-    return { requested, key: 'pc', fallback: 'pad-uses-pc-tree' };
+    if (inventPadTree) {
+      return { requested, key: 'pad', fallback: 'invent-pad-tree' };
+    }
+    if (padUsesPcTree) {
+      return { requested, key: 'pc', fallback: 'pad-uses-pc-tree' };
+    }
+    return { requested, key: 'pc', fallback: null };
   }
   if (composition === 'mobile' && !platforms.mobile) {
     return { requested, key: 'pc', fallback: 'mobile-uses-pc-tree' };
@@ -211,9 +219,12 @@ export function viewFitScale({
 }
 
 /**
- * Width ruler shared by QA zoom and product rem. Same number as official
- * `10vw`: k = viewportW / designWidth. Phone samples are 360/375/390/412/414/430;
- * they do not invent extra layouts.
+ * Segmented width ruler (DESIGN.md 第 5.0). Not one k for every viewport:
+ *   viewportW > 1920              → column follows viewport, k = viewportW / 3840
+ *   1127 ≤ viewportW ≤ 1920       → freeze columnWidth 1920, k locked at 0.5
+ *   viewportW ≤ 1126              → mobile tree, k = viewportW / 750
+ * officialRootFontPx stays 0.1 * viewportW (html 10vw). Tree cutoff stays 1126/1127.
+ * Do not copy season patches (1440/1024/750/650 rem, aspect-ratio, hover, 812 QR).
  */
 export function widthScale({
   viewportW,
@@ -224,14 +235,33 @@ export function widthScale({
   const dw = n(designWidth, NaN);
   const fallbackDw = DESIGN_WIDTHS[compositionKey] || DESIGN_WIDTHS.pc;
   const used = Number.isFinite(dw) && dw > 0 ? dw : fallbackDw;
-  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(used) || used <= 0) {
-    return { k: null, designWidth: used, officialRootFontPx: null };
+  const officialRootFontPx = Number.isFinite(width) && width > 0
+    ? width * (OFFICIAL_ROOT_FONT_VW / 100)
+    : null;
+  if (!Number.isFinite(width) || width <= 0) {
+    return { k: null, designWidth: used, officialRootFontPx: null, columnWidth: null };
   }
-  const k = width / used;
+  if (width <= TORCHLIGHT_COMPOSITION_BREAKPOINTS[0].max) {
+    return {
+      k: width / DESIGN_WIDTHS.mobile,
+      designWidth: DESIGN_WIDTHS.mobile,
+      officialRootFontPx,
+      columnWidth: width,
+    };
+  }
+  if (width <= PC_COLUMN_FREEZE_MAX) {
+    return {
+      k: PC_COLUMN_FREEZE_K,
+      designWidth: DESIGN_WIDTHS.pc,
+      officialRootFontPx,
+      columnWidth: PC_COLUMN_FREEZE_MAX,
+    };
+  }
   return {
-    k,
-    designWidth: used,
-    officialRootFontPx: width * (OFFICIAL_ROOT_FONT_VW / 100),
+    k: width / DESIGN_WIDTHS.pc,
+    designWidth: DESIGN_WIDTHS.pc,
+    officialRootFontPx,
+    columnWidth: width,
   };
 }
 
@@ -244,11 +274,13 @@ export function heroViewportFill({
   viewportH,
   widthScaleK,
   heroDesignHeight,
+  fillVh = HERO_VIEWPORT_FILL_VH,
 } = {}) {
   const vh = n(viewportH, NaN);
   const k = n(widthScaleK, NaN);
   const heroH = n(heroDesignHeight, NaN);
-  if (![vh, k, heroH].every((value) => Number.isFinite(value) && value > 0)) {
+  const fill = n(fillVh, NaN);
+  if (![vh, k, heroH, fill].every((value) => Number.isFinite(value) && value > 0)) {
     return {
       slotScale: null,
       fillsViewport: false,
@@ -256,10 +288,11 @@ export function heroViewportFill({
       uiYRatio: 1,
     };
   }
-  const slotScale = Math.max(k, vh / heroH);
-  const designHeight = vh / k;
+  const slotH = vh * (fill / 100);
+  const slotScale = Math.max(k, slotH / heroH);
+  const designHeight = slotH / k;
   const layoutOffsetDesign = Math.max(0, designHeight - heroH);
-  const cropWindowDesign = vh / slotScale;
+  const cropWindowDesign = slotH / slotScale;
   /* Size stays on k. When the 100vh slot is taller than k×hero, hero UI
      blocks anchor their BOTTOM fraction of the slot so a lower-hero title
      keeps its Figma distance above the first-screen bottom edge instead of
@@ -307,9 +340,9 @@ export function planeResizePolicies(layoutPlanes = null) {
     status: 'verified-two-plane',
     background: {
       nodeId: layoutPlanes.planes.background.nodeId,
-      scaleMode: 'width-scale',
-      cropAxes: [],
-      anchor: 'source-origin',
+      scaleMode: 'cover-crop',
+      cropAxes: ['x'],
+      anchor: 'center',
     },
     foreground: {
       nodeId: layoutPlanes.planes.foreground.nodeId,
@@ -343,16 +376,12 @@ export function heroCoverCrop({
   if (![w, h, dw, dh, k].every(Number.isFinite) || w <= 0 || h <= 0 || dw <= 0 || dh <= 0 || k <= 0) {
     return { scale: k, cropLeft: 0, applied: false };
   }
-  /* Season-1 stretch is uniform width-scale k. Cover-crop left-right-crops
-     the artwork when the viewport is taller than k×hero. Keep the KV/bg
-     plane on the same k as UI until a later axis opts into cover. */
-  void h;
-  void dh;
+  const cover = Math.max(k, h / dh);
   return {
-    scale: k,
-    cropLeft: 0,
-    applied: false,
-    plane: 'width-scale',
+    scale: cover,
+    cropLeft: (w / cover - dw) / 2,
+    applied: cover > k + 1e-6,
+    plane: 'kv-visual',
     uiPlane: 'source-ui-scale',
   };
 }
@@ -397,6 +426,7 @@ export function classifyResizeIntent({
     plat: composition.requested,
     composition,
     widthScale: ruler,
+    columnWidth: ruler.columnWidth,
     heroFill: heroViewportFill({
       viewportH,
       widthScaleK: ruler.k,
@@ -432,15 +462,15 @@ export function resizeOwns() {
   return [
     'product/QA tree from composition width (torchlight official 0–1126 mobile, ≥1127 pc; no pad tree)',
     'device-picker buckets stay 0–750 / 751–1023 / ≥1024 and do not select the Figma tree',
-    'continuous width scale k = viewportW / designWidth (official 10vw ruler)',
-    'hero first-screen fill of current viewport height (season-1: width-scale k, no KV/bg left-right cover-crop; inventory stays one sheet)',
+    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5; ≤1126 k=viewportW/750 (official 10vw html font stays 0.1*viewportW)',
+    'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; inventory stays one sheet)',
     'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
     'left directory rail stretches to the current viewport height without SS5 node IDs',
     'product-view page overflow-x clip (official adaptive-width)',
     'light-drag vs full rebuild',
     'preview 1:1 fit scale',
-    'season-1 background/KV/UI share width-scale k; no left-right cover-crop',
-    'homepage title/UI stay on width-scale',
+    'background cover-crop vs UI source-scale vs sea aspect-crop',
+    'KV cover-crop stays on the kv visual plane; homepage title/UI stay on width-scale',
     'fixed directory follows remaining viewport height without inheriting KV cover scale',
     'hero lock / exit / release geometry while the window size changes',
   ];
@@ -452,7 +482,7 @@ export function resizeDoesNotOwn() {
     'click / switch / tab / scrollspy wiring (Interaction Skill)',
     'Figma fetch, truth extraction, or asset export (Main Skill)',
     'page-specific node IDs or official-site one-off CSS',
-    'per-device special-case layouts or official media-query size patches (1920/1440/1024/750/650, aspect-ratio, device-vertical; 1126 is the tree cutoff only)',
+    'per-device special-case layouts or official media-query size patches (1440/1024/750/650 rem, aspect-ratio, hover, 812 QR, device-vertical; 1126 is the tree cutoff only — 1127–1920 column freeze is owned by the segmented ruler)',
   ];
 }
 
