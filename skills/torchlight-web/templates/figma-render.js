@@ -3243,7 +3243,7 @@
          }
          return none;
        };
-
+       const truthChildrenByParentId = new Map();
        for (const item of list) {
          const parentId = nodeParentId(item);
          if (!parentId) continue;
