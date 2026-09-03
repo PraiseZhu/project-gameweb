@@ -6824,7 +6824,7 @@
             const frameRect = frame.getBoundingClientRect();
             if (!frameRect.width || !frameRect.height) return;
             const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
-            const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base] || 3840;
+            const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
             const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
             const pageZoom = Number.parseFloat(frame.style.zoom) || 1;
             const visibleW = frameRect.width / (pageZoom || 1);
