@@ -236,7 +236,7 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
     const base = await server.listen('127.0.0.1');
     ({ browser } = await launchChromium(SKILL_ROOT, { headless: true }));
     const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-    await page.goto(`${base}/index.html?inventory-static-gate=1`, { waitUntil: 'load', timeout: 120000 });
+    await page.goto(`${base}/index.html?inventory-static-gate=1&interaction=1`, { waitUntil: 'load', timeout: 120000 });
     await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: 120000 });
     for (const width of WIDTHS) {
       const measured = await measurePage(page, width);

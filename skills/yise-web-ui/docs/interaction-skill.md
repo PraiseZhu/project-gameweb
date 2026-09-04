@@ -210,9 +210,14 @@ overlay stays fail-closed.
 Renderer wiring for left/right switch, named modal openers, independent
 `btn/` highlight, and directory scrollspy lives in
 `templates/figma-render.js`, but Main static does not turn it on.
-Clicks stay inert until Interaction passes `enablePageInteraction: true`.
-It must not rewrite accepted static geometry or assets to make a click
-work. Incomplete graphs stay unresolved.
+Clicks stay inert unless `enablePageInteraction === true`. A missing flag
+is inert, never true. Real QA / `?product=1` pages opt in only with
+`?interaction=1` from chrome `renderInto`; the demo shell must not default
+the flag to true. Stop 1 URLs stay `?product=1` without that query. Stop 2
+and later-axes probes append `interaction=1`. QA matrix language stays on
+the chrome bar; in-page dropmenu / modal / switch / directory clicks stay
+inert until that opt-in. It must not rewrite accepted static geometry or
+assets to make a click work. Incomplete graphs stay unresolved.
 
 ## What this Skill does not own yet
 

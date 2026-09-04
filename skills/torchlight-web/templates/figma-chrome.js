@@ -765,6 +765,7 @@
     cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
       interactionPayload: cfg.interactionPayload || null,
+      enablePageInteraction: new URLSearchParams(location.search).get('interaction') === '1',
       productView: !!PRODUCT_VIEW });
   }
 
@@ -1681,24 +1682,6 @@
     if (kind) el.setAttribute('data-hero-entry-nav-kind', kind);
   }
 
-  function syncHeroEntryBrand(stage) {
-    try {
-      var brands = frame.querySelectorAll('[data-motion-role="kvBrand"]');
-      for (var b = 0; b < brands.length; b++) {
-        var brand = brands[b];
-        if (stage && brand.parentElement !== stage) stage.appendChild(brand);
-        applyHeroEntryBox(brand, -22, 0, 840, 300, 'brand');
-        brand.style.pointerEvents = 'none';
-        brand.style.zIndex = '22';
-        var media = brand.querySelectorAll('img,canvas,video,.fx-img');
-        for (var m = 0; m < media.length; m++) {
-          applyHeroEntryBox(media[m], 0, 0, 840, 300, 'brand-media');
-          media[m].style.objectFit = 'fill';
-        }
-      }
-    } catch (e) { /* brand is optional for non-KV pages */ }
-  }
-
   function fixedNavigationGroupForRoot(root) {
     try {
       var groups = frame.__fxFixedNavigation || [];
@@ -1975,7 +1958,6 @@
         var stage = stages[s];
         var stageZoom = parseZoomValue(stage.style ? stage.style.zoom : null);
         if (!isFinite(stageZoom) || stageZoom <= 0) stageZoom = 1;
-        syncHeroEntryBrand(stage);
         var navRoots = typeof collectDirectoryRoots === 'function'
           ? collectDirectoryRoots(stage)
           : stage.querySelectorAll('[data-motion-role="navigationFooter"], [data-prefix="fix"]');

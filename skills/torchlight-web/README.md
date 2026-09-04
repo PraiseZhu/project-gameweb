@@ -2,14 +2,14 @@
 
 触发词：`torchlightweb`（也可说 `torchlight-web` / `火炬网页还原`）。召回机制与「出清单」相同：仓根 `CLAUDE.md` 触发表命中后立即执行 `skills/torchlight-web/SKILL.md`，只跑 `npm run torchlightweb` 状态机。本包不装进 `.claude/skills/`（gitignore + 夜间健康检查会红）。没有触发表那一行，说 `torchlightweb` 不会加载本 Skill。禁止 showcase、跳过人核、直连出页。
 
-**完成标准（与 SKILL.md、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`）→ 政策镜像必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
+**完成标准（与 SKILL.md、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
 | 情况 | 走哪条 |
 |---|---|
 | 已有 ready 交接包 | `cd skills/torchlight-web && npm run torchlightweb -- --handoff <dir> --demo <dir>`。`figma:from-handoff` 只验包、不写 HTML。`figma:html-from-handoff` 只许编排器调用。 |
 | 只有 Figma 链接、没有包 | 停下来要包。禁止 `figma-showcase` 九步，即使用户说「先看稿、没有清单」。 |
 | `preview:first` 红 | 不许给人打开 `?product=1`，不许开 Interaction / Resize。红 payload 的 `productView.command` 必须是 `null`。外置 truth 的内部检查必须走 HTTP；给人的地址是命令结束后仍可打开的 `file://...?product=1`。 |
-| 清单对账红 | 不许给人打开 `?product=1`。对账认设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景 / 整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`（`scripts/lib/inventory-static-gate-probe.mjs`）。缺 probe 脚本、缺 `index.html`、缺 Chrome、缺 `productScroll` 一律红。按钮/logo 软溢出不按尺寸红。不要拿普通产品预览去对 inventory。 |
+| 清单对账红 | 不许给人打开 `?product=1`。对账认设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景 / 整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh（`scripts/lib/inventory-static-gate-probe.mjs`）。缺 probe 脚本、缺 `index.html`、缺 Chrome、缺 `productScroll` 一律红。按钮/logo 软溢出不按尺寸红。不要拿普通产品预览去对 inventory。 |
 | 两次给人看 | ①静态±翻译 ②交互+拉伸。人说继续后 Lead 跑 `npm run torchlightweb -- accept --demo <dir>`，再 `continue`。`continue` 不会自己签字。第一次没接受不许开后轴；第二次没接受 Pack 失败。禁止跳过人核。脚本闸仍是 `node scripts/human-review.mjs present/accept/can-start/pack-allowed --demo <dir>`。 |
 | 拉仓后说 `torchlightweb` | `node scripts/recall-torchlightweb.mjs`：靠仓根 `CLAUDE.md` 触发表，不装进 `.claude/skills/`。 |
 

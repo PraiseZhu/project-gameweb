@@ -53,6 +53,9 @@ shrinkSteps:
 shrinkFloorPercent: 1
 hugNoShrink: true
 openFlowNoShrink: true
+modalViewportFill: cover
+modalScrimOpacity: 0.8
+modalLockPageScroll: true
 ---
 
 # 火炬之光宣发页 DESIGN.md
@@ -64,7 +67,7 @@ openFlowNoShrink: true
 | 入口 | 回答什么 | 不回答什么 |
 |---|---|---|
 | 交接包 / inventory | 数据：`pageBox`、`fonts`、`role` + `params`、`variants`、`determined` / `unknown` | 断点、`k`、`100vh`、外文比例、Auto Layout 上限 |
-| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限 | 这一稿有哪些图层、哪条关系 determined、哪句对哪语 |
+| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限、弹窗铺满与遮罩 | 这一稿有哪些图层、哪条关系 determined、哪句对哪语 |
 | `docs/copy-extraction-adapter.md` | 切语言时怎么取字 | 断点、`k`、外文缩字比例 |
 
 - 做页只吃 `kind=ready` 的交接包。`unknown` 只画不接线。
@@ -231,7 +234,7 @@ openFlowNoShrink: true
 ### 5.3 三平面
 
 - bg / KV：cover-crop 进 `100vh` 窗。官方 PC `center center`；官方手机 `center 0`。产品页居中裁。不要和 UI 共用一个 transform。
-- UI：按 §5.0 的水平尺。Hero 底边钉在槽底（官方 `justify-content: flex-end`），禁止 `y×k` 抬到上半屏。
+- UI：按 §5.0 的水平尺。Hero 底边钉在槽底（官方 `justify-content: flex-end`），禁止 `y×k` 抬到上半屏。滚动槽只记账，不得给 hero 加 `%` 假离场（`-6%` 只挪 sec/1、后面屏钉在原地就是缝）。
 - 海 / K1：按源比例，居中裁。
 
 切图填满 Figma owner box（官方 `.widget-image>img { width:100%; height:100% }`），不按图片内在尺寸。

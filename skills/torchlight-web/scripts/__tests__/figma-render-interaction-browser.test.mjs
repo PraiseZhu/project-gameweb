@@ -218,31 +218,139 @@ browserTest('browser named close button and img/关闭按钮 close the host moda
     const opened = await page.evaluate(() => {
       const modal = document.querySelector('[data-modal-name="订阅赛季日程"]');
       const host = modal && modal.parentElement;
+      const scrim = host && host.querySelector('[data-modal-scrim="true"]');
+      const frame = document.querySelector('.frame');
       return {
         open: modal && modal.getAttribute('data-modal-open'),
         hidden: modal && modal.hidden,
-        hostFixed: host && host.style.position,
+        hostPosition: host && host.style.position,
+        hostZoom: host && host.style.zoom,
+        layerZoom: modal && modal.style.zoom,
+        fill: host && host.getAttribute('data-modal-fill'),
+        scrim: scrim && scrim.style.background.replace(/\s+/g, ''),
+        scrollLock: frame && frame.getAttribute('data-modal-scroll-lock'),
         closeBtn: !!document.querySelector('[data-btn-name="关闭按钮"]'),
         closeImg: !!document.querySelector('[data-name="img/关闭按钮"]'),
       };
     });
     assert.equal(opened.open, 'true');
     assert.equal(opened.hidden, false);
-    assert.equal(opened.hostFixed, 'fixed');
+    assert.equal(opened.hostPosition, 'absolute');
+    assert.equal(opened.hostZoom, '1');
+    assert.equal(opened.layerZoom, '1');
+    assert.equal(opened.fill, 'cover');
+    assert.equal(opened.scrim, 'rgba(0,0,0,0.8)');
+    assert.equal(opened.scrollLock, 'true');
     assert.equal(opened.closeBtn, true);
     await page.evaluate(() => document.querySelector('[data-name="img/关闭按钮"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
     const closed = await page.evaluate(() => {
       const modal = document.querySelector('[data-modal-name="订阅赛季日程"]');
       const host = modal && modal.parentElement;
+      const frame = document.querySelector('.frame');
       return {
         open: modal && modal.getAttribute('data-modal-open'),
         hidden: modal && modal.hidden,
-        hostFixed: host && host.style.position,
+        hostPosition: host && host.style.position,
+        hostZoom: host && host.style.zoom,
+        pageScale: (document.querySelector('[data-page-stage-scale]') && document.querySelector('[data-page-stage-scale]').getAttribute('data-page-stage-scale'))
+          || (frame && frame.getAttribute('data-hero-page-scale')),
+        fill: host && host.getAttribute('data-modal-fill'),
+        scrim: host && !!host.querySelector('[data-modal-scrim="true"]'),
+        scrollLock: frame && frame.getAttribute('data-modal-scroll-lock'),
       };
     });
     assert.equal(closed.open, null);
     assert.equal(closed.hidden, true);
-    assert.equal(closed.hostFixed, 'absolute');
+    assert.equal(closed.hostPosition, 'absolute');
+    const closedZoom = Number(closed.hostZoom);
+    const closedScale = Number(closed.pageScale);
+    assert.ok(Number.isFinite(closedZoom) && Number.isFinite(closedScale));
+    assert.ok(Math.abs(closedZoom - closedScale) < 1e-5, `hostZoom=${closed.hostZoom} pageScale=${closed.pageScale}`);
+    assert.notEqual(closed.hostZoom, '1');
+    assert.equal(closed.fill, null);
+    assert.equal(closed.scrim, false);
+    assert.equal(closed.scrollLock, null);
+  } finally {
+    await browser.close();
+  }
+});
+browserTest('browser opening a second named modal closes the first', async () => {
+  const { browser, page } = await setup();
+  try {
+    const modalTruth = {
+      platforms: {
+        pc: {
+          pageChrome: { meta: { x: 0, y: 0, width: 400, height: 300 }, nodes: [] },
+          sections: {
+            section: {
+              meta: { x: 0, y: 0, width: 400, height: 300 },
+              nodes: [
+                node('play-cal', 'btn/日历@go=modal/订阅赛季日程', 'section', 10, 10, 80, 24, { params: { go: 'modal/订阅赛季日程' } }),
+                node('play-video', 'btn/播放按钮@go=modal/视频弹窗', 'section', 100, 10, 80, 24, { params: { go: 'modal/视频弹窗' } }),
+              ],
+            },
+          },
+          modals: [{
+            id: 'modal-cal',
+            name: 'modal/订阅赛季日程',
+            platform: 'pc',
+            triggerStatus: 'determined',
+            triggerFrom: ['play-cal'],
+            pageBox: { x: 0, y: 0, w: 400, h: 300 },
+            box: { x: 0, y: 0, w: 400, h: 300 },
+            nodes: [node('modal-cal', 'modal/订阅赛季日程', null, 0, 0, 400, 300, { pageBox: { x: 0, y: 0, w: 400, h: 300 } })],
+          }, {
+            id: 'modal-video',
+            name: 'modal/视频弹窗',
+            platform: 'pc',
+            triggerStatus: 'determined',
+            triggerFrom: ['play-video'],
+            pageBox: { x: 0, y: 0, w: 400, h: 300 },
+            box: { x: 40, y: 80, w: 200, h: 120 },
+            nodes: [node('modal-video', 'modal/视频弹窗', null, 40, 80, 200, 120, { pageBox: { x: 40, y: 80, w: 200, h: 120 } })],
+          }],
+        },
+      },
+    };
+    await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
+      truth,
+      rawTruth: truth,
+      prefs: { plat: 'pc', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 400, h: 300, dpr: 1 },
+    }), modalTruth);
+    await click(page, 'play-cal');
+    const first = await page.evaluate(() => ({
+      cal: document.querySelector('[data-modal-name="订阅赛季日程"]')?.getAttribute('data-modal-open') || null,
+      video: document.querySelector('[data-modal-name="视频弹窗"]')?.getAttribute('data-modal-open') || null,
+    }));
+    assert.equal(first.cal, 'true');
+    assert.equal(first.video, null);
+    await click(page, 'play-video');
+    const second = await page.evaluate(() => {
+      const cal = document.querySelector('[data-modal-name="订阅赛季日程"]');
+      const video = document.querySelector('[data-modal-name="视频弹窗"]');
+      const host = video && video.parentElement;
+      const frame = document.querySelector('.frame');
+      return {
+        calOpen: cal && cal.getAttribute('data-modal-open'),
+        calHidden: cal && cal.hidden,
+        videoOpen: video && video.getAttribute('data-modal-open'),
+        videoHidden: video && video.hidden,
+        fill: host && host.getAttribute('data-modal-fill'),
+        hostZoom: host && host.style.zoom,
+        scrollLock: frame && frame.getAttribute('data-modal-scroll-lock'),
+      };
+    });
+    assert.equal(second.calOpen, null);
+    assert.equal(second.calHidden, true);
+    assert.equal(second.videoOpen, 'true');
+    assert.equal(second.videoHidden, false);
+    assert.equal(second.fill, 'cover');
+    assert.equal(second.hostZoom, '1');
+    assert.equal(second.scrollLock, 'true');
   } finally {
     await browser.close();
   }

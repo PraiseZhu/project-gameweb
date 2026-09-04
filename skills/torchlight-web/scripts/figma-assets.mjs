@@ -255,11 +255,19 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const listedSlice = Boolean(n.sliceExport) || isWholeFrameSliceNode(n);
       const hasImageFill = Array.isArray((n.style || {}).fills)
         && (n.style || {}).fills.some((f) => f && f.visible !== false && f.type === 'IMAGE');
+      const nodeAncestors = [
+        String(n.parentId || ''),
+        ...nodesOf(n.ancestorIds).map((id) => String(id)),
+        ...nodesOf(n.ownerPath).map((id) => String(id)),
+      ].filter(Boolean);
+      /* IMAGE under a whole-frame kv/bg/img owner is already in that PNG.
+         Direct parentId is not enough: masked grandchildren (814:11948 under
+         Mask group under kv) still bake into the owner. */
       const bakedIntoWholeFrame = !listedSlice && list.some((owner) =>
-        owner && isWholeFrameSliceNode(owner) && String(n.parentId) === String(owner.id));
+        owner && isWholeFrameSliceNode(owner) && nodeAncestors.includes(String(owner.id)));
       if (listedOnly) {
         /* Ready handoff: listed sliceExport owners, plus unnamed kv/bg/img
-           even when an older pack omitted sliceExport. IMAGE children under a
+           even when an older pack omitted sliceExport. IMAGE descendants under a
            whole-frame owner stay inside that PNG. */
         if (n.status === 'skipped') continue;
         if (bakedIntoWholeFrame) continue;
@@ -340,14 +348,27 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
          the card frame at a section boundary. Other slice types retain the
          conservative effect-backed rule. */
       const isBakedImageOwner = pfx === 'img' && (n.type === 'INSTANCE' || n.type === 'COMPONENT');
-      /* Inventory bounds:"render" = pageBox, never Figma unclipped canvas ink. */
-      const listedInkBox = isWholeFrameSliceNode(n);
-      const listedBounds = listedInkBox ? 'box' : n.sliceExport?.bounds;
+      /* Full-bleed kv/bg/img (unnamed kv included) export pageBox when the
+         listed ink is canvas-space or shorter than the owner. Same-space
+         DROP_SHADOW larger than the owner (play-button 188 around 124) is
+         not that plane: isWholeFrameSliceNode is true for every img/. */
+      const wholeFrameSlice = isWholeFrameSliceNode(n);
+      const pageOrBox = n.pageBox || b;
+      const sameSpaceInk = !!(rb && pageOrBox && sameCoordinateSpace(rb, pageOrBox));
+      /* Same-space ink larger than the owner (play 188 vs 124). A shorter
+         visible renderBox (time-bg 167 vs 260) or a huge LAYER_BLUR inkBox
+         is not play-button spill — those stay on pageBox. */
+      const softSpill = (hasSoftSpillEffect || isBakedImageOwner)
+        && sameSpaceInk
+        && Number(rb.w) > Number(pageOrBox.w) + 0.5
+        && Number(rb.h) > Number(pageOrBox.h) + 0.5;
+      const pageBoxExport = wholeFrameSlice && !softSpill;
+      const listedBounds = pageBoxExport ? 'box' : n.sliceExport?.bounds;
       const exportBounds = listedBounds
-        || (((hasSoftSpillEffect || isBakedImageOwner) && spillBox(n.pageBox || b, rb)) ? 'render' : 'box');
-      const clippedVisible = !listedInkBox && rb && b && Number(rb.w) > 0 && Number(rb.h) > 0
+        || (softSpill ? 'render' : 'box');
+      const clippedVisible = !pageBoxExport && rb && b && Number(rb.w) > 0 && Number(rb.h) > 0
         && (Number(rb.w) + 0.5 < Number(b.w) || Number(rb.h) + 0.5 < Number(b.h));
-      const exportBox = listedInkBox
+      const exportBox = pageBoxExport
         ? pageAlignedExportBox(n, { exportBounds, renderBox: rb })
         : (exportBounds === 'render'
           ? roundBox(n.inkBox || rb)
@@ -363,7 +384,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
         sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
         reason: n.sliceExport ? '清单 sliceExport' : isWholeFrameSliceNode(n) ? '整框 pageBox' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
         w: outW, h: outH, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
-        cropToVisibleBox: !listedInkBox && exportBounds === 'box' && clippedVisible,
+        cropToVisibleBox: !pageBoxExport && exportBounds === 'box' && clippedVisible,
         imageRefs: imageRefs.length ? imageRefs : undefined,
         renderCropPolicy: exportBounds === 'render' && isBakedImageOwner ? 'top-left-render-canvas' : null,
         effectTypes: [...new Set(allEffectTypes)],
@@ -709,7 +730,10 @@ async function main() {
 
   // 2) 下载 + 记 sha256（清单是资产的可校验替代品：二进制没有 JSON locator）
   const onlySet = new Set(a.only || []);
-  const manifest = previous ? { ...previousAssets } : {};
+  /* Full pick (no --only) must not keep leftover IMAGE grandchildren that
+     used to be sliced and are now baked into a whole-frame kv/bg/img PNG.
+     --only still copies previous so a targeted refetch can patch one id. */
+  const manifest = previous && onlySet.size ? { ...previousAssets } : {};
   for (const id of onlySet) delete manifest[id];
   let bytes = previous ? Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0) : 0;
   const failed = [];

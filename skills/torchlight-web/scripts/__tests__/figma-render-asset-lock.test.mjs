@@ -25,7 +25,9 @@ test('asset locking is based on ownerPath when DOM parent stack is incomplete', 
   assert.match(renderer, /for \(const id of ancestorIds\.map\(\(raw\) => String\(__u\(raw\)\)\)\.reverse\(\)\) pushBakedOwner\(id\)/);
   assert.match(renderer, /const bakedOwnerId = bakedOwnerChain\.find\(\(id\) => listedSliceOwner\(id\)\)/);
   assert.match(renderer, /parent && parent\.assetLock \|\| \(bakedOwnerId && !bakedOwnerReleased\)/);
-  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease\) continue/);
+  assert.match(renderer, /ownImageFillPunchesBake/);
+  assert.match(renderer, /bakedWholeFrameOwner/);
+  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFillPunchesBake && !imgLangRelease\) continue/);
 });
 
 test('heroUi stretch never moves pin=viewport fix descendants', () => {
@@ -95,7 +97,7 @@ test('section height is inventory pageBox.h, never ceil-snapped', () => {
 
 test('play triangle art-fragment still paints above a baked owner', () => {
   assert.match(renderer, /const paintAsFragment = n\.paintAsFragment === true/);
-  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease\) continue/);
+  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFillPunchesBake && !imgLangRelease\) continue/);
 });
 
 test('only explicit interaction descendants remain renderable under baked assets', () => {
@@ -326,7 +328,7 @@ test('section stage clip is sourced from Figma clipsContent, not a global defaul
 test('baked image render spill exports and verifies the render canvas, never the layout box', () => {
   assert.match(assetPipeline, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
   assert.match(assetPipeline, /pageAlignedExportBox/);
-  assert.match(assetPipeline, /listedInkBox \? 'box' : n\.sliceExport\?\.bounds/);
+  assert.match(assetPipeline, /pageBoxExport = wholeFrameSlice && !softSpill/);
   assert.match(assetPipeline, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner/);
   assert.match(coverageGate, /if \(rec\?\.exportBounds !== 'render'\) problems\.push/);
   assert.match(coverageGate, /exportBox!=renderBox/);
@@ -405,7 +407,7 @@ test('sticky overlay host uses overlay root height, not descendant pageBoxes', (
 
 test('legal lang-axis instances still paint under a baked ancestor', () => {
   assert.match(renderer, /imgLangRelease/);
-  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease\) continue/);
+  assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFillPunchesBake && !imgLangRelease\) continue/);
   assert.match(renderer, /liveImgLangBakeRelease/);
   assert.match(renderer, /data-asset-lock-released', 'live-img-lang-descendant'/);
   assert.match(renderer, /if \(ancestorPfx === 'img' \|\| ancestorPfx === 'bg' \|\| ancestorPfx === 'kv'\) return/);

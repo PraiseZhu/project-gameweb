@@ -94,6 +94,8 @@ test('refuses continue until accepted', async () => {
   });
   assert.equal(start.ok, true, start.error);
   assert.equal(start.phase, 'wait-stop-1');
+  assert.match(start.productView?.url || '', /\?product=1$/);
+  assert.doesNotMatch(start.productView?.url || '', /interaction=1/);
   const review = JSON.parse(readFileSync(join(demo, 'human-review.json'), 'utf8'));
   assert.equal(review.stops['static-and-translation'].presented, true);
   assert.equal(review.stops['static-and-translation'].accepted, false);
@@ -169,7 +171,7 @@ test('accept then continue probes later axes and does not jump to stop 2 until p
   assert.equal(greenProbe.ok, true, greenProbe.error);
   assert.equal(greenProbe.phase, 'wait-stop-2');
   assert.equal(greenProbe.laterAxes.interaction, 'probed');
-  assert.match(greenProbe.productView?.url || '', /\?product=1$/);
+  assert.match(greenProbe.productView?.url || '', /\?product=1&interaction=1$/);
   assert.match(greenProbe.productView?.command || '', /open /);
   assert.equal(JSON.parse(readFileSync(join(demo, 'human-review.json'), 'utf8')).stops['interaction-and-resize'].accepted, false);
   assert.equal(packed, false);

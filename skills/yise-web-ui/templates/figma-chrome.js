@@ -729,6 +729,7 @@
     cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
       interactionPayload: cfg.interactionPayload || null,
+      enablePageInteraction: new URLSearchParams(location.search).get('interaction') === '1',
       setPref: applyPref });
   }
 

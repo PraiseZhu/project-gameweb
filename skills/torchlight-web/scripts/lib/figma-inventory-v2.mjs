@@ -94,6 +94,8 @@ function passthroughDrawFields(entry) {
   return {
     pageBox: entry.pageBox ?? null,
     parentBox: entry.parentBox ?? null,
+    renderBox: entry.renderBox ?? null,
+    inkBox: entry.inkBox ?? null,
     sliceExport: entry.sliceExport ?? null,
     text: entry.text ?? null,
     layout: entry.layout ?? null,
