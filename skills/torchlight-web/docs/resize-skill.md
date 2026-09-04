@@ -6,6 +6,10 @@ This is the reusable resize / stretch contract. The Etheria demo is only a
 fixture consumer; no rule here may depend on Etheria node IDs, page selectors,
 or page-specific CSS.
 
+The torchlightweb orchestrator later-axes phase calls
+`scripts/lib/later-axes-probe.mjs` for the 1126/1127 tree cut and the `10vw`
+ruler. That probe does not replace this Skill.
+
 The public interface is `scripts/lib/resize/index.mjs`. It distills rules that
 already live in `templates/figma-chrome.js`, `templates/figma-render.js`,
 `scripts/lib/figma-layout-planes.mjs`, and `scripts/lib/hero-scroll-slot.mjs`.

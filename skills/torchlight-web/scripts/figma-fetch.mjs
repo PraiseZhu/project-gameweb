@@ -40,6 +40,7 @@
 
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { requireFigmaToken } from './lib/figma-token.mjs';
 
 const API = 'https://api.figma.com/v1';
 
@@ -68,22 +69,14 @@ function fail(msg) {
 /* ─────────────── token ─────────────── */
 
 function readToken(startDir) {
-  if (process.env.FIGMA_TOKEN) return process.env.FIGMA_TOKEN.trim();
-  let dir = resolve(startDir);
-  for (let i = 0; i < 8; i++) {
-    const p = join(dir, '.env');
-    if (existsSync(p)) {
-      const m = readFileSync(p, 'utf8').match(/^\s*FIGMA_TOKEN\s*=\s*(.+?)\s*$/m);
-      if (m) return m[1].trim();
-    }
-    const up = dirname(dir);
-    if (up === dir) break;
-    dir = up;
+  try {
+    return requireFigmaToken(startDir);
+  } catch (error) {
+    fail(
+      `${error && error.message ? error.message : String(error)}\n` +
+      'token 只需 file_content:read + file_metadata:read + file_versions:read，不要给写权限。'
+    );
   }
-  fail(
-    '找不到 FIGMA_TOKEN。设环境变量，或在工作区根放 .env 写 FIGMA_TOKEN=figd_xxx\n' +
-    '  token 只需 file_content:read + file_metadata:read + file_versions:read，不要给写权限。'
-  );
 }
 
 /* ─────────────── fetch ─────────────── */

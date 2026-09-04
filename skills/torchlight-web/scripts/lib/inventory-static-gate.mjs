@@ -773,7 +773,9 @@ export function evaluateInventoryStaticGate({
     }
     if (node.sliceExport) {
       const expectedSlice = expectedSliceBox(node, byId, expected);
-      if (!actual.imgBox) {
+      if (!expectedSlice) {
+        failures.push({ id: node.id, reason: 'missing-sliceExport-box' });
+      } else if (!actual.imgBox) {
         failures.push({ id: node.id, reason: 'missing-dom-imgBox', expected: expectedSlice });
       } else {
         const imgBox = geom(actual.imgBox);

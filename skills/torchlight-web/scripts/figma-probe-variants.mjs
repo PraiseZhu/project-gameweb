@@ -20,6 +20,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { readFigmaToken } from './lib/figma-token.mjs';
 
 const API = 'https://api.figma.com/v1';
 
@@ -44,19 +45,7 @@ if (!existsSync(snapFile)) fail(`缺快照 ${snapFile}`);
 const snap = JSON.parse(readFileSync(snapFile, 'utf8'));
 
 function readToken(startDir) {
-  if (process.env.FIGMA_TOKEN) return process.env.FIGMA_TOKEN.trim();
-  let dir = resolve(startDir);
-  for (let i = 0; i < 8; i++) {
-    const p = join(dir, '.env');
-    if (existsSync(p)) {
-      const m = readFileSync(p, 'utf8').match(/^\s*FIGMA_TOKEN\s*=\s*(.+?)\s*$/m);
-      if (m) return m[1].trim();
-    }
-    const up = dirname(dir);
-    if (up === dir) break;
-    dir = up;
-  }
-  return null;
+  return readFigmaToken(startDir);
 }
 
 async function figmaGet(url, token) {

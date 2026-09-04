@@ -28,6 +28,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { loadPngApi, readPng } from './lib/png-compare.mjs';
+import { requireFigmaToken } from './lib/figma-token.mjs';
 
 function fail(msg) {
   console.error(JSON.stringify({ ok: false, error: msg }, null, 2));
@@ -51,19 +52,11 @@ const demoDir = resolve(args.demo);
 /* token：环境变量或向上找 .env（与 figma-assets.mjs 同一口径；该文件是脚本不导出，
    这 12 行是第三份拷贝 —— 若哪天改鉴权方式，三处都要改，已互相点名） */
 function readToken(startDir) {
-  if (process.env.FIGMA_TOKEN) return process.env.FIGMA_TOKEN.trim();
-  let dir = resolve(startDir);
-  for (let i = 0; i < 8; i++) {
-    const p = join(dir, '.env');
-    if (existsSync(p)) {
-      const m = readFileSync(p, 'utf8').match(/^\s*FIGMA_TOKEN\s*=\s*(.+?)\s*$/m);
-      if (m) return m[1].trim();
-    }
-    const up = dirname(dir);
-    if (up === dir) break;
-    dir = up;
+  try {
+    return requireFigmaToken(startDir);
+  } catch (error) {
+    fail(error && error.message ? error.message : String(error));
   }
-  fail('找不到 FIGMA_TOKEN（环境变量或工作区根 .env）');
 }
 
 const spec = JSON.parse(readFileSync(join(demoDir, 'spec.json'), 'utf8'));

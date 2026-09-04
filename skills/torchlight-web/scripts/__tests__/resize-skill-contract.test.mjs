@@ -89,6 +89,8 @@ test('product and QA trees follow official torchlight 1126 width, not UA', () =>
 
   assert.equal(compositionBucketForWidth(1126, TORCHLIGHT_COMPOSITION_BREAKPOINTS), 'mobile');
   assert.equal(compositionBucketForWidth(1127, TORCHLIGHT_COMPOSITION_BREAKPOINTS), 'pc');
+  assert.match(chromeSrc, /Product tree is DESIGN\.md composition/);
+  assert.match(chromeSrc, /compositionKey === 'mobile' \? 'mobile'/);
   assert.equal(compositionForView({ width: 390, platforms: {} }).fallback, 'mobile-uses-pc-tree');
   assert.notEqual(compositionForView({ width: 390, platforms }).source, 'ua');
 });

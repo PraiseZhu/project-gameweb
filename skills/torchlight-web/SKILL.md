@@ -12,21 +12,28 @@ description: >-
 
 This is the Torchlight public Skill identity. Local Torch demo output is a verification example only, not the Skill identity and not an AppStore application.
 
-**Recall:** 仓根 `CLAUDE.md` 触发表命中 `torchlightweb` / `火炬网页还原` 后立即执行本文件，不要先问。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
+**Recall:** 仓根 `CLAUDE.md` 触发表命中 `torchlightweb` / `火炬网页还原` 后立即执行本文件，不要先问。官方命令只有 `npm run torchlightweb` 状态机。禁止 `figma-showcase`、跳过人核、直连 `figma:html-from-handoff` / `pack:demo`。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
 
 **完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`）→ 政策镜像必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
 | 情况 | 走哪条 |
 |---|---|
-| 人说 `torchlightweb` **且已有 ready 交接包** | 官方：`npm run figma:html-from-handoff -- --handoff <dir> --demo <dir>`。吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`：设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景；整框 PNG 非空，满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`）→ 才给人 `?product=1`。Main 静态停下来等人验收。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
-| 人说 `torchlightweb` **只有 Figma 链接、没有包** | **停下来要包**。不要默默走 live showcase。若用户明确说「先看稿、没有清单」，才允许 `figma-showcase` 九步，且必须标明 `latest-Figma local extract baseline`。 |
-| `figma:from-handoff` 单独跑 | 只验包、打印消费计划，**不写 HTML**。触发词 `torchlightweb` 不能再暗示「说了就会出 HTML」，除非后面接了 `figma:html-from-handoff`。 |
+| 人说 `torchlightweb` **且已有 ready 交接包** | 官方只跑 `npm run torchlightweb -- --handoff <dir> --demo <dir>`。状态机内部才调用 `figma:html-from-handoff`：吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`：设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景；整框 PNG 非空，满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`）→ 政策镜像必须绿 → 才给人 `?product=1`。然后停在 `wait-stop-1`，只写 presented。人说继续后 Lead 跑 `npm run torchlightweb -- accept --demo <dir>` 才签字；再 `continue` 才跑后轴探针。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
+| 人说 `torchlightweb` **只有 Figma 链接、没有包** | **停下来要包**。禁止 `figma-showcase`、禁止直连 Figma 抽节点。用户说「先看稿、没有清单」也一样停。 |
+| `figma:from-handoff` 单独跑 | 只验包、打印消费计划，**不写 HTML**。触发词 `torchlightweb` 不能再暗示「说了就会出 HTML」，除非状态机已经跑过 `figma:html-from-handoff`。 |
+| 直连 `figma:html-from-handoff` / `pack:demo` | 无一次性票据时 CLI 锁死。`TORCHLIGHTWEB_ORCHESTRATOR=1` 不再放行。Agent 不得 import `buildHtmlFromHandoff` 当触发词入口。 |
 
 Commands from repo root; each step `cd`s itself:
 
 ```bash
 cd skills/torchlight-web
-npm run figma:html-from-handoff -- --handoff <handoff-dir> --demo <demo-dir>
+npm run torchlightweb -- --handoff <handoff-dir> --demo <demo-dir>
+# 人看过停 1 并说继续后
+npm run torchlightweb -- accept --demo <demo-dir>
+npm run torchlightweb -- continue --demo <demo-dir>
+# 人看过停 2 并说继续后
+npm run torchlightweb -- accept --demo <demo-dir>
+npm run torchlightweb -- continue --demo <demo-dir>
 ```
 
 Do not open the product view, and do not start Interaction / Resize, while `preview:first` is red or the inventory static gate is red. `preview:first` uses HTTP only for the internal check; the URL given to humans is the durable `file://...?product=1` path, which must still open after the command exits. Inventory static gate measures `index.html?inventory-static-gate=1` over HTTP for design-viewport coordinates, then `index.html?product=1` after scroll for pin=viewport sticky, spill-slice placement, later-section backgrounds, whole-frame PNG non-empty, and full-bleed `bg/` `kv` / unnamed `kv` / time-bg `pageBox` size. Soft-spill button/logo ink larger than the owner is not a size mismatch. Missing `productScroll`, missing `inventory-static-gate-probe.mjs`, missing `index.html`, or missing Chrome is fail-closed red. Do not hand-edit inventory `status`. Do not treat a local adapter page as Skill acceptance.
@@ -35,7 +42,8 @@ Do not open the product view, and do not start Interaction / Resize, while `prev
 
 `npm run figma:from-handoff -- <handoff-dir>` remains the consume-only gate: it
 emits a consume plan and does **not** write HTML. The official HTML command is
-`npm run figma:html-from-handoff -- --handoff <handoff-dir> --demo <demo-dir>`.
+still `figma:html-from-handoff`, but only the `torchlightweb` state machine may
+call it. Direct CLI is locked.
 A `green-draft` package remains `ready=false`: consume only `determined`
 records and never wire `unknown`. `inventory:check` is deprecated as a package
 entry; it only retains the five-item audit for a single `ready` inventory JSON.
@@ -64,12 +72,10 @@ handoff by pretending the local extract is the inventory consumer.
 
 There are two explicit workflow declarations:
 
-- `figma-showcase` is the Figma-only preview-first workflow. It has a legal
-  candidate completion path after `npm run figma:preview:first -- --demo <dir>`
-  passes: open the reported `index.html?product=1` product-view URL immediately
-  for human review. It must not assume a product repo, true sandbox, PR, full
-  verify gates, mobile, responsive acceptance, or pixel-grid comparison; any
-  unsupported capability stays `not-claimed` in the preview output.
+- `figma-showcase` is **not** a `torchlightweb` path. Triggering `torchlightweb`
+  must not run showcase nine steps, even if the user says look at the file first.
+  Showcase remains a labelled local-extract baseline for other maintenance, never
+  a substitute for the orchestrator.
 - `product-qa` is the product-repo QA workflow for component/source integration
   and the later deterministic gates. It is separate from `figma-showcase`; do not
   block a Figma-only showcase candidate on product repo or PR prerequisites.
@@ -83,15 +89,13 @@ There are two explicit workflow declarations:
    (`userPreviewAllowed` stays false; `humanStopPreviewAllowed` is true).
    Tell the user this axis is done. Do not start Interaction / Resize until
    they say continue. No copy table → Translation stays `not-claimed`. zh-CN
-   font load is not a translation pass. Script gate:
-   `node scripts/human-review.mjs present --demo <dir> --stop static-and-translation --preview-ok`,
-   then after the user says continue
-   `node scripts/human-review.mjs accept --demo <dir> --stop static-and-translation`.
-   `can-start` must be green before Interaction / Resize.
+   font load is not a translation pass. Script gate is the orchestrator:
+   after stop 1, Lead runs `npm run torchlightweb -- accept --demo <dir>`
+   only after the human says continue. `continue` never writes accepted.
 2. After Interaction and Resize: open `?product=1` again and stop. Tell the
-   user this axis is done. Do not Pack until they say continue.
-   `node scripts/human-review.mjs present --demo <dir> --stop interaction-and-resize --preview-ok`,
-   then `accept`. `pack-allowed` / Pack itself fail-close without that accept.
+   user this axis is done. Do not Pack until they say continue, then `accept`,
+   then `continue`. Later-axes Chrome probe must be green first.
+   Direct `pack-demo` CLI is locked.
 
 Do not open or present the page while `preview:first` is red. A red payload
 must set `productView.command` to null and must not include an open command.
@@ -100,8 +104,8 @@ Do not open the next human stop until the previous one is accepted
 assets, or zh-CN copy. Directory static stays in Main; directory
 click/scrollspy stays in Interaction; directory stretch stays in Resize. Do
 not invent a fourth Skill. After the second
-human stop is accepted, run the Pack delivery step (`docs/pack-skill.md`,
-`node scripts/pack-demo.mjs --demo <dir>`): whole served folder ≤ 15MB.
+human stop is accepted, the orchestrator Pack phase runs (`docs/pack-skill.md`):
+whole served folder ≤ 15MB. Direct `node scripts/pack-demo.mjs` is locked.
 Pack is not a restore axis. A clean clone recalls this Skill from the repo
 root `CLAUDE.md` trigger table (`node scripts/recall-torchlightweb.mjs`); it is
 not installed into `.claude/skills/`.

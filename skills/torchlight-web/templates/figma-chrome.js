@@ -50,7 +50,14 @@
       return q === '1' || q === 'true' || q === 'yes';
     } catch (e) { return false; }
   })();
+  var STATIC_GATE_VIEW = (function () {
+    try {
+      var q = new URLSearchParams(window.location.search).get('inventory-static-gate');
+      return q === '1' || q === 'true' || q === 'yes';
+    } catch (e) { return false; }
+  })();
   if (PRODUCT_VIEW) document.documentElement.setAttribute('data-product-view', '1');
+  if (STATIC_GATE_VIEW) document.documentElement.setAttribute('data-inventory-static-gate', '1');
 
   function designPolicy() {
     var policy = window.__designPolicy;
@@ -158,7 +165,7 @@
     devIdx: 0,
     freeW: 0,
     freeH: 0,
-    fit: !PRODUCT_VIEW,    /* QA 默认可视区适配；产品视图必须 1:1，窗口就是稿面视口 */
+    fit: !PRODUCT_VIEW && !STATIC_GATE_VIEW,    /* QA 默认可视区适配；产品视图 / 清单对账必须 1:1 */
     grid: false,
     /* 平铺只渲染用户选中的、且确实由 cfg 声明的状态。初始化留空，
        buildBar2 会按 cfg.states/tabStates 建立全选集合。 */
@@ -351,6 +358,7 @@
     '.frame{background:transparent;overflow:visible;transform-origin:0 0;border-radius:6px;',
     'box-shadow:0 0 0 1px #000}',
     '[data-product-view="1"] .frame{background:transparent;border-radius:0;box-shadow:none;overflow-x:hidden}',
+    'html{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1))}',
     'html[data-product-view="1"]{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1));overflow-x:hidden}',
     /* Keep the official 10vw number as a reported ruler. Do not apply it as the
        document font-size: Figma stages size in px, and a 10vw html font-size
@@ -744,8 +752,16 @@
   function renderInto(container, state) {
     var renderPrefs = cp(S.prefs);
     var productPlatform = productViewportPlatform();
-    if (productPlatform) renderPrefs.plat = productPlatform;
     var vp = viewport();
+    /* Product tree is DESIGN.md composition (0–1126 mobile / ≥1127 pc).
+       QA matrix plat follows kit buckets (desktop ≥1024) and must not pick
+       the PC tree at 1126. */
+    if (productPlatform) renderPrefs.plat = productPlatform;
+    else {
+      var compositionKey = compositionKeyForViewport(vp);
+      renderPrefs.plat = compositionKey === 'mobile' ? 'mobile'
+        : (compositionKey === 'pad' ? 'pad' : 'desktop');
+    }
     cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
       interactionPayload: cfg.interactionPayload || null,
@@ -1030,7 +1046,7 @@
       _skipContentRebuild = false;
     }
     var scale = 1;
-    if (PRODUCT_VIEW) S.fit = false;
+    if (PRODUCT_VIEW || STATIC_GATE_VIEW) S.fit = false;
     /* ── 适配缩放：能 1:1 就绝不缩 ──
      *
      * 2026-08-04 实测的真问题：舞台原本写死 `stage.clientWidth - 40`（左右各 20px 留白），
@@ -2065,6 +2081,7 @@
 
   function syncStaticKvChrome(vp) {
     try {
+      if (STATIC_GATE_VIEW) { restoreStaticKvChrome(); return; }
       var pageRoot = frame.querySelector('.fx-stage[data-node="__page__"]');
       var hero = frame.querySelector('[data-hero-slot-role="hero"]');
       if (!pageRoot || !hero) { restoreStaticKvChrome(); return; }

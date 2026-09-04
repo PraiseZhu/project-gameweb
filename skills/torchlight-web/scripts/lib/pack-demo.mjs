@@ -68,6 +68,27 @@ export function assertSafePackPath(root, candidate) {
   return inspected;
 }
 
+/** Containment for a path that may not exist yet (encoder dest). Existing files still get inspectPackPath. */
+export function inspectPlannedPackPath(root, candidate) {
+  const lexical = resolve(candidate);
+  if (!withinPackRoot(root, lexical)) return packPathFail(root, lexical, 'path escapes pack root');
+  if (existsSync(lexical)) return inspectPackPath(root, lexical);
+  let cursor = dirname(lexical);
+  const base = packRoot(root);
+  while (withinPackRoot(base, cursor)) {
+    if (existsSync(cursor)) {
+      const parent = inspectPackPath(base, cursor);
+      if (!parent.ok) return parent;
+      if (!parent.stat?.isDirectory()) return packPathFail(root, lexical, 'parent is not a directory');
+      return { ok: true, path: lexical, missing: true };
+    }
+    const parentDir = dirname(cursor);
+    if (parentDir === cursor) break;
+    cursor = parentDir;
+  }
+  return { ok: true, path: lexical, missing: true };
+}
+
 export function listPackFiles(root, { filesOnly = true } = {}) {
   const base = packRoot(root);
   const files = [];
@@ -103,12 +124,27 @@ export function collectFallbackRefs(html) {
   return [...found];
 }
 
+export function isWebpFile(path) {
+  if (!existsSync(path)) return false;
+  try {
+    const buf = readFileSync(path);
+    return buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP';
+  } catch {
+    return false;
+  }
+}
+
 export function missingFallbackFiles(demoDir, html) {
   const missing = [];
   for (const rel of collectFallbackRefs(html)) {
     const direct = join(demoDir, rel);
     const underAssets = join(demoDir, 'assets', rel.replace(/^assets\//, ''));
-    if (!existsSync(direct) && !existsSync(underAssets)) missing.push(rel);
+    const hit = existsSync(direct) ? direct : (existsSync(underAssets) ? underAssets : null);
+    if (!hit) {
+      missing.push(rel);
+      continue;
+    }
+    if (/\.webp$/i.test(hit) && !isWebpFile(hit)) missing.push(rel);
   }
   return missing;
 }
@@ -190,7 +226,9 @@ function localReferences(text = '') {
   }
   for (const match of String(text).matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi)) add(match[2]);
   for (const match of String(text).matchAll(/@import\s+(?:url\(\s*)?["']([^"']+)["']/gi)) add(match[1]);
-  for (const match of String(text).matchAll(/["'`]((?:\.\/|\.\.\/|\/)?(?:assets|fonts)\/[^"'`]+|[^"'`]+?\.(?:webp|png|jpe?g|svg|ico|woff2?|css|js|mjs|json|html?))["'`]/gi)) {
+  // JS/JSON quoted scrape: only served folders + indicator fallbacks.
+  // Bare "399-42188.png" in inlined renderer comments is not a served path.
+  for (const match of String(text).matchAll(/["'`]((?:\.\/|\.\.\/|\/)?(?:assets|fonts)\/[^"'`]+|(?:\.\/|\.\.\/|\/)?figma-indicator[-.][\w.-]+\.(?:png|webp))["'`]/gi)) {
     if (/,/.test(match[1])) continue;
     add(match[1]);
   }
@@ -307,4 +345,38 @@ export function rewritePackedRefs(demoDir, mappings = []) {
 
 export function sha256File(path) {
   const h = createHash('sha256'); h.update(readFileSync(path)); return h.digest('hex');
+}
+
+function unwrapProvenance(value) {
+  if (Array.isArray(value)) return value.map(unwrapProvenance);
+  if (value && typeof value === 'object') {
+    if (Object.hasOwn(value, 'value') && Object.hasOwn(value, 'provenance')) return unwrapProvenance(value.value);
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, unwrapProvenance(child)]));
+  }
+  return value;
+}
+
+function isComponentSetRecord(value) {
+  return Boolean(value && typeof value === 'object' && Object.hasOwn(value, 'componentSetId') && Object.hasOwn(value, 'variants'));
+}
+
+/**
+ * Packed truth.json is served. Extract-only failClosed and the COMPONENT_SET
+ * paint list (duplicated by variants[].nodes + variantTrees) are not runtime.
+ * Keep variants[].nodes — the inlined renderer mounts those trees.
+ */
+export function slimPackedTruth(raw) {
+  const walk = (value) => {
+    if (Array.isArray(value)) return value.map(walk);
+    if (!value || typeof value !== 'object') return value;
+    const dropSetNodes = isComponentSetRecord(value);
+    const next = {};
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'failClosed') continue;
+      if (dropSetNodes && key === 'nodes') continue;
+      next[key] = walk(child);
+    }
+    return next;
+  };
+  return walk(unwrapProvenance(raw));
 }

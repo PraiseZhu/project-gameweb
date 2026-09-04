@@ -235,6 +235,10 @@ test('probe script is a shipped skill file, not an optional local extra', () => 
   assert.match(src, /laterKvMeasureIds/);
   assert.match(src, /laterKvPaintNode/);
   assert.match(src, /owner-ink-spill-natural/);
+  assert.match(src, /viewport: \{ width: viewport\.w/);
+  assert.match(src, /setPref\(plat\) after resize/);
+  assert.match(src, /data-fix-from-active', 'static-gate'/);
+  assert.doesNotMatch(src, /Math\.min\(Math\.round\(firstH\), 1080\)/);
 });
 
 test('descendants baked into an ancestor PNG are not missing-dom', () => {

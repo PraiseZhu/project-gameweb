@@ -1,10 +1,23 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { installIndicatorFallbacks } from '../figma-assets.mjs';
 
 const renderer = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
 const assetPipeline = readFileSync(new URL('../figma-assets.mjs', import.meta.url), 'utf8');
 const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.url), 'utf8');
+
+test('missing figma-indicator fallback sources fail closed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-'));
+  const assetsDir = join(dir, 'assets');
+  mkdirSync(assetsDir);
+  assert.throws(
+    () => installIndicatorFallbacks(assetsDir, {}),
+    /missing figma-indicator fallback sources/,
+  );
+});
 
 test('asset locking is based on ownerPath when DOM parent stack is incomplete', () => {
   assert.match(renderer, /const bakedOwnerChain = \[\]/);
@@ -234,6 +247,11 @@ test('owner-model scope/assetPolicy/role evidence is derived in the renderer, no
   assert.match(renderer, /data-owner-mask-children/);
 });
 
+test('zh-CN static keeps authored pageBox instead of Auto Layout flex restack', () => {
+  assert.match(renderer, /zhSourceExactLayout/);
+  assert.match(renderer, /sourceParticipatesInFlow && !zhSourceExactLayout/);
+});
+
 test('paint siblings are absolute unless source-backed Auto Layout admits flow', () => {
   assert.match(renderer, /el\.style\.position = 'absolute';\s*el\.style\.left = \(\(box\.x/);
   assert.match(renderer, /Only a proven Auto Layout child may flow/);
@@ -333,9 +351,11 @@ test('owner-tree consumption: page/fixed roots keep paint order, placement origi
   assert.match(renderer, /pagePaintOrder && rawPagePaintOrder && pagePaintOrder\.length === rawPagePaintOrder\.length/);
   assert.match(renderer, /for \(let pi = 0; pi < pagePaintOrder\.length; pi\+\+\)/);
   assert.match(renderer, /layer\.setAttribute\('data-paint-source-key', key\)/);
-  /* placement origin：子节点坐标相对真实 owner（parentId 优先，ownerPath 回退，stack 最后） */
+  /* placement origin：left/top 相对已渲染 DOM 父级；未画出的 unknown/skipped parentId 不当原点 */
   assert.match(renderer, /const directParentId = nodeParentId\(n\)/);
-  assert.match(renderer, /const coordinateOwnerBox = directParentRecord\?\.pageBox \|\| directParentRecord\?\.box/);
+  assert.match(renderer, /const coordinateOwner = directParentRecord \|\| parent \|\| null/);
+  assert.match(renderer, /const coordinateOwnerBox = coordinateOwner\?\.pageBox \|\| coordinateOwner\?\.box/);
+  assert.match(renderer, /未画出来的\s+unknown\/skipped parentId 不能当原点/);
   /* CONSUMER pin=viewport: sticky on `.frame` (the scrollport). Product
      `.frame` always has transform:scale, which is a containing block for
      position:fixed and would pin overlay to the page canvas. zoom=k stays
@@ -413,6 +433,7 @@ test('auto-layout axis alignment fields flow from fixture into truth and feed th
   assert.match(renderer, /const prim = String\(__u\(parentLayout\.primaryAxisAlignItems\)/);
   assert.match(renderer, /pel\.style\.alignItems = ai\[counter\]/);
   assert.match(renderer, /pel\.style\.justifyContent = jc\[prim\]/);
+  assert.match(renderer, /zhSourceExactLayout/);
 });
 
 test('multiline HUG explanatory text keeps source width instead of max-content', () => {

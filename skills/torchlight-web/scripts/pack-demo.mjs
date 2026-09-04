@@ -39,9 +39,12 @@ import {
   removeUnreferencedPackedFiles,
   rewritePackedRefs,
   sha256File,
+  slimPackedTruth,
   withinPackRoot,
 } from './lib/pack-demo.mjs';
 import { packAllowedAfterSecondStop } from './lib/human-review.mjs';
+import { laterAxesProbeRecordIsGreen, readLaterAxesProbe } from './lib/later-axes-probe.mjs';
+import { requireOrchestratorTicket } from './lib/orchestrator-ticket.mjs';
 
 function fail(error) {
   console.error(JSON.stringify({ ok: false, error }, null, 2));
@@ -72,21 +75,8 @@ function pythonHas(mod) {
   return null;
 }
 
-function validResizeMarker(demoDir) {
-  for (const name of ['resize-acceptance.json', 'resize-acceptance.md']) {
-    const file = join(demoDir, name);
-    const inspected = inspectPackPath(demoDir, file);
-    if (!inspected.ok || !inspected.stat.isFile()) continue;
-    const text = readFileSync(inspected.path, 'utf8').trim();
-    if (!text) continue;
-    if (name.endsWith('.json')) {
-      try {
-        const marker = JSON.parse(text);
-        if (marker.status === 'accepted' && marker.schema) return true;
-      } catch {}
-    } else if (/status\s*:\s*accepted(?:\s|$)/i.test(text) && !/status\s*:\s*not\s+accepted/i.test(text)) return true;
-  }
-  return false;
+function validLaterAxesProbe(demoDir) {
+  return laterAxesProbeRecordIsGreen(readLaterAxesProbe(demoDir), { demoDir });
 }
 
 function collectImageFiles(root) {
@@ -214,7 +204,7 @@ function prunePackWorktree(demoDir) {
     'extract.mjs', 'extract-helpers.mjs', 'extract-report.json', 'report.json',
     'report-gate-a.json', 'report-assets.json', '_verify-four-fixes.mjs',
     'resize-acceptance.json', 'human-review.json', 'truth.runtime.json', 'assets-manifest.json',
-    'spec.json', '.env',
+    'spec.json', '.env', 'later-axes-probe.json', 'torchlightweb-machine.json',
   ]) {
     removePackTarget(demoDir, name);
   }
@@ -352,18 +342,10 @@ function compactRuntimeTruth(demoDir, proofDir) {
   const parsed = readJsonOrError(truthInfo.path, 'truth.json is not valid JSON');
   if (!parsed.ok) return parsed;
   const raw = parsed.value;
-  const unwrap = (value) => {
-    if (Array.isArray(value)) return value.map(unwrap);
-    if (value && typeof value === 'object') {
-      if (Object.hasOwn(value, 'value') && Object.hasOwn(value, 'provenance')) return unwrap(value.value);
-      return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, unwrap(child)]));
-    }
-    return value;
-  };
   const proofPath = join(proofDir, 'truth.json');
   mkdirSync(dirname(proofPath), { recursive: true });
   copyFileSync(truthInfo.path, proofPath);
-  const compact = JSON.stringify(unwrap(raw));
+  const compact = JSON.stringify(slimPackedTruth(raw));
   writeFileSync(truthInfo.path, compact);
   return { ok: true, beforeBytes: truthInfo.stat.size, bytes: Buffer.byteLength(compact), proof: proofPath };
 }
@@ -520,6 +502,10 @@ function subsetFonts(demoDir) {
 }
 
 function main() {
+  const ticket = requireOrchestratorTicket('scripts/pack-demo.mjs', { argv: process.argv, env: process.env });
+  if (ticket.ok !== true) {
+    fail(`pack-demo CLI is locked; ${ticket.hint || 'run npm run torchlightweb -- continue --demo <dir>'} (${ticket.error})`);
+  }
   const args = parseArgs(process.argv);
   const demoDir = packRoot(args.demo);
   const indexPath = join(demoDir, 'index.html');
@@ -528,14 +514,14 @@ function main() {
   try { listPackFiles(demoDir); }
   catch (error) { fail(error.message); }
   const html = readFileSync(indexInfo.path, 'utf8');
-  const resizeAccepted = validResizeMarker(demoDir);
+  const laterAxesProbed = validLaterAxesProbe(demoDir);
   const secondStop = packAllowedAfterSecondStop(demoDir);
   const fallbackRefs = collectFallbackRefs(html);
   const missingFallbacks = missingFallbackFiles(demoDir, html);
   const runtimeRefs = packRuntimeReferencesOk(demoDir, html);
   const budgetBytes = Math.round(args.budgetMb * 1024 * 1024) || DEFAULT_PACK_BUDGET_BYTES;
   const out = {
-    ok: resizeAccepted && secondStop.ok && missingFallbacks.length === 0 && runtimeRefs.ok,
+    ok: laterAxesProbed && secondStop.ok && missingFallbacks.length === 0 && runtimeRefs.ok,
     dryRun: !!args.dryRun,
     demo: demoDir,
     quality: args.quality,
@@ -543,7 +529,7 @@ function main() {
     bytesBefore: dirBytes(demoDir),
     fallbacks: fallbackRefs,
     missingFallbacks,
-    resizeAccepted,
+    laterAxesProbed,
     secondStop,
     runtimeRefs,
     pillow: !!pythonHas('PIL'),
@@ -557,7 +543,7 @@ function main() {
     },
     note: 'Pack uses an isolated work tree and commits only after reference and budget gates pass. Dry-run reports current bytes and planned actions; the 15MB gate is live-after-mutation only.',
   };
-  if (!resizeAccepted) out.error = 'missing valid accepted Resize marker';
+  if (!laterAxesProbed) out.error = 'later-axes probe not green; do not Pack';
   if (!secondStop.ok) out.error = secondStop.error || 'second human review stop not accepted; do not Pack';
   if (missingFallbacks.length) out.error = `missing runtime fallback files: ${missingFallbacks.join(', ')}`;
   if (!runtimeRefs.ok) out.error = `missing runtime references: ${runtimeRefs.missing.join(', ')}`;
