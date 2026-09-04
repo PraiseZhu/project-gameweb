@@ -53,6 +53,9 @@ shrinkSteps:
 shrinkFloorPercent: 1
 hugNoShrink: true
 openFlowNoShrink: true
+modalViewportFill: cover
+modalScrimOpacity: 0.8
+modalLockPageScroll: true
 ---
 
 # 火炬之光宣发页 DESIGN.md
@@ -64,7 +67,7 @@ openFlowNoShrink: true
 | 入口 | 回答什么 | 不回答什么 |
 |---|---|---|
 | 交接包 / inventory | 数据：`pageBox`、`fonts`、`role` + `params`、`variants`、`determined` / `unknown` | 断点、`k`、`100vh`、外文比例、Auto Layout 上限 |
-| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限 | 这一稿有哪些图层、哪条关系 determined、哪句对哪语 |
+| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限、弹窗铺满与遮罩 | 这一稿有哪些图层、哪条关系 determined、哪句对哪语 |
 | `docs/copy-extraction-adapter.md` | 切语言时怎么取字 | 断点、`k`、外文缩字比例 |
 
 - 做页只吃 `kind=ready` 的交接包。`unknown` 只画不接线。

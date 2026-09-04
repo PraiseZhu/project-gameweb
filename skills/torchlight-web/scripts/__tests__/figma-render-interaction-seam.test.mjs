@@ -118,6 +118,45 @@ test('renderer loops applySwitch and keeps calendar/hscroll commands off native 
   assert.doesNotMatch(renderer, /左滑\|前/);
 });
 
+test('named modal cover fill, scrim, and scroll lock follow DESIGN.md YAML', () => {
+  assert.match(renderer, /modalViewportFill/);
+  assert.match(renderer, /modalScrimOpacity/);
+  assert.match(renderer, /data-modal-scrim/);
+  assert.match(renderer, /data-modal-scroll-lock/);
+  assert.match(renderer, /Math\.max\(visibleW \/ designW, visibleH \/ designH\)/);
+  assert.doesNotMatch(renderer, /const scale = Math\.min\(visibleW \/ designW, visibleH \/ designH\);/);
+});
+
+test('named modal pin drops host zoom so Figma sheet is not scaled twice', () => {
+  const pinAt = renderer.indexOf('const pinModalToViewport = (entry) =>');
+  const unpinAt = renderer.indexOf('const unpinModalHost = (entry) =>');
+  const closeAt = renderer.indexOf('const closeNamedModal = (entry) =>', pinAt);
+  assert.ok(pinAt > 0 && unpinAt > 0 && closeAt > pinAt);
+  const pin = renderer.slice(pinAt, closeAt);
+  const unpin = renderer.slice(unpinAt, pinAt);
+  assert.match(pin, /host\.style\.zoom = '1'/);
+  assert.match(pin, /layer\.style\.zoom = '1'/);
+  assert.match(pin, /frame\.style\.width/);
+  assert.match(pin, /frame\.clientWidth/);
+  assert.match(pin, /host\.style\.position = 'absolute'/);
+  assert.doesNotMatch(pin, /frame\.style\.zoom/);
+  assert.doesNotMatch(pin, /visibleW = frameRect\.width \/ \(pageZoom/);
+  assert.doesNotMatch(pin, /const visibleW = frameRect\.width;/);
+  assert.match(unpin, /host\.style\.zoom = String\(pageStageScale \|\| k\)/);
+  assert.match(unpin, /host\.__fxNamedModalRest/);
+  assert.doesNotMatch(unpin, /pageMeta\.height/);
+  assert.match(renderer, /rgba\(0,0,0,' \+ opacity \+ '\)/);
+  assert.match(renderer, /frame\.style\.overflowY = 'hidden'/);
+});
+
+test('exclusive named modals close the previous sheet before opening the next', () => {
+  const openAt = renderer.indexOf('const openNamedModal = (entry) =>');
+  const closeBtnAt = renderer.indexOf('const closeBtn = this._closeControlFromEvent(ev);', openAt);
+  assert.ok(openAt > 0 && closeBtnAt > openAt);
+  const open = renderer.slice(openAt, closeBtnAt);
+  assert.match(open, /if \(entry\.exclusive && other\.exclusive\) closeNamedModal\(other\)/);
+});
+
 test('unresolved model does not emit a direct-child runtime bridge', () => {
   const unresolved = buildRendererInteractionPayload(deriveInteractionModel([
     { id: 'section', type: 'FRAME', name: 'sec/one' },

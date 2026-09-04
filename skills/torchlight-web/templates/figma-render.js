@@ -7098,15 +7098,60 @@
             node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
             node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
           };
+          const modalPolicy = () => {
+            const policy = designPolicy();
+            const fill = policy.modalViewportFill === 'cover' ? 'cover' : 'contain';
+            const scrim = Number(policy.modalScrimOpacity);
+            const lock = policy.modalLockPageScroll === true;
+            return {
+              fill,
+              scrim: Number.isFinite(scrim) ? Math.min(1, Math.max(0, scrim)) : 0,
+              lock,
+            };
+          };
+          const ensureModalScrim = (host, opacity) => {
+            if (!host) return null;
+            let scrim = host.querySelector('[data-modal-scrim="true"]');
+            if (opacity <= 0) {
+              if (scrim) scrim.remove();
+              return null;
+            }
+            if (!scrim) {
+              scrim = document.createElement('div');
+              scrim.setAttribute('data-modal-scrim', 'true');
+              scrim.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+              host.insertBefore(scrim, host.firstChild);
+            }
+            scrim.style.background = 'rgba(0,0,0,' + opacity + ')';
+            return scrim;
+          };
+          const lockNamedModalScroll = (lock) => {
+            if (lock) {
+              if (frame.__fxModalPrevOverflow == null) frame.__fxModalPrevOverflow = frame.style.overflowY || '';
+              frame.style.overflowY = 'hidden';
+              frame.setAttribute('data-modal-scroll-lock', 'true');
+            } else {
+              if (frame.__fxModalPrevOverflow != null) frame.style.overflowY = frame.__fxModalPrevOverflow;
+              frame.removeAttribute('data-modal-scroll-lock');
+              frame.__fxModalPrevOverflow = null;
+            }
+          };
           const unpinModalHost = (entry) => {
             const host = entry && entry.layer && entry.layer.parentElement;
             if (!host || !host.classList || !host.classList.contains('fx-named-modals')) return;
+            const rest = host.__fxNamedModalRest || {};
             host.style.position = 'absolute';
             host.style.left = '0';
             host.style.top = '0';
+            host.style.width = rest.width || (designWidth + 'px');
+            host.style.height = rest.height || ((pageScrollHeight || 0) + 'px');
             host.style.transform = '';
+            host.style.zoom = String(pageStageScale || k);
             host.style.pointerEvents = 'none';
             host.style.zIndex = '40';
+            host.style.overflow = 'visible';
+            host.removeAttribute('data-modal-fill');
+            ensureModalScrim(host, 0);
           };
           const pinModalToViewport = (entry) => {
             if (!entry || !entry.layer) return;
@@ -7117,21 +7162,38 @@
             const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
             const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
             const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
-            const pageZoom = Number.parseFloat(frame.style.zoom) || 1;
-            const visibleW = frameRect.width / (pageZoom || 1);
-            const visibleH = frameRect.height / (pageZoom || 1);
-            const scale = Math.min(visibleW / designW, visibleH / designH);
+            /* Host zoom is the page-stage ruler for closed overlays. Pinning
+               to the visible frame must drop it, or cover/contain scale
+               multiplies k and the Figma sheet shrinks to a card.
+               getBoundingClientRect already includes QA preview transform on
+               `.frame`; use the unscaled frame box so cover/contain matches
+               Figma 3840×2160 against the 1920×1080 screen, not the shrunk
+               preview pixels. */
+            const visibleW = Math.max(0, Number.parseFloat(frame.style.width) || frame.clientWidth || frameRect.width);
+            const visibleH = Math.max(0, Number.parseFloat(frame.style.height) || frame.clientHeight || frameRect.height);
+            const policy = modalPolicy();
+            const scale = policy.fill === 'cover'
+              ? Math.max(visibleW / designW, visibleH / designH)
+              : Math.min(visibleW / designW, visibleH / designH);
             if (host) {
-              host.style.position = 'fixed';
-              host.style.left = frameRect.left + 'px';
-              host.style.top = frameRect.top + 'px';
-              host.style.width = designW + 'px';
-              host.style.height = Math.max(Number.parseFloat(host.style.height) || 0, designH) + 'px';
-              host.style.transformOrigin = '0 0';
-              host.style.transform = 'scale(' + scale + ')';
-              host.style.pointerEvents = 'none';
+              if (!host.__fxNamedModalRest) {
+                host.__fxNamedModalRest = {
+                  width: host.style.width || (designWidth + 'px'),
+                  height: host.style.height || ((pageScrollHeight || 0) + 'px'),
+                };
+              }
+              host.style.position = 'absolute';
+              host.style.left = '0px';
+              host.style.top = (Number(frame.scrollTop) || 0) + 'px';
+              host.style.width = visibleW + 'px';
+              host.style.height = visibleH + 'px';
+              host.style.zoom = '1';
+              host.style.transform = 'none';
+              host.style.pointerEvents = 'auto';
               host.style.zIndex = '2147483001';
-              host.style.overflow = 'visible';
+              host.style.overflow = 'hidden';
+              host.setAttribute('data-modal-fill', policy.fill);
+              ensureModalScrim(host, policy.scrim);
             }
             layer.style.left = '0px';
             layer.style.top = '0px';
@@ -7139,7 +7201,9 @@
             layer.style.height = designH + 'px';
             layer.style.maxWidth = 'none';
             layer.style.maxHeight = 'none';
-            layer.style.transform = 'none';
+            layer.style.zoom = '1';
+            layer.style.transformOrigin = '0 0';
+            layer.style.transform = 'scale(' + scale + ')';
             layer.style.pointerEvents = 'auto';
             layer.style.zIndex = '41';
             if (layer.getAttribute('data-modal-clip') === 'source') layer.style.overflow = 'hidden';
@@ -7156,6 +7220,7 @@
               if (host && host.classList && host.classList.contains('fx-named-modals')) {
                 host.style.pointerEvents = 'none';
               }
+              lockNamedModalScroll(false);
             }
           };
           const openNamedModal = (entry) => {
@@ -7167,6 +7232,7 @@
             hideInPlace(entry.layer, false);
             entry.layer.setAttribute('data-modal-open', 'true');
             pinModalToViewport(entry);
+            if (modalPolicy().lock) lockNamedModalScroll(true);
             if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
               frame.__fxAssetScheduler.prime(entry.layer);
             }

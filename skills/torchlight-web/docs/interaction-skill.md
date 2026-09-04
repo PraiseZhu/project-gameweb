@@ -176,7 +176,14 @@ A play control that already lives inside the video modal is the in-modal
 player, not a second opener. The two mobile overlays are mutually exclusive.
 `btn/关闭按钮` closes the modal that contains it. Runtime only toggles
 visibility of the extracted modal layer; it does not move modal nodes into
-the homepage tree or change Figma coordinates.
+the homepage tree. A `modal/` whose inventory `pageBox` is the artboard is
+pinned to the visible frame: YAML `modalViewportFill` is `cover` (fill the
+viewport) or `contain` (letterbox). YAML `modalScrimOpacity` paints a black
+scrim behind the sheet. YAML `modalLockPageScroll: true` locks the page
+frame `overflow-y` until the named modal is closed. Exclusive named modals
+open one at a time. The overlay host keeps page-stage `zoom` while closed;
+pinning must set host/layer `zoom` to `1` and scale only from the visible
+frame vs the Figma `pageBox`. Incomplete graphs stay unresolved.
 
 Missing modal tree, missing unique opener, or a PC page with no mobile
 overlay stays fail-closed.
