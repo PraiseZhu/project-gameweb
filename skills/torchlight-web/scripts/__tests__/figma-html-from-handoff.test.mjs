@@ -327,6 +327,8 @@ test('skipPreview still runs inventory static gate and never marks skipped-ok', 
   assert.match(src, /figma-assets\.mjs/);
   assert.match(src, /reuseExistingAssets/);
   assert.match(src, /--reuse-existing/);
+  const orch = readFileSync(new URL('../torchlightweb.mjs', import.meta.url), 'utf8');
+  assert.match(orch, /--reuse-existing/);
   assert.doesNotMatch(src, /\|\| true/);
   assert.doesNotMatch(src, /--skip-preview/);
   assert.doesNotMatch(src, /design-policy-dom-probe/);

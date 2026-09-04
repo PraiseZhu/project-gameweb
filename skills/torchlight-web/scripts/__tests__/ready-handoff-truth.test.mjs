@@ -198,6 +198,12 @@ test('adapter source must not fall back to box ?? pageBox', () => {
   assert.equal(/entry\?\.pageBox/.test(src), true);
 });
 
+test('readyPlatformTruth stamps design.fileVersion from source lastModified', () => {
+  const src = readFileSync(fileURLToPath(new URL('../lib/ready-handoff-truth.mjs', import.meta.url)), 'utf8');
+  assert.match(src, /source\?\.lastModified \|\| source\?\.snapshotHash \|\| fingerprint/);
+  assert.match(src, /design: fileVersion \? \{ fileVersion \} : undefined/);
+});
+
 test('section-owned bg/ stays in the section tree, not pageChrome', () => {
   const inv = fixture();
   inv.backgrounds = [

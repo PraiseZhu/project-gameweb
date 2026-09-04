@@ -13,7 +13,7 @@ import { createSafeStaticServer } from './safe-server.mjs';
 /* Callers: figma-html-from-handoff defaultStaticGateProbe.
    Adds firstKv PNG meta so the gate can fail empty first-screen KV.
    User: 「闸门验整框 PNG 非空；满铺板尺寸正确」. */
-import { laterKvMeasureIds, laterKvPaintNode, firstKvMeasureId } from './inventory-static-gate.mjs';
+import { laterKvMeasureIds, laterKvPaintNode, firstKvMeasureId, chromeTopBarContract, CHROME_PNG_SAMPLE_POINTS, needsChromePngPixels } from './inventory-static-gate.mjs';
 import { isWholeFrameSliceNode } from '../../../../standards/figma-naming/spec/inventory.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
 
@@ -146,7 +146,9 @@ function laterKvPaintBox(inventory, owner) {
 }
 
 function pngMeta(file) {
-  if (!file || !existsSync(file)) return { assetW: 0, assetH: 0, assetEmpty: true };
+  if (!file || !existsSync(file)) {
+    return { assetW: 0, assetH: 0, assetEmpty: true, assetInkEmpty: true, assetSamples: [], assetInkHash: null };
+  }
   const png = PNG.sync.read(readFileSync(file));
   const stepX = Math.max(1, Math.floor(png.width / 24));
   const stepY = Math.max(1, Math.floor(png.height / 16));
@@ -157,7 +159,28 @@ function pngMeta(file) {
       if (png.data[i + 3] > 8) opaque += 1;
     }
   }
-  return { assetW: png.width, assetH: png.height, assetEmpty: opaque < 8 };
+  const points = CHROME_PNG_SAMPLE_POINTS;
+  const assetSamples = points.map(([fx, fy]) => {
+    const x = Math.max(0, Math.min(png.width - 1, Math.round(png.width * fx)));
+    const y = Math.max(0, Math.min(png.height - 1, Math.round(png.height * fy)));
+    const i = (png.width * y + x) * 4;
+    return { x, y, rgba: [png.data[i], png.data[i + 1], png.data[i + 2], png.data[i + 3]] };
+  });
+  let hash = 2166136261;
+  for (const row of assetSamples) {
+    for (const channel of row.rgba) {
+      hash ^= Number(channel) & 255;
+      hash = Math.imul(hash, 16777619);
+    }
+  }
+  return {
+    assetW: png.width,
+    assetH: png.height,
+    assetEmpty: opaque < 8,
+    assetInkEmpty: opaque < 8,
+    assetSamples,
+    assetInkHash: (hash >>> 0).toString(16),
+  };
 }
 
 function firstKvNode(inventory) {
@@ -202,9 +225,16 @@ function assetFile(demoDir, rec) {
   return null;
 }
 
-async function measureDemo({ demoDir, handoffDir, platform, lang }) {
+const PRODUCT_VIEWPORTS = Object.freeze({
+  mobile: { w: 390, h: 844 },
+  pc: { w: 1440, h: 900 },
+});
+
+async function measureDemo({ demoDir, handoffDir, platform, lang, viewportKind = 'design' }) {
   const inventory = loadInventory(handoffDir, platform);
-  const viewport = designSize(inventory);
+  const viewport = viewportKind === 'product'
+    ? (PRODUCT_VIEWPORTS[platform] || PRODUCT_VIEWPORTS.pc)
+    : designSize(inventory);
   const nodeIds = liveIds(inventory);
   const absDemo = resolve(demoDir);
   if (!existsSync(join(absDemo, 'index.html'))) {
@@ -216,19 +246,32 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
     const base = await server.listen('127.0.0.1');
     ({ browser } = await launchChromium(SKILL_ROOT, { headless: true }));
     const page = await browser.newPage({
-      viewport: { width: viewport.w, height: Math.max(viewport.h, 1080) },
+      viewport: {
+        width: viewport.w,
+        height: viewportKind === 'product' ? viewport.h : Math.max(viewport.h, 1080),
+      },
       deviceScaleFactor: 1,
     });
-    await page.goto(`${base}/index.html?inventory-static-gate=1`, { waitUntil: 'load', timeout: 120000 });
-    await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: 120000 });
-    await page.evaluate(({ w, h, lang: nextLang, plat }) => {
-      /* Plat first, then design-width resize. setPref(plat) after resize
-         remaps PC 3840 back onto the 1920 device preset (k=0.5) and the
-         static gate starts comparing a half-scale page to pageBox. */
-      if (typeof window.__qa.setPref === 'function' && plat) window.__qa.setPref('plat', plat);
-      if (typeof window.__qa.resize === 'function') window.__qa.resize(w, h);
-      if (typeof window.__qa.setPref === 'function' && nextLang) window.__qa.setPref('lang', nextLang);
-    }, { w: viewport.w, h: viewport.h, lang, plat: platform === 'mobile' ? 'mobile' : 'desktop' });
+    if (viewportKind === 'product') {
+      await page.goto(`${base}/index.html?product=1`, { waitUntil: 'load', timeout: 120000 });
+      await page.waitForFunction(() => {
+        const frame = document.querySelector('.frame');
+        if (!frame) return false;
+        const r = frame.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && !!frame.querySelector('[data-node]');
+      }, null, { timeout: 120000 });
+    } else {
+      await page.goto(`${base}/index.html?inventory-static-gate=1`, { waitUntil: 'load', timeout: 120000 });
+      await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: 120000 });
+      await page.evaluate(({ w, h, lang: nextLang, plat }) => {
+        /* Plat first, then design-width resize. setPref(plat) after resize
+           remaps PC 3840 back onto the 1920 device preset (k=0.5) and the
+           static gate starts comparing a half-scale page to pageBox. */
+        if (typeof window.__qa.setPref === 'function' && plat) window.__qa.setPref('plat', plat);
+        if (typeof window.__qa.resize === 'function') window.__qa.resize(w, h);
+        if (typeof window.__qa.setPref === 'function' && nextLang) window.__qa.setPref('lang', nextLang);
+      }, { w: viewport.w, h: viewport.h, lang, plat: platform === 'mobile' ? 'mobile' : 'desktop' });
+    }
     await page.evaluate(() => new Promise((resolveWait) => setTimeout(resolveWait, 250)));
     await page.evaluate(() => {
       const style = document.createElement('style');
@@ -379,9 +422,11 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
   const sampleLocal = laterBox
     ? { x: Math.round(Math.max(0, laterBox.w) * 0.18), y: Math.round(Math.max(0, laterBox.h) * 0.42) }
     : null;
+  /* Product gate must measure the real product viewport (390×844 / 1440×900).
+     Clamping height to 720 used to hide a 100vh vs pageBox gap on mobile. */
   await page.setViewportSize({
-    width: Math.max(390, Math.min(Number(viewport.w) || 1280, 1280)),
-    height: Math.max(640, Math.min(Number(viewport.h) || 720, 720)),
+    width: Number(viewport.w),
+    height: Number(viewport.h),
   });
   await page.goto(`${base}/index.html?product=1`, { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction(() => {
@@ -456,20 +501,52 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
     const layers = {};
     if (firstSectionId) layers[firstSectionId] = layerOf(firstSectionId);
     if (nextSectionId) layers[nextSectionId] = layerOf(nextSectionId);
+    const stageOf = (id) => id
+      ? frame.querySelector(`[data-node-id="section-${cssEscape(id)}"]`)
+      : null;
+    const firstRect = stageOf(firstSectionId)?.getBoundingClientRect?.() || null;
+    const nextRect = stageOf(nextSectionId)?.getBoundingClientRect?.() || null;
+    const sectionAbut = (firstRect && nextRect)
+      ? {
+        firstBottom: firstRect.top + firstRect.height,
+        nextTop: nextRect.top,
+        gap: nextRect.top - (firstRect.top + firstRect.height),
+      }
+      : null;
+    const frameRect = frame.getBoundingClientRect();
+    const firstKvAtTop = firstKvId ? bgOf(firstKvId) : null;
+    const firstScreenFloorSample = {
+      x: (frameRect.width || window.innerWidth || 0) * 0.5,
+      y: Math.max(0, (frameRect.height || window.innerHeight || 0) - 4),
+    };
+    const slotDesignHeight = Number(frame.getAttribute('data-hero-slot-design-height'));
     const scrollBefore = Number(frame.scrollTop) || 0;
     const nextStage = nextSectionId
       ? frame.querySelector(`[data-node-id="section-${cssEscape(nextSectionId)}"]`)
       : null;
-    if (nextStage && typeof nextStage.scrollIntoView === 'function') {
-      nextStage.scrollIntoView({ block: 'start' });
+    if (nextStage) {
+      const nextTop = Number(nextStage.getBoundingClientRect().top) + Number(frame.scrollTop || 0);
+      frame.scrollTop = Math.max(0, nextTop);
     } else if (laterBgId) {
       const bg = find(laterBgId);
-      if (bg && typeof bg.scrollIntoView === 'function') bg.scrollIntoView({ block: 'start' });
+      if (bg) {
+        const bgTop = Number(bg.getBoundingClientRect().top) + Number(frame.scrollTop || 0);
+        frame.scrollTop = Math.max(0, bgTop);
+      }
     }
     await new Promise((resolveWait) => setTimeout(resolveWait, 400));
+    const firstRectAfter = stageOf(firstSectionId)?.getBoundingClientRect?.() || null;
+    const nextRectAfter = stageOf(nextSectionId)?.getBoundingClientRect?.() || null;
+    const sectionAbutAfter = (firstRectAfter && nextRectAfter)
+      ? {
+        firstBottom: firstRectAfter.top + firstRectAfter.height,
+        nextTop: nextRectAfter.top,
+        gap: nextRectAfter.top - (firstRectAfter.top + firstRectAfter.height),
+      }
+      : sectionAbut;
     const backgrounds = {};
     for (const id of laterBgIds || []) backgrounds[id] = bgOf(id);
-    const firstKvDom = firstKvId ? bgOf(firstKvId) : null;
+    const firstKvDom = firstKvAtTop || (firstKvId ? bgOf(firstKvId) : null);
     const scrollAfter = Number(frame.scrollTop) || 0;
     const after = Object.fromEntries((ids || []).map((id) => [id, rectOf(id)]));
     const overlayDeltas = {};
@@ -491,6 +568,9 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       const sy = c.top + c.height * 0.38;
       sample = { sx, sy, hostTop: r.top, hostLeft: r.left, hostH: r.height, hostW: r.width, clipW: c.width, clipH: c.height };
     }
+    const seamY = sectionAbutAfter && Number.isFinite(Number(sectionAbutAfter.nextTop))
+      ? Number(sectionAbutAfter.nextTop)
+      : null;
     return {
       overlay: {
         position: overlayCs ? overlayCs.position : null,
@@ -502,9 +582,16 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       overlayDeltas,
       play,
       layers,
+      sectionAbut,
       backgrounds,
       firstKv: firstKvDom,
       sample,
+      seamSample: Number.isFinite(seamY)
+        ? { y: seamY, x: (frame.getBoundingClientRect().width || window.innerWidth || 0) * 0.5 }
+        : null,
+      firstScreenFloorSample,
+      slotDesignHeight: Number.isFinite(slotDesignHeight) ? slotDesignHeight : null,
+      viewport: { w: window.innerWidth, h: window.innerHeight },
       scrollTop: scrollAfter,
       scrolled: scrollAfter > scrollBefore + 1 ? 1 : 0,
     };
@@ -560,7 +647,232 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       ...pngMeta(assetFile(demoDir, firstKvNodeRec || { id: firstKvId })),
     }
     : null;
-  return { ...measured, backgrounds, samples, firstKv };
+  let seamPixels = null;
+  if (measured?.seamSample && Number.isFinite(Number(measured.seamSample.y))) {
+    const shot = await page.screenshot({ type: 'png' });
+    const png = PNG.sync.read(shot);
+    const x = Math.max(0, Math.min(png.width - 1, Math.round(Number(measured.seamSample.x) || png.width / 2)));
+    const y0 = Math.round(Number(measured.seamSample.y));
+    const rows = [];
+    for (let dy = -6; dy <= 6; dy += 2) {
+      const y = Math.max(0, Math.min(png.height - 1, y0 + dy));
+      const i = (png.width * y + x) * 4;
+      const rgba = [png.data[i], png.data[i + 1], png.data[i + 2], png.data[i + 3]];
+      const lum = 0.2126 * rgba[0] + 0.7152 * rgba[1] + 0.0722 * rgba[2];
+      rows.push({ y, dy, rgba, lum });
+    }
+    const mean = [0, 0, 0];
+    for (const row of rows) {
+      mean[0] += row.rgba[0];
+      mean[1] += row.rgba[1];
+      mean[2] += row.rgba[2];
+    }
+    mean[0] /= rows.length;
+    mean[1] /= rows.length;
+    mean[2] /= rows.length;
+    let variance = 0;
+    for (const row of rows) {
+      variance += (row.rgba[0] - mean[0]) ** 2 + (row.rgba[1] - mean[1]) ** 2 + (row.rgba[2] - mean[2]) ** 2;
+    }
+    variance /= rows.length;
+    seamPixels = {
+      x,
+      y: y0,
+      rows,
+      mean,
+      variance,
+      minLum: Math.min(...rows.map((row) => row.lum)),
+      maxLum: Math.max(...rows.map((row) => row.lum)),
+    };
+  }
+  let firstScreenFloor = null;
+  if (measured?.firstScreenFloorSample && Number.isFinite(Number(measured.firstScreenFloorSample.y))) {
+    await page.evaluate(() => {
+      const frame = document.querySelector('.frame');
+      if (frame) frame.scrollTop = 0;
+    });
+    await page.evaluate(() => new Promise((resolveWait) => setTimeout(resolveWait, 120)));
+    const shot = await page.screenshot({ type: 'png' });
+    const png = PNG.sync.read(shot);
+    const x = Math.max(0, Math.min(png.width - 1, Math.round(Number(measured.firstScreenFloorSample.x) || png.width / 2)));
+    const y0 = Math.round(Number(measured.firstScreenFloorSample.y));
+    const rows = [];
+    for (let dy = -8; dy <= 0; dy += 2) {
+      const y = Math.max(0, Math.min(png.height - 1, y0 + dy));
+      const i = (png.width * y + x) * 4;
+      const rgba = [png.data[i], png.data[i + 1], png.data[i + 2], png.data[i + 3]];
+      const lum = 0.2126 * rgba[0] + 0.7152 * rgba[1] + 0.0722 * rgba[2];
+      rows.push({ y, dy, rgba, lum });
+    }
+    const mean = [0, 0, 0];
+    for (const row of rows) {
+      mean[0] += row.rgba[0];
+      mean[1] += row.rgba[1];
+      mean[2] += row.rgba[2];
+    }
+    mean[0] /= rows.length;
+    mean[1] /= rows.length;
+    mean[2] /= rows.length;
+    let variance = 0;
+    for (const row of rows) {
+      variance += (row.rgba[0] - mean[0]) ** 2 + (row.rgba[1] - mean[1]) ** 2 + (row.rgba[2] - mean[2]) ** 2;
+    }
+    variance /= rows.length;
+    firstScreenFloor = {
+      x,
+      y: y0,
+      rows,
+      mean,
+      variance,
+      minLum: Math.min(...rows.map((row) => row.lum)),
+      maxLum: Math.max(...rows.map((row) => row.lum)),
+    };
+  }
+  /* Human-review stop is the QA chrome page. ?product=1 skips
+     syncHeroEntryNavigation, so it never saw mobile 844/1334 squash. */
+  let chromeTopBar = null;
+  try {
+    await page.setViewportSize({
+      width: Number(viewport.w),
+      height: Number(viewport.h),
+    });
+    await page.goto(`${base}/index.html`, { waitUntil: 'load', timeout: 120000 });
+    await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: 120000 });
+    await page.evaluate(({ w, h, lang: nextLang, plat }) => {
+      if (typeof window.__qa.setPref === 'function' && plat) window.__qa.setPref('plat', plat);
+      if (typeof window.__qa.resize === 'function') window.__qa.resize(w, h);
+      if (typeof window.__qa.setPref === 'function' && nextLang) window.__qa.setPref('lang', nextLang);
+    }, { w: viewport.w, h: viewport.h, lang, plat: platform === 'mobile' ? 'mobile' : 'desktop' });
+    await page.evaluate(() => new Promise((resolveWait) => setTimeout(resolveWait, 250)));
+    chromeTopBar = await page.evaluate(({ nodeIds, samplePoints }) => {
+      const cssEscape = (value) => (globalThis.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/(["\\])/g, '\\$1'));
+      const frame = document.querySelector('.frame') || document.body;
+      if (typeof window.__qa?.setPref === 'function') {
+        try { window.__qa.setPref('fit', false); } catch { /* keep source k */ }
+      }
+      const bars = [...frame.querySelectorAll('[data-prefix="fix"][data-fix-pin="viewport"], [data-topbar-chrome="true"]')];
+      const uniqueBars = [];
+      const seenBars = new Set();
+      for (const bar of bars) {
+        const id = bar.getAttribute('data-node') || '';
+        if (id && seenBars.has(id)) continue;
+        if (id) seenBars.add(id);
+        uniqueBars.push(bar);
+      }
+      if (!uniqueBars.length) return null;
+      const find = (id) => frame.querySelector(`[data-node="${cssEscape(id)}"]`);
+      const sampleDrawnImage = (img) => {
+        if (!img || String(img.tagName || '').toUpperCase() !== 'IMG') {
+          return { samples: [], error: 'missing-img' };
+        }
+        const width = Number(img.naturalWidth || img.width || 0);
+        const height = Number(img.naturalHeight || img.height || 0);
+        if (!(width > 0 && height > 0)) {
+          return { samples: [], error: 'img-not-decoded' };
+        }
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return { samples: [], error: 'canvas-2d-unavailable' };
+          ctx.drawImage(img, 0, 0);
+          return {
+            samples: samplePoints.map(([fx, fy]) => {
+              const x = Math.max(0, Math.min(width - 1, Math.round(width * fx)));
+              const y = Math.max(0, Math.min(height - 1, Math.round(height * fy)));
+              const d = ctx.getImageData(x, y, 1, 1).data;
+              return { x, y, rgba: [d[0], d[1], d[2], d[3]] };
+            }),
+            error: null,
+          };
+        } catch (err) {
+          return { samples: [], error: err && err.message ? err.message : String(err) };
+        }
+      };
+      const recOf = (bar) => {
+        const saved = bar.__fxHeroEntryStyleBase;
+        const sourceH = parseFloat(saved && saved.height) || parseFloat(bar.style.height);
+        const origin = bar.getBoundingClientRect();
+        const sourceW = parseFloat(saved && saved.width) || parseFloat(bar.style.width);
+        const scale = (Number.isFinite(sourceW) && sourceW > 0 && origin.width > 0)
+          ? origin.width / sourceW
+          : 1;
+        const ordered = [...bar.querySelectorAll('[data-node]')];
+        const nodes = {};
+        for (const id of nodeIds || []) {
+          const el = find(id);
+          if (!el || !bar.contains(el)) continue;
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          const img = el.matches('img') ? el : el.querySelector(':scope > img.fx-img, :scope img.fx-img, img');
+          const idx = ordered.indexOf(el);
+          const drawn = sampleDrawnImage(img);
+          nodes[id] = {
+            x: (r.left - origin.left) / scale,
+            y: (r.top - origin.top) / scale,
+            w: r.width / scale,
+            h: r.height / scale,
+            hasImg: !!(img && String(img.tagName || '').toUpperCase() === 'IMG'),
+            text: String(el.innerText || el.textContent || '').trim(),
+            fontWeight: cs.fontWeight || null,
+            fontSize: Number.isFinite(parseFloat(cs.fontSize)) ? parseFloat(cs.fontSize) : null,
+            color: cs.color || null,
+            backgroundImage: cs.backgroundImage || null,
+            backgroundClip: cs.backgroundClip || cs.webkitBackgroundClip || null,
+            webkitTextFillColor: cs.webkitTextFillColor || null,
+            gradient: el.getAttribute('data-text-gradient') === '1'
+              || String(cs.backgroundClip || '').includes('text')
+              || String(cs.backgroundImage || '').includes('gradient')
+              || String(el.style.backgroundImage || '').includes('gradient'),
+            screenSamples: drawn.samples,
+            screenSampleError: drawn.error,
+            overflow: cs.overflow || el.style.overflow || null,
+            clips: cs.overflow === 'hidden' || cs.overflow === 'clip' || el.style.overflow === 'hidden',
+            stackIndex: idx >= 0 ? idx : (Number(cs.zIndex) || 0),
+          };
+        }
+        return {
+          id: bar.getAttribute('data-node'),
+          navShell: bar.getAttribute('data-nav-shell') === 'true',
+          topbar: bar.getAttribute('data-topbar-chrome') === 'true',
+          kind: bar.getAttribute('data-hero-entry-nav-kind') || null,
+          yScale: parseFloat(bar.getAttribute('data-hero-entry-nav-y-scale') || ''),
+          height: parseFloat(bar.style.height),
+          sourceHeight: Number.isFinite(sourceH) ? sourceH : null,
+          nodes,
+        };
+      };
+      const roots = {};
+      const merged = {};
+      let first = null;
+      for (const bar of uniqueBars) {
+        const rec = recOf(bar);
+        if (!first) first = rec;
+        if (rec.id) roots[rec.id] = rec;
+        Object.assign(merged, rec.nodes);
+      }
+      return {
+        ...(first || {}),
+        nodes: merged,
+        roots,
+      };
+    }, { nodeIds: chromeTopBarContract(inventory).nodeIds, samplePoints: CHROME_PNG_SAMPLE_POINTS });
+    if (chromeTopBar && chromeTopBar.nodes) {
+      const byId = new Map(asArray(inventory?.nodes).filter((node) => node && node.id).map((node) => [String(node.id), node]));
+      for (const [id, rec] of Object.entries(chromeTopBar.nodes)) {
+        const node = byId.get(String(id));
+        if (!needsChromePngPixels(node)) continue;
+        chromeTopBar.nodes[id] = { ...rec, ...pngMeta(assetFile(demoDir, node)) };
+      }
+    }
+  } catch (err) {
+    chromeTopBar = {
+      probeFailed: true,
+      error: err && err.message ? err.message : String(err),
+    };
+  }
+  return { ...measured, backgrounds, samples, firstKv, seamPixels, firstScreenFloor, chromeTopBar };
 }
 
 async function main(argv = process.argv.slice(2)) {
@@ -568,14 +880,16 @@ async function main(argv = process.argv.slice(2)) {
   const handoffDir = argOf(argv, '--handoff');
   const platform = argOf(argv, '--platform') || 'pc';
   const lang = argOf(argv, '--lang') || 'zh-CN';
+  const viewportKind = argOf(argv, '--viewport') || 'design';
   if (!demoDir || !handoffDir) {
-    throw new Error('usage: node scripts/lib/inventory-static-gate-probe.mjs --demo <dir> --handoff <dir> [--platform pc|mobile]');
+    throw new Error('usage: node scripts/lib/inventory-static-gate-probe.mjs --demo <dir> --handoff <dir> [--platform pc|mobile] [--viewport design|product]');
   }
   const measured = await measureDemo({
     demoDir: resolve(demoDir),
     handoffDir: resolve(handoffDir),
     platform,
     lang,
+    viewportKind,
   });
   process.stdout.write(`${JSON.stringify(measured)}\n`);
 }

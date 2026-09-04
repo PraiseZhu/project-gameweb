@@ -46,6 +46,8 @@ export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, fi
     && Number.isFinite(firstY);
   if (!valid) return null;
   const designHeight = viewport / factor;
+  /* 100vh may pad a short hero. A taller Figma hero must keep its full
+     pageBox and flow downward — never crop, never pull later sections up. */
   const extra = Math.max(0, designHeight - heroHeight);
   const layoutOffsetDesign = extra;
   const releaseDistance = extra * factor;

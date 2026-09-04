@@ -342,6 +342,49 @@ test('machine-written resize-acceptance.json cannot authorize pack', async () =>
   assert.equal(packed.error, 'machine-resize-acceptance-forbidden');
 });
 
+test('start on wait-stop-2 rebuilds Main and returns to wait-stop-1 without packing', async () => {
+  const demo = demoDir();
+  const handoff = join(demo, 'handoff');
+  let packed = false;
+  let builds = 0;
+  await runTorchlightweb({
+    command: 'start',
+    demoDir: demo,
+    handoffDir: handoff,
+    now: '2026-09-03T00:00:00.000Z',
+    buildMain: () => { builds += 1; return greenMain(); },
+    packDemo: () => { packed = true; return { ok: true }; },
+  });
+  await runTorchlightweb({ command: 'accept', demoDir: demo, now: '2026-09-03T00:01:00.000Z' });
+  await runTorchlightweb({
+    command: 'continue',
+    demoDir: demo,
+    now: '2026-09-03T00:02:00.000Z',
+    probeLaterAxes: async () => {
+      writeGreenProbe(demo);
+      return { ok: true, problems: [] };
+    },
+  });
+  assert.equal(JSON.parse(readFileSync(torchlightwebMachinePath(demo), 'utf8')).phase, 'wait-stop-2');
+  const rebuilt = await runTorchlightweb({
+    command: 'start',
+    demoDir: demo,
+    handoffDir: handoff,
+    now: '2026-09-03T00:03:00.000Z',
+    buildMain: () => { builds += 1; return greenMain(); },
+    packDemo: () => { packed = true; return { ok: true }; },
+  });
+  assert.equal(rebuilt.ok, true, rebuilt.error);
+  assert.equal(rebuilt.phase, 'wait-stop-1');
+  assert.equal(builds, 2);
+  assert.equal(packed, false);
+  const review = JSON.parse(readFileSync(join(demo, 'human-review.json'), 'utf8'));
+  assert.equal(review.stops['static-and-translation'].presented, true);
+  assert.equal(review.stops['static-and-translation'].accepted, false);
+  assert.equal(review.stops['interaction-and-resize'].presented, false);
+  assert.equal(review.stops['interaction-and-resize'].accepted, false);
+});
+
 test('direct html-from-handoff, later-axes probe, and pack-demo CLIs are locked without a ticket, even with env var', () => {
   const html = spawnSync(process.execPath, [HTML_CLI, '--handoff', '/tmp', '--demo', '/tmp'], {
     cwd: ROOT,

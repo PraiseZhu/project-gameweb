@@ -10,6 +10,7 @@ import {
   expectedDrawBox,
   evaluateInventoryStaticGate,
   evaluateProductScrollGate,
+  chromeTopBarContract,
   laterKvMeasureIds,
   laterKvPaintNode,
   firstKvMeasureId,
@@ -235,10 +236,213 @@ test('probe script is a shipped skill file, not an optional local extra', () => 
   assert.match(src, /laterKvMeasureIds/);
   assert.match(src, /laterKvPaintNode/);
   assert.match(src, /owner-ink-spill-natural/);
-  assert.match(src, /viewport: \{ width: viewport\.w/);
+  assert.match(src, /viewport: \{[\s\S]*width: viewport\.w/);
   assert.match(src, /setPref\(plat\) after resize/);
   assert.match(src, /data-fix-from-active', 'static-gate'/);
+  assert.match(src, /PRODUCT_VIEWPORTS/);
+  assert.match(src, /sectionAbut/);
+  assert.match(src, /--viewport/);
+  assert.match(src, /width: Number\(viewport\.w\)/);
+  assert.match(src, /height: Number\(viewport\.h\)/);
+  assert.match(src, /data-node-id="section-\$\{cssEscape\(id\)\}"/);
+  assert.match(src, /seamPixels/);
+  assert.match(src, /seamSample/);
+  assert.match(src, /firstScreenFloorSample/);
+  assert.match(src, /firstScreenFloor/);
+  assert.match(src, /slotDesignHeight/);
+  assert.match(src, /frame\.scrollTop = Math\.max\(0, nextTop\)/);
+  assert.match(src, /sectionAbutAfter/);
+  assert.match(src, /nextRectAfter/);
+  assert.match(src, /seamY = sectionAbutAfter && Number\.isFinite\(Number\(sectionAbutAfter\.nextTop\)\)/);
+  assert.doesNotMatch(src, /const seamY = sectionAbut && Number\.isFinite\(Number\(sectionAbut\.nextTop\)\)/);
+  assert.doesNotMatch(src, /Math\.min\(Number\(viewport\.h\) \|\| 720, 720\)/);
   assert.doesNotMatch(src, /Math\.min\(Math\.round\(firstH\), 1080\)/);
+});
+
+test('full-bleed kv IMAGE child is baked, not missing-dom', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: 'kv',
+          status: 'unknown',
+          name: 'kv',
+          pageBox: { x: 0, y: 0, w: 3840, h: 2143 },
+          sliceExport: { box: { x: 0, y: 0, w: 3840, h: 2143 }, scale: 1, format: 'png', file: 'kv.png' },
+        },
+        {
+          id: 'crop',
+          status: 'unknown',
+          name: '赛季kv-0623-整理 2',
+          parentId: 'kv',
+          ancestorIds: ['kv'],
+          pageBox: { x: 0, y: -4, w: 3848, h: 2156 },
+          style: { fills: [{ type: 'IMAGE', visible: true }] },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        kv: { x: 0, y: 0, w: 3840, h: 2143, hasImg: true, imgBox: { x: 0, y: 0, w: 3840, h: 2143 } },
+      },
+      productScroll: {
+        overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+        overlayDeltas: {},
+        scrolled: 1,
+        scrollTop: 1,
+        layers: {},
+        firstKv: { imgSrc: 'assets/kv.webp', assetW: 3840, assetH: 2143, assetEmpty: false },
+      
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('product viewport rejects a gap between sec/1 and sec/2', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [
+      { id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'sec-2', number: 2, pageBox: { x: 0, y: 1334, w: 750, h: 1334 } },
+    ],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'sec-2', status: 'determined', role: 'sec', name: 'sec/2', pageBox: { x: 0, y: 1334, w: 750, h: 1334 } },
+    ],
+  };
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: {
+        'sec-1': { cropWindow: 'first-section-pagebox', height: 844, overflow: 'hidden' },
+        'sec-2': { height: 889, overflow: 'hidden' },
+      },
+      sectionAbut: { gap: 45 },
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('section-gap')), (red.problems || []).join('\n'));
+
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: {
+        'sec-1': { cropWindow: 'first-section-pagebox', height: 1623, overflow: 'visible' },
+        'sec-2': { height: 889, overflow: 'hidden' },
+      },
+      sectionAbut: { gap: 0 },
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      slotDesignHeight: 1623,
+      viewport: { w: 390, h: 844 },
+      firstKv: { hostH: 844, imgSrc: 'assets/kv.webp', assetW: 750, assetH: 1334, assetEmpty: false },
+      firstScreenFloor: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+
+  const blackSeam = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: {
+        'sec-1': { cropWindow: 'first-section-pagebox', height: 844, overflow: 'hidden' },
+        'sec-2': { height: 889, overflow: 'hidden' },
+      },
+      sectionAbut: { gap: 0 },
+      seamPixels: { minLum: 8, variance: 4, mean: [12, 15, 20], rows: [{ lum: 8, rgba: [12, 15, 20, 255] }] },
+    },
+  });
+  assert.equal(blackSeam.ok, false);
+  assert.ok(blackSeam.problems.some((line) => line.includes('section-seam-black')), (blackSeam.problems || []).join('\n'));
+
+  const shortKv = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: {
+        'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'hidden' },
+        'sec-2': { height: 889, overflow: 'hidden' },
+      },
+      sectionAbut: { gap: 0 },
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      slotDesignHeight: 1623,
+      viewport: { w: 390, h: 844 },
+      firstKv: { hostH: 693, imgSrc: 'assets/kv.webp', assetW: 750, assetH: 1334, assetEmpty: false },
+      firstScreenFloor: { minLum: 8, variance: 1, mean: [12, 14, 22], stageRatio: 1, rows: [{ lum: 8, rgba: [12, 14, 22, 255] }] },
+    },
+  });
+  assert.equal(shortKv.ok, false);
+  assert.ok(shortKv.problems.some((line) => line.includes('first-section-shorter-than-pageBox-or-slot')), (shortKv.problems || []).join('\n'));
+  assert.ok(shortKv.problems.some((line) => line.includes('first-kv-shorter-than-viewport')), (shortKv.problems || []).join('\n'));
+  assert.ok(shortKv.problems.some((line) => line.includes('first-screen-floor-black')), (shortKv.problems || []).join('\n'));
+});
+
+test('product viewport rejects a painted IMAGE child of a kv plate', () => {
+  const red = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+      nodes: [
+        {
+          id: 'kv',
+          status: 'unknown',
+          name: 'kv',
+          pageBox: { x: 0, y: 0, w: 3840, h: 2143 },
+          sliceExport: { box: { x: 0, y: 0, w: 3840, h: 2143 }, scale: 1, format: 'png', file: 'kv.png' },
+        },
+        {
+          id: 'crop',
+          status: 'unknown',
+          name: '赛季kv-0623-整理 2',
+          parentId: 'kv',
+          ancestorIds: ['kv'],
+          pageBox: { x: 0, y: -4, w: 3848, h: 2156 },
+          style: { fills: [{ type: 'IMAGE' }] },
+        },
+      ],
+    },
+    viewportKind: 'product',
+    measurements: {
+      nodes: {
+        kv: { x: 0, y: 0, w: 1920, h: 728, hasImg: true },
+        crop: { x: 0, y: 0, w: 1924, h: 1078, hasImg: true },
+      },
+      productScroll: {
+        overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+        overlayDeltas: {},
+        scrolled: 1,
+        scrollTop: 1,
+        layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 728, overflow: 'hidden' } },
+        firstKv: { imgSrc: 'assets/kv.webp', assetW: 3840, assetH: 2143, assetEmpty: false },
+      
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('full-bleed-child-repainted')), (red.problems || []).join('\n'));
 });
 
 test('descendants baked into an ancestor PNG are not missing-dom', () => {
@@ -335,6 +539,8 @@ test('empty first-screen kv PNG is red', () => {
       backgrounds: {},
       firstKv: { imgSrc: 'assets/721-7868.webp', assetW: 3840, assetH: 167, assetEmpty: true },
       samples: [],
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(empty.ok, false);
@@ -520,7 +726,9 @@ test('unprefixed parent bake cannot swallow a copy-only child unless owner has s
         backgrounds: {},
         firstKv: { imgSrc: 'assets/kv.webp', assetW: 3840, assetH: 2143, assetEmpty: false },
         samples: [],
-      },
+      
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+    },
     },
   });
   assert.equal(red.ok, false);
@@ -950,6 +1158,8 @@ test('from-tagged delayed overlay is not required in current overlayDeltas', () 
       layers: {
         'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'hidden' },
       },
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
@@ -975,6 +1185,515 @@ test('pin=viewport page without productScroll is red, never skipped-ok', () => {
   assert.ok(red.problems.some((line) => line.includes('product-scroll-missing')), (red.problems || []).join('\n'));
 });
 
+test('QA chrome squashing landscape top bar to 100vh is red', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '顶部固定内容' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/顶部固定内容', pageBox: { x: 0, y: 0, w: 736, h: 401 } },
+    ],
+  };
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: true,
+        kind: 'root',
+        yScale: 0.6327,
+        height: 253.7,
+        sourceHeight: 401,
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-squashed')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-treated-as-directory')), (red.problems || []).join('\n'));
+
+  const missing = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+  });
+  assert.equal(missing.ok, false);
+  assert.ok(missing.problems.some((line) => line.includes('topbar-chrome-unmeasured')), (missing.problems || []).join('\n'));
+
+  const productStub = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 401,
+        sourceHeight: 401,
+      },
+    },
+  });
+  assert.equal(productStub.ok, false);
+  assert.ok(productStub.problems.some((line) => line.includes('topbar-chrome-unmeasured')), (productStub.problems || []).join('\n'));
+
+  const greenBar = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        kind: null,
+        yScale: NaN,
+        height: 401,
+        sourceHeight: 401,
+        nodes: {
+          'fix-1': { x: 0, y: 0, w: 736, h: 401 },
+        },
+      },
+    },
+  });
+  assert.equal(greenBar.ok, true, (greenBar.problems || []).join('\n'));
+
+  const probeFailed = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: { probeFailed: true, error: 'QA chrome page did not load' },
+    },
+  });
+  assert.equal(probeFailed.ok, false);
+  assert.ok(probeFailed.problems.some((line) => line.includes('topbar-chrome-probe-failed')), (probeFailed.problems || []).join('\n'));
+});
+
+test('QA chrome top-bar button move, missing slice, and copy change are red', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '顶部固定内容' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/顶部固定内容', pageBox: { x: 0, y: 0, w: 736, h: 401 } },
+      { id: 'fix-btn', status: 'determined', role: 'btn', name: 'btn/按钮', ancestorIds: ['fix-1'], parentId: 'fix-1', pageBox: { x: 370, y: 27, w: 310, h: 90 } },
+      { id: 'fix-copy', status: 'determined', role: 'copy', name: '官方充值', ancestorIds: ['fix-1', 'fix-btn'], parentId: 'fix-btn', pageBox: { x: 406, y: 59, w: 238, h: 27 }, text: { characters: '官方充值', fontSize: 24 } },
+      { id: 'fix-home', status: 'determined', role: 'img', name: 'img/按钮', ancestorIds: ['fix-1'], parentId: 'fix-1', pageBox: { x: 651, y: 98, w: 85, h: 85 }, sliceExport: { box: { x: 651, y: 98, w: 85, h: 85 }, file: 'home.png' } },
+    ],
+  };
+  const contract = chromeTopBarContract(inventory);
+  assert.deepEqual(contract.rootIds, ['fix-1']);
+  assert.ok(contract.nodeIds.includes('fix-btn'));
+  assert.ok(contract.nodeIds.includes('fix-copy'));
+  assert.ok(contract.nodeIds.includes('fix-home'));
+
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 401,
+        sourceHeight: 401,
+        nodes: {
+          'fix-1': { x: 0, y: 0, w: 736, h: 401 },
+          'fix-btn': { x: 480, y: 8, w: 310, h: 57 },
+          'fix-copy': { x: 406, y: 59, w: 238, h: 8, text: '充' },
+          'fix-home': {
+            x: 651, y: 98, w: 85, h: 85, hasImg: true, assetEmpty: false, assetW: 40, assetH: 40,
+            assetInkHash: 'aaa', assetInkEmpty: false,
+            assetSamples: [{ rgba: [10, 10, 10, 255] }],
+            screenSamples: [{ rgba: [10, 10, 10, 255] }],
+          },
+        },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-pageBox-mismatch')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-copy-mismatch')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-png-size-mismatch')), (red.problems || []).join('\n'));
+
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 401,
+        sourceHeight: 401,
+        nodes: {
+          'fix-1': { x: 0, y: 0, w: 736, h: 401 },
+          'fix-btn': { x: 370, y: 27, w: 310, h: 90 },
+          'fix-copy': { x: 406, y: 59, w: 238, h: 27, text: '官方充值' },
+          'fix-home': {
+            x: 651, y: 98, w: 85, h: 85, hasImg: true, assetEmpty: false, assetInkHash: 'aaa', assetInkEmpty: false,
+            assetSamples: [{ rgba: [10, 10, 10, 255] }],
+            screenSamples: [{ rgba: [10, 10, 10, 255] }],
+          },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('QA chrome stack, clip, color, weight, and portrait fix are red when they drift', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [
+      { id: 'fix-1', role: 'fix', pin: 'viewport', label: '顶部固定内容' },
+      { id: 'fix-side', role: 'fix', pin: 'viewport', label: '左侧目录' },
+    ],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/顶部固定内容', pageBox: { x: 0, y: 0, w: 736, h: 401 } },
+      {
+        id: 'fix-btn',
+        status: 'determined',
+        role: 'btn',
+        name: 'btn/按钮',
+        ancestorIds: ['fix-1'],
+        parentId: 'fix-1',
+        orderKey: '0.0.6.1',
+        clipsContent: true,
+        pageBox: { x: 370, y: 27, w: 310, h: 90 },
+      },
+      {
+        id: 'fix-copy',
+        status: 'determined',
+        role: 'copy',
+        name: '官方充值',
+        ancestorIds: ['fix-1', 'fix-btn'],
+        parentId: 'fix-btn',
+        orderKey: '0.0.6.1.1',
+        pageBox: { x: 406, y: 59, w: 238, h: 27 },
+        text: {
+          characters: '官方充值',
+          fontSize: 24,
+          fontWeight: 600,
+          color: { type: 'GRADIENT_LINEAR' },
+        },
+      },
+      {
+        id: 'fix-home',
+        status: 'determined',
+        role: 'img',
+        name: 'img/按钮',
+        ancestorIds: ['fix-1'],
+        parentId: 'fix-1',
+        orderKey: '0.0.6.4',
+        pageBox: { x: 651, y: 98, w: 85, h: 85 },
+        sliceExport: { box: { x: 651, y: 98, w: 85, h: 85 }, file: 'home.png' },
+      },
+      {
+        id: 'fix-side',
+        status: 'determined',
+        role: 'fix',
+        pin: 'viewport',
+        name: 'fix/左侧目录',
+        pageBox: { x: 0, y: 0, w: 80, h: 400 },
+      },
+      {
+        id: 'fix-side-btn',
+        status: 'determined',
+        role: 'btn',
+        name: 'btn/目录',
+        ancestorIds: ['fix-side'],
+        parentId: 'fix-side',
+        pageBox: { x: 8, y: 20, w: 64, h: 40 },
+      },
+    ],
+  };
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 }, 'fix-side': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 401,
+        sourceHeight: 401,
+        nodes: {
+          'fix-1': { x: 0, y: 0, w: 736, h: 401, overflow: 'visible', stackIndex: 0 },
+          'fix-btn': { x: 370, y: 27, w: 310, h: 90, overflow: 'visible', clips: false, stackIndex: 2 },
+          'fix-copy': {
+            x: 406, y: 59, w: 238, h: 27, text: '官方充值',
+            fontWeight: 400, color: 'rgb(0, 0, 0)', gradient: false, overflow: 'visible', stackIndex: 0,
+          },
+          'fix-home': {
+            x: 651, y: 98, w: 85, h: 85, hasImg: true, assetEmpty: false, assetW: 85, assetH: 85,
+            overflow: 'visible', stackIndex: 1, assetInkHash: 'aaa', assetInkEmpty: false,
+            assetSamples: [{ rgba: [10, 10, 10, 255] }],
+            screenSamples: [{ rgba: [10, 10, 10, 255] }],
+          },
+          'fix-side': { x: 0, y: 0, w: 80, h: 400, overflow: 'visible', stackIndex: 0 },
+          'fix-side-btn': { x: 40, y: 8, w: 64, h: 40, overflow: 'visible', stackIndex: 0 },
+        },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-clip-mismatch')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-fontWeight-mismatch')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-color-mismatch')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-stack-mismatch')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('fix-side-btn: topbar-chrome-pageBox-mismatch')), (red.problems || []).join('\n'));
+
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 }, 'fix-side': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 401,
+        sourceHeight: 401,
+        nodes: {
+          'fix-1': { x: 0, y: 0, w: 736, h: 401, overflow: 'visible', stackIndex: 0 },
+          'fix-btn': { x: 370, y: 27, w: 310, h: 90, overflow: 'hidden', clips: true, stackIndex: 1 },
+          'fix-copy': {
+            x: 406, y: 59, w: 238, h: 27, text: '官方充值',
+            fontWeight: 600, gradient: true, backgroundClip: 'text', overflow: 'visible', stackIndex: 0,
+          },
+          'fix-home': {
+            x: 651, y: 98, w: 85, h: 85, hasImg: true, assetEmpty: false, assetW: 85, assetH: 85,
+            overflow: 'visible', stackIndex: 2, assetInkHash: 'aaa', assetInkEmpty: false,
+            assetSamples: [{ rgba: [10, 10, 10, 255] }],
+            screenSamples: [{ rgba: [10, 10, 10, 255] }],
+          },
+          'fix-side': { x: 0, y: 0, w: 80, h: 400, overflow: 'visible', stackIndex: 0 },
+          'fix-side-btn': { x: 8, y: 20, w: 64, h: 40, overflow: 'visible', stackIndex: 0 },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('QA chrome PNG ink and non-copy gradient CSS fill are red when they drift', () => {
+  const ink = [
+    { x: 21, y: 21, rgba: [200, 180, 90, 255] },
+    { x: 42, y: 42, rgba: [180, 160, 70, 255] },
+    { x: 63, y: 63, rgba: [120, 90, 40, 255] },
+  ];
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '顶部固定内容' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/顶部固定内容', pageBox: { x: 0, y: 0, w: 736, h: 401 } },
+      {
+        id: 'fix-home',
+        status: 'determined',
+        role: 'img',
+        name: 'img/按钮',
+        ancestorIds: ['fix-1'],
+        parentId: 'fix-1',
+        pageBox: { x: 651, y: 98, w: 85, h: 85 },
+        sliceExport: { box: { x: 651, y: 98, w: 85, h: 85 }, file: 'home.png' },
+      },
+      {
+        id: 'fix-icon',
+        status: 'determined',
+        role: 'img',
+        name: 'img/icon',
+        ancestorIds: ['fix-1'],
+        parentId: 'fix-1',
+        pageBox: { x: 679, y: 59, w: 27, h: 27 },
+        sliceExport: { box: { x: 679, y: 59, w: 27, h: 27 }, file: 'icon.png' },
+        style: { fills: [{ type: 'GRADIENT_LINEAR', visible: true }] },
+      },
+    ],
+  };
+  const baseNodes = {
+    'fix-1': { x: 0, y: 0, w: 736, h: 401 },
+    'fix-home': {
+      x: 651, y: 98, w: 85, h: 85, hasImg: true, assetEmpty: false, assetW: 85, assetH: 85,
+      assetInkEmpty: false, assetInkHash: 'ink-a', assetSamples: ink, screenSamples: ink,
+    },
+    'fix-icon': {
+      x: 679, y: 59, w: 27, h: 27, hasImg: true, assetEmpty: false, assetW: 27, assetH: 27,
+      assetInkEmpty: false, assetInkHash: 'icon-a',
+      assetSamples: [{ rgba: [177, 194, 203, 180] }],
+      screenSamples: [{ rgba: [177, 194, 203, 180] }],
+      gradient: false, backgroundClip: 'border-box', webkitTextFillColor: 'rgb(230, 234, 240)', color: 'rgb(230, 234, 240)',
+    },
+  };
+  const productScrollOf = (nodes) => ({
+    overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+    overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+    scrolled: 1,
+    scrollTop: 400,
+    layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+    backgrounds: {},
+    samples: [],
+    seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+    chromeTopBar: { id: 'fix-1', navShell: false, topbar: true, height: 401, sourceHeight: 401, nodes },
+  });
+
+  const unmeasured = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: productScrollOf({
+      ...baseNodes,
+      'fix-home': { x: 651, y: 98, w: 85, h: 85, hasImg: true, assetEmpty: false, assetW: 85, assetH: 85 },
+    }),
+  });
+  assert.equal(unmeasured.ok, false);
+  assert.ok(unmeasured.problems.some((line) => line.includes('topbar-chrome-png-pixels-unmeasured')), (unmeasured.problems || []).join('\n'));
+
+  const swapped = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: productScrollOf({
+      ...baseNodes,
+      'fix-home': {
+        ...baseNodes['fix-home'],
+        assetSamples: ink,
+        screenSamples: [{ x: 21, y: 21, rgba: [0, 0, 0, 255] }, { x: 42, y: 42, rgba: [0, 0, 0, 255] }, { x: 63, y: 63, rgba: [0, 0, 0, 255] }],
+      },
+    }),
+  });
+  assert.equal(swapped.ok, false);
+  assert.ok(swapped.problems.some((line) => line.includes('topbar-chrome-png-pixels-mismatch')), (swapped.problems || []).join('\n'));
+
+  const solidIcon = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: productScrollOf({
+      ...baseNodes,
+      'fix-icon': {
+        ...baseNodes['fix-icon'],
+        hasImg: false,
+        gradient: false,
+        backgroundClip: 'border-box',
+        webkitTextFillColor: 'rgb(230, 234, 240)',
+        color: 'rgb(230, 234, 240)',
+      },
+    }),
+  });
+  assert.equal(solidIcon.ok, false);
+  assert.ok(solidIcon.problems.some((line) => line.includes('topbar-chrome-color-mismatch')), (solidIcon.problems || []).join('\n'));
+
+  const screenFailed = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: productScrollOf({
+      ...baseNodes,
+      'fix-home': {
+        ...baseNodes['fix-home'],
+        screenSamples: [],
+        screenSampleError: 'canvas tainted',
+      },
+    }),
+  });
+  assert.equal(screenFailed.ok, false);
+  assert.ok(screenFailed.problems.some((line) => line.includes('topbar-chrome-png-pixels-unmeasured')), (screenFailed.problems || []).join('\n'));
+
+  const fileOnly = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: productScrollOf({
+      ...baseNodes,
+      'fix-home': {
+        ...baseNodes['fix-home'],
+        screenSamples: [],
+      },
+    }),
+  });
+  assert.equal(fileOnly.ok, false);
+  assert.ok(fileOnly.problems.some((line) => line.includes('topbar-chrome-png-pixels-unmeasured')), (fileOnly.problems || []).join('\n'));
+
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: productScrollOf(baseNodes),
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
 test('product overlay stretched to viewport height is red', () => {
   const inventory = {
     schema: 'inventory/v2',
@@ -995,6 +1714,8 @@ test('product overlay stretched to viewport height is red', () => {
       layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'hidden' } },
       backgrounds: {},
       samples: [],
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(red.ok, false);
@@ -1016,6 +1737,8 @@ test('product overlay that stays position:fixed after scroll is red', () => {
       overlayDeltas: { 'fix-btn': { dTop: 40, dLeft: 0 } },
       scrolled: 1,
       scrollTop: 720,
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(red.ok, false);
@@ -1060,6 +1783,8 @@ test('play button 188 filling 228 is red', () => {
         polygonVertex: 'up',
         clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)',
       },
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(red.ok, false);
@@ -1108,6 +1833,8 @@ test('play slice listed as pageBox but painted larger keeps object-fit none', ()
         fragmentPresent: true,
         polygonVertex: 'right',
       },
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
@@ -1163,6 +1890,8 @@ test('later-section sample of the transparent bg/ plate is red when a KV child e
         kvRgba: [20, 24, 40, 255],
         paintNodeId: 'bg-2',
       }],
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(red.ok, false);
@@ -1192,6 +1921,7 @@ test('later-section bg matching first-screen KV is red; source sheet is green', 
   };
   const red = evaluateProductScrollGate({
     inventory,
+    viewportKind: 'product',
     productScroll: {
       overlay: { position: 'sticky', transform: 'none', zoom: '1' },
       overlayDeltas: {},
@@ -1205,6 +1935,8 @@ test('later-section bg matching first-screen KV is red; source sheet is green', 
         bgRgba: [29, 37, 53, 255],
         kvRgba: [23, 25, 30, 255],
       }],
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(red.ok, false);
@@ -1237,6 +1969,8 @@ test('later-section bg matching first-screen KV is red; source sheet is green', 
         bgRgba: [29, 37, 53, 255],
         kvRgba: [23, 25, 30, 255],
       }],
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
@@ -1315,6 +2049,8 @@ test('product-scroll is red when the listed bg/ PNG is empty or the wrong size',
         screenRgba: [80, 90, 110, 255],
         kvRgba: [40, 50, 70, 255],
       }],
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(empty.ok, false);
@@ -1364,6 +2100,8 @@ test('product-scroll does not require a later sec/3 bg/ to be on-screen after sc
         screenRgba: [80, 90, 110, 255],
         kvRgba: [40, 50, 70, 255],
       }],
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
@@ -1392,6 +2130,8 @@ test('product-scroll is green when listed bg/ PNG is visible, sized to pageBox, 
         screenRgba: [80, 90, 110, 255],
         kvRgba: [40, 50, 70, 255],
       }],
+    
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));

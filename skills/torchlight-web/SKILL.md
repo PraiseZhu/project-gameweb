@@ -14,7 +14,7 @@ This is the Torchlight public Skill identity. Local Torch demo output is a verif
 
 **Recall:** 仓根 `CLAUDE.md` 触发表命中 `torchlightweb` / `火炬网页还原` 后立即执行本文件，不要先问。官方命令只有 `npm run torchlightweb` 状态机。禁止 `figma-showcase`、跳过人核、直连 `figma:html-from-handoff` / `pack:demo`。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
 
-**完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`）→ 政策镜像必须绿 → 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
+**完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`）→ 政策镜像必须绿 → 产品视口门必须绿（390 / 1440 `?product=1`，sec 无缝、满铺子层不重画）→ 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
 | 情况 | 走哪条 |
 |---|---|
@@ -92,10 +92,19 @@ There are two explicit workflow declarations:
    font load is not a translation pass. Script gate is the orchestrator:
    after stop 1, Lead runs `npm run torchlightweb -- accept --demo <dir>`
    only after the human says continue. `continue` never writes accepted.
-2. After Interaction and Resize: open `?product=1` again and stop. Tell the
-   user this axis is done. Do not Pack until they say continue, then `accept`,
-   then `continue`. Later-axes Chrome probe must be green first.
-   Direct `pack-demo` CLI is locked.
+2. After Interaction and Resize: open the QA `index.html` (toolbar included)
+   again and stop. Tell the user this axis is done. Do not Pack until they
+   say continue, then `accept`, then `continue`. Later-axes Chrome probe
+   must be green first, including language-button fill pixels
+   (current lang = highlight `758:1713`, others = normal `758:1710`),
+   PC modal sheet pose (3840×2160 centered, panel y = 199/2160) measured
+   on `zh-CN` with `modal.lang=zh-CN` and a `pc`/`mobile` 适龄 `go`,
+   mobile modal inside the 390 sheet, close, and named-scroll
+   `scrollbarWidth` none. Every visible homepage `@go` opener must open
+   then close; a homepage `btn/` without `@go` must not open a modal.
+   Skip, unmeasured, leftover-en, missing `modal.lang`/`go`, missing
+   catalog, or fixture-without-mobile cannot go green.
+   Attribute green is not enough. Direct `pack-demo` CLI is locked.
 
 Do not open or present the page while `preview:first` is red. A red payload
 must set `productView.command` to null and must not include an open command.

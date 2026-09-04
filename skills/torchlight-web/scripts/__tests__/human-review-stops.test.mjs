@@ -53,6 +53,20 @@ test('first stop must be accepted before Interaction / Resize, second before Pac
   assert.equal(record.stops['interaction-and-resize'].accepted, true);
 });
 
+test('re-presenting stop 1 clears stop 2 signatures', () => {
+  const dir = demo();
+  assert.equal(presentStop(dir, 'static-and-translation', { previewOk: true }).ok, true);
+  assert.equal(acceptStop(dir, 'static-and-translation').ok, true);
+  assert.equal(presentStop(dir, 'interaction-and-resize', { previewOk: true }).ok, true);
+  const again = presentStop(dir, 'static-and-translation', { previewOk: true });
+  assert.equal(again.ok, true);
+  const record = JSON.parse(readFileSync(join(dir, 'human-review.json'), 'utf8'));
+  assert.equal(record.stops['static-and-translation'].presented, true);
+  assert.equal(record.stops['static-and-translation'].accepted, false);
+  assert.equal(record.stops['interaction-and-resize'].presented, false);
+  assert.equal(record.stops['interaction-and-resize'].accepted, false);
+});
+
 test('human-review CLI cannot present or accept; torchlightweb is the signature', () => {
   const dir = demo();
   const presented = spawnSync(process.execPath, [CLI, 'present', '--demo', dir, '--stop', 'static-and-translation', '--preview-ok'], {

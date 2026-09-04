@@ -34,14 +34,16 @@ identity transform and full opacity; returning to the top restores both.
   只有一个 sibling 且未重复列出 `sectionIds`（SS6 手机稿常见），该 sibling
   仍是内容 root，不得因此关掉 100vh 槽。
 
-首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 统一增加
-`max(0, slotDesignHeight - heroDesignHeight)` 的设计坐标偏移（`layoutOffsetDesign`），
-因此它们从实际 viewport 高度之后开始；长 `bg/*` 被裁掉的尾巴以 `bg-tail` 续画在
-偏移之后，页面背景跟着走，不会露出空带。KV/page chrome 与 fixed overlay 仍按
-原 sibling 顺序绘制。
+首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 的设计坐标偏移是
+`layoutOffsetDesign = max(0, slotDesignHeight - heroDesignHeight)`。100vh 比稿高时
+首屏舞台垫到槽高，sec/2 下移贴住新底。100vh 比稿矮时**不准裁**：首屏保持
+pageBox，后面的内容正常往下排，禁止把 CTA / 时间文案切掉。产品视口门量 section
+相接、首屏层高至少等于 pageBox（不够才垫到槽高），不是把内容裁进 100vh。
+长 `bg/*` 被裁掉的尾巴以 `bg-tail`
+续画在偏移之后。KV/page chrome 与 fixed overlay 仍按原 sibling 顺序绘制。
 
 Hero 的 cover 缩放只作用在 `bg/*` / `kv` 视觉层。长 `bg/*` 仍是清单里的一整张图，
-不切开；首屏只是把它裁进 100vh 窗口。首页 UI 的大小继续用平台宽度尺子 `k`，不跟着 cover 放大。
+不切开。100vh 只垫短 hero；稿比视口高时首屏保持 pageBox，cover 不得把 CTA / 时间 / 箭头裁没。首页 UI 的大小继续用平台宽度尺子 `k`，不跟着 cover 放大。
 上下位置通用分界（不写节点名）：稿里底边落在首屏上半部的块（顶栏按钮）按顶边比例钉住；
 底边落在下半部的块（首屏大标题、下载 CTA）按**底边**比例钉住——与首屏底边的距离和稿一致（正下方），
 不会被 `y×k` 抬到上半屏，也不会浮在中间。

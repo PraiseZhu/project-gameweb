@@ -32,10 +32,14 @@ test('heroUi stretch never moves pin=viewport fix descendants', () => {
   assert.match(renderer, /data-fix-pin="viewport"/);
   assert.match(renderer, /!pinViewport/);
   assert.match(renderer, /listedHeroArt/);
+  assert.match(renderer, /parentIsHeroSection/);
   assert.match(renderer, /fullBleedHeroArt/);
   assert.match(renderer, /fixedHost\.style\.position = 'sticky'/);
   assert.match(renderer, /fx-fixed-zoom/);
   assert.match(renderer, /isTopBarChrome/);
+  assert.match(renderer, /Number\(navRailBox\.w\) > Number\(navRailBox\.h\)/);
+  assert.match(renderer, /data-topbar-chrome/);
+  assert.doesNotMatch(renderer, /Number\(navRailBox\.w\) > Number\(navRailBox\.h\) \* 2/);
   assert.match(renderer, /fixedStage\.style\.transform = 'scale\(' \+ k \+ '\)'/);
   assert.doesNotMatch(renderer, /fixedHost\.style\.position = 'fixed'/);
   assert.doesNotMatch(renderer, /fixedStage\.style\.position = 'sticky'/);
@@ -48,6 +52,8 @@ test('product sticky overlay stays height 0 after viewport sync', () => {
   assert.match(chrome, /data-fix-pin-height', '0'/);
   assert.doesNotMatch(chrome, /targetDesignHeight \+ 'px'/);
   assert.match(chrome, /if \(!PRODUCT_VIEW\) syncHeroEntryNavigation/);
+  assert.match(chrome, /data-topbar-chrome/);
+  assert.match(chrome, /sourceWidth > sourceHeight/);
 });
 
 test('only listed sliceExport owners bake descendants; canvas exportBox is not placement', () => {
@@ -58,6 +64,8 @@ test('only listed sliceExport owners bake descendants; canvas exportBox is not p
   assert.match(renderer, /Canvas renderBox \(x≈-14000\)/);
   assert.match(renderer, /n\.sliceExport && assetRec/);
   assert.match(renderer, /assetLock: !!n\.sliceExport && !!assetRec/);
+  assert.match(renderer, /underFullBleedPlate/);
+  assert.match(renderer, /isFullBleedPlateOwner/);
 });
 
 test('platform-prefixed asset records keep bare-id exportBox geometry', () => {
@@ -218,7 +226,8 @@ test('hscroll host drag uses pointer capture and converts vertical wheel to scro
   assert.match(renderer, /setHscrollOffset\(drag\.surface, drag\.left - delta, drag\.host\)/);
   assert.match(renderer, /setHscrollOffset\(surface, hscrollOffsetOf\(surface\) \+ delta, host\)/);
   assert.match(renderer, /el\.style\.touchAction = 'pan-x'/);
-  assert.doesNotMatch(renderer, /el\.style\.touchAction = 'pan-y'/);
+  assert.match(renderer, /el\.style\.touchAction = 'pan-y'/);
+  assert.match(renderer, /data-scroll-axis', 'y'/);
   assert.match(renderer, /Native overflow-x[\s\S]*calendar left labels/s);
 });
 
@@ -306,6 +315,11 @@ test('hero cover scale stays on the hero slot, not the released page stage', () 
   assert.match(renderer, /data-kv-cover-plane/);
   assert.match(renderer, /data-hero-ui-plane/);
   assert.match(renderer, /stage\.style\.zoom = String\(pageStageMode \? pageStageScale : \(pageScope \? 1 : k\)\)/);
+  assert.match(renderer, /planeRatio > 1\.001/);
+  assert.match(renderer, /heroVisualPlane \|\| isKvOwner/);
+  assert.match(renderer, /const layerH = Math.max\(firstPageH, slotDesign\)/);
+  assert.match(renderer, /layer.style.height = layerH \+ 'px'/);
+  assert.doesNotMatch(renderer, /el\.style\.height = slotDesign \+ 'px'/);
 });
 
 test('page paint roots follow recorded pagePaintOrder locators on canvas-rooted snapshots', () => {
@@ -381,11 +395,12 @@ test('hscroll gutter expands host box and survives the generic box.h height over
 test('fx-img follows the owner box instead of intrinsic pixels', () => {
   /* 有 exportBox/sliceExport：按导出框像素摆。缩小导出的 PNG 必须 fill 铺满
      设计框，禁止 object-fit:none 把 intrinsic 像素钉死。简中无导出框：按
-     owner box 像素，禁止 100%+fill。 */
+     owner box 像素，禁止 100%+fill。简中有导出框时也保持 none，播放钮闸门
+     拒绝 fill。 */
   assert.match(renderer, /img\.style\.position = 'absolute'/);
   assert.match(renderer, /const placedBox = exportBox \|\| sliceBox/);
   assert.match(renderer, /owner-box-zh-cn/);
-  assert.match(renderer, /img\.style\.objectFit = spillsOwner \? 'none' : 'fill'/);
+  assert.match(renderer, /img\.style\.objectFit = \(spillsOwner \|\| matchesOwner\) \? 'none' : 'fill'/);
   assert.match(renderer, /img\.style\.objectFit = 'none'/);
   assert.match(renderer, /el\.style\.overflow = 'hidden'/);
   assert.match(renderer, /el\.style\.position = 'relative'/);
@@ -422,6 +437,11 @@ test('zh-CN static images must not stretch with object-fit fill', () => {
   assert.match(zhBlock[0], /img\.style\.width = \(box\.w \?\? 0\) \+ 'px'/);
   assert.match(zhBlock[0], /img\.style\.objectFit = 'none'/);
   assert.doesNotMatch(zhBlock[0], /objectFit = 'fill'/);
+});
+
+test('zh-CN listed play-slice exportBox also keeps object-fit none', () => {
+  assert.match(renderer, /img\.style\.objectFit = \(spillsOwner \|\| matchesOwner\) \? 'none' : 'fill'/);
+  assert.match(renderer, /Play-slice gate also rejects fill when the PNG already matches/);
 });
 
 test('auto-layout axis alignment fields flow from fixture into truth and feed the renderer flex model', () => {

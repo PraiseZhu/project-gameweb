@@ -257,6 +257,51 @@ test('ready-handoff slices listed sliceExport and visible IMAGE fills, not empty
   assert.deepEqual(picks.find((pick) => pick.nodeId === 'kv-unknown')?.exportBox, { x: 0, y: 0, w: 3840, h: 2143 });
 });
 
+test('IMAGE grandchildren under unnamed kv stay inside the whole-frame PNG', () => {
+  const picks = pickSliceNodes({
+    schema: 'yise-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    platforms: {
+      mobile: {
+        sections: {
+          'sec:1': {
+            nodes: [
+              {
+                id: '814:11943',
+                type: 'FRAME',
+                name: 'kv',
+                status: 'unknown',
+                pageBox: { x: 0, y: 0, w: 750, h: 1334 },
+                sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '814-11943.png', box: { x: 0, y: 0, w: 750, h: 1334 } },
+                style: { fills: [] },
+              },
+              {
+                id: '814:11945',
+                type: 'GROUP',
+                name: 'Mask group',
+                status: 'skipped',
+                parentId: '814:11943',
+                ancestorIds: ['814:11942', '814:11943'],
+              },
+              {
+                id: '814:11948',
+                type: 'RECTANGLE',
+                name: '赛季kv-0623-整理 2',
+                status: 'unknown',
+                parentId: '814:11945',
+                ancestorIds: ['814:11942', '814:11943', '814:11945'],
+                pageBox: { x: -425, y: 112, w: 1771, h: 992 },
+                style: { fills: [{ type: 'IMAGE', visible: true }] },
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+  assert.deepEqual(picks.map((pick) => pick.nodeId), ['814:11943']);
+});
+
 test('listed img/ time-bg and unnamed kv FRAME export the owner pageBox, not ink', () => {
   const truth = {
     schema: 'yise-ready-platform-truth/v1',
@@ -444,6 +489,12 @@ test('whole-frame box export requests use_absolute_bounds=true', () => {
   assert.deepEqual(timeBg?.exportBox, { x: 10, y: 20, w: 200, h: 300 });
 });
 
+test('full asset rebuild drops leftover IMAGE grandchildren from a previous manifest', () => {
+  const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
+  assert.match(src, /previous && onlySet\.size \? \{ \.\.\.previousAssets \} : \{\}/);
+  assert.match(src, /must not keep leftover IMAGE grandchildren/);
+});
+
 test('reuse-existing skips Figma fetch when the PNG is already on disk', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
   assert.match(src, /--reuse-existing/);
@@ -466,4 +517,11 @@ test('collapsed webp under 2KB keeps serving pngFile', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
   assert.match(src, /webpCollapsed/);
   assert.match(src, /hit\.bytes\) < 2048 && rec\.pngFile/);
+});
+
+test('ready-handoff truth lastModified is a designVersion fallback', () => {
+  const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
+  assert.match(src, /truth\.design\?\.fileVersion/);
+  assert.match(src, /truth\.source\?\.lastModified/);
+  assert.match(src, /truth\.source\?\.snapshotHash/);
 });

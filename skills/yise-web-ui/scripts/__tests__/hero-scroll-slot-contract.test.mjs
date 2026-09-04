@@ -79,3 +79,9 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.doesNotMatch(render, /const _rawH = meta\.height \?\? 0/);
   assert.doesNotMatch(render, /display\s*:\s*none[^\n]*hero/i);
 });
+
+test('QA shell does not rewrite logo to a hardcoded 840×300 overlay', () => {
+  const chrome = readFileSync(resolve('templates/figma-chrome.js'), 'utf8');
+  assert.doesNotMatch(chrome, /function syncHeroEntryBrand/);
+  assert.doesNotMatch(chrome, /840, 300/);
+});

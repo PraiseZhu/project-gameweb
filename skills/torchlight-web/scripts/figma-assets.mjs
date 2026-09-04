@@ -255,11 +255,19 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const listedSlice = Boolean(n.sliceExport) || isWholeFrameSliceNode(n);
       const hasImageFill = Array.isArray((n.style || {}).fills)
         && (n.style || {}).fills.some((f) => f && f.visible !== false && f.type === 'IMAGE');
+      const nodeAncestors = [
+        String(n.parentId || ''),
+        ...nodesOf(n.ancestorIds).map((id) => String(id)),
+        ...nodesOf(n.ownerPath).map((id) => String(id)),
+      ].filter(Boolean);
+      /* IMAGE under a whole-frame kv/bg/img owner is already in that PNG.
+         Direct parentId is not enough: masked grandchildren (814:11948 under
+         Mask group under kv) still bake into the owner. */
       const bakedIntoWholeFrame = !listedSlice && list.some((owner) =>
-        owner && isWholeFrameSliceNode(owner) && String(n.parentId) === String(owner.id));
+        owner && isWholeFrameSliceNode(owner) && nodeAncestors.includes(String(owner.id)));
       if (listedOnly) {
         /* Ready handoff: listed sliceExport owners, plus unnamed kv/bg/img
-           even when an older pack omitted sliceExport. IMAGE children under a
+           even when an older pack omitted sliceExport. IMAGE descendants under a
            whole-frame owner stay inside that PNG. */
         if (n.status === 'skipped') continue;
         if (bakedIntoWholeFrame) continue;
@@ -590,7 +598,10 @@ async function main() {
 
   const rawTruth = JSON.parse(readFileSync(truthPath, 'utf8'));
   const truth = unwrap(rawTruth);
-  const designVersion = truth.design?.fileVersion ?? null;
+  const designVersion = truth.design?.fileVersion
+    ?? truth.source?.lastModified
+    ?? truth.source?.snapshotHash
+    ?? null;
 
   let picks = pickSliceNodes(truth, { minDim: spec.figma?.sliceMinDimPx ?? 24 });
   if (a.only && a.only.length) {
@@ -709,7 +720,10 @@ async function main() {
 
   // 2) 下载 + 记 sha256（清单是资产的可校验替代品：二进制没有 JSON locator）
   const onlySet = new Set(a.only || []);
-  const manifest = previous ? { ...previousAssets } : {};
+  /* Full pick (no --only) must not keep leftover IMAGE grandchildren that
+     used to be sliced and are now baked into a whole-frame kv/bg/img PNG.
+     --only still copies previous so a targeted refetch can patch one id. */
+  const manifest = previous && onlySet.size ? { ...previousAssets } : {};
   for (const id of onlySet) delete manifest[id];
   let bytes = previous ? Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0) : 0;
   const failed = [];

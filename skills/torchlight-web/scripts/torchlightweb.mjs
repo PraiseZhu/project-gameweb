@@ -97,7 +97,13 @@ function runChild(scriptRel, args, extra = {}) {
 }
 
 function buildMain({ handoffDir, demoDir }) {
-  return runChild('scripts/figma-html-from-handoff.mjs', ['--handoff', handoffDir, '--demo', demoDir], { timeout: 3600000 });
+  /* Re-running Main for an existing demo must reuse on-disk slices.
+     Hitting Figma again is not required to present stop 1. */
+  return runChild('scripts/figma-html-from-handoff.mjs', [
+    '--handoff', handoffDir,
+    '--demo', demoDir,
+    '--reuse-existing',
+  ], { timeout: 3600000 });
 }
 
 function packDemo({ demoDir }) {

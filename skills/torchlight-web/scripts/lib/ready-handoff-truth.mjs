@@ -290,10 +290,12 @@ export function readyPlatformTruth({ fingerprint, source, pc, mobile }) {
   const platforms = {};
   if (pc) platforms.pc = pc;
   if (mobile) platforms.mobile = mobile;
+  const fileVersion = source?.lastModified || source?.snapshotHash || fingerprint || null;
   return {
     schema: 'yise-ready-platform-truth/v1',
     fingerprint,
     source,
+    design: fileVersion ? { fileVersion } : undefined,
     platforms,
   };
 }

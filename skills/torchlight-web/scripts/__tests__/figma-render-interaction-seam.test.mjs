@@ -45,7 +45,10 @@ test('Main static leaves page clicks inert until Interaction opts in', () => {
   assert.match(renderer, /enablePageInteraction && !__motionCarouselOptIn && !frame\.__fxInteractionBridgeInstalled/);
   assert.match(renderer, /if \(!enablePageInteraction\) return;/);
   const shell = readFileSync(new URL('../../templates/demo-shell.html', import.meta.url), 'utf8');
-  assert.match(shell, /if \(ctx && ctx\.enablePageInteraction == null\) ctx\.enablePageInteraction = true;/);
+  assert.doesNotMatch(shell, /if \(ctx && ctx\.enablePageInteraction == null\) ctx\.enablePageInteraction = true;/);
+  const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
+  assert.match(chrome, /enablePageInteraction: !!PRODUCT_VIEW \|\| new URLSearchParams\(location\.search\)\.get\('interaction'\) === '1'/);
+  assert.doesNotMatch(chrome, /enablePageInteraction: !!PRODUCT_VIEW,/);
 });
 
 test('selected component tree keeps inner btn @go live', () => {
@@ -68,6 +71,58 @@ test('only language dropmenus consume inner btn as setPref lang', () => {
   assert.match(renderer, /frame\.__fxAssetScheduler\.prime\(target\)/);
   assert.match(renderer, /Open panel must sit above later sticky siblings/);
   assert.match(renderer, /owner\.style\.zIndex = '50'/);
+  assert.match(renderer, /ctx\.setPref === 'function'/);
+  assert.match(renderer, /qa && typeof qa\.setPref === 'function'/);
+});
+
+test('named modal pin fills the visible frame with an 80% black scrim', () => {
+  assert.match(renderer, /data-modal-scrim/);
+  assert.match(renderer, /rgba\(0,0,0,0\.8\)/);
+  assert.match(renderer, /host\.style\.zoom = '1'/);
+  assert.match(renderer, /data-modal-panel-box/);
+  assert.match(renderer, /visibleW \/ contentW, visibleH \/ contentH, 1/);
+  assert.match(renderer, /Fit and center the authored sheet/);
+  assert.match(renderer, /doc\.body\.appendChild\(host\)/);
+  assert.match(renderer, /frameRect\.left/);
+  assert.match(renderer, /panelFitsSheet/);
+  assert.match(renderer, /sheetFits \? designW : \(hasPanel \? panelW : designW\)/);
+  assert.doesNotMatch(renderer, /frameRect\.width \/ \(pageZoom \|\| 1\)/);
+});
+
+test('language dropmenu matches one option label, not the whole menu tree', () => {
+  assert.match(renderer, /dropmenuLangFromEvent/);
+  assert.match(renderer, /uniqueDropmenuLang/);
+  assert.match(renderer, /hits\.length === 1/);
+  assert.match(renderer, /syncLanguageDropmenuHighlight/);
+  assert.match(renderer, /optionLang === current \? 'highlight' : 'normal'/);
+  assert.match(renderer, /syncLanguageDropmenuHighlight\(owner, currentPageLang\(\)\)/);
+  assert.match(renderer, /frame\.__fxRenderPrefs = ctx\.prefs/);
+  assert.match(renderer, /Stale prefs\.lang=en after a language remount re-highlighted English/);
+  assert.match(renderer, /Paint the COMPONENT root fill onto the layer itself/);
+  assert.match(renderer, /data-btn-variant-fill-source/);
+  assert.match(renderer, /isText \? false : !active/);
+  assert.match(renderer, /paint\(treeNodes, treeNodes, layer, \{/);
+  assert.match(renderer, /skipNodeIds: new Set\(\[String\(__u\(root\.id\)\)\]\)/);
+  assert.doesNotMatch(renderer, /Hide the master TEXT while a variant layer is showing/);
+  assert.doesNotMatch(renderer, /dropmenuLangFromNode/);
+});
+
+test('named modal overlays close when either side is exclusive', () => {
+  assert.match(renderer, /exclusive: !\/\^\(\?:pc\|移动端\)\?视频弹窗\$\/\.test\(parsed\.label\)/);
+  assert.match(renderer, /entry\.exclusive \|\| other\.exclusive/);
+  assert.doesNotMatch(renderer, /entry\.exclusive && other\.exclusive/);
+});
+
+test('named modal paint keeps close and named scroll live', () => {
+  const marker = 'named modal paint is not defined';
+  const at = renderer.indexOf(marker);
+  const paintCall = renderer.slice(at, at + 900);
+  assert.match(paintCall, /suppressInteractions:\s*false/);
+  assert.match(renderer, /data-hscroll'\] === 'y'/);
+  assert.match(renderer, /overflowY = 'auto'/);
+  assert.match(renderer, /scrollbarWidth = 'none'/);
+  assert.match(renderer, /childOverflowsHostY/);
+  assert.match(renderer, /evidenceAttrs\['data-go'\] != null/);
 });
 
 test('renderer consumes pure direct-child interaction payload without raw switch classification', () => {

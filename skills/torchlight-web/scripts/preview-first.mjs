@@ -167,7 +167,7 @@ function collectPreviewMetrics(thresholds) {
     meaningfulSamples: meaningful.slice(0, 8),
     placeholder: /state=entry/.test(document.body && document.body.textContent || ''),
     hasRenderer: !!(window.__figmaRender && typeof window.__figmaRender.renderApp === 'function'),
-    hasQa: !!window.__qa,
+    hasQa: typeof window.__qa?.resize === 'function',
     contract: thresholds,
   };
 }

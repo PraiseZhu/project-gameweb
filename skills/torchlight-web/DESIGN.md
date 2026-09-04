@@ -106,7 +106,7 @@ openFlowNoShrink: true
 | 层 | 规则 | 证据 |
 |---|---|---|
 | 根尺子 | `html { font-size: calc(10vw * var(--moo-root-scale, 1)) }` → `1rem = 10vw`，`10rem = 100vw` | 默认 `height:5.4322916667rem` × 192px = 1043px，与 `max-width:1920px` 的 `height:1043px` 同一层。78 个默认 rem 尺寸里 74 个在 1920 上是整像素 |
-| 视口窗 | 背景槽 + UI 叠层都是字面 `height:100vh`；`#poster { overflow:hidden }` 裁溢出 | 现测各档 hero 高 = `innerHeight`；桌面 `--vh` 空 |
+| 视口窗 | 官方背景槽 + UI 叠层都是字面 `height:100vh`；`#poster { overflow:hidden }` 裁溢出 | 产品页**不跟这条裁切**：100vh 只给短于视口的 hero 垫高；稿比视口高时保持 pageBox，内容往下排，禁止把 CTA / 时间 / 箭头切掉 |
 | 切树 | 只有 `@media screen and (max-width: 1126px)` 写了 `display` | 245 个选择器里 5 条 display：none 51 / flex 23 / block 24，另加 flex 1 + block 1。`1920/1440/1024/750/650` 的 display = 0 |
 | 档内尺寸 | `>1920`：PC 列 `align-self:stretch`，随视口。`≤1920` 且仍是 PC 树：把默认 rem **冻成 px**（211 条，`width`/`height` rem 次数变 0；字号从 `calc(.15625rem * --moo-font-rem-scale)` 改成 `calc(30px * --moo-font-scale)` 等 31 条）。手机树：回到 rem，按当前 `10vw` 继续缩 | 1440 现测：背景 1440×900，PC 列 CSS 宽 1920 被裁。1126 现测：换手机树，列宽跟视口 |
 | 级联顺序 | `#main-style` 的 `@media` 按源码顺序叠：`192dpi → 1920 → 1440 → 1126 → 1024 → 750 → 650`。后档覆盖前档。1126 仍匹配 `max-width:1920px`，但 display:none 把 PC 列关掉 | 源码顺序；1126 块在 1920 块之后 |
@@ -124,9 +124,9 @@ openFlowNoShrink: true
 2. **PC 列宽**：`viewportW > 1920` → 列宽 = 视口（官方 stretch）。`1127 ≤ viewportW ≤ 1920` → 列按 **1920 设计宽** 排，超出视口的部分裁掉（官方冻 `1920px` + `#poster` hidden）。这一档水平尺锁死 `k = 1920/3840 = 0.5`。
 3. **切树**：`viewportW ≤ 1126` 换手机树。没有 pad 树。
 4. **手机列宽**：列宽 = 视口，`k = viewportW / 750`，继续 `10vw`。
-5. **首屏高**：背景槽和 UI 叠层都 = `innerHeight`。UI 底边钉在槽底。
+5. **首屏高**：官方两层都 = `innerHeight`。产品页 100vh 只垫短 hero；稿高 > 视口时舞台保持 Figma pageBox，overflow 可见，后面的内容正常往下排。禁止把首屏 CTA / 时间 / 箭头裁进视口。
 6. **字号**：默认 `calc(Nrem * --moo-font-rem-scale)`（`.15625rem` = 30px @1920）。PC 冻宽档改 `calc(Npx * --moo-font-scale)`（现测 18/23/25/30）。手机树回到 rem。产品页用 Figma 字号 × 该档 `k`，不抄 31 条官方 calc。
-7. **背景**：cover-crop 进 `100vh` 窗。产品页用清单长 `bg/*`，不抄官方 PC/手机两张 URL。
+7. **背景**：KV / `bg/*` 仍按 cover 填视觉平面。产品页用清单长 `bg/*`，不抄官方 PC/手机两张 URL。cover 不得把首屏 UI 裁出视口外当消失；放不下就随 pageBox 往下滚。
 8. **锁缩放**：`width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`。
 9. **固定叠层**：官方另有 `position:fixed` 的顶栏 `.i_14pfw1l3`（`top:0;width:100%;justify-content:flex-end`）、底 CTA `.i_cwyomnms`、粒子 `.i_h6wakwff`。产品页对应 Figma overlay，不跟它们的 `vh`/`bottom` 季节补丁。
 
@@ -134,9 +134,9 @@ openFlowNoShrink: true
 
 | 视口宽 | 树 | 列宽 | UI 水平尺 | 背景窗 | 官方对应 |
 |---|---|---|---|---|---|
-| `>1920` | PC | `viewportW` | `k = viewportW / 3840` | `viewportW × 100vh`，cover 居中 | 默认 rem × 当前 10vw；列 stretch |
-| `1127–1920` | PC | **1920**，裁到视口 | **`k = 1920 / 3840 = 0.5`**（列内不再随视口变） | 视口宽 × `100vh`，cover 居中 | `@media (max-width:1920px)` 冻 px |
-| `0–1126` | 手机 | `viewportW` | `k = viewportW / 750` | 视口宽 × `100vh`，cover | `@media (max-width:1126px)` display 切树 + rem |
+| `>1920` | PC | `viewportW` | `k = viewportW / 3840` | 视口宽 × `max(pageBox, 100vh)`，cover 只填平面 | 默认 rem × 当前 10vw；列 stretch |
+| `1127–1920` | PC | **1920**，裁到视口 | **`k = 1920 / 3840 = 0.5`**（列内不再随视口变） | 视口宽 × `max(pageBox, 100vh)`，cover 只填平面 | `@media (max-width:1920px)` 冻 px |
+| `0–1126` | 手机 | `viewportW` | `k = viewportW / 750` | 视口宽 × `max(pageBox, 100vh)`，cover 只填平面 | `@media (max-width:1126px)` display 切树 + rem |
 
 现测对照（`html` 字号 = `10vw`；两层 hero 高 = `innerHeight`）：
 
@@ -230,8 +230,8 @@ openFlowNoShrink: true
 
 ### 5.3 三平面
 
-- bg / KV：cover-crop 进 `100vh` 窗。官方 PC `center center`；官方手机 `center 0`。产品页居中裁。不要和 UI 共用一个 transform。
-- UI：按 §5.0 的水平尺。Hero 底边钉在槽底（官方 `justify-content: flex-end`），禁止 `y×k` 抬到上半屏。
+- bg / KV：cover 填视觉平面。官方 PC `center center`；官方手机 `center 0`。产品页居中 cover，但**不准**用 100vh clip 把首屏 UI 裁没。不要和 UI 共用一个 transform。
+- UI：按 §5.0 的水平尺。短 hero 时底边钉在槽底（官方 `justify-content: flex-end`）；稿比视口高时按 Figma y 往下排，禁止 `y×k` 抬到上半屏，也禁止裁进 100vh。
 - 海 / K1：按源比例，居中裁。
 
 切图填满 Figma owner box（官方 `.widget-image>img { width:100%; height:100% }`），不按图片内在尺寸。
@@ -298,7 +298,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 - 完成标准原句。
 - `figma:from-handoff` 只验包、不写 HTML。
 - `kind=ready` 才吃；`unknown` 只画不接线。
-- Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=viewportW/750`。首屏两层 `100vh`。页面 `overflow-x: hidden`。
+- Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=viewportW/750`。首屏 100vh 只垫短稿，高稿保持 pageBox 往下排。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
 - zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。
 - 不把 inventory JSON 焊进本文件。不改 naming spec、Interaction / Pack / 语义换行。`_fitText` 与 extract 的 max 字段只按第 6.1 节改。

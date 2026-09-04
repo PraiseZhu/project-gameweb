@@ -765,7 +765,9 @@
     cfg.renderApp({ truth: TRUTH, rawTruth: RAW_TRUTH, prefs: renderPrefs, state: state, frame: container,
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
       interactionPayload: cfg.interactionPayload || null,
-      productView: !!PRODUCT_VIEW });
+      productView: !!PRODUCT_VIEW,
+      enablePageInteraction: !!PRODUCT_VIEW || new URLSearchParams(location.search).get('interaction') === '1',
+      setPref: applyPref });
   }
 
   /* 字体就绪回调：渲染层重量完缩字号后调这里，让读数（缩字号条数/字宽对账/缺字形）
@@ -1681,24 +1683,6 @@
     if (kind) el.setAttribute('data-hero-entry-nav-kind', kind);
   }
 
-  function syncHeroEntryBrand(stage) {
-    try {
-      var brands = frame.querySelectorAll('[data-motion-role="kvBrand"]');
-      for (var b = 0; b < brands.length; b++) {
-        var brand = brands[b];
-        if (stage && brand.parentElement !== stage) stage.appendChild(brand);
-        applyHeroEntryBox(brand, -22, 0, 840, 300, 'brand');
-        brand.style.pointerEvents = 'none';
-        brand.style.zIndex = '22';
-        var media = brand.querySelectorAll('img,canvas,video,.fx-img');
-        for (var m = 0; m < media.length; m++) {
-          applyHeroEntryBox(media[m], 0, 0, 840, 300, 'brand-media');
-          media[m].style.objectFit = 'fill';
-        }
-      }
-    } catch (e) { /* brand is optional for non-KV pages */ }
-  }
-
   function fixedNavigationGroupForRoot(root) {
     try {
       var groups = frame.__fxFixedNavigation || [];
@@ -1944,6 +1928,10 @@
     var nodes = frame.querySelectorAll('[data-motion-role="navigationFooter"], [data-nav-shell="true"]');
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
+      /* Landscape fix/顶部信息 is viewport chrome (官方充值 / 地球 / 官网),
+         not a left directory. Stretching it to 100vh squashes mobile 736×401
+         by 844/1334. Skip even if an old render still stamped nav-shell. */
+      if (node.getAttribute('data-topbar-chrome') === 'true') continue;
       var nested = false;
       for (var r = 0; r < roots.length; r++) {
         if (roots[r].contains(node)) { nested = true; break; }
@@ -1975,7 +1963,6 @@
         var stage = stages[s];
         var stageZoom = parseZoomValue(stage.style ? stage.style.zoom : null);
         if (!isFinite(stageZoom) || stageZoom <= 0) stageZoom = 1;
-        syncHeroEntryBrand(stage);
         var navRoots = typeof collectDirectoryRoots === 'function'
           ? collectDirectoryRoots(stage)
           : stage.querySelectorAll('[data-motion-role="navigationFooter"], [data-prefix="fix"]');
@@ -1991,6 +1978,8 @@
           if (!isFinite(sourceLeft) || !isFinite(sourceTop)
             || !isFinite(sourceWidth) || sourceWidth <= 0
             || !isFinite(sourceHeight) || sourceHeight <= 0) continue;
+          if (root.getAttribute('data-topbar-chrome') === 'true'
+            || sourceWidth > sourceHeight) continue;
           var sourceScaleY = stageZoom > 0 ? (yScale / stageZoom) : 1;
           if (!isFinite(sourceScaleY) || sourceScaleY <= 0) sourceScaleY = 1;
           /* Items belong to exactly one nav root. Ready consumers may paint
@@ -2207,9 +2196,24 @@
   }
 
   /* ── 老师的 __qa 合约：verify.mjs 靠它驱动门 B/C/D/F，必须保住 ──
-     产品视图(?product=1)不暴露 __qa:QA 壳 = 工具区 + __qa API 所在的整个 chrome 运行时,
-     纯净渲染路径里两者都不该存在。 */
-  if (!PRODUCT_VIEW) window.__qa = {
+     产品视图(?product=1)不建控制栏、不读深链、不挂 current/goto/resize。
+     页上 dropmenu/多语言 仍要切整页语种，和工具栏 Language 同一条 persist+syncAll，
+     所以产品视图只暴露 setPref('lang')。 */
+  function applyPref(key, value) {
+    if (!cfg.matrix || !(key in ({ plat: 1, region: 1, os: 1, mode: 1, lang: 1 }))) {
+      throw new Error('__qa.setPref: 未声明的维度 ' + key);
+    }
+    if (key === 'plat') syncDeviceToPlat(value);
+    S.prefs[key] = value; persist(); syncAll();
+  }
+  if (PRODUCT_VIEW) {
+    window.__qa = {
+      setPref: function (key, value) {
+        if (key !== 'lang') throw new Error('product view setPref only accepts lang');
+        applyPref(key, value);
+      },
+    };
+  } else window.__qa = {
     current: function () { return S.state; },
     goto: function (id) {
       if (!cfg.states[id] && !(cfg.tabStates || []).some(function (t) { return t.id === id; })) {
@@ -2222,16 +2226,7 @@
        （matrix 仅 any/default 单选项、渲染层不消费），故不设可见分段控件；但 case
        自动化仍要能把它们写进 prefs 走完整校验链，走这个正式 API 而非点不可见 DOM。
        只许写 cfg.matrix 已声明的 key；写后 persist+syncAll 让 case 持久化与读数一致。 */
-    setPref: function (key, value) {
-      if (!cfg.matrix || !(key in ({ plat: 1, region: 1, os: 1, mode: 1, lang: 1 }))) {
-        throw new Error('__qa.setPref: 未声明的维度 ' + key);
-      }
-      /* Platform is a geometry preference: use the same device-routing path as
-         the visible platform buttons, otherwise syncAll immediately derives PC
-         again from the old device viewport. */
-      if (key === 'plat') syncDeviceToPlat(value);
-      S.prefs[key] = value; persist(); syncAll();
-    },
+    setPref: applyPref,
     scale: function () { return typeof cfg.scale === 'function' ? cfg.scale.call(cfg) : 1; },
     supports: function () { return cfg.supports || {}; },
     resize: function (w, h) { S.freeW = clampViewportW(w); S.freeH = clampViewportH(h); S.devIdx = -1; syncAll(); },

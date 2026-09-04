@@ -374,6 +374,19 @@ test('routed requested weight: zh-CN keeps source 700 (no re-route)', () => {
   assert.equal(out.weight.status, 'requested-weight');
 });
 
+test('renderer runFit forwards Auto Layout maxWidth/maxHeight into _fitText', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  assert.match(
+    src,
+    /this\._fitText\(c\.el, c\.tx, c\.box, \{ widthFit: c\.widthFit, heightFit: c\.heightFit, maxWidth: c\.maxWidth, maxHeight: c\.maxHeight, sourceTitleInlineSafe: c\.sourceTitleInlineSafe, semanticBreak: c\.semanticBreak \}\)/,
+  );
+  assert.doesNotMatch(
+    src,
+    /this\._fitText\(c\.el, c\.tx, c\.box, \{ widthFit: c\.widthFit, heightFit: c\.heightFit, sourceTitleInlineSafe: c\.sourceTitleInlineSafe, semanticBreak: c\.semanticBreak \}\)/,
+  );
+});
+
 test('routed requested weight: genuine synthetic still detected when routed weight unavailable', () => {
   // 若路由后请求的字重字体文件里真没有（如路由到某字体但该字体缺 500），仍应如实报 synthetic。
   const out = classifyTypographyRange({

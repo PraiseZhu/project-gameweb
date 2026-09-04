@@ -602,6 +602,84 @@ test('renderer enqueue requires written Auto Layout max, not semanticBreak or ow
   assert.match(src, /if \(!c\.groupKey \|\| c\.semanticBreak\) continue;/);
 });
 
+test('renderer runFit forwards Auto Layout maxWidth/maxHeight into _fitText', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  assert.match(src, /maxWidth: alOwner\.maxWidth/);
+  assert.match(src, /maxHeight: alOwner\.maxHeight/);
+  assert.match(
+    src,
+    /this\._fitText\(c\.el, c\.tx, c\.box, \{ widthFit: c\.widthFit, heightFit: c\.heightFit, maxWidth: c\.maxWidth, maxHeight: c\.maxHeight, sourceTitleInlineSafe: c\.sourceTitleInlineSafe, semanticBreak: c\.semanticBreak \}\)/,
+  );
+  assert.doesNotMatch(
+    src,
+    /this\._fitText\(c\.el, c\.tx, c\.box, \{ widthFit: c\.widthFit, heightFit: c\.heightFit, sourceTitleInlineSafe: c\.sourceTitleInlineSafe, semanticBreak: c\.semanticBreak \}\)/,
+  );
+});
+
+test('renderer fit uses FONT_SIZE_% lineHeightPercent when lineHeightPx is omitted', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  assert.match(src, /_resolvedLineHeight\(tx, fontSize\)/);
+  assert.match(src, /tx && tx\.lineHeightPercent/);
+  assert.match(src, /this\._resolvedLineHeight\(tx, fs\)/);
+  assert.match(src, /this\._realignTranslatedClipText\(c\.el, c\.box\)/);
+  assert.match(src, /data-fit-clip-realign/);
+  assert.match(src, /data-fit-source-top/);
+  assert.match(src, /if \(!el\.getAttribute\('data-fit-px'\)\) return;/);
+  assert.match(src, /storedRaw == null \|\| storedRaw === '' \? NaN : Number\(storedRaw\)/);
+  assert.match(src, /scrollWidth\/Height repeat a min-content/);
+  assert.match(src, /el\.style\.minHeight = '0px'/);
+});
+
+test('6.1 C long English against written maxWidth shrinks instead of overflowing', () => {
+  const glyphWidthAt = (fontSize) => fontSize * 18;
+  const maxWidth = 460;
+  const spilled = glyphWidthAt(46);
+  assert.ok(spilled > maxWidth, 'PRE-REGISTER NOW at source size must exceed the CTA max');
+  const out = integerPxFit({
+    baseFontSize: 46,
+    baseLineHeight: 46,
+    maxWidth,
+    measure: ({ fontSize }) => ({ width: glyphWidthAt(fontSize), height: fontSize }),
+  });
+  assert.equal(out.shrunk, true);
+  assert.equal(out.reason, 'integer-px');
+  assert.ok(out.fontSize < 46);
+  assert.ok(glyphWidthAt(out.fontSize) <= maxWidth + 0.5);
+  const droppedCaps = integerPxFit({
+    baseFontSize: 46,
+    baseLineHeight: 46,
+    measure: ({ fontSize }) => ({ width: glyphWidthAt(fontSize), height: fontSize }),
+  });
+  assert.equal(droppedCaps.shrunk, false);
+  assert.equal(droppedCaps.reason, 'no-cap');
+  assert.equal(droppedCaps.fontSize, 46);
+});
+
+test('6.1 C carnival English against written maxHeight shrinks instead of clipping the last line', () => {
+  const maxHeight = 250;
+  const sourceFs = 32;
+  const sourceLh = sourceFs * 112.69999742507935 / 100;
+  const englishLinesAt = (fontSize, lineHeight) => {
+    const lines = fontSize >= 31 ? 8 : 7;
+    return { width: 1954, height: lines * lineHeight };
+  };
+  const spilled = englishLinesAt(sourceFs, sourceLh);
+  assert.ok(spilled.height > maxHeight, '8 English lines at 32px must exceed the written 250 maxHeight');
+  const out = integerPxFit({
+    baseFontSize: sourceFs,
+    baseLineHeight: sourceLh,
+    maxHeight,
+    measure: ({ fontSize, lineHeight }) => englishLinesAt(fontSize, lineHeight),
+  });
+  assert.equal(out.shrunk, true);
+  assert.equal(out.reason, 'integer-px');
+  assert.ok(out.fontSize < sourceFs);
+  const fitted = englishLinesAt(out.fontSize, out.lineHeight);
+  assert.ok(fitted.height <= maxHeight + 0.5);
+});
+
 test('ellipsis or clip is not a fit pass', () => {
   const result = classifyTypographyRange({
     truth: { text: { fontWeight: 400, autoResize: 'HEIGHT', fontSize: 20, lineHeight: 24 } },

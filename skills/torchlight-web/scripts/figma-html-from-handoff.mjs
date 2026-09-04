@@ -314,7 +314,7 @@ export function buildHtmlFromHandoff({
     consume,
     htmlVolume,
     note: 'unknown 只画不接线。skipped 不画。preview-first 与清单对账绿之前禁止给人打开产品视图，禁止开 Interaction / Resize。',
-    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → policy mirror must be green → then show ?product=1. Stop at Main static.',
+    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → policy mirror must be green → product viewport gate must be green (390 / 1440 ?product=1, section abut, no full-bleed child repaint) → then show ?product=1. Stop at Main static.',
   };
 
   if (skipPreview) {
@@ -425,6 +425,30 @@ function attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, 
       asArray(gate?.problems),
     );
   }
+  const productGates = platforms.map((platform) => runInventoryStaticGate({
+    handoffDir,
+    platform,
+    lang: 'zh-CN',
+    viewportKind: 'product',
+    probe: staticGateProbe || (skipPreview
+      ? failClosedStaticGateProbe(demoDir)
+      : defaultStaticGateProbe(demoDir, handoffDir, platform, 'product')),
+  }));
+  const productGate = {
+    ok: productGates.every((item) => item?.ok === true),
+    skipped: productGates.some((item) => item?.skipped === true),
+    platforms: Object.fromEntries(platforms.map((platform, index) => [platform, productGates[index]])),
+    problems: productGates.flatMap((item, index) => asArray(item?.problems).map((problem) => `${platforms[index]}: ${problem}`)),
+    failureCount: productGates.reduce((sum, item) => sum + Number(item?.failureCount || 0), 0),
+  };
+  payload.productViewportGate = productGate;
+  if (!productGate || productGate.ok !== true) {
+    return blockProductView(
+      payload,
+      'product-viewport-gate red; do not open product view, do not start Interaction / Resize',
+      asArray(productGate?.problems),
+    );
+  }
   if (skipPreview) {
     return blockProductView(payload, 'preview-first skipped; product view not allowed');
   }
@@ -452,7 +476,7 @@ function failClosedStaticGateProbe(demoDir) {
   };
 }
 
-function defaultStaticGateProbe(demoDir, handoffDir, platform) {
+function defaultStaticGateProbe(demoDir, handoffDir, platform, viewportKind = 'design') {
   return () => {
     if (!existsSync(join(demoDir, 'index.html'))) {
       throw new Error('demo index.html missing; cannot measure DOM');
@@ -466,6 +490,7 @@ function defaultStaticGateProbe(demoDir, handoffDir, platform) {
       '--handoff', handoffDir,
       '--platform', platform || 'pc',
       '--lang', 'zh-CN',
+      '--viewport', viewportKind,
     ], { timeout: 180000 });
     const text = String(res.stdout || '').trim();
     const start = text.indexOf('{');
