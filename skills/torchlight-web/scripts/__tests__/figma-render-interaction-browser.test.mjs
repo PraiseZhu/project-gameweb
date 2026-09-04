@@ -218,31 +218,53 @@ browserTest('browser named close button and img/关闭按钮 close the host moda
     const opened = await page.evaluate(() => {
       const modal = document.querySelector('[data-modal-name="订阅赛季日程"]');
       const host = modal && modal.parentElement;
+      const scrim = host && host.querySelector('[data-modal-scrim="true"]');
+      const frame = document.querySelector('.frame');
       return {
         open: modal && modal.getAttribute('data-modal-open'),
         hidden: modal && modal.hidden,
-        hostFixed: host && host.style.position,
+        hostPosition: host && host.style.position,
+        hostZoom: host && host.style.zoom,
+        layerZoom: modal && modal.style.zoom,
+        fill: host && host.getAttribute('data-modal-fill'),
+        scrim: scrim && scrim.style.background.replace(/\s+/g, ''),
+        scrollLock: frame && frame.getAttribute('data-modal-scroll-lock'),
         closeBtn: !!document.querySelector('[data-btn-name="关闭按钮"]'),
         closeImg: !!document.querySelector('[data-name="img/关闭按钮"]'),
       };
     });
     assert.equal(opened.open, 'true');
     assert.equal(opened.hidden, false);
-    assert.equal(opened.hostFixed, 'fixed');
+    assert.equal(opened.hostPosition, 'absolute');
+    assert.equal(opened.hostZoom, '1');
+    assert.equal(opened.layerZoom, '1');
+    assert.equal(opened.fill, 'cover');
+    assert.equal(opened.scrim, 'rgba(0,0,0,0.8)');
+    assert.equal(opened.scrollLock, 'true');
     assert.equal(opened.closeBtn, true);
     await page.evaluate(() => document.querySelector('[data-name="img/关闭按钮"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
     const closed = await page.evaluate(() => {
       const modal = document.querySelector('[data-modal-name="订阅赛季日程"]');
       const host = modal && modal.parentElement;
+      const frame = document.querySelector('.frame');
       return {
         open: modal && modal.getAttribute('data-modal-open'),
         hidden: modal && modal.hidden,
-        hostFixed: host && host.style.position,
+        hostPosition: host && host.style.position,
+        hostZoom: host && host.style.zoom,
+        pageScale: frame && frame.getAttribute('data-hero-page-scale'),
+        fill: host && host.getAttribute('data-modal-fill'),
+        scrim: host && !!host.querySelector('[data-modal-scrim="true"]'),
+        scrollLock: frame && frame.getAttribute('data-modal-scroll-lock'),
       };
     });
     assert.equal(closed.open, null);
     assert.equal(closed.hidden, true);
-    assert.equal(closed.hostFixed, 'absolute');
+    assert.equal(closed.hostPosition, 'absolute');
+    assert.equal(closed.hostZoom, closed.pageScale || '1');
+    assert.equal(closed.fill, null);
+    assert.equal(closed.scrim, false);
+    assert.equal(closed.scrollLock, null);
   } finally {
     await browser.close();
   }
