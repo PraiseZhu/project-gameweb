@@ -1020,6 +1020,132 @@ browserTest('browser language dropmenu option calls setPref lang', async () => {
     await browser.close();
   }
 });
+browserTest('browser hero visual scrub applies translate and opacity', async () => {
+  const { browser, page } = await setup();
+  try {
+    await page.evaluate(() => {
+      const frame = document.querySelector('.frame');
+      frame.style.cssText = 'height:300px;overflow:auto;position:relative';
+      const hero = document.createElement('div');
+      hero.setAttribute('data-hero-slot-role', 'hero');
+      hero.style.cssText = 'height:400px';
+      const spacer = document.createElement('div');
+      spacer.style.height = '800px';
+      frame.append(hero, spacer);
+      window.__figmaRender._installHeroScrollSlot(frame, {
+        stateVersion: 'hero-scroll-slot/v3',
+        releaseDistance: 200,
+      });
+    });
+    const top = await page.evaluate(() => {
+      const frame = document.querySelector('.frame');
+      const hero = frame.querySelector('[data-hero-slot-role="hero"]');
+      frame.scrollTop = 0;
+      frame.dispatchEvent(new Event('scroll'));
+      const y = Number.parseFloat(String(hero.style.translate).split(/\s+/)[1] || '0');
+      return {
+        state: frame.getAttribute('data-hero-scroll-state'),
+        progress: Number(frame.getAttribute('data-hero-scroll-progress')),
+        translateY: y,
+        opacity: Number(hero.style.opacity),
+      };
+    });
+    assert.equal(top.state, 'HERO_LOCKED');
+    assert.equal(top.progress, 0);
+    assert.equal(top.translateY, 0);
+    assert.equal(top.opacity, 1);
+    const partial = await page.evaluate(() => {
+      const frame = document.querySelector('.frame');
+      frame.scrollTop = 100;
+      frame.dispatchEvent(new Event('scroll'));
+      const hero = frame.querySelector('[data-hero-slot-role="hero"]');
+      const y = Number.parseFloat(String(hero.style.translate).split(/\s+/)[1] || '0');
+      return {
+        state: frame.getAttribute('data-hero-scroll-state'),
+        progress: Number(frame.getAttribute('data-hero-scroll-progress')),
+        translateY: y,
+        opacity: Number(hero.style.opacity),
+      };
+    });
+    assert.equal(partial.state, 'HERO_EXITING');
+    assert.ok(Math.abs(partial.progress - 0.5) < 0.01, JSON.stringify(partial));
+    assert.ok(Math.abs(partial.translateY + 3) < 0.05, JSON.stringify(partial));
+    assert.ok(Math.abs(partial.opacity - 0.92) < 0.001, JSON.stringify(partial));
+    const released = await page.evaluate(() => {
+      const frame = document.querySelector('.frame');
+      frame.scrollTop = 200;
+      frame.dispatchEvent(new Event('scroll'));
+      const hero = frame.querySelector('[data-hero-slot-role="hero"]');
+      const y = Number.parseFloat(String(hero.style.translate).split(/\s+/)[1] || '0');
+      return {
+        state: frame.getAttribute('data-hero-scroll-state'),
+        progress: Number(frame.getAttribute('data-hero-scroll-progress')),
+        translateY: y,
+        opacity: Number(hero.style.opacity),
+      };
+    });
+    assert.equal(released.state, 'CONTENT_RELEASED');
+    assert.equal(released.progress, 1);
+    assert.ok(Math.abs(released.translateY + 6) < 0.05, JSON.stringify(released));
+    assert.ok(Math.abs(released.opacity - 0.84) < 0.001, JSON.stringify(released));
+    const back = await page.evaluate(() => {
+      const frame = document.querySelector('.frame');
+      frame.scrollTop = 0;
+      frame.dispatchEvent(new Event('scroll'));
+      const hero = frame.querySelector('[data-hero-slot-role="hero"]');
+      const y = Number.parseFloat(String(hero.style.translate).split(/\s+/)[1] || '0');
+      return {
+        state: frame.getAttribute('data-hero-scroll-state'),
+        translateY: y,
+        opacity: Number(hero.style.opacity),
+      };
+    });
+    assert.equal(back.state, 'HERO_LOCKED');
+    assert.equal(back.translateY, 0);
+    assert.equal(back.opacity, 1);
+  } finally {
+    await browser.close();
+  }
+});
+browserTest('browser hero visual scrub stays identity under reduced motion', async () => {
+  const { browser, page } = await setup();
+  try {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.evaluate(() => {
+      const frame = document.querySelector('.frame');
+      frame.style.cssText = 'height:300px;overflow:auto;position:relative';
+      const hero = document.createElement('div');
+      hero.setAttribute('data-hero-slot-role', 'hero');
+      hero.style.cssText = 'height:400px';
+      const spacer = document.createElement('div');
+      spacer.style.height = '800px';
+      frame.append(hero, spacer);
+      window.__figmaRender._installHeroScrollSlot(frame, {
+        stateVersion: 'hero-scroll-slot/v3',
+        releaseDistance: 200,
+      });
+      frame.scrollTop = 100;
+      frame.dispatchEvent(new Event('scroll'));
+    });
+    const reduced = await page.evaluate(() => {
+      const frame = document.querySelector('.frame');
+      const hero = frame.querySelector('[data-hero-slot-role="hero"]');
+      const y = Number.parseFloat(String(hero.style.translate).split(/\s+/)[1] || '0');
+      return {
+        state: frame.getAttribute('data-hero-scroll-state'),
+        progress: Number(frame.getAttribute('data-hero-scroll-progress')),
+        translateY: Number.isFinite(y) ? y : 0,
+        opacity: Number(hero.style.opacity),
+      };
+    });
+    assert.equal(reduced.state, 'HERO_EXITING');
+    assert.ok(Math.abs(reduced.progress - 0.5) < 0.01, JSON.stringify(reduced));
+    assert.equal(reduced.translateY, 0);
+    assert.equal(reduced.opacity, 1);
+  } finally {
+    await browser.close();
+  }
+});
 void node;
 void buildRendererInteractionPayload;
 void resolve;

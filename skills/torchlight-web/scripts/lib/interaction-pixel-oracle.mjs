@@ -143,12 +143,19 @@ function modalLangGoOk(entry, { plat }) {
   return catalogGoMatchesPlat(entry.go, plat);
 }
 
-export function catalogGoMatchesPlat(go, plat) {
-  const text = String(go || '');
+export function catalogGoMatchesPlat(go, plat, { mountedNames = null } = {}) {
+  const text = String(go || '').replace(/^modal\//, '').trim();
   if (!text) return false;
-  if (plat === 'pc') return /(?:^|\/)(?:modal\/)?pc/i.test(text) && !/mobile/i.test(text);
-  if (plat === 'mobile') return /mobile/i.test(text);
-  return false;
+  if (plat !== 'pc' && plat !== 'mobile') return false;
+  /* Cross-platform labels stay out. Unprefixed same-platform names
+     (视频弹窗 / 顶部导航-1624尺寸 / 多语言按钮弹窗) are legal. */
+  if (plat === 'pc' && /mobile/i.test(text)) return false;
+  if (plat === 'mobile' && /(?:^|\/)pc(?![a-z])/i.test(text) && !/mobile/i.test(text)) return false;
+  if (Array.isArray(mountedNames) && mountedNames.length) {
+    const names = new Set(mountedNames.map((name) => String(name || '').replace(/^modal\//, '').trim()).filter(Boolean));
+    return names.has(text);
+  }
+  return true;
 }
 
 export function catalogOpenedGoMatches(go, openedGo) {
@@ -164,7 +171,8 @@ export function catalogEvidenceOk(catalog, { plat } = {}) {
   const openers = Array.isArray(catalog.openers) ? catalog.openers : [];
   if (!openers.length) return false;
   if (openers.some((row) => !measuredOk(row) || row.opened !== true || row.closed !== true)) return false;
-  if (openers.some((row) => !catalogGoMatchesPlat(row.go, wanted))) return false;
+  const mountedNames = Array.isArray(catalog.mountedNames) ? catalog.mountedNames : null;
+  if (openers.some((row) => !catalogGoMatchesPlat(row.go, wanted, { mountedNames }))) return false;
   if (openers.some((row) => !catalogOpenedGoMatches(row.go, row.openedGo))) return false;
   if (!measuredOk(catalog.inert)) return false;
   if (catalog.inert.openedModal === true) return false;

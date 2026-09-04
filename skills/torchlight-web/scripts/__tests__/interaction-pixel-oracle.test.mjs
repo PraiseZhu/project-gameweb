@@ -5,6 +5,7 @@ import {
   LANG_BTN_FILL,
   LANG_OPTION_PAGES,
   catalogEvidenceOk,
+  catalogGoMatchesPlat,
   catalogOpenedGoMatches,
   languageOptionVerdict,
   laterAxesPixelEvidenceComplete,
@@ -253,4 +254,38 @@ test('opener catalog measures duplicate @go and every inert homepage btn', () =>
   }, 'mobile');
   assert.equal(inertPartial.ok, false);
   assert.ok(inertPartial.problems.includes('mobile-inert-unmeasured'));
+});
+
+test('unprefixed same-platform homepage @go stays in the opener catalog', () => {
+  const src = readFileSync(new URL('../lib/later-axes-probe.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /wantedPlat === 'pc' && \(!\/\(\?:\\^|\\\/\)\(\?:modal\\\/\)\?pc\/i\.test\(go\)/);
+  assert.doesNotMatch(src, /wantedPlat === 'mobile' && !\/mobile\/i\.test\(go\)/);
+  assert.match(src, /Visible homepage @go is in-scope/);
+  assert.equal(catalogGoMatchesPlat('modal/视频弹窗', 'pc'), true);
+  assert.equal(catalogGoMatchesPlat('modal/顶部导航-1624尺寸', 'mobile'), true);
+  assert.equal(catalogGoMatchesPlat('modal/多语言按钮弹窗', 'mobile'), true);
+  assert.equal(catalogGoMatchesPlat('modal/pc适龄提示', 'pc'), true);
+  assert.equal(catalogGoMatchesPlat('modal/mobile适龄提示', 'pc'), false);
+  assert.equal(catalogGoMatchesPlat('modal/pc适龄提示', 'mobile'), false);
+  assert.equal(catalogGoMatchesPlat('modal/视频弹窗', 'pc', { mountedNames: ['视频弹窗', 'pc适龄提示'] }), true);
+  assert.equal(catalogGoMatchesPlat('modal/订阅赛季日程', 'pc', { mountedNames: ['视频弹窗'] }), false);
+  const video = catalogEvidenceOk({
+    ok: true, measured: true, skipped: false, plat: 'pc',
+    mountedNames: ['视频弹窗', 'pc适龄提示'],
+    openers: [{
+      go: 'modal/视频弹窗',
+      openedGo: '视频弹窗',
+      ok: true, measured: true, skipped: false, opened: true, closed: true,
+    }],
+    inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
+  }, { plat: 'pc' });
+  assert.equal(video, true);
+  const scored = scoreOpenerCatalog({
+    plat: 'pc',
+    mountedNames: ['视频弹窗'],
+    openers: [{ go: 'modal/视频弹窗', opened: true, closed: true, openedGo: '视频弹窗' }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'pc');
+  assert.equal(scored.ok, true);
+  assert.equal(scored.openers[0].matched, true);
 });

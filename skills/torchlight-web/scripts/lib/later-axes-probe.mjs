@@ -288,12 +288,18 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       const still = document.querySelector('[data-modal-open="true"]');
       return !still || still.hidden || still.getAttribute('data-modal-open') !== 'true';
     };
+    const mountedNames = [...document.querySelectorAll('[data-modal-name], [data-name^="modal/"]')]
+      .map((el) => el.getAttribute('data-modal-name') || String(el.getAttribute('data-name') || '').replace(/^modal\//, ''))
+      .filter(Boolean);
     const homepage = [...document.querySelectorAll('[data-go]')].filter((el) => {
       if (!visible(el)) return false;
       if (el.closest('[data-modal-open], [data-prefix="modal"], [data-name^="modal/"]')) return false;
       const go = el.getAttribute('data-go') || '';
-      if (wantedPlat === 'pc' && (!/(?:^|\/)(?:modal\/)?pc/i.test(go) || /mobile/i.test(go))) return false;
-      if (wantedPlat === 'mobile' && !/mobile/i.test(go)) return false;
+      if (!go) return false;
+      /* Visible homepage @go is in-scope. Do not guess platform from the go
+         label. A mobile-labelled go on PC (or pc on mobile) is the other tree. */
+      if (wantedPlat === 'pc' && /mobile/i.test(go)) return false;
+      if (wantedPlat === 'mobile' && /(?:^|\/)(?:modal\/)?pc(?![a-z])/i.test(go) && !/mobile/i.test(go)) return false;
       return true;
     });
     const openers = [];
@@ -332,13 +338,14 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
         break;
       }
     }
-    return { plat: wantedPlat, openers, inert: { openedModal, clicked, visible: inertCandidates.length } };
+    return { plat: wantedPlat, openers, mountedNames, inert: { openedModal, clicked, visible: inertCandidates.length } };
   }, plat);
   return scoreOpenerCatalog(measured, plat);
 }
 
 export function scoreOpenerCatalog(raw, plat) {
   const platKey = raw?.plat || plat;
+  const mountedNames = Array.isArray(raw?.mountedNames) ? raw.mountedNames : null;
   const openers = (Array.isArray(raw?.openers) ? raw.openers : []).map((row) => {
     const matched = Boolean(row.opened) && catalogOpenedGoMatches(row.go, row.openedGo);
     return {
@@ -371,6 +378,7 @@ export function scoreOpenerCatalog(raw, plat) {
     problems,
     plat: platKey,
     openers,
+    mountedNames,
     inert: {
       ok: !inertOpened,
       measured: true,

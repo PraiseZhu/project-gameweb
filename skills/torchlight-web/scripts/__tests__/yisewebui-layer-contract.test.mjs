@@ -199,6 +199,7 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   assert.match(oracle, /modalLangGoOk/);
   assert.match(oracle, /catalogEvidenceOk/);
   assert.match(oracle, /catalogGoMatchesPlat/);
+  assert.match(oracle, /Unprefixed same-platform names/);
   assert.match(oracle, /catalogOpenedGoMatches/);
   assert.match(probe, /catalogOpenedGoMatches/);
   assert.match(probe, /scoreOpenerCatalog/);

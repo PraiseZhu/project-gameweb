@@ -1731,8 +1731,8 @@
         const offset = (-6 * progress).toFixed(3);
         const opacity = (1 - (0.16 * progress)).toFixed(4);
         heroStage.style.transformOrigin = '50% 0';
-        heroStage.style.translate = '0 0';
-        heroStage.style.opacity = '1';
+        heroStage.style.translate = reduce ? '0 0' : '0 ' + offset + '%';
+        heroStage.style.opacity = reduce ? '1' : opacity;
         heroStage.style.transition = reduce ? 'none' : 'translate 180ms linear, opacity 180ms linear';
         heroStage.style.willChange = reduce ? 'auto' : 'translate, opacity';
         heroStage.setAttribute('data-hero-visual-motion', 'scroll-scrub-generic-unverified');
