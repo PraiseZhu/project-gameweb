@@ -252,3 +252,501 @@ test('copy coverage: 表叶子 + contextual 证据齐全才通过', () => {
   assert.equal(out.ok, true);
   assert.equal(out.contextualCount, 1);
 });
+
+test('extractCopy: one table sentence can occupy adjacent time and title TEXT layers', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' } },
+    rows: {
+      26: {
+        'zh-CN': '16:30 主创演讲\n16:50 现场提问&主创答疑',
+        en: '1:30 AM PDT: Developer Talk\n1:50 AM PDT: Q&A',
+        'zh-TW': '16:30 開發團隊分享\n16:50 Q&A 問答',
+      },
+    },
+  };
+  const pc = [
+    { nodeId: 'T1', name: 'time', characters: '16:30', parentId: 'row1', orderKey: '1.0' },
+    { nodeId: 'N1', name: 'title', characters: '主创演讲', parentId: 'row1', orderKey: '1.1' },
+    { nodeId: 'T2', name: 'time', characters: '16:50', parentId: 'row2', orderKey: '2.0' },
+    { nodeId: 'N2', name: 'title', characters: '现场提问&主创答疑', parentId: 'row2', orderKey: '2.1' },
+  ];
+  const mobile = [
+    { nodeId: 'N1m', name: 'title', characters: '主创演讲', parentId: 'm1', orderKey: '1.1' },
+    { nodeId: 'T1m', name: 'time', characters: '16:30', parentId: 'm1', orderKey: '1.2' },
+    { nodeId: 'N2m', name: 'title', characters: '现场提问&主创答疑', parentId: 'm2', orderKey: '2.1' },
+    { nodeId: 'T2m', name: 'time', characters: '16:50', parentId: 'm2', orderKey: '2.2' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const outPc = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts: pc });
+  assert.equal(outPc.byNode.T1.matchKind, 'cell-split');
+  assert.equal(String(outPc.byNode.T1.row), '26');
+  assert.equal(outPc.byNode.T1.translations.en.value, '1:30');
+  assert.equal(outPc.byNode.N1.translations.en.value, 'AM PDT: Developer Talk');
+  assert.equal(outPc.byNode.N2.translations['zh-TW'].value, 'Q&A 問答');
+  const outMobile = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts: mobile });
+  assert.equal(outMobile.byNode.N1m.matchKind, 'cell-split');
+  assert.equal(outMobile.byNode.T1m.translations.en.value, '1:30');
+  assert.equal(outMobile.byNode.N1m.translations.en.value, 'AM PDT: Developer Talk');
+  assert.equal(outMobile.report.none, 0);
+});
+
+test('extractCopy: designated nodeRow wins over cell-split row but keeps split parts', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      7: {
+        'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
+        en: 'Afterlight\nNew Season Preview',
+      },
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW\nSEASON LAUNCH',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'T1', name: 'title', characters: '赛季前瞻直面会', parentId: 'hero', orderKey: '1' },
+    { nodeId: 'T2', name: 'tag', characters: 'SS13守夜人', parentId: 'hero', orderKey: '2' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const overlay = { nodeRow: { T2: { row: 8, why: 'review fixture: designated beats cell-split' } } };
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.T2.matchKind, 'designated');
+  assert.equal(String(out.byNode.T2.row), '8');
+  assert.equal(out.byNode.T2.translations.en.value, 'SEASON LAUNCH');
+  assert.equal(out.byNode.T2.cellSplit.lineIndex, 1);
+  assert.equal(out.byNode.T2.cellSplit.lineCount, 2);
+  assert.equal(out.byNode.T1.matchKind, 'cell-split');
+  assert.equal(String(out.byNode.T1.row), '7');
+  const without = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(without.byNode.T2.matchKind, 'cell-split');
+  assert.equal(String(without.byNode.T2.row), '7');
+});
+
+test('extractCopy: one visible TEXT can bind one line of a newline cell', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      7: {
+        'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
+        en: 'Afterlight\nNew Season Preview',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'T', name: 'tag', characters: 'SS13守夜人', parentId: 'hero', orderKey: '1' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.T.matchKind, 'cell-split');
+  assert.equal(String(out.byNode.T.row), '7');
+  assert.equal(out.byNode.T.translations.en.value, 'New Season Preview');
+});
+
+test('extractCopy: leftover siblings after a cell-split group do not block the match', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW\nSEASON LAUNCH',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'A', name: 'line1', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p', orderKey: '1' },
+    { nodeId: 'B', name: 'line2', characters: '赛季开启时间：7月17日 10:00', parentId: 'p', orderKey: '2' },
+    { nodeId: 'C', name: 'tag', characters: 'SS13守夜人', parentId: 'p', orderKey: '3' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.A.matchKind, 'cell-split');
+  assert.equal(out.byNode.B.matchKind, 'cell-split');
+  assert.equal(out.byNode.C.matchKind, 'none');
+});
+
+test('extractCopy: table cell newlines bind consecutive sibling TEXT layers', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', J: 'ko' } },
+    rows: {
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW: July 11, 10 AM PDT\nSEASON LAUNCH: July 16, 7 PM PDT',
+        ko: '시즌 프리뷰 방송시간 : 7월11일(토) 20:00\n시즌 오픈 시간 : 7월17일(금) 11:00',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'A', name: 'line1', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p', orderKey: '1' },
+    { nodeId: 'B', name: 'line2', characters: '赛季开启时间：7月17日 10:00', parentId: 'p', orderKey: '2' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.A.matchKind, 'cell-split');
+  assert.equal(out.byNode.B.matchKind, 'cell-split');
+  assert.equal(out.byNode.A.row, '8');
+  assert.equal(out.byNode.A.translations.en.value, 'WATCH THE PREVIEW: July 11, 10 AM PDT');
+  assert.equal(out.byNode.B.translations.ko.value, '시즌 오픈 시간 : 7월17일(금) 11:00');
+  assert.equal(out.report.cellSplit, 2);
+  assert.equal(out.report.none, 0);
+  assert.equal(out.report.review.length, 2);
+});
+
+test('extractCopy: duplicate newline cells stay ambiguous until unique neighbors pick one', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' } },
+    rows: {
+      7: { 'zh-CN': '赛季前瞻直面会', en: 'Afterlight', 'zh-TW': '賽季前瞻發佈會' },
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW: July 11, 10 AM PDT\nSEASON LAUNCH: July 16, 7 PM PDT',
+        'zh-TW': '前瞻發布會時間：7月11日 19:00\n賽季開啟時間：7月17日 10:00',
+      },
+      23: { 'zh-CN': '火炬嘉年华正文', en: 'Carnival body', 'zh-TW': '火炬嘉年華正文' },
+      25: { 'zh-CN': '嘉年华直播目录', en: 'TorchCon 2026 Rundown', 'zh-TW': '嘉年華直播目錄' },
+      28: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW: July 11, 10 AM PDT\nSEASON LAUNCH: July 16, 7 PM PDT',
+        'zh-TW': '前瞻發佈會時間：7月11日 19:00\n賽季開啟時間：7月17日 10:00',
+      },
+      56: { 'zh-CN': '订阅赛季日程', en: 'Subscribe', 'zh-TW': '訂閱賽季行程' },
+    },
+  };
+  const texts = [
+    { nodeId: 'H', name: 'hero', characters: '赛季前瞻直面会', parentId: 'sec1', orderKey: '1' },
+    { nodeId: 'A', name: 'line1', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p1', orderKey: '2' },
+    { nodeId: 'B', name: 'line2', characters: '赛季开启时间：7月17日 10:00', parentId: 'p1', orderKey: '3' },
+    { nodeId: 'BODY', name: 'body', characters: '火炬嘉年华正文', parentId: 'sec2', orderKey: '4' },
+    { nodeId: 'C', name: 'dir', characters: '嘉年华直播目录', parentId: 'sec3', orderKey: '5' },
+    { nodeId: 'D', name: 'line1b', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p3', orderKey: '6' },
+    { nodeId: 'E', name: 'line2b', characters: '赛季开启时间：7月17日 10:00', parentId: 'p3', orderKey: '7' },
+    { nodeId: 'F', name: 'cal', characters: '订阅赛季日程', parentId: 'modal', orderKey: '8' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.A.matchKind, 'inferred-neighbor');
+  assert.equal(out.byNode.B.matchKind, 'inferred-neighbor');
+  assert.equal(String(out.byNode.A.row), '8');
+  assert.equal(out.byNode.A.translations.en.value, 'WATCH THE PREVIEW: July 11, 10 AM PDT');
+  assert.equal(out.byNode.B.translations['zh-TW'].value, '賽季開啟時間：7月17日 10:00');
+  assert.equal(out.byNode.D.matchKind, 'inferred-neighbor');
+  assert.equal(String(out.byNode.D.row), '28');
+  assert.equal(out.byNode.E.translations['zh-TW'].value, '賽季開啟時間：7月17日 10:00');
+  assert.equal(out.report.none, 0);
+  assert.equal(out.report.inferredNeighbor, 4);
+});
+
+test('extractCopy: unique already-bound neighbors pick one ambiguous row', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', J: 'ko' } },
+    rows: {
+      28: { 'zh-CN': '赛季开启时间：7月17日 10:00', en: 'SEASON LAUNCH', ko: '시즌 오픈' },
+      29: { 'zh-CN': '查看更多', en: 'View More', ko: '더 보기' },
+      24: { 'zh-CN': '查看更多', en: 'Learn More', ko: null },
+      30: { 'zh-CN': '直播平台', en: 'Platforms', ko: '플랫폼' },
+    },
+  };
+  const texts = [
+    { nodeId: 'T', name: 'time', characters: '赛季开启时间：7月17日 10:00', parentId: 'sec', orderKey: '1' },
+    { nodeId: 'M', name: 'more', characters: '查看更多', parentId: 'sec', orderKey: '2' },
+    { nodeId: 'P', name: 'plat', characters: '直播平台', parentId: 'sec', orderKey: '3' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.M.matchKind, 'inferred-neighbor');
+  assert.equal(String(out.byNode.M.row), '29');
+  assert.equal(out.byNode.M.translations.en.value, 'View More');
+  assert.equal(out.report.inferredNeighbor, 1);
+  assert.equal(out.report.ambiguous, 0);
+});
+
+test('extractCopy: a later neighbor alone does not pick among two earlier rows', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      24: { 'zh-CN': '查看更多', en: 'Learn More' },
+      29: { 'zh-CN': '查看更多', en: 'View More' },
+      40: { 'zh-CN': '直播平台', en: 'Platforms' },
+    },
+  };
+  const texts = [
+    { nodeId: 'M', name: 'more', characters: '查看更多', parentId: 'sec', orderKey: '1' },
+    { nodeId: 'P', name: 'plat', characters: '直播平台', parentId: 'sec', orderKey: '2' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.M.matchKind, 'ambiguous');
+});
+
+test('extractCopy: neighbor inference stays inside one page tree', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' } },
+    rows: {
+      7: { 'zh-CN': '赛季前瞻直面会', en: 'Afterlight', 'zh-TW': '賽季前瞻發佈會' },
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW: July 11, 10 AM PDT\nSEASON LAUNCH: July 16, 7 PM PDT',
+        'zh-TW': '前瞻發布會時間：7月11日 19:00\n賽季開啟時間：7月17日 10:00',
+      },
+      23: { 'zh-CN': '火炬嘉年华正文', en: 'Carnival body', 'zh-TW': '火炬嘉年華正文' },
+      25: { 'zh-CN': '嘉年华直播目录', en: 'TorchCon 2026 Rundown', 'zh-TW': '嘉年華直播目錄' },
+      28: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW: July 11, 10 AM PDT\nSEASON LAUNCH: July 16, 7 PM PDT',
+        'zh-TW': '前瞻發佈會時間：7月11日 19:00\n賽季開啟時間：7月17日 10:00',
+      },
+      56: { 'zh-CN': '订阅赛季日程', en: 'Subscribe', 'zh-TW': '訂閱賽季行程' },
+    },
+  };
+  const texts = [
+    { nodeId: 'H', name: 'hero', characters: '赛季前瞻直面会', parentId: 'sec1', orderKey: '1', treeKey: 'pc' },
+    { nodeId: 'A', name: 'line1', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p1', orderKey: '2', treeKey: 'pc' },
+    { nodeId: 'B', name: 'line2', characters: '赛季开启时间：7月17日 10:00', parentId: 'p1', orderKey: '3', treeKey: 'pc' },
+    { nodeId: 'BODY', name: 'body', characters: '火炬嘉年华正文', parentId: 'sec2', orderKey: '4', treeKey: 'pc' },
+    { nodeId: 'C', name: 'dir', characters: '嘉年华直播目录', parentId: 'sec3', orderKey: '1', treeKey: 'mobile' },
+    { nodeId: 'D', name: 'line1b', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p3', orderKey: '2', treeKey: 'mobile' },
+    { nodeId: 'E', name: 'line2b', characters: '赛季开启时间：7月17日 10:00', parentId: 'p3', orderKey: '3', treeKey: 'mobile' },
+    { nodeId: 'F', name: 'cal', characters: '订阅赛季日程', parentId: 'modal', orderKey: '4', treeKey: 'mobile' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.A.matchKind, 'inferred-neighbor');
+  assert.equal(String(out.byNode.A.row), '8');
+  assert.equal(out.byNode.D.matchKind, 'inferred-neighbor');
+  assert.equal(String(out.byNode.D.row), '28');
+});
+
+test('extractCopy: leftover unique row in the same tree binds after neighbor pass', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      5: { 'zh-CN': '首充双倍', en: 'Double' },
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW\nSEASON LAUNCH',
+      },
+      25: { 'zh-CN': '嘉年华直播目录', en: 'Rundown' },
+      28: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW\nSEASON LAUNCH',
+      },
+      56: { 'zh-CN': '订阅赛季日程', en: 'Subscribe' },
+    },
+  };
+  const texts = [
+    { nodeId: 'A', name: 'line1', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p1', orderKey: '1', treeKey: 'pc' },
+    { nodeId: 'B', name: 'line2', characters: '赛季开启时间：7月17日 10:00', parentId: 'p1', orderKey: '2', treeKey: 'pc' },
+    { nodeId: 'NAV', name: 'nav', characters: '首充双倍', parentId: 'nav', orderKey: '3', treeKey: 'pc' },
+    { nodeId: 'C', name: 'dir', characters: '嘉年华直播目录', parentId: 'sec3', orderKey: '4', treeKey: 'pc' },
+    { nodeId: 'D', name: 'line1b', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p3', orderKey: '5', treeKey: 'pc' },
+    { nodeId: 'E', name: 'line2b', characters: '赛季开启时间：7月17日 10:00', parentId: 'p3', orderKey: '6', treeKey: 'pc' },
+    { nodeId: 'F', name: 'cal', characters: '订阅赛季日程', parentId: 'modal', orderKey: '7', treeKey: 'pc' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.D.matchKind, 'inferred-neighbor');
+  assert.equal(String(out.byNode.D.row), '28');
+  assert.equal(out.byNode.A.matchKind, 'inferred-leftover');
+  assert.equal(String(out.byNode.A.row), '8');
+  assert.equal(out.byNode.B.translations.en.value, 'SEASON LAUNCH');
+});
+
+test('extractCopy: two 查看更多 in one tree bind different rows from unique sandwiches', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      23: { 'zh-CN': '火炬嘉年华正文', en: 'Carnival body' },
+      24: { 'zh-CN': '查看更多', en: 'Learn More' },
+      25: { 'zh-CN': '嘉年华直播目录', en: 'Rundown' },
+      29: { 'zh-CN': '查看更多', en: 'View More' },
+      56: { 'zh-CN': '订阅赛季日程', en: 'Subscribe' },
+    },
+  };
+  const texts = [
+    { nodeId: 'BODY', name: 'body', characters: '火炬嘉年华正文', parentId: 'sec2', orderKey: '1', treeKey: 'pc' },
+    { nodeId: 'M1', name: 'more1', characters: '查看更多', parentId: 'sec2', orderKey: '2', treeKey: 'pc' },
+    { nodeId: 'DIR', name: 'dir', characters: '嘉年华直播目录', parentId: 'sec3', orderKey: '3', treeKey: 'pc' },
+    { nodeId: 'M2', name: 'more2', characters: '查看更多', parentId: 'sec3', orderKey: '4', treeKey: 'pc' },
+    { nodeId: 'CAL', name: 'cal', characters: '订阅赛季日程', parentId: 'modal', orderKey: '5', treeKey: 'pc' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.M2.matchKind, 'inferred-neighbor');
+  assert.equal(String(out.byNode.M2.row), '29');
+  assert.equal(out.byNode.M1.matchKind, 'inferred-neighbor');
+  assert.equal(String(out.byNode.M1.row), '24');
+});
+
+test('extractCopy: adjacent bound table row uniquely picks among duplicate zh rows', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW\nSEASON LAUNCH',
+      },
+      9: { 'zh-CN': '立即下载', en: 'PRE-REGISTER NOW!' },
+      91: { 'zh-CN': '立即下载', en: 'Download Now' },
+    },
+  };
+  const texts = [
+    { nodeId: 'A', name: 'line1', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p', orderKey: '1' },
+    { nodeId: 'B', name: 'line2', characters: '赛季开启时间：7月17日 10:00', parentId: 'p', orderKey: '2' },
+    { nodeId: 'D', name: 'cta', characters: '立即下载', parentId: 'btn', orderKey: '3' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.D.matchKind, 'inferred-adjacent');
+  assert.equal(String(out.byNode.D.row), '9');
+  assert.equal(out.byNode.D.translations.en.value, 'PRE-REGISTER NOW!');
+});
+
+test('extractCopy: a layer earlier than a bound cluster still keeps the unique cluster-edge row', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      7: {
+        'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
+        en: 'Afterlight\nNew Season Preview',
+      },
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW\nSEASON LAUNCH',
+      },
+      9: { 'zh-CN': '立即下载', en: 'PRE-REGISTER NOW!' },
+      91: { 'zh-CN': '立即下载', en: 'Download Now' },
+    },
+  };
+  const texts = [
+    { nodeId: 'D', name: 'cta', characters: '立即下载', parentId: 'btn', orderKey: '0.1' },
+    { nodeId: 'H', name: 'tag', characters: 'SS13守夜人', parentId: 'hero', orderKey: '0.3' },
+    { nodeId: 'A', name: 'line1', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p', orderKey: '0.4' },
+    { nodeId: 'B', name: 'line2', characters: '赛季开启时间：7月17日 10:00', parentId: 'p', orderKey: '0.5' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.H.matchKind, 'cell-split');
+  assert.equal(String(out.byNode.H.row), '7');
+  assert.equal(out.byNode.H.translations.en.value, 'New Season Preview');
+  assert.equal(String(out.byNode.A.row), '8');
+  assert.equal(String(out.byNode.B.row), '8');
+  assert.equal(out.byNode.D.matchKind, 'inferred-adjacent');
+  assert.equal(String(out.byNode.D.row), '9');
+  assert.equal(out.byNode.D.translations.en.value, 'PRE-REGISTER NOW!');
+});
+
+test('extractCopy: remaining sibling of an adjacent-bound cell-split shares that row', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      7: {
+        'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
+        en: 'Afterlight\nNew Season Preview',
+      },
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW\nSEASON LAUNCH',
+      },
+      28: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW\nSEASON LAUNCH BODY',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'H', name: 'tag', characters: 'SS13守夜人', parentId: 'hero', orderKey: '1' },
+    { nodeId: 'A', name: 'line1', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p', orderKey: '2' },
+    { nodeId: 'B', name: 'line2', characters: '赛季开启时间：7月17日 10:00', parentId: 'p', orderKey: '3' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(String(out.byNode.A.row), '8');
+  assert.equal(String(out.byNode.B.row), '8');
+  assert.equal(out.byNode.B.translations.en.value, 'SEASON LAUNCH');
+  assert.ok(out.byNode.B.matchKind === 'inferred-adjacent' || out.byNode.B.matchKind === 'inferred-split-share');
+});
+
+test('extractCopy: two cluster-edge candidates stay ambiguous', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      5: { 'zh-CN': '首充双倍', en: 'Double' },
+      6: { 'zh-CN': '立即下载', en: 'Before' },
+      9: { 'zh-CN': '立即下载', en: 'PRE-REGISTER NOW!' },
+      10: { 'zh-CN': '订阅赛季日程', en: 'Subscribe' },
+    },
+  };
+  const texts = [
+    { nodeId: 'NAV', name: 'nav', characters: '首充双倍', parentId: 'nav', orderKey: '1' },
+    { nodeId: 'D', name: 'cta', characters: '立即下载', parentId: 'btn', orderKey: '2' },
+    { nodeId: 'CAL', name: 'cal', characters: '订阅赛季日程', parentId: 'modal', orderKey: '3' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.D.matchKind, 'ambiguous');
+});
+
+test('extractCopy: two remaining parents on the same cluster edge stay ambiguous', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      7: {
+        'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
+        en: 'Afterlight\nNew Season Preview',
+      },
+      8: {
+        'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
+        en: 'WATCH THE PREVIEW\nSEASON LAUNCH',
+      },
+      9: { 'zh-CN': '立即下载', en: 'PRE-REGISTER NOW!' },
+      91: { 'zh-CN': '立即下载', en: 'Download Now' },
+    },
+  };
+  const texts = [
+    { nodeId: 'D1', name: 'cta1', characters: '立即下载', parentId: 'btn1', orderKey: '0.1' },
+    { nodeId: 'D2', name: 'cta2', characters: '立即下载', parentId: 'btn2', orderKey: '0.2' },
+    { nodeId: 'H', name: 'tag', characters: 'SS13守夜人', parentId: 'hero', orderKey: '0.3' },
+    { nodeId: 'A', name: 'line1', characters: '嘉年华直播时间：7月11日16:30', parentId: 'p', orderKey: '0.4' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.D1.matchKind, 'ambiguous');
+  assert.equal(out.byNode.D2.matchKind, 'ambiguous');
+});
+
+test('extractCopy: leftover does not zip two remaining parents by appearance order', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      24: { 'zh-CN': '查看更多', en: 'Learn More' },
+      29: { 'zh-CN': '查看更多', en: 'View More' },
+    },
+  };
+  const texts = [
+    { nodeId: 'M1', name: 'more1', characters: '查看更多', parentId: 'sec2', orderKey: '1', treeKey: 'pc' },
+    { nodeId: 'M2', name: 'more2', characters: '查看更多', parentId: 'sec3', orderKey: '2', treeKey: 'pc' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.M1.matchKind, 'ambiguous');
+  assert.equal(out.byNode.M2.matchKind, 'ambiguous');
+  assert.equal(out.report.inferredLeftover, 0);
+});
+
+test('extractCopy: two remaining neighbor rows stay ambiguous', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      1: { 'zh-CN': '查看更多', en: 'Learn More' },
+      2: { 'zh-CN': '查看更多', en: 'View More' },
+      3: { 'zh-CN': '查看更多', en: 'More' },
+    },
+  };
+  const texts = [
+    { nodeId: 'M', name: 'more', characters: '查看更多', parentId: 'sec', orderKey: '1' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.M.matchKind, 'ambiguous');
+  assert.equal(out.report.inferredNeighbor, 0);
+});

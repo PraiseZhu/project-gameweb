@@ -18,6 +18,7 @@
 
 import { normalizeCopy, editDistance, fuzzyThreshold } from './figma-copy-normalize.mjs';
 import { deriveContext, resolveContextualRow, validateCopyOverlay } from './figma-copy-context.mjs';
+import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferSplitShareRow, splitLocaleCell } from './figma-copy-structure.mjs';
 
 const LANGS_FALLBACK = ['zh-CN', 'en', 'ko', 'ja', 'zh-TW'];
 
@@ -123,19 +124,32 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
 
   const byNode = {};
   const _unread = [];
-  const tally = { exact: 0, normalized: 0, fuzzy: 0, ambiguous: 0, none: 0 };
+  const tally = { exact: 0, normalized: 0, fuzzy: 0, ambiguous: 0, none: 0, cellSplit: 0, inferredNeighbor: 0, inferredLeftover: 0, inferredAdjacent: 0, inferredSplitShare: 0 };
+  const cellSplit = findCellSplitGroups(texts, table);
+  const _review = [];
 
   /** 命中唯一一行后造五语叶子；空语言列不造叶子（值是 null），记 missingLangs。 */
-  function adopt(t, kind) {
+  function adopt(t, kind, { lineIndex = null, lineCount = null, partIndex = 0, partCount = 1 } = {}) {
     const translations = {};
     const missingLangs = [];
+    const split = Number.isInteger(lineIndex) && Number.isInteger(lineCount) && lineCount > 1;
     for (const lang of langs) {
       const v = at(larkSnap, `/rows/${t.row}/${lang}`);
       if (v === null || v === undefined) {
         missingLangs.push(lang);
         continue;
       }
-      translations[lang] = larkLeaf(`/rows/${t.row}/${lang}`);
+      if (!split) {
+        translations[lang] = larkLeaf(`/rows/${t.row}/${lang}`);
+        continue;
+      }
+      const piece = splitLocaleCell(v, lineIndex, lineCount, { partIndex, partCount });
+      if (piece == null) {
+        missingLangs.push(lang);
+        continue;
+      }
+      const leaf = larkLeaf(`/rows/${t.row}/${lang}`);
+      translations[lang] = { ...leaf, value: piece, splitLine: lineIndex, splitPart: partIndex };
     }
     return {
       matchKind: kind,
@@ -171,16 +185,67 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       tally.none += 1;
       continue;
     }
+    const cellGroup = cellSplit.byNode.get(String(nodeId));
+    const cellSplitMeta = (() => {
+      if (!cellGroup) return null;
+      const parts = Array.isArray(cellGroup.parts) ? cellGroup.parts : [];
+      const part = parts.find((item) => (item.nodeIds || []).includes(String(nodeId)));
+      const lineIndex = part ? part.lineIndex : cellGroup.nodeIds.indexOf(String(nodeId));
+      const partIndex = part ? (part.nodeIds || []).indexOf(String(nodeId)) : 0;
+      const partCount = part ? (part.nodeIds || []).length : 1;
+      return { lineIndex, lineCount: cellGroup.lines.length, partIndex, partCount };
+    })();
     const __nodeRow = copyOverlay && copyOverlay.nodeRow && copyOverlay.nodeRow[nodeId];
     if (__nodeRow && __nodeRow.row != null) {
       const __row = Number(__nodeRow.row);
       let __rawZh = '';
       try { __rawZh = String(at(larkSnap, `/rows/${__row}/zh-CN`) ?? ''); } catch { __rawZh = ''; }
+      const splitMeta = cellSplitMeta && Number.isInteger(cellSplitMeta.lineCount) && cellSplitMeta.lineCount > 1
+        ? cellSplitMeta
+        : {};
       byNode[nodeId] = {
-        ...base, ...adopt({ row: __row, rawZh: __rawZh }, 'designated'),
-        note: `人工指认第 ${__row} 行（${__nodeRow.why || 'copy-designations'}）；值由 larkLeaf 机械取，非手填`,
+        ...base,
+        ...adopt({ row: __row, rawZh: __rawZh }, 'designated', splitMeta),
+        ...(cellSplitMeta ? { cellSplit: cellSplitMeta } : {}),
+        note: `人工指认第 ${__row} 行（${__nodeRow.why || 'copy-designations'}）；值由 larkLeaf 机械取，非手填${cellSplitMeta ? `；拆格句序第 ${cellSplitMeta.lineIndex + 1}/${cellSplitMeta.lineCount} 句第 ${cellSplitMeta.partIndex + 1}/${cellSplitMeta.partCount} 截仍保留` : ''}`,
       };
       tally.exact += 1; // designated 计入 exact 桶（已解析）
+      continue;
+    }
+    if (cellGroup) {
+      const splitMeta = cellSplitMeta;
+      if (cellGroup.unresolved) {
+        tally.ambiguous += 1;
+        byNode[nodeId] = {
+          ...base,
+          matchKind: 'ambiguous',
+          cellSplit: splitMeta,
+          candidates: cellGroup.candidates,
+        };
+        _unread.push({
+          ...base,
+          matchKind: 'ambiguous',
+          reason: `表第 ${cellGroup.candidates.map((item) => item.row).join('、')} 行一格 ${cellGroup.lines.length} 句对相邻 TEXT，本层第 ${splitMeta.lineIndex + 1} 句，多行简中相同但译文不同，机器不替人选`,
+          candidates: cellGroup.candidates,
+        });
+        continue;
+      }
+      byNode[nodeId] = {
+        ...base,
+        ...adopt({ row: cellGroup.row, rawZh: cellGroup.rawZh }, 'cell-split', splitMeta),
+        cellSplit: splitMeta,
+        note: `表第 ${cellGroup.row} 行一格 ${cellGroup.lines.length} 句对相邻 TEXT，本层第 ${splitMeta.lineIndex + 1} 句第 ${splitMeta.partIndex + 1}/${splitMeta.partCount} 截；请审拆句`,
+      };
+      tally.cellSplit += 1;
+      tally.exact += 1;
+      _review.push({
+        nodeId: String(nodeId),
+        matchKind: 'cell-split',
+        row: cellGroup.row,
+        lineIndex: splitMeta.lineIndex,
+        partIndex: splitMeta.partIndex,
+        why: `cell-split of row ${cellGroup.row} line ${splitMeta.lineIndex + 1}/${cellGroup.lines.length} part ${splitMeta.partIndex + 1}/${splitMeta.partCount}`,
+      });
       continue;
     }
 
@@ -279,6 +344,106 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
     });
   }
 
+  const firstPassBound = { ...byNode };
+  function adoptInferred(nodeId, entry, picked, kind) {
+    const candidates = Array.isArray(entry.candidates) ? entry.candidates : [];
+    const hit = candidates.find((item) => Number(item.row) === Number(picked.row))
+      || { row: picked.row, tableZhCN: at(larkSnap, `/rows/${picked.row}/zh-CN`) };
+    const split = entry.cellSplit && Number.isInteger(entry.cellSplit.lineIndex)
+      ? {
+        lineIndex: entry.cellSplit.lineIndex,
+        lineCount: entry.cellSplit.lineCount,
+        partIndex: entry.cellSplit.partIndex || 0,
+        partCount: entry.cellSplit.partCount || 1,
+      }
+      : {};
+    byNode[nodeId] = {
+      nodeId: entry.nodeId,
+      name: entry.name,
+      characters: entry.characters,
+      normalized: entry.normalized,
+      ...adopt({ row: picked.row, rawZh: String(hit.tableZhCN ?? hit.rawZh ?? '') }, kind, split),
+      note: picked.why,
+    };
+    if (kind === 'inferred-leftover') tally.inferredLeftover += 1;
+    else if (kind === 'inferred-adjacent') tally.inferredAdjacent += 1;
+    else if (kind === 'inferred-split-share') tally.inferredSplitShare += 1;
+    else tally.inferredNeighbor += 1;
+    tally.ambiguous = Math.max(0, tally.ambiguous - 1);
+    tally.exact += 1;
+    const unreadAt = _unread.findIndex((item) => String(item.nodeId) === String(nodeId) && item.matchKind === 'ambiguous');
+    if (unreadAt >= 0) _unread.splice(unreadAt, 1);
+    _review.push({
+      nodeId: String(nodeId),
+      matchKind: kind,
+      row: picked.row,
+      why: picked.why,
+    });
+  }
+
+  for (const [nodeId, entry] of Object.entries(byNode)) {
+    if (!entry || entry.matchKind !== 'ambiguous') continue;
+    const candidates = Array.isArray(entry.candidates) ? entry.candidates : [];
+    const neighbor = inferRowFromNeighbors({
+      nodeId,
+      candidateRows: candidates.map((item) => item.row),
+      texts,
+      byNode: firstPassBound,
+    });
+    if (neighbor.unresolved) continue;
+    adoptInferred(nodeId, entry, neighbor, 'inferred-neighbor');
+  }
+
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const [nodeId, entry] of Object.entries(byNode)) {
+      if (!entry || entry.matchKind !== 'ambiguous') continue;
+      const adjacent = inferAdjacentBoundRow({
+        nodeId,
+        candidateRows: (entry.candidates || []).map((item) => item.row),
+        texts,
+        byNode,
+      });
+      if (adjacent.unresolved) continue;
+      adoptInferred(nodeId, entry, adjacent, 'inferred-adjacent');
+      grew = true;
+    }
+    for (const [nodeId, entry] of Object.entries(byNode)) {
+      if (!entry || entry.matchKind !== 'ambiguous' || !entry.cellSplit) continue;
+      const shared = inferSplitShareRow({
+        nodeId,
+        candidateRows: (entry.candidates || []).map((item) => item.row),
+        texts,
+        byNode,
+      });
+      if (shared.unresolved) continue;
+      adoptInferred(nodeId, entry, shared, 'inferred-split-share');
+      grew = true;
+    }
+  }
+
+  const leftoverSeen = new Set();
+  for (const [nodeId, entry] of Object.entries(byNode)) {
+    if (!entry || entry.matchKind !== 'ambiguous' || leftoverSeen.has(String(nodeId))) continue;
+    const leftover = inferLeftoverUniqueRow({
+      nodeId,
+      candidateRows: (entry.candidates || []).map((item) => item.row),
+      texts,
+      byNode,
+    });
+    if (leftover.unresolved) continue;
+    const groupIds = leftover.remainingNodeIds && leftover.remainingNodeIds.length
+      ? leftover.remainingNodeIds
+      : [String(nodeId)];
+    for (const id of groupIds) {
+      leftoverSeen.add(String(id));
+      const groupEntry = byNode[id];
+      if (!groupEntry || groupEntry.matchKind !== 'ambiguous') continue;
+      adoptInferred(id, groupEntry, leftover, 'inferred-leftover');
+    }
+  }
+
   const report = {
     total: texts.length,
     ...tally,
@@ -287,6 +452,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
     duplicateZhGroups,
     emptyLangCells,
     contextual: _contextual, // 同字段多场景解析留痕：resolved/via/contextKey/why（进报告不进 truth）
+    review: _review,
   };
 
   return { byNode, report, _unread };
