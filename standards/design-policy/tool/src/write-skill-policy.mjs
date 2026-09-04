@@ -5,7 +5,7 @@
  */
 
 import { writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import { parseDesignPolicyFile } from './parse-design-policy.mjs';
 
 export function renderSkillPolicyModule(policy) {
@@ -19,9 +19,11 @@ export const DESIGN_POLICY = Object.freeze(${json});
 export function writeSkillPolicyModule(designPath, outPath, { repoRoot = process.cwd() } = {}) {
   const policy = parseDesignPolicyFile(designPath);
   const absDesign = resolve(designPath);
-  const rel = absDesign.startsWith(resolve(repoRoot) + '/')
-    ? absDesign.slice(resolve(repoRoot).length + 1)
-    : absDesign;
+  const absRoot = resolve(repoRoot);
+  const rel = relative(absRoot, absDesign).split(sep).join('/');
+  if (!rel || rel.startsWith('..') || /^[A-Za-z]:/.test(rel) || rel.startsWith('/')) {
+    throw new Error(`DESIGN.md path must stay inside the repo: ${absDesign}`);
+  }
   const portable = { ...policy, path: rel };
   const absOut = resolve(outPath);
   writeFileSync(absOut, renderSkillPolicyModule(portable));

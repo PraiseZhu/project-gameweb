@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, readdirSync, statSync } from 
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseDesignPolicyMarkdown, parseDesignPolicyFile } from '../src/parse-design-policy.mjs';
 import {
   implementationFromPolicy,
@@ -16,6 +16,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '../../../..');
 const PARSE = join(HERE, '../src/parse-design-policy.mjs');
 const MIRROR = join(HERE, '../src/mirror-design-policy.mjs');
+
+function importRepo(rel) {
+  return import(pathToFileURL(join(REPO, rel)).href);
+}
 
 function sampleMarkdown() {
   return `---
@@ -123,8 +127,8 @@ test('CLI and library fail the same missing-key YAML', () => {
 test('real skill DESIGN.md mirrors against loaded modules and chrome source', async () => {
   const { implementationSnapshotFromModules } = await import('../src/implementation-snapshot.mjs');
   const packs = [
-    ['skills/yise-web-ui', await import(join(REPO, 'skills/yise-web-ui/scripts/lib/resize/index.mjs')), await import(join(REPO, 'skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs'))],
-    ['skills/torchlight-web', await import(join(REPO, 'skills/torchlight-web/scripts/lib/resize/index.mjs')), await import(join(REPO, 'skills/torchlight-web/scripts/lib/translation/typography-policy.mjs'))],
+    ['skills/yise-web-ui', await importRepo('skills/yise-web-ui/scripts/lib/resize/index.mjs'), await importRepo('skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs')],
+    ['skills/torchlight-web', await importRepo('skills/torchlight-web/scripts/lib/resize/index.mjs'), await importRepo('skills/torchlight-web/scripts/lib/translation/typography-policy.mjs')],
   ];
   for (const [rel, resize, typography] of packs) {
     const abs = join(REPO, rel, 'DESIGN.md');
@@ -140,8 +144,8 @@ test('real skill DESIGN.md mirrors against loaded modules and chrome source', as
 
 test('sourceTitleInlineSafe 70/65 width-fit cannot mirror green', async () => {
   const { implementationSnapshotFromModules } = await import('../src/implementation-snapshot.mjs');
-  const yiseResize = await import(join(REPO, 'skills/yise-web-ui/scripts/lib/resize/index.mjs'));
-  const yiseType = await import(join(REPO, 'skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs'));
+  const yiseResize = await importRepo('skills/yise-web-ui/scripts/lib/resize/index.mjs');
+  const yiseType = await importRepo('skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs');
   const chromeSource = readFileSync(join(REPO, 'skills/yise-web-ui/templates/figma-chrome.js'), 'utf8');
   const live = readFileSync(join(REPO, 'skills/yise-web-ui/templates/figma-render.js'), 'utf8');
   const drifted = live.replace(
@@ -160,8 +164,8 @@ test('sourceTitleInlineSafe 70/65 width-fit cannot mirror green', async () => {
 
 test('hardcoded render DW / FLOOR cannot mirror green', async () => {
   const { implementationSnapshotFromModules } = await import('../src/implementation-snapshot.mjs');
-  const yiseResize = await import(join(REPO, 'skills/yise-web-ui/scripts/lib/resize/index.mjs'));
-  const yiseType = await import(join(REPO, 'skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs'));
+  const yiseResize = await importRepo('skills/yise-web-ui/scripts/lib/resize/index.mjs');
+  const yiseType = await importRepo('skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs');
   const chromeSource = readFileSync(join(REPO, 'skills/yise-web-ui/templates/figma-chrome.js'), 'utf8');
   const driftedRender = `const DW = { pc: 3840, pad: 3840, mobile: 750 };\nconst FLOOR = 75;\nfor (const s of [92, 85, 78, FLOOR]) {}\nconst slotScale = Math.max(k, viewportH / firstHeight);`;
   assert.throws(() => implementationSnapshotFromModules({
@@ -176,8 +180,8 @@ test('hardcoded render DW / FLOOR cannot mirror green', async () => {
 test('chrome silent || 10 is not a live implementation number', async () => {
   const { chromeOfficialRootFontVwFromSource, implementationSnapshotFromModules } = await import('../src/implementation-snapshot.mjs');
   assert.equal(chromeOfficialRootFontVwFromSource("html{--fx-official-root:calc((window.__designPolicy && window.__designPolicy.officialRootFontVw) || 10)vw}"), null);
-  const yiseResize = await import(join(REPO, 'skills/yise-web-ui/scripts/lib/resize/index.mjs'));
-  const yiseType = await import(join(REPO, 'skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs'));
+  const yiseResize = await importRepo('skills/yise-web-ui/scripts/lib/resize/index.mjs');
+  const yiseType = await importRepo('skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs');
   const abs = join(REPO, 'skills/yise-web-ui/DESIGN.md');
   const drifted = implementationSnapshotFromModules({
     resize: yiseResize,
@@ -188,8 +192,8 @@ test('chrome silent || 10 is not a live implementation number', async () => {
 });
 
 test('generated skill snapshots match live DESIGN.md YAML', async () => {
-  const { DESIGN_POLICY: yise } = await import(join(REPO, 'skills/yise-web-ui/scripts/lib/design-policy.generated.mjs'));
-  const { DESIGN_POLICY: torch } = await import(join(REPO, 'skills/torchlight-web/scripts/lib/design-policy.generated.mjs'));
+  const { DESIGN_POLICY: yise } = await importRepo('skills/yise-web-ui/scripts/lib/design-policy.generated.mjs');
+  const { DESIGN_POLICY: torch } = await importRepo('skills/torchlight-web/scripts/lib/design-policy.generated.mjs');
   assert.deepEqual(yise.shrinkSteps, parseDesignPolicyFile(join(REPO, 'skills/yise-web-ui/DESIGN.md')).shrinkSteps);
   assert.deepEqual(torch.composition, parseDesignPolicyFile(join(REPO, 'skills/torchlight-web/DESIGN.md')).composition);
   assert.equal(yise.officialRootFontVw, 10);
@@ -215,7 +219,7 @@ test('runtime override below YAML floor is not a production default', () => {
 
 test('generated snapshot drift against YAML is red', async () => {
   const yisePath = join(REPO, 'skills/yise-web-ui/DESIGN.md');
-  const { DESIGN_POLICY: generated } = await import(join(REPO, 'skills/yise-web-ui/scripts/lib/design-policy.generated.mjs'));
+  const { DESIGN_POLICY: generated } = await importRepo('skills/yise-web-ui/scripts/lib/design-policy.generated.mjs');
   const drifted = { ...generated, shrinkSteps: [100, 92, 85, 78, 75, 70, 65] };
   assert.throws(
     () => mirrorDesignPolicyFile(yisePath, implementationFromPolicy(drifted)),

@@ -1082,6 +1082,56 @@
     return Number.isFinite(width) ? width : 0;
   },
 
+  /* inventory/v2 often ships FONT_SIZE_% as lineHeightPercent and omits
+     lineHeightPx. Paint already resolves that to px; fit/reset must use the
+     same number or integer-px shrink returns before measuring. */
+  _resolvedLineHeight(tx, fontSize) {
+    const abs = Number(tx && tx.lineHeight);
+    if (Number.isFinite(abs) && abs > 0) return abs;
+    const fs = Number(fontSize);
+    const pct = Number(tx && tx.lineHeightPercent);
+    if (Number.isFinite(fs) && fs > 0 && Number.isFinite(pct) && pct > 0) return fs * pct / 100;
+    return null;
+  },
+
+  /* HEIGHT copy is absolutely placed from the zh-CN box. Growing English
+     downward is then clipped by the source clipsContent frame even when the
+     written Auto Layout maxHeight still has room — the carnival 正文 is
+     source-centered (top 60 in 263). Keep that center after fit, but only
+     when this leaf itself was integer-px shrunk against a written maxHeight
+     and the parent clip is taller than the source box. Random clipped
+     labels must keep their authored top. */
+  _realignTranslatedClipText(el, box) {
+    if (!el || !el.parentElement || typeof getComputedStyle !== 'function') return;
+    if (el.getAttribute('data-fit-policy') === 'zh-cn-figma-exact') return;
+    if (!el.getAttribute('data-fit-px')) return;
+    const writtenMaxH = Number(el.getAttribute('data-fit-max-height'));
+    if (!(writtenMaxH > 0)) return;
+    const parent = el.parentElement;
+    const overflowY = getComputedStyle(parent).overflowY || getComputedStyle(parent).overflow;
+    if (overflowY !== 'hidden') return;
+    const parentH = parent.clientHeight || Number.parseFloat(parent.style.height) || 0;
+    const sourceH = Number(box && box.h);
+    const storedRaw = el.getAttribute('data-fit-source-top');
+    const storedTop = storedRaw == null || storedRaw === '' ? NaN : Number(storedRaw);
+    const sourceTop = Number.isFinite(storedTop) ? storedTop : Number.parseFloat(el.style.top);
+    if (!(parentH > 0) || !(sourceH > 0) || !Number.isFinite(sourceTop)) return;
+    if (parentH + 0.5 < writtenMaxH && parentH <= sourceH + sourceTop + 0.5) return;
+    if (!el.hasAttribute('data-fit-source-top')) el.setAttribute('data-fit-source-top', String(sourceTop));
+    const fittedH = (typeof el.scrollHeight === 'number' && el.scrollHeight > 0)
+      ? el.scrollHeight
+      : (el.offsetHeight || 0);
+    if (!(fittedH > 0) || Math.abs(fittedH - sourceH) < 0.5) return;
+    if (sourceTop + fittedH <= parentH + 0.5) return;
+    const sourceCenter = sourceTop + sourceH / 2;
+    let nextTop = sourceCenter - fittedH / 2;
+    if (fittedH <= parentH) nextTop = Math.max(0, Math.min(nextTop, parentH - fittedH));
+    else nextTop = Math.max(0, nextTop);
+    if (Math.abs(nextTop - sourceTop) < 0.5) return;
+    el.style.top = nextTop + 'px';
+    el.setAttribute('data-fit-clip-realign', 'source-center');
+  },
+
   /* DESIGN.md 6.1 C：locale 基准字号上按整数 px 减，直到完整落入已写的
      Auto Layout maxWidth / maxHeight。没有 75% 地板，也不走百分比阶梯。 */
   _applyIntegerPxShrink(el, fs, lh, fits) {
@@ -1117,7 +1167,11 @@
     const _lbFs = el ? Number(el.getAttribute('data-locale-base-fontsize')) : NaN;
     const _lbLh = el ? Number(el.getAttribute('data-locale-base-lineheight')) : NaN;
     const fs = (Number.isFinite(_lbFs) && _lbFs > 0) ? _lbFs : (tx && tx.fontSize);
-    const lh = (Number.isFinite(_lbLh) && _lbLh > 0) ? _lbLh : (tx && tx.lineHeight);
+    const fromStyle = el && el.style ? Number.parseFloat(el.style.lineHeight) : NaN;
+    const lh = (Number.isFinite(_lbLh) && _lbLh > 0)
+      ? _lbLh
+      : (this._resolvedLineHeight(tx, fs)
+        || (Number.isFinite(fromStyle) && fromStyle > 0 ? fromStyle : null));
     if (typeof fs !== 'number' || typeof lh !== 'number' || !lh) return;
     const policy = designPolicy();
     const cap = (n) => { const v = Number(n); return Number.isFinite(v) && v > 0 ? v : null; };
@@ -1130,11 +1184,45 @@
     const maxH = writtenH;
     if (policy.shrinkMode === 'integer-px') {
       if (maxW == null && maxH == null) return;
-      const measuredW = () => {
-        if (typeof el.scrollWidth === 'number' && isFinite(el.scrollWidth) && el.scrollWidth > 0) return el.scrollWidth;
-        return this._measureInlineText(el, el.textContent || '');
+      /* scrollWidth/Height repeat a min-content / min-height box, not glyph
+         ink. Shop/Learn More minWidth equals maxWidth, so scrollWidth never
+         drops and integer-px shrinks to 1px. Measure glyphs for width;
+         temporarily release minHeight when measuring height. */
+      const wraps = String((el.style && el.style.whiteSpace) || '') !== 'pre';
+      const withNaturalBox = (fn) => {
+        const prev = {
+          minHeight: el.style.minHeight,
+          height: el.style.height,
+          minWidth: el.style.minWidth,
+          width: el.style.width,
+        };
+        el.style.minHeight = '0px';
+        el.style.height = 'auto';
+        if (!wraps) {
+          el.style.minWidth = '0px';
+          el.style.width = 'max-content';
+        }
+        const out = fn();
+        el.style.minHeight = prev.minHeight;
+        el.style.height = prev.height;
+        el.style.minWidth = prev.minWidth;
+        el.style.width = prev.width;
+        return out;
       };
-      const measuredH = () => (typeof el.scrollHeight === 'number' && isFinite(el.scrollHeight) ? el.scrollHeight : 0);
+      const measuredW = () => withNaturalBox(() => {
+        if (wraps) {
+          const sw = Number(el.scrollWidth);
+          if (Number.isFinite(sw) && sw > 0) return sw;
+        }
+        return this._measureInlineText(el, el.textContent || '', {
+          fontSize: Number.parseFloat(el.style.fontSize) || fs,
+          lineHeight: Number.parseFloat(el.style.lineHeight) || lh,
+        });
+      });
+      const measuredH = () => withNaturalBox(() => {
+        const sh = Number(el.scrollHeight);
+        return Number.isFinite(sh) ? sh : 0;
+      });
       const fitsCaps = () => {
         if (maxW != null && measuredW() > maxW + 0.5) return false;
         if (maxH != null && measuredH() > maxH + 0.5) return false;
@@ -1628,20 +1716,16 @@
         && typeof window.matchMedia === 'function'
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-      /* 可见离场只消费通用 hero slot 语义，不依赖页面标题、节点 id 或序号。
-         这是滚动进度驱动的通用视觉接入；Figma 未提供 motion truth 时明确留痕，
-         不把它冒充成精确 easing/duration。静态首屏与释放后的布局仍由 geometry
-         contract 决定，不能用 display:none、遮罩或白块制造“离场”。 */
+      /* Geometry only. A percent translate on the hero stage moves sec/1
+         while later sections stay on pageBox y + extra, so a few CSS pixels
+         of scroll open a black hole. Figma did not author that exit. */
       if (heroStage && heroStage.style) {
-        const offset = (-6 * progress).toFixed(3);
-        const opacity = (1 - (0.16 * progress)).toFixed(4);
-        heroStage.style.transformOrigin = '50% 0';
-        heroStage.style.translate = reduce ? '0 0' : '0 ' + offset + '%';
-        heroStage.style.opacity = reduce ? '1' : opacity;
-        heroStage.style.transition = reduce ? 'none' : 'translate 180ms linear, opacity 180ms linear';
-        heroStage.style.willChange = reduce ? 'auto' : 'translate, opacity';
-        heroStage.setAttribute('data-hero-visual-motion', 'scroll-scrub-generic-unverified');
-        heroStage.setAttribute('data-hero-visual-progress', progress.toFixed(4));
+        heroStage.style.translate = '0 0';
+        heroStage.style.opacity = '1';
+        heroStage.style.transition = 'none';
+        heroStage.style.willChange = 'auto';
+        heroStage.removeAttribute('data-hero-visual-motion');
+        heroStage.removeAttribute('data-hero-visual-progress');
       }
       /* Only the immediate successor that leaks into the viewport receives a
          temporary reveal translate. Every other section is painted at its
@@ -1922,10 +2006,10 @@
          page origin (SS6 mobile). Do not invent a layout; do not skip the slot. */
       const contentRoot = listedRoot || (pagePaintOrder.length === 1 ? pagePaintOrder[0] : null);
       if (!startsAtPageOrigin || !contentRoot) return null;
-      /* Cover-crop belongs to the KV visual plane (the page-chrome `kv` root),
-         not the hero section that holds title/download UI. Applying slotScale
-         to the section turns the title into a height-driven poster and leaves
-         the actual KV artwork on width-scale with later sections. */
+      /* Cover-crop belongs to the KV visual plane (page-chrome `kv` or the
+         unnamed `kv` sitting inside sec/1). Applying slotScale to the section
+         turns the title into a height-driven poster and leaves the artwork on
+         width-scale with later sections. */
       const fillVh = Number(designPolicy().heroViewportFillVh);
       if (!Number.isFinite(fillVh) || fillVh <= 0) {
         throw new Error('figma-render: heroViewportFillVh missing from DESIGN.md YAML');
@@ -2102,24 +2186,23 @@
          already abut (0/2143/4286). Ceil(*k)/k adds up to 1 design px per
          section and shows as a black seam at every join. */
       const _snapH = _rawH;
-      /* Official first screen is a 100vh crop window. Keep the Figma hero
-         height on the visual plane. The UI stage itself must be tall enough
-         for source Y × uiYRatio (vh/k), or a lower-hero UI title stays in
-         the top half. */
+      /* Official first screen is a 100vh crop window. UI still uses Figma Y as
+         a fraction of that slot. The first-screen *visual* plane (unnamed kv
+         inside sec/1) cover-crops into the same window; clipping the stage to
+         pageBox.h (2143) would crop the scaled KV back to width-k. Later
+         sections stay on their own pageBox via the paint-root clip. */
       const heroUiHeight = isHeroStage && heroSlot && Number(heroSlot.designHeight) > 0
         ? Number(heroSlot.designHeight)
         : _snapH;
-      /* First-screen clipsContent must clip to the Figma section pageBox
-         (sec/1 = 2143), not the 100vh designHeight. A taller stage lets
-         first-screen KV leak into later sections. */
-      const heroClipHeight = isHeroStage && Number(_rawH) > 0
-        ? Math.min(heroUiHeight, Number(_rawH))
+      const heroClipHeight = isHeroStage && heroCropWindowDesign > 0
+        ? heroCropWindowDesign
         : heroUiHeight;
       stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : heroClipHeight) + 'px';
       if (isHeroStage) {
         stage.style.overflow = 'hidden';
         stage.setAttribute('data-hero-source-height', String(_rawH));
-        if (Number(_rawH) > 0) stage.setAttribute('data-hero-clip-height', String(heroClipHeight));
+        if (Number(heroClipHeight) > 0) stage.setAttribute('data-hero-clip-height', String(heroClipHeight));
+        if (heroCropWindowDesign > 0) stage.setAttribute('data-hero-crop-window', '100vh');
       }
       if (pageScope && !pageStageMode) {
         stage.style.position = 'absolute';
@@ -3631,11 +3714,26 @@
         const paintAsFragment = n.paintAsFragment === true;
         const ownImageFill = Array.isArray(st.fills)
           && st.fills.some((f) => f && f.visible !== false && f.type === 'IMAGE');
+        const bakedWholeFrameOwner = (() => {
+          if (!bakedOwnerId) return false;
+          const owner = truthNodeById.get(String(bakedOwnerId));
+          const ownerName = String((owner && owner.name) || '');
+          const ownerRole = String((owner && owner.role) || '');
+          return ownerRole === 'kv' || ownerRole === 'bg' || ownerRole === 'img'
+            || /^kv(?:\/|$)/i.test(ownerName)
+            || /^bg(?:\/|$)/i.test(ownerName)
+            || /^img(?:\/|$)/i.test(ownerName);
+        })();
+        /* Whole-frame kv/bg/img already rasterizes IMAGE descendants. Painting
+           those fills again (a masked 750×992 grandchild on top of 750×1334 kv)
+           crops the first screen a second time. Interaction / fragment / lang
+           still punch through. */
+        const ownImageFillPunchesBake = ownImageFill && !bakedWholeFrameOwner;
         const componentIdEarly = String(__u(n.componentId) || '');
         const imgLangRelease = !!(componentIdEarly && imgLangSetsByMemberId.has(componentIdEarly));
         if ((parent && parent.assetLock || (bakedOwnerId && !bakedOwnerReleased))
           && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable
-          && !ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease) continue;
+          && !ownListedSlice && !paintAsFragment && !ownImageFillPunchesBake && !imgLangRelease) continue;
         /* Direct-owner fallback for text constraint. The locator-stack parent is
            often the SECTION layer for a deeply nested text leaf; it must not win
            over a tighter truth owner. Accept a rendered direct parent only when
@@ -3707,7 +3805,7 @@
            the baked PNG. Only a structural interaction (switch/tab/scroll/copy/nav)
            or a genuinely CSS-rebuildable blend layer may remain above baked pixels;
            every other baked-subtree paint node is skipped to avoid double-draw. */
-        const __inBakedSubtree = !!(bakedOwnerId) && !assetRec && !paintAsFragment && !ownImageFill;
+        const __inBakedSubtree = !!(bakedOwnerId) && !assetRec && !paintAsFragment && !ownImageFillPunchesBake;
         if (__inBakedSubtree && !bakedOwnerReleased && !hasStructuralInteraction && !liveCloseBtn && !underHscrollSurface && !__blendLiftable) continue;
         const assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
@@ -4125,23 +4223,28 @@
            Inventory still owns one bg/* sheet; this only scales the locked
            first-screen view. Later sections stay on platform scale k. Do not
            shrink the owner box: that would squash the long sheet and keep the
-           next-screen seam inside the first screen. */
-        if (heroVisualPlane && heroSlot && heroVisualScale > 0 && pageStageScale > 0
-          && !parent && Number.isFinite(Number(box.h)) && Number(box.h) > 0) {
+           next-screen seam inside the first screen.
+           Nested unnamed `kv` under sec/1 is still first-screen art: the
+           parent is the section stage, not a second kv wrapper. */
+        const isBg = /^bg(?:\/|$)/i.test(layerName);
+        const isKv = /^kv(?:\/|$)/i.test(layerName);
+        const firstScreenKvInSection = isHeroStage && isKv
+          && (!parent || String(__u(parent && parent.nid)) === String(__u(sid)));
+        if ((heroVisualPlane || firstScreenKvInSection) && heroSlot && heroVisualScale > 0 && pageStageScale > 0
+          && Number.isFinite(Number(box.h)) && Number(box.h) > 0) {
           const planeRatio = heroVisualScale / pageStageScale;
           const nodeY = Number(box.y);
-          const isFirstScreenVisual = !Number.isFinite(nodeY) || nodeY <= heroSectionBottomY + 0.5;
-          const layerName = String(n.name || '');
-          const isBg = /^bg(?:\/|$)/i.test(layerName);
-          const isKv = /^kv(?:\/|$)/i.test(layerName);
+          const isFirstScreenVisual = firstScreenKvInSection
+            || !Number.isFinite(nodeY) || nodeY <= heroSectionBottomY + 0.5;
           /* Later-section bg/* (y=2143 / 4286) is not first-screen cover art.
              Cover-cropping it on the page chrome plane paints the wrong sheet
              under sec/2–3. Only the first-screen kv plane may scale. */
           if (isFirstScreenVisual && isKv) {
+            const origin = __normalizedPlat === 'mobile' ? 'center 0' : 'center center';
             if (planeRatio > 1.001) {
               const planeLeft = Number.parseFloat(el.style.left || '0') || 0;
               el.style.left = (planeLeft + heroVisualCropLeft) + 'px';
-              el.style.transformOrigin = '0 0';
+              el.style.transformOrigin = origin === 'center 0' ? '50% 0' : '50% 50%';
               el.style.transform = ((el.style.transform ? el.style.transform + ' ' : '') + 'scale(' + planeRatio + ')').trim();
               el.setAttribute('data-hero-visual-plane-scale', String(planeRatio));
             }
@@ -4152,6 +4255,8 @@
               el.setAttribute('data-hero-visual-clip', String(clipH));
             }
             el.setAttribute('data-hero-visual-plane', isBg ? 'bg' : 'kv');
+            el.setAttribute('data-kv-cover-plane', 'cover-crop');
+            el.setAttribute('data-kv-cover-origin', origin);
           }
         }
         el.style.width = (box.w ?? 0) + 'px';
@@ -4884,7 +4989,7 @@
                统一与容器自然增长。缺译（走 fallback 原文）不进此分支，保持 Figma 字号
                并已有 data-copy-missing 标记。不改简中、不按文案/node 特判。 */
             if (String(ctx.prefs.lang || '') !== 'zh-CN' && typeof this._officialTargetDesignSize === 'function') {
-              const _ot = this._officialTargetDesignSize({ sourceFontSize: tx.fontSize, sourceLineHeight: tx.lineHeight, role: semantic.role, language: ctx.prefs.lang, fontWeight: tx.fontWeight });
+              const _ot = this._officialTargetDesignSize({ sourceFontSize: tx.fontSize, sourceLineHeight: this._resolvedLineHeight(tx, tx.fontSize), role: semantic.role, language: ctx.prefs.lang, fontWeight: tx.fontWeight });
               if (_ot && Number.isFinite(_ot.fontSize) && _ot.ratio !== 1) {
                 el.style.fontSize = _ot.fontSize + 'px';
                 if (Number.isFinite(_ot.lineHeight)) el.style.lineHeight = _ot.lineHeight + 'px';
@@ -6142,13 +6247,21 @@
           const sectionY = Number(sectionMeta && sectionMeta.y);
           const sectionH = Number(sectionMeta && sectionMeta.height);
           if (isFirstSectionRoot && firstPageH > 0) {
+            /* Product 100vh cover-crop: clip to the viewport design height so a
+               nested unnamed kv can scale past pageBox.h. inventory-static-gate=1
+               keeps pageBox so design-viewport coordinates still match. */
+            const heroWindowH = heroSlot && heroCropWindowDesign > 0
+              ? Math.max(firstPageH, heroCropWindowDesign)
+              : firstPageH;
             layer.style.left = '0';
             layer.style.top = '0';
             layer.style.width = designWidth + 'px';
-            layer.style.height = firstPageH + 'px';
+            layer.style.height = heroWindowH + 'px';
             layer.style.overflow = 'hidden';
-            layer.setAttribute('data-hero-crop-window', 'first-section-pagebox');
-            layer.setAttribute('data-hero-crop-window-design', String(firstPageH));
+            layer.setAttribute('data-hero-crop-window', heroSlot && heroCropWindowDesign > firstPageH + 0.5
+              ? '100vh'
+              : 'first-section-pagebox');
+            layer.setAttribute('data-hero-crop-window-design', String(heroWindowH));
           } else if (Number.isFinite(sectionY) && Number.isFinite(sectionH) && sectionH > 0 && String(rootId) !== firstSectionId) {
             /* Later section roots must clip to their own pageBox height, not a
                full-page layer from y=0. Keep top at 0: children already use
@@ -6425,7 +6538,6 @@
             id: String(modal.id || ''),
             name: parsed.label,
             layer,
-            exclusive: parsed.label !== '视频弹窗',
             openerEls,
             closeEls: this._closeControlEls(layer),
           });
@@ -7098,15 +7210,60 @@
             node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
             node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
           };
+          const modalPolicy = () => {
+            const policy = designPolicy();
+            const fill = policy.modalViewportFill === 'cover' ? 'cover' : 'contain';
+            const scrim = Number(policy.modalScrimOpacity);
+            const lock = policy.modalLockPageScroll === true;
+            return {
+              fill,
+              scrim: Number.isFinite(scrim) ? Math.min(1, Math.max(0, scrim)) : 0,
+              lock,
+            };
+          };
+          const ensureModalScrim = (host, opacity) => {
+            if (!host) return null;
+            let scrim = host.querySelector('[data-modal-scrim="true"]');
+            if (opacity <= 0) {
+              if (scrim) scrim.remove();
+              return null;
+            }
+            if (!scrim) {
+              scrim = document.createElement('div');
+              scrim.setAttribute('data-modal-scrim', 'true');
+              scrim.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+              host.insertBefore(scrim, host.firstChild);
+            }
+            scrim.style.background = 'rgba(0,0,0,' + opacity + ')';
+            return scrim;
+          };
+          const lockNamedModalScroll = (lock) => {
+            if (lock) {
+              if (frame.__fxModalPrevOverflow == null) frame.__fxModalPrevOverflow = frame.style.overflowY || '';
+              frame.style.overflowY = 'hidden';
+              frame.setAttribute('data-modal-scroll-lock', 'true');
+            } else {
+              if (frame.__fxModalPrevOverflow != null) frame.style.overflowY = frame.__fxModalPrevOverflow;
+              frame.removeAttribute('data-modal-scroll-lock');
+              frame.__fxModalPrevOverflow = null;
+            }
+          };
           const unpinModalHost = (entry) => {
             const host = entry && entry.layer && entry.layer.parentElement;
             if (!host || !host.classList || !host.classList.contains('fx-named-modals')) return;
+            const rest = host.__fxNamedModalRest || {};
             host.style.position = 'absolute';
             host.style.left = '0';
             host.style.top = '0';
+            host.style.width = rest.width || (designWidth + 'px');
+            host.style.height = rest.height || ((pageScrollHeight || 0) + 'px');
             host.style.transform = '';
+            host.style.zoom = String(pageStageScale || k);
             host.style.pointerEvents = 'none';
             host.style.zIndex = '40';
+            host.style.overflow = 'visible';
+            host.removeAttribute('data-modal-fill');
+            ensureModalScrim(host, 0);
           };
           const pinModalToViewport = (entry) => {
             if (!entry || !entry.layer) return;
@@ -7117,21 +7274,38 @@
             const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
             const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
             const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
-            const pageZoom = Number.parseFloat(frame.style.zoom) || 1;
-            const visibleW = frameRect.width / (pageZoom || 1);
-            const visibleH = frameRect.height / (pageZoom || 1);
-            const scale = Math.min(visibleW / designW, visibleH / designH);
+            /* Host zoom is the page-stage ruler for closed overlays. Pinning
+               to the visible frame must drop it, or cover/contain scale
+               multiplies k and the Figma sheet shrinks to a card.
+               getBoundingClientRect already includes QA preview transform on
+               `.frame`; use the unscaled frame box so cover/contain matches
+               Figma 3840×2160 against the 1920×1080 screen, not the shrunk
+               preview pixels. */
+            const visibleW = Math.max(0, Number.parseFloat(frame.style.width) || frame.clientWidth || frameRect.width);
+            const visibleH = Math.max(0, Number.parseFloat(frame.style.height) || frame.clientHeight || frameRect.height);
+            const policy = modalPolicy();
+            const scale = policy.fill === 'cover'
+              ? Math.max(visibleW / designW, visibleH / designH)
+              : Math.min(visibleW / designW, visibleH / designH);
             if (host) {
-              host.style.position = 'fixed';
-              host.style.left = frameRect.left + 'px';
-              host.style.top = frameRect.top + 'px';
-              host.style.width = designW + 'px';
-              host.style.height = Math.max(Number.parseFloat(host.style.height) || 0, designH) + 'px';
-              host.style.transformOrigin = '0 0';
-              host.style.transform = 'scale(' + scale + ')';
-              host.style.pointerEvents = 'none';
+              if (!host.__fxNamedModalRest) {
+                host.__fxNamedModalRest = {
+                  width: host.style.width || (designWidth + 'px'),
+                  height: host.style.height || ((pageScrollHeight || 0) + 'px'),
+                };
+              }
+              host.style.position = 'absolute';
+              host.style.left = '0px';
+              host.style.top = (Number(frame.scrollTop) || 0) + 'px';
+              host.style.width = visibleW + 'px';
+              host.style.height = visibleH + 'px';
+              host.style.zoom = '1';
+              host.style.transform = 'none';
+              host.style.pointerEvents = 'auto';
               host.style.zIndex = '2147483001';
-              host.style.overflow = 'visible';
+              host.style.overflow = 'hidden';
+              host.setAttribute('data-modal-fill', policy.fill);
+              ensureModalScrim(host, policy.scrim);
             }
             layer.style.left = '0px';
             layer.style.top = '0px';
@@ -7139,7 +7313,9 @@
             layer.style.height = designH + 'px';
             layer.style.maxWidth = 'none';
             layer.style.maxHeight = 'none';
-            layer.style.transform = 'none';
+            layer.style.zoom = '1';
+            layer.style.transformOrigin = '0 0';
+            layer.style.transform = 'scale(' + scale + ')';
             layer.style.pointerEvents = 'auto';
             layer.style.zIndex = '41';
             if (layer.getAttribute('data-modal-clip') === 'source') layer.style.overflow = 'hidden';
@@ -7156,17 +7332,19 @@
               if (host && host.classList && host.classList.contains('fx-named-modals')) {
                 host.style.pointerEvents = 'none';
               }
+              lockNamedModalScroll(false);
             }
           };
           const openNamedModal = (entry) => {
             if (!entry || !entry.layer) return;
             for (const other of namedModals) {
               if (other === entry) continue;
-              if (entry.exclusive && other.exclusive) closeNamedModal(other);
+              if (other.layer && other.layer.getAttribute('data-modal-open') === 'true') closeNamedModal(other);
             }
             hideInPlace(entry.layer, false);
             entry.layer.setAttribute('data-modal-open', 'true');
             pinModalToViewport(entry);
+            if (modalPolicy().lock) lockNamedModalScroll(true);
             if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
               frame.__fxAssetScheduler.prime(entry.layer);
             }
@@ -7628,7 +7806,8 @@
             c.el.setAttribute('data-fit-inline-source-max', String(sourceMax));
           }
         }
-        for (const c of fitCandidates) this._fitText(c.el, c.tx, c.box, { widthFit: c.widthFit, heightFit: c.heightFit, sourceTitleInlineSafe: c.sourceTitleInlineSafe, semanticBreak: c.semanticBreak });
+        for (const c of fitCandidates) this._fitText(c.el, c.tx, c.box, { widthFit: c.widthFit, heightFit: c.heightFit, maxWidth: c.maxWidth, maxHeight: c.maxHeight, sourceTitleInlineSafe: c.sourceTitleInlineSafe, semanticBreak: c.semanticBreak });
+        for (const c of fitCandidates) this._realignTranslatedClipText(c.el, c.box);
         /* 组级最小统一字号（required-scale prepass，官网实证：同一组件组标题/正文
            统一字号，最严格成员定全组等级，其余兄弟跟随，最长项折行也不单独缩）。
            逐成员 step-fit 后读取各自"所需 scale"（未缩=100）；组内取 min，若确有成员
@@ -7669,8 +7848,16 @@
             /* 重置到 locale 基准（官方缩放后），无缩放时回退 Figma 源字号。 */
             const _lbFs = Number(c.el.getAttribute('data-locale-base-fontsize'));
             const _lbLh = Number(c.el.getAttribute('data-locale-base-lineheight'));
-            c.el.style.fontSize = (Number.isFinite(_lbFs) && _lbFs > 0 ? _lbFs : c.tx.fontSize) + 'px';
-            c.el.style.lineHeight = (Number.isFinite(_lbLh) && _lbLh > 0 ? _lbLh : c.tx.lineHeight) + 'px';
+            const _resetFs = Number.isFinite(_lbFs) && _lbFs > 0 ? _lbFs : c.tx.fontSize;
+            const _resetLh = Number.isFinite(_lbLh) && _lbLh > 0 ? _lbLh : this._resolvedLineHeight(c.tx, _resetFs);
+            c.el.style.fontSize = _resetFs + 'px';
+            if (Number.isFinite(_resetLh) && _resetLh > 0) c.el.style.lineHeight = _resetLh + 'px';
+            const _srcTop = c.el.getAttribute('data-fit-source-top');
+            if (_srcTop != null) {
+              c.el.style.top = _srcTop + 'px';
+              c.el.removeAttribute('data-fit-source-top');
+            }
+            c.el.removeAttribute('data-fit-clip-realign');
             c.el.removeAttribute('data-fit-scale');
             c.el.removeAttribute('data-fit-overflow');
           }

@@ -74,5 +74,8 @@ export const DESIGN_POLICY = Object.freeze({
   "shrinkFloorPercent": 1,
   "hugNoShrink": true,
   "openFlowNoShrink": true,
-  "shrinkMode": "integer-px"
+  "shrinkMode": "integer-px",
+  "modalViewportFill": "cover",
+  "modalScrimOpacity": 0.8,
+  "modalLockPageScroll": true
 });

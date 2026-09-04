@@ -7132,7 +7132,7 @@
             c.el.setAttribute('data-fit-inline-source-max', String(sourceMax));
           }
         }
-        for (const c of fitCandidates) this._fitText(c.el, c.tx, c.box, { widthFit: c.widthFit, heightFit: c.heightFit, sourceTitleInlineSafe: c.sourceTitleInlineSafe, semanticBreak: c.semanticBreak });
+        for (const c of fitCandidates) this._fitText(c.el, c.tx, c.box, { widthFit: c.widthFit, heightFit: c.heightFit, maxWidth: c.maxWidth, maxHeight: c.maxHeight, sourceTitleInlineSafe: c.sourceTitleInlineSafe, semanticBreak: c.semanticBreak });
         /* 组级最小统一字号（required-scale prepass，官网实证：同一组件组标题/正文
            统一字号，最严格成员定全组等级，其余兄弟跟随，最长项折行也不单独缩）。
            逐成员 step-fit 后读取各自"所需 scale"（未缩=100）；组内取 min，若确有成员

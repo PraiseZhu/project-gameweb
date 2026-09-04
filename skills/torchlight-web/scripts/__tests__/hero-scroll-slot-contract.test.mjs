@@ -58,6 +58,11 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /Official first screen is a 100vh crop window/);
   assert.match(render, /data-hero-crop-window/);
   assert.match(render, /heroVisualPlane/);
+  assert.match(render, /firstScreenKvInSection/);
+  assert.doesNotMatch(render, /Nested unnamed `kv` under sec\/1[\s\S]{0,240}const layerName = String\(n\.name/);
+  assert.match(render, /data-kv-cover-plane', 'cover-crop'/);
+  assert.match(render, /data-kv-cover-origin/);
+  assert.match(render, /center 0/);
   assert.match(render, /bg-tail/);
   assert.match(render, /data-hero-visual-clip/);
   assert.match(render, /Hero UI size stays on platform width-scale k/);
@@ -80,8 +85,15 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /data-hero-slot-reveal/);
   assert.match(render, /revealDistance/);
   assert.doesNotMatch(render, /slotOffset/);
-  assert.match(render, /data-hero-visual-motion/);
+  assert.doesNotMatch(render, /-6 \* progress/);
+  assert.doesNotMatch(render, /scroll-scrub-generic-unverified/);
   assert.match(render, /data-hero-bg-gap/);
   assert.match(render, /data-hero-bg-follow/);
   assert.doesNotMatch(render, /display\s*:\s*none[^\n]*hero/i);
+});
+
+test('QA shell does not rewrite logo to a hardcoded 840×300 overlay', () => {
+  const chrome = readFileSync(resolve('templates/figma-chrome.js'), 'utf8');
+  assert.doesNotMatch(chrome, /function syncHeroEntryBrand/);
+  assert.doesNotMatch(chrome, /840, 300/);
 });

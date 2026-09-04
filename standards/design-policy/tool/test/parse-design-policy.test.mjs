@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDesignPolicyFile, parseDesignPolicyMarkdown } from '../src/parse-design-policy.mjs';
+import { writeSkillPolicyModule } from '../src/write-skill-policy.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
@@ -126,6 +127,9 @@ test('parses torchlight DESIGN.md YAML with composition != qaBuckets', () => {
   assert.equal(policy.shrinkMode, 'integer-px');
   assert.deepEqual([...policy.shrinkSteps], [1]);
   assert.equal(policy.shrinkFloorPercent, 1);
+  assert.equal(policy.modalViewportFill, 'cover');
+  assert.equal(policy.modalScrimOpacity, 0.8);
+  assert.equal(policy.modalLockPageScroll, true);
 });
 
 test('fixture markdown parses the same shape', () => {
@@ -145,6 +149,41 @@ test('duplicate keys are red', () => {
 
 test('unregistered extraBreakpoint is red', () => {
   throws(() => parseDesignPolicyMarkdown(yiseYaml('extraBreakpoint: 999\n')), /unregistered key: extraBreakpoint/);
+});
+
+test('yise DESIGN.md may omit named-modal YAML', () => {
+  const policy = parseDesignPolicyFile(join(REPO, 'skills/yise-web-ui/DESIGN.md'));
+  assert.equal(policy.modalViewportFill, undefined);
+  assert.equal(policy.modalScrimOpacity, undefined);
+  assert.equal(policy.modalLockPageScroll, undefined);
+});
+
+test('named-modal YAML keys must be declared together', () => {
+  throws(
+    () => parseDesignPolicyMarkdown(yiseYaml('modalViewportFill: cover\n')),
+    /must be declared together/,
+  );
+});
+
+test('named-modal YAML fill must be cover or contain', () => {
+  throws(
+    () => parseDesignPolicyMarkdown(yiseYaml('modalViewportFill: stretch\nmodalScrimOpacity: 0.8\nmodalLockPageScroll: true\n')),
+    /modalViewportFill must be cover or contain/,
+  );
+});
+
+test('writeSkillPolicyModule stores a repo-relative DESIGN.md path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'design-policy-write-'));
+  const out = join(dir, 'design-policy.generated.mjs');
+  writeSkillPolicyModule(
+    join(REPO, 'skills/torchlight-web/DESIGN.md'),
+    out,
+    { repoRoot: REPO },
+  );
+  const generated = readFileSync(out, 'utf8');
+  assert.match(generated, /"path": "skills\/torchlight-web\/DESIGN.md"/);
+  assert.doesNotMatch(generated, /C:\\\\Users/);
+  assert.doesNotMatch(generated, /"path": "\/Users/);
 });
 
 test('bare hash comments on a value line are red', () => {
