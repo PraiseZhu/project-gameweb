@@ -10,16 +10,28 @@ import { assessLanguageCompleteness, DEFAULT_TRANSLATION_LANGUAGES } from './tra
 const unwrap = (value) => (value && typeof value === 'object' && 'value' in value ? value.value : value);
 const isLeaf = (value) => value && typeof value === 'object' && 'value' in value && 'provenance' in value;
 
-export function collectFigmaTexts(snapshot) {
+export function collectFigmaTexts(snapshot, { treeKey = 'default' } = {}) {
   const texts = new Map();
-  const walk = (node) => {
+  const walk = (node, parentId, orderKey) => {
     if (!node || typeof node !== 'object') return;
-    if (node.type === 'TEXT' && node.id != null) {
-      texts.set(String(node.id), { nodeId: String(node.id), name: String(node.name ?? ''), characters: String(node.characters ?? '') });
+    const id = node.id != null ? String(node.id) : '';
+    if (node.type === 'TEXT' && id) {
+      texts.set(id, {
+        nodeId: id,
+        name: String(node.name ?? ''),
+        characters: String(node.characters ?? ''),
+        parentId: parentId ? String(parentId) : '',
+        orderKey: String(orderKey || ''),
+        treeKey: String(treeKey || 'default'),
+      });
     }
-    for (const child of node.children || []) walk(child);
+    (node.children || []).forEach((child, index) => {
+      walk(child, id || parentId, orderKey === '' ? String(index) : `${orderKey}.${index}`);
+    });
   };
-  for (const entry of Object.values(snapshot?.nodes || {})) walk(entry?.document);
+  for (const [rootKey, entry] of Object.entries(snapshot?.nodes || {})) {
+    walk(entry?.document, '', `${rootKey}.0`);
+  }
   return [...texts.values()];
 }
 

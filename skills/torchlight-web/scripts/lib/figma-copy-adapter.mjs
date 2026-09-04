@@ -49,7 +49,7 @@ const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
  */
 function extractOnePlat({ snap, sectionIds, larkSnap, at, larkLeaf, overlay, designations }) {
   // ① Figma TEXT 分母（机械收集，不由 truth 反推）
-  const texts = collectFigmaTexts(snap);
+  const texts = collectFigmaTexts(snap, { treeKey: String(sectionIds?.[0] || 'page') });
   // ② context 机械派生：对每个分区的 TEXT 节点建祖先链 → deriveContext
   const contexts = new Map();
   /* at 兼容两种形态：extractCopy 内部对 lark 用 at(larkSnap, ptr)（2参）；buildAncestorMap 对 fig 用 at(ptr)（1参，snap 由调用方闭包锁）。按参数数分流。 */
