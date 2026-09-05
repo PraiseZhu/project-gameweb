@@ -248,6 +248,11 @@ test('hero fill uses YAML fillVh of the viewport so later sections leave the fir
   });
   assert.equal(ninety.slotScale, (844 * 0.9) / 1334);
   assert.notEqual(ninety.slotScale, 844 / 1334);
+  const shortHero = heroViewportFill({
+    viewportH: 728, widthScaleK: 0.5, heroDesignHeight: 2143,
+  });
+  assert.equal(shortHero.layoutOffsetDesign, 0);
+  assert.ok(shortHero.layoutOffsetDesign >= 0);
 });
 
 test('product view clips page X; QA keeps X auto for no-clip probes', () => {

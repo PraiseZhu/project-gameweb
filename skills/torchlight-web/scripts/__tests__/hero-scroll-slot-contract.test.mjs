@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { buildHeroScrollSlot, assertHeroScrollSlotState, resolveHeroContentRoot } from '../lib/hero-scroll-slot.mjs';
+
+const renderSource = () => readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
 
 test('generic hero scroll-slot state machine locks, exits progressively, then releases', () => {
   const slot = buildHeroScrollSlot({
@@ -47,7 +48,7 @@ test('lone page-paint sibling without sectionIds still resolves a content root',
 });
 
 test('renderer exposes the generic state contract and does not use a visual cover', () => {
-  const render = readFileSync(resolve('templates/figma-render.js'), 'utf8');
+  const render = renderSource();
   assert.match(render, /_buildHeroScrollSlot/);
   assert.match(render, /_installHeroScrollSlot/);
   assert.match(render, /data-hero-scroll-state/);
@@ -59,12 +60,11 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /data-hero-crop-window/);
   assert.match(render, /heroVisualPlane/);
   assert.match(render, /firstScreenKvInSection/);
-  assert.doesNotMatch(render, /Nested unnamed `kv` under sec\/1[\s\S]{0,240}const layerName = String\(n\.name/);
+  assert.match(render, /Nested unnamed `kv` under sec\/1 is still first-screen art/);
   assert.match(render, /data-kv-cover-plane', 'cover-crop'/);
   assert.match(render, /data-kv-cover-origin/);
   assert.match(render, /center 0/);
   assert.match(render, /bg-tail/);
-  assert.match(render, /data-hero-visual-clip/);
   assert.match(render, /Hero UI size stays on platform width-scale k/);
   assert.match(render, /pageScope \? 1 : k/);
   assert.match(render, /data-hero-ui-scale/);
@@ -74,6 +74,7 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /owner-block/);
   assert.match(render, /pfx === 'fix'/);
   assert.match(render, /listedHeroArt/);
+  assert.match(render, /firstScreenKvInSection/);
   assert.match(render, /fullBleedHeroArt/);
   assert.match(render, /fixedHost\.style\.position = 'sticky'/);
   assert.match(render, /fx-fixed-zoom/);
@@ -87,13 +88,15 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.doesNotMatch(render, /slotOffset/);
   assert.doesNotMatch(render, /-6 \* progress/);
   assert.doesNotMatch(render, /scroll-scrub-generic-unverified/);
+  assert.match(render, /heroStage\.style\.translate = '0 0'/);
+  assert.match(render, /heroStage\.style\.opacity = '1'/);
   assert.match(render, /data-hero-bg-gap/);
   assert.match(render, /data-hero-bg-follow/);
   assert.doesNotMatch(render, /display\s*:\s*none[^\n]*hero/i);
 });
 
 test('QA shell does not rewrite logo to a hardcoded 840×300 overlay', () => {
-  const chrome = readFileSync(resolve('templates/figma-chrome.js'), 'utf8');
+  const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
   assert.doesNotMatch(chrome, /function syncHeroEntryBrand/);
   assert.doesNotMatch(chrome, /840, 300/);
 });

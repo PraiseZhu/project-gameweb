@@ -824,9 +824,13 @@
       img.style.width = exportW + 'px';
       img.style.height = exportH + 'px';
       /* Downscaled Figma PNG must fill the design box. A larger spill PNG
-         (188 around 124) keeps intrinsic pixels with object-fit:none. */
+         (188 around 124) keeps intrinsic pixels with object-fit:none.
+         Play-slice gate also rejects fill when the PNG already matches the
+         owner box — none and fill look the same, fill still fails the gate. */
       const spillsOwner = natW > Number(box.w) + 1.5 || natH > Number(box.h) + 1.5;
-      img.style.objectFit = spillsOwner ? 'none' : 'fill';
+      const matchesOwner = natW > 0 && Number(box.w) > 0 && Number(box.h) > 0
+        && Math.abs(natW - Number(box.w)) <= 1.5 && Math.abs(natH - Number(box.h)) <= 1.5;
+      img.style.objectFit = (spillsOwner || matchesOwner) ? 'none' : 'fill';
       el.setAttribute('data-asset-bounds-resolved', policy);
     };
     const applyPlacement = () => {
@@ -1822,6 +1826,7 @@
           '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
           '[data-dropmenu="true"]:hover,[data-dropmenu="true"]:active{filter:none}',
           '[data-dropmenu-state="on"] [data-prefix="img"]{filter:none}',
+          '[data-scroll-axis="y"]::-webkit-scrollbar{display:none;width:0;height:0}',
         ].join('');
       const style = doc.createElement('style');
       style.setAttribute('data-fx-button-press', 'figma-button-press-contract/v1');
@@ -4183,11 +4188,23 @@
           const heroH = heroSlot ? Number(heroSlot.heroHeight || 0) : 0;
           const fullBleedHeroArt = !!(heroSlot && Number.isFinite(sourceTop) && Number.isFinite(heroH) && heroH > 0
             && Math.abs(sourceTop) <= 0.5 && sourceH >= heroH * 0.7);
-          const listedHeroArt = pfx === 'img' || pfx === 'kv' || pfx === 'bg' || pfx === 'btn'
-            || /^kv(?:\/|$)/i.test(String(n.name || ''));
-          if (heroUiBlocks && !parent && Number.isFinite(sourceTop) && !pinViewport
+          const listedHeroArt = pfx === 'kv' || pfx === 'bg'
+            || /^kv(?:\/|$)/i.test(String(n.name || ''))
+            || /^bg(?:\/|$)/i.test(String(n.name || ''));
+          const parentNodeId = parent && parent.nid != null ? String(parent.nid) : '';
+          const parentIsHeroSection = !!(heroSlot && parentNodeId && parentNodeId === String(heroSlot.sectionId));
+          /* Direct children of the hero section (title / CTA / calendar) must
+             remap onto the 100vh slot. Nested leaves ride a stretched owner
+             block when one already exists; otherwise they keep Figma y. */
+          const localX = (box.x ?? 0) - originX;
+          const rideOwner = heroUiBlocks && parent && !parentIsHeroSection && !pinViewport
+            ? heroUiOwnerBlock(heroUiBlocks, localX + (box.w ?? 0) / 2, sourceTop + sourceH / 2)
+            : null;
+          if (rideOwner) {
+            heroUiTop = rideOwner.stretchedTop + (sourceTop - rideOwner.y);
+            heroUiAnchored = true;
+          } else if (heroUiBlocks && (!parent || parentIsHeroSection) && Number.isFinite(sourceTop) && !pinViewport
             && !(fullBleedHeroArt || listedHeroArt)) {
-            const localX = (box.x ?? 0) - originX;
             const sourceBottom = sourceTop + sourceH;
             /* Generic split, no node names: blocks whose Figma bottom sits in
                the upper half of the hero are top chrome and keep their top
@@ -4199,11 +4216,6 @@
             heroUiTop = sourceBottom > heroUiHalf
               ? sourceBottom * heroUiYRatio - sourceH
               : sourceTop * heroUiYRatio;
-            const best = heroUiOwnerBlock(heroUiBlocks, localX + (box.w ?? 0) / 2, sourceTop + sourceH / 2);
-            if (best) {
-              heroUiTop = best.stretchedTop + (sourceTop - best.y);
-              heroUiAnchored = true;
-            }
             heroUiBlocks.push({
               x: localX,
               y: sourceTop,
@@ -4422,6 +4434,18 @@
           } else {
             el.style.overflow = 'hidden';
           }
+        }
+        if ((evidenceAttrs && evidenceAttrs['data-hscroll'] === 'y')
+          || (pfx === 'scroll' && n.clipsContent === true && !(evidenceAttrs && evidenceAttrs['data-hscroll'] === 'x'))) {
+          el.style.overflow = 'hidden';
+          el.style.overflowX = 'hidden';
+          el.style.overflowY = 'auto';
+          el.style.overscrollBehavior = 'contain';
+          el.style.touchAction = 'pan-y';
+          el.style.webkitOverflowScrolling = 'touch';
+          el.style.scrollbarWidth = 'none';
+          el.style.msOverflowStyle = 'none';
+          el.setAttribute('data-scroll-axis', 'y');
         }
         if (evidenceAttrs && evidenceAttrs['data-hscroll'] === 'x') {
           /* This same Figma node is the clipped viewport. Native overflow-x
@@ -6512,7 +6536,7 @@
               originX: Number(box.x) || 0,
               originY: Number(box.y) || 0,
               skipNodeIds: new Set([String(modal.id || '')].filter(Boolean)),
-              suppressInteractions: true,
+              suppressInteractions: false,
             });
             /* Full-bleed overlay art is painted after the close button in
                DFS. Keep the pixels, punch hits through to btn/关闭按钮. */
@@ -6538,6 +6562,7 @@
             id: String(modal.id || ''),
             name: parsed.label,
             layer,
+            exclusive: !/^(?:pc|移动端)?视频弹窗$/.test(parsed.label),
             openerEls,
             closeEls: this._closeControlEls(layer),
           });
@@ -6765,13 +6790,83 @@
           );
           return /多语言|语言|language/i.test(name);
         };
-        const dropmenuLangFromSelfLabel = (raw) => {
+        const dropmenuLangHits = (raw) => {
           const key = normalizeDropmenuSelfLabel(raw);
-          if (!key) return null;
+          if (!key) return [];
+          const hits = [];
           for (const [label, lang] of Object.entries(DROPMENU_SELF_LABELS)) {
-            if (normalizeDropmenuSelfLabel(label) === key) return lang;
+            const token = normalizeDropmenuSelfLabel(label);
+            if (!token) continue;
+            if (key === token || key.includes(token)) hits.push(lang);
+          }
+          return hits;
+        };
+        const uniqueDropmenuLang = (raw) => {
+          const hits = dropmenuLangHits(raw);
+          return hits.length === 1 ? hits[0] : null;
+        };
+        const dropmenuLangFromSelfLabel = (raw) => uniqueDropmenuLang(raw);
+        const dropmenuLangFromEvent = (target, owner) => {
+          let node = target && target.nodeType === 3 ? target.parentElement : target;
+          while (node && node !== owner && node.nodeType === 1) {
+            const directCopy = node.matches && (
+              node.matches('[data-prefix="txt"]')
+              || node.matches('[data-role="copy"]')
+              || node.matches('.fx-t')
+            ) ? node.textContent : '';
+            const named = [
+              node.getAttribute && node.getAttribute('data-copy'),
+              node.getAttribute && node.getAttribute('data-btn-name'),
+              node.getAttribute && node.getAttribute('data-name'),
+            ].filter(Boolean).join('');
+            const lang = uniqueDropmenuLang(directCopy) || uniqueDropmenuLang(named);
+            if (lang) return lang;
+            const isOption = node.getAttribute && (
+              node.getAttribute('data-prefix') === 'btn'
+              || node.hasAttribute('data-btn-name')
+            );
+            if (isOption) {
+              const nested = uniqueDropmenuLang(node.textContent);
+              if (nested) return nested;
+            }
+            node = node.parentElement;
           }
           return null;
+        };
+        const languageOptionButtons = (owner) => {
+          if (!owner || !owner.querySelectorAll) return [];
+          const seen = new Set();
+          const out = [];
+          for (const el of owner.querySelectorAll('[data-btn-name="切换语言"], [data-prefix="btn"][data-btn-name]')) {
+            if (!el || seen.has(el) || !owner.contains(el)) continue;
+            const name = String(el.getAttribute('data-btn-name') || '');
+            if (name && name !== '切换语言') continue;
+            seen.add(el);
+            out.push(el);
+          }
+          return out;
+        };
+        const currentPageLang = () => String(
+          (frame.__fxRenderPrefs && frame.__fxRenderPrefs.lang)
+          || (ctx.prefs && ctx.prefs.lang)
+          || '',
+        ).trim();
+        const syncLanguageDropmenuHighlight = (owner, lang) => {
+          if (!owner || !isLanguageDropmenu(owner)) return false;
+          const current = String(lang || currentPageLang()).trim();
+          let applied = 0;
+          for (const option of languageOptionButtons(owner)) {
+            const optionLang = dropmenuLangFromEvent(option, owner)
+              || uniqueDropmenuLang(option.textContent);
+            const nextState = optionLang && optionLang === current ? 'highlight' : 'normal';
+            if (option.getAttribute('data-btn-variant') === 'true'
+              && option.getAttribute('data-btn-variant-mount-status') === 'owner-local-mutually-exclusive') {
+              if (applyIndependentButtonVariant(option, nextState)) applied += 1;
+              continue;
+            }
+            option.setAttribute('data-btn-variant-state', nextState);
+          }
+          return applied > 0;
         };
         const applyDropmenuLang = (lang) => {
           if (!lang) return false;
@@ -6780,6 +6875,9 @@
             ? ctx.setPref
             : (qa && typeof qa.setPref === 'function' ? qa.setPref.bind(qa) : null);
           if (typeof setPref !== 'function') return false;
+          for (const owner of [...frame.querySelectorAll('[data-dropmenu="true"]')]) {
+            syncLanguageDropmenuHighlight(owner, lang);
+          }
           setPref('lang', lang);
           return true;
         };
@@ -6830,7 +6928,10 @@
           if (!owner) return false;
           const current = owner.getAttribute('data-dropmenu-state');
           if (current !== 'on' && current !== 'off') return false;
-          return applyDropmenuVariant(owner, current === 'on' ? 'off' : 'on');
+          const next = current === 'on' ? 'off' : 'on';
+          const ok = applyDropmenuVariant(owner, next);
+          if (ok && next === 'on') syncLanguageDropmenuHighlight(owner, currentPageLang());
+          return ok;
         };
         const closeDropmenuOwners = (root) => {
           const scope = root && typeof root.querySelectorAll === 'function' ? root : frame;

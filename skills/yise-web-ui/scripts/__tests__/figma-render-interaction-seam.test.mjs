@@ -42,6 +42,7 @@ test('Main static leaves page clicks inert until Interaction opts in', () => {
   const renderInto = chrome.slice(renderIntoAt, nextFnAt > renderIntoAt ? nextFnAt : chrome.length);
   assert.match(renderInto, /enablePageInteraction: new URLSearchParams\(location\.search\)\.get\('interaction'\) === '1'/);
   assert.doesNotMatch(renderInto, /enablePageInteraction:\s*true/);
+  assert.doesNotMatch(renderInto, /enablePageInteraction: !!PRODUCT_VIEW/);
 });
 
 test('named modal runtime only wires openers listed in triggerFrom', () => {

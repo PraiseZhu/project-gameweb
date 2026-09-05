@@ -53,6 +53,8 @@ window.__qaDemo = {
     if (!window.__figmaRender || typeof window.__figmaRender.renderApp !== 'function') {
       throw new Error('figma preview shell: __figmaRender.renderApp is missing; run figma-inline');
     }
+    /* Main static stays inert. Interaction must pass
+       enablePageInteraction: true via ?interaction=1. */
     return window.__figmaRender.renderApp(ctx);
   },
 };

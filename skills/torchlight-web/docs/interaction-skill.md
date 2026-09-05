@@ -115,6 +115,16 @@ parent group to normal. Replacement is in-place hide/show of already extracted
 variant trees. TEXT/HUG nodes need `display:none` plus the saved original
 display. Flattened `I{owner};…` descendants must not be reparented.
 
+Stop-2 completion for `dropmenu/多语言` `btn/切换语言` is the authored
+COMPONENT root fill, not `data-btn-variant-state`. Current page language
+gets Property 1=highlight (`758:1713`, `rgb(169, 177, 220)`); every other
+option stays Property 1=normal (`758:1710`, `rgb(127, 133, 162)`). Labels
+stay visible. After a language remount, open-menu highlight must read
+`frame.__fxRenderPrefs.lang`, never the first-paint closure. `later-axes-probe`
+fails closed if any of en / zh-TW / zh-CN / ko opens with the wrong fill,
+if a remount keeps stale `prefs.lang`, or if skip / unmeasured rows try
+to go green.
+
 PC `btn/多语言切换按钮` highlight is the large opener panel itself, not a
 `modal/`. The small language list-item set is a different component set and
 must not replace the homepage opener.
@@ -185,6 +195,19 @@ closes every other open named modal first, including `modal/视频弹窗`.
 The overlay host keeps page-stage `zoom` while closed;
 pinning must set host/layer `zoom` to `1` and scale only from the visible
 frame vs the Figma `pageBox`. Incomplete graphs stay unresolved.
+
+PC named modals pin the authored 3840×2160 sheet in the current viewport.
+Do not geometrically center only `img/弹窗背景` (3840×1340 @ y=199); that
+drops the panel below the spec rest pose. Completion is sheet center =
+viewport center and panel top / sheet height = 199/2160. Mobile overflow
+`img/背景` still stays inside the phone sheet. `later-axes-probe` measures
+this on the QA page after switching back to `zh-CN`, not leftover `en`.
+Mobile `modal/` must stay inside the 390 host; `btn/关闭按钮` must close
+it; a named `scroll/` must keep `scrollbarWidth: none`. Skip, missing
+close, overflow, or a visible scrollbar cannot go green.
+Every visible homepage `@go` opener on PC and mobile must open then
+close; a homepage `btn/` without `@go` must not open a modal. Catalog
+skip or unmeasured rows cannot go green.
 
 Missing modal tree, missing unique opener, or a PC page with no mobile
 overlay stays fail-closed.

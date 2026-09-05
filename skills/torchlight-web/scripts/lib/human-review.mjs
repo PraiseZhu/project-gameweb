@@ -76,6 +76,10 @@ export function presentStop(demoDir, id, { previewOk = false } = {}) {
     return { ok: false, reason: 'preview:first-red', presentPage: false };
   }
   const record = readHumanReview(demoDir);
+  if (id === 'static-and-translation') {
+    /* Re-presenting stop 1 after a Main rebuild clears later-stop signatures. */
+    record.stops['interaction-and-resize'] = emptyStop();
+  }
   if (id === 'interaction-and-resize' && record.stops['static-and-translation'].accepted !== true) {
     return { ok: false, reason: 'first-stop-not-accepted', presentPage: false };
   }

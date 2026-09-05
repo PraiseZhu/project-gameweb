@@ -35,7 +35,7 @@ test('sc-61-recall: CLAUDE.md trigger table loads torchlight-web SKILL.md', () =
 });
 
 test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence', () => {
-  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg\/` `kv` \/ 无名 `kv` \/ 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 才给人 `\?product=1`/;
+  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg\/` `kv` \/ 无名 `kv` \/ 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 \/ 1440 `\?product=1`，sec 无缝、满铺子层不重画）→ 才给人 `\?product=1`/;
   const skill = read('SKILL.md');
   const readme = read('README.md');
   const claude = readClaude();
@@ -47,7 +47,7 @@ test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence',
   assert.match(readme, /政策镜像必须绿/);
   assert.doesNotMatch(skill, /DOM 已验 10vw|整份 DESIGN\.md 已上屏/);
   assert.doesNotMatch(readme, /DOM 已验 10vw|整份 DESIGN\.md 已上屏/);
-  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green \(whole-frame PNG non-empty; full-bleed `bg\/` `kv` \/ unnamed `kv` \/ time-bg size = `pageBox`; product-view first-screen unnamed `kv` cover-crops into 100vh\) → policy mirror must be green → then show `\?product=1`/);
+  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green \(whole-frame PNG non-empty; full-bleed `bg\/` `kv` \/ unnamed `kv` \/ time-bg size = `pageBox`; product-view first-screen unnamed `kv` cover-crops into 100vh\) → policy mirror must be green → product viewport gate must be green \(390 \/ 1440 `\?product=1`, section abut, no full-bleed child repaint\) → then show `\?product=1`/);
   assert.match(skill, /figma:html-from-handoff/);
   assert.match(readme, /figma:html-from-handoff/);
   assert.match(skill, /停下来要包/);
@@ -150,6 +150,10 @@ test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not po
   assert.match(chrome, /html\[data-product-view="1"\]\{font-size:16px\}/);
   assert.match(chrome, /BEZEL = PRODUCT_VIEW \? 0 : 22/);
   assert.match(chrome, /fit: !PRODUCT_VIEW/);
+  assert.match(chrome, /product view setPref only accepts lang/);
+  assert.match(chrome, /function applyPref\(key, value\)/);
+  assert.match(chrome, /setPref: applyPref/);
+  assert.doesNotMatch(chrome, /if \(!PRODUCT_VIEW\) window\.__qa = \{/);
   assert.doesNotMatch(chrome, /poster\.xdcdn/);
 });
 
@@ -165,6 +169,47 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   assert.match(arch, /not a restore axis/);
   assert.match(pack, /not a fourth restore axis/);
   assert.match(pack, /after Resize is accepted|later-axes Chrome probe is green/);
+  assert.match(skill, /language-button fill pixels/);
+  assert.match(skill, /PC modal sheet pose/);
+  assert.match(skill, /mobile\s+modal inside the 390 sheet/);
+  assert.match(skill, /Skip, unmeasured, leftover-en, missing `modal.lang`\/`go`, missing\s+catalog, or fixture-without-mobile cannot go green/);
+  assert.match(skill, /measured\s+on `zh-CN`/);
+  assert.match(skill, /modal.lang=zh-CN/);
+  const interaction = read('docs/interaction-skill.md');
+  assert.match(interaction, /758:1713/);
+  assert.match(interaction, /199\/2160/);
+  assert.match(interaction, /scrollbarWidth: none/);
+  assert.match(interaction, /Skip, missing\s+close, overflow, or a visible scrollbar cannot go green/s);
+  const probe = read('scripts/lib/later-axes-probe.mjs');
+  assert.match(probe, /measureInteractionPixels/);
+  assert.match(probe, /index\.html\?interaction=1#g=/);
+  assert.doesNotMatch(probe, /index\.html#g=/);
+  assert.match(probe, /laterAxesPixelEvidenceComplete/);
+  assert.match(probe, /mobileModalSheetVerdict/);
+  assert.match(probe, /pcModalCloseVerdict/);
+  assert.match(probe, /setPref\('lang', 'zh-CN'\)/);
+  assert.match(probe, /pc-modal-lang/);
+  assert.match(probe, /mobile-close/);
+  assert.match(probe, /lang: 'zh-CN', go: 'modal\/pc适龄提示'/);
+  assert.match(probe, /lang: 'zh-CN', go: 'modal\/mobile适龄提示'/);
+  assert.match(probe, /measureVisibleOpenerCatalog/);
+  assert.match(probe, /pcCatalog/);
+  assert.match(probe, /mobileCatalog/);
+  const oracle = read('scripts/lib/interaction-pixel-oracle.mjs');
+  assert.match(oracle, /modalLangGoOk/);
+  assert.match(oracle, /catalogEvidenceOk/);
+  assert.match(oracle, /catalogGoMatchesPlat/);
+  assert.match(oracle, /Unprefixed same-platform names/);
+  assert.match(oracle, /catalogOpenedGoMatches/);
+  assert.match(probe, /catalogOpenedGoMatches/);
+  assert.match(probe, /scoreOpenerCatalog/);
+  assert.match(probe, /hostLeft/);
+  assert.match(probe, /modalLeft/);
+  assert.doesNotMatch(probe, /seen\.has\(go\)/);
+  assert.doesNotMatch(probe, /下载\|播放\|预约\|日历/);
+  assert.doesNotMatch(probe, /catalogOpenedGoMatches\(go, openedGo\)/);
+  assert.match(oracle, /entry.lang !== 'zh-CN'/);
+  assert.doesNotMatch(probe, /waitForTimeout/);
   assert.match(lib, /DEFAULT_PACK_BUDGET_BYTES = 15 \* 1024 \* 1024/);
   assert.match(lib, /figma-indicator/);
 });

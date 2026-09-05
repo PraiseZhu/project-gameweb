@@ -52,8 +52,11 @@ test('Main static leaves page clicks inert until Interaction opts in', () => {
   const renderInto = chrome.slice(renderIntoAt, nextFnAt > renderIntoAt ? nextFnAt : chrome.length);
   assert.match(renderInto, /enablePageInteraction: new URLSearchParams\(location\.search\)\.get\('interaction'\) === '1'/);
   assert.doesNotMatch(renderInto, /enablePageInteraction:\s*true/);
+  assert.doesNotMatch(renderInto, /enablePageInteraction: !!PRODUCT_VIEW/);
   const laterAxes = readFileSync(new URL('../lib/later-axes-probe.mjs', import.meta.url), 'utf8');
-  assert.match(laterAxes, /index\.html\?inventory-static-gate=1&interaction=1/);
+  assert.match(laterAxes, /index\.html\?interaction=1#g=/);
+  assert.match(laterAxes, /index\.html\?inventory-static-gate=1/);
+  assert.doesNotMatch(laterAxes, /index\.html\?inventory-static-gate=1&interaction=1/);
 });
 
 test('selected component tree keeps inner btn @go live', () => {
@@ -76,6 +79,41 @@ test('only language dropmenus consume inner btn as setPref lang', () => {
   assert.match(renderer, /frame\.__fxAssetScheduler\.prime\(target\)/);
   assert.match(renderer, /Open panel must sit above later sticky siblings/);
   assert.match(renderer, /owner\.style\.zIndex = '50'/);
+  assert.match(renderer, /ctx\.setPref === 'function'/);
+  assert.match(renderer, /qa && typeof qa\.setPref === 'function'/);
+});
+
+test('named modal pin fills the visible frame with an 80% black scrim', () => {
+  assert.match(renderer, /data-modal-scrim/);
+  assert.match(renderer, /rgba\(0,0,0,' \+ opacity \+ '\)/);
+  assert.match(renderer, /host\.style\.zoom = '1'/);
+  assert.match(renderer, /modalViewportFill/);
+  assert.match(renderer, /Math\.max\(visibleW \/ designW, visibleH \/ designH\)/);
+  assert.doesNotMatch(renderer, /frameRect\.width \/ \(pageZoom \|\| 1\)/);
+});
+
+test('language dropmenu matches one option label, not the whole menu tree', () => {
+  assert.match(renderer, /dropmenuLangFromEvent/);
+  assert.match(renderer, /uniqueDropmenuLang/);
+  assert.match(renderer, /hits\.length === 1/);
+  assert.match(renderer, /syncLanguageDropmenuHighlight/);
+  assert.match(renderer, /optionLang === current \? 'highlight' : 'normal'/);
+  assert.match(renderer, /syncLanguageDropmenuHighlight\(owner, currentPageLang\(\)\)/);
+  assert.doesNotMatch(renderer, /dropmenuLangFromNode/);
+});
+
+test('named modal overlays close when either side is exclusive', () => {
+  assert.match(renderer, /exclusive: !\/\^\(\?:pc\|移动端\)\?视频弹窗\$\/\.test\(parsed\.label\)/);
+  assert.match(renderer, /other\.layer && other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) closeNamedModal\(other\)/);
+  assert.doesNotMatch(renderer, /entry\.exclusive && other\.exclusive/);
+});
+
+test('named modal paint keeps close and named scroll live', () => {
+  const marker = 'named modal paint is not defined';
+  const at = renderer.indexOf(marker);
+  const paintCall = renderer.slice(at, at + 900);
+  assert.match(paintCall, /suppressInteractions:\s*false/);
+  assert.match(renderer, /_punchModalOverlayHits/);
 });
 
 test('renderer consumes pure direct-child interaction payload without raw switch classification', () => {

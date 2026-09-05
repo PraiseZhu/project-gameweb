@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -172,6 +172,7 @@ test('named-modal YAML fill must be cover or contain', () => {
   );
 });
 
+
 test('writeSkillPolicyModule stores a repo-relative DESIGN.md path', () => {
   const dir = mkdtempSync(join(tmpdir(), 'design-policy-write-'));
   const out = join(dir, 'design-policy.generated.mjs');
@@ -185,6 +186,18 @@ test('writeSkillPolicyModule stores a repo-relative DESIGN.md path', () => {
   assert.doesNotMatch(generated, /C:\\\\Users/);
   assert.doesNotMatch(generated, /"path": "\/Users/);
 });
+
+test('writeSkillPolicyModule rejects DESIGN.md outside the repo', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'design-policy-outside-'));
+  const outside = join(dir, 'DESIGN.md');
+  const out = join(dir, 'design-policy.generated.mjs');
+  writeFileSync(outside, readFileSync(join(REPO, 'skills/torchlight-web/DESIGN.md')));
+  assert.throws(
+    () => writeSkillPolicyModule(outside, out, { repoRoot: REPO }),
+    /DESIGN.md path must stay inside the repo/,
+  );
+});
+
 
 test('bare hash comments on a value line are red', () => {
   throws(() => parseDesignPolicyMarkdown(yiseYaml().replace('officialRootFontVw: 10', 'officialRootFontVw: 10 # vw')), /bare #/);

@@ -35,7 +35,7 @@ test('sc-61-recall: CLAUDE.md trigger table loads yise-web-ui SKILL.md', () => {
 });
 
 test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence', () => {
-  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg\/` `kv` \/ 无名 `kv` \/ 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 才给人 `\?product=1`/;
+  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg\/` `kv` \/ 无名 `kv` \/ 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 \/ 1440 `\?product=1`，sec 无缝、满铺子层不重画）→ 才给人 `\?product=1`/;
   const skill = read('SKILL.md');
   const readme = read('README.md');
   const claude = readClaude();
@@ -47,7 +47,7 @@ test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence',
   assert.match(readme, /政策镜像必须绿/);
   assert.doesNotMatch(skill, /DOM 已验 10vw|整份 DESIGN\.md 已上屏/);
   assert.doesNotMatch(readme, /DOM 已验 10vw|整份 DESIGN\.md 已上屏/);
-  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green → policy mirror must be green → then show `\?product=1`/);
+  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green \(whole-frame PNG non-empty; full-bleed `bg\/` `kv` \/ unnamed `kv` \/ time-bg size = `pageBox`; product-view first-screen unnamed `kv` cover-crops into 100vh\) → policy mirror must be green → product viewport gate must be green \(390 \/ 1440 `\?product=1`, section abut, no full-bleed child repaint\) → then show `\?product=1`/);
   assert.match(skill, /figma:html-from-handoff/);
   assert.match(readme, /figma:html-from-handoff/);
   assert.match(skill, /停下来要包/);

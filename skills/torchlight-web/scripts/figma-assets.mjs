@@ -611,7 +611,10 @@ async function main() {
 
   const rawTruth = JSON.parse(readFileSync(truthPath, 'utf8'));
   const truth = unwrap(rawTruth);
-  const designVersion = truth.design?.fileVersion ?? null;
+  const designVersion = truth.design?.fileVersion
+    ?? truth.source?.lastModified
+    ?? truth.source?.snapshotHash
+    ?? null;
 
   let picks = pickSliceNodes(truth, { minDim: spec.figma?.sliceMinDimPx ?? 24 });
   if (a.only && a.only.length) {

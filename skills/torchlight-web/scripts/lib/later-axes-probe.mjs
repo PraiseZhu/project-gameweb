@@ -1,6 +1,7 @@
 /**
  * Later-axes Chrome probe (B1): interaction wiring still exists / unresolved
- * stays inert, and 1126/1127 composition + 10vw ruler match DESIGN.md.
+ * stays inert, 1126/1127 composition + 10vw ruler match DESIGN.md, and
+ * language/modal pixels match the authored fill / sheet pose.
  * Does not write human-review accepted.
  */
 import { createHash } from 'node:crypto';
@@ -12,6 +13,15 @@ import { launchChromium } from './resolve-playwright.mjs';
 import { inspectPackPath, packRoot, sha256File } from './pack-demo.mjs';
 import { requireOrchestratorTicket } from './orchestrator-ticket.mjs';
 import { compositionForView, DESIGN_POLICY, OFFICIAL_ROOT_FONT_VW, widthScale } from './resize/index.mjs';
+import {
+  LANG_OPTION_PAGES,
+  catalogOpenedGoMatches,
+  languageOptionVerdict,
+  laterAxesPixelEvidenceComplete,
+  mobileModalSheetVerdict,
+  pcModalCloseVerdict,
+  pcModalSheetVerdict,
+} from './interaction-pixel-oracle.mjs';
 
 export const LATER_AXES_PROBE_SCHEMA = 'torchlightweb-later-axes-probe/v1';
 export const LATER_AXES_PROBE_FILE = 'later-axes-probe.json';
@@ -72,6 +82,7 @@ export function laterAxesProbeEvidenceComplete(parsed, { demoDir } = {}) {
     if (!Number.isFinite(expectedFont) || expectedFont <= 0) return false;
     if (!Number.isFinite(measuredFont) || Math.abs(measuredFont - expectedFont) > 0.5) return false;
   }
+  if (!laterAxesPixelEvidenceComplete(parsed)) return false;
   return true;
 }
 
@@ -106,6 +117,23 @@ export function greenLaterAxesProbeFixture({
         inertCount: 0,
       };
     }),
+    pixel: {
+      ok: true,
+      languages: LANG_OPTION_PAGES.map((row) => ({ lang: row.lang, label: row.label, ok: true, measured: true, skipped: false, problems: [] })),
+      stalePrefs: { ok: true, measured: true, skipped: false, problems: [] },
+      modal: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/pc适龄提示', close: { ok: true, measured: true, skipped: false } },
+      mobile: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/mobile适龄提示', close: { ok: true, measured: true, skipped: false } },
+      pcCatalog: {
+        ok: true, measured: true, skipped: false, problems: [], plat: 'pc',
+        openers: [{ go: 'modal/pc适龄提示', openedGo: 'pc适龄提示', ok: true, measured: true, skipped: false, opened: true, closed: true }],
+        inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
+      },
+      mobileCatalog: {
+        ok: true, measured: true, skipped: false, problems: [], plat: 'mobile',
+        openers: [{ go: 'modal/mobile适龄提示', openedGo: 'mobile适龄提示', ok: true, measured: true, skipped: false, opened: true, closed: true }],
+        inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
+      },
+    },
   };
 }
 
@@ -209,6 +237,376 @@ async function measurePage(page, width) {
   }, width);
 }
 
+function waitMs(page, ms) {
+  return page.evaluate((delay) => new Promise((resolveWait) => setTimeout(resolveWait, delay)), ms);
+}
+
+async function waitQa(page) {
+  await page.waitForFunction(() => window.__qa && typeof window.__qa.setPref === 'function', null, { timeout: 120000 });
+}
+
+async function collectLanguageOptions(page) {
+  return page.evaluate(() => {
+    const owner = [...document.querySelectorAll('[data-dropmenu="true"]')]
+      .find((el) => /多语言|语言|language/i.test(el.getAttribute('data-dropmenu-name') || el.getAttribute('data-name') || ''));
+    if (!owner) return { missing: true, options: [] };
+    if (owner.getAttribute('data-dropmenu-state') !== 'on') {
+      owner.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    }
+    const options = [...owner.querySelectorAll('[data-btn-name="切换语言"]')].map((el) => {
+      const nested = [...el.querySelectorAll('.fx-t, [data-figma-type="TEXT"]')]
+        .filter((node) => !node.hidden && getComputedStyle(node).display !== 'none')
+        .map((node) => (node.textContent || '').trim())
+        .filter(Boolean);
+      return {
+        text: nested[0] || (el.textContent || '').replace(/\s+/g, ' ').trim(),
+        visibleCount: nested.length || ((el.textContent || '').trim() ? 1 : 0),
+        state: el.getAttribute('data-btn-variant-state'),
+        fillSource: el.getAttribute('data-btn-variant-fill-source'),
+        ownerBg: getComputedStyle(el).backgroundImage,
+      };
+    });
+    return { missing: false, options };
+  });
+}
+
+async function measureVisibleOpenerCatalog(page, { plat }) {
+  const measured = await page.evaluate((wantedPlat) => {
+    const visible = (el) => {
+      if (!el || el.hidden) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.pointerEvents === 'none') return false;
+      const box = el.getBoundingClientRect();
+      return box.width >= 1 && box.height >= 1;
+    };
+    const closeOpenModal = () => {
+      const layer = document.querySelector('[data-modal-open="true"]');
+      if (!layer) return true;
+      const close = [...layer.querySelectorAll('[data-btn-name], [data-name], [data-node-name]')]
+        .find((el) => /关闭按钮/.test(`${el.getAttribute('data-btn-name') || ''} ${el.getAttribute('data-name') || ''} ${el.getAttribute('data-node-name') || ''}`));
+      if (close) close.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      const still = document.querySelector('[data-modal-open="true"]');
+      return !still || still.hidden || still.getAttribute('data-modal-open') !== 'true';
+    };
+    const mountedNames = [...document.querySelectorAll('[data-modal-name], [data-name^="modal/"]')]
+      .map((el) => el.getAttribute('data-modal-name') || String(el.getAttribute('data-name') || '').replace(/^modal\//, ''))
+      .filter(Boolean);
+    const homepage = [...document.querySelectorAll('[data-go]')].filter((el) => {
+      if (!visible(el)) return false;
+      if (el.closest('[data-modal-open], [data-prefix="modal"], [data-name^="modal/"]')) return false;
+      const go = el.getAttribute('data-go') || '';
+      if (!go) return false;
+      /* Visible homepage @go is in-scope. Do not guess platform from the go
+         label. A mobile-labelled go on PC (or pc on mobile) is the other tree. */
+      if (wantedPlat === 'pc' && /mobile/i.test(go)) return false;
+      if (wantedPlat === 'mobile' && /(?:^|\/)(?:modal\/)?pc(?![a-z])/i.test(go) && !/mobile/i.test(go)) return false;
+      return true;
+    });
+    const openers = [];
+    homepage.forEach((el, index) => {
+      const go = el.getAttribute('data-go') || '';
+      if (!go) return;
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      const layer = document.querySelector('[data-modal-open="true"]');
+      const opened = !!layer;
+      const openedGo = layer && (layer.getAttribute('data-name') || layer.getAttribute('data-modal-name') || '');
+      const closed = closeOpenModal();
+      openers.push({
+        go,
+        index,
+        node: el.getAttribute('data-node') || el.getAttribute('data-name') || null,
+        opened,
+        closed,
+        openedGo,
+      });
+    });
+    const inertCandidates = [...document.querySelectorAll('[data-btn-name], [data-prefix="btn"]')].filter((el) => {
+      if (!visible(el)) return false;
+      if (el.getAttribute('data-go')) return false;
+      if (el.closest('[data-dropmenu="true"]')) return false;
+      if (el.closest('[data-modal-open], [data-prefix="modal"], [data-name^="modal/"]')) return false;
+      return true;
+    });
+    let openedModal = false;
+    let clicked = 0;
+    for (const el of inertCandidates) {
+      clicked += 1;
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      if (document.querySelector('[data-modal-open="true"]')) {
+        openedModal = true;
+        closeOpenModal();
+        break;
+      }
+    }
+    return { plat: wantedPlat, openers, mountedNames, inert: { openedModal, clicked, visible: inertCandidates.length } };
+  }, plat);
+  return scoreOpenerCatalog(measured, plat);
+}
+
+export function scoreOpenerCatalog(raw, plat) {
+  const platKey = raw?.plat || plat;
+  const mountedNames = Array.isArray(raw?.mountedNames) ? raw.mountedNames : null;
+  const openers = (Array.isArray(raw?.openers) ? raw.openers : []).map((row) => {
+    const matched = Boolean(row.opened) && catalogOpenedGoMatches(row.go, row.openedGo);
+    return {
+      ...row,
+      matched,
+      ok: Boolean(row.opened) && Boolean(row.closed) && matched,
+      measured: true,
+      skipped: false,
+    };
+  });
+  const inertOpened = raw?.inert?.openedModal === true;
+  const problems = [];
+  if (!openers.length) problems.push(`${platKey}-catalog-opener-missing`);
+  for (const row of openers) {
+    const label = row.node ? `${row.go}@${row.node}` : row.go;
+    if (!row.opened) problems.push(`${platKey}-opener-did-not-open:${label}`);
+    if (row.opened && !row.matched) problems.push(`${platKey}-opener-opened-wrong:${label}=>${row.openedGo}`);
+    if (!row.closed) problems.push(`${platKey}-opener-did-not-close:${label}`);
+  }
+  const inertVisible = Number(raw?.inert?.visible);
+  const inertClicked = Number(raw?.inert?.clicked) || 0;
+  if (Number.isFinite(inertVisible) && inertVisible > 0 && inertClicked < inertVisible && !inertOpened) {
+    problems.push(`${platKey}-inert-unmeasured`);
+  }
+  if (inertOpened) problems.push(`${platKey}-inert-opened-modal`);
+  return {
+    ok: problems.length === 0,
+    measured: true,
+    skipped: false,
+    problems,
+    plat: platKey,
+    openers,
+    mountedNames,
+    inert: {
+      ok: !inertOpened,
+      measured: true,
+      skipped: false,
+      openedModal: inertOpened,
+      clicked: Number(raw?.inert?.clicked) || 0,
+      visible: Number.isFinite(Number(raw?.inert?.visible)) ? Number(raw.inert.visible) : undefined,
+    },
+  };
+}
+
+async function measureInteractionPixels(page, { base, width }) {
+  const problems = [];
+  await page.setViewportSize({ width: Math.max(width, 1280), height: 1080 });
+  await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&lang=zh-CN`, {
+    waitUntil: 'load',
+    timeout: 120000,
+  });
+  await waitQa(page);
+  const languages = [];
+  for (const row of LANG_OPTION_PAGES) {
+    await page.evaluate((lang) => window.__qa.setPref('lang', lang), row.lang);
+    await waitMs(page, 200);
+    const opened = await collectLanguageOptions(page);
+    const verdict = opened.missing
+      ? { ok: false, measured: true, skipped: false, problems: ['language-dropmenu-missing'], currentLang: row.lang, label: row.label }
+      : { ...languageOptionVerdict(opened.options, row.lang), measured: true, skipped: false };
+    languages.push(verdict);
+    if (!verdict.ok) {
+      problems.push(`lang ${row.lang}: ${(verdict.problems || [verdict.error]).join(',')}`);
+    }
+    await page.evaluate(() => {
+      const owner = [...document.querySelectorAll('[data-dropmenu="true"]')]
+        .find((el) => /多语言|语言|language/i.test(el.getAttribute('data-dropmenu-name') || ''));
+      if (owner && owner.getAttribute('data-dropmenu-state') === 'on') {
+        owner.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }
+    });
+  }
+  await page.evaluate(() => window.__qa.setPref('lang', 'en'));
+  await waitMs(page, 200);
+  const afterEn = await collectLanguageOptions(page);
+  const stalePrefs = afterEn.missing
+    ? { ok: false, measured: false, skipped: false, problems: ['language-dropmenu-missing-after-en'] }
+    : { ...languageOptionVerdict(afterEn.options, 'en'), measured: true, skipped: false };
+  if (!stalePrefs.ok) problems.push(`stale-prefs: ${(stalePrefs.problems || []).join(',')}`);
+
+  // modal pixels lock to zh-CN: @lang=cn 适龄 opener is gone on leftover en.
+  await page.evaluate(() => window.__qa.setPref('lang', 'zh-CN'));
+  await waitMs(page, 200);
+  const modal = await page.evaluate(() => {
+    const prefs = typeof window.__qa.prefs === 'function' ? window.__qa.prefs() : {};
+    const opener = [...document.querySelectorAll('[data-go]')].find((el) => {
+      if (!/适龄/.test(el.getAttribute('data-go') || '')) return false;
+      if (el.hidden) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const box = el.getBoundingClientRect();
+      return box.width >= 1 && box.height >= 1;
+    });
+    if (!opener) return { missing: true, lang: prefs.lang || null };
+    opener.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    const layer = document.querySelector('[data-modal-open="true"]');
+    const host = layer && layer.parentElement;
+    const panel = layer && layer.querySelector('[data-name="img/弹窗背景"]');
+    if (!layer || !host) return { missing: true, lang: prefs.lang || null };
+    const hostRect = host.getBoundingClientRect();
+    const layerRect = layer.getBoundingClientRect();
+    const panelRect = panel ? panel.getBoundingClientRect() : null;
+    const scroll = layer.querySelector('[data-hscroll="y"], [data-prefix="scroll"]');
+    const close = layer.querySelector('[data-btn-name="关闭按钮"], [data-name="img/关闭按钮"]');
+    const scrollbarHidden = !scroll || getComputedStyle(scroll).scrollbarWidth === 'none'
+      || getComputedStyle(scroll, '::-webkit-scrollbar').display === 'none';
+    const pose = {
+      missing: false,
+      lang: prefs.lang || null,
+      go: opener.getAttribute('data-go'),
+      panelBox: layer.getAttribute('data-modal-panel-box'),
+      sheetCx: layerRect.left + layerRect.width / 2,
+      sheetCy: layerRect.top + layerRect.height / 2,
+      viewCx: hostRect.left + hostRect.width / 2,
+      viewCy: hostRect.top + hostRect.height / 2,
+      panelTopRatio: panelRect && layerRect.height
+        ? (panelRect.top - layerRect.top) / layerRect.height
+        : null,
+      hasClose: !!close,
+      hasNamedScroll: !!scroll,
+      scrollbarHidden,
+    };
+    if (close) close.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    pose.closedAfterClose = !layer.isConnected || layer.hidden || layer.getAttribute('data-modal-open') !== 'true';
+    return pose;
+  });
+  let modalVerdict = modal.missing
+    ? { ok: false, measured: false, skipped: false, problems: ['pc-modal-missing'] }
+    : { ...pcModalSheetVerdict(modal), measured: true, skipped: false };
+  if (modal.lang && modal.lang !== 'zh-CN') {
+    modalVerdict.ok = false;
+    modalVerdict.problems = [...(modalVerdict.problems || []), `pc-modal-lang:${modal.lang}`];
+  }
+  const pcClose = modal.missing
+    ? { ok: false, measured: false, skipped: false, problems: ['pc-modal-missing'] }
+    : { ...pcModalCloseVerdict(modal), measured: true, skipped: false };
+  modalVerdict.close = pcClose;
+  modalVerdict.lang = modal.lang || null;
+  modalVerdict.go = modal.go || null;
+  if (!pcClose.ok) modalVerdict.ok = false;
+  if (!modalVerdict.ok) problems.push(`pc-modal: ${(modalVerdict.problems || ['pc-modal-missing']).join(',')}`);
+  if (!pcClose.ok) problems.push(`pc-close: ${pcClose.problems.join(',')}`);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${base}/index.html?interaction=1#g=Mobile&d=0&w=390&h=844&state=entry&plat=phone&lang=zh-CN`, {
+    waitUntil: 'load',
+    timeout: 120000,
+  });
+  await waitQa(page);
+  await page.evaluate(() => {
+    try { window.__qa.setPref('plat', 'phone'); } catch {}
+    window.__qa.setPref('lang', 'zh-CN');
+  });
+  await waitMs(page, 200);
+  const mobile = await page.evaluate(() => {
+    const prefs = typeof window.__qa.prefs === 'function' ? window.__qa.prefs() : {};
+    const opener = [...document.querySelectorAll('[data-go]')].find((el) => {
+      if (!/适龄/.test(el.getAttribute('data-go') || '')) return false;
+      if (el.hidden) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const box = el.getBoundingClientRect();
+      return box.width >= 1 && box.height >= 1;
+    });
+    if (!opener) return { missing: true, lang: prefs.lang || null, plat: prefs.plat || null };
+    opener.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    const layer = document.querySelector('[data-modal-open="true"]');
+    const host = layer && layer.parentElement;
+    if (!layer || !host) return { missing: true, lang: prefs.lang || null, plat: prefs.plat || null };
+    const hostRect = host.getBoundingClientRect();
+    const layerRect = layer.getBoundingClientRect();
+    const scroll = layer.querySelector('[data-hscroll="y"], [data-prefix="scroll"]');
+    const close = layer.querySelector('[data-btn-name="关闭按钮"], [data-name="img/关闭按钮"], [data-name="img/按钮"]');
+    const scrollbarHidden = !scroll || getComputedStyle(scroll).scrollbarWidth === 'none';
+    const pose = {
+      missing: false,
+      lang: prefs.lang || null,
+      plat: prefs.plat || null,
+      go: opener.getAttribute('data-go'),
+      hostW: hostRect.width,
+      hostH: hostRect.height,
+      hostLeft: hostRect.left,
+      hostTop: hostRect.top,
+      modalW: layerRect.width,
+      modalH: layerRect.height,
+      modalLeft: layerRect.left,
+      modalTop: layerRect.top,
+      hasClose: !!close,
+      hasNamedScroll: !!scroll,
+      scrollbarHidden,
+    };
+    if (close) close.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    pose.closedAfterClose = !layer.isConnected || layer.hidden || layer.getAttribute('data-modal-open') !== 'true';
+    return pose;
+  });
+  const mobileVerdict = mobile.missing
+    ? { ok: false, measured: false, skipped: false, problems: ['mobile-modal-missing'] }
+    : { ...mobileModalSheetVerdict(mobile), measured: true, skipped: false };
+  if (mobile.lang && mobile.lang !== 'zh-CN') {
+    mobileVerdict.ok = false;
+    mobileVerdict.problems = [...(mobileVerdict.problems || []), `mobile-modal-lang:${mobile.lang}`];
+  }
+  const mobileClose = mobile.missing
+    ? { ok: false, measured: false, skipped: false, problems: ['mobile-modal-missing'] }
+    : {
+      ok: mobileVerdict.problems.filter((item) => /close|scrollbar/.test(item)).length === 0,
+      measured: true,
+      skipped: false,
+      problems: mobileVerdict.problems.filter((item) => /close|scrollbar/.test(item)),
+    };
+  if (!mobileClose.ok) mobileVerdict.ok = false;
+  mobileVerdict.close = mobileClose;
+  mobileVerdict.lang = mobile.lang || null;
+  mobileVerdict.go = mobile.go || null;
+  if (!mobileVerdict.ok) problems.push(`mobile-modal: ${(mobileVerdict.problems || ['mobile-modal-missing']).join(',')}`);
+  if (!mobileClose.ok) problems.push(`mobile-close: ${mobileClose.problems.join(',')}`);
+
+  await page.evaluate(() => window.__qa.setPref('lang', 'zh-CN'));
+  await waitMs(page, 200);
+  const pcCatalog = await (async () => {
+    await page.setViewportSize({ width: Math.max(width, 1280), height: 1080 });
+    await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&lang=zh-CN`, {
+      waitUntil: 'load',
+      timeout: 120000,
+    });
+    await waitQa(page);
+    await page.evaluate(() => {
+      try { window.__qa.setPref('plat', 'desktop'); } catch {}
+      window.__qa.setPref('lang', 'zh-CN');
+    });
+    await waitMs(page, 200);
+    return measureVisibleOpenerCatalog(page, { plat: 'pc' });
+  })();
+  if (!pcCatalog.ok) problems.push(`pc-catalog: ${(pcCatalog.problems || []).join(',')}`);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${base}/index.html?interaction=1#g=Mobile&d=0&w=390&h=844&state=entry&plat=phone&lang=zh-CN`, {
+    waitUntil: 'load',
+    timeout: 120000,
+  });
+  await waitQa(page);
+  await page.evaluate(() => {
+    try { window.__qa.setPref('plat', 'phone'); } catch {}
+    window.__qa.setPref('lang', 'zh-CN');
+  });
+  await waitMs(page, 200);
+  const mobileCatalog = await measureVisibleOpenerCatalog(page, { plat: 'mobile' });
+  if (!mobileCatalog.ok) problems.push(`mobile-catalog: ${(mobileCatalog.problems || []).join(',')}`);
+
+  return {
+    ok: problems.length === 0,
+    languages,
+    stalePrefs,
+    modal: modalVerdict,
+    mobile: mobileVerdict,
+    pcCatalog,
+    mobileCatalog,
+    problems,
+  };
+}
+
 export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString() } = {}) {
   const root = packRoot(demoDir);
   const indexPath = join(root, 'index.html');
@@ -229,6 +627,7 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
   let browser;
   const samples = [];
   const problems = [];
+  let payloadPixel = { ok: false, languages: [], stalePrefs: { ok: false }, modal: { ok: false }, problems: ['pixel-not-measured'] };
   if (Number(DESIGN_POLICY.officialRootFontVw) !== 10) {
     problems.push(`DESIGN.md officialRootFontVw ${DESIGN_POLICY.officialRootFontVw} != 10`);
   }
@@ -236,7 +635,7 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
     const base = await server.listen('127.0.0.1');
     ({ browser } = await launchChromium(SKILL_ROOT, { headless: true }));
     const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-    await page.goto(`${base}/index.html?inventory-static-gate=1&interaction=1`, { waitUntil: 'load', timeout: 120000 });
+    await page.goto(`${base}/index.html?inventory-static-gate=1`, { waitUntil: 'load', timeout: 120000 });
     await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: 120000 });
     for (const width of WIDTHS) {
       const measured = await measurePage(page, width);
@@ -270,6 +669,9 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
       }
       samples.push(item);
     }
+    const pixel = await measureInteractionPixels(page, { base, width: 1920 });
+    payloadPixel = pixel;
+    for (const problem of pixel.problems || []) problems.push(problem);
   } catch (error) {
     problems.push(error && error.message ? error.message : String(error));
   } finally {
@@ -281,6 +683,7 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
     at: now,
     demoDigest: laterAxesDemoDigest(root),
     samples,
+    pixel: payloadPixel,
     problems,
   };
   const green = problems.length === 0 && laterAxesProbeEvidenceComplete(payload, { demoDir: root });

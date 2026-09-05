@@ -267,10 +267,10 @@ function startMachine({ record, root, handoffDir, now, buildMain }) {
   }
   const pack = handoffDir || record.handoffDir;
   if (record.phase === 'wait-stop-1' || record.phase === 'later-axes' || record.phase === 'wait-stop-2' || record.phase === 'pack' || record.phase === 'done') {
-    return payload(false, record, {
-      error: 'machine-already-running',
-      nextHumanStep: nextStep(record),
-    });
+    /* Rebuild Main on the same demo/pack and return to the first human stop.
+       Do not accept later stops, do not Pack, do not invent a new workflow. */
+    record.phase = 'main-static';
+    record.laterAxes = null;
   }
   if (record.handoffDir && handoffDir && resolve(record.handoffDir) !== resolve(handoffDir)) {
     return payload(false, record, {

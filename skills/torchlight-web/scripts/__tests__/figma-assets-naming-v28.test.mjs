@@ -552,3 +552,10 @@ test('collapsed webp under 2KB keeps serving pngFile', () => {
   assert.match(src, /webpCollapsed/);
   assert.match(src, /hit\.bytes\) < 2048 && rec\.pngFile/);
 });
+
+test('ready-handoff truth lastModified is a designVersion fallback', () => {
+  const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
+  assert.match(src, /truth\.design\?\.fileVersion/);
+  assert.match(src, /truth\.source\?\.lastModified/);
+  assert.match(src, /truth\.source\?\.snapshotHash/);
+});

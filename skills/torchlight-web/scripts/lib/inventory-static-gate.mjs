@@ -11,13 +11,57 @@ export const FONT_SIZE_TOLERANCE_PX = 0.05;
 export const PRODUCT_OVERLAY_TOP_TOLERANCE_PX = 1;
 export const PRODUCT_SLICE_TOLERANCE_PX = 0.5;
 export const PRODUCT_SAMPLE_CHANNEL_TOLERANCE = 18;
+export const PRODUCT_SEAM_LUM_MIN = 22;
+export const PRODUCT_STAGE_RGB = Object.freeze([12, 15, 20]);
+export const PRODUCT_STAGE_CHANNEL_TOLERANCE = 18;
+export const PRODUCT_STAGE_VARIANCE_MAX = 20;
+export const PRODUCT_STAGE_RATIO_MIN = 0.95;
+export const CHROME_PNG_SAMPLE_POINTS = Object.freeze([[0.25, 0.25], [0.5, 0.5], [0.75, 0.75]]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function hasVisibleImageFill(node) {
+function rgbaOf(row) {
+  const rgba = Array.isArray(row?.rgba) ? row.rgba : [];
+  return [Number(rgba[0]), Number(rgba[1]), Number(rgba[2])];
+}
+
+function isStageFillBand(sample) {
+  const rows = asArray(sample?.rows);
+  if (!rows.length) return false;
+  const rgbRows = rows.map(rgbaOf).filter((rgb) => rgb.every(Number.isFinite));
+  if (!rgbRows.length) return false;
+  const mean = [0, 0, 0];
+  for (const rgb of rgbRows) {
+    mean[0] += rgb[0];
+    mean[1] += rgb[1];
+    mean[2] += rgb[2];
+  }
+  mean[0] /= rgbRows.length;
+  mean[1] /= rgbRows.length;
+  mean[2] /= rgbRows.length;
+  let variance = 0;
+  for (const rgb of rgbRows) {
+    variance += (rgb[0] - mean[0]) ** 2 + (rgb[1] - mean[1]) ** 2 + (rgb[2] - mean[2]) ** 2;
+  }
+  variance /= rgbRows.length;
+  const nearStage = channelDistance(mean, PRODUCT_STAGE_RGB) <= PRODUCT_STAGE_CHANNEL_TOLERANCE * 3;
+  const nearCount = rgbRows.filter((rgb) => channelDistance(rgb, PRODUCT_STAGE_RGB) <= PRODUCT_STAGE_CHANNEL_TOLERANCE * 3).length;
+  const stageRatio = nearCount / rgbRows.length;
+  const reportedRatio = Number(sample?.stageRatio);
+  const ratio = Number.isFinite(reportedRatio) ? reportedRatio : stageRatio;
+  const reported = Number(sample?.variance);
+  const tight = Number.isFinite(reported) ? reported <= PRODUCT_STAGE_VARIANCE_MAX : variance <= PRODUCT_STAGE_VARIANCE_MAX;
+  return nearStage && tight && ratio >= PRODUCT_STAGE_RATIO_MIN;
+}
+
+export function hasVisibleImageFill(node) {
   return asArray(node?.style?.fills).some((fill) => fill && fill.visible !== false && fill.type === 'IMAGE');
+}
+
+export function needsChromePngPixels(node) {
+  return !!(node?.sliceExport || hasVisibleImageFill(node));
 }
 
 function geom(box) {
@@ -197,6 +241,300 @@ function descendantIdsOf(rootId, inventory) {
     .map((node) => String(node.id));
 }
 
+function isLandscapeFixOwner(node) {
+  const box = geom(node?.pageBox || node?.box);
+  return !!(box && box.w > box.h);
+}
+
+function isChromeGatedNode(node) {
+  if (!node || node.status === 'skipped') return false;
+  const role = String(node.role || '');
+  const name = String(node.name || '');
+  return role === 'btn' || role === 'img' || role === 'copy' || role === 'dropmenu' || role === 'fix'
+    || /^(btn|img|dropmenu|fix)\//.test(name)
+    || String(node.text?.characters || '').trim() !== '';
+}
+
+function orderKeyRank(value) {
+  return String(value || '').split('.').map((part) => {
+    const numeric = Number(part);
+    return Number.isFinite(numeric) ? numeric : 0;
+  });
+}
+
+function cmpOrderKey(a, b) {
+  const left = orderKeyRank(a);
+  const right = orderKeyRank(b);
+  const n = Math.max(left.length, right.length);
+  for (let i = 0; i < n; i += 1) {
+    const delta = (left[i] || 0) - (right[i] || 0);
+    if (delta) return delta;
+  }
+  return 0;
+}
+
+function parseCssRgb(value) {
+  const text = String(value || '').trim();
+  if (!text || text === 'transparent') return null;
+  const comma = text.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?/i);
+  const space = comma ? null : text.match(/rgba?\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?/i);
+  const m = comma || space;
+  if (!m) return null;
+  const alpha = m[4] == null || m[4] === '' ? 1 : Number(m[4]);
+  return [Number(m[1]), Number(m[2]), Number(m[3]), Number.isFinite(alpha) ? alpha : 1];
+}
+
+function expectedSolidRgb(color) {
+  if (!color || typeof color !== 'object') return null;
+  if (color.type && color.type !== 'SOLID') return null;
+  const c = (color.r == null && color.color && color.color.r != null) ? color.color : color;
+  if (!Number.isFinite(Number(c?.r)) || !Number.isFinite(Number(c?.g)) || !Number.isFinite(Number(c?.b))) return null;
+  const scale = Number(c.r) <= 1 && Number(c.g) <= 1 && Number(c.b) <= 1 ? 255 : 1;
+  return [Number(c.r) * scale, Number(c.g) * scale, Number(c.b) * scale];
+}
+
+function expectedChromePaint(node) {
+  const color = node?.text?.color;
+  if (color && typeof color === 'object') {
+    if (String(color.type || '').startsWith('GRADIENT')) return { kind: 'gradient' };
+    const rgb = expectedSolidRgb(color);
+    if (rgb) return { kind: 'solid', rgb };
+  }
+  const fill = asArray(node?.style?.fills).find((entry) => entry && entry.visible !== false);
+  if (fill && String(fill.type || '').startsWith('GRADIENT')) return { kind: 'gradient' };
+  if (node?.role === 'copy' || node?.text) {
+    const rgb = expectedSolidRgb(fill);
+    if (rgb) return { kind: 'solid', rgb };
+  }
+  return null;
+}
+
+function chromeOverflowHidden(actual) {
+  const overflow = String(actual?.overflow || '').toLowerCase();
+  return overflow === 'hidden' || overflow === 'clip' || actual?.clips === true;
+}
+
+function sampleRgbaMismatch(want, have) {
+  const expected = asArray(want);
+  const actual = asArray(have);
+  if (expected.length < 4 || actual.length < 4) return true;
+  return channelDistance(expected, actual) > PRODUCT_SAMPLE_CHANNEL_TOLERANCE
+    || Math.abs(Number(expected[3]) - Number(actual[3])) > PRODUCT_SAMPLE_CHANNEL_TOLERANCE;
+}
+
+function evaluateChromeSliceAndPixels(node, actual, expected, byId, failures) {
+  if (!needsChromePngPixels(node)) return;
+  const id = String(node.id);
+  if (actual.hasImg !== true) {
+    failures.push({ id, reason: 'topbar-chrome-missing-img', expected });
+  } else if (actual.assetEmpty === true) {
+    failures.push({ id, reason: 'topbar-chrome-png-empty' });
+  }
+  const expectedSlice = expectedSliceBox(node, byId, expected);
+  if (expectedSlice && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
+    if (Math.abs(Number(actual.assetW) - expectedSlice.w) > 1
+      || Math.abs(Number(actual.assetH) - expectedSlice.h) > 1) {
+      failures.push({
+        id,
+        reason: 'topbar-chrome-png-size-mismatch',
+        expected: { w: expectedSlice.w, h: expectedSlice.h },
+        actual: { w: actual.assetW, h: actual.assetH },
+      });
+    }
+  }
+  const screenSamples = asArray(actual.screenSamples);
+  const fileSamples = asArray(actual.assetSamples);
+  const screenFailed = actual.screenSampleError != null && String(actual.screenSampleError) !== '';
+  if (screenFailed || !screenSamples.length || !fileSamples.length) {
+    failures.push({
+      id,
+      reason: 'topbar-chrome-png-pixels-unmeasured',
+      actual: actual.screenSampleError || {
+        screen: screenSamples.length,
+        file: fileSamples.length,
+      },
+    });
+    return;
+  }
+  if (actual.assetInkEmpty === true) {
+    failures.push({ id, reason: 'topbar-chrome-png-pixels-mismatch', expected: 'ink', actual: 'empty' });
+  }
+  const n = Math.min(screenSamples.length, fileSamples.length);
+  for (let i = 0; i < n; i += 1) {
+    if (!sampleRgbaMismatch(fileSamples[i]?.rgba, screenSamples[i]?.rgba)) continue;
+    failures.push({
+      id,
+      reason: 'topbar-chrome-png-pixels-mismatch',
+      expected: asArray(fileSamples[i]?.rgba),
+      actual: asArray(screenSamples[i]?.rgba),
+    });
+    break;
+  }
+}
+
+function evaluateChromeColorAndWeight(node, actual, failures) {
+  const id = String(node.id);
+  if (node.text?.fontWeight != null) {
+    const actualWeight = parsedFontWeight(actual.fontWeight);
+    if (actualWeight == null || actualWeight !== Number(node.text.fontWeight)) {
+      failures.push({
+        id,
+        reason: 'topbar-chrome-fontWeight-mismatch',
+        expected: node.text.fontWeight,
+        actual: actualWeight ?? actual.fontWeight ?? null,
+      });
+    }
+  }
+  const paint = expectedChromePaint(node);
+  const fillColor = parseCssRgb(actual.webkitTextFillColor);
+  const cssColor = parseCssRgb(actual.color);
+  if (paint?.kind === 'gradient' && actual.hasImg !== true) {
+    const clipped = String(actual.backgroundClip || '').includes('text');
+    const cssGradient = actual.gradient === true
+      || clipped
+      || String(actual.backgroundImage || '').includes('gradient');
+    const fillAlpha = fillColor ? Number(fillColor[3]) : 0;
+    if (!cssGradient || (fillColor && fillAlpha > 0.08)) {
+      failures.push({
+        id,
+        reason: 'topbar-chrome-color-mismatch',
+        expected: 'gradient',
+        actual: actual.webkitTextFillColor || actual.color || null,
+      });
+    }
+  } else if (paint?.kind === 'solid') {
+    if (!cssColor || channelDistance(cssColor, paint.rgb) > PRODUCT_SAMPLE_CHANNEL_TOLERANCE) {
+      failures.push({
+        id,
+        reason: 'topbar-chrome-color-mismatch',
+        expected: paint.rgb,
+        actual: cssColor || actual.color || null,
+      });
+    }
+  }
+}
+
+function evaluateChromeClip(node, actual, failures) {
+  const id = String(node.id);
+  if (node.clipsContent === true && !chromeOverflowHidden(actual)) {
+    failures.push({
+      id,
+      reason: 'topbar-chrome-clip-mismatch',
+      expected: 'hidden',
+      actual: actual.overflow || null,
+    });
+  } else if (node.clipsContent === false && chromeOverflowHidden(actual)) {
+    failures.push({
+      id,
+      reason: 'topbar-chrome-clip-mismatch',
+      expected: 'visible',
+      actual: actual.overflow || 'hidden',
+    });
+  }
+}
+
+function evaluateChromeStack(contract, nodes, byId, failures) {
+  const groups = new Map();
+  for (const id of contract.nodeIds) {
+    const node = byId.get(id);
+    const actual = nodes[id];
+    if (!node || !actual) continue;
+    const parent = String(node.parentId || '');
+    if (!groups.has(parent)) groups.set(parent, []);
+    groups.get(parent).push({ id, node, actual });
+  }
+  for (const siblings of groups.values()) {
+    if (siblings.length < 2) continue;
+    if (siblings.every((row) => row.node.orderKey == null || row.node.orderKey === '')) continue;
+    siblings.sort((a, b) => cmpOrderKey(a.node.orderKey, b.node.orderKey));
+    for (let i = 1; i < siblings.length; i += 1) {
+      const prev = siblings[i - 1];
+      const next = siblings[i];
+      const prevIndex = Number(prev.actual.stackIndex);
+      const nextIndex = Number(next.actual.stackIndex);
+      if (!Number.isFinite(prevIndex) || !Number.isFinite(nextIndex) || nextIndex <= prevIndex) {
+        failures.push({
+          id: next.id,
+          reason: 'topbar-chrome-stack-mismatch',
+          expected: { after: prev.id, orderKey: next.node.orderKey },
+          actual: { stackIndex: Number.isFinite(nextIndex) ? nextIndex : null, prev: Number.isFinite(prevIndex) ? prevIndex : null },
+        });
+      }
+    }
+  }
+}
+
+export function chromeTopBarContract(inventory, byId = null) {
+  const map = byId || new Map(asArray(inventory?.nodes).filter((node) => node && node.id).map((node) => [String(node.id), node]));
+  const rootIds = keptViewportFixIds(inventory, map);
+  const nodeIds = [];
+  const seen = new Set();
+  for (const rootId of rootIds) {
+    for (const id of descendantIdsOf(rootId, inventory)) {
+      if (seen.has(id)) continue;
+      const node = map.get(id);
+      if (!isChromeGatedNode(node)) continue;
+      seen.add(id);
+      nodeIds.push(id);
+    }
+  }
+  return { rootIds, nodeIds };
+}
+
+function evaluateChromeTopBarGeometry({ inventory, chromeTopBar, byId, viewportKind } = {}) {
+  if (String(viewportKind) !== 'product') return [];
+  const failures = [];
+  const contract = chromeTopBarContract(inventory, byId);
+  if (!contract.rootIds.length) return failures;
+  if (!chromeTopBar || typeof chromeTopBar !== 'object') {
+    failures.push({ reason: 'topbar-chrome-unmeasured' });
+    return failures;
+  }
+  const nodes = chromeTopBar.nodes && typeof chromeTopBar.nodes === 'object' ? chromeTopBar.nodes : {};
+  if (!Object.keys(nodes).length) {
+    failures.push({ reason: 'topbar-chrome-unmeasured' });
+    return failures;
+  }
+  for (const id of contract.nodeIds) {
+    const node = byId.get(id);
+    if (!node) continue;
+    const expected = expectedDrawBox(node, byId);
+    const actual = nodes[id];
+    if (!actual) {
+      failures.push({ id, reason: 'topbar-chrome-missing-dom', expected });
+      continue;
+    }
+    if (!expected) {
+      failures.push({ id, reason: 'missing-pageBox' });
+      continue;
+    }
+    const rect = compareRect(expected, {
+      x: Number(actual.x),
+      y: Number(actual.y),
+      w: Number(actual.w),
+      h: Number(actual.h),
+    });
+    if (!rect.ok) failures.push({ id, reason: 'topbar-chrome-pageBox-mismatch', ...rect });
+    const expectedText = String(node.text?.characters || '').trim();
+    if (expectedText) {
+      const actualText = String(actual.text || '').trim();
+      if (!actualText || !actualText.includes(expectedText)) {
+        failures.push({
+          id,
+          reason: 'topbar-chrome-copy-mismatch',
+          expected: expectedText,
+          actual: actualText || null,
+        });
+      }
+    }
+    evaluateChromeSliceAndPixels(node, actual, expected, byId, failures);
+    evaluateChromeColorAndWeight(node, actual, failures);
+    evaluateChromeClip(node, actual, failures);
+  }
+  evaluateChromeStack(contract, nodes, byId, failures);
+  return failures;
+}
+
 function playButtonContract(inventory, byId) {
   const play = asArray(inventory?.nodes).find((node) => {
     const name = String(node?.name || '');
@@ -276,6 +614,22 @@ function firstKvOwner(inventory) {
   }) || null;
 }
 
+function evaluateProductPlateOverlap({ inventory, measurements } = {}) {
+  const failures = [];
+  const measured = measurements?.nodes && typeof measurements.nodes === 'object' ? measurements.nodes : {};
+  const byId = new Map(asArray(inventory?.nodes).filter((node) => node && node.id).map((node) => [String(node.id), node]));
+  for (const node of flattenInventoryNodes(inventory)) {
+    if (!isBakedIntoAncestor(node, byId, measured)) continue;
+    const actual = measured[String(node.id)];
+    const painted = actual && Number.isFinite(Number(actual.w)) && Number.isFinite(Number(actual.h))
+      && Number(actual.w) > 0 && Number(actual.h) > 0;
+    if (painted && actual.hasImg === true) {
+      failures.push({ id: node.id, reason: 'full-bleed-child-repainted' });
+    }
+  }
+  return failures;
+}
+
 function productScrollRequired(inventory) {
   const byId = new Map(asArray(inventory?.nodes).filter((node) => node && node.id).map((node) => [String(node.id), node]));
   const first = firstSection(inventory);
@@ -286,7 +640,7 @@ function productScrollRequired(inventory) {
     || !!firstKvOwner(inventory);
 }
 
-export function evaluateProductScrollGate({ inventory, productScroll } = {}) {
+export function evaluateProductScrollGate({ inventory, productScroll, viewportKind = 'design' } = {}) {
   if (!inventory || typeof inventory !== 'object') {
     return { ok: false, skipped: false, problems: ['inventory-missing'] };
   }
@@ -322,6 +676,57 @@ export function evaluateProductScrollGate({ inventory, productScroll } = {}) {
       failures.push({ reason: 'overlay-stretched-to-viewport', actual: overlay.height || overlay.pinHeight });
     }
   }
+  /* QA chrome used to treat landscape fix/顶部信息 as a left directory and
+     squash it by viewportH/heroH (mobile 844/1334). Product ?product=1 skips
+     that stretch, so a green product gate never saw the human-review page.
+     A landscape overlay that the QA chrome probe did not report is also red. */
+  const keptFixIds = keptViewportFixIds(inventory, byId);
+  const chrome = productScroll.chromeTopBar || overlay.chromeTopBar || null;
+  if (String(viewportKind) === 'product'
+    && keptFixIds.length
+    && !(chrome && typeof chrome === 'object')) {
+    failures.push({ reason: 'topbar-chrome-unmeasured' });
+  }
+  if (chrome && chrome.probeFailed === true) {
+    failures.push({
+      reason: 'topbar-chrome-probe-failed',
+      actual: chrome.error || null,
+    });
+  }
+  if (chrome && typeof chrome === 'object' && chrome.probeFailed !== true) {
+    const rootMap = chrome.roots && typeof chrome.roots === 'object' && Object.keys(chrome.roots).length
+      ? chrome.roots
+      : { [String(chrome.id || 'bar')]: chrome };
+    for (const [rootId, rec] of Object.entries(rootMap)) {
+      const rootNode = byId.get(String(rootId)) || (chrome.id ? byId.get(String(chrome.id)) : null);
+      const landscape = isLandscapeFixOwner(rootNode) || rec.topbar === true;
+      if (!landscape) continue;
+      const yScale = Number(rec.yScale);
+      const sourceH = Number(rec.sourceHeight);
+      const actualH = Number(rec.height);
+      if ((Number.isFinite(yScale) && yScale > 0 && yScale < 0.98)
+        || (Number.isFinite(sourceH) && sourceH > 0 && Number.isFinite(actualH)
+          && actualH < sourceH * 0.98)) {
+        failures.push({
+          reason: 'topbar-chrome-squashed',
+          expected: { sourceHeight: sourceH || null, yScale: 1 },
+          actual: { height: Number.isFinite(actualH) ? actualH : null, yScale: Number.isFinite(yScale) ? yScale : null },
+        });
+      }
+      if (rec.navShell === true || rec.kind === 'root') {
+        failures.push({
+          reason: 'topbar-chrome-treated-as-directory',
+          actual: { navShell: rec.navShell || null, kind: rec.kind || null },
+        });
+      }
+    }
+    failures.push(...evaluateChromeTopBarGeometry({
+      inventory,
+      chromeTopBar: chrome,
+      byId,
+      viewportKind,
+    }));
+  }
 
   const first = firstSection(inventory);
   const next = followingSection(inventory);
@@ -330,7 +735,7 @@ export function evaluateProductScrollGate({ inventory, productScroll } = {}) {
   const firstBox = geom(first?.pageBox);
   const nextBox = geom(next?.pageBox);
   const layers = productScroll.layers && typeof productScroll.layers === 'object' ? productScroll.layers : {};
-  if (firstId) {
+  if (firstId && String(viewportKind) === 'product') {
     const layer = layers[firstId];
     if (!layer) failures.push({ id: firstId, reason: 'first-section-layer-missing' });
     else {
@@ -341,8 +746,80 @@ export function evaluateProductScrollGate({ inventory, productScroll } = {}) {
       if (cropWindow === 'first-section-pagebox' && firstBox && Number(layer.height) > firstBox.h + POSITION_TOLERANCE_PX) {
         failures.push({ id: firstId, reason: 'first-section-taller-than-pageBox', expected: firstBox.h, actual: layer.height });
       }
-      if (String(layer.overflow || '') !== 'hidden') {
-        failures.push({ id: firstId, reason: 'first-section-overflow-visible', actual: layer.overflow || null });
+      const slotDesign = Number(productScroll.slotDesignHeight);
+      const pageH = Number(firstBox?.h);
+      if (String(viewportKind) === 'product' && Number.isFinite(Number(layer.height))) {
+        const minH = Math.max(
+          Number.isFinite(pageH) ? pageH : 0,
+          Number.isFinite(slotDesign) ? slotDesign : 0,
+        );
+        if (minH > 0 && Number(layer.height) + POSITION_TOLERANCE_PX < minH) {
+          failures.push({
+            id: firstId,
+            reason: 'first-section-shorter-than-pageBox-or-slot',
+            expected: minH,
+            actual: layer.height,
+          });
+        }
+      }
+      if (String(layer.overflow || '') === 'hidden' && Number(layer.height) + POSITION_TOLERANCE_PX < Number(firstBox?.h || 0)) {
+        failures.push({ id: firstId, reason: 'first-section-cropped-below-pageBox', actual: layer.height, expected: firstBox?.h });
+      }
+    }
+  }
+
+  const abut = productScroll.sectionAbut;
+  if (String(viewportKind) === 'product' && firstId && nextId) {
+    const gap = abut && Number.isFinite(Number(abut.gap))
+      ? Number(abut.gap)
+      : null;
+    if (gap == null) {
+      failures.push({ reason: 'section-abut-missing', expected: { firstId, nextId } });
+    } else if (Math.abs(gap) > POSITION_TOLERANCE_PX) {
+      failures.push({
+        reason: 'section-gap',
+        expected: 0,
+        actual: gap,
+        firstId,
+        nextId,
+      });
+    }
+    const seam = productScroll.seamPixels;
+    if (!seam || !Array.isArray(seam.rows) || !seam.rows.length) {
+      failures.push({ reason: 'section-seam-pixels-missing' });
+    } else if (isStageFillBand(seam)) {
+      failures.push({
+        reason: 'section-seam-black',
+        expected: 'scenic join, not --stage fill',
+        actual: { minLum: seam.minLum, variance: seam.variance, mean: seam.mean },
+        firstId,
+        nextId,
+      });
+    }
+    const viewportH = Number(productScroll.viewport && productScroll.viewport.h);
+    const kvHostH = Number(productScroll.firstKv && productScroll.firstKv.hostH);
+    if (Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(kvHostH)
+      && kvHostH + POSITION_TOLERANCE_PX < viewportH) {
+      failures.push({
+        id: firstKvOwner(inventory)?.id || firstId,
+        reason: 'first-kv-shorter-than-viewport',
+        expected: viewportH,
+        actual: kvHostH,
+      });
+    }
+    const kvCoversViewport = Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(kvHostH)
+      && kvHostH + POSITION_TOLERANCE_PX >= viewportH;
+    const floor = productScroll.firstScreenFloor;
+    if (!kvCoversViewport) {
+      if (!floor || !Array.isArray(floor.rows) || !floor.rows.length) {
+        failures.push({ reason: 'first-screen-floor-pixels-missing' });
+      } else if (isStageFillBand(floor)) {
+        failures.push({
+          reason: 'first-screen-floor-black',
+          expected: 'KV fill, not --stage fill',
+          actual: { minLum: floor.minLum, variance: floor.variance, mean: floor.mean },
+          firstId,
+        });
       }
     }
   }
@@ -525,7 +1002,9 @@ export function evaluateProductScrollGate({ inventory, productScroll } = {}) {
     }
   }
 
-  if (Number(productScroll.scrolled) !== 1 && Number(productScroll.scrollTop) <= 0) {
+  if (String(viewportKind) === 'product'
+    && Number(productScroll.scrolled) !== 1
+    && Number(productScroll.scrollTop) <= 0) {
     failures.push({ reason: 'product-view-did-not-scroll' });
   }
 
@@ -564,11 +1043,10 @@ function shouldGateWholeFramePngSize(node) {
 }
 
 /** Descendants of a delivered baked owner are inside that PNG, not independent DOM.
- *  A child with its own sliceExport must still appear in DOM; the parent bake
- *  cannot swallow it. */
+ *  A child with its own sliceExport must still appear in DOM unless the owner is a
+ *  full-bleed kv/bg plate — those plates already contain IMAGE crops. */
 function isBakedIntoAncestor(node, byId, measured) {
-  if (node?.sliceExport) return false;
-  if (isWholeFrameSliceNode(node)) return false;
+  if (isWholeFrameSliceNode(node) && isFullBleedWholeFrame(node)) return false;
   const seen = new Set();
   const ids = [];
   for (const ancestorId of asArray(node?.ancestorIds)) ids.push(String(ancestorId));
@@ -582,8 +1060,11 @@ function isBakedIntoAncestor(node, byId, measured) {
   return ids.some((id) => {
     const owner = byId.get(id);
     if (isFullBleedWholeFrame(owner)) {
-      return hasVisibleImageFill(node) && !node.sliceExport;
+      const role = String(node?.role || '');
+      if (role === 'copy' || node?.type === 'TEXT' || node?.text) return false;
+      return true;
     }
+    if (node?.sliceExport) return false;
     return measured[id]?.bakedDescendants === true && isLegalBakedOwner(owner);
   });
 }
@@ -656,14 +1137,36 @@ export function evaluateInventoryStaticGate({
   if (String(lang || '') !== 'zh-CN') {
     return { ok: true, skipped: true, reason: 'static-gate-only-zh-CN' };
   }
-  if (String(viewportKind || '') !== 'design') {
-    return { ok: true, skipped: true, reason: 'static-gate-only-design-viewport' };
+  if (String(viewportKind || '') !== 'design' && String(viewportKind || '') !== 'product') {
+    return { ok: true, skipped: true, reason: 'static-gate-only-design-or-product-viewport' };
   }
   if (!inventory || typeof inventory !== 'object') {
     return { ok: false, skipped: false, problems: ['inventory-missing'] };
   }
   if (!measurements || typeof measurements !== 'object') {
     return { ok: false, skipped: false, problems: ['dom-measurements-missing'] };
+  }
+  if (String(viewportKind) === 'product') {
+    const product = evaluateProductScrollGate({
+      inventory,
+      productScroll: measurements.productScroll,
+      viewportKind: 'product',
+    });
+    const plate = asArray(product.failures).concat(asArray(evaluateProductPlateOverlap({
+      inventory,
+      measurements,
+    })));
+    return {
+      ok: plate.length === 0,
+      skipped: false,
+      lang,
+      viewportKind,
+      expectationSource: 'handoff-inventory',
+      failureCount: plate.length,
+      failures: plate,
+      problems: plate.map((entry) => entry.id ? `${entry.id}: ${entry.reason}` : entry.reason),
+      productScroll: { ok: product.ok === true, problems: product.problems },
+    };
   }
   const nodes = flattenInventoryNodes(inventory);
   const measured = measurements.nodes && typeof measurements.nodes === 'object' ? measurements.nodes : {};
@@ -824,6 +1327,7 @@ export function evaluateInventoryStaticGate({
   const product = evaluateProductScrollGate({
     inventory,
     productScroll: measurements.productScroll,
+    viewportKind,
   });
   failures.push(...asArray(product.failures));
   return {
