@@ -292,7 +292,14 @@ test('full-bleed kv IMAGE child is baked, not missing-dom', () => {
         scrolled: 1,
         scrollTop: 1,
         layers: {},
-        firstKv: { imgSrc: 'assets/kv.webp', assetW: 3840, assetH: 2143, assetEmpty: false },
+        firstKv: {
+          imgSrc: 'assets/kv.webp',
+          assetW: 3840,
+          assetH: 2143,
+          assetEmpty: false,
+          heroVisualPlane: 'kv',
+          coverCrop: 'cover-crop',
+        },
       
       seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
     },
@@ -341,7 +348,7 @@ test('product viewport rejects a gap between sec/1 and sec/2', () => {
       scrolled: 1,
       scrollTop: 1,
       layers: {
-        'sec-1': { cropWindow: 'first-section-pagebox', height: 1623, overflow: 'visible' },
+        'sec-1': { cropWindow: '100vh', height: 1623, overflow: 'hidden' },
         'sec-2': { height: 889, overflow: 'hidden' },
       },
       sectionAbut: { gap: 0 },
@@ -548,6 +555,69 @@ test('empty first-screen kv PNG is red', () => {
   assert.ok(empty.problems.some((line) => line.includes('first-kv-png-size-mismatch')), (empty.problems || []).join('\n'));
 });
 
+test('unnamed first-screen kv without cover-crop is red; cover-crop marker is green', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 3840, h: 2143 } },
+      {
+        id: '721:7868',
+        status: 'unknown',
+        name: 'kv',
+        parentId: 'sec-1',
+        ancestorIds: ['sec-1'],
+        pageBox: { x: 0, y: 0, w: 3840, h: 2143 },
+        sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '721-7868.png', box: { x: 0, y: 0, w: 3840, h: 2143 } },
+      },
+    ],
+  };
+  const red = evaluateProductScrollGate({
+    inventory,
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 2143, overflow: 'hidden' } },
+      backgrounds: {},
+      firstKv: {
+        imgSrc: 'assets/721-7868.webp',
+        assetW: 3840,
+        assetH: 2143,
+        assetEmpty: false,
+        heroVisualPlane: null,
+        coverCrop: null,
+      },
+      samples: [],
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('first-kv-missing-cover-crop')), (red.problems || []).join('\n'));
+
+  const green = evaluateProductScrollGate({
+    inventory,
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 2160, overflow: 'hidden' } },
+      backgrounds: {},
+      firstKv: {
+        imgSrc: 'assets/721-7868.webp',
+        assetW: 3840,
+        assetH: 2143,
+        assetEmpty: false,
+        heroVisualPlane: 'kv',
+        coverCrop: 'cover-crop',
+      },
+      samples: [],
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
 test('listed img/ time-bg with shorter ink box expects pageBox, not sliceExport.box', () => {
   const pageBox = { x: 0, y: 1543, w: 3840, h: 260 };
   const inkBox = { x: 0, y: 1539.925, w: 3840, h: 167.075 };
@@ -724,7 +794,7 @@ test('unprefixed parent bake cannot swallow a copy-only child unless owner has s
         scrollTop: 1,
         layers: {},
         backgrounds: {},
-        firstKv: { imgSrc: 'assets/kv.webp', assetW: 3840, assetH: 2143, assetEmpty: false },
+        firstKv: { imgSrc: 'assets/kv.webp', assetW: 3840, assetH: 2143, assetEmpty: false, heroVisualPlane: 'kv', coverCrop: 'cover-crop' },
         samples: [],
       
       seamPixels: { minLum: 40, rows: [{ lum: 40 }] },

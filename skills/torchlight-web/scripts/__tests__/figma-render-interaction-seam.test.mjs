@@ -45,10 +45,18 @@ test('Main static leaves page clicks inert until Interaction opts in', () => {
   assert.match(renderer, /enablePageInteraction && !__motionCarouselOptIn && !frame\.__fxInteractionBridgeInstalled/);
   assert.match(renderer, /if \(!enablePageInteraction\) return;/);
   const shell = readFileSync(new URL('../../templates/demo-shell.html', import.meta.url), 'utf8');
-  assert.doesNotMatch(shell, /if \(ctx && ctx\.enablePageInteraction == null\) ctx\.enablePageInteraction = true;/);
   const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
-  assert.match(chrome, /enablePageInteraction: !!PRODUCT_VIEW \|\| new URLSearchParams\(location\.search\)\.get\('interaction'\) === '1'/);
-  assert.doesNotMatch(chrome, /enablePageInteraction: !!PRODUCT_VIEW,/);
+  assert.doesNotMatch(shell, /if \(ctx && ctx\.enablePageInteraction == null\) ctx\.enablePageInteraction = true;/);
+  const renderIntoAt = chrome.indexOf('function renderInto(container, state)');
+  const nextFnAt = chrome.indexOf('\n  function ', renderIntoAt + 1);
+  const renderInto = chrome.slice(renderIntoAt, nextFnAt > renderIntoAt ? nextFnAt : chrome.length);
+  assert.match(renderInto, /enablePageInteraction: new URLSearchParams\(location\.search\)\.get\('interaction'\) === '1'/);
+  assert.doesNotMatch(renderInto, /enablePageInteraction:\s*true/);
+  assert.doesNotMatch(renderInto, /enablePageInteraction: !!PRODUCT_VIEW/);
+  const laterAxes = readFileSync(new URL('../lib/later-axes-probe.mjs', import.meta.url), 'utf8');
+  assert.match(laterAxes, /index\.html\?interaction=1#g=/);
+  assert.match(laterAxes, /index\.html\?inventory-static-gate=1/);
+  assert.doesNotMatch(laterAxes, /index\.html\?inventory-static-gate=1&interaction=1/);
 });
 
 test('selected component tree keeps inner btn @go live', () => {
@@ -77,15 +85,10 @@ test('only language dropmenus consume inner btn as setPref lang', () => {
 
 test('named modal pin fills the visible frame with an 80% black scrim', () => {
   assert.match(renderer, /data-modal-scrim/);
-  assert.match(renderer, /rgba\(0,0,0,0\.8\)/);
+  assert.match(renderer, /rgba\(0,0,0,' \+ opacity \+ '\)/);
   assert.match(renderer, /host\.style\.zoom = '1'/);
-  assert.match(renderer, /data-modal-panel-box/);
-  assert.match(renderer, /visibleW \/ contentW, visibleH \/ contentH, 1/);
-  assert.match(renderer, /Fit and center the authored sheet/);
-  assert.match(renderer, /doc\.body\.appendChild\(host\)/);
-  assert.match(renderer, /frameRect\.left/);
-  assert.match(renderer, /panelFitsSheet/);
-  assert.match(renderer, /sheetFits \? designW : \(hasPanel \? panelW : designW\)/);
+  assert.match(renderer, /modalViewportFill/);
+  assert.match(renderer, /Math\.max\(visibleW \/ designW, visibleH \/ designH\)/);
   assert.doesNotMatch(renderer, /frameRect\.width \/ \(pageZoom \|\| 1\)/);
 });
 
@@ -96,20 +99,12 @@ test('language dropmenu matches one option label, not the whole menu tree', () =
   assert.match(renderer, /syncLanguageDropmenuHighlight/);
   assert.match(renderer, /optionLang === current \? 'highlight' : 'normal'/);
   assert.match(renderer, /syncLanguageDropmenuHighlight\(owner, currentPageLang\(\)\)/);
-  assert.match(renderer, /frame\.__fxRenderPrefs = ctx\.prefs/);
-  assert.match(renderer, /Stale prefs\.lang=en after a language remount re-highlighted English/);
-  assert.match(renderer, /Paint the COMPONENT root fill onto the layer itself/);
-  assert.match(renderer, /data-btn-variant-fill-source/);
-  assert.match(renderer, /isText \? false : !active/);
-  assert.match(renderer, /paint\(treeNodes, treeNodes, layer, \{/);
-  assert.match(renderer, /skipNodeIds: new Set\(\[String\(__u\(root\.id\)\)\]\)/);
-  assert.doesNotMatch(renderer, /Hide the master TEXT while a variant layer is showing/);
   assert.doesNotMatch(renderer, /dropmenuLangFromNode/);
 });
 
 test('named modal overlays close when either side is exclusive', () => {
   assert.match(renderer, /exclusive: !\/\^\(\?:pc\|移动端\)\?视频弹窗\$\/\.test\(parsed\.label\)/);
-  assert.match(renderer, /entry\.exclusive \|\| other\.exclusive/);
+  assert.match(renderer, /other\.layer && other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) closeNamedModal\(other\)/);
   assert.doesNotMatch(renderer, /entry\.exclusive && other\.exclusive/);
 });
 
@@ -118,11 +113,7 @@ test('named modal paint keeps close and named scroll live', () => {
   const at = renderer.indexOf(marker);
   const paintCall = renderer.slice(at, at + 900);
   assert.match(paintCall, /suppressInteractions:\s*false/);
-  assert.match(renderer, /data-hscroll'\] === 'y'/);
-  assert.match(renderer, /overflowY = 'auto'/);
-  assert.match(renderer, /scrollbarWidth = 'none'/);
-  assert.match(renderer, /childOverflowsHostY/);
-  assert.match(renderer, /evidenceAttrs\['data-go'\] != null/);
+  assert.match(renderer, /_punchModalOverlayHits/);
 });
 
 test('renderer consumes pure direct-child interaction payload without raw switch classification', () => {
@@ -171,6 +162,48 @@ test('renderer loops applySwitch and keeps calendar/hscroll commands off native 
   assert.match(renderer, /data-btn-press', 'inert'/);
   assert.doesNotMatch(renderer, /activity-calendar-reveal/);
   assert.doesNotMatch(renderer, /左滑\|前/);
+});
+
+test('named modal cover fill, scrim, and scroll lock follow DESIGN.md YAML', () => {
+  assert.match(renderer, /modalViewportFill/);
+  assert.match(renderer, /modalScrimOpacity/);
+  assert.match(renderer, /data-modal-scrim/);
+  assert.match(renderer, /data-modal-scroll-lock/);
+  assert.match(renderer, /Math\.max\(visibleW \/ designW, visibleH \/ designH\)/);
+  assert.doesNotMatch(renderer, /const scale = Math\.min\(visibleW \/ designW, visibleH \/ designH\);/);
+});
+
+test('named modal pin drops host zoom so Figma sheet is not scaled twice', () => {
+  const pinAt = renderer.indexOf('const pinModalToViewport = (entry) =>');
+  const unpinAt = renderer.indexOf('const unpinModalHost = (entry) =>');
+  const closeAt = renderer.indexOf('const closeNamedModal = (entry) =>', pinAt);
+  assert.ok(pinAt > 0 && unpinAt > 0 && closeAt > pinAt);
+  const pin = renderer.slice(pinAt, closeAt);
+  const unpin = renderer.slice(unpinAt, pinAt);
+  assert.match(pin, /host\.style\.zoom = '1'/);
+  assert.match(pin, /layer\.style\.zoom = '1'/);
+  assert.match(pin, /frame\.style\.width/);
+  assert.match(pin, /frame\.clientWidth/);
+  assert.match(pin, /host\.style\.position = 'absolute'/);
+  assert.doesNotMatch(pin, /frame\.style\.zoom/);
+  assert.doesNotMatch(pin, /visibleW = frameRect\.width \/ \(pageZoom/);
+  assert.doesNotMatch(pin, /const visibleW = frameRect\.width;/);
+  assert.match(unpin, /host\.style\.zoom = String\(pageStageScale \|\| k\)/);
+  assert.match(unpin, /host\.__fxNamedModalRest/);
+  assert.doesNotMatch(unpin, /pageMeta\.height/);
+  assert.match(renderer, /rgba\(0,0,0,' \+ opacity \+ '\)/);
+  assert.match(renderer, /frame\.style\.overflowY = 'hidden'/);
+});
+
+test('opening a named modal closes every other open named modal first', () => {
+  const openAt = renderer.indexOf('const openNamedModal = (entry) =>');
+  const closeBtnAt = renderer.indexOf('const closeBtn = this._closeControlFromEvent(ev);', openAt);
+  assert.ok(openAt > 0 && closeBtnAt > openAt);
+  const open = renderer.slice(openAt, closeBtnAt);
+  assert.match(open, /other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) closeNamedModal\(other\)/);
+  assert.doesNotMatch(open, /entry\.exclusive && other\.exclusive/);
+  assert.doesNotMatch(renderer, /exclusive: parsed\.label !== '视频弹窗'/);
+  assert.doesNotMatch(renderer, /exclusive: true/);
 });
 
 test('unresolved model does not emit a direct-child runtime bridge', () => {

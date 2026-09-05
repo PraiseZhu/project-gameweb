@@ -56,9 +56,14 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /HERO_EXITING/);
   assert.match(render, /CONTENT_RELEASED/);
   assert.match(render, /data-hero-slot-role=\"hero\"/);
-  assert.match(render, /First screen keeps the Figma pageBox/);
+  assert.match(render, /Official first screen is a 100vh crop window/);
   assert.match(render, /data-hero-crop-window/);
   assert.match(render, /heroVisualPlane/);
+  assert.match(render, /firstScreenKvInSection/);
+  assert.match(render, /Nested unnamed `kv` under sec\/1 is still first-screen art/);
+  assert.match(render, /data-kv-cover-plane', 'cover-crop'/);
+  assert.match(render, /data-kv-cover-origin/);
+  assert.match(render, /center 0/);
   assert.match(render, /bg-tail/);
   assert.match(render, /Hero UI size stays on platform width-scale k/);
   assert.match(render, /pageScope \? 1 : k/);
@@ -69,12 +74,11 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /owner-block/);
   assert.match(render, /pfx === 'fix'/);
   assert.match(render, /listedHeroArt/);
-  assert.match(render, /parentIsHeroSection/);
+  assert.match(render, /firstScreenKvInSection/);
   assert.match(render, /fullBleedHeroArt/);
   assert.match(render, /fixedHost\.style\.position = 'sticky'/);
   assert.match(render, /fx-fixed-zoom/);
   assert.match(render, /isTopBarChrome/);
-  assert.match(render, /data-topbar-chrome/);
   assert.match(render, /first-section-pagebox/);
   assert.doesNotMatch(render, /fixedHost\.style\.position = 'fixed'/);
   assert.doesNotMatch(render, /fixedStage\.style\.position = 'sticky'/);
@@ -82,37 +86,13 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /data-hero-slot-reveal/);
   assert.match(render, /revealDistance/);
   assert.doesNotMatch(render, /slotOffset/);
-  assert.match(render, /data-hero-visual-motion/);
-  assert.match(render, /heroStage\.style\.translate = reduce \? '0 0' : '0 ' \+ offset \+ '%'/);
-  assert.match(render, /heroStage\.style\.opacity = reduce \? '1' : opacity/);
-  assert.doesNotMatch(render, /heroStage\.style\.translate = '0 0';/);
-  assert.doesNotMatch(render, /heroStage\.style\.opacity = '1';/);
+  assert.doesNotMatch(render, /-6 \* progress/);
+  assert.doesNotMatch(render, /scroll-scrub-generic-unverified/);
+  assert.match(render, /heroStage\.style\.translate = '0 0'/);
+  assert.match(render, /heroStage\.style\.opacity = '1'/);
   assert.match(render, /data-hero-bg-gap/);
   assert.match(render, /data-hero-bg-follow/);
   assert.doesNotMatch(render, /display\s*:\s*none[^\n]*hero/i);
-});
-
-test('100vh shorter than Figma hero keeps pageBox and does not crop', () => {
-  const slot = buildHeroScrollSlot({
-    viewportHeight: 728,
-    scale: 0.5,
-    pageOriginY: 0,
-    firstSection: { id: 'hero', y: 0, height: 2143 },
-    followingSections: [{ id: 'next', y: 2143 }],
-    contentRootId: 'root',
-  });
-  assert.ok(slot, 'hero slot must exist when the first section starts at page origin');
-  assert.equal(slot.layoutOffsetDesign, 0);
-  const render = renderSource();
-  assert.match(render, /extra = Math\.max\(0, designHeight - heroHeight\)/);
-  assert.match(render, /underFullBleedPlate/);
-  assert.match(render, /isFullBleedPlateOwner/);
-  assert.match(render, /Math\.max\(_snapH, Number\(heroSlot\.designHeight\)\)/);
-  assert.match(render, /stage\.style\.overflow = 'visible'/);
-  assert.match(render, /layer\.style\.overflow = 'visible'/);
-  assert.match(render, /Math\.max\(firstPageH, slotDesign\)/);
-  assert.doesNotMatch(render, /el\.style\.height = slotDesign \+ 'px'/);
-  assert.match(render, /parentIsHeroSection/);
 });
 
 test('QA shell does not rewrite logo to a hardcoded 840×300 overlay', () => {

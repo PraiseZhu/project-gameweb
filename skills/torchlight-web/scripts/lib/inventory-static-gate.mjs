@@ -739,10 +739,11 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
     const layer = layers[firstId];
     if (!layer) failures.push({ id: firstId, reason: 'first-section-layer-missing' });
     else {
-      if (String(layer.cropWindow || '') !== 'first-section-pagebox') {
+      const cropWindow = String(layer.cropWindow || '');
+      if (cropWindow !== 'first-section-pagebox' && cropWindow !== '100vh') {
         failures.push({ id: firstId, reason: 'first-section-not-pagebox-clip', actual: layer.cropWindow || null });
       }
-      if (String(viewportKind) !== 'product' && firstBox && Number(layer.height) > firstBox.h + POSITION_TOLERANCE_PX) {
+      if (cropWindow === 'first-section-pagebox' && firstBox && Number(layer.height) > firstBox.h + POSITION_TOLERANCE_PX) {
         failures.push({ id: firstId, reason: 'first-section-taller-than-pageBox', expected: firstBox.h, actual: layer.height });
       }
       const slotDesign = Number(productScroll.slotDesignHeight);
@@ -965,6 +966,19 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       }
       if (kvDom.assetEmpty === true) {
         failures.push({ id: firstKv.id, reason: 'first-kv-png-empty' });
+      }
+      /* Product view cover-crops first-screen kv into 100vh. Missing the
+         marker means the unnamed kv under sec/1 stayed on width-k. */
+      const coverPlane = String(kvDom.heroVisualPlane || kvDom.coverCrop || kvDom.kvCoverPlane || '');
+      if (coverPlane !== 'kv' && coverPlane !== 'cover-crop') {
+        failures.push({
+          id: firstKv.id,
+          reason: 'first-kv-missing-cover-crop',
+          actual: {
+            heroVisualPlane: kvDom.heroVisualPlane || null,
+            coverCrop: kvDom.coverCrop || kvDom.kvCoverPlane || null,
+          },
+        });
       }
     }
   }

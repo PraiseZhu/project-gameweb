@@ -992,19 +992,16 @@
       .filter((el) => this._isNamedCloseControl(this._closeControlNameOf(el)));
   },
   _closeControlFromEvent(ev) {
-    const start = ev && ev.target && ev.target.nodeType === 3 ? ev.target.parentElement : ev && ev.target;
-    let node = start;
-    while (node && node.nodeType === 1) {
-      if (this._isNamedCloseControl(this._closeControlNameOf(node))) return node;
-      node = node.parentElement;
-    }
-    return null;
+    const hit = ev && ev.target && ev.target.closest
+      ? ev.target.closest('[data-btn-name], [data-node-name], [data-name]')
+      : null;
+    if (!hit) return null;
+    return this._isNamedCloseControl(this._closeControlNameOf(hit)) ? hit : null;
   },
   _punchModalOverlayHits(layer) {
     if (!layer || !layer.querySelectorAll) return;
-    for (const overlay of layer.querySelectorAll('[data-prefix="img"], [data-name]')) {
-      const name = overlay.getAttribute('data-name') || overlay.getAttribute('data-node-name') || '';
-      if (this._isModalOverlayArt(name) || /img\s*[\/／]\s*(?:按钮|关闭按钮)$/.test(name)) {
+    for (const overlay of layer.querySelectorAll('[data-prefix="img"]')) {
+      if (this._isModalOverlayArt(overlay.getAttribute('data-name'))) {
         overlay.style.pointerEvents = 'none';
       }
     }
@@ -1723,20 +1720,16 @@
         && typeof window.matchMedia === 'function'
         && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-      /* 可见离场只消费通用 hero slot 语义，不依赖页面标题、节点 id 或序号。
-         这是滚动进度驱动的通用视觉接入；Figma 未提供 motion truth 时明确留痕，
-         不把它冒充成精确 easing/duration。静态首屏与释放后的布局仍由 geometry
-         contract 决定，不能用 display:none、遮罩或白块制造“离场”。 */
+      /* Geometry only. A percent translate on the hero stage moves sec/1
+         while later sections stay on pageBox y + extra, so a few CSS pixels
+         of scroll open a black hole. Figma did not author that exit. */
       if (heroStage && heroStage.style) {
-        const offset = (-6 * progress).toFixed(3);
-        const opacity = (1 - (0.16 * progress)).toFixed(4);
-        heroStage.style.transformOrigin = '50% 0';
-        heroStage.style.translate = reduce ? '0 0' : '0 ' + offset + '%';
-        heroStage.style.opacity = reduce ? '1' : opacity;
-        heroStage.style.transition = reduce ? 'none' : 'translate 180ms linear, opacity 180ms linear';
-        heroStage.style.willChange = reduce ? 'auto' : 'translate, opacity';
-        heroStage.setAttribute('data-hero-visual-motion', 'scroll-scrub-generic-unverified');
-        heroStage.setAttribute('data-hero-visual-progress', progress.toFixed(4));
+        heroStage.style.translate = '0 0';
+        heroStage.style.opacity = '1';
+        heroStage.style.transition = 'none';
+        heroStage.style.willChange = 'auto';
+        heroStage.removeAttribute('data-hero-visual-motion');
+        heroStage.removeAttribute('data-hero-visual-progress');
       }
       /* Only the immediate successor that leaks into the viewport receives a
          temporary reveal translate. Every other section is painted at its
@@ -1777,23 +1770,6 @@
     if (typeof frame.__heroScrollSlotCleanup === 'function') frame.__heroScrollSlotCleanup();
     if (typeof frame.__motionAdapterCleanup === 'function') frame.__motionAdapterCleanup();
     if (typeof frame.__fxAssetSchedulerCleanup === 'function') frame.__fxAssetSchedulerCleanup();
-    if (typeof frame.__fxNamedModalDocCleanup === 'function') frame.__fxNamedModalDocCleanup();
-    /* Keep the one-shot click bridge, but always read the latest page lang.
-       Stale prefs.lang=en after a language remount re-highlighted English. */
-    frame.__fxRenderPrefs = ctx.prefs || {};
-    const staleModalHosts = [];
-    const seenHosts = new Set();
-    const collectHost = (node) => {
-      if (!node || seenHosts.has(node)) return;
-      seenHosts.add(node);
-      staleModalHosts.push(node);
-    };
-    collectHost(typeof document !== 'undefined' ? document.querySelector('.fx-named-modals') : null);
-    collectHost((frame.parentElement || (typeof document !== 'undefined' ? document.body : null))
-      && (frame.parentElement || document.body).querySelector('.fx-named-modals'));
-    for (const staleModalHost of staleModalHosts) {
-      if (staleModalHost && staleModalHost.parentElement) staleModalHost.parentElement.removeChild(staleModalHost);
-    }
     frame.innerHTML = '';
 
     // 当前端对应的设计稿宽度。规范只有 mobile(750) 与 pc(3840) 两套稿；
@@ -2035,10 +2011,10 @@
          page origin (SS6 mobile). Do not invent a layout; do not skip the slot. */
       const contentRoot = listedRoot || (pagePaintOrder.length === 1 ? pagePaintOrder[0] : null);
       if (!startsAtPageOrigin || !contentRoot) return null;
-      /* Cover-crop belongs to the KV visual plane (the page-chrome `kv` root),
-         not the hero section that holds title/download UI. Applying slotScale
-         to the section turns the title into a height-driven poster and leaves
-         the actual KV artwork on width-scale with later sections. */
+      /* Cover-crop belongs to the KV visual plane (page-chrome `kv` or the
+         unnamed `kv` sitting inside sec/1). Applying slotScale to the section
+         turns the title into a height-driven poster and leaves the artwork on
+         width-scale with later sections. */
       const fillVh = Number(designPolicy().heroViewportFillVh);
       if (!Number.isFinite(fillVh) || fillVh <= 0) {
         throw new Error('figma-render: heroViewportFillVh missing from DESIGN.md YAML');
@@ -2080,8 +2056,8 @@
       const afterHero = heroSlot && String(id) !== String(heroSlot.sectionId) && Number(m.y) > pageOriginY + 0.5;
       return (Number(m.y || 0) + Number(m.height || 0) + (afterHero ? heroLayoutOffsetDesign : 0)) - pageOriginY;
     };
-    const pageScrollHeight = pageScope && Number.isFinite(heroLayoutOffsetDesign) && heroLayoutOffsetDesign !== 0
-      ? Math.max(pageContentHeight + heroLayoutOffsetDesign, ...ids.map((id) => shiftedSectionBottom(id)))
+    const pageScrollHeight = pageScope && heroLayoutOffsetDesign > 0
+      ? Math.max(pageContentHeight, ...ids.map((id) => shiftedSectionBottom(id)))
       : pageContentHeight;
     /* Hero slot only moves after-hero *sections*. pageBackground stays at Figma
        y, so the last painted bg slice ends early and the shifted tail looks like
@@ -2093,11 +2069,10 @@
         + Number((sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && sections[heroSlot.sectionId].meta.height) || heroSlot.heroHeight || 0)
       : 0;
     const afterHeroBackgroundShift = (node) => {
-      if (!heroSlot || !Number.isFinite(heroLayoutOffsetDesign) || heroLayoutOffsetDesign === 0) return 0;
+      if (!(heroLayoutOffsetDesign > 0) || !heroSlot) return 0;
       const y = Number(node && node.box && node.box.y);
       if (!Number.isFinite(y)) return 0;
-      /* bg/ of sec/2 starts on the first-section bottom (y=2143), not past it. */
-      return y >= heroSectionBottomY - 0.5 ? heroLayoutOffsetDesign : 0;
+      return y > heroSectionBottomY + 0.5 ? heroLayoutOffsetDesign : 0;
     };
     frame.setAttribute('data-hero-scroll-slot', heroSlot ? 'active' : 'fallback-missing-page-structure');
     if (heroSlot) {
@@ -2216,17 +2191,23 @@
          already abut (0/2143/4286). Ceil(*k)/k adds up to 1 design px per
          section and shows as a black seam at every join. */
       const _snapH = _rawH;
-      /* First screen keeps the Figma pageBox. 100vh may pad a short hero;
-         a taller hero flows downward instead of cropping CTA / time copy. */
+      /* Official first screen is a 100vh crop window. UI still uses Figma Y as
+         a fraction of that slot. The first-screen *visual* plane (unnamed kv
+         inside sec/1) cover-crops into the same window; clipping the stage to
+         pageBox.h (2143) would crop the scaled KV back to width-k. Later
+         sections stay on their own pageBox via the paint-root clip. */
       const heroUiHeight = isHeroStage && heroSlot && Number(heroSlot.designHeight) > 0
-        ? Math.max(_snapH, Number(heroSlot.designHeight))
+        ? Number(heroSlot.designHeight)
         : _snapH;
-      const heroClipHeight = heroUiHeight;
+      const heroClipHeight = isHeroStage && heroCropWindowDesign > 0
+        ? heroCropWindowDesign
+        : heroUiHeight;
       stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : heroClipHeight) + 'px';
       if (isHeroStage) {
-        stage.style.overflow = 'visible';
+        stage.style.overflow = 'hidden';
         stage.setAttribute('data-hero-source-height', String(_rawH));
-        if (Number(_rawH) > 0) stage.setAttribute('data-hero-clip-height', String(heroClipHeight));
+        if (Number(heroClipHeight) > 0) stage.setAttribute('data-hero-clip-height', String(heroClipHeight));
+        if (heroCropWindowDesign > 0) stage.setAttribute('data-hero-crop-window', '100vh');
       }
       if (pageScope && !pageStageMode) {
         stage.style.position = 'absolute';
@@ -2499,35 +2480,20 @@
           const box = boxXw(child);
           return !!(box && (box.x < host.x - 0.5 || box.right > host.right + 0.5));
         };
-        const boxYh = (raw) => {
-          const box = __plain(raw && (raw.pageBox || raw.box) || {});
-          const y = Number(box.y), h = Number(box.h);
-          return Number.isFinite(y) && Number.isFinite(h) && h > 0 ? { y, h, bottom: y + h } : null;
-        };
-        const childOverflowsHostY = (child, host) => {
-          const box = boxYh(child);
-          return !!(box && (box.y < host.y - 0.5 || box.bottom > host.bottom + 0.5));
-        };
         const hscrollAxis = (node, parsed) => {
           const namedScroll = parsed.role === 'scroll';
           const calendarMix = parsed.role === 'mix' && /^(?:calendar|日历)$/i.test(String(parsed.label || ''));
           const clipHost = value(node && node.clipsContent) === true;
           if ((!namedScroll && !calendarMix) || !clipHost) return null;
-          const hostX = boxXw(node);
-          const hostY = boxYh(node);
-          if (!hostX && !hostY) return null;
-          const namedAxis = String(parsed.params.axis || '').toLowerCase();
-          if (namedAxis === 'y' || namedAxis === 'vertical') return 'y';
-          if (namedAxis === 'x' || namedAxis === 'horizontal') return 'x';
-          const overflowX = hostX && items.some((candidate) => parentId(candidate) === id(node) && childOverflowsHost(candidate, hostX));
-          const overflowY = hostY && items.some((candidate) => parentId(candidate) === id(node) && childOverflowsHostY(candidate, hostY));
-          if (namedScroll && overflowY && !overflowX) return 'y';
-          if (!overflowX && !(namedScroll && overflowY)) return null;
+          const host = boxXw(node);
+          if (!host) return null;
+          const overflows = items.some((candidate) => parentId(candidate) === id(node) && childOverflowsHost(candidate, host));
+          if (!overflows) return null;
           /* Named scroll/ is the explicit host. Calendar mix is the one
              product window whose overflowing child must translate without
              turning the mix itself into native overflow-x. A random
              clipsContent frame is not a host. */
-          return 'x';
+          return parsed.params.axis || 'x';
         };
         const calendarNowLabel = (node, parsed) => parsed.role === 'dyn'
           && /今日日期|today\s*date|current\s*date/i.test(String(parsed.label || ''));
@@ -2976,14 +2942,12 @@
           /* A fixed navigation item is only targetable later if its complete
              source-ordered set can be paired 1:1 with page sections. */
           const fixedOwner = p.role === 'btn' ? ownerFixed(n) : null;
-          /* Directory nav-items pair 1:1 with sections. A landscape overlay
-             (fix/顶部信息, mobile 736×401 or PC 3793×493) holding 官方充值/地球/官网
-             is viewport chrome, not a rail. w>2h used to miss the phone bar
-             (1.83) so chrome syncHeroEntryNavigation squashed it to 100vh. */
-          const navRailOwner = (fixedOwner && (fixedById.get(String(fixedOwner)) || byId.get(String(fixedOwner))))
-            || (p.role === 'fix' ? n : null);
+          /* Directory nav-items pair 1:1 with sections. A wide top bar
+             (fix/顶部信息) holding 官方充值/进入官网 is viewport chrome, not a
+             rail; chrome syncHeroEntryNavigation would rewrite those tops. */
+          const navRailOwner = fixedOwner && (fixedById.get(String(fixedOwner)) || byId.get(String(fixedOwner)));
           const navRailBox = navRailOwner && (navRailOwner.pageBox || navRailOwner.box);
-          const isTopBarChrome = !!(navRailBox && Number(navRailBox.w) > Number(navRailBox.h));
+          const isTopBarChrome = !!(navRailBox && Number(navRailBox.w) > Number(navRailBox.h) * 2);
           if (fixedOwner && !isTopBarChrome) {
             attrs['data-nav-item'] = 'true';
             attrs['data-nav-owner'] = fixedOwner;
@@ -2993,10 +2957,8 @@
             /* The sticky rail must stay visually above content, but its empty
                box must not swallow sibling switch arrows. Only explicit nav
                items re-enable pointer targeting. @from=N is scroll-gated pin,
-               not a stretch rule. Landscape chrome must not get nav-shell or
-               the QA bar stretches 官方充值 to 844/1334. */
-            if (!isTopBarChrome) attrs['data-nav-shell'] = 'true';
-            else attrs['data-topbar-chrome'] = 'true';
+               not a stretch rule. */
+            attrs['data-nav-shell'] = 'true';
             attrs['data-fix-pin'] = 'viewport';
             const fromRaw = p.params.from;
             if (fromRaw != null && /^[1-9]\d*$/.test(String(fromRaw))) attrs['data-fix-from'] = String(fromRaw);
@@ -3693,7 +3655,6 @@
           || evidenceAttrs['data-btn-press'] === 'true'
           || evidenceAttrs['data-btn-variant'] === 'true'
           || evidenceAttrs['data-dropmenu'] === 'true'
-          || evidenceAttrs['data-go'] != null
         );
         const liveCloseBtn = this._isNamedCloseControl(n.name);
         /* The rendered-parent stack is only a convenience for DOM nesting.  It
@@ -3725,22 +3686,9 @@
           const owner = truthNodeById.get(String(id));
           return !!(owner && owner.sliceExport);
         };
-        const isFullBleedPlateOwner = (id) => {
-          const owner = truthNodeById.get(String(id));
-          if (!owner || !owner.sliceExport) return false;
-          const role = String(owner.role || '');
-          const name = String(owner.name || '');
-          return role === 'bg' || role === 'kv'
-            || /^kv(?:\/|$)/i.test(name)
-            || /^bg(?:\/|$)/i.test(name)
-            || /时间背景/.test(name);
-        };
         /* Only a清单 sliceExport owner may bake descendants. Unknown / unprefixed
-           parents in #qa-assets must not lock img/ children that have their own contract.
-           Full-bleed kv/bg plates already contain their IMAGE children; painting those
-           children again stacks a second crop (PC 721:7871 used a mobile PNG). */
+           parents in #qa-assets must not lock img/ children that have their own contract. */
         const bakedOwnerId = bakedOwnerChain.find((id) => listedSliceOwner(id));
-        const bakedFullBleedOwnerId = bakedOwnerChain.find((id) => isFullBleedPlateOwner(id));
         /* Non-default blend layers (SOFT_LIGHT/OVERLAY/…) punched through by the
            extractor: a baked export rasterizes them on a transparent canvas, so the
            blend loses its page backdrop and flattens to a near-white fill (06 barcode
@@ -3771,17 +3719,26 @@
         const paintAsFragment = n.paintAsFragment === true;
         const ownImageFill = Array.isArray(st.fills)
           && st.fills.some((f) => f && f.visible !== false && f.type === 'IMAGE');
+        const bakedWholeFrameOwner = (() => {
+          if (!bakedOwnerId) return false;
+          const owner = truthNodeById.get(String(bakedOwnerId));
+          const ownerName = String((owner && owner.name) || '');
+          const ownerRole = String((owner && owner.role) || '');
+          return ownerRole === 'kv' || ownerRole === 'bg' || ownerRole === 'img'
+            || /^kv(?:\/|$)/i.test(ownerName)
+            || /^bg(?:\/|$)/i.test(ownerName)
+            || /^img(?:\/|$)/i.test(ownerName);
+        })();
+        /* Whole-frame kv/bg/img already rasterizes IMAGE descendants. Painting
+           those fills again (a masked 750×992 grandchild on top of 750×1334 kv)
+           crops the first screen a second time. Interaction / fragment / lang
+           still punch through. */
+        const ownImageFillPunchesBake = ownImageFill && !bakedWholeFrameOwner;
         const componentIdEarly = String(__u(n.componentId) || '');
         const imgLangRelease = !!(componentIdEarly && imgLangSetsByMemberId.has(componentIdEarly));
-        const underFullBleedPlate = !!(bakedFullBleedOwnerId && !bakedOwnerReleased);
         if ((parent && parent.assetLock || (bakedOwnerId && !bakedOwnerReleased))
           && !hasStructuralInteraction && !underHscrollSurface && !__blendLiftable
-          && !ownListedSlice && !paintAsFragment && !ownImageFill && !imgLangRelease) continue;
-        /* IMAGE / unnamed crop children of a delivered kv/bg plate are already in
-           that PNG. Do not paint them again even if they have their own fill. */
-        if (underFullBleedPlate && !hasStructuralInteraction && !underHscrollSurface
-          && !__blendLiftable && !paintAsFragment && !imgLangRelease
-          && (ownImageFill || ownListedSlice || !pfx)) continue;
+          && !ownListedSlice && !paintAsFragment && !ownImageFillPunchesBake && !imgLangRelease) continue;
         /* Direct-owner fallback for text constraint. The locator-stack parent is
            often the SECTION layer for a deeply nested text leaf; it must not win
            over a tighter truth owner. Accept a rendered direct parent only when
@@ -3853,8 +3810,8 @@
            the baked PNG. Only a structural interaction (switch/tab/scroll/copy/nav)
            or a genuinely CSS-rebuildable blend layer may remain above baked pixels;
            every other baked-subtree paint node is skipped to avoid double-draw. */
-        const __inBakedSubtree = !!(bakedOwnerId) && !assetRec && !paintAsFragment && !ownImageFill;
-        if (__inBakedSubtree && !bakedOwnerReleased && !hasStructuralInteraction && !liveCloseBtn && !underHscrollSurface && !__blendLiftable && pfx !== 'scroll') continue;
+        const __inBakedSubtree = !!(bakedOwnerId) && !assetRec && !paintAsFragment && !ownImageFillPunchesBake;
+        if (__inBakedSubtree && !bakedOwnerReleased && !hasStructuralInteraction && !liveCloseBtn && !underHscrollSurface && !__blendLiftable) continue;
         const assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
           : (__indComponentFallback && __indComponentFallback.file);
@@ -4209,11 +4166,7 @@
              stack vertically. Only a proven Auto Layout child may flow. */
           el.style.position = 'absolute';
           el.style.left = ((box.x ?? 0) - originX) + 'px';
-          const sourceTop = ((box.y ?? 0) - originY)
-            + (backgroundHeroShift ? afterHeroBackgroundShift(n) : 0);
-          if (backgroundHeroShift && afterHeroBackgroundShift(n)) {
-            el.setAttribute('data-hero-bg-shift-design', String(afterHeroBackgroundShift(n)));
-          }
+          const sourceTop = ((box.y ?? 0) - originY);
           /* Size stays on k. When the first-screen slot is taller than the
              Figma hero, top-level blocks anchor their BOTTOM fraction of the
              slot so a lower-hero title stays at the first-screen bottom. A
@@ -4282,32 +4235,40 @@
            Inventory still owns one bg/* sheet; this only scales the locked
            first-screen view. Later sections stay on platform scale k. Do not
            shrink the owner box: that would squash the long sheet and keep the
-           next-screen seam inside the first screen. */
-        const isKvOwner = /^kv(?:\/|$)/i.test(layerName) || pfx === 'kv';
-        if (heroSlot && heroVisualScale > 0 && pageStageScale > 0
-          && Number.isFinite(Number(box.h)) && Number(box.h) > 0
-          && (heroVisualPlane || isKvOwner)) {
+           next-screen seam inside the first screen.
+           Nested unnamed `kv` under sec/1 is still first-screen art: the
+           parent is the section stage, not a second kv wrapper. */
+        const isBg = /^bg(?:\/|$)/i.test(layerName);
+        const isKv = /^kv(?:\/|$)/i.test(layerName);
+        const firstScreenKvInSection = isHeroStage && isKv
+          && (!parent || String(__u(parent && parent.nid)) === String(__u(sid)));
+        if ((heroVisualPlane || firstScreenKvInSection) && heroSlot && heroVisualScale > 0 && pageStageScale > 0
+          && Number.isFinite(Number(box.h)) && Number(box.h) > 0) {
           const planeRatio = heroVisualScale / pageStageScale;
           const nodeY = Number(box.y);
-          const isFirstScreenVisual = !Number.isFinite(nodeY) || nodeY <= heroSectionBottomY + 0.5;
-          const isBg = /^bg(?:\/|$)/i.test(layerName);
-          const isKv = isKvOwner;
+          const isFirstScreenVisual = firstScreenKvInSection
+            || !Number.isFinite(nodeY) || nodeY <= heroSectionBottomY + 0.5;
           /* Later-section bg/* (y=2143 / 4286) is not first-screen cover art.
              Cover-cropping it on the page chrome plane paints the wrong sheet
              under sec/2–3. Only the first-screen kv plane may scale. */
           if (isFirstScreenVisual && isKv) {
-            const slotDesign = heroSlot && Number(heroSlot.designHeight) > 0
-              ? Number(heroSlot.designHeight)
-              : Number(box.h);
+            const origin = __normalizedPlat === 'mobile' ? 'center 0' : 'center center';
             if (planeRatio > 1.001) {
               const planeLeft = Number.parseFloat(el.style.left || '0') || 0;
               el.style.left = (planeLeft + heroVisualCropLeft) + 'px';
-              el.style.transformOrigin = '0 0';
+              el.style.transformOrigin = origin === 'center 0' ? '50% 0' : '50% 50%';
               el.style.transform = ((el.style.transform ? el.style.transform + ' ' : '') + 'scale(' + planeRatio + ')').trim();
               el.setAttribute('data-hero-visual-plane-scale', String(planeRatio));
             }
-            /* Keep the Figma KV height. Do not clip a taller first screen to 100vh. */
+            const sourceH = Number(box.h);
+            const clipH = heroCropWindowDesign > 0 ? Math.min(sourceH, heroCropWindowDesign) : sourceH;
+            if (isBg && heroLayoutOffsetDesign > 0 && clipH > 0 && clipH < sourceH - 0.5) {
+              el.style.clipPath = 'inset(0 0 ' + (sourceH - clipH) + 'px 0)';
+              el.setAttribute('data-hero-visual-clip', String(clipH));
+            }
             el.setAttribute('data-hero-visual-plane', isBg ? 'bg' : 'kv');
+            el.setAttribute('data-kv-cover-plane', 'cover-crop');
+            el.setAttribute('data-kv-cover-origin', origin);
           }
         }
         el.style.width = (box.w ?? 0) + 'px';
@@ -5296,11 +5257,7 @@
             });
           }
         } else {
-          const heroVisualClip = Number(el.getAttribute('data-hero-visual-clip'));
-          const paintedH = Number.isFinite(heroVisualClip) && heroVisualClip > 0
-            ? heroVisualClip
-            : ((box.h ?? 0) + (Number(el.getAttribute('data-hscroll-gutter-h')) || 0));
-          el.style.height = paintedH + 'px';
+          el.style.height = ((box.h ?? 0) + (Number(el.getAttribute('data-hscroll-gutter-h')) || 0)) + 'px';
           /* 通用旋转：Figma rotation 对**所有**节点类型生效，不只 TEXT。此前只有
              TEXT 分支消费 rotation，非文本形状（箭头/斜切装饰等）被画成未旋转的
              盒子 —— 09「更多」右箭头(1:850 REGULAR_POLYGON rotation=90°)因此没有转向。
@@ -5996,15 +5953,6 @@
             baseExternals.push(sibling);
           }
         }
-        const variantFillCss = (root) => {
-          const fills = ((root && root.style) || {}).fills;
-          const vis = (Array.isArray(fills) ? fills : []).filter((fill) => fill && fill.visible !== false);
-          if (!vis.length) return '';
-          const kind = this._fillKind(vis);
-          if (kind === 'gradient') return this._cssGradient(vis[0]) || '';
-          if (kind === 'solid') return this._solidFill(vis) || '';
-          return '';
-        };
         for (const [index, tree] of trees.entries()) {
           const treeNodes = tree && tree.nodes || [];
           const wantedId = String(__u(tree && tree.componentId) || '');
@@ -6021,7 +5969,6 @@
             }));
             break;
           }
-          const fillCss = variantFillCss(root);
           if (index === owner.initialIndex) {
             owner.el.setAttribute('data-btn-variant-index', String(index));
             owner.el.setAttribute('data-btn-variant-state', state);
@@ -6029,7 +5976,7 @@
               sibling.setAttribute('data-btn-variant-index', String(index));
               hideInPlace(sibling, false);
             }
-            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true, fillCss });
+            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true });
             continue;
           }
           const layer = document.createElement('div');
@@ -6043,21 +5990,8 @@
           layer.style.width = '100%';
           layer.style.height = '100%';
           layer.style.overflow = 'hidden';
-          layer.style.pointerEvents = 'none';
-          /* Paint the COMPONENT root fill onto the layer itself. Nested paint
-             of 758:1713/758:1710 used the component-set canvas origin, so the
-             fill sat at left:20 top:92 and never covered the 190x52 button. */
-          if (fillCss) {
-            if (/gradient/i.test(fillCss)) layer.style.backgroundImage = fillCss;
-            else layer.style.background = fillCss;
-            layer.setAttribute('data-css-gradient', /gradient/i.test(fillCss) ? '1' : '0');
-            layer.setAttribute('data-btn-variant-fill-source', wantedId);
-          }
           layer.hidden = true;
           owner.el.appendChild(layer);
-          /* Alternate INSTANCE trees keep unique icons/images/vectors as well as
-             the root fill. Skip the COMPONENT root itself: its fill is already
-             on this layer so nested paint cannot sit at the component-set origin. */
           paint(treeNodes, treeNodes, layer, {
             originX: Number(rootBox.x) || 0,
             originY: Number(rootBox.y) || 0,
@@ -6065,7 +5999,7 @@
             suppressInteractions: true,
           });
           hideInPlace(layer, true);
-          layers.push({ index, state, el: layer, externals: [], isBase: false, fillCss });
+          layers.push({ index, state, el: layer, externals: [], isBase: false });
         }
         if (!mountBlocked && layers.length === trees.length) {
           if (!owner.el.style.overflow || owner.el.style.overflow === 'visible') owner.el.style.overflow = 'hidden';
@@ -6076,36 +6010,11 @@
              instances must keep their own label override on every variant layer. */
           const ownTexts = [...owner.el.querySelectorAll('.fx-t, [data-figma-type="TEXT"]')]
             .filter((node) => !node.closest('[data-btn-variant-layer="true"]'));
-          for (const node of ownTexts) {
-            node.style.position = node.style.position || 'relative';
-            node.style.zIndex = '2';
-          }
           for (const layer of layers) {
             if (layer.isBase) continue;
-            layer.el.style.zIndex = '1';
             const layerTexts = [...layer.el.querySelectorAll('.fx-t, [data-figma-type="TEXT"]')];
             for (let i = 0; i < layerTexts.length && i < ownTexts.length; i++) {
               layerTexts[i].textContent = ownTexts[i].textContent;
-            }
-          }
-          const initial = layers.find((layer) => layer.index === owner.initialIndex) || layers[0];
-          if (initial) {
-            owner.el.setAttribute('data-btn-variant-index', String(initial.index));
-            owner.el.setAttribute('data-btn-variant-state', initial.state);
-            if (initial.fillCss) {
-              if (/gradient/i.test(initial.fillCss)) {
-                owner.el.style.backgroundImage = initial.fillCss;
-                owner.el.style.backgroundColor = 'transparent';
-                owner.el.setAttribute('data-css-gradient', '1');
-              } else {
-                owner.el.style.backgroundImage = 'none';
-                owner.el.style.backgroundColor = initial.fillCss;
-              }
-              owner.el.setAttribute('data-btn-variant-fill-source', String(initial.state));
-            }
-            for (const layer of layers) {
-              if (layer.isBase) continue;
-              hideInPlace(layer.el, layer !== initial);
             }
           }
         }
@@ -6362,18 +6271,21 @@
           const sectionY = Number(sectionMeta && sectionMeta.y);
           const sectionH = Number(sectionMeta && sectionMeta.height);
           if (isFirstSectionRoot && firstPageH > 0) {
+            /* Product 100vh cover-crop: clip to the viewport design height so a
+               nested unnamed kv can scale past pageBox.h. inventory-static-gate=1
+               keeps pageBox so design-viewport coordinates still match. */
+            const heroWindowH = heroSlot && heroCropWindowDesign > 0
+              ? Math.max(firstPageH, heroCropWindowDesign)
+              : firstPageH;
             layer.style.left = '0';
             layer.style.top = '0';
             layer.style.width = designWidth + 'px';
-            const slotDesign = heroSlot && Number(heroSlot.designHeight) > 0
-              ? Number(heroSlot.designHeight)
-              : firstPageH;
-            /* Pad a short first screen to 100vh. Never crop a taller pageBox. */
-            const layerH = Math.max(firstPageH, slotDesign);
-            layer.style.height = layerH + 'px';
-            layer.style.overflow = 'visible';
-            layer.setAttribute('data-hero-crop-window', 'first-section-pagebox');
-            layer.setAttribute('data-hero-crop-window-design', String(layerH));
+            layer.style.height = heroWindowH + 'px';
+            layer.style.overflow = 'hidden';
+            layer.setAttribute('data-hero-crop-window', heroSlot && heroCropWindowDesign > firstPageH + 0.5
+              ? '100vh'
+              : 'first-section-pagebox');
+            layer.setAttribute('data-hero-crop-window-design', String(heroWindowH));
           } else if (Number.isFinite(sectionY) && Number.isFinite(sectionH) && sectionH > 0 && String(rootId) !== firstSectionId) {
             /* Later section roots must clip to their own pageBox height, not a
                full-page layer from y=0. Keep top at 0: children already use
@@ -6383,13 +6295,9 @@
             layer.style.left = '0';
             layer.style.top = '0';
             layer.style.width = designWidth + 'px';
-            const laterTop = (sectionY - pageY) + (heroSlot ? heroLayoutOffsetDesign : 0);
-            layer.style.height = (laterTop + sectionH) + 'px';
+            layer.style.height = (sectionY - pageY + sectionH) + 'px';
             layer.style.overflow = 'hidden';
             layer.setAttribute('data-section-layer-box', 'pageBox-clip');
-            if (heroSlot && heroLayoutOffsetDesign !== 0) {
-              layer.setAttribute('data-hero-layout-shift-design', String(heroLayoutOffsetDesign));
-            }
           } else if (heroSlot && Number(heroSlot.designHeight) > 0 && /^kv(?:\/|$)/i.test(layerName)) {
             layer.style.height = Number(heroSlot.designHeight) + 'px';
             layer.style.overflow = 'hidden';
@@ -6436,11 +6344,10 @@
                  as a cover-crop plane would also scale later-section coords. */
               if (isKvRoot && !isFirstSectionRoot && heroSlot && pageStageScale > 0) {
                 const kvRatio = heroVisualScale / pageStageScale;
-                const kvClipH = Number(heroSlot.heroHeight) || Number(firstMeta && firstMeta.height) || 0;
-                if (Math.abs(kvRatio - 1) > 0.001) {
-                  layer.style.zoom = String(kvRatio);
-                  layer.style.left = heroVisualCropLeft + 'px';
-                }
+                const firstMeta = sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta;
+                const kvClipH = Number(firstMeta && firstMeta.height) || Number(heroSlot.heroHeight) || 0;
+                layer.style.zoom = String(kvRatio);
+                layer.style.left = heroVisualCropLeft + 'px';
                 layer.style.top = '0';
                 layer.style.width = designWidth + 'px';
                 if (kvClipH > 0) layer.style.height = kvClipH + 'px';
@@ -6452,7 +6359,7 @@
               }
             }
             if (bg) {
-              if (layer && heroLayoutOffsetDesign !== 0) {
+              if (layer && heroLayoutOffsetDesign > 0) {
                 layer.setAttribute('data-hero-bg-follow', 'after-hero-slices');
                 layer.setAttribute('data-hero-bg-shift-design', String(heroLayoutOffsetDesign));
               }
@@ -6600,40 +6507,6 @@
             if (!node || !node.pageBox) return node;
             return { ...node, box: node.pageBox };
           });
-          const hasNamedScroll = nodes.some((node) => /^scroll\s*[\/／]/i.test(String(node && node.name || '').split('@')[0]));
-          if (!hasNamedScroll) {
-            const copyNodes = nodes.filter((node) => {
-              const name = String(node && node.name || '');
-              const isText = String(node && node.type || '') === 'TEXT';
-              const box = __plain((node && (node.pageBox || node.box)) || {});
-              return isText && Number(box.h) > 240 && !/^btn\s*[\/／]/i.test(name);
-            });
-            if (copyNodes.length === 1) {
-              const copy = copyNodes[0];
-              const copyBox = __plain(copy.pageBox || copy.box || {});
-              const hostId = String(copy.id || 'modal-scroll') + ':scroll-host';
-              const panelNode = nodes.find((node) => /弹窗背景$/.test(String(node && node.name || '').split('@')[0]));
-              const panelBox = __plain((panelNode && (panelNode.pageBox || panelNode.box)) || {});
-              const panelBottom = Number.isFinite(Number(panelBox.h))
-                ? (Number(panelBox.y) || 0) + Number(panelBox.h)
-                : (Number(box.y) || 0) + Number(box.h);
-              const copyY = Number(copyBox.y) || 0;
-              const copyH = Number(copyBox.h) || 0;
-              const hostH = Math.max(160, Math.min(copyH, panelBottom - copyY - 48));
-              if (hostH > 0) {
-                nodes.push({
-                  id: hostId,
-                  name: 'scroll/文字提示信息',
-                  type: 'FRAME',
-                  parentId: copy.parentId || modal.id,
-                  clipsContent: true,
-                  pageBox: { x: Number(copyBox.x) || 0, y: copyY, w: Number(copyBox.w) || 0, h: hostH },
-                  box: { x: Number(copyBox.x) || 0, y: copyY, w: Number(copyBox.w) || 0, h: hostH },
-                });
-                copy.parentId = hostId;
-              }
-            }
-          }
           if (!nodes.length || !Number.isFinite(Number(box.w)) || !Number.isFinite(Number(box.h))) continue;
           const layer = document.createElement('div');
           layer.className = 'fx-named-modal';
@@ -6646,29 +6519,6 @@
           layer.style.width = Number(box.w) + 'px';
           layer.style.height = Number(box.h) + 'px';
           layer.setAttribute('data-modal-source-box', [box.x, box.y, box.w, box.h].map((v) => Number(v || 0)).join(','));
-          const panelFitsSheet = (node) => {
-            const candidate = __plain((node && (node.pageBox || node.box)) || {});
-            const w = Number(candidate.w);
-            const h = Number(candidate.h);
-            const x = (Number(candidate.x) || 0) - (Number(box.x) || 0);
-            const y = (Number(candidate.y) || 0) - (Number(box.y) || 0);
-            return Number.isFinite(w) && w > 0 && Number.isFinite(h) && h > 0
-              && w <= Number(box.w) + 0.5 && h <= Number(box.h) + 0.5
-              && x >= -0.5 && y >= -0.5;
-          };
-          const panelNode = nodes.find((node) => {
-            const name = String(node && node.name || '').split('@')[0].trim();
-            return (/(^|[\/／])弹窗背景$/.test(name) || /img[\/／]弹窗背景/.test(name)) && panelFitsSheet(node);
-          }) || nodes.find((node) => {
-            const name = String(node && node.name || '').split('@')[0].trim();
-            return (/(^|[\/／])背景$/.test(name) || /img[\/／]背景$/.test(name)) && panelFitsSheet(node);
-          });
-          const panelBox = __plain((panelNode && (panelNode.pageBox || panelNode.box)) || {});
-          if (panelFitsSheet(panelNode)) {
-            const panelX = (Number(panelBox.x) || 0) - (Number(box.x) || 0);
-            const panelY = (Number(panelBox.y) || 0) - (Number(box.y) || 0);
-            layer.setAttribute('data-modal-panel-box', [panelX, panelY, Number(panelBox.w), Number(panelBox.h)].join(','));
-          }
           layer.style.pointerEvents = 'auto';
           layer.style.zIndex = '41';
           /* Paint the modal sheet, not a second nested root. Keep the Figma
@@ -6721,13 +6571,9 @@
           frame.setAttribute('data-named-modal-count', '0');
           return;
         }
-        /* Overlay host stays a sibling of `.frame` (not inside it). Product
-           view applies zoom on `.frame`; a fixed child of a zoomed ancestor
-           lands above the visible window. Close clicks stay on document capture. */
-        const overlayParent = frame.parentElement || frame;
-        overlayParent.appendChild(host);
-        host.__fxModalHomeParent = overlayParent;
-        frame.__fxNamedModalHost = host;
+        /* Overlay host stays inside `.frame` so close clicks hit the same
+           listener. Host pointer-events stay none; the layer is the hit target. */
+        frame.appendChild(host);
         frame.__fxNamedModals = wired;
         frame.setAttribute('data-named-modal-count', String(wired.length));
         const doc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
@@ -6917,28 +6763,10 @@
             if (layer.isBase) {
               for (const child of [...layer.el.children]) {
                 if (child.getAttribute && child.getAttribute('data-btn-variant-layer') === 'true') continue;
-                const isText = (child.classList && child.classList.contains('fx-t'))
-                  || child.getAttribute('data-figma-type') === 'TEXT'
-                  || child.getAttribute('data-prefix') === 'txt';
-                hideBtnLayer(child, isText ? false : !active);
+                hideBtnLayer(child, !active);
               }
             }
             for (const sibling of layer.externals || []) hideBtnLayer(sibling, !active);
-          }
-          /* Visible plate is the COMPONENT root fill from the selected variant
-             (btn/切换语言 Property 1=highlight vs normal). Keep labels on the
-             instance; do not hide TEXT. Never use the `background` shorthand:
-             it clears backgroundImage. */
-          if (next.fillCss) {
-            if (/gradient/i.test(next.fillCss)) {
-              owner.style.backgroundImage = next.fillCss;
-              owner.style.backgroundColor = 'transparent';
-              owner.setAttribute('data-css-gradient', '1');
-            } else {
-              owner.style.backgroundImage = 'none';
-              owner.style.backgroundColor = next.fillCss;
-            }
-            owner.setAttribute('data-btn-variant-fill-source', String(next.state));
           }
           owner.setAttribute('data-btn-variant-state', next.state);
           owner.setAttribute('data-btn-variant-index', String(next.index));
@@ -7362,8 +7190,9 @@
           if (innerBtn && dropmenuOwner && dropmenuOwner.contains(innerBtn)
             && dropmenuOwner.getAttribute('data-dropmenu-state') === 'on') {
             if (isLanguageDropmenu(dropmenuOwner)) {
-              const lang = dropmenuLangFromEvent(ev.target, dropmenuOwner)
-                || dropmenuLangFromEvent(innerBtn, dropmenuOwner);
+              const visible = String((innerBtn.textContent || '')).replace(/\s+/g, ' ').trim();
+              const named = String(innerBtn.getAttribute('data-btn-name') || innerBtn.getAttribute('data-name') || '').trim();
+              const lang = dropmenuLangFromSelfLabel(visible || named);
               if (lang) applyDropmenuLang(lang);
               closeDropmenuOwners(frame);
               ev.preventDefault();
@@ -7482,96 +7311,110 @@
             node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
             node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
           };
-          const modalScrimOf = (host) => host && host.querySelector && host.querySelector('[data-modal-scrim="true"]');
-          const ensureModalScrim = (host) => {
+          const modalPolicy = () => {
+            const policy = designPolicy();
+            const fill = policy.modalViewportFill === 'cover' ? 'cover' : 'contain';
+            const scrim = Number(policy.modalScrimOpacity);
+            const lock = policy.modalLockPageScroll === true;
+            return {
+              fill,
+              scrim: Number.isFinite(scrim) ? Math.min(1, Math.max(0, scrim)) : 0,
+              lock,
+            };
+          };
+          const ensureModalScrim = (host, opacity) => {
             if (!host) return null;
-            let scrim = modalScrimOf(host);
+            let scrim = host.querySelector('[data-modal-scrim="true"]');
+            if (opacity <= 0) {
+              if (scrim) scrim.remove();
+              return null;
+            }
             if (!scrim) {
               scrim = document.createElement('div');
               scrim.setAttribute('data-modal-scrim', 'true');
-              scrim.style.position = 'absolute';
-              scrim.style.left = '0';
-              scrim.style.top = '0';
-              scrim.style.right = '0';
-              scrim.style.bottom = '0';
-              scrim.style.background = 'rgba(0,0,0,0.8)';
-              scrim.style.pointerEvents = 'auto';
-              scrim.style.zIndex = '40';
+              scrim.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
               host.insertBefore(scrim, host.firstChild);
             }
+            scrim.style.background = 'rgba(0,0,0,' + opacity + ')';
             return scrim;
           };
+          const lockNamedModalScroll = (lock) => {
+            if (lock) {
+              if (frame.__fxModalPrevOverflow == null) frame.__fxModalPrevOverflow = frame.style.overflowY || '';
+              frame.style.overflowY = 'hidden';
+              frame.setAttribute('data-modal-scroll-lock', 'true');
+            } else {
+              if (frame.__fxModalPrevOverflow != null) frame.style.overflowY = frame.__fxModalPrevOverflow;
+              frame.removeAttribute('data-modal-scroll-lock');
+              frame.__fxModalPrevOverflow = null;
+            }
+          };
           const unpinModalHost = (entry) => {
-            const host = (entry && entry.layer && entry.layer.parentElement)
-              || frame.__fxNamedModalHost
-              || (typeof document !== 'undefined' ? document.querySelector('.fx-named-modals') : null);
+            const host = entry && entry.layer && entry.layer.parentElement;
             if (!host || !host.classList || !host.classList.contains('fx-named-modals')) return;
-            const scrim = modalScrimOf(host);
-            if (scrim) scrim.hidden = true;
-            const home = host.__fxModalHomeParent || frame.parentElement || frame;
-            if (home && host.parentElement !== home) home.appendChild(host);
+            const rest = host.__fxNamedModalRest || {};
             host.style.position = 'absolute';
             host.style.left = '0';
             host.style.top = '0';
-            host.style.width = '';
-            host.style.height = '';
+            host.style.width = rest.width || (designWidth + 'px');
+            host.style.height = rest.height || ((pageScrollHeight || 0) + 'px');
             host.style.transform = '';
             host.style.zoom = String(pageStageScale || k);
             host.style.pointerEvents = 'none';
             host.style.zIndex = '40';
             host.style.overflow = 'visible';
+            host.removeAttribute('data-modal-fill');
+            ensureModalScrim(host, 0);
           };
           const pinModalToViewport = (entry) => {
             if (!entry || !entry.layer) return;
             const layer = entry.layer;
-            const host = layer.parentElement || frame.__fxNamedModalHost;
-            const doc = layer.ownerDocument || (typeof document !== 'undefined' ? document : null);
+            const host = layer.parentElement;
             const frameRect = frame.getBoundingClientRect();
-            const visibleW = frameRect.width;
-            const visibleH = frameRect.height;
-            if (!visibleW || !visibleH) return;
+            if (!frameRect.width || !frameRect.height) return;
             const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
             const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
             const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
-            const panel = String(layer.getAttribute('data-modal-panel-box') || '').split(',');
-            const panelX = Number(panel[0]);
-            const panelY = Number(panel[1]);
-            const panelW = Number(panel[2]);
-            const panelH = Number(panel[3]);
-            const hasPanel = [panelX, panelY, panelW, panelH].every((value) => Number.isFinite(value))
-              && panelW > 0 && panelH > 0;
-            /* Fit and center the authored sheet (PC 3840×2160 / mobile 750×1334).
-               Centering only the inner img/弹窗背景 (1340 @ y=199) dropped the
-               panel below the spec rest pose. Keep panel-box for overflow
-               sheets that do not fit the phone frame. */
-            const sheetFits = designW > 0 && designH > 0
-              && (!hasPanel || (panelW <= designW + 0.5 && panelH <= designH + 0.5));
-            const contentW = sheetFits ? designW : (hasPanel ? panelW : designW);
-            const contentH = sheetFits ? designH : (hasPanel ? panelH : designH);
-            const scale = Math.min(visibleW / contentW, visibleH / contentH, 1);
+            /* Host zoom is the page-stage ruler for closed overlays. Pinning
+               to the visible frame must drop it, or cover/contain scale
+               multiplies k and the Figma sheet shrinks to a card.
+               getBoundingClientRect already includes QA preview transform on
+               `.frame`; use the unscaled frame box so cover/contain matches
+               Figma 3840×2160 against the 1920×1080 screen, not the shrunk
+               preview pixels. */
+            const visibleW = Math.max(0, Number.parseFloat(frame.style.width) || frame.clientWidth || frameRect.width);
+            const visibleH = Math.max(0, Number.parseFloat(frame.style.height) || frame.clientHeight || frameRect.height);
+            const policy = modalPolicy();
+            const scale = policy.fill === 'cover'
+              ? Math.max(visibleW / designW, visibleH / designH)
+              : Math.min(visibleW / designW, visibleH / designH);
             if (host) {
-              const scrim = ensureModalScrim(host);
-              if (scrim) scrim.hidden = false;
-              if (doc && doc.body && host.parentElement !== doc.body) doc.body.appendChild(host);
-              host.style.position = 'fixed';
-              host.style.left = frameRect.left + 'px';
-              host.style.top = frameRect.top + 'px';
+              if (!host.__fxNamedModalRest) {
+                host.__fxNamedModalRest = {
+                  width: host.style.width || (designWidth + 'px'),
+                  height: host.style.height || ((pageScrollHeight || 0) + 'px'),
+                };
+              }
+              host.style.position = 'absolute';
+              host.style.left = '0px';
+              host.style.top = (Number(frame.scrollTop) || 0) + 'px';
               host.style.width = visibleW + 'px';
               host.style.height = visibleH + 'px';
-              host.style.transform = 'none';
               host.style.zoom = '1';
+              host.style.transform = 'none';
               host.style.pointerEvents = 'auto';
               host.style.zIndex = '2147483001';
               host.style.overflow = 'hidden';
+              host.setAttribute('data-modal-fill', policy.fill);
+              ensureModalScrim(host, policy.scrim);
             }
-            const originX = sheetFits ? 0 : (hasPanel ? panelX : 0);
-            const originY = sheetFits ? 0 : (hasPanel ? panelY : 0);
-            layer.style.left = (((visibleW - contentW * scale) / 2) - originX * scale) + 'px';
-            layer.style.top = (((visibleH - contentH * scale) / 2) - originY * scale) + 'px';
+            layer.style.left = '0px';
+            layer.style.top = '0px';
             layer.style.width = designW + 'px';
             layer.style.height = designH + 'px';
             layer.style.maxWidth = 'none';
             layer.style.maxHeight = 'none';
+            layer.style.zoom = '1';
             layer.style.transformOrigin = '0 0';
             layer.style.transform = 'scale(' + scale + ')';
             layer.style.pointerEvents = 'auto';
@@ -7590,19 +7433,19 @@
               if (host && host.classList && host.classList.contains('fx-named-modals')) {
                 host.style.pointerEvents = 'none';
               }
+              lockNamedModalScroll(false);
             }
           };
           const openNamedModal = (entry) => {
             if (!entry || !entry.layer) return;
             for (const other of namedModals) {
               if (other === entry) continue;
-              /* Mobile nav / language overlays are mutually exclusive. A video
-                 overlay also yields when those open so two sheets never stack. */
-              if (entry.exclusive || other.exclusive) closeNamedModal(other);
+              if (other.layer && other.layer.getAttribute('data-modal-open') === 'true') closeNamedModal(other);
             }
             hideInPlace(entry.layer, false);
             entry.layer.setAttribute('data-modal-open', 'true');
             pinModalToViewport(entry);
+            if (modalPolicy().lock) lockNamedModalScroll(true);
             if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
               frame.__fxAssetScheduler.prime(entry.layer);
             }
@@ -8089,7 +7932,7 @@
             const _gFs = Number(m.c.el.getAttribute('data-locale-base-fontsize'));
             const _gLh = Number(m.c.el.getAttribute('data-locale-base-lineheight'));
             m.c.el.style.fontSize = ((Number.isFinite(_gFs) && _gFs > 0 ? _gFs : m.c.tx.fontSize) * minScale / 100) + 'px';
-            m.c.el.style.lineHeight = ((Number.isFinite(_gLh) && _gLh > 0 ? _gLh : this._resolvedLineHeight(m.c.tx, m.c.tx.fontSize)) * minScale / 100) + 'px';
+            m.c.el.style.lineHeight = ((Number.isFinite(_gLh) && _gLh > 0 ? _gLh : m.c.tx.lineHeight) * minScale / 100) + 'px';
             m.c.el.setAttribute('data-fit-scale', String(minScale));
             m.c.el.setAttribute('data-fit-group-unified', String(m.required) + '->' + String(minScale));
           }

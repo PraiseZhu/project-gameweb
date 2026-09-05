@@ -14,13 +14,11 @@ partial-scroll state, release state, and return-to-top state. Resize rebuilds
 the contract from the current truth-derived viewport and scale. No tablet
 Figma truth is inferred: the existing pad fallback remains explicitly marked.
 
-When a hero stage is mounted, the renderer also applies a generic visible
-scroll-scrub (`transform` plus `opacity`) to the semantic
-`[data-hero-slot-role="hero"]` stage. The DOM marker
-`data-hero-visual-motion="scroll-scrub-generic-unverified"` is intentional:
-it proves a real visual route is installed, while recording that Figma motion
-truth did not provide exact easing or duration. The static top state remains
-identity transform and full opacity; returning to the top restores both.
+Hero scroll-slot records `HERO_LOCKED / HERO_EXITING / CONTENT_RELEASED`.
+It must not invent a visual exit: a `-6%` translate on the hero stage
+moves only sec/1 while later sections stay on pageBox y + extra, so a few
+CSS pixels of scroll open a black hole. Keep identity transform and full
+opacity. Figma motion truth is still absent; do not fake it.
 
 页面级预览的首屏不是把第一张稿图缩放到任意设备高度，而是一个真实 viewport 高度的滚动槽。
 
@@ -34,16 +32,14 @@ identity transform and full opacity; returning to the top restores both.
   只有一个 sibling 且未重复列出 `sectionIds`（SS6 手机稿常见），该 sibling
   仍是内容 root，不得因此关掉 100vh 槽。
 
-首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 的设计坐标偏移是
-`layoutOffsetDesign = max(0, slotDesignHeight - heroDesignHeight)`。100vh 比稿高时
-首屏舞台垫到槽高，sec/2 下移贴住新底。100vh 比稿矮时**不准裁**：首屏保持
-pageBox，后面的内容正常往下排，禁止把 CTA / 时间文案切掉。产品视口门量 section
-相接、首屏层高至少等于 pageBox（不够才垫到槽高），不是把内容裁进 100vh。
-长 `bg/*` 被裁掉的尾巴以 `bg-tail`
-续画在偏移之后。KV/page chrome 与 fixed overlay 仍按原 sibling 顺序绘制。
+首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 统一增加
+`max(0, slotDesignHeight - heroDesignHeight)` 的设计坐标偏移（`layoutOffsetDesign`），
+因此它们从实际 viewport 高度之后开始；长 `bg/*` 被裁掉的尾巴以 `bg-tail` 续画在
+偏移之后，页面背景跟着走，不会露出空带。KV/page chrome 与 fixed overlay 仍按
+原 sibling 顺序绘制。滚动槽只记账，不得给 hero 加 `%` 假离场。
 
-Hero 的 cover 缩放只作用在 `bg/*` / `kv` 视觉层。长 `bg/*` 仍是清单里的一整张图，
-不切开。100vh 只垫短 hero；稿比视口高时首屏保持 pageBox，cover 不得把 CTA / 时间 / 箭头裁没。首页 UI 的大小继续用平台宽度尺子 `k`，不跟着 cover 放大。
+Hero 的 cover 缩放只作用在 `bg/*` / `kv` 视觉层。无名 `kv` 坐在 `sec/1` 里也算首屏视觉层，不得只认页面根上的 `kv/`。长 `bg/*` 仍是清单里的一整张图，
+不切开；首屏只是把它裁进 100vh 窗口。PC `center center`，手机 `center 0`。首页 UI 的大小继续用平台宽度尺子 `k`，不跟着 cover 放大。整框 `kv` PNG 的 IMAGE 子孙不再单切、不再叠画。
 上下位置通用分界（不写节点名）：稿里底边落在首屏上半部的块（顶栏按钮）按顶边比例钉住；
 底边落在下半部的块（首屏大标题、下载 CTA）按**底边**比例钉住——与首屏底边的距离和稿一致（正下方），
 不会被 `y×k` 抬到上半屏，也不会浮在中间。

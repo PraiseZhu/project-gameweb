@@ -766,7 +766,7 @@
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
       interactionPayload: cfg.interactionPayload || null,
       productView: !!PRODUCT_VIEW,
-      enablePageInteraction: !!PRODUCT_VIEW || new URLSearchParams(location.search).get('interaction') === '1',
+      enablePageInteraction: new URLSearchParams(location.search).get('interaction') === '1',
       setPref: applyPref });
   }
 

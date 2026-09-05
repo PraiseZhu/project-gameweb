@@ -28,9 +28,18 @@ export const REGISTERED_KEYS = Object.freeze([
   'hugNoShrink',
   'openFlowNoShrink',
   'shrinkMode',
+  'modalViewportFill',
+  'modalScrimOpacity',
+  'modalLockPageScroll',
 ]);
 
-const REQUIRED_KEYS = Object.freeze(REGISTERED_KEYS.filter((key) => key !== 'shrinkMode'));
+const OPTIONAL_KEYS = Object.freeze([
+  'shrinkMode',
+  'modalViewportFill',
+  'modalScrimOpacity',
+  'modalLockPageScroll',
+]);
+const REQUIRED_KEYS = Object.freeze(REGISTERED_KEYS.filter((key) => !OPTIONAL_KEYS.includes(key)));
 
 function fail(message) {
   const err = new Error(message);
@@ -294,7 +303,29 @@ export function parseDesignPolicyMarkdown(markdown, { path = 'DESIGN.md' } = {})
     hugNoShrink: assertBool('hugNoShrink', doc.hugNoShrink),
     openFlowNoShrink: assertBool('openFlowNoShrink', doc.openFlowNoShrink),
     shrinkMode,
+    ...assertOptionalModalPolicy(doc),
   });
+}
+
+function assertOptionalModalPolicy(doc) {
+  const hasFill = hasOwn(doc, 'modalViewportFill');
+  const hasScrim = hasOwn(doc, 'modalScrimOpacity');
+  const hasLock = hasOwn(doc, 'modalLockPageScroll');
+  if (!hasFill && !hasScrim && !hasLock) return {};
+  if (!hasFill || !hasScrim || !hasLock) {
+    fail('modalViewportFill, modalScrimOpacity, and modalLockPageScroll must be declared together');
+  }
+  const fill = String(doc.modalViewportFill);
+  if (fill !== 'cover' && fill !== 'contain') {
+    fail(`modalViewportFill must be cover or contain, got ${fill}`);
+  }
+  const scrim = assertNumber('modalScrimOpacity', doc.modalScrimOpacity, { min: 0 });
+  if (scrim > 1) fail('modalScrimOpacity must be <= 1');
+  return {
+    modalViewportFill: fill,
+    modalScrimOpacity: scrim,
+    modalLockPageScroll: assertBool('modalLockPageScroll', doc.modalLockPageScroll),
+  };
 }
 
 export function parseDesignPolicyFile(filePath) {

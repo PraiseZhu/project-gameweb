@@ -319,9 +319,10 @@ test('listed img/ time-bg and unnamed kv FRAME export the owner pageBox, not ink
                 role: 'img',
                 pageBox: { x: 0, y: 1543, w: 3840, h: 260 },
                 box: { x: 0, y: 1543, w: 3840, h: 260 },
-                renderBox: { x: -14764, y: 1560.925, w: 3840, h: 167.075 },
+                renderBox: { x: 0, y: 1539.925, w: 3840, h: 167.075 },
+                inkBox: { x: -783, y: 431, w: 4623, h: 1610 },
                 sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '721-8193.png', box: { x: 0, y: 1539.925, w: 3840, h: 167.075 } },
-                style: { fills: [] },
+                style: { fills: [], descendantEffects: [{ effectType: 'LAYER_BLUR' }] },
               },
               {
                 id: '721:7868',
@@ -396,6 +397,39 @@ test('unnamed kv without sliceExport still exports the owner pageBox', () => {
   assert.deepEqual(picks[0].exportBox, { x: 0, y: 0, w: 750, h: 1334 });
 });
 
+test('play-button img/ DROP_SHADOW exports same-space ink, not the 124 pageBox', () => {
+  const picks = pickSliceNodes({
+    schema: 'yise-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    platforms: {
+      pc: {
+        sections: {
+          'sec:1': {
+            nodes: [{
+              id: '725:3432',
+              type: 'RECTANGLE',
+              name: 'img/按钮背景',
+              status: 'determined',
+              role: 'img',
+              pageBox: { x: 1858, y: 852, w: 124, h: 124 },
+              box: { x: 1858, y: 852, w: 124, h: 124 },
+              renderBox: { x: 1826, y: 820, w: 188, h: 188 },
+              sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '725-3432.png' },
+              style: {
+                fills: [{ type: 'IMAGE', visible: true }],
+                effects: [{ type: 'DROP_SHADOW', visible: true }],
+              },
+            }],
+          },
+        },
+      },
+    },
+  });
+  assert.equal(picks[0]?.nodeId, '725:3432');
+  assert.equal(picks[0].exportBounds, 'render');
+  assert.deepEqual(picks[0].exportBox, { x: 1826, y: 820, w: 188, h: 188 });
+});
+
 test('listed bg/ with inventory bounds=render still exports the node box, not canvas ink', () => {
   const truth = {
     schema: 'yise-ready-platform-truth/v1',
@@ -459,7 +493,7 @@ test('exportBox is page-aligned, never canvas renderBox', () => {
 
 test('whole-frame box export requests use_absolute_bounds=true', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
-  assert.match(src, /listedInkBox \? 'box'/);
+  assert.match(src, /pageBoxExport = wholeFrameSlice && !softSpill/);
   assert.match(src, /if \(chunk\[0\]\.exportBounds !== 'render'\) q\.set\('use_absolute_bounds', 'true'\)/);
   const timeBg = pickSliceNodes({
     schema: 'yise-ready-platform-truth/v1',

@@ -203,6 +203,15 @@ export function implementationSnapshotFromModules({
     if (!hero || hero.fromPolicy !== true) {
       throw new Error('implementation snapshot missing live render heroViewportFillVh');
     }
+    if (policy.modalViewportFill != null) {
+      if (!/modalViewportFill/.test(renderSource)
+        || !/modalScrimOpacity/.test(renderSource)
+        || !/data-modal-scrim/.test(renderSource)
+        || !/data-modal-scroll-lock/.test(renderSource)
+        || !/host\.style\.zoom = '1'/.test(renderSource)) {
+        throw new Error('implementation snapshot missing live named-modal policy pin');
+      }
+    }
   }
   if (chromeSource != null) {
     const chromeComp = chromeCompositionFromSource(chromeSource);
@@ -239,6 +248,9 @@ export function implementationSnapshotFromModules({
     hugNoShrink: policy.hugNoShrink,
     openFlowNoShrink: policy.openFlowNoShrink,
     shrinkMode: policy.shrinkMode,
+    modalViewportFill: policy.modalViewportFill,
+    modalScrimOpacity: policy.modalScrimOpacity,
+    modalLockPageScroll: policy.modalLockPageScroll,
     chromeOfficialRootFontVw: chromeVw,
   };
 }

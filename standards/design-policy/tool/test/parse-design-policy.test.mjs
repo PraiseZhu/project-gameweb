@@ -127,6 +127,9 @@ test('parses torchlight DESIGN.md YAML with composition != qaBuckets', () => {
   assert.equal(policy.shrinkMode, 'integer-px');
   assert.deepEqual([...policy.shrinkSteps], [1]);
   assert.equal(policy.shrinkFloorPercent, 1);
+  assert.equal(policy.modalViewportFill, 'cover');
+  assert.equal(policy.modalScrimOpacity, 0.8);
+  assert.equal(policy.modalLockPageScroll, true);
 });
 
 test('fixture markdown parses the same shape', () => {
@@ -147,6 +150,28 @@ test('duplicate keys are red', () => {
 test('unregistered extraBreakpoint is red', () => {
   throws(() => parseDesignPolicyMarkdown(yiseYaml('extraBreakpoint: 999\n')), /unregistered key: extraBreakpoint/);
 });
+
+test('yise DESIGN.md may omit named-modal YAML', () => {
+  const policy = parseDesignPolicyFile(join(REPO, 'skills/yise-web-ui/DESIGN.md'));
+  assert.equal(policy.modalViewportFill, undefined);
+  assert.equal(policy.modalScrimOpacity, undefined);
+  assert.equal(policy.modalLockPageScroll, undefined);
+});
+
+test('named-modal YAML keys must be declared together', () => {
+  throws(
+    () => parseDesignPolicyMarkdown(yiseYaml('modalViewportFill: cover\n')),
+    /must be declared together/,
+  );
+});
+
+test('named-modal YAML fill must be cover or contain', () => {
+  throws(
+    () => parseDesignPolicyMarkdown(yiseYaml('modalViewportFill: stretch\nmodalScrimOpacity: 0.8\nmodalLockPageScroll: true\n')),
+    /modalViewportFill must be cover or contain/,
+  );
+});
+
 
 test('writeSkillPolicyModule stores a repo-relative DESIGN.md path', () => {
   const dir = mkdtempSync(join(tmpdir(), 'design-policy-write-'));
@@ -172,6 +197,7 @@ test('writeSkillPolicyModule rejects DESIGN.md outside the repo', () => {
     /DESIGN.md path must stay inside the repo/,
   );
 });
+
 
 test('bare hash comments on a value line are red', () => {
   throws(() => parseDesignPolicyMarkdown(yiseYaml().replace('officialRootFontVw: 10', 'officialRootFontVw: 10 # vw')), /bare #/);

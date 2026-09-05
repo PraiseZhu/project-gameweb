@@ -81,6 +81,9 @@ export function implementationFromPolicy(policy) {
     hugNoShrink: policy.hugNoShrink,
     openFlowNoShrink: policy.openFlowNoShrink,
     shrinkMode: policy.shrinkMode,
+    modalViewportFill: policy.modalViewportFill,
+    modalScrimOpacity: policy.modalScrimOpacity,
+    modalLockPageScroll: policy.modalLockPageScroll,
     chromeOfficialRootFontVw: policy.officialRootFontVw,
   };
 }
@@ -116,6 +119,11 @@ export function mirrorDesignPolicy({ policy, implementation, path = 'DESIGN.md' 
   pushIfDrift(problems, 'hugNoShrink', implementation.hugNoShrink, policy.hugNoShrink);
   pushIfDrift(problems, 'shrinkMode', implementation.shrinkMode || 'percent-ladder', policy.shrinkMode);
   pushIfDrift(problems, 'openFlowNoShrink', implementation.openFlowNoShrink, policy.openFlowNoShrink);
+  if (policy.modalViewportFill != null) {
+    pushIfDrift(problems, 'modalViewportFill', implementation.modalViewportFill, policy.modalViewportFill);
+    pushIfNumberDrift(problems, 'modalScrimOpacity', implementation.modalScrimOpacity, policy.modalScrimOpacity);
+    pushIfDrift(problems, 'modalLockPageScroll', implementation.modalLockPageScroll, policy.modalLockPageScroll);
+  }
   if (implementation.chromeOfficialRootFontVw == null) {
     problems.push('chromeOfficialRootFontVw missing');
   } else {

@@ -192,10 +192,12 @@ function currentStop(phase) {
   return null;
 }
 
-function productViewForDemo(demoDir) {
+function productViewForDemo(demoDir, { interaction = false } = {}) {
   const indexPath = join(packRoot(demoDir), 'index.html');
   if (!existsSync(indexPath)) return { url: null, command: null, blocked: true };
-  const url = `file://${indexPath}?product=1`;
+  const url = interaction
+    ? `file://${indexPath}?product=1&interaction=1`
+    : `file://${indexPath}?product=1`;
   return { url, command: `open "${url}"` };
 }
 
@@ -458,7 +460,7 @@ async function runLaterAxesPhase({ record, root, now, probeLaterAxes }) {
     waiting: true,
     laterAxes: record.laterAxes,
     humanReview: presented,
-    productView: productViewForDemo(root),
+    productView: productViewForDemo(root, { interaction: true }),
     nextHumanStep: nextStep(record),
   });
 }

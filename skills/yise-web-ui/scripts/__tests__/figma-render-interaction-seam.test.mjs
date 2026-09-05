@@ -35,10 +35,14 @@ test('Main static leaves page clicks inert until Interaction opts in', () => {
   assert.match(renderer, /enablePageInteraction && !__motionCarouselOptIn && !frame\.__fxInteractionBridgeInstalled/);
   assert.match(renderer, /if \(!enablePageInteraction\) return;/);
   const shell = readFileSync(new URL('../../templates/demo-shell.html', import.meta.url), 'utf8');
-  assert.doesNotMatch(shell, /if \(ctx && ctx\.enablePageInteraction == null\) ctx\.enablePageInteraction = true;/);
   const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
-  assert.match(chrome, /enablePageInteraction: !!PRODUCT_VIEW \|\| new URLSearchParams\(location\.search\)\.get\('interaction'\) === '1'/);
-  assert.doesNotMatch(chrome, /enablePageInteraction: !!PRODUCT_VIEW,/);
+  assert.doesNotMatch(shell, /if \(ctx && ctx\.enablePageInteraction == null\) ctx\.enablePageInteraction = true;/);
+  const renderIntoAt = chrome.indexOf('function renderInto(container, state)');
+  const nextFnAt = chrome.indexOf('\n  function ', renderIntoAt + 1);
+  const renderInto = chrome.slice(renderIntoAt, nextFnAt > renderIntoAt ? nextFnAt : chrome.length);
+  assert.match(renderInto, /enablePageInteraction: new URLSearchParams\(location\.search\)\.get\('interaction'\) === '1'/);
+  assert.doesNotMatch(renderInto, /enablePageInteraction:\s*true/);
+  assert.doesNotMatch(renderInto, /enablePageInteraction: !!PRODUCT_VIEW/);
 });
 
 test('named modal runtime only wires openers listed in triggerFrom', () => {

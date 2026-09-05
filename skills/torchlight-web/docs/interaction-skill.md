@@ -186,7 +186,15 @@ A play control that already lives inside the video modal is the in-modal
 player, not a second opener. The two mobile overlays are mutually exclusive.
 `btn/关闭按钮` closes the modal that contains it. Runtime only toggles
 visibility of the extracted modal layer; it does not move modal nodes into
-the homepage tree or change Figma coordinates.
+the homepage tree. A `modal/` whose inventory `pageBox` is the artboard is
+pinned to the visible frame: YAML `modalViewportFill` is `cover` (fill the
+viewport) or `contain` (letterbox). YAML `modalScrimOpacity` paints a black
+scrim behind the sheet. YAML `modalLockPageScroll: true` locks the page
+frame `overflow-y` until the named modal is closed. Opening any named modal
+closes every other open named modal first, including `modal/视频弹窗`.
+The overlay host keeps page-stage `zoom` while closed;
+pinning must set host/layer `zoom` to `1` and scale only from the visible
+frame vs the Figma `pageBox`. Incomplete graphs stay unresolved.
 
 PC named modals pin the authored 3840×2160 sheet in the current viewport.
 Do not geometrically center only `img/弹窗背景` (3840×1340 @ y=199); that
@@ -207,9 +215,14 @@ overlay stays fail-closed.
 Renderer wiring for left/right switch, named modal openers, independent
 `btn/` highlight, and directory scrollspy lives in
 `templates/figma-render.js`, but Main static does not turn it on.
-Clicks stay inert until Interaction passes `enablePageInteraction: true`.
-It must not rewrite accepted static geometry or assets to make a click
-work. Incomplete graphs stay unresolved.
+Clicks stay inert unless `enablePageInteraction === true`. A missing flag
+is inert, never true. Real QA / `?product=1` pages opt in only with
+`?interaction=1` from chrome `renderInto`; the demo shell must not default
+the flag to true. Stop 1 URLs stay `?product=1` without that query. Stop 2
+and later-axes probes append `interaction=1`. QA matrix language stays on
+the chrome bar; in-page dropmenu / modal / switch / directory clicks stay
+inert until that opt-in. It must not rewrite accepted static geometry or
+assets to make a click work. Incomplete graphs stay unresolved.
 
 ## What this Skill does not own yet
 
