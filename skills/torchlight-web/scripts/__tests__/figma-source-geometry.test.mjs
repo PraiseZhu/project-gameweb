@@ -64,6 +64,7 @@ test('zh-CN expected box prefers inventory pageBox over canvas box', () => {
 test('renderer source prefers pageBox for paint placement', () => {
   const src = readFileSync(fileURLToPath(new URL('../../templates/figma-render.js', import.meta.url)), 'utf8');
   assert.match(src, /n\.pageBox && Number\.isFinite\(Number\(n\.pageBox\.x\)\)/);
+  assert.match(src, /hairlinePage \? renderPaintBox/);
   assert.match(src, /const coordinateOwner = directParentRecord \|\| parent \|\| null/);
   assert.match(src, /const coordinateOwnerBox = coordinateOwner\?\.pageBox \|\| coordinateOwner\?\.box/);
   // Importers: none (node:test via npm test / nightly). API: source-lock on figma-render.js paint origin.

@@ -36,6 +36,23 @@ test('language completeness rejects empty bound leaves but preserves explicit un
   assert.deepEqual(result.missing, [{ nodeId: 'nav-1', language: 'en', kind: 'empty-value' }]);
 });
 
+test('language completeness treats locale-absent cell-split leaves as present gaps, not empty-value', () => {
+  const result = assessLanguageCompleteness({
+    sourceTexts: [{ nodeId: 'slot-5' }],
+    byNode: {
+      'slot-5': {
+        translations: {
+          'zh-CN': leaf('赛季前瞻', 26, 'zh-CN'),
+          en: { ...leaf('', 26, 'en'), absent: true, localeLineCount: 4 },
+        },
+      },
+    },
+    languages: ['zh-CN', 'en'],
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.missing.length, 0);
+});
+
 test('locale consistency identifies residual source text and unexpected script', () => {
   const residual = classifyLocaleText({ language: 'en', sourceText: '活动日历', renderedText: '活动日历' });
   assert.equal(residual.status, 'source-residual');
@@ -193,9 +210,17 @@ test('translation axis stays not-claimed without a copy table even if zh-CN font
 
   const claimed = translationAxisClaim({
     spec: { matrix: { langs: ['zh-CN', 'en'] }, translationTable: { en: { a: 'A' } } },
+    truth: { copy: { byNode: { n1: { en: 'A', translations: { en: { value: 'A' } } } } } },
   });
   assert.equal(claimed.status, 'claimed');
   assert.equal(claimed.claimed, true);
+
+  const tableOnly = translationAxisClaim({
+    spec: { matrix: { langs: ['zh-CN', 'en'] }, translationTable: { en: { a: 'A' } } },
+    truth: { copy: { byNode: {} } },
+  });
+  assert.equal(tableOnly.status, 'not-claimed');
+  assert.equal(tableOnly.reason, 'copy-unwired-truth');
 });
 
 test('img/ lang variants follow page language and never fall back to cn', () => {

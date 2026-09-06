@@ -84,6 +84,12 @@ export function implementationFromPolicy(policy) {
     modalViewportFill: policy.modalViewportFill,
     modalScrimOpacity: policy.modalScrimOpacity,
     modalLockPageScroll: policy.modalLockPageScroll,
+    letterSpacingPolicy: policy.letterSpacingPolicy
+      ? {
+          keepSourceLangs: [...policy.letterSpacingPolicy.keepSourceLangs],
+          zeroLangs: [...policy.letterSpacingPolicy.zeroLangs],
+        }
+      : undefined,
     chromeOfficialRootFontVw: policy.officialRootFontVw,
   };
 }
@@ -123,6 +129,15 @@ export function mirrorDesignPolicy({ policy, implementation, path = 'DESIGN.md' 
     pushIfDrift(problems, 'modalViewportFill', implementation.modalViewportFill, policy.modalViewportFill);
     pushIfNumberDrift(problems, 'modalScrimOpacity', implementation.modalScrimOpacity, policy.modalScrimOpacity);
     pushIfDrift(problems, 'modalLockPageScroll', implementation.modalLockPageScroll, policy.modalLockPageScroll);
+  }
+  if (policy.letterSpacingPolicy) {
+    const got = implementation.letterSpacingPolicy || {};
+    const keep = Array.isArray(got.keepSourceLangs) ? got.keepSourceLangs.join(',') : '';
+    const zero = Array.isArray(got.zeroLangs) ? got.zeroLangs.join(',') : '';
+    const expKeep = policy.letterSpacingPolicy.keepSourceLangs.join(',');
+    const expZero = policy.letterSpacingPolicy.zeroLangs.join(',');
+    if (keep !== expKeep) problems.push(`letterSpacingPolicy.keepSourceLangs [${keep}] != YAML [${expKeep}]`);
+    if (zero !== expZero) problems.push(`letterSpacingPolicy.zeroLangs [${zero}] != YAML [${expZero}]`);
   }
   if (implementation.chromeOfficialRootFontVw == null) {
     problems.push('chromeOfficialRootFontVw missing');

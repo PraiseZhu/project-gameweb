@@ -290,6 +290,44 @@ test('extractCopy: one table sentence can occupy adjacent time and title TEXT la
   assert.equal(outMobile.report.none, 0);
 });
 
+test('extractCopy: fewer locale sentences keep their own line count and mark extra layers absent', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' } },
+    rows: {
+      26: {
+        'zh-CN': '16:30 主创演讲\n16:50 现场提问&主创答疑\n17:40 游园体验\n18:40 开场秀\n19:00 赛季前瞻',
+        en: '1:30 AM PDT: Developer Talk\n1:50 AM PDT: Q&A\n2:40 AM PDT: Venue Tour\n3:00 AM PDT: Special Guest Talk',
+        'zh-TW': '16:30 開發團隊分享\n16:50 Q&A 問答\n17:40 現場巡禮\n18:40 開場秀\n19:00 SS13赛季前瞻',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'T1', name: '16:30', characters: '16:30', parentId: 'flow', orderKey: '1.0' },
+    { nodeId: 'N1', name: '主创演讲', characters: '主创演讲', parentId: 'flow', orderKey: '1.1' },
+    { nodeId: 'T2', name: '16:50', characters: '16:50', parentId: 'flow', orderKey: '2.0' },
+    { nodeId: 'N2', name: '现场提问&主创答疑', characters: '现场提问&主创答疑', parentId: 'flow', orderKey: '2.1' },
+    { nodeId: 'T3', name: '17:40', characters: '17:40', parentId: 'flow', orderKey: '3.0' },
+    { nodeId: 'N3', name: '游园体验', characters: '游园体验', parentId: 'flow', orderKey: '3.1' },
+    { nodeId: 'T4', name: '18:40', characters: '18:40', parentId: 'flow', orderKey: '4.0' },
+    { nodeId: 'N4', name: '开场秀', characters: '开场秀', parentId: 'flow', orderKey: '4.1' },
+    { nodeId: 'T5', name: '19:00', characters: '19:00', parentId: 'flow', orderKey: '5.0' },
+    { nodeId: 'N5', name: '赛季前瞻', characters: '赛季前瞻', parentId: 'flow', orderKey: '5.1' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.T1.translations.en.value, '1:30');
+  assert.equal(out.byNode.N1.translations.en.value, 'AM PDT: Developer Talk');
+  assert.equal(out.byNode.T4.translations.en.value, '3:00');
+  assert.equal(out.byNode.N4.translations.en.value, 'AM PDT: Special Guest Talk');
+  assert.equal(out.byNode.T5.translations.en.absent, true);
+  assert.equal(out.byNode.T5.translations.en.value, '');
+  assert.equal(out.byNode.N5.translations.en.absent, true);
+  assert.equal(out.byNode.T5.translations['zh-TW'].value, '19:00');
+  assert.equal(out.byNode.N5.translations['zh-TW'].value, 'SS13赛季前瞻');
+  assert.equal(out.byNode.T1.localeLineCounts.en, 4);
+  assert.equal(out.byNode.T1.missingLangs.includes('en'), false);
+});
+
 test('extractCopy: designated nodeRow wins over cell-split row but keeps split parts', () => {
   const splitSnap = {
     _meta: { langCols: { D: 'zh-CN', F: 'en' } },

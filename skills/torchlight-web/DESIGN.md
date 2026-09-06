@@ -56,6 +56,14 @@ openFlowNoShrink: true
 modalViewportFill: cover
 modalScrimOpacity: 0.8
 modalLockPageScroll: true
+letterSpacingPolicy:
+  keepSourceLangs:
+    - zh-CN
+    - zh-TW
+  zeroLangs:
+    - en
+    - ja
+    - ko
 ---
 
 # 火炬之光宣发页 DESIGN.md
@@ -66,9 +74,9 @@ modalLockPageScroll: true
 
 | 入口 | 回答什么 | 不回答什么 |
 |---|---|---|
-| 交接包 / inventory | 数据：`pageBox`、`fonts`、`role` + `params`、`variants`、`determined` / `unknown` | 断点、`k`、`100vh`、外文比例、Auto Layout 上限 |
-| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限、弹窗铺满与遮罩 | 这一稿有哪些图层、哪条关系 determined、哪句对哪语 |
-| `docs/copy-extraction-adapter.md` | 切语言时怎么取字 | 断点、`k`、外文缩字比例 |
+| 交接包 / inventory | 数据：`pageBox`、`fonts`、`role` + `params`、`variants`、`determined` / `unknown` | 断点、`k`、`100vh`、外文比例、Auto Layout 上限、字距 |
+| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限、弹窗铺满与遮罩、字距 | 这一稿有哪些图层、哪条关系 determined、哪句对哪语 |
+| `docs/copy-extraction-adapter.md` | 切语言时怎么取字 | 断点、`k`、外文缩字比例、字距 |
 
 - 做页只吃 `kind=ready` 的交接包。`unknown` 只画不接线。
 - 吃包命令仍是 `figma:from-handoff`（只验包、打印消费计划，不写 HTML）。出页命令是 `figma:html-from-handoff`。
@@ -250,10 +258,13 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 | body | 字重 < 600 | en / ja / ko `0.8`，zh-TW `1.0` |
 | card-title | 字重 ≥ 600 且源字号 > 40px | ja / zh-TW `0.833`，en / ko `1.0` |
 | heading | 字重 ≥ 600 且源字号 ≤ 40px | 全语 `1.0` |
+| 按钮 / 顶栏折扣条 | 祖先名含 `btn/`（含下载/预约按钮）或 `折扣信息`，不进 body / card-title | 全语 `1.0`：清单源字号。书面 max 放得下就不预缩 |
 
 外文框听稿上包着文案的那层 Auto Layout：`maxWidth` 是宽度硬限；写了 `maxHeight` 的，高度也是硬限。没写的那一轴不拿来当缩字理由，也不发明框。换语言后文案必须**完整**落在这些已写的上限里，禁止裁切、省略号、截断顶过关。
 
 溢出就缩：先套档位比例，再按整数 px 减字号（行高同比），直到完整放下。不走 `100→92→85→78→75`，没有 75% 地板。组内兄弟共用同一整数字号，取最严的那档。没有 B 的 owner 就停，不缩。
+
+字距听本文件，不听 copy 适配器。`zh-CN` / `zh-TW` 共用稿上 `letterSpacing`（简繁一致）；`en` / `ja` / `ko` 强制 `0`。缺 YAML 时才退回稿值。切语言后必须重写 `letter-spacing`，禁止把中文拉开的字距带到拉丁/韩文。
 
 缺目标文案输出 `unverified-no-locale-copy`，禁止拿简中顶上当通过。切语言、对文案时取字纪律听 [`docs/copy-extraction-adapter.md`](docs/copy-extraction-adapter.md)，本文件不写哪句对哪语。
 
@@ -303,7 +314,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 - `kind=ready` 才吃；`unknown` 只画不接线。
 - Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=viewportW/750`。首屏 100vh 只垫短稿，高稿保持 pageBox 往下排。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
-- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。
+- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。
 - 不把 inventory JSON 焊进本文件。不改 naming spec、Interaction / Pack / 语义换行。`_fitText` 与 extract 的 max 字段只按第 6.1 节改。
 
 ## 8. 别造第二份

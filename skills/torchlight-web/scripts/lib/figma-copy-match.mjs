@@ -18,7 +18,7 @@
 
 import { normalizeCopy, editDistance, fuzzyThreshold } from './figma-copy-normalize.mjs';
 import { deriveContext, resolveContextualRow, validateCopyOverlay } from './figma-copy-context.mjs';
-import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferSplitShareRow, splitLocaleCell } from './figma-copy-structure.mjs';
+import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferSplitShareRow, splitLocaleCellByOwnLines } from './figma-copy-structure.mjs';
 
 const LANGS_FALLBACK = ['zh-CN', 'en', 'ko', 'ja', 'zh-TW'];
 
@@ -132,6 +132,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
   function adopt(t, kind, { lineIndex = null, lineCount = null, partIndex = 0, partCount = 1 } = {}) {
     const translations = {};
     const missingLangs = [];
+    const localeLineCounts = {};
     const split = Number.isInteger(lineIndex) && Number.isInteger(lineCount) && lineCount > 1;
     for (const lang of langs) {
       const v = at(larkSnap, `/rows/${t.row}/${lang}`);
@@ -143,13 +144,31 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
         translations[lang] = larkLeaf(`/rows/${t.row}/${lang}`);
         continue;
       }
-      const piece = splitLocaleCell(v, lineIndex, lineCount, { partIndex, partCount });
-      if (piece == null) {
+      const splitResult = splitLocaleCellByOwnLines(v, lineIndex, { partIndex, partCount });
+      if (Number.isInteger(splitResult.localeLineCount)) localeLineCounts[lang] = splitResult.localeLineCount;
+      if (splitResult.kind === 'absent') {
+        translations[lang] = {
+          ...larkLeaf(`/rows/${t.row}/${lang}`),
+          value: '',
+          splitLine: lineIndex,
+          splitPart: partIndex,
+          localeLineCount: splitResult.localeLineCount,
+          absent: true,
+        };
+        continue;
+      }
+      if (splitResult.kind !== 'piece' || splitResult.value == null) {
         missingLangs.push(lang);
         continue;
       }
       const leaf = larkLeaf(`/rows/${t.row}/${lang}`);
-      translations[lang] = { ...leaf, value: piece, splitLine: lineIndex, splitPart: partIndex };
+      translations[lang] = {
+        ...leaf,
+        value: splitResult.value,
+        splitLine: lineIndex,
+        splitPart: partIndex,
+        localeLineCount: splitResult.localeLineCount,
+      };
     }
     return {
       matchKind: kind,
@@ -157,6 +176,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       tableZhCN: t.rawZh, // 表里的简中原文（normalized 命中时与稿内略有出入，留证）
       translations,
       missingLangs,
+      ...(Object.keys(localeLineCounts).length ? { localeLineCounts } : {}),
     };
   }
 

@@ -168,6 +168,60 @@ function keepLivePaintNode(node, skippedChildren, byId = null) {
   return [paintBoxOf(liftOwnerComposite(node, skippedChildren))];
 }
 
+function layoutCap(layout, key) {
+  const n = Number(layout && layout[key]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function isAutoLayoutMaxOwner(node) {
+  if (!isPlainObject(node) || !isPlainObject(node.layout)) return false;
+  const mode = String(node.layout.layoutMode || '').toUpperCase();
+  if (mode !== 'HORIZONTAL' && mode !== 'VERTICAL') return false;
+  return layoutCap(node.layout, 'maxWidth') != null || layoutCap(node.layout, 'maxHeight') != null;
+}
+
+/** DESIGN.md 6.1 B: skipped wrappers are not paint nodes. parentId must land on
+ *  the nearest still-live ancestor, or owner lookup breaks and written max
+ *  never reaches _fitText. If that skipped wrapper itself holds AL max, stamp
+ *  the same caps onto the live TEXT so the numbers stay locked. */
+function relinkSkippedMaxOwners(nodes, byId) {
+  return asArray(nodes).map((node) => {
+    if (!isPlainObject(node) || isSkipped(node)) return node;
+    let parentId = node.parentId;
+    const seen = new Set([String(node.id || '')]);
+    let inherited = null;
+    while (parentId != null && parentId !== '' && !seen.has(String(parentId))) {
+      seen.add(String(parentId));
+      const parent = byId.get(String(parentId));
+      if (!parent) break;
+      if (!isSkipped(parent)) {
+        const next = { ...node, parentId: parent.id };
+        if (inherited) {
+          const layout = isPlainObject(next.layout) ? { ...next.layout } : {};
+          if (inherited.maxWidth != null && layoutCap(layout, 'maxWidth') == null) layout.maxWidth = inherited.maxWidth;
+          if (inherited.maxHeight != null && layoutCap(layout, 'maxHeight') == null) layout.maxHeight = inherited.maxHeight;
+          next.layout = layout;
+          next.fitOwnerFromSkipped = {
+            sourceId: inherited.sourceId,
+            maxWidth: inherited.maxWidth,
+            maxHeight: inherited.maxHeight,
+          };
+        }
+        return next;
+      }
+      if (!inherited && isAutoLayoutMaxOwner(parent)) {
+        inherited = {
+          sourceId: parent.id,
+          maxWidth: layoutCap(parent.layout, 'maxWidth'),
+          maxHeight: layoutCap(parent.layout, 'maxHeight'),
+        };
+      }
+      parentId = parent.parentId;
+    }
+    return node;
+  });
+}
+
 function hasVisibleImageFill(node) {
   return visibleFillsOf(node).some((fill) => String(fill.type || '') === 'IMAGE');
 }
@@ -187,10 +241,11 @@ function keepUnknownImageUnderSkipped(node, byId) {
 export function restoreOwnerComposites(nodes) {
   const list = asArray(nodes);
   const byId = new Map(list.filter((node) => node && node.id != null).map((node) => [String(node.id), node]));
-  return list.flatMap((node) => {
+  const live = list.flatMap((node) => {
     if (keepUnknownImageUnderSkipped(node, byId)) return [paintBoxOf(node)];
     return keepLivePaintNode(node, childrenOf(list, node.id).filter(isSkipped), byId);
   });
+  return relinkSkippedMaxOwners(live, byId);
 }
 
 const TODAY_NAME = /^dyn\/今日日期/;
@@ -225,11 +280,13 @@ export function calendarIdentityFromNodes(nodes) {
  *  restoreOwnerComposites does for page nodes. */
 function omitSkippedNodes(nodes) {
   const list = asArray(nodes);
-  return list.flatMap((node) => {
+  const byId = new Map(list.filter((node) => node && node.id != null).map((node) => [String(node.id), node]));
+  const live = list.flatMap((node) => {
     const nestedSkipped = asArray(node.nodes).filter(isSkipped);
     const siblingSkipped = childrenOf(list, node.id).filter(isSkipped);
-    return keepLivePaintNode(node, [...nestedSkipped, ...siblingSkipped]);
+    return keepLivePaintNode(node, [...nestedSkipped, ...siblingSkipped], byId);
   });
+  return relinkSkippedMaxOwners(live, byId);
 }
 
 function visitNodeTree(nodes, visit) {

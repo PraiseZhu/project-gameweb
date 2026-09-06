@@ -305,6 +305,23 @@ export function splitLocaleCell(raw, lineIndex, lineCount, { partIndex = 0, part
 }
 
 /**
+ * Locale cell-split uses that language's own newline count, not the zh-CN
+ * layer count. Extra source layers past the locale's last sentence stay
+ * absent; they must not fall back to zh-CN.
+ */
+export function splitLocaleCellByOwnLines(raw, lineIndex, { partIndex = 0, partCount = 1 } = {}) {
+  const lines = cellLines(raw);
+  if (!lines.length) return { kind: 'unresolved', localeLineCount: 0 };
+  if (!Number.isInteger(lineIndex) || lineIndex < 0) {
+    return { kind: 'unresolved', localeLineCount: lines.length };
+  }
+  if (lineIndex >= lines.length) return { kind: 'absent', localeLineCount: lines.length };
+  const piece = splitLocaleCell(raw, lineIndex, lines.length, { partIndex, partCount });
+  if (piece == null) return { kind: 'unresolved', localeLineCount: lines.length };
+  return { kind: 'piece', value: piece, localeLineCount: lines.length };
+}
+
+/**
  * Ambiguous rows: keep a candidate only when already-bound document-order
  * neighbors uniquely sandwich it in table row order. Season/slot names are
  * not inputs.

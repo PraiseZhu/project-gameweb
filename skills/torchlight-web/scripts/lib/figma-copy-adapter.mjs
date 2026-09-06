@@ -21,20 +21,18 @@
  *      overlay 形态；绝不在这里手填任何译文。
  *
  * ═══ 接线 ═══
- *   extract.mjs 当前并发中（禁改）。本文件纯新增、无副作用。
- *   主线最小接入（见 docs/copy-extraction-adapter.md 的 diff 草图）：
- *     import { buildCopyEnvelope } from '<skill>/scripts/lib/figma-copy-adapter.mjs';
- *     const copyEnv = buildCopyEnvelope({ demoDir, spec, at: main.at, larkLeaf: main.fig, figSnap: snap });
- *     truth.copy = copyEnv.byNode;  report.copy = copyEnv.report;
- *
- * 纯函数 + 只读 fixture；不写任何文件（写 truth/report 是调用方的事）。
+ *   官方出页主线是 figma-html-from-handoff：handoff inventory TEXT 是分母，
+ *   走 buildHandoffCopyEnvelope。旧 Figma fixture 入口 buildCopyEnvelope 仍保留。
+ *   调用方写 truth.copy 与 extract-report.copy。纯函数，不写文件。
  */
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { extractCopy } from './figma-copy-match.mjs';
-import { collectFigmaTexts } from './figma-copy-coverage.mjs';
+import { collectFigmaTexts, collectInventoryTexts } from './figma-copy-coverage.mjs';
 import { buildAncestorMap, deriveContext } from './figma-copy-context.mjs';
+import { makeFixtureLeaf } from './extract-helpers.mjs';
+import { isPresentTable } from './translation/locale-policy.mjs';
 
 const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
 
@@ -167,4 +165,170 @@ export function buildCopyEnvelope({ demoDir, spec, at, larkLeaf, pcSnap = null }
   }
   report.unread = unreadAll;
   return { byNode, report, unread: unreadAll };
+}
+
+function pointerAt(root, pointer) {
+  const path = String(pointer || '');
+  if (!path.startsWith('/')) return undefined;
+  return path.slice(1).split('/').filter(Boolean).reduce((cursor, key) => {
+    if (cursor == null) return undefined;
+    return cursor[key];
+  }, root);
+}
+
+function leafValue(leaf) {
+  if (leaf == null) return null;
+  if (typeof leaf === 'object' && 'value' in leaf) return leaf.value;
+  return leaf;
+}
+
+/**
+ * Renderer reads `copy.byNode[id][lang]` as a string. extractCopy stores
+ * `{ translations: { lang: { value, provenance } } }`. Flatten adopted
+ * strings onto the same record so QA chrome can switch languages.
+ */
+export function flattenCopyByNodeForRenderer(byNode) {
+  const out = {};
+  for (const [nodeId, entry] of Object.entries(byNode || {})) {
+    const next = { ...(entry || {}) };
+    const translations = entry && typeof entry === 'object' ? entry.translations : null;
+    if (translations && typeof translations === 'object') {
+      for (const [lang, leaf] of Object.entries(translations)) {
+        if (leaf && typeof leaf === 'object' && leaf.absent === true) {
+          next[lang] = '';
+          continue;
+        }
+        const value = leafValue(leaf);
+        if (value == null || value === '') continue;
+        next[lang] = value;
+      }
+    }
+    out[nodeId] = next;
+  }
+  return out;
+}
+
+function larkFixtureRel(spec = {}) {
+  const named = spec?.copy?.snapshotFile || spec?.lark?.path || 'lark-copy.json';
+  const fileName = String(named).replace(/^fixtures\//, '');
+  return `fixtures/${fileName}`;
+}
+
+function larkTools(demoDir, larkSnap, spec = {}) {
+  const fixtureRel = larkFixtureRel(spec);
+  const at = (a, b) => (b === undefined ? pointerAt(larkSnap, a) : pointerAt(a, b));
+  const larkLeaf = (pointer) => makeFixtureLeaf(
+    pointerAt(larkSnap, pointer),
+    fixtureRel,
+    {
+      locator: pointer,
+      capturedFrom: {
+        environment: 'handoff-copy-table',
+        capturedAt: String(larkSnap?._meta?.fetchedAt || larkSnap?._meta?.capturedAt || '1970-01-01'),
+        note: 'lark-copy fixture leaf',
+      },
+      demoDir,
+    },
+  );
+  return { at, larkLeaf };
+}
+
+function loadLarkSnapshot(demoDir, spec = {}) {
+  const absDemo = resolve(demoDir);
+  const path = join(absDemo, larkFixtureRel(spec));
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+function larkHasRows(larkSnap) {
+  return isPresentTable(larkSnap);
+}
+
+function inventorySectionIds(inventory) {
+  const sections = Array.isArray(inventory?.sections) ? inventory.sections : [];
+  return sections.map((entry) => entry && entry.id).filter((id) => id != null).map(String);
+}
+
+function contextsFromInventory(inventory, texts) {
+  const nodes = Array.isArray(inventory?.nodes) ? inventory.nodes : [];
+  const byId = new Map(nodes.filter((node) => node && node.id).map((node) => [String(node.id), node]));
+  const contexts = new Map();
+  for (const text of texts) {
+    const node = byId.get(String(text.nodeId));
+    const ancestorIds = Array.isArray(node?.ancestorIds) ? node.ancestorIds.map(String) : [];
+    const ancestors = ancestorIds.slice().reverse().map((id) => {
+      const entry = byId.get(id);
+      return {
+        id,
+        name: String(entry?.name || ''),
+        type: String(entry?.type || ''),
+      };
+    });
+    contexts.set(String(text.nodeId), deriveContext({
+      name: String(text.name || node?.name || ''),
+      type: 'TEXT',
+      ancestors,
+    }));
+  }
+  return contexts;
+}
+
+function overlayFromDemo(demoDir) {
+  const path = join(resolve(demoDir), 'copy-designations.json');
+  if (!existsSync(path)) return null;
+  return designationsToOverlay(JSON.parse(readFileSync(path, 'utf8')));
+}
+
+/**
+ * Official handoff path: inventory TEXT is the denominator.
+ * Does not read Figma REST snapshots.
+ */
+export function buildHandoffCopyEnvelope({ demoDir, spec = {}, pcInventory = null, mobileInventory = null } = {}) {
+  const absDemo = resolve(demoDir);
+  const larkSnap = loadLarkSnapshot(absDemo, spec);
+  if (!larkSnap || !larkHasRows(larkSnap)) {
+    return { byNode: {}, report: { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [] }, unread: [], sourceTexts: [], larkSnap: larkSnap || null };
+  }
+  const { at, larkLeaf } = larkTools(absDemo, larkSnap, spec);
+  const overlay = overlayFromDemo(absDemo);
+  const report = { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [] };
+  const byNode = {};
+  const unreadAll = [];
+  const sourceTexts = [];
+  const jobs = [
+    { plat: 'pc', inventory: pcInventory },
+    { plat: 'mobile', inventory: mobileInventory },
+  ];
+  for (const job of jobs) {
+    if (!job.inventory) continue;
+    const texts = collectInventoryTexts(job.inventory, { treeKey: job.plat });
+    sourceTexts.push(...texts);
+    const contexts = contextsFromInventory(job.inventory, texts);
+    const res = extractCopy({
+      figSnap: {},
+      larkSnap,
+      at,
+      larkLeaf,
+      texts,
+      copyOverlay: overlay,
+      contexts,
+    });
+    const env = res && res.byNode ? res : { byNode: {}, report: {}, _unread: [] };
+    const unread = res._unread || res.unread || [];
+    report.plats[job.plat] = {
+      texts: texts.length,
+      bound: Object.values(env.byNode || {}).filter((entry) => entry && entry.translations && Object.keys(entry.translations).length > 0).length,
+      unread: unread.length,
+      report: res.report || null,
+      sectionIds: inventorySectionIds(job.inventory),
+    };
+    Object.assign(byNode, env.byNode);
+    unreadAll.push(...unread);
+    report.totals.texts += texts.length;
+    report.totals.bound += report.plats[job.plat].bound;
+    report.totals.unread += unread.length;
+    report.contextual.push(...((res.report && res.report.contextual) || []).map((entry) => ({ plat: job.plat, ...entry })));
+  }
+  report.unread = unreadAll;
+  return { byNode, report, unread: unreadAll, sourceTexts, larkSnap };
 }

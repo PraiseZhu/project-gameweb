@@ -212,6 +212,15 @@ export function implementationSnapshotFromModules({
         throw new Error('implementation snapshot missing live named-modal policy pin');
       }
     }
+    if (policy.letterSpacingPolicy) {
+      if (!/letterSpacingPolicy/.test(renderSource)
+        || !/keepSourceLangs/.test(renderSource)
+        || !/zeroLangs/.test(renderSource)
+        || !/_letterSpacingPx/.test(renderSource)
+        || !/data-letter-spacing-policy/.test(renderSource)) {
+        throw new Error('implementation snapshot missing live letterSpacingPolicy pin');
+      }
+    }
   }
   if (chromeSource != null) {
     const chromeComp = chromeCompositionFromSource(chromeSource);
@@ -251,6 +260,12 @@ export function implementationSnapshotFromModules({
     modalViewportFill: policy.modalViewportFill,
     modalScrimOpacity: policy.modalScrimOpacity,
     modalLockPageScroll: policy.modalLockPageScroll,
+    letterSpacingPolicy: policy.letterSpacingPolicy
+      ? {
+          keepSourceLangs: [...policy.letterSpacingPolicy.keepSourceLangs],
+          zeroLangs: [...policy.letterSpacingPolicy.zeroLangs],
+        }
+      : undefined,
     chromeOfficialRootFontVw: chromeVw,
   };
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,7 +18,7 @@ import {
   LATER_AXES_PROBE_SCHEMA,
 } from '../lib/later-axes-probe.mjs';
 import { mintOrchestratorTicket, consumeOrchestratorTicket } from '../lib/orchestrator-ticket.mjs';
-import { parseChildJson } from '../torchlightweb.mjs';
+import { htmlFromHandoffArgs, parseChildJson } from '../torchlightweb.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const CLI = join(ROOT, 'scripts/torchlightweb.mjs');
@@ -43,6 +43,29 @@ function greenMain() {
 function writeGreenProbe(demo) {
   writeFileSync(join(demo, 'later-axes-probe.json'), `${JSON.stringify(greenLaterAxesProbeFixture({ demoDir: demo }), null, 2)}\n`);
 }
+
+test('empty demo assets do not pass --reuse-existing; existing PNGs may reuse', () => {
+  const empty = mkdtempSync(join(tmpdir(), 'torchlightweb-empty-assets-'));
+  mkdirSync(join(empty, 'assets'), { recursive: true });
+  assert.deepEqual(
+    htmlFromHandoffArgs({ handoffDir: '/handoff', demoDir: empty }),
+    ['--handoff', '/handoff', '--demo', empty],
+  );
+
+  const missingDir = mkdtempSync(join(tmpdir(), 'torchlightweb-no-assets-'));
+  assert.equal(
+    htmlFromHandoffArgs({ handoffDir: '/handoff', demoDir: missingDir }).includes('--reuse-existing'),
+    false,
+  );
+
+  const filled = mkdtempSync(join(tmpdir(), 'torchlightweb-filled-assets-'));
+  mkdirSync(join(filled, 'assets'), { recursive: true });
+  writeFileSync(join(filled, 'assets', '721-8399.png'), 'png');
+  assert.deepEqual(
+    htmlFromHandoffArgs({ handoffDir: '/handoff', demoDir: filled }),
+    ['--handoff', '/handoff', '--demo', filled, '--reuse-existing'],
+  );
+});
 
 test('parseChildJson keeps the first complete object even when later braces are truncated', () => {
   const payload = { ok: false, problems: ['inventory-static-gate red'], inventoryStaticGate: { ok: false, problems: ['399:42189: missing-sliceExport-box'] } };

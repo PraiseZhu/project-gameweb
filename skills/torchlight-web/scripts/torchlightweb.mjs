@@ -8,7 +8,7 @@
  *   npm run torchlightweb -- status --demo <dir>
  */
 import { spawnSync } from 'node:child_process';
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseTorchlightwebArgs, runTorchlightweb } from './lib/torchlightweb-machine.mjs';
@@ -96,14 +96,27 @@ function runChild(scriptRel, args, extra = {}) {
   };
 }
 
-function buildMain({ handoffDir, demoDir }) {
+export function demoHasReusablePngs(demoDir) {
+  const assetsDir = join(demoDir, 'assets');
+  if (!existsSync(assetsDir)) return false;
+  try {
+    return readdirSync(assetsDir).some((name) => String(name).toLowerCase().endsWith('.png'));
+  } catch {
+    return false;
+  }
+}
+
+export function htmlFromHandoffArgs({ handoffDir, demoDir }) {
   /* Re-running Main for an existing demo must reuse on-disk slices.
-     Hitting Figma again is not required to present stop 1. */
-  return runChild('scripts/figma-html-from-handoff.mjs', [
-    '--handoff', handoffDir,
-    '--demo', demoDir,
-    '--reuse-existing',
-  ], { timeout: 3600000 });
+     A first Main with an empty assets/ still has to hit Figma for new slices
+     (timeline line + arrows). --reuse-existing fail-closes on missing PNGs. */
+  const args = ['--handoff', handoffDir, '--demo', demoDir];
+  if (demoHasReusablePngs(demoDir)) args.push('--reuse-existing');
+  return args;
+}
+
+function buildMain({ handoffDir, demoDir }) {
+  return runChild('scripts/figma-html-from-handoff.mjs', htmlFromHandoffArgs({ handoffDir, demoDir }), { timeout: 3600000 });
 }
 
 function packDemo({ demoDir }) {

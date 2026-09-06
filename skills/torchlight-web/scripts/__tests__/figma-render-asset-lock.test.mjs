@@ -39,7 +39,9 @@ test('heroUi stretch never moves pin=viewport fix descendants', () => {
   assert.match(renderer, /fixedHost\.style\.position = 'sticky'/);
   assert.match(renderer, /fx-fixed-zoom/);
   assert.match(renderer, /isTopBarChrome/);
-  assert.match(renderer, /Number\(navRailBox\.w\) > Number\(navRailBox\.h\) \* 2/);
+  assert.match(renderer, /Number\(navRailBox\.w\) > Number\(navRailBox\.h\)/);
+  assert.match(renderer, /data-topbar-chrome/);
+  assert.match(renderer, /landscapeFix/);
   assert.match(renderer, /fixedStage\.style\.transform = 'scale\(' \+ k \+ '\)'/);
   assert.doesNotMatch(renderer, /fixedHost\.style\.position = 'fixed'/);
   assert.doesNotMatch(renderer, /fixedStage\.style\.position = 'sticky'/);
@@ -306,7 +308,7 @@ test('authored multiline text keeps source metrics instead of height step-fit', 
 
 test('hero cover scale stays on the hero slot, not the released page stage', () => {
   assert.match(renderer, /heroVisualScale = slotScale/);
-  assert.match(renderer, /scale: pageStageScale/);
+  assert.match(renderer, /scale: Number\(heroVisualScale\) > 0 \? Number\(heroVisualScale\) : pageStageScale/);
   assert.match(renderer, /data-hero-visual-scale/);
   assert.match(renderer, /heroVisualScale \/ pageStageScale/);
   assert.doesNotMatch(renderer, /pageStageScale = slotScale/);
@@ -315,6 +317,8 @@ test('hero cover scale stays on the hero slot, not the released page stage', () 
   assert.match(renderer, /stage\.style\.zoom = String\(pageStageMode \? pageStageScale : \(pageScope \? 1 : k\)\)/);
   assert.match(renderer, /planeRatio > 1\.001/);
   assert.match(renderer, /heroVisualPlane \|\| firstScreenKvInSection/);
+  assert.match(renderer, /coverHeroSlot/);
+  assert.match(renderer, /coverHeroVisualScale/);
 });
 
 test('page paint roots follow recorded pagePaintOrder locators on canvas-rooted snapshots', () => {
