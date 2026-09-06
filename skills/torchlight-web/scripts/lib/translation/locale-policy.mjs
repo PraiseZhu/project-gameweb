@@ -179,7 +179,7 @@ export function resolveImgLangVariant({
   });
 }
 
-function isPresentTable(value) {
+export function isPresentTable(value) {
   if (!value) return false;
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value !== 'object') return false;
@@ -247,6 +247,27 @@ export function translationAxisClaim({
       claimed: false,
       reason: 'zh-CN-only-matrix',
       note: '有翻译表但矩阵只有 zh-CN；独立翻译门未宣称。',
+      languages: langs,
+      fontLoaded: !!fontLoaded,
+    };
+  }
+  const byNode = truth?.copy?.byNode && typeof truth.copy.byNode === 'object'
+    ? truth.copy.byNode
+    : null;
+  const bound = byNode && Object.values(byNode).some((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    return nonZh.some((language) => {
+      const leaf = entry[language] ?? entry.translations?.[language];
+      const value = leaf && typeof leaf === 'object' && 'value' in leaf ? leaf.value : leaf;
+      return value != null && String(value) !== '';
+    });
+  });
+  if (!bound) {
+    return {
+      status: 'not-claimed',
+      claimed: false,
+      reason: 'copy-unwired-truth',
+      note: '有翻译表但 truth.copy.byNode 未绑到节点；切语言仍是简中。',
       languages: langs,
       fontLoaded: !!fontLoaded,
     };
@@ -415,12 +436,13 @@ export function assessLanguageCompleteness({ sourceTexts = [], byNode = {}, lang
   for (const source of Array.isArray(sourceTexts) ? sourceTexts : []) {
     const nodeId = String(source.nodeId ?? source.id ?? '');
     const binding = byNode?.[nodeId];
-    if (!binding && unresolved.has(nodeId)) continue;
+    if (!binding || unresolved.has(nodeId)) continue;
     const translations = binding?.translations || binding || {};
     for (const language of required) {
       const leaf = translations[language];
       const value = normalizeCopy(leafValue(leaf));
-      if (!value) missing.push({ nodeId, language, kind: 'empty-value' });
+      const localeAbsent = leaf && typeof leaf === 'object' && leaf.absent === true;
+      if (!value && !localeAbsent) missing.push({ nodeId, language, kind: 'empty-value' });
       const p = leafProvenance(leaf);
       if (leaf != null && (!p || p.sourceKind !== 'fixture' || !/^\/rows\/[^/]+\//.test(String(p.locator || '')))) {
         invalid.push({ nodeId, language, kind: 'invalid-provenance' });

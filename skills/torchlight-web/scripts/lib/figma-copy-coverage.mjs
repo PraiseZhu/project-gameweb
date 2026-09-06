@@ -10,6 +10,32 @@ import { assessLanguageCompleteness, DEFAULT_TRANSLATION_LANGUAGES } from './tra
 const unwrap = (value) => (value && typeof value === 'object' && 'value' in value ? value.value : value);
 const isLeaf = (value) => value && typeof value === 'object' && 'value' in value && 'provenance' in value;
 
+export function collectInventoryTexts(inventory, { treeKey = 'default' } = {}) {
+  const texts = [];
+  const seen = new Set();
+  for (const node of Array.isArray(inventory?.nodes) ? inventory.nodes : []) {
+    if (!node || node.status === 'skipped') continue;
+    const type = String(node.type || '').toUpperCase();
+    const role = String(node.role || '');
+    const characters = node.text?.characters ?? node.characters;
+    const isText = type === 'TEXT' || role === 'copy' || role === 'txt'
+      || (characters != null && characters !== '' && (role === 'copy' || type === 'TEXT'));
+    if (!isText) continue;
+    const id = node.id != null ? String(node.id) : '';
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    texts.push({
+      nodeId: id,
+      name: String(node.name ?? ''),
+      characters: String(characters ?? ''),
+      parentId: node.parentId != null ? String(node.parentId) : '',
+      orderKey: String(node.orderKey || ''),
+      treeKey: String(treeKey || 'default'),
+    });
+  }
+  return texts;
+}
+
 export function collectFigmaTexts(snapshot, { treeKey = 'default' } = {}) {
   const texts = new Map();
   const walk = (node, parentId, orderKey) => {
@@ -75,8 +101,13 @@ export function assessCopyCoverage({ sourceTexts, truth, report, larkSnapshot = 
   const unreadIds = new Set(unread.map((entry) => String(entry?.nodeId ?? '')).filter(Boolean));
   const errors = [];
   const warnings = [];
-  const observedLanguages = [...new Set(Object.values(byNode || {}).flatMap((binding) => Object.keys(binding?.translations || binding || {})))];
-  const configuredLanguages = report?.copy?.languages || truth?.copy?.languages || observedLanguages;
+  const observedLanguages = [...new Set(Object.values(byNode || {}).flatMap((binding) => Object.keys(binding?.translations || {})))];
+  const tableLangs = Object.values(larkSnapshot?._meta?.langCols || {}).filter((lang) => lang && lang !== 'ja');
+  const configuredLanguages = (Array.isArray(report?.copy?.languages) && report.copy.languages.length
+    ? report.copy.languages
+    : (Array.isArray(truth?.copy?.languages) && truth.copy.languages.length
+      ? truth.copy.languages
+      : (tableLangs.length ? tableLangs : observedLanguages))).filter((lang) => lang !== 'ja');
 
   if (!larkSnapshot) {
     return {
@@ -104,8 +135,12 @@ export function assessCopyCoverage({ sourceTexts, truth, report, larkSnapshot = 
         if (!unreadIds.has(text.nodeId)) missing.push(text.nodeId);
         continue;
       }
-      const translations = binding.translations || binding;
+      const translations = (binding.translations && typeof binding.translations === 'object')
+        ? binding.translations
+        : Object.fromEntries(Object.entries(binding).filter(([key, leaf]) => isLarkLeaf(leaf) || (typeof leaf === 'string' && ['zh-CN', 'en', 'zh-TW', 'ko', 'ja'].includes(key))));
       for (const [lang, leaf] of Object.entries(translations)) {
+        if (['matchKind', 'row', 'tableZhCN', 'missingLangs', 'note', 'nodeId', 'name', 'characters', 'normalized', 'translations', 'cellSplit', 'context', 'candidates', 'localeLineCounts'].includes(lang)) continue;
+        if (typeof leaf === 'string') continue;
         if (!isLarkLeaf(leaf)) invalidLeaves.push({ nodeId: text.nodeId, lang });
       }
     }

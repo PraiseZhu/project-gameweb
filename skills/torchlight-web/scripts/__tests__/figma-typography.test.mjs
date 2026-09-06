@@ -615,6 +615,16 @@ test('renderer runFit forwards Auto Layout maxWidth/maxHeight into _fitText', as
     src,
     /this\._fitText\(c\.el, c\.tx, c\.box, \{ widthFit: c\.widthFit, heightFit: c\.heightFit, sourceTitleInlineSafe: c\.sourceTitleInlineSafe, semanticBreak: c\.semanticBreak \}\)/,
   );
+  assert.match(src, /if \(Number\.isFinite\(written\) && written > 0\) continue;/);
+  assert.match(src, /const maxW = writtenW;/);
+  assert.match(src, /_isButtonLabelContext/);
+  assert.match(src, /btn\\\/按钮/);
+  assert.match(src, /折扣信息/);
+  assert.match(src, /_letterSpacingPx/);
+  assert.match(src, /letterSpacingPolicy/);
+  assert.match(src, /keepSourceLangs/);
+  assert.match(src, /zeroLangs/);
+  assert.match(src, /data-letter-spacing-policy/);
 });
 
 test('renderer fit uses FONT_SIZE_% lineHeightPercent when lineHeightPx is omitted', async () => {
@@ -626,10 +636,13 @@ test('renderer fit uses FONT_SIZE_% lineHeightPercent when lineHeightPx is omitt
   assert.match(src, /this\._realignTranslatedClipText\(c\.el, c\.box\)/);
   assert.match(src, /data-fit-clip-realign/);
   assert.match(src, /data-fit-source-top/);
-  assert.match(src, /if \(!el\.getAttribute\('data-fit-px'\)\) return;/);
+  assert.match(src, /data-fit-policy'\) === 'zh-cn-figma-exact'\) return;/);
+  assert.doesNotMatch(src, /if \(!el\.getAttribute\('data-fit-px'\)\) return;/);
   assert.match(src, /storedRaw == null \|\| storedRaw === '' \? NaN : Number\(storedRaw\)/);
   assert.match(src, /scrollWidth\/Height repeat a min-content/);
   assert.match(src, /el\.style\.minHeight = '0px'/);
+  assert.match(src, /data-fit-visible-max-height/);
+  assert.match(src, /el\.style\.maxHeight = maxH \+ 'px'/);
 });
 
 test('6.1 C long English against written maxWidth shrinks instead of overflowing', () => {

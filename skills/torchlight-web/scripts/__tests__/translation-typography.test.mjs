@@ -378,6 +378,13 @@ test('locale font scale: body and source-size title tiers use their official evi
   assert.equal(localeFontScale({ role: 'heading-content-card', language: 'ja', fontWeight: 700, sourceFontSize: 60 }), 0.833, '60px card-title tier is tightened in ja');
   assert.equal(localeFontScale({ role: 'heading-content-card', language: 'en', fontWeight: 700, sourceFontSize: 60 }), 1, '60px card-title tier is level in en');
   assert.equal(localeFontScale({ role: 'heading-content-card', language: 'ja', fontWeight: 700, sourceFontSize: 25 }), 1, 'small heading tier stays level');
+  assert.equal(localeFontScale({ role: 'button', language: 'zh-TW', fontWeight: 900, sourceFontSize: 46 }), 1, 'btn/ keeps inventory size');
+  assert.equal(localeFontScale({ role: 'unknown', language: 'en', fontWeight: 400, sourceFontSize: 40, ancestorNames: ['fix/顶部信息', 'btn/按钮'] }), 1, 'btn ancestor is not body 0.8');
+  assert.equal(localeFontScale({ role: 'unknown', language: 'en', fontWeight: 400, sourceFontSize: 40, ancestorNames: ['fix/顶部信息', '折扣信息'] }), 1, 'discount chip is not body 0.8');
+  const btnTw = officialTargetDesignSize({ sourceFontSize: 46, sourceLineHeight: 52, role: 'unknown', language: 'zh-TW', fontWeight: 900, ancestorNames: ['btn/按钮'] });
+  assert.equal(btnTw.ratio, 1);
+  assert.equal(btnTw.fontSize, 46);
+  assert.equal(btnTw.tier, 'heading');
 });
 
 test('officialTargetDesignSize scales ja body 30->24 with line-height, keeps zh-CN source', () => {

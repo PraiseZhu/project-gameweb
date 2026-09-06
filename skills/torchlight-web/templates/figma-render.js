@@ -373,7 +373,13 @@
         if (entry.fontWeight != null) span.style.fontWeight = String(entry.fontWeight);
         if (entry.fontSize != null) span.style.fontSize = entry.fontSize + 'px';
         if (entry.fontFamily != null) span.style.fontFamily = '"' + entry.fontFamily + '", "PingFang SC", "Microsoft YaHei", sans-serif';
-        if (entry.letterSpacing != null) span.style.letterSpacing = entry.letterSpacing + 'px';
+        if (entry.letterSpacing != null) {
+          const lang = (el && el.getAttribute('data-letter-spacing-policy'))
+            || (typeof window !== 'undefined' && window.__figmaPrefs && window.__figmaPrefs.lang)
+            || 'zh-CN';
+          const spacing = this._letterSpacingPx(entry.letterSpacing, lang);
+          if (spacing != null) span.style.letterSpacing = spacing + 'px';
+        }
         if (entry.textCase === 'UPPER') span.style.textTransform = 'uppercase';
         if (entry.textDecoration === 'UNDERLINE') span.style.textDecoration = 'underline';
         else if (entry.textDecoration === 'STRIKETHROUGH') span.style.textDecoration = 'line-through';
@@ -870,12 +876,32 @@
      officialTargetDesignSize / LOCALE_FONT_SCALE）。证据 artifacts/official-locale-typography-20260810.json：
      本地 2× 高清稿，官网运行时约为一半，语言比 = 官网该语言视觉字号 / 官网 zh-CN 视觉字号。
      标题各语言同级（en 拉丁略小），正文 ja/en/ko=0.8、zh-TW=1.0。未收录角色/语言回退 1。 */
-    _officialTargetDesignSize({ sourceFontSize, sourceLineHeight = null, role = 'unknown', language = 'zh-CN', fontWeight = 400 } = {}) {
+    _letterSpacingPx(source, language) {
+    const src = Number(source);
+    const lang = String(language || 'zh-CN');
+    const policy = designPolicy().letterSpacingPolicy;
+    if (!policy) return Number.isFinite(src) ? src : null;
+    const keep = Array.isArray(policy.keepSourceLangs) ? policy.keepSourceLangs : [];
+    const zero = Array.isArray(policy.zeroLangs) ? policy.zeroLangs : [];
+    if (keep.includes(lang)) return Number.isFinite(src) ? src : 0;
+    if (zero.includes(lang)) return 0;
+    return Number.isFinite(src) ? src : null;
+  },
+
+    _isButtonLabelContext({ role = 'unknown', ancestorNames = [], name = '' } = {}) {
+    const explicit = String(role || '').trim().toLowerCase();
+    if (explicit === 'button' || explicit === 'btn') return true;
+    const haystack = [name, explicit, ...(Array.isArray(ancestorNames) ? ancestorNames : [])]
+      .filter(Boolean).map(String).join(' ').toLowerCase();
+    return /(?:^|[\s/>])btn\/|btn\/按钮|下载按钮|预约按钮|折扣信息/.test(haystack);
+  },
+
+    _officialTargetDesignSize({ sourceFontSize, sourceLineHeight = null, role = 'unknown', language = 'zh-CN', fontWeight = 400, ancestorNames = [], name = '' } = {}) {
     /* 镜像 scripts/lib/translation/typography-policy.mjs#officialTargetDesignSize（tier-aware）。
        证据 artifacts/official-tier-ratio-20260810.json：同一 fw700 标题按【源字号档】分缩放——
        卡片标题(源>40) ja/zh-TW 0.833、en/ko 1.0；技能/小节标题(源<=40)全语言 1.0；正文 fw<600
        ja/en/ko 0.8、zh-TW 1.0。zh-CN 返回 null（不动、保 Figma）。en 标题字重压 400 是 font
-       routing 的字体缺口，不在此处处理。不按文案/node 特判。 */
+       routing 的字体缺口，不在此处处理。btn/ 走 heading：清单源字号，只在书面 max 放不下时才收。 */
     const lang = String(language || 'zh-CN');
     if (lang === 'zh-CN') return null;
     const src = Number(sourceFontSize);
@@ -887,9 +913,11 @@
     if (!Number.isFinite(bodyMax) || !Number.isFinite(cardMin)) {
       throw new Error('figma-render: tierRules missing from DESIGN.md YAML');
     }
-    const tier = Number(fontWeight) < bodyMax
-      ? 'body'
-      : (src > cardMin ? 'card-title' : 'heading');
+    const tier = this._isButtonLabelContext({ role, ancestorNames, name })
+      ? 'heading'
+      : (Number(fontWeight) < bodyMax
+        ? 'body'
+        : (src > cardMin ? 'card-title' : 'heading'));
     const SCALE = policy.localeFontScale || {};
     const row = SCALE[tier] || {};
     const ratio = Number.isFinite(row[lang]) ? row[lang] : 1;
@@ -1108,7 +1136,6 @@
   _realignTranslatedClipText(el, box) {
     if (!el || !el.parentElement || typeof getComputedStyle !== 'function') return;
     if (el.getAttribute('data-fit-policy') === 'zh-cn-figma-exact') return;
-    if (!el.getAttribute('data-fit-px')) return;
     const writtenMaxH = Number(el.getAttribute('data-fit-max-height'));
     if (!(writtenMaxH > 0)) return;
     const parent = el.parentElement;
@@ -1134,6 +1161,244 @@
     if (Math.abs(nextTop - sourceTop) < 0.5) return;
     el.style.top = nextTop + 'px';
     el.setAttribute('data-fit-clip-realign', 'source-center');
+  },
+
+  /* cell-split 按该语言自己的句数切。稿上层数更多时，多出来的层是 absent，
+     不是缺译，禁止回退简中。 */
+  _localeSplitAbsent(hit, lang) {
+    if (!hit || !lang || String(lang) === 'zh-CN') return false;
+    const leaf = hit.translations && hit.translations[lang];
+    if (leaf && leaf.absent === true) return true;
+    const lineIndex = hit.cellSplit && Number.isInteger(Number(hit.cellSplit.lineIndex))
+      ? Number(hit.cellSplit.lineIndex) : NaN;
+    const localeCount = leaf && Number.isInteger(Number(leaf.localeLineCount))
+      ? Number(leaf.localeLineCount)
+      : (hit.localeLineCounts && Number.isInteger(Number(hit.localeLineCounts[lang]))
+        ? Number(hit.localeLineCounts[lang]) : NaN);
+    return Number.isInteger(lineIndex) && Number.isInteger(localeCount) && lineIndex >= localeCount;
+  },
+
+  /* 有几句留几个：藏 absent 槽。剩余点仍锚在原稿全部槽位的首尾（含被藏的），
+     中间等比排开，所以 4 句仍落在原来 5 点的视觉跨度里。 */
+  _localeSplitLocalPos(el) {
+    const left = Number.parseFloat(el && el.style && el.style.left);
+    const top = Number.parseFloat(el && el.style && el.style.top);
+    if (Number.isFinite(left) && Number.isFinite(top)) return { left, top };
+    const parseBox = (node) => {
+      const raw = node && node.getAttribute && node.getAttribute('data-node-box');
+      if (!raw) return null;
+      const parts = String(raw).split(',').map((part) => Number.parseFloat(part));
+      if (parts.length < 4 || parts.some((n) => !Number.isFinite(n))) return null;
+      return { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
+    };
+    const box = parseBox(el);
+    const parentBox = parseBox(el && el.parentElement);
+    if (box && parentBox) {
+      return {
+        left: Number.isFinite(left) ? left : (box.x - parentBox.x),
+        top: Number.isFinite(top) ? top : (box.y - parentBox.y),
+      };
+    }
+    return { left, top };
+  },
+  _localeSplitEqualSpan(origin, start, end, index, count) {
+    if (!Number.isFinite(origin) || !Number.isFinite(start) || !Number.isFinite(end)) return origin;
+    if (!(count > 0)) return origin;
+    if (count === 1) return (start + end) / 2;
+    return start + (end - start) * index / Math.max(1, count - 1);
+  },
+  _hideAndRedistributeLocaleSplitTracks(frame, byNode, lang) {
+    if (!frame || typeof frame.querySelectorAll !== 'function' || !byNode) return;
+    if (String(lang || 'zh-CN') === 'zh-CN') return;
+    const splitEls = [];
+    for (const el of Array.from(frame.querySelectorAll('[data-node]') || [])) {
+      const id = el.getAttribute('data-node');
+      const hit = byNode[id];
+      if (!hit || !hit.cellSplit || !Number.isInteger(Number(hit.cellSplit.lineIndex))) continue;
+      const pos = this._localeSplitLocalPos(el);
+      splitEls.push({ el, hit, left: pos.left, top: pos.top });
+      if (!this._localeSplitAbsent(hit, lang)) continue;
+      el.style.display = 'none';
+      el.setAttribute('data-copy-locale-absent', String(lang));
+      el.setAttribute('aria-hidden', 'true');
+    }
+    const owners = new Set(splitEls.map((item) => item.el.parentElement).filter(Boolean));
+    for (const owner of owners) {
+      if (!owner) continue;
+      const childSplits = splitEls.filter((item) => item.el.parentElement === owner);
+      if (!childSplits.length) continue;
+      if (!childSplits.every((item) => this._localeSplitAbsent(item.hit, lang))) continue;
+      if (!owner.getAttribute('data-copy-locale-slot-top')) {
+        owner.setAttribute('data-copy-locale-slot-top', String(this._localeSplitLocalPos(owner).top));
+        owner.setAttribute('data-copy-locale-slot-left', String(this._localeSplitLocalPos(owner).left));
+      }
+      owner.style.display = 'none';
+      owner.setAttribute('data-copy-locale-absent-slot', String(lang));
+      owner.setAttribute('aria-hidden', 'true');
+    }
+    this._hideLocaleSplitTimelineMarks(frame, splitEls, lang);
+    const timelineOwnerOf = (el) => el && el.closest
+      ? (el.closest('[data-node="721:8398"], [data-name="活动流程"], [data-node-name="活动流程"], [data-name="mix/活动流程"], [data-node-name="mix/活动流程"]')
+        || el.parentElement)
+      : null;
+    const byOwner = new Map();
+    for (const item of splitEls) {
+      const owner = timelineOwnerOf(item.el);
+      if (!owner) continue;
+      if (!byOwner.has(owner)) byOwner.set(owner, []);
+      byOwner.get(owner).push(item);
+    }
+    for (const [owner, members] of byOwner) {
+      const lines = new Map();
+      for (const item of members) {
+        const line = Number(item.hit.cellSplit.lineIndex);
+        if (!Number.isInteger(line)) continue;
+        if (!lines.has(line)) {
+          const slot = item.el.parentElement && item.el.parentElement !== owner
+            ? item.el.parentElement
+            : null;
+          const slotPos = slot ? this._localeSplitLocalPos(slot) : { left: item.left, top: item.top };
+          lines.set(line, { items: [], lefts: [], tops: [], slot, slotLeft: slotPos.left, slotTop: slotPos.top });
+        }
+        const rec = lines.get(line);
+        rec.items.push(item);
+        rec.lefts.push(item.left);
+        rec.tops.push(item.top);
+      }
+      const ordered = [...lines.entries()].sort((a, b) => a[0] - b[0]);
+      if (ordered.length < 2) continue;
+      const visible = ordered.filter(([, rec]) => rec.items.some((item) => !this._localeSplitAbsent(item.hit, lang)));
+      if (visible.length === 0 || visible.length === ordered.length) continue;
+      const sourceLefts = ordered.map(([, rec]) => rec.lefts.find((n) => Number.isFinite(n))).filter((n) => Number.isFinite(n));
+      const sourceTops = ordered.map(([, rec]) => {
+        if (Number.isFinite(rec.slotTop)) return rec.slotTop;
+        return rec.tops.find((n) => Number.isFinite(n));
+      }).filter((n) => Number.isFinite(n));
+      const horizontal = sourceLefts.length >= 2 && (Math.max(...sourceLefts) - Math.min(...sourceLefts) > 8);
+      const vertical = sourceTops.length >= 2 && (Math.max(...sourceTops) - Math.min(...sourceTops) > 8);
+      if (horizontal) {
+        const spanStart = Math.min(...sourceLefts);
+        const spanEnd = Math.max(...sourceLefts);
+        visible.forEach(([, rec], index) => {
+          const originLeft = rec.lefts.find((n) => Number.isFinite(n));
+          if (!Number.isFinite(originLeft)) return;
+          const nextLeft = this._localeSplitEqualSpan(originLeft, spanStart, spanEnd, index, visible.length);
+          const dx = nextLeft - originLeft;
+          for (const item of rec.items) {
+            if (this._localeSplitAbsent(item.hit, lang)) continue;
+            if (!Number.isFinite(item.left)) continue;
+            item.el.style.left = (item.left + dx) + 'px';
+            item.el.setAttribute('data-copy-locale-split-track', 'equal-span');
+          }
+        });
+      }
+      if (vertical) {
+        const spanStart = Math.min(...sourceTops);
+        const spanEnd = Math.max(...sourceTops);
+        visible.forEach(([, rec], index) => {
+          const originTop = Number.isFinite(rec.slotTop)
+            ? rec.slotTop
+            : rec.tops.find((n) => Number.isFinite(n));
+          if (!Number.isFinite(originTop)) return;
+          const nextTop = this._localeSplitEqualSpan(originTop, spanStart, spanEnd, index, visible.length);
+          const dy = nextTop - originTop;
+          const slot = rec.slot;
+          if (slot && slot.getAttribute('data-copy-locale-absent-slot') !== String(lang)) {
+            const cs = (typeof getComputedStyle === 'function') ? getComputedStyle(slot) : null;
+            if (cs && cs.position !== 'absolute') {
+              slot.style.position = 'absolute';
+              if (Number.isFinite(rec.slotLeft)) slot.style.left = rec.slotLeft + 'px';
+            }
+            slot.style.top = nextTop + 'px';
+            slot.setAttribute('data-copy-locale-split-track', 'equal-span');
+            return;
+          }
+          for (const item of rec.items) {
+            if (this._localeSplitAbsent(item.hit, lang)) continue;
+            if (!Number.isFinite(item.top)) continue;
+            item.el.style.top = (item.top + dy) + 'px';
+            item.el.setAttribute('data-copy-locale-split-track', 'equal-span');
+          }
+        });
+      }
+    }
+  },
+
+  /* PC 时间轴：文案槽和 img/箭头 是兄弟，不在同一 skipped 框里。
+     第 N 句 absent 时把水平对齐的第 N 支箭头也藏掉，不再留下第 5 个三角。 */
+  _hideLocaleSplitTimelineMarks(frame, splitEls, lang) {
+    if (!frame || typeof frame.querySelectorAll !== 'function') return;
+    const marks = Array.from(frame.querySelectorAll('[data-name="img/箭头"], [data-node-name="img/箭头"]') || []);
+    if (!marks.length) return;
+    const groups = new Map();
+    const timelineOwnerOf = (el) => el && el.closest
+      ? (el.closest('[data-node="721:8398"], [data-name="活动流程"], [data-node-name="活动流程"], [data-name="mix/活动流程"], [data-node-name="mix/活动流程"]')
+        || el.parentElement)
+      : null;
+    for (const item of splitEls) {
+      const owner = timelineOwnerOf(item.el);
+      if (!owner) continue;
+      if (!groups.has(owner)) groups.set(owner, []);
+      groups.get(owner).push(item);
+    }
+    for (const [owner, members] of groups) {
+      const lines = new Map();
+      for (const item of members) {
+        const line = Number(item.hit.cellSplit.lineIndex);
+        if (!Number.isInteger(line)) continue;
+        if (!lines.has(line)) lines.set(line, { items: [], lefts: [], tops: [] });
+        const rec = lines.get(line);
+        rec.items.push(item);
+        rec.lefts.push(Number.parseFloat(item.el.style.left));
+        rec.tops.push(Number.parseFloat(item.el.style.top));
+      }
+      const ordered = [...lines.entries()].sort((a, b) => a[0] - b[0]);
+      const localMarks = marks.filter((el) => owner.contains(el) || timelineOwnerOf(el) === owner);
+      if (!localMarks.length) continue;
+      const markLeft = (el) => this._localeSplitLocalPos(el).left;
+      const sortedMarks = [...localMarks].sort((a, b) => markLeft(a) - markLeft(b) || String(a.getAttribute('data-node') || '').localeCompare(String(b.getAttribute('data-node') || '')));
+      const trackLefts = ordered.flatMap(([, rec]) => rec.lefts).filter((n) => Number.isFinite(n));
+      const markLefts = sortedMarks.map(markLeft).filter((n) => Number.isFinite(n));
+      const horizontal = (trackLefts.length >= 2 && Math.max(...trackLefts) - Math.min(...trackLefts) > 8)
+        || (markLefts.length >= 2 && Math.max(...markLefts) - Math.min(...markLefts) > 8);
+      ordered.forEach(([, rec], index) => {
+        const mark = sortedMarks[index];
+        if (!mark) return;
+        const absent = rec.items.every((item) => this._localeSplitAbsent(item.hit, lang));
+        if (!absent) return;
+        mark.style.display = 'none';
+        mark.setAttribute('data-copy-locale-absent-mark', String(lang));
+        mark.setAttribute('aria-hidden', 'true');
+      });
+      const visibleMarks = sortedMarks.filter((el) => el.getAttribute('data-copy-locale-absent-mark') !== String(lang));
+      if (!visibleMarks.length || visibleMarks.length === sortedMarks.length) continue;
+      if (horizontal) {
+        const sourceLefts = sortedMarks.map(markLeft).filter((n) => Number.isFinite(n));
+        if (sourceLefts.length < 2) continue;
+        const spanStart = Math.min(...sourceLefts);
+        const spanEnd = Math.max(...sourceLefts);
+        visibleMarks.forEach((el, index) => {
+          const origin = markLeft(el);
+          if (!Number.isFinite(origin)) return;
+          const nextLeft = this._localeSplitEqualSpan(origin, spanStart, spanEnd, index, visibleMarks.length);
+          el.style.left = nextLeft + 'px';
+          el.setAttribute('data-copy-locale-split-track', 'equal-span-mark');
+        });
+      } else {
+        const markTop = (el) => this._localeSplitLocalPos(el).top;
+        const sourceTops = sortedMarks.map(markTop).filter((n) => Number.isFinite(n));
+        if (sourceTops.length < 2) continue;
+        const spanStart = Math.min(...sourceTops);
+        const spanEnd = Math.max(...sourceTops);
+        visibleMarks.forEach((el, index) => {
+          const origin = markTop(el);
+          if (!Number.isFinite(origin)) return;
+          const nextTop = this._localeSplitEqualSpan(origin, spanStart, spanEnd, index, visibleMarks.length);
+          el.style.top = nextTop + 'px';
+          el.setAttribute('data-copy-locale-split-track', 'equal-span-mark');
+        });
+      }
+    }
   },
 
   /* DESIGN.md 6.1 C：locale 基准字号上按整数 px 减，直到完整落入已写的
@@ -1179,12 +1444,11 @@
     if (typeof fs !== 'number' || typeof lh !== 'number' || !lh) return;
     const policy = designPolicy();
     const cap = (n) => { const v = Number(n); return Number.isFinite(v) && v > 0 ? v : null; };
-    /* DESIGN.md 6.1 C: widthFit may only tighten a written maxWidth.
-       A parent box width is not a cap. Missing axis is not borrowed. */
+    /* DESIGN.md 6.1 C: width against written maxWidth only.
+       Source glyph width / box.w / sibling source-max are not caps. */
     const writtenW = cap(opts.maxWidth);
     const writtenH = cap(opts.maxHeight);
-    const tightW = cap(opts.widthFit);
-    const maxW = writtenW != null && tightW != null ? Math.min(writtenW, tightW) : writtenW;
+    const maxW = writtenW;
     const maxH = writtenH;
     if (policy.shrinkMode === 'integer-px') {
       if (maxW == null && maxH == null) return;
@@ -1232,8 +1496,17 @@
         if (maxH != null && measuredH() > maxH + 0.5) return false;
         return true;
       };
-      if (fitsCaps()) return;
-      this._applyIntegerPxShrink(el, fs, lh, fitsCaps);
+      if (!fitsCaps()) this._applyIntegerPxShrink(el, fs, lh, fitsCaps);
+      /* Source pageBox.h is the zh-CN lock. Adopted copy may grow up to the
+         written Auto Layout maxHeight; keeping minHeight at the source box
+         clips the last line even after integer-px shrink. */
+      if (maxH != null) {
+        el.style.height = 'auto';
+        el.style.minHeight = '0px';
+        el.style.maxHeight = maxH + 'px';
+        el.style.overflow = 'visible';
+        el.setAttribute('data-fit-visible-max-height', String(maxH));
+      }
       return;
     }
     const bh = box && box.h;
@@ -2039,7 +2312,9 @@
         .sort((a, b) => Number(a.meta.y) - Number(b.meta.y));
       return this._buildHeroScrollSlot({
         viewportHeight: viewportH,
-        scale: pageStageScale,
+        /* Later sections must follow the same cover-crop scale as first-screen
+           kv, or the 100vh window leaves a black gap before sec/2. */
+        scale: Number(heroVisualScale) > 0 ? Number(heroVisualScale) : pageStageScale,
         pageOriginY,
         firstSection: { id: sectionId, y: first.y, height: first.height },
         followingSections: following.map((entry) => ({ id: entry.id, y: entry.meta.y })),
@@ -2199,9 +2474,11 @@
       const heroUiHeight = isHeroStage && heroSlot && Number(heroSlot.designHeight) > 0
         ? Number(heroSlot.designHeight)
         : _snapH;
-      const heroClipHeight = isHeroStage && heroCropWindowDesign > 0
-        ? heroCropWindowDesign
-        : heroUiHeight;
+      /* Section stage keeps Figma pageBox.h so sec/2 still abuts. Cover-crop
+         lives on the unnamed kv node, not by stretching this frame. */
+      const heroClipHeight = isHeroStage && heroLayoutOffsetDesign > 0
+        ? (_snapH + heroLayoutOffsetDesign)
+        : (isHeroStage && heroCropWindowDesign > 0 ? Math.max(_snapH, heroCropWindowDesign) : heroUiHeight);
       stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : heroClipHeight) + 'px';
       if (isHeroStage) {
         stage.style.overflow = 'hidden';
@@ -2947,21 +3224,28 @@
              rail; chrome syncHeroEntryNavigation would rewrite those tops. */
           const navRailOwner = fixedOwner && (fixedById.get(String(fixedOwner)) || byId.get(String(fixedOwner)));
           const navRailBox = navRailOwner && (navRailOwner.pageBox || navRailOwner.box);
-          const isTopBarChrome = !!(navRailBox && Number(navRailBox.w) > Number(navRailBox.h) * 2);
+          const isTopBarChrome = !!(navRailBox && Number(navRailBox.w) > Number(navRailBox.h));
           if (fixedOwner && !isTopBarChrome) {
             attrs['data-nav-item'] = 'true';
             attrs['data-nav-owner'] = fixedOwner;
             const variant = indicatorVariant(n);
             if (variant) attrs['data-nav-variant'] = variant;
           } else if (p.role === 'fix') {
-            /* The sticky rail must stay visually above content, but its empty
-               box must not swallow sibling switch arrows. Only explicit nav
-               items re-enable pointer targeting. @from=N is scroll-gated pin,
-               not a stretch rule. */
-            attrs['data-nav-shell'] = 'true';
+            const fixBox = n.pageBox || n.box;
+            const landscapeFix = !!(fixBox && Number(fixBox.w) > Number(fixBox.h));
             attrs['data-fix-pin'] = 'viewport';
             const fromRaw = p.params.from;
             if (fromRaw != null && /^[1-9]\d*$/.test(String(fromRaw))) attrs['data-fix-from'] = String(fromRaw);
+            if (landscapeFix) {
+              /* Landscape fix/顶部信息 is viewport chrome, not a left directory. */
+              attrs['data-topbar-chrome'] = 'true';
+            } else {
+              /* The sticky rail must stay visually above content, but its empty
+                 box must not swallow sibling switch arrows. Only explicit nav
+                 items re-enable pointer targeting. @from=N is scroll-gated pin,
+                 not a stretch rule. */
+              attrs['data-nav-shell'] = 'true';
+            }
           }
           if (switchId && p.role === 'swpage') {
             attrs['data-motion-carousel-page'] = 'true';
@@ -3597,9 +3881,17 @@
         })();
         const nodeLangCodes = Array.isArray(n.langs) ? n.langs.map(String) : [];
         if (nodeLangCodes.length && prefLangCode && !nodeLangCodes.includes(prefLangCode)) continue;
-        const box = (n.pageBox && Number.isFinite(Number(n.pageBox.x)) && Number.isFinite(Number(n.pageBox.y)))
+        const pagePaintBox = (n.pageBox && Number.isFinite(Number(n.pageBox.x)) && Number.isFinite(Number(n.pageBox.y)))
           ? n.pageBox
-          : (n.box || {});
+          : null;
+        const renderPaintBox = n.renderBox && Number.isFinite(Number(n.renderBox.x)) && Number.isFinite(Number(n.renderBox.y))
+          ? n.renderBox
+          : null;
+        const hairlinePage = !!(pagePaintBox && (Number(pagePaintBox.h) < 1 || Number(pagePaintBox.w) < 1)
+          && renderPaintBox
+          && (Number(renderPaintBox.h) > Number(pagePaintBox.h) + 0.5
+            || Number(renderPaintBox.w) > Number(pagePaintBox.w) + 0.5));
+        const box = hairlinePage ? renderPaintBox : (pagePaintBox || n.box || {});
         const st = n.style || {};
          const seq = seqOf(ni);
          while (stack.length && !isPrefix(stack[stack.length - 1].seq, seq)) stack.pop();
@@ -4225,6 +4517,11 @@
               area: Math.max(1, (box.w ?? 0) * sourceH),
             });
           }
+          const afterHeroShift = afterHeroBackgroundShift(n);
+          if (afterHeroShift > 0 && (pfx === 'bg' || /^bg(?:\/|$)/i.test(String(n.name || '')))) {
+            heroUiTop += afterHeroShift;
+            el.setAttribute('data-hero-bg-follow-y', String(afterHeroShift));
+          }
           el.style.top = heroUiTop + 'px';
           if (heroUiTop !== sourceTop) {
             el.setAttribute('data-hero-ui-y', String(heroUiYRatio));
@@ -4242,17 +4539,29 @@
         const isKv = /^kv(?:\/|$)/i.test(layerName);
         const firstScreenKvInSection = isHeroStage && isKv
           && (!parent || String(__u(parent && parent.nid)) === String(__u(sid)));
-        if ((heroVisualPlane || firstScreenKvInSection) && heroSlot && heroVisualScale > 0 && pageStageScale > 0
+        /* Product 100vh cover-crop still applies when inventory-static-gate=1
+           nulls heroSlot (design-viewport coords). Unnamed `kv` under sec/1
+           is first-screen art either way; later bg/* stays on width-k. */
+        const coverHeroSlot = heroSlot || (isKv && ids[0] && String(sid) === String(ids[0])
+          ? { sectionId: ids[0] } : null);
+        const coverHeroVisualScale = Number(heroVisualScale) > 0 ? Number(heroVisualScale)
+          : (Number(k) > 0 ? Number(k) : 1);
+        const coverPageStageScale = Number(pageStageScale) > 0 ? Number(pageStageScale) : 1;
+        if ((heroVisualPlane || firstScreenKvInSection || (isKv && coverHeroSlot && String(sid) === String(coverHeroSlot.sectionId)))
+          && coverHeroSlot && coverHeroVisualScale > 0 && coverPageStageScale > 0
           && Number.isFinite(Number(box.h)) && Number(box.h) > 0) {
-          const planeRatio = heroVisualScale / pageStageScale;
           const nodeY = Number(box.y);
+          const firstSectionBottomY = Number(heroSectionBottomY) > 0
+            ? Number(heroSectionBottomY)
+            : (Number(meta && meta.height) || 0);
           const isFirstScreenVisual = firstScreenKvInSection
-            || !Number.isFinite(nodeY) || nodeY <= heroSectionBottomY + 0.5;
+            || !Number.isFinite(nodeY) || nodeY <= firstSectionBottomY + 0.5;
           /* Later-section bg/* (y=2143 / 4286) is not first-screen cover art.
              Cover-cropping it on the page chrome plane paints the wrong sheet
              under sec/2–3. Only the first-screen kv plane may scale. */
           if (isFirstScreenVisual && isKv) {
             const origin = __normalizedPlat === 'mobile' ? 'center 0' : 'center center';
+            const planeRatio = coverHeroVisualScale / coverPageStageScale;
             if (planeRatio > 1.001) {
               const planeLeft = Number.parseFloat(el.style.left || '0') || 0;
               el.style.left = (planeLeft + heroVisualCropLeft) + 'px';
@@ -4621,7 +4930,14 @@
               ? Number(tx.fontSize) * Number(tx.lineHeightPercent) / 100
               : null);
           if (typeof lineHeightPx === 'number') el.style.lineHeight = lineHeightPx + 'px';
-          if (tx.letterSpacing) el.style.letterSpacing = tx.letterSpacing + 'px';
+          if (tx.letterSpacing != null && Number.isFinite(Number(tx.letterSpacing))) {
+            const spacing = this._letterSpacingPx(tx.letterSpacing, ctx.prefs && ctx.prefs.lang);
+            if (spacing != null) {
+              el.style.letterSpacing = spacing + 'px';
+              el.setAttribute('data-letter-spacing-policy', String(ctx.prefs && ctx.prefs.lang || 'zh-CN'));
+              el.setAttribute('data-letter-spacing-px', String(spacing));
+            }
+          }
           if (tx.align) el.style.textAlign = String(tx.align).toLowerCase();
           if (tx.textCase === 'UPPER') el.style.textTransform = 'uppercase';
           /* 字体按【语言 + 语义角色】路由到 Figma 真源字体（见 _routeFontFamily），
@@ -4977,11 +5293,16 @@
           }
 
           /* 文案三级兜底，每级都留痕，不许静默变空白：
-             ① 表里查到该语言 → 用它
-             ② 查不到但稿里有原文 → 用原文 + data-copy-missing（门 C 抓）
-             ③ 连原文都没有 → data-text-empty（说明 truth 缺 characters 叶子） */
+             ① zh-CN 锁稿：静态对账听 inventory TEXT.characters，飞书简中空格/换行不得盖原文
+             ② 其它语言：表里查到该语言 → 用它
+             ③ 查不到但稿里有原文 → 用原文 + data-copy-missing（门 C 抓）
+             ④ 连原文都没有 → data-text-empty（说明 truth 缺 characters 叶子） */
           const hit = t.copy && t.copy.byNode ? t.copy.byNode[nid] : null;
-          const val = hit ? normalizeFigmaLineBreaks(hit[ctx.prefs.lang]) : null;
+          const lang = String(ctx.prefs && ctx.prefs.lang || 'zh-CN');
+          const val = lang === 'zh-CN'
+            ? null
+            : (hit ? normalizeFigmaLineBreaks(hit[lang]) : null);
+          const localeAbsent = this._localeSplitAbsent(hit, lang);
           const semanticLayout = t.copy && t.copy.semanticLayout && t.copy.semanticLayout.byNode
             ? t.copy.semanticLayout.byNode[nid] : null;
           const semanticBreak = semanticLayout && semanticLayout[ctx.prefs.lang]
@@ -5006,14 +5327,27 @@
           const _richTable = tx.styleOverrideTable;
           const _hasRich = Array.isArray(_richOverrides) && _richOverrides.some((v) => Number(v) !== 0)
             && _richTable && typeof _richTable === 'object';
-          if (val != null && val !== '') {
+          if (localeAbsent) {
+            el.textContent = '';
+            el.setAttribute('data-copy-locale-absent', lang);
+            el.style.display = 'none';
+            el.setAttribute('aria-hidden', 'true');
+          } else if (val != null && val !== '') {
             /* 双真源（用户 2026-08-10 最终决策）：zh-CN 严守 Figma 静态字号；非 zh-CN
                且有真实译文时，按官网实测的 locale+角色目标等级重设设计坐标字号/行高
                （officialTargetDesignSize = Figma zh-CN 源 × 语言比），再交给后续组级
                统一与容器自然增长。缺译（走 fallback 原文）不进此分支，保持 Figma 字号
                并已有 data-copy-missing 标记。不改简中、不按文案/node 特判。 */
             if (String(ctx.prefs.lang || '') !== 'zh-CN' && typeof this._officialTargetDesignSize === 'function') {
-              const _ot = this._officialTargetDesignSize({ sourceFontSize: tx.fontSize, sourceLineHeight: this._resolvedLineHeight(tx, tx.fontSize), role: semantic.role, language: ctx.prefs.lang, fontWeight: tx.fontWeight });
+              const _ot = this._officialTargetDesignSize({
+                sourceFontSize: tx.fontSize,
+                sourceLineHeight: this._resolvedLineHeight(tx, tx.fontSize),
+                role: semantic.role,
+                language: ctx.prefs.lang,
+                fontWeight: tx.fontWeight,
+                ancestorNames: Array.isArray(n.ancestorNames) ? n.ancestorNames : [],
+                name: n.name,
+              });
               if (_ot && Number.isFinite(_ot.fontSize) && _ot.ratio !== 1) {
                 el.style.fontSize = _ot.fontSize + 'px';
                 if (Number.isFinite(_ot.lineHeight)) el.style.lineHeight = _ot.lineHeight + 'px';
@@ -5057,7 +5391,7 @@
                  为了救 1 条丢换行的，把另外 N 条本来对的折乱了。 */
               if (!inlineHugs) el.style.textWrap = 'balance';
             }
-          } else if (fallback != null && fallback !== '') {
+          } else if (!localeAbsent && fallback != null && fallback !== '') {
             if (_hasRich) this._renderRichText(el, String(fallback), _richOverrides, _richTable, tx);
             else el.textContent = fallback;
             el.setAttribute('data-copy-missing', ctx.prefs.lang);
@@ -5762,8 +6096,21 @@
         const imgLangFollow = imgLang.status === 'matched';
         const langShellFollow = langShell.status === 'matched';
         const alreadyPainted = !!(owner.el && (owner.el.querySelector('[data-node]') || owner.el.querySelector('img.fx-img')));
+        const currentLangSlice = alreadyPainted
+          ? (owner.el.querySelector('img.fx-img')?.getAttribute('data-asset-src')
+            || owner.el.getAttribute('data-asset-src')
+            || '')
+          : '';
+        const wantedLangAsset = imgLangFollow ? this._assetRec(imgLang.componentId, __base) : null;
+        const wantedLangFile = wantedLangAsset && wantedLangAsset.file ? String(wantedLangAsset.file) : '';
+        const showingWantedLangSlice = !!(wantedLangFile && currentLangSlice && (
+          currentLangSlice === wantedLangFile
+          || currentLangSlice.endsWith('/' + wantedLangFile)
+          || currentLangSlice.endsWith(wantedLangFile)
+        ));
         const sameSelectedSlice = imgLangFollow
-          && String(owner.selectedComponentId || '') === String(imgLang.componentId || '');
+          && String(owner.selectedComponentId || '') === String(imgLang.componentId || '')
+          && showingWantedLangSlice;
         const sameSelectedShell = langShellFollow
           && String(owner.selectedComponentId || '') === String(langShell.componentId || '');
         const stripOwnerPixels = () => {
@@ -6291,11 +6638,13 @@
                full-page layer from y=0. Keep top at 0: children already use
                page coordinates, and the section stage itself is placed at sec.y.
                A y=0 full-page layer lets first-screen KV show through a
-               transparent bg PNG. */
+               transparent bg PNG. After-hero stages are shifted by
+               layoutOffsetDesign; the paint-root clip must cover that shift. */
+            const laterShift = heroLayoutOffsetDesign > 0 ? heroLayoutOffsetDesign : 0;
             layer.style.left = '0';
             layer.style.top = '0';
             layer.style.width = designWidth + 'px';
-            layer.style.height = (sectionY - pageY + sectionH) + 'px';
+            layer.style.height = (sectionY - pageY + sectionH + laterShift) + 'px';
             layer.style.overflow = 'hidden';
             layer.setAttribute('data-section-layer-box', 'pageBox-clip');
           } else if (heroSlot && Number(heroSlot.designHeight) > 0 && /^kv(?:\/|$)/i.test(layerName)) {
@@ -7855,6 +8204,7 @@
       this._installHeroScrollSlot(frame, heroSlot);
       this._installMotionAdapter(frame, motionAdapter);
       this._installAssetScheduler(frame);
+      this._hideAndRedistributeLocaleSplitTracks(frame, t.copy && t.copy.byNode, ctx.prefs && ctx.prefs.lang);
 
       /* 超框缩字号放在 stage 挂载之后：scrollHeight 要元素进了文档才量得到，
          在 paint 里（元素还 detached）量永远是 0，会假装"没超框"。
@@ -7902,6 +8252,10 @@
           const safeWidth = Math.min(slotLimit, sourceMax);
           if (!Number.isFinite(safeWidth) || safeWidth <= 0) continue;
           for (const c of members) {
+            const written = Number(c.maxWidth);
+            /* Written Auto Layout maxWidth is the cap. Do not shrink a label
+               that already fits 392px down to the zh-CN glyph run (~96px). */
+            if (Number.isFinite(written) && written > 0) continue;
             c.widthFit = safeWidth;
             c.el.setAttribute('data-fit-inline-safe-width', String(safeWidth));
             c.el.setAttribute('data-fit-inline-source-max', String(sourceMax));

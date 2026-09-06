@@ -523,6 +523,37 @@ test('whole-frame box export requests use_absolute_bounds=true', () => {
   assert.deepEqual(timeBg?.exportBox, { x: 10, y: 20, w: 200, h: 300 });
 });
 
+test('hairline img/ with LAYER_BLUR exports same-space renderBox, not 0-height pageBox', () => {
+  const picks = pickSliceNodes({
+    schema: 'yise-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    platforms: {
+      pc: {
+        sections: {
+          'sec:3': {
+            nodes: [{
+              id: '721:8399',
+              type: 'GROUP',
+              name: 'img/线条',
+              status: 'determined',
+              role: 'img',
+              pageBox: { x: 908, y: 5450, w: 2022, h: 0.00017676885181572288 },
+              box: { x: 908, y: 5450, w: 2022, h: 0.00017676885181572288 },
+              renderBox: { x: 908, y: 5447, w: 2022, h: 6 },
+              sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '721-8399.png', box: { x: 908, y: 5450, w: 2022, h: 0.00017676885181572288 } },
+              style: { fills: [], descendantEffects: [{ effectType: 'LAYER_BLUR' }] },
+            }],
+          },
+        },
+      },
+    },
+  });
+  assert.equal(picks[0]?.nodeId, '721:8399');
+  assert.equal(picks[0].exportBounds, 'render');
+  assert.deepEqual(picks[0].exportBox, { x: 908, y: 5447, w: 2022, h: 6 });
+  assert.notEqual(picks[0].exportBox.h, 643);
+});
+
 test('full asset rebuild drops leftover IMAGE grandchildren from a previous manifest', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
   assert.match(src, /previous && onlySet\.size \? \{ \.\.\.previousAssets \} : \{\}/);

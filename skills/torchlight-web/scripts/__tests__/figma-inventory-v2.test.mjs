@@ -638,6 +638,45 @@ test("restoreOwnerComposites lifts skipped gradient onto the determined btn owne
   assert.equal(restored.find((node) => node.id === "btn-copy-text").status, "determined");
 });
 
+test("restoreOwnerComposites relinks skipped Auto Layout max onto live TEXT parentId", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "clip",
+      type: "FRAME",
+      name: "正文",
+      status: "unknown",
+      clipsContent: true,
+      pageBox: { x: 0, y: 0, w: 1954, h: 263 },
+    },
+    {
+      id: "wrap",
+      type: "FRAME",
+      name: "Frame 1312316812",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "clip",
+      layout: { layoutMode: "HORIZONTAL", maxWidth: 1954, maxHeight: 250 },
+      pageBox: { x: 0, y: 40, w: 1954, h: 144 },
+    },
+    {
+      id: "copy",
+      type: "TEXT",
+      name: "嘉年华正文",
+      status: "determined",
+      role: "copy",
+      parentId: "wrap",
+      pageBox: { x: 0, y: 40, w: 1954, h: 144 },
+      text: { characters: "正文", fontSize: 32, letterSpacing: 0 },
+    },
+  ]);
+  assert.equal(restored.some((node) => node.id === "wrap"), false);
+  const copy = restored.find((node) => node.id === "copy");
+  assert.equal(copy.parentId, "clip");
+  assert.equal(copy.layout.maxWidth, 1954);
+  assert.equal(copy.layout.maxHeight, 250);
+  assert.equal(copy.fitOwnerFromSkipped.sourceId, "wrap");
+});
+
 test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as paintAsFragment", () => {
   const restored = restoreOwnerComposites([
     {

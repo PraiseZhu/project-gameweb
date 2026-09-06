@@ -31,6 +31,7 @@ export const REGISTERED_KEYS = Object.freeze([
   'modalViewportFill',
   'modalScrimOpacity',
   'modalLockPageScroll',
+  'letterSpacingPolicy',
 ]);
 
 const OPTIONAL_KEYS = Object.freeze([
@@ -38,6 +39,7 @@ const OPTIONAL_KEYS = Object.freeze([
   'modalViewportFill',
   'modalScrimOpacity',
   'modalLockPageScroll',
+  'letterSpacingPolicy',
 ]);
 const REQUIRED_KEYS = Object.freeze(REGISTERED_KEYS.filter((key) => !OPTIONAL_KEYS.includes(key)));
 
@@ -304,7 +306,33 @@ export function parseDesignPolicyMarkdown(markdown, { path = 'DESIGN.md' } = {})
     openFlowNoShrink: assertBool('openFlowNoShrink', doc.openFlowNoShrink),
     shrinkMode,
     ...assertOptionalModalPolicy(doc),
+    ...assertOptionalLetterSpacingPolicy(doc),
   });
+}
+
+function assertOptionalLetterSpacingPolicy(doc) {
+  if (!hasOwn(doc, 'letterSpacingPolicy')) return {};
+  const value = doc.letterSpacingPolicy;
+  if (!isPlainObject(value)) fail('letterSpacingPolicy must be a mapping');
+  const extra = Object.keys(value).filter((key) => !['keepSourceLangs', 'zeroLangs'].includes(key));
+  if (extra.length) fail(`letterSpacingPolicy has unregistered keys: ${extra.join(', ')}`);
+  const langs = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko'];
+  const keep = value.keepSourceLangs;
+  const zero = value.zeroLangs;
+  if (!Array.isArray(keep) || !keep.length) fail('letterSpacingPolicy.keepSourceLangs must be a non-empty list');
+  if (!Array.isArray(zero) || !zero.length) fail('letterSpacingPolicy.zeroLangs must be a non-empty list');
+  const seen = new Set();
+  for (const lang of [...keep, ...zero]) {
+    if (typeof lang !== 'string' || !langs.includes(lang)) fail(`letterSpacingPolicy unknown lang: ${lang}`);
+    if (seen.has(lang)) fail(`letterSpacingPolicy lang listed twice: ${lang}`);
+    seen.add(lang);
+  }
+  return {
+    letterSpacingPolicy: Object.freeze({
+      keepSourceLangs: Object.freeze([...keep]),
+      zeroLangs: Object.freeze([...zero]),
+    }),
+  };
 }
 
 function assertOptionalModalPolicy(doc) {

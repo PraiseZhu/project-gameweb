@@ -102,6 +102,7 @@ test('sc-static-copy-figma: zh-CN keeps Figma metrics; official wrap is later Tr
   });
   assert.notEqual(ko.output.wrap.mode, 'figma-exact');
   assert.match(renderSrc, /zh-cn-figma-exact/);
+  assert.match(renderSrc, /lang === 'zh-CN'\s*\n\s*\? null/);
   assert.match(staticDoc, /zh-CN copy/);
   assert.match(staticDoc, /language-generic official-site evidence/);
 });

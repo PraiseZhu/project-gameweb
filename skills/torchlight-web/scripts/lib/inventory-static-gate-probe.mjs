@@ -315,7 +315,7 @@ async function measureDemo({ demoDir, handoffDir, platform, lang, viewportKind =
         const nodeId = el.getAttribute('data-node-id') || '';
         if (nodeId === 'page-scope' || nodeId === 'page-fixed-overlays') return false;
         if (el.classList.contains('fx-stage') && String(el.getAttribute('data-node-id') || '').startsWith('section-') === false) return false;
-        return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) !== 0 && r.width > 0 && r.height > 0;
+        return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) !== 0 && r.width > 0 && r.height >= 1;
       };
       const overlayOwnerOf = (el) => el?.closest?.('[data-fix-pin="viewport"]') || null;
       const inSectionOf = (el) => {
@@ -686,6 +686,30 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       minLum: Math.min(...rows.map((row) => row.lum)),
       maxLum: Math.max(...rows.map((row) => row.lum)),
     };
+    const laterBgFile = laterBg[0] ? assetFile(demoDir, laterBg[0]) : (laterPaint ? assetFile(demoDir, laterPaint) : null);
+    if (laterBgFile) {
+      const laterPng = PNG.sync.read(readFileSync(laterBgFile));
+      const ax = Math.max(0, Math.min(laterPng.width - 1, Math.round((x / Math.max(1, png.width)) * laterPng.width)));
+      const assetRows = [];
+      for (let dy = -6; dy <= 6; dy += 2) {
+        const ay = Math.max(0, Math.min(laterPng.height - 1, Math.max(0, dy)));
+        const ai = (laterPng.width * ay + ax) * 4;
+        const rgba = [laterPng.data[ai], laterPng.data[ai + 1], laterPng.data[ai + 2], laterPng.data[ai + 3]];
+        const lum = 0.2126 * rgba[0] + 0.7152 * rgba[1] + 0.0722 * rgba[2];
+        assetRows.push({ y: ay, dy, rgba, lum });
+      }
+      const assetMean = [0, 0, 0];
+      for (const row of assetRows) {
+        assetMean[0] += row.rgba[0];
+        assetMean[1] += row.rgba[1];
+        assetMean[2] += row.rgba[2];
+      }
+      assetMean[0] /= assetRows.length;
+      assetMean[1] /= assetRows.length;
+      assetMean[2] /= assetRows.length;
+      seamPixels.assetMean = assetMean;
+      seamPixels.assetRows = assetRows;
+    }
   }
   let firstScreenFloor = null;
   if (measured?.firstScreenFloorSample && Number.isFinite(Number(measured.firstScreenFloorSample.y))) {

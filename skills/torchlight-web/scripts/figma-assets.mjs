@@ -358,10 +358,13 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       /* Same-space ink larger than the owner (play 188 vs 124). A shorter
          visible renderBox (time-bg 167 vs 260) or a huge LAYER_BLUR inkBox
          is not play-button spill — those stay on pageBox. */
+      const hairlineOwner = Number(pageOrBox?.h) < 1 || Number(pageOrBox?.w) < 1;
       const softSpill = (hasSoftSpillEffect || isBakedImageOwner)
         && sameSpaceInk
-        && Number(rb.w) > Number(pageOrBox.w) + 0.5
-        && Number(rb.h) > Number(pageOrBox.h) + 0.5;
+        && (
+          (Number(rb.w) > Number(pageOrBox.w) + 0.5 && Number(rb.h) > Number(pageOrBox.h) + 0.5)
+          || (hairlineOwner && (Number(rb.w) > Number(pageOrBox.w) + 0.5 || Number(rb.h) > Number(pageOrBox.h) + 0.5))
+        );
       const pageBoxExport = wholeFrameSlice && !softSpill;
       const listedBounds = pageBoxExport ? 'box' : n.sliceExport?.bounds;
       const exportBounds = listedBounds
@@ -371,7 +374,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const exportBox = pageBoxExport
         ? pageAlignedExportBox(n, { exportBounds, renderBox: rb })
         : (exportBounds === 'render'
-          ? roundBox(n.inkBox || rb)
+          ? roundBox((hairlineOwner && rb) || n.inkBox || rb)
           : roundBox(clippedVisible ? rb : b));
       const outW = Math.round((exportBox?.w ?? w) || 0);
       const outH = Math.round((exportBox?.h ?? h) || 0);

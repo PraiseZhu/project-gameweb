@@ -117,6 +117,56 @@ test('section and page meta draw from pageBox, never canvas box', () => {
   assert.notEqual(section.meta.x, SECTION_CANVAS.x);
 });
 
+test('skipped Auto Layout max is locked onto live TEXT so fit can find the owner', () => {
+  const inv = fixture();
+  inv.nodes.push(
+    {
+      id: 'clip',
+      scope: 'page',
+      type: 'FRAME',
+      name: '正文',
+      parentId: '100:2',
+      ancestorIds: [PAGE_ID, '100:2'],
+      status: 'unknown',
+      clipsContent: true,
+      pageBox: { x: 942, y: 3534, w: 1954, h: 263 },
+    },
+    {
+      id: 'wrap',
+      scope: 'page',
+      type: 'FRAME',
+      name: 'Frame 1312316812',
+      parentId: 'clip',
+      ancestorIds: [PAGE_ID, '100:2', 'clip'],
+      status: 'skipped',
+      why: 'art-fragment',
+      layout: { layoutMode: 'HORIZONTAL', maxWidth: 1954, maxHeight: 250 },
+      pageBox: { x: 942, y: 3594, w: 1954, h: 144 },
+    },
+    {
+      id: 'body-copy',
+      scope: 'page',
+      type: 'TEXT',
+      name: '嘉年华正文',
+      parentId: 'wrap',
+      ancestorIds: [PAGE_ID, '100:2', 'clip', 'wrap'],
+      status: 'determined',
+      role: 'copy',
+      pageBox: { x: 942, y: 3594, w: 1954, h: 144 },
+      text: { characters: '正文', fontFamily: 'Source Han Sans', fontWeight: 600, fontSize: 32, letterSpacing: 0 },
+    },
+  );
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  const copy = truth.sections['100:2'].nodes.find((node) => node.id === 'body-copy');
+  assert.ok(copy);
+  assert.equal(copy.parentId, 'clip');
+  assert.equal(copy.layout.maxWidth, 1954);
+  assert.equal(copy.layout.maxHeight, 250);
+  assert.equal(copy.fitOwnerFromSkipped.sourceId, 'wrap');
+  assert.equal(truth.sections['100:2'].nodes.some((node) => node.id === 'wrap'), false);
+});
+
 test('live nodes keep inventory pageBox/parentBox/text/sliceExport/constraints', () => {
   const inv = fixture();
   const truth = platformTruthFromInventory(inv);

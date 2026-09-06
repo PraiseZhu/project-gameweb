@@ -130,6 +130,8 @@ test('parses torchlight DESIGN.md YAML with composition != qaBuckets', () => {
   assert.equal(policy.modalViewportFill, 'cover');
   assert.equal(policy.modalScrimOpacity, 0.8);
   assert.equal(policy.modalLockPageScroll, true);
+  assert.deepEqual([...policy.letterSpacingPolicy.keepSourceLangs], ['zh-CN', 'zh-TW']);
+  assert.deepEqual([...policy.letterSpacingPolicy.zeroLangs], ['en', 'ja', 'ko']);
 });
 
 test('fixture markdown parses the same shape', () => {
@@ -156,6 +158,7 @@ test('yise DESIGN.md may omit named-modal YAML', () => {
   assert.equal(policy.modalViewportFill, undefined);
   assert.equal(policy.modalScrimOpacity, undefined);
   assert.equal(policy.modalLockPageScroll, undefined);
+  assert.equal(policy.letterSpacingPolicy, undefined);
 });
 
 test('named-modal YAML keys must be declared together', () => {

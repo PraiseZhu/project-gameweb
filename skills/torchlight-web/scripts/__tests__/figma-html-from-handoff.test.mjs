@@ -29,6 +29,23 @@ function sample(id, extra = {}) {
     parentId: role === 'ind' ? `${id}-switch` : null,
     box: { x: 0, y: index * 40, w: role === 'hot' ? 400 : 80, h: role === 'hot' ? 220 : 32 },
   }));
+  if (extra.copyText) {
+    const sec = nodes.find((node) => node.role === 'sec');
+    nodes.push(stampReadyFields({
+      id: extra.copyId || `${id}-copy`,
+      type: 'TEXT',
+      name: extra.copyText,
+      status: 'determined',
+      role: 'copy',
+      label: extra.copyText,
+      behavior: behaviorOf('copy'),
+      via: 'prefix',
+      parentId: sec ? sec.id : null,
+      ancestorIds: sec ? [sec.id] : [],
+      box: { x: 10, y: 10, w: 120, h: 24 },
+      text: { characters: extra.copyText, fontFamily: 'Noto Sans SC', fontWeight: 400, fontSize: 16 },
+    }));
+  }
   nodes.push({
     id: `${id}-scroll-track`,
     type: 'FRAME',
@@ -67,6 +84,14 @@ function packedReady(dir) {
   });
 }
 
+function seedEmptyCopyTable(demoDir) {
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, langs: ['zh-CN', 'en'], fetchedAt: '2026-09-05T00:00:00Z' },
+    rows: {},
+  }, null, 2));
+}
+
 test('from-handoff still does not write HTML after a ready pack', () => {
   const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-consume-'));
   const pack = packedReady(dir);
@@ -89,6 +114,7 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-build-'));
   const pack = packedReady(dir);
   const demoDir = join(dir, 'demo');
+  seedEmptyCopyTable(demoDir);
   const result = buildHtmlFromHandoff({
     handoffDir: pack.outDir,
     demoDir,
@@ -129,6 +155,7 @@ test('html-from-handoff writes a fresh shell when spec.json exists but index.htm
   const pack = packedReady(dir);
   const demoDir = join(dir, 'demo');
   mkdirSync(demoDir, { recursive: true });
+  seedEmptyCopyTable(demoDir);
   writeFileSync(join(demoDir, 'spec.json'), JSON.stringify({
     meta: { name: 'stale-demo' },
     figma: { fileKey: 'OLD', exportScale: 1 },
@@ -149,10 +176,11 @@ test('html-from-handoff writes a fresh shell when spec.json exists but index.htm
   assert.match(html, /FIGMA_RENDER_BEGIN/);
   const src = readFileSync(new URL('../figma-html-from-handoff.mjs', import.meta.url), 'utf8');
   assert.match(src, /function writeFreshShowcaseIndex/);
-  assert.match(src, /existsSync\(join\(demoDir, 'spec\.json'\)\)/);
+  assert.match(src, /const specPath = join\(demoDir, 'spec\.json'\)/);
+  assert.match(src, /existsSync\(specPath\)/);
   assert.match(src, /writeFreshShowcaseIndex\(demoDir, consume\)/);
   assert.match(src, /runNode\(INIT,/);
-  assert.ok(src.indexOf("existsSync(join(demoDir, 'spec.json'))") < src.indexOf('runNode(INIT,'));
+  assert.ok(src.indexOf("existsSync(specPath)") < src.indexOf('runNode(INIT,'));
 });
 
 test('html-from-handoff inserts a closed design-policy block into a legacy shell', () => {
@@ -160,6 +188,7 @@ test('html-from-handoff inserts a closed design-policy block into a legacy shell
   const pack = packedReady(dir);
   const demoDir = join(dir, 'demo');
   mkdirSync(demoDir, { recursive: true });
+  seedEmptyCopyTable(demoDir);
   writeFileSync(join(demoDir, 'index.html'), `<!doctype html>
 <body>
 <script id="qa-truth" type="application/json">{}</script>
@@ -217,6 +246,7 @@ test('html-from-handoff language matrix follows img/ langs and does not invent j
     pcPath, mobilePath, pcDoc, mobileDoc, kind: 'ready', outDir: join(dir, 'out'),
   });
   const demoDir = join(dir, 'demo');
+  seedEmptyCopyTable(demoDir);
   const result = buildHtmlFromHandoff({
     handoffDir: pack.outDir,
     demoDir,
@@ -238,6 +268,7 @@ test('html-from-handoff writes a pc-only ready pack without claiming mobile', ()
     pcPath, mobilePath: null, pcDoc, mobileDoc: null, kind: 'ready', outDir: join(dir, 'out'),
   });
   const demoDir = join(dir, 'demo');
+  seedEmptyCopyTable(demoDir);
   const result = buildHtmlFromHandoff({
     handoffDir: pack.outDir,
     demoDir,
@@ -290,6 +321,7 @@ test('html-from-handoff fail-closes before HTML when a source font is not in the
   const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-missing-font-'));
   const pack = packedReadyWithFont(dir, 'Missing Face');
   const demoDir = join(dir, 'demo');
+  seedEmptyCopyTable(demoDir);
   const consume = runFromHandoff(pack.outDir);
   assert.equal(consume.ok, false);
   assert.match((consume.problems || []).join('\n'), /Missing Face/);
@@ -308,9 +340,11 @@ test('html-from-handoff fail-closes before HTML when a source font is not in the
 test('skipPreview still runs inventory static gate and never marks skipped-ok', () => {
   const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-static-gate-'));
   const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo');
+  seedEmptyCopyTable(demoDir);
   const result = buildHtmlFromHandoff({
     handoffDir: pack.outDir,
-    demoDir: join(dir, 'demo'),
+    demoDir,
     skipPreview: true,
   });
   assert.equal(result.ok, false);
@@ -329,6 +363,8 @@ test('skipPreview still runs inventory static gate and never marks skipped-ok', 
   assert.match(src, /--reuse-existing/);
   const orch = readFileSync(new URL('../torchlightweb.mjs', import.meta.url), 'utf8');
   assert.match(orch, /--reuse-existing/);
+  assert.match(orch, /demoHasReusablePngs/);
+  assert.match(orch, /A first Main with an empty assets\/ still has to hit Figma/);
   assert.doesNotMatch(src, /\|\| true/);
   assert.doesNotMatch(src, /--skip-preview/);
   assert.doesNotMatch(src, /design-policy-dom-probe/);
@@ -341,9 +377,11 @@ test('skipPreview still runs inventory static gate and never marks skipped-ok', 
 test('preview green + static gate red still blocks product view', () => {
   const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-gate-red-'));
   const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo');
+  seedEmptyCopyTable(demoDir);
   const result = buildHtmlFromHandoff({
     handoffDir: pack.outDir,
-    demoDir: join(dir, 'demo'),
+    demoDir,
     skipPreview: true,
     staticGateProbe: () => ({ nodes: { mismatch: { x: 0, y: 0, w: 1, h: 1 } } }),
   });
@@ -367,12 +405,132 @@ test('official static gate probe is shipped and missing probe/index is fail-clos
   assert.match(probeSrc, /inSection/);
 });
 
+test('html-from-handoff binds lark-copy into truth.copy.byNode and switches langs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-copy-'));
+  const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920, copyId: 'txt-shop', copyText: '官方充值' });
+  const mobileDoc = sample('2:2', { roles: GOLD_MOBILE_PREFIX_CLASSES, pageWidth: 750 });
+  const pcPath = join(dir, 'pc.json');
+  const mobilePath = join(dir, 'mo.json');
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: 'ready', outDir: join(dir, 'out'),
+  });
+  const demoDir = join(dir, 'demo');
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: {
+      langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' },
+      langs: ['zh-CN', 'en', 'zh-TW', 'ko'],
+      fetchedAt: '2026-09-05T00:00:00Z',
+    },
+    rows: {
+      3: { 'zh-CN': '官方充值', en: 'Shop', 'zh-TW': '官方儲值', ko: '충전' },
+    },
+  }, null, 2));
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const truth = JSON.parse(readFileSync(join(demoDir, 'truth.json'), 'utf8'));
+  assert.equal(truth.copy.byNode['txt-shop'].en, 'Shop');
+  assert.equal(truth.copy.byNode['txt-shop']['zh-TW'], '官方儲值');
+  assert.equal(truth.copy.byNode['txt-shop'].ko, '충전');
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  assert.match(html, /Shop/);
+  assert.match(html, /官方儲值/);
+  const src = readFileSync(new URL('../figma-html-from-handoff.mjs', import.meta.url), 'utf8');
+  assert.match(src, /attachHandoffCopy\(demoDir, truth, spec, inventories\)/);
+});
+
+test('html-from-handoff fail-closes when the lark copy table file is missing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-missing-copy-'));
+  const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo');
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.wroteHtml, false);
+  assert.equal(existsSync(join(demoDir, 'index.html')), false);
+  assert.match((result.problems || []).join('\n'), /missing-copy-table/);
+  assert.doesNotMatch((result.problems || []).join('\n'), /no-copy-table/);
+});
+
+test('html-from-handoff skips an empty lark table without failing the page', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-empty-copy-'));
+  const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo');
+  seedEmptyCopyTable(demoDir);
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const truth = JSON.parse(readFileSync(join(demoDir, 'truth.json'), 'utf8'));
+  assert.deepEqual(truth.copy.byNode, {});
+  const problems = (result.problems || []).join('\n');
+  assert.equal(problems.includes('copy-unwired-truth'), false);
+  assert.equal(problems.includes('copy table present but no non-zh-CN leaf'), false);
+});
+
+test('html-from-handoff binds a custom lark snapshotFile name', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-custom-copy-'));
+  const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920, copyId: 'txt-shop', copyText: '官方充值' });
+  const mobileDoc = sample('2:2', { roles: GOLD_MOBILE_PREFIX_CLASSES, pageWidth: 750 });
+  const pcPath = join(dir, 'pc.json');
+  const mobilePath = join(dir, 'mo.json');
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: 'ready', outDir: join(dir, 'out'),
+  });
+  const demoDir = join(dir, 'demo');
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'spec.json'), JSON.stringify({
+    meta: { name: 'custom-copy' },
+    copy: { snapshotFile: 'lark-2026-09.json' },
+    matrix: { langs: ['zh-CN', 'en'] },
+  }, null, 2));
+  writeFileSync(join(demoDir, 'fixtures', 'lark-2026-09.json'), JSON.stringify({
+    _meta: {
+      langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' },
+      langs: ['zh-CN', 'en', 'zh-TW', 'ko'],
+      fetchedAt: '2026-09-05T00:00:00Z',
+    },
+    rows: {
+      3: { 'zh-CN': '官方充值', en: 'Shop', 'zh-TW': '官方儲值', ko: '충전' },
+    },
+  }, null, 2));
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  assert.equal(existsSync(join(demoDir, 'fixtures', 'lark-copy.json')), false);
+  const truth = JSON.parse(readFileSync(join(demoDir, 'truth.json'), 'utf8'));
+  assert.equal(truth.copy.byNode['txt-shop'].en, 'Shop');
+  assert.equal(truth.copy.byNode['txt-shop']['zh-TW'], '官方儲值');
+  const leaf = truth.copy.byNode['txt-shop'].translations.en;
+  assert.equal(leaf.provenance.source, 'fixtures/lark-2026-09.json');
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  assert.match(html, /Shop/);
+});
+
 test('html-from-handoff fails when index.html stays over the HTML volume gate', () => {
   const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-volume-'));
   const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo');
+  seedEmptyCopyTable(demoDir);
   const result = buildHtmlFromHandoff({
     handoffDir: pack.outDir,
-    demoDir: join(dir, 'demo'),
+    demoDir,
     skipPreview: true,
     htmlLimitBytes: 2048,
   });

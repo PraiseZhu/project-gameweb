@@ -75,6 +75,8 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /pfx === 'fix'/);
   assert.match(render, /listedHeroArt/);
   assert.match(render, /firstScreenKvInSection/);
+  assert.match(render, /coverHeroSlot/);
+  assert.match(render, /scale: Number\(heroVisualScale\) > 0 \? Number\(heroVisualScale\) : pageStageScale/);
   assert.match(render, /fullBleedHeroArt/);
   assert.match(render, /fixedHost\.style\.position = 'sticky'/);
   assert.match(render, /fx-fixed-zoom/);

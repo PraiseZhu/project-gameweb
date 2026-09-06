@@ -23,7 +23,9 @@ import { DEFAULT_MAX_HTML_BYTES, QA_TRUTH_RE, externalizeQaTruthIfOverLimit } fr
 import { safeJsonForScript } from './lib/fs-utils.mjs';
 import { workflowDeclaration } from './lib/workflows.mjs';
 import { runInventoryStaticGate } from './lib/inventory-static-gate.mjs';
-import { languageMatrixOptions, pageLangsFromImgLangSets } from './lib/translation/locale-policy.mjs';
+import { languageMatrixOptions, pageLangsFromImgLangSets, hasTranslationTable, isPresentTable } from './lib/translation/locale-policy.mjs';
+import { buildHandoffCopyEnvelope, flattenCopyByNodeForRenderer } from './lib/figma-copy-adapter.mjs';
+import { assessCopyCoverage, collectInventoryTexts } from './lib/figma-copy-coverage.mjs';
 import { parseDesignPolicyFile } from '../../../standards/design-policy/tool/src/parse-design-policy.mjs';
 import { mirrorDesignPolicy } from '../../../standards/design-policy/tool/src/mirror-design-policy.mjs';
 import { implementationSnapshotFromModules } from '../../../standards/design-policy/tool/src/implementation-snapshot.mjs';
@@ -131,10 +133,23 @@ function writeFreshShowcaseIndex(demoDir, consume) {
   writeFileSync(join(demoDir, 'index.html'), shell);
 }
 
-function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_MAX_HTML_BYTES) {
+function copyTablePath(demoDir, spec = {}) {
+  return join(demoDir, 'fixtures', String(spec?.copy?.snapshotFile || spec?.lark?.path || 'lark-copy.json').replace(/^fixtures\//, ''));
+}
+
+function requireCopyTableFile(demoDir, spec = {}) {
+  const larkPath = copyTablePath(demoDir, spec);
+  if (existsSync(larkPath)) return larkPath;
+  throw new Error(`missing-copy-table: ${larkPath} is required; empty byNode is not a language switch`);
+}
+
+function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_MAX_HTML_BYTES, inventories = {}) {
+  const specPath = join(demoDir, 'spec.json');
+  const spec = existsSync(specPath) ? JSON.parse(readFileSync(specPath, 'utf8')) : {};
+  requireCopyTableFile(demoDir, spec);
   const indexPath = join(demoDir, 'index.html');
   if (!existsSync(indexPath)) {
-    if (existsSync(join(demoDir, 'spec.json'))) writeFreshShowcaseIndex(demoDir, consume);
+    if (existsSync(specPath)) writeFreshShowcaseIndex(demoDir, consume);
     else {
       const slug = `handoff-${String(consume.fingerprint || 'pack').replace(/[^a-z0-9-]/gi, '').slice(0, 24).toLowerCase() || 'pack'}`;
       runNode(INIT, ['--dir', demoDir, '--name', slug, '--workflow', 'figma-showcase']);
@@ -143,6 +158,7 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
   if (!existsSync(indexPath)) throw new Error(`init did not write ${indexPath}`);
   embedDesignPolicy(indexPath);
   const truth = readyPlatformTruth({ fingerprint: consume.fingerprint, source: pc.source, pc, mobile });
+  const copyEnv = attachHandoffCopy(demoDir, truth, spec, inventories);
   assertHtmlVolume(demoDir, htmlLimitBytes, embedOrExternalizeTruth(demoDir, truth, htmlLimitBytes));
   patchShowcaseSpec(demoDir, consume, pageLangsFromTruth(pc, mobile));
   patchShowcaseLanguageMatrix(demoDir, pageLangsFromTruth(pc, mobile));
@@ -151,7 +167,62 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
      the demo and fail-closes when a source family is missing — never swap in
      PingFang/YaHei as if the page matched the file. */
   runNode(FONTS, ['--demo', demoDir]);
-  return { indexPath, htmlVolume: assertHtmlVolume(demoDir, htmlLimitBytes) };
+  return { indexPath, htmlVolume: assertHtmlVolume(demoDir, htmlLimitBytes), copy: copyEnv };
+}
+
+function attachHandoffCopy(demoDir, truth, spec, inventories = {}) {
+  const larkPath = requireCopyTableFile(demoDir, spec);
+  const fileSnap = JSON.parse(readFileSync(larkPath, 'utf8'));
+  if (!isPresentTable(fileSnap) && !hasTranslationTable(spec, truth)) {
+    truth.copy = { byNode: {}, unread: [] };
+    return { skipped: true, reason: 'empty-copy-table' };
+  }
+  const copyEnv = buildHandoffCopyEnvelope({
+    demoDir,
+    spec,
+    pcInventory: inventories.pc || null,
+    mobileInventory: inventories.mobile || null,
+  });
+  if (!isPresentTable(copyEnv.larkSnap) && !hasTranslationTable(spec, truth)) {
+    truth.copy = { byNode: {}, unread: [] };
+    return { skipped: true, reason: 'empty-copy-table' };
+  }
+  const flattened = flattenCopyByNodeForRenderer(copyEnv.byNode);
+  truth.copy = {
+    byNode: flattened,
+    unread: copyEnv.unread || [],
+    languages: Object.values(copyEnv.larkSnap?._meta?.langCols || {}).filter((lang) => lang && lang !== 'ja'),
+  };
+  const report = { copy: { ...copyEnv.report, unread: copyEnv.unread || [], languages: truth.copy.languages } };
+  writeFileSync(join(demoDir, 'extract-report.json'), `${JSON.stringify(report, null, 2)}\n`);
+  const sourceTexts = [
+    ...(inventories.pc ? collectInventoryTexts(inventories.pc, { treeKey: 'pc' }) : []),
+    ...(inventories.mobile ? collectInventoryTexts(inventories.mobile, { treeKey: 'mobile' }) : []),
+  ];
+  const coverage = assessCopyCoverage({
+    sourceTexts: copyEnv.sourceTexts?.length ? copyEnv.sourceTexts : sourceTexts,
+    truth,
+    report,
+    larkSnapshot: copyEnv.larkSnap || null,
+  });
+  const hard = (coverage.errors || []).filter((item) => item.kind === 'copy-unwired-truth' || item.kind === 'copy-unwired-report');
+  if (hard.length) {
+    const why = hard.map((item) => `${item.kind}: ${item.why}`).join('; ');
+    throw new Error(`copy-coverage red: ${why}`);
+  }
+  const switched = Object.values(flattened).filter((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    return ['en', 'zh-TW', 'ko', 'ja'].some((lang) => entry[lang] != null && String(entry[lang]) !== '');
+  });
+  if (!switched.length) {
+    throw new Error('copy-coverage red: copy table present but no non-zh-CN leaf bound for language switch');
+  }
+  return {
+    skipped: false,
+    coverage: { ...coverage, ok: hard.length === 0 && switched.length > 0 },
+    bound: Object.keys(flattened).length,
+    switched: switched.length,
+  };
 }
 
 function attachSliceAssets(payload, demoDir, { reuseExisting = false } = {}) {
@@ -291,12 +362,20 @@ export function buildHtmlFromHandoff({
 }) {
   const loaded = consumeReadyPack(handoffDir);
   if (loaded.error) return loaded.error;
-  const { consume, pc, mobile } = loaded;
+  const { consume, pc, mobile, ends } = loaded;
 
   mkdirSync(demoDir, { recursive: true });
+  const inventories = {
+    pc: ends.includes('pc') && existsSync(join(handoffDir, 'inventory-pc.json'))
+      ? JSON.parse(readFileSync(join(handoffDir, 'inventory-pc.json'), 'utf8'))
+      : null,
+    mobile: ends.includes('mobile') && existsSync(join(handoffDir, 'inventory-mobile.json'))
+      ? JSON.parse(readFileSync(join(handoffDir, 'inventory-mobile.json'), 'utf8'))
+      : null,
+  };
   let written;
   try {
-    written = writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes);
+    written = writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes, inventories);
   } catch (err) {
     return failBuild(consume, [err && err.message ? err.message : String(err)], {
       wroteHtml: existsSync(join(demoDir, 'index.html')),

@@ -260,9 +260,21 @@ export function unifyGroupFitScales(members = []) {
 /* 默认基线数据表（来源与适用范围见上;其它产品线可经 localeFontScale({ overrides }) 覆写）。 */
 export const LOCALE_FONT_SCALE = DESIGN_POLICY.localeFontScale;
 
+/* btn/ labels keep inventory fontSize. Official body/card-title ratios came
+   from article titles, not compact button glyphs that already fit maxWidth. */
+export function isButtonLabelContext({ role = 'unknown', ancestorNames = [], name = '' } = {}) {
+  const explicit = String(role || '').trim().toLowerCase();
+  if (explicit === 'button' || explicit === 'btn') return true;
+  const haystack = [name, explicit, ...(Array.isArray(ancestorNames) ? ancestorNames : [])]
+    .filter(Boolean).map(String).join(' ').toLowerCase();
+  return /(?:^|[\s/>])btn\/|btn\/按钮|下载按钮|预约按钮|折扣信息/.test(haystack);
+}
+
 /* 由 Figma 源 fontWeight + 源字号推出官网缩放档（tier）。这是"源字号档"维度的分类器，
-   解决同 fontWeight=700 的标题在官网分属不同缩放档的问题。不按文案/node/section 特判。 */
-export function classifySourceSizeTier({ fontWeight = 400, sourceFontSize = null } = {}) {
+   解决同 fontWeight=700 的标题在官网分属不同缩放档的问题。不按文案/node/section 特判。
+   按钮祖先（btn/）走 heading：清单源字号，只在书面 max 放不下时才收。 */
+export function classifySourceSizeTier({ fontWeight = 400, sourceFontSize = null, role = 'unknown', ancestorNames = [], name = '' } = {}) {
+  if (isButtonLabelContext({ role, ancestorNames, name })) return 'heading';
   if (Number(fontWeight) < TIER_RULES.bodyMaxWeightExclusive) return 'body';
   const src = Number(sourceFontSize);
   /* 卡片标题档：源 > YAML cardTitleMinSourcePxExclusive 的粗体大标题。 */
@@ -299,10 +311,10 @@ export function officialTypeKind({ role = 'unknown', fontWeight = 400 } = {}) {
 
 /* non-zh-CN 翻译语言的官方目标缩放比。zh-CN 恒 1（保 Figma 静态指标）；
    未收录回退 1（不动、不猜）。 */
-export function localeFontScale({ role = 'unknown', language = 'zh-CN', fontWeight = 400, sourceFontSize = null, overrides = null, allowOverrides = false } = {}) {
+export function localeFontScale({ role = 'unknown', language = 'zh-CN', fontWeight = 400, sourceFontSize = null, overrides = null, allowOverrides = false, ancestorNames = [], name = '' } = {}) {
   const lang = normalizeLanguage(language);
   if (lang === 'zh-CN') return 1;
-  const tier = classifySourceSizeTier({ fontWeight, sourceFontSize });
+  const tier = classifySourceSizeTier({ fontWeight, sourceFontSize, role, ancestorNames, name });
   /* Production page-making must not bypass YAML. Tests may pass allowOverrides. */
   if (allowOverrides === true) {
     const custom = overrides?.[tier]?.[lang];
@@ -315,12 +327,12 @@ export function localeFontScale({ role = 'unknown', language = 'zh-CN', fontWeig
 
 /* non-zh-CN 的官方目标设计字号：Figma zh-CN 源字号 × 语言比。行高同比缩放保 leading。
    zh-CN 返回源字号不动。renderer 设定 non-zh-CN 基准字号的唯一入口。 */
-export function officialTargetDesignSize({ sourceFontSize, sourceLineHeight = null, role = 'unknown', language = 'zh-CN', fontWeight = 400 } = {}) {
+export function officialTargetDesignSize({ sourceFontSize, sourceLineHeight = null, role = 'unknown', language = 'zh-CN', fontWeight = 400, ancestorNames = [], name = '' } = {}) {
   const src = Number(sourceFontSize);
   if (!Number.isFinite(src) || src <= 0) return null;
   const lang = normalizeLanguage(language);
-  const tier = classifySourceSizeTier({ fontWeight, sourceFontSize: src });
-  const ratio = localeFontScale({ role, language: lang, fontWeight, sourceFontSize: src });
+  const tier = classifySourceSizeTier({ fontWeight, sourceFontSize: src, role, ancestorNames, name });
+  const ratio = localeFontScale({ role, language: lang, fontWeight, sourceFontSize: src, ancestorNames, name });
   const fontSize = src * ratio;
   /* 行高：默认同比缩放保 leading；但官网对 ja/zh-TW 的卡片标题档把行高收紧到≈字号（1.0×），
      与 zh 的 1.2× 不同。仅 card-title 档 ja/zh-TW 应用收紧，其余按源行高同比。 */
@@ -328,7 +340,7 @@ export function officialTargetDesignSize({ sourceFontSize, sourceLineHeight = nu
   if (tier === 'card-title' && (lang === 'ja' || lang === 'zh-TW')) lineHeight = fontSize;
   return { fontSize, lineHeight, ratio, tier, kind: tier === 'body' ? 'body' : 'title', role, language: lang };
 }
-export function assessLocaleVisualLevel({ role = 'unknown', language = 'zh-CN', fontWeight = 400, sourceFontSize = null, stageZoom = null, visualFontPx = null, tolerance = 1.5, copyStatus = null, fitScale = null } = {}) {
+export function assessLocaleVisualLevel({ role = 'unknown', language = 'zh-CN', fontWeight = 400, sourceFontSize = null, stageZoom = null, visualFontPx = null, tolerance = 1.5, copyStatus = null, fitScale = null, ancestorNames = [], name = '' } = {}) {
   /* 完整可审计诊断：source px → 语言比 → 期望视觉（源×比×stageZoom）→ 实测视觉 → on/off。
      仅诊断，不进 pass/fail gate；未知/缺数据一律 unverified/unmeasured，不假绿。 */
   const lang = normalizeLanguage(language);
@@ -338,7 +350,7 @@ export function assessLocaleVisualLevel({ role = 'unknown', language = 'zh-CN', 
     return { status: 'unverified-no-locale-copy', ok: null, reason: 'no-locale-copy', role, language: lang, fontWeight };
   }
   const kind = officialTypeKind({ role, fontWeight });
-  const ratio = localeFontScale({ role, language: lang, fontWeight, sourceFontSize: sourceFontSize });
+  const ratio = localeFontScale({ role, language: lang, fontWeight, sourceFontSize: sourceFontSize, ancestorNames, name });
   const src = Number(sourceFontSize);
   const zoom = Number(stageZoom);
   if (!Number.isFinite(src) || src <= 0) return { status: 'unverified', reason: 'no-source-font-size', kind, ratio };

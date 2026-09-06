@@ -53,7 +53,14 @@ function isStageFillBand(sample) {
   const ratio = Number.isFinite(reportedRatio) ? reportedRatio : stageRatio;
   const reported = Number(sample?.variance);
   const tight = Number.isFinite(reported) ? reported <= PRODUCT_STAGE_VARIANCE_MAX : variance <= PRODUCT_STAGE_VARIANCE_MAX;
-  return nearStage && tight && ratio >= PRODUCT_STAGE_RATIO_MIN;
+  if (!(nearStage && tight && ratio >= PRODUCT_STAGE_RATIO_MIN)) return false;
+  /* Night-sky later-section plates sit near --stage RGB with low variance.
+     If the seam matches that plate's own top pixels, it is scenic join. */
+  const asset = Array.isArray(sample?.assetMean) ? sample.assetMean : null;
+  if (asset && asset.length >= 3 && channelDistance(mean, asset) <= PRODUCT_SAMPLE_CHANNEL_TOLERANCE) {
+    return false;
+  }
+  return true;
 }
 
 export function hasVisibleImageFill(node) {
@@ -107,6 +114,15 @@ function sectionOriginX(node, byId = null) {
   return 0;
 }
 
+function hairlinePaintBox(node) {
+  const page = geom(node?.pageBox);
+  const render = geom(node?.renderBox);
+  if (!page || !render) return null;
+  if (!(page.w < 1 || page.h < 1)) return null;
+  if (!(render.w > page.w + 0.5 || render.h > page.h + 0.5)) return null;
+  return render;
+}
+
 export function expectedDrawBox(node, byId = null) {
   if (node?.role === 'fix' || node?.pin === 'viewport') {
     const ownerBox = geom(node?.pageBox);
@@ -115,19 +131,20 @@ export function expectedDrawBox(node, byId = null) {
   }
   const page = geom(node?.pageBox);
   if (!page) return null;
+  const paint = hairlinePaintBox(node) || page;
   const owner = findFixOwner(node, byId);
   if (owner) {
     const delta = overlayOffset(node, byId);
     return {
-      x: page.x - delta.x,
-      y: page.y - delta.y,
-      w: page.w,
-      h: page.h,
+      x: paint.x - delta.x,
+      y: paint.y - delta.y,
+      w: paint.w,
+      h: paint.h,
     };
   }
   const originX = sectionOriginX(node, byId);
-  if (originX) return { ...page, x: page.x - originX };
-  return page;
+  if (originX) return { ...paint, x: paint.x - originX };
+  return paint;
 }
 
 function foldBox(box, node, byId) {
@@ -148,6 +165,8 @@ function foldBox(box, node, byId) {
 }
 
 function expectedSliceBox(node, byId, fallback) {
+  const hairline = hairlinePaintBox(node);
+  if (hairline) return foldBox(hairline, node, byId) || fallback || null;
   const paint = geom(sliceExportPaintBox(node));
   if (paint) return foldBox(paint, node, byId) || fallback || null;
   const slice = geom(node?.sliceExport?.box);

@@ -79,6 +79,17 @@ test('expectation is pageBox, never canvas box', () => {
   assert.notEqual(box.x, CANVAS_BOX.x);
 });
 
+test('hairline img/ expects same-space renderBox instead of 0-height pageBox', () => {
+  const box = expectedDrawBox({
+    id: '721:8399',
+    role: 'img',
+    name: 'img/线条',
+    pageBox: { x: 908, y: 5450, w: 2022, h: 0.00017676885181572288 },
+    renderBox: { x: 908, y: 5447, w: 2022, h: 6 },
+  });
+  assert.deepEqual(box, { x: 908, y: 5447, w: 2022, h: 6 });
+});
+
 test('mobile sibling-board sections expect x folded onto the 750-wide page', () => {
   const byId = new Map([
     ['sec-2', { id: 'sec-2', role: 'sec', name: 'sec/2', pageBox: { x: 840, y: 1334, w: 750, h: 1334 } }],
@@ -379,6 +390,34 @@ test('product viewport rejects a gap between sec/1 and sec/2', () => {
   });
   assert.equal(blackSeam.ok, false);
   assert.ok(blackSeam.problems.some((line) => line.includes('section-seam-black')), (blackSeam.problems || []).join('\n'));
+
+  const scenicNightSky = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: {
+        'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'hidden' },
+        'sec-2': { height: 2668, overflow: 'hidden' },
+      },
+      sectionAbut: { gap: 0 },
+      seamPixels: {
+        minLum: 18.87,
+        variance: 1.67,
+        mean: [15.86, 19.29, 29.29],
+        assetMean: [16, 20, 30],
+        rows: [{ lum: 18.87, rgba: [15, 19, 29, 255] }],
+      },
+      slotDesignHeight: 1334,
+      viewport: { w: 390, h: 844 },
+      firstKv: { hostH: 844, imgSrc: 'assets/kv.webp', assetW: 750, assetH: 1334, assetEmpty: false },
+      firstScreenFloor: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+  });
+  assert.equal(scenicNightSky.ok, true, (scenicNightSky.problems || []).join('\n'));
 
   const shortKv = evaluateProductScrollGate({
     inventory,
