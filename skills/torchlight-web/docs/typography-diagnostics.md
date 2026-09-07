@@ -34,12 +34,12 @@ node scripts/lib/figma-typography-browser-check.mjs \
 ## Language + role font routing (source truth)
 
 The renderer no longer keeps the Chinese source family for every language.
-`scripts/lib/translation/font-routing.mjs` maps a normalized language + a
-coarse generic role to the Figma-source family, then preserves the source text
-weight except for Latin display text. Current mapping: zh-CN title/button =
-Alimama ShuHeiTi, zh-CN body = FontquanXinYiGuanHeiTi; en title/button = Bebas
-Neue, en body = Noto Sans; ja all = Noto Sans JP; ko all = Noto Sans KR; zh-TW
-all = Noto Sans HK.
+Family names come from this skill's `DESIGN.md` YAML (`localeFontFamily` /
+`localeInvariantFamilies`). `scripts/lib/translation/font-routing.mjs` reads
+the generated policy snapshot: Torch zh-CN title/button/body =
+FZVariable-YouHeiS WT W H; en = Noto Sans; ja = Noto Sans JP; ko = Noto Sans KR;
+zh-TW = Noto Sans HK. Locale-invariant source families (currently Bebas Neue)
+stay that family in every language. Do not treat English titles as Bebas.
 
 The role comes from the node's own SOURCE font family (a display family means
 title/button, the body family means body), not from a page/node id or selector.

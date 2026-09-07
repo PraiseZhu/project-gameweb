@@ -132,6 +132,9 @@ test('parses torchlight DESIGN.md YAML with composition != qaBuckets', () => {
   assert.equal(policy.modalLockPageScroll, true);
   assert.deepEqual([...policy.letterSpacingPolicy.keepSourceLangs], ['zh-CN', 'zh-TW']);
   assert.deepEqual([...policy.letterSpacingPolicy.zeroLangs], ['en', 'ja', 'ko']);
+  assert.equal(policy.localeFontFamily.en.title, 'Noto Sans');
+  assert.equal(policy.localeFontFamily['zh-CN'].body, 'FZVariable-YouHeiS WT W H');
+  assert.deepEqual([...policy.localeInvariantFamilies], ['Bebas Neue']);
 });
 
 test('fixture markdown parses the same shape', () => {
@@ -159,6 +162,49 @@ test('yise DESIGN.md may omit named-modal YAML', () => {
   assert.equal(policy.modalScrimOpacity, undefined);
   assert.equal(policy.modalLockPageScroll, undefined);
   assert.equal(policy.letterSpacingPolicy, undefined);
+  assert.equal(policy.localeFontFamily, undefined);
+  assert.equal(policy.localeInvariantFamilies, undefined);
+});
+
+test('localeFontFamily extra lang is red', () => {
+  throws(
+    () => parseDesignPolicyMarkdown(yiseYaml(`localeFontFamily:
+  zh-CN:
+    title: A
+    button: A
+    body: A
+  en:
+    title: B
+    button: B
+    body: B
+  ja:
+    title: C
+    button: C
+    body: C
+  ko:
+    title: D
+    button: D
+    body: D
+  zh-TW:
+    title: E
+    button: E
+    body: E
+  fr:
+    title: F
+    button: F
+    body: F
+localeInvariantFamilies:
+  - Bebas Neue
+`)),
+    /unregistered langs: fr/,
+  );
+});
+
+test('localeFontFamily and localeInvariantFamilies must be declared together', () => {
+  throws(
+    () => parseDesignPolicyMarkdown(yiseYaml('localeInvariantFamilies:\n  - Bebas Neue\n')),
+    /must be declared together/,
+  );
 });
 
 test('named-modal YAML keys must be declared together', () => {

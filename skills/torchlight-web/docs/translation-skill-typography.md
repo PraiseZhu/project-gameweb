@@ -91,11 +91,13 @@ gate can assert that no fitted group ends with divergent sibling scales.
 Import `scripts/lib/translation/index.mjs` for the reusable interface:
 
 - `routeFontFamily` / `fontRoleFor` / `FONT_SOURCE_ROUTING` (see
-  `scripts/lib/translation/font-routing.mjs`): resolve the Figma-source font
-  family for a normalized language + a coarse generic role (title / button /
-  body). The role is derived from the node's own SOURCE font family (display
-  family -> title/button, body family -> body), never from a page/node id or
-  selector. A family with no local file is still routed by its truth name; the
+  `scripts/lib/translation/font-routing.mjs`): resolve the font family for a
+  normalized language + a coarse generic role (title / button / body). Family
+  names come from this skill's `DESIGN.md` YAML; the module freezes
+  `DESIGN_POLICY.localeFontFamily`. The role is derived from the node's own
+  SOURCE font family (display family -> title/button, body family -> body),
+  never from a page/node id or selector. Locale-invariant source families stay
+  verbatim. A family with no local file is still routed by its truth name; the
   missing file surfaces separately via `figma-fonts` `missing` and browser
   `font.loaded`/`availableWeights` evidence. Routing and file availability are
   two independent facts and neither may fake the other.
