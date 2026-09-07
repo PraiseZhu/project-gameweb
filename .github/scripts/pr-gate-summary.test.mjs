@@ -16,6 +16,7 @@ const DIE_FAKE_TEST = '夜间健康检查失败 1 项:\n- skills/demo: 进仓必
 const DIE_MISSING_LIST = '夜间健康检查失败 1 项:\n- skills/omit: test-public --list 漏了包内公开测试: test/bad.test.mjs';
 const DIE_NPM_CI = '夜间健康检查失败 1 项:\n- skills/yise-web-ui npm ci: 退出码 1';
 const DIE_TAP = '夜间健康检查失败 1 项:\n- skills/yise-web-ui: TAP 失败 3 / 退出码 1';
+const DIE_TAP_TRUNCATED = '夜间健康检查失败 1 项:\n- skills/torchlight-web: TAP 摘要被截断（已看到 1039 个真实用例，但没有 # tests；退出码 0），不能当作有自测';
 const DIE_UNKNOWN = '夜间健康检查失败 1 项:\n- standards/figma-naming/tool npm run fonts:check: 退出码 1';
 const SECRET_LOG = '夜间健康检查失败 1 项:\n- token=example-secret-value-not-a-key leaked from /Users/someone/secret.env';
 const REAL_HEALTH_LOG = [
@@ -37,6 +38,7 @@ test('health source still contains the mapped die() substrings', () => {
   assert.match(src, /进仓必须有可核验的 npm test/);
   assert.match(src, /漏了包内公开测试/);
   assert.match(src, /npm ci/);
+  assert.match(src, /TAP 摘要被截断/);
 });
 
 test('real health.log progress lines are not treated as failures', () => {
@@ -108,6 +110,15 @@ test('TAP failure maps to bringing red tests onto main', () => {
   const md = renderPrGateSummary({ logText: DIE_TAP, exitCode: 2 });
   assert.match(md, /TAP 失败/);
   assert.match(md, /红测试带上主干/);
+});
+
+test('truncated TAP maps to incomplete self-test, not unknown copy', () => {
+  const md = renderPrGateSummary({ logText: DIE_TAP_TRUNCATED, exitCode: 2 });
+  assert.match(md, /TAP 摘要被截断/);
+  assert.match(md, /不能把它当成已经验过|缺 # tests 仍算截断/);
+  assert.match(md, /夜间同一把尺子还会红/);
+  assert.doesNotMatch(md, /尚未写成固定人话/);
+  assert.doesNotMatch(md, /## PR 审核通过/);
 });
 
 test('unknown failure still has three fields and does not claim pass', () => {
