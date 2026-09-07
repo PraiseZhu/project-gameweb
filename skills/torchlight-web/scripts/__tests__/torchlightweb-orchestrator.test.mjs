@@ -87,6 +87,28 @@ test('torchlightweb refuses showcase / skip-preview / extra flags', () => {
   assert.equal(extra.error, 'unknown-flag:--extra');
 });
 
+test('pixel-gate red main does not present stop 1', async () => {
+  const demo = demoDir();
+  const handoff = join(demo, 'handoff');
+  const result = await runTorchlightweb({
+    command: 'start',
+    demoDir: demo,
+    handoffDir: handoff,
+    now: '2026-09-03T00:00:00.000Z',
+    buildMain: () => ({
+      ok: false,
+      productView: { url: null, command: null, blocked: true },
+      stop1FigmaPixelGate: { ok: false, problems: ['pc 1:1: diffRatio 12.00%'] },
+    }),
+    packDemo: () => { throw new Error('must not pack'); },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'main-static-red');
+  assert.notEqual(result.phase, 'wait-stop-1');
+  assert.match(result.nextHumanStep, /stop1-pixel/);
+  assert.equal(existsSync(join(demo, 'human-review.json')), false);
+});
+
 test('missing ready pack stops and does not invent showcase', async () => {
   const demo = demoDir();
   const result = await runTorchlightweb({

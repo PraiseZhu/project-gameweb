@@ -268,6 +268,48 @@ test('preview green + static gate red still blocks product view', () => {
   assert.match((result.problems || []).join('\n'), /inventory-static-gate red|missing-dom|pageBox-mismatch|probe missing|DOM probe required/);
 });
 
+test('pixelGateProbe over threshold blocks product view', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-pixel-red-'));
+  const pack = packedReady(dir);
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir: join(dir, 'demo'),
+    skipPreview: true,
+    staticGateProbe: () => ({ ok: true, nodes: {} }),
+    pixelGateProbe: () => ({
+      ok: false,
+      skipped: false,
+      problems: ['pc 721:7867: diffRatio 12.00% > 0.50% (artifacts/stop1-pixel/pc.721-7867.diff.png)'],
+    }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.productViewAllowed, false);
+  assert.equal(result.humanStopPreviewAllowed, false);
+  assert.equal(result.productView.command, null);
+  assert.equal(result.stop1FigmaPixelGate?.ok, false);
+  assert.notEqual(result.stop1FigmaPixelGate?.skipped, true);
+  assert.match((result.problems || []).join('\n'), /stop1-figma-pixel-gate red|diffRatio|pixel gate not skipped-ok/);
+  const src = readFileSync(new URL('../figma-html-from-handoff.mjs', import.meta.url), 'utf8');
+  assert.match(src, /attachStop1FigmaPixelGate/);
+  assert.match(src, /pixelGateProbe/);
+  assert.doesNotMatch(src, /pixel-compare\.mjs/);
+});
+
+test('skipPreview never marks the pixel gate skipped-ok', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-pixel-skip-'));
+  const pack = packedReady(dir);
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir: join(dir, 'demo'),
+    skipPreview: true,
+    pixelGateProbe: () => ({ ok: true, skipped: true }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.productViewAllowed, false);
+  assert.equal(result.stop1FigmaPixelGate?.ok, false);
+  assert.notEqual(result.stop1FigmaPixelGate?.skipped, true);
+});
+
 test('official static gate probe is shipped and missing probe/index is fail-closed in source', () => {
   const skillRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
   assert.equal(existsSync(join(skillRoot, 'scripts/lib/inventory-static-gate-probe.mjs')), true);

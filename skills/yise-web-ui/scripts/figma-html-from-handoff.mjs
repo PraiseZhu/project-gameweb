@@ -22,6 +22,7 @@ import { DEFAULT_MAX_HTML_BYTES, QA_TRUTH_RE, externalizeQaTruthIfOverLimit } fr
 import { safeJsonForScript } from './lib/fs-utils.mjs';
 import { workflowDeclaration } from './lib/workflows.mjs';
 import { runInventoryStaticGate } from './lib/inventory-static-gate.mjs';
+import { runStop1FigmaPixelGate } from './lib/stop1-figma-pixel-gate.mjs';
 import { parseDesignPolicyFile } from '../../../standards/design-policy/tool/src/parse-design-policy.mjs';
 import { mirrorDesignPolicy } from '../../../standards/design-policy/tool/src/mirror-design-policy.mjs';
 import { implementationSnapshotFromModules } from '../../../standards/design-policy/tool/src/implementation-snapshot.mjs';
@@ -240,6 +241,7 @@ export function buildHtmlFromHandoff({
   skipPreview = false,
   htmlLimitBytes = DEFAULT_MAX_HTML_BYTES,
   staticGateProbe = null,
+  pixelGateProbe = null,
 }) {
   const loaded = consumeReadyPack(handoffDir);
   if (loaded.error) return loaded.error;
@@ -266,7 +268,7 @@ export function buildHtmlFromHandoff({
     consume,
     htmlVolume,
     note: 'unknown 只画不接线。skipped 不画。preview-first 与清单对账绿之前禁止给人打开产品视图，禁止开 Interaction / Resize。',
-    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → policy mirror must be green → then show ?product=1. Stop at Main static.',
+    completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → policy mirror must be green → product viewport gate must be green (390 / 1440 ?product=1, section abut, no full-bleed child repaint) → pixel gate must be green (per-section screenshot of the existing page vs cropped Figma spec; over-threshold blocks, diffs in artifacts/stop1-pixel/) → then show ?product=1. Stop at Main static.',
   };
 
   if (skipPreview) {
@@ -278,7 +280,8 @@ export function buildHtmlFromHandoff({
     if (payload.ok === true) attachPreviewFirst(payload, demoDir);
   }
   const afterInventory = attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, staticGateProbe });
-  return attachDesignPolicyMirror(afterInventory);
+  const afterPolicy = attachDesignPolicyMirror(afterInventory);
+  return attachStop1FigmaPixelGate(afterPolicy, { handoffDir, demoDir, skipPreview, pixelGateProbe });
 }
 
 const DESIGN_POLICY_RE = /<script id="qa-design-policy" type="application\/json">[\s\S]*?<\/script>/;
@@ -324,6 +327,45 @@ function attachDesignPolicyMirror(payload) {
   }
 }
 
+function attachStop1FigmaPixelGate(payload, { handoffDir, demoDir, skipPreview, pixelGateProbe }) {
+  const gate = runStop1FigmaPixelGate({
+    handoffDir,
+    demoDir,
+    skipPreview,
+    pixelGateProbe,
+  });
+  payload.stop1FigmaPixelGate = gate;
+  if (skipPreview) {
+    payload.stop1FigmaPixelGate = {
+      ...gate,
+      ok: false,
+      skipped: false,
+      problems: [...asArray(gate?.problems), 'preview-first skipped; product view not allowed; pixel gate not skipped-ok'],
+    };
+    return blockProductView(
+      payload,
+      'preview-first skipped; product view not allowed; pixel gate not skipped-ok',
+      asArray(payload.stop1FigmaPixelGate.problems),
+    );
+  }
+  if (!gate || gate.ok !== true) {
+    return blockProductView(
+      payload,
+      'stop1-figma-pixel-gate red; do not open product view, do not start Interaction / Resize; see artifacts/stop1-pixel/',
+      asArray(gate?.problems),
+    );
+  }
+  if (payload.ok !== true) {
+    return blockProductView(
+      payload,
+      payload.productView?.reason || 'preview-first red; do not open product view, do not start Interaction / Resize',
+    );
+  }
+  payload.productViewAllowed = true;
+  payload.humanStopPreviewAllowed = true;
+  return payload;
+}
+
 function blockProductView(payload, reason, extraProblems = []) {
   payload.ok = false;
   payload.productViewAllowed = false;
@@ -363,17 +405,6 @@ function attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, 
       asArray(gate?.problems),
     );
   }
-  if (skipPreview) {
-    return blockProductView(payload, 'preview-first skipped; product view not allowed');
-  }
-  if (payload.ok !== true) {
-    return blockProductView(
-      payload,
-      payload.productView?.reason || 'preview-first red; do not open product view, do not start Interaction / Resize',
-    );
-  }
-  payload.productViewAllowed = true;
-  payload.humanStopPreviewAllowed = true;
   return payload;
 }
 
