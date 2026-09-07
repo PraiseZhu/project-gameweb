@@ -289,7 +289,7 @@ function startMachine({ record, root, handoffDir, now, buildMain }) {
       error: 'main-static-red',
       main,
       productView: main?.productView || { url: null, command: null, blocked: true },
-      nextHumanStep: 'preview:first / 清单对账 / 政策镜像 红了不许给人打开 ?product=1，也不许开 Interaction / Resize。',
+      nextHumanStep: 'preview:first / 清单对账 / 政策镜像 / 像素门 红了不许给人打开 ?product=1，也不许开 Interaction / Resize。差异图在 artifacts/stop1-pixel/。',
     });
   }
 
