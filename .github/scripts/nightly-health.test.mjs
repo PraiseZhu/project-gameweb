@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { packageManagerCommand, normalizePathForComparison, TRUSTED_TAP_MAX_BUFFER } from './nightly-health.mjs';
+import { packageManagerCommand, normalizePathForComparison, TRUSTED_TAP_MAX_BUFFER, parseTap, countRealTapCases, missingTapTestsMessage } from './nightly-health.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./nightly-health.mjs', import.meta.url));
 const WORKFLOW = fileURLToPath(new URL('../workflows/nightly-health.yml', import.meta.url));
@@ -432,6 +432,44 @@ test('trusted TAP spawn uses a 32MB maxBuffer and names ENOBUFS', () => {
   assert.match(src, /result\.error\.code === 'ENOBUFS'/);
   assert.match(src, /TAP 输出超过 \$\{TRUSTED_TAP_MAX_BUFFER\} 字节被截断/);
   assert.match(src, /timeout: 300000,\n    maxBuffer: TRUSTED_TAP_MAX_BUFFER,/);
+  assert.doesNotMatch(src, /--test-force-exit/);
+  assert.match(src, /missingTapTestsMessage/);
+});
+
+test('truncated TAP with real cases stays red and is not called missing tests', () => {
+  const output = [
+    'TAP version 13',
+    '# Subtest: sc-mobile-scale: product view uses real browser size and native mobile tree',
+    'ok 1039 - sc-mobile-scale: product view uses real browser size and native mobile tree',
+    '',
+  ].join('\n');
+  const tap = parseTap(output);
+  const cases = countRealTapCases(output, []);
+  assert.equal(tap.tests, null);
+  assert.equal(cases, 1);
+  const msg = missingTapTestsMessage('skills/torchlight-web', { cases, result: { status: 0, signal: null } });
+  assert.match(msg, /TAP 摘要被截断/);
+  assert.match(msg, /已看到 1 个真实用例/);
+  assert.match(msg, /退出码 0/);
+  assert.doesNotMatch(msg, /看不到 # tests/);
+});
+
+test('empty TAP without cases still says missing # tests', () => {
+  const output = 'TAP version 13\n';
+  const tap = parseTap(output);
+  const cases = countRealTapCases(output, []);
+  assert.equal(tap.tests, null);
+  assert.equal(cases, 0);
+  const msg = missingTapTestsMessage('skills/empty', { cases, result: { status: 0 } });
+  assert.match(msg, /看不到 # tests/);
+  assert.doesNotMatch(msg, /TAP 摘要被截断/);
+});
+
+test('parseTap uses the last # tests line so a mid-stream fake cannot win', () => {
+  const tap = parseTap('# tests 1\nok 1 - a\n# tests 28\n# pass 28\n# fail 0\n');
+  assert.equal(tap.tests, 28);
+  assert.equal(tap.pass, 28);
+  assert.equal(tap.fail, 0);
 });
 
 test('存在失败测试但 npm test 是 fake-runner 必须红', () => {
