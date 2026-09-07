@@ -1,0 +1,16 @@
+{
+  "name": "gameweb-skill-shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Preview, check, and copy shared files between self-contained page-making skills without overwriting diverged copies",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "preview": "node src/sync-shared-files.mjs preview",
+    "check": "node src/sync-shared-files.mjs check",
+    "apply": "node src/sync-shared-files.mjs apply"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
