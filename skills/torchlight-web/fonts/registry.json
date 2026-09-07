@@ -153,5 +153,5 @@
       "bytes": 144636
     }
   },
-  "_languageRouting": "语言+角色字体路由表见 scripts/lib/translation/font-routing.mjs（FONT_SOURCE_ROUTING）。本册只登记字体文件；路由由渲染层按 lang+角色现算。"
+  "_languageRouting": "语言+角色字体家族听本包 DESIGN.md YAML（localeFontFamily / localeInvariantFamilies）。scripts/lib/translation/font-routing.mjs 只读 generated 快照。本册只登记字体文件。"
 }

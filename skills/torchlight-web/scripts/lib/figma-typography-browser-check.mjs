@@ -389,9 +389,9 @@ export async function runTypographyBrowserCheck({ demoDir, langs = DEFAULT_LANGS
           openFlow: (row.container && row.container.mode === 'open-flow'),
         }).authorized;
         row.fitAuthorized = fitAuthorized;
-        /* 路由后请求字重：非 zh-CN display 文本被 font routing 重路由（en 标题 Alimama 700 -> Bebas 400）。
-   把路由后请求字重注入 row.font，让 classifyTypographyRange 据此判 synthetic-weight（400 在 Bebas
-   可用字重里 = requested-weight），源 700 仍保留在 source.style 作对照。zh-CN 不重路由，仍用源字重。 */
+        /* 路由后请求字重：非 zh-CN 文本按 DESIGN.md localeFontFamily 重路由
+           （Torch 优黑标题 -> 目标语言 Noto）。invariant 家族保持源家族/字重 400。
+           把路由后请求字重注入 row.font；源字重仍保留在 source.style 作对照。 */
 const __srcFam = leafValue(source.text && source.text.fontFamily) ?? leafValue(source.fontFamily);
 const __routed = routeFontFamily({ language, role, semanticClass: role, sourceFamily: __srcFam, sourceWeight: leafValue(source.text && source.text.fontWeight) ?? leafValue(source.fontWeight) });
 if (row.font && __routed && Number.isFinite(Number(__routed.weight))) row.font.routedRequestedWeight = Number(__routed.weight);

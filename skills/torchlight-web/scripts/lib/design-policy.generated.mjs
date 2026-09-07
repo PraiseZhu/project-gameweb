@@ -88,5 +88,35 @@ export const DESIGN_POLICY = Object.freeze({
       "ja",
       "ko"
     ]
-  }
+  },
+  "localeFontFamily": {
+    "zh-CN": {
+      "title": "FZVariable-YouHeiS WT W H",
+      "button": "FZVariable-YouHeiS WT W H",
+      "body": "FZVariable-YouHeiS WT W H"
+    },
+    "en": {
+      "title": "Noto Sans",
+      "button": "Noto Sans",
+      "body": "Noto Sans"
+    },
+    "ja": {
+      "title": "Noto Sans JP",
+      "button": "Noto Sans JP",
+      "body": "Noto Sans JP"
+    },
+    "ko": {
+      "title": "Noto Sans KR",
+      "button": "Noto Sans KR",
+      "body": "Noto Sans KR"
+    },
+    "zh-TW": {
+      "title": "Noto Sans HK",
+      "button": "Noto Sans HK",
+      "body": "Noto Sans HK"
+    }
+  },
+  "localeInvariantFamilies": [
+    "Bebas Neue"
+  ]
 });

@@ -13,7 +13,7 @@ Input: Figma text metrics (`fontFamily`, `fontWeight`, `fontSize`, `lineHeight`,
   - `body`: ja/en/ko 0.8, zh-TW 1.0 (e.g. source 30 -> ja 24).
   - `card-title`: ja/zh-TW 0.833, en/ko 1.0; ja/zh-TW also tighten line-height to ~1.0x font-size.
   - `heading` (small/section titles): all locales 1.0 (level).
-  - en titles keep source size but the font router renders them at weight 400 (Bebas Neue has no 700) — a font-file gap recorded as synthetic-weight, not a locale ratio.
+  - en titles keep source size and route to Noto Sans at the source weight. Locale-invariant families listed in DESIGN.md (currently Bebas Neue) stay weight 400 in every language — that is an invariant-family rule, not a locale ratio.
 - Copy sits in the wrapping Auto Layout owner. `maxWidth` is a hard width cap; `maxHeight` is a hard height cap only when the file wrote one. After the locale ratio, overflow shrinks font-size by whole CSS pixels (line-height in proportion) until the translated text fits those written caps in full. No 75% floor. Sibling nodes in a group share the strictest integer size. Explicit Figma clips remain clips. Do not pass with ellipsis or clipping.
 - Missing target copy outputs `unverified-no-locale-copy`: do not invent text, substitute zh-CN as a target result, or mark the record as passing.
 - A non-zh-CN contract is `official-pattern-derived-needs-browser-evidence` until the actual translated text is measured in Chrome. Attach `targetEvidence.status: observed-current-target` only after that measurement.
