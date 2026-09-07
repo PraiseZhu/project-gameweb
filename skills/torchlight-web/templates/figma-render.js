@@ -1063,6 +1063,104 @@
       reason: 'page-language-variant',
     };
   },
+  /* DESIGN.md 6.2 — mirror scripts/lib/translation/locale-policy.mjs#resolvePrimaryCtaType.
+     Match COMPONENT_SET name btn/主要按钮, never page instance name btn/按钮. */
+  _primaryCtaSetName(set) {
+    return String((set && (set.name || set.componentSetName)) || '').trim();
+  },
+  _primaryCtaSetId(set) {
+    return String((set && (set.componentSetId || set.id)) || '');
+  },
+  _findComponentSetByMemberId(componentSets, componentId) {
+    const id = String(componentId || '');
+    if (!id) return null;
+    const sets = Array.isArray(componentSets) ? componentSets : [];
+    return sets.find((set) => {
+      if (this._primaryCtaSetId(set) === id) return true;
+      return (Array.isArray(set && set.variants) ? set.variants : [])
+        .some((variant) => String((variant && (variant.componentId || variant.id)) || '') === id);
+    }) || null;
+  },
+  _isCtaInstance(node) {
+    return Boolean(node && String(node.type || '').toUpperCase() === 'INSTANCE' && node.componentId);
+  },
+  _findOwningInstance(node, nodesById) {
+    if (!node || !nodesById || typeof nodesById.get !== 'function') return null;
+    const startId = String((node && node.id) || '');
+    const seen = new Set(startId ? [startId] : []);
+    let current = node;
+    while (current) {
+      const parentId = String((current && current.parentId) || '');
+      if (!parentId || seen.has(parentId)) break;
+      seen.add(parentId);
+      const parent = nodesById.get(parentId);
+      if (!parent) break;
+      if (this._isCtaInstance(parent)) return parent;
+      current = parent;
+    }
+    const ancestorIds = Array.isArray(node.ancestorIds) ? node.ancestorIds : [];
+    for (let i = ancestorIds.length - 1; i >= 0; i -= 1) {
+      const ancestor = nodesById.get(String(ancestorIds[i] || ''));
+      if (this._isCtaInstance(ancestor)) return ancestor;
+    }
+    return null;
+  },
+  _firstTextOfRecord(record) {
+    const stack = Array.isArray(record && record.nodes) ? record.nodes.slice() : [];
+    while (stack.length) {
+      const node = stack.shift();
+      if (!node) continue;
+      if (String(node.type || '').toUpperCase() === 'TEXT') return node;
+      if (Array.isArray(node.nodes) && node.nodes.length) stack.unshift(...node.nodes);
+    }
+    return null;
+  },
+  _resolvePrimaryCtaType({ node, nodesById, componentSets, language, hasAdoptedCopy } = {}) {
+    const raw = String(language || '').replace('_', '-').toLowerCase();
+    const lang = raw.startsWith('zh-tw') || raw.startsWith('zh-hk') ? 'zh-TW'
+      : raw.startsWith('zh') ? 'zh-CN' : raw.startsWith('ja') ? 'ja'
+      : raw.startsWith('ko') ? 'ko' : raw.startsWith('en') ? 'en' : raw;
+    const owner = this._findOwningInstance(node, nodesById);
+    const ownerSet = this._findComponentSetByMemberId(componentSets, owner && owner.componentId);
+    const ownerSetName = this._primaryCtaSetName(ownerSet);
+    const sets = Array.isArray(componentSets) ? componentSets : [];
+    const heroSet = sets.find((set) => this._primaryCtaSetName(set) === '首屏主按钮') || null;
+    const isHeroShell = ownerSetName === '首屏主按钮';
+    const isPrimaryFollow = ownerSetName === 'btn/主要按钮';
+    if (!isHeroShell && !isPrimaryFollow) {
+      return { status: 'not-applicable', language: lang, reason: 'not-primary-cta', uppercase: false };
+    }
+    const unverified = (reason) => ({
+      status: 'unverified-primary-cta-type', language: lang, reason, uppercase: lang === 'en',
+    });
+    if (!heroSet) return unverified('anchor-set-missing');
+    const value = this._imgLangVariantValue(lang);
+    const variants = Array.isArray(heroSet.variants) ? heroSet.variants : [];
+    const match = value
+      ? variants.find((variant) => this._langValueOfImgVariant(variant) === value) || null
+      : null;
+    if (!match) return { status: 'not-applicable', language: lang, reason: 'anchor-variant-absent', uppercase: false };
+    const text = (this._firstTextOfRecord(match) || {}).text || null;
+    const fontFamily = String((text && text.fontFamily) || '').trim();
+    const fontWeight = Number(text && text.fontWeight);
+    if (!text || !fontFamily || !Number.isFinite(fontWeight)) return unverified('anchor-text-missing');
+    if (lang !== 'zh-CN' && hasAdoptedCopy === false) {
+      return { status: 'not-applicable', language: lang, reason: 'unadopted-copy-keeps-source', uppercase: lang === 'en' };
+    }
+    const letterSpacing = (lang === 'en' || lang === 'ja' || lang === 'ko')
+      ? 0
+      : (Number.isFinite(Number(text.letterSpacing)) ? Number(text.letterSpacing) : 0);
+    return {
+      status: 'matched',
+      language: lang,
+      reason: isPrimaryFollow ? 'follow-hero-type' : 'hero-self-type',
+      role: isPrimaryFollow ? 'follow' : 'anchor',
+      fontFamily,
+      fontWeight,
+      letterSpacing,
+      uppercase: lang === 'en',
+    };
+  },
 
   /* Step-fit authorization policy — single source of truth is
      scripts/lib/figma-typography.mjs#fitAuthorization; mirrored inline here
@@ -4955,17 +5053,38 @@
           const _copyByNode = t.copy && t.copy.byNode ? t.copy.byNode[nid] : null;
           const _adoptedVal = _copyByNode ? _copyByNode[ctx.prefs.lang] : null;
           const _hasAdoptedCopy = _adoptedVal != null && _adoptedVal !== '';
-          const fontRoute = _hasAdoptedCopy
-            ? this._routeFontFamily({
+          const primaryCta = this._resolvePrimaryCtaType({
+            node: n,
+            nodesById: truthNodeById,
+            componentSets: activeComponentSets,
+            language: ctx.prefs && ctx.prefs.lang,
+            hasAdoptedCopy: _hasAdoptedCopy,
+          });
+          let fontRoute = { family: tx.fontFamily, weight: tx.fontWeight, role: null, language: ctx.prefs && ctx.prefs.lang, routed: false };
+          if (primaryCta.status === 'matched') {
+            fontRoute = { family: primaryCta.fontFamily, weight: primaryCta.fontWeight, role: primaryCta.role, language: primaryCta.language, routed: true };
+          } else if (_hasAdoptedCopy) {
+            fontRoute = this._routeFontFamily({
               language: ctx.prefs && ctx.prefs.lang,
               role: semantic.role,
               semanticClass: semantic.role,
               sourceFamily: tx.fontFamily,
               sourceWeight: tx.fontWeight,
-            })
-            : { family: tx.fontFamily, weight: tx.fontWeight, role: null, language: ctx.prefs && ctx.prefs.lang, routed: false };
+            });
+          }
           if (!_hasAdoptedCopy && String(ctx.prefs.lang || '') !== 'zh-CN') {
             el.setAttribute('data-font-source-fallback', 'unadopted-copy-keeps-source-family');
+          }
+          if (primaryCta.status === 'matched' || primaryCta.status === 'unverified-primary-cta-type') {
+            el.setAttribute('data-primary-cta-type', primaryCta.reason);
+          }
+          if (primaryCta.status === 'matched' && primaryCta.letterSpacing != null && Number.isFinite(Number(primaryCta.letterSpacing))) {
+            el.style.letterSpacing = Number(primaryCta.letterSpacing) + 'px';
+            el.setAttribute('data-letter-spacing-px', String(primaryCta.letterSpacing));
+          }
+          if (primaryCta.uppercase) {
+            el.style.textTransform = 'uppercase';
+            el.setAttribute('data-primary-cta-uppercase', 'en');
           }
           const effectiveFamily = fontRoute.family || tx.fontFamily;
           if (fontRoute.routed) {

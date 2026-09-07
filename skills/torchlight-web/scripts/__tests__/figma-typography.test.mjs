@@ -625,6 +625,9 @@ test('renderer runFit forwards Auto Layout maxWidth/maxHeight into _fitText', as
   assert.match(src, /keepSourceLangs/);
   assert.match(src, /zeroLangs/);
   assert.match(src, /data-letter-spacing-policy/);
+  assert.match(src, /_resolvePrimaryCtaType/);
+  assert.match(src, /btn\/主要按钮/);
+  assert.match(src, /data-primary-cta-uppercase/);
 });
 
 test('renderer fit uses FONT_SIZE_% lineHeightPercent when lineHeightPx is omitted', async () => {

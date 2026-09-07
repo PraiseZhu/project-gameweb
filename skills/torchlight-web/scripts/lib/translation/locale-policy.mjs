@@ -179,6 +179,235 @@ export function resolveImgLangVariant({
   });
 }
 
+/* DESIGN.md 6.2: btn/主要按钮 follows 首屏主按钮 type data for the page language.
+   Match the COMPONENT_SET name, never the page instance name `btn/按钮`
+   (btn/次要按钮 instances reuse that name). Do not follow copy or fontSize. */
+export const PRIMARY_CTA_ANCHOR_SET = '首屏主按钮';
+export const PRIMARY_CTA_FOLLOW_SET = 'btn/主要按钮';
+
+function setNameOf(set = {}) {
+  return String(set?.name || set?.componentSetName || '').trim();
+}
+
+function setIdOf(set = {}) {
+  return String(set?.componentSetId || set?.id || '');
+}
+
+function variantIdOf(variant = {}) {
+  return String(variant?.componentId || variant?.id || '');
+}
+
+function nodesOf(record) {
+  return Array.isArray(record?.nodes) ? record.nodes : [];
+}
+
+function isInstance(node) {
+  return Boolean(node && String(node.type || '').toUpperCase() === 'INSTANCE' && node.componentId);
+}
+
+function firstTextOf(record) {
+  const stack = nodesOf(record).slice();
+  while (stack.length) {
+    const node = stack.shift();
+    if (!node) continue;
+    if (String(node.type || '').toUpperCase() === 'TEXT') return node;
+    if (Array.isArray(node.nodes) && node.nodes.length) stack.unshift(...node.nodes);
+  }
+  return null;
+}
+
+function findComponentSetByMemberId(componentSets = [], componentId = '') {
+  const id = String(componentId || '');
+  if (!id) return null;
+  const sets = Array.isArray(componentSets) ? componentSets : [];
+  return sets.find((set) => {
+    if (setIdOf(set) === id) return true;
+    return (Array.isArray(set?.variants) ? set.variants : [])
+      .some((variant) => variantIdOf(variant) === id);
+  }) || null;
+}
+
+function findOwningInstance({ node = null, nodesById = null } = {}) {
+  if (!node || !nodesById || typeof nodesById.get !== 'function') return null;
+  const startId = String(node.id || '');
+  const seen = new Set(startId ? [startId] : []);
+  let current = node;
+  while (current) {
+    const parentId = String(current.parentId || '');
+    if (!parentId || seen.has(parentId)) break;
+    seen.add(parentId);
+    const parent = nodesById.get(parentId);
+    if (!parent) break;
+    if (isInstance(parent)) return parent;
+    current = parent;
+  }
+  const ancestorIds = Array.isArray(node.ancestorIds) ? node.ancestorIds : [];
+  for (let i = ancestorIds.length - 1; i >= 0; i -= 1) {
+    const ancestor = nodesById.get(String(ancestorIds[i] || ''));
+    if (isInstance(ancestor)) return ancestor;
+  }
+  return null;
+}
+
+function unverifiedPrimaryCta(language, reason, setId = null) {
+  return {
+    status: 'unverified-primary-cta-type',
+    language,
+    reason,
+    uppercase: language === 'en',
+    ...(setId ? { setId } : {}),
+  };
+}
+
+function liveTypeOf(text) {
+  if (!text || typeof text !== 'object') return null;
+  const fontFamily = String(text.fontFamily ?? '').trim();
+  const fontWeight = Number(text.fontWeight);
+  if (!fontFamily || !Number.isFinite(fontWeight)) return null;
+  return { fontFamily, fontWeight };
+}
+
+function letterSpacingOf(text = {}, language = 'zh-CN') {
+  const lang = normalizeLanguage(language);
+  if (lang === 'en' || lang === 'ja' || lang === 'ko') return 0;
+  const src = Number(text?.letterSpacing);
+  return Number.isFinite(src) ? src : 0;
+}
+
+function typeFromText(text = {}, language = 'zh-CN') {
+  const lang = normalizeLanguage(language);
+  return {
+    fontFamily: text?.fontFamily ?? null,
+    fontWeight: text?.fontWeight ?? null,
+    letterSpacing: letterSpacingOf(text, lang),
+    uppercase: lang === 'en',
+  };
+}
+
+export function resolvePrimaryCtaType({
+  node = null,
+  nodesById = null,
+  componentSets = [],
+  language = 'zh-CN',
+  hasAdoptedCopy = false,
+} = {}) {
+  const lang = normalizeLanguage(language);
+  const owner = findOwningInstance({ node, nodesById });
+  const ownerSet = findComponentSetByMemberId(componentSets, owner?.componentId);
+  const ownerSetName = setNameOf(ownerSet);
+  const sets = Array.isArray(componentSets) ? componentSets : [];
+  const heroSet = sets.find((set) => setNameOf(set) === PRIMARY_CTA_ANCHOR_SET) || null;
+  const isHeroShell = ownerSetName === PRIMARY_CTA_ANCHOR_SET;
+  const isPrimaryFollow = ownerSetName === PRIMARY_CTA_FOLLOW_SET;
+  if (!isHeroShell && !isPrimaryFollow) {
+    return { status: 'not-applicable', language: lang, reason: 'not-primary-cta', uppercase: false };
+  }
+  if (!heroSet) return unverifiedPrimaryCta(lang, 'anchor-set-missing');
+  const value = imgLangVariantValue(lang);
+  const variants = Array.isArray(heroSet.variants) ? heroSet.variants : [];
+  const match = value
+    ? variants.find((variant) => langValueOfImgVariant(variant) === value) || null
+    : null;
+  if (!match) {
+    return { status: 'not-applicable', language: lang, reason: 'anchor-variant-absent', uppercase: false };
+  }
+  const text = firstTextOf(match)?.text || null;
+  const live = liveTypeOf(text);
+  if (!live) {
+    return unverifiedPrimaryCta(lang, 'anchor-text-missing', setIdOf(heroSet));
+  }
+  if (lang !== 'zh-CN' && hasAdoptedCopy === false) {
+    return {
+      status: 'not-applicable',
+      language: lang,
+      reason: 'unadopted-copy-keeps-source',
+      uppercase: lang === 'en',
+    };
+  }
+  return {
+    status: 'matched',
+    language: lang,
+    reason: isPrimaryFollow ? 'follow-hero-type' : 'hero-self-type',
+    role: isPrimaryFollow ? 'follow' : 'anchor',
+    setId: setIdOf(ownerSet || heroSet),
+    anchorSetId: setIdOf(heroSet),
+    ...typeFromText({ ...text, ...live }, lang),
+  };
+}
+
+function firstCssFamily(family) {
+  const raw = String(family || '').trim();
+  if (!raw) return '';
+  const first = raw.split(',')[0].trim();
+  return first.replace(/^['"]+|['"]+$/g, '');
+}
+
+function letterSpacingPxOf(value) {
+  if (value == null || value === '') return null;
+  const raw = String(value).trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === 'normal') return 0;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * DESIGN.md 6.2 page claim. Matched rows must keep hero type.
+ * A missing language variant means the spec did not ship that language;
+ * that is not-applicable, not red. A present variant with no live TEXT
+ * stays unverified-primary-cta-type.
+ */
+export function assessPrimaryCtaType(records = []) {
+  const list = Array.isArray(records) ? records : [];
+  const failures = [];
+  for (const record of list) {
+    const resolved = record?.primaryCta || record?.ctaType || null;
+    const status = resolved?.status;
+    if (!status || status === 'not-applicable') continue;
+    const nodeId = record.nodeId || record.id || null;
+    const language = normalizeLanguage(record.language || resolved.language);
+    if (status === 'unverified-primary-cta-type') {
+      failures.push({
+        nodeId,
+        language,
+        reason: resolved.reason || 'unverified-primary-cta-type',
+        status,
+      });
+      continue;
+    }
+    if (status !== 'matched') continue;
+    const family = firstCssFamily(record.fontFamily ?? record.browser?.font?.family ?? record.font?.family);
+    const weight = Number(record.fontWeight ?? record.browser?.font?.computedWeight ?? record.font?.computedWeight);
+    const spacing = letterSpacingPxOf(record.letterSpacing ?? record.browser?.letterSpacing ?? record.letterSpacingPx);
+    const transform = String(record.textTransform ?? record.browser?.textTransform ?? '').toLowerCase();
+    if (!family) {
+      failures.push({ nodeId, language, reason: 'primary-cta-family-unverified', expected: resolved.fontFamily ?? null, actual: family || null });
+    } else if (resolved.fontFamily && family !== String(resolved.fontFamily)) {
+      failures.push({ nodeId, language, reason: 'primary-cta-family-mismatch', expected: resolved.fontFamily, actual: family });
+    }
+    if (!Number.isFinite(weight)) {
+      failures.push({ nodeId, language, reason: 'primary-cta-weight-unverified', expected: resolved.fontWeight ?? null, actual: weight });
+    } else if (resolved.fontWeight != null && weight !== Number(resolved.fontWeight)) {
+      failures.push({ nodeId, language, reason: 'primary-cta-weight-mismatch', expected: resolved.fontWeight, actual: weight });
+    }
+    if (spacing == null) {
+      failures.push({ nodeId, language, reason: 'primary-cta-letter-spacing-unverified', expected: resolved.letterSpacing ?? null, actual: spacing });
+    } else if (resolved.letterSpacing != null && Math.abs(spacing - Number(resolved.letterSpacing)) > 0.05) {
+      failures.push({ nodeId, language, reason: 'primary-cta-letter-spacing-mismatch', expected: resolved.letterSpacing, actual: spacing });
+    }
+    if (resolved.uppercase === true && transform !== 'uppercase') {
+      failures.push({ nodeId, language, reason: 'primary-cta-uppercase-missing', expected: 'uppercase', actual: transform || null });
+    }
+  }
+  return {
+    ok: failures.length === 0,
+    status: failures.length ? 'failed' : 'passed',
+    total: list.length,
+    failed: failures.length,
+    failures: failures.slice(0, 100),
+  };
+}
+
 export function isPresentTable(value) {
   if (!value) return false;
   if (Array.isArray(value)) return value.length > 0;

@@ -86,6 +86,7 @@ export function buildTranslationChromeEvidence({ demo = null, language = 'unknow
     gates: {
       copy: gates.copy || null,
       locale: gates.locale || null,
+      primaryCta: gates.primaryCta || null,
       typography: gates.typography || null,
       component: gates.component || null,
       context: gates.context || null,

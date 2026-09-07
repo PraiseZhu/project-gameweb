@@ -24,6 +24,8 @@ import {
   officialTargetDesignSize,
   assessLocaleVisualLevel,
   routeFontFamily,
+  resolvePrimaryCtaType,
+  assessPrimaryCtaType,
 } from './translation/index.mjs';
 
 const DEFAULT_LANGS = ['zh-CN', 'en', 'ja', 'ko', 'zh-TW'];
@@ -153,6 +155,22 @@ export async function runTypographyBrowserCheck({ demoDir, langs = DEFAULT_LANGS
     // makes browser evidence look detached from Figma.
     const truth = unwrap(rawTruth);
     const textTruth = findTextTruth(rawTruth);
+    const nodesById = new Map();
+    const walkIds = (value) => {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) { for (const item of value) walkIds(item); return; }
+      const id = leafValue(value.id);
+      if (id != null && leafValue(value.type)) nodesById.set(String(id), value);
+      for (const [key, child] of Object.entries(value)) {
+        if (key === 'provenance' || key === 'text' || key === 'box' || key === 'renderBox') continue;
+        walkIds(child);
+      }
+    };
+    walkIds(truth);
+    const componentSetsOf = (plat) => {
+      const graph = plat && plat.componentVariantGraph;
+      return Array.isArray(graph && graph.componentSets) ? graph.componentSets : [];
+    };
     // Optional fixture-side review metadata. It can classify a known
     // designation/proper noun, but it never provides or changes a translation.
     const designationPath = join(resolve(demoDir), 'copy-designations.json');
@@ -309,6 +327,10 @@ export async function runTypographyBrowserCheck({ demoDir, langs = DEFAULT_LANGS
             },
             copyMissing: el.getAttribute('data-copy-missing'),
             textEmpty: el.getAttribute('data-text-empty') === '1',
+            textTransform: cs.textTransform || '',
+            letterSpacing: cs.letterSpacing || '',
+            primaryCtaType: el.getAttribute('data-primary-cta-type') || null,
+            primaryCtaUppercase: el.getAttribute('data-primary-cta-uppercase') || null,
             font: { family, computedWeight: Number(weight) || null, loaded, glyphsMissing, availableWeights },
             /* 双真源 locale 校验：把 computed 字号 × stage zoom 得到视觉等效字号，
                与官网实测目标 level 比对（按语义角色×语言）。stage zoom 由 bounding rect
@@ -349,6 +371,37 @@ export async function runTypographyBrowserCheck({ demoDir, langs = DEFAULT_LANGS
         const copy = copyLeaf
           ? { status: 'bound', provenance: copyLeaf.provenance || null, value: copyLeaf.value, designation: designations[row.id] || null }
           : { status: 'unresolved', provenance: null, value: null, designation: designations[row.id] || null };
+        const sourceNode = nodesById.get(String(row.id)) || source;
+        const ownerComponentId = (() => {
+          const isInstance = (node) => Boolean(node && String(node.type || '').toUpperCase() === 'INSTANCE' && node.componentId);
+          let current = sourceNode;
+          const seen = new Set();
+          while (current && current.id && !seen.has(String(current.id))) {
+            seen.add(String(current.id));
+            if (isInstance(current)) return String(current.componentId);
+            current = current.parentId ? nodesById.get(String(current.parentId)) : null;
+          }
+          const ancestorIds = Array.isArray(sourceNode && sourceNode.ancestorIds) ? sourceNode.ancestorIds : [];
+          for (let i = ancestorIds.length - 1; i >= 0; i -= 1) {
+            const ancestor = nodesById.get(String(ancestorIds[i] || ''));
+            if (isInstance(ancestor)) return String(ancestor.componentId);
+          }
+          return '';
+        })();
+        const setHasMember = (sets, memberId) => (Array.isArray(sets) ? sets : []).some((set) => (
+          (Array.isArray(set && set.variants) ? set.variants : [])
+            .some((variant) => String((variant && (variant.componentId || variant.id)) || '') === memberId)
+        ));
+        const plat = truth.platforms
+          ? ['pc', 'mobile'].map((key) => truth.platforms[key]).find((branch) => setHasMember(componentSetsOf(branch), ownerComponentId))
+          : truth;
+        const primaryCta = resolvePrimaryCtaType({
+          node: sourceNode,
+          nodesById,
+          componentSets: plat ? componentSetsOf(plat) : [],
+          language,
+          hasAdoptedCopy: copy.status === 'bound',
+        });
         const semanticClass = classifySemanticText({ name: source.name || row.name, ancestorNames: source.ancestorNames });
         const role = classifyTranslationTextRole({ name: source.name || row.name, ancestorNames: source.ancestorNames });
         const locale = classifyLocaleText({
@@ -448,6 +501,11 @@ if (row.font && __routed && __routed.family) row.font.routedFamily = __routed.fa
           role,
           copy: { ...evidence.copy, designation: copy.designation, expectedValue: copy.value, domUsesExpectedValue: copy.value == null ? null : row.text === copy.value },
           renderer: { copyMissing: row.copyMissing, textEmpty: row.textEmpty },
+          primaryCta,
+          fontFamily: row.font && row.font.family,
+          fontWeight: row.font && row.font.computedWeight,
+          letterSpacing: row.letterSpacing,
+          textTransform: row.textTransform,
           localeVisualLevel,
           layout,
           layoutPlan,
@@ -458,12 +516,14 @@ if (row.font && __routed && __routed.family) row.font.routedFamily = __routed.fa
     report.summary.failureGroups = groupTypographyFailures(report.records);
     report.locale = assessLocaleConsistency(report.records);
     report.locale.unresolved = report.locale.unresolved || groupUnresolvedCopy(report.records);
+    report.primaryCta = assessPrimaryCtaType(report.records);
     report.component = assessComponentTextRange(report.records);
     report.context = assessTextContext(report.records);
     report.layout = assessTextLayout(report.records);
     report.gates = {
       typography: { ok: report.summary.failed === 0, summary: report.summary },
       locale: report.locale,
+      primaryCta: report.primaryCta,
       component: report.component,
       context: report.context,
       layout: report.layout,
@@ -476,7 +536,8 @@ if (row.font && __routed && __routed.family) row.font.routedFamily = __routed.fa
     });
     report.pageErrors = errors;
     report.ok = errors.length === 0 && report.records.length > 0
-      && report.gates.typography.ok && report.gates.locale.ok && report.gates.component.ok && report.gates.layout.ok;
+      && report.gates.typography.ok && report.gates.locale.ok && report.gates.primaryCta.ok
+      && report.gates.component.ok && report.gates.layout.ok;
   } catch (error) {
     report.blocked = String(error?.message || error);
     report.ok = false;
