@@ -13,10 +13,13 @@ import {
   groupUnresolvedCopy,
   translationAxisClaim,
   imgLangVariantValue,
+  langValueOfImgVariant,
   isLegalImgLangSet,
   languageMatrixOptions,
   pageLangsFromImgLangSets,
   resolveImgLangVariant,
+  resolvePrimaryCtaType,
+  assessPrimaryCtaType,
 } from '../lib/translation/index.mjs';
 
 const leaf = (value, row, lang) => ({ value, provenance: {
@@ -352,4 +355,193 @@ test('img/ lang variants follow page language and never fall back to cn', () => 
   assert.equal(resolveImgLangVariant({ componentSets: [hashed], componentId: 'hash-cn', language: 'en' }).componentId, 'hash-en');
   assert.equal(isLegalImgLangSet(emptyProps), true);
   assert.equal(resolveImgLangVariant({ componentSets: [emptyProps], componentId: 'empty-cn', language: 'en' }).componentId, 'empty-en');
+});
+
+function primaryCtaFixture() {
+  const heroText = (id, lang, characters, family, weight, letterSpacing) => ({
+    id,
+    type: 'TEXT',
+    name: characters,
+    ancestorNames: ['首屏主按钮', `lang=${lang}`],
+    text: { characters, fontFamily: family, fontWeight: weight, fontSize: lang === 'en' ? 40 : 46, letterSpacing, textCase: null },
+  });
+  const hero = {
+    componentSetId: '800:4353',
+    name: '首屏主按钮',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['cn', 'tw', 'en', 'kr'] } },
+    variants: [
+      { componentId: '800:4354', name: 'lang=cn', componentProperties: { lang: { type: 'VARIANT', value: 'cn' } }, nodes: [heroText('800:4363', 'cn', '立即下载', 'FZVariable-YouHeiS WT W H', 900, 13.8)] },
+      { componentId: '800:4364', name: 'lang=tw', componentProperties: { lang: { type: 'VARIANT', value: 'tw' } }, nodes: [heroText('800:4373', 'tw', '立即預約', 'Noto Sans TC', 700, 13.8)] },
+      { componentId: '800:4374', name: 'lang=en', componentProperties: { lang: { type: 'VARIANT', value: 'en' } }, nodes: [heroText('800:4383', 'en', 'PRE-REGISTER NOW', 'Noto Sans', 600, 0)] },
+      { componentId: '800:4384', name: 'lang=kr', componentProperties: { lang: { type: 'VARIANT', value: 'kr' } }, nodes: [heroText('800:4393', 'kr', '사전 예약하기', 'Noto Sans KR', 500, 0)] },
+    ],
+  };
+  const primary = {
+    componentSetId: '758:1681',
+    name: 'btn/主要按钮',
+    variants: [{
+      componentId: '758:1682',
+      name: 'Property 1=Default',
+      nodes: [{ id: '758:1691', type: 'TEXT', name: '立即下载', text: { characters: '立即下载', fontFamily: 'FZVariable-YouHeiS WT W H', fontWeight: 900, fontSize: 46, letterSpacing: 13.8 } }],
+    }],
+  };
+  const secondary = {
+    componentSetId: '758:1673',
+    name: 'btn/次要按钮',
+    variants: [{ componentId: '758:1674', name: 'Property 1=Default' }],
+  };
+  const nodes = [
+    { id: '758:2142', type: 'INSTANCE', name: 'btn/按钮', componentId: '758:1682', parentId: 'sec2' },
+    { id: 'I758:2142;758:1690', type: 'FRAME', name: 'Frame', parentId: '758:2142' },
+    { id: 'I758:2142;758:1691', type: 'TEXT', name: '立即下载', parentId: 'I758:2142;758:1690', ancestorIds: ['sec2', '758:2142', 'I758:2142;758:1690'], text: { characters: '查看更多', fontFamily: 'FZVariable-YouHeiS WT W H', fontWeight: 400, fontSize: 46, letterSpacing: 2 } },
+    { id: '758:1826', type: 'INSTANCE', name: 'btn/按钮', componentId: '758:1674', parentId: 'chrome' },
+    { id: 'I758:1826;758:1680', type: 'TEXT', name: '官方充值', parentId: '758:1826', text: { characters: '官方充值', fontFamily: 'FZVariable-YouHeiS WT W H', fontWeight: 600, fontSize: 40, letterSpacing: 0 } },
+    { id: '800:4533', type: 'INSTANCE', name: '首屏主按钮', componentId: '800:4354', parentId: 'sec1' },
+    { id: 'I800:4533;800:4363', type: 'TEXT', name: '立即下载', parentId: '800:4533', text: { characters: '立即下载', fontFamily: 'FZVariable-YouHeiS WT W H', fontWeight: 900, fontSize: 46, letterSpacing: 13.8 } },
+  ];
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  return { hero, primary, secondary, nodesById, follow: nodes[2], secondaryText: nodes[4], heroText: nodes[6] };
+}
+
+test('DESIGN.md 6.2: btn/主要按钮 follows 首屏主按钮 type; btn/按钮 name is not enough', () => {
+  const fx = primaryCtaFixture();
+  const sets = [fx.hero, fx.primary, fx.secondary];
+  const en = resolvePrimaryCtaType({ node: fx.follow, nodesById: fx.nodesById, componentSets: sets, language: 'en', hasAdoptedCopy: true });
+  assert.equal(en.status, 'matched');
+  assert.equal(en.role, 'follow');
+  assert.equal(en.fontFamily, 'Noto Sans');
+  assert.equal(en.fontWeight, 600);
+  assert.equal(en.letterSpacing, 0);
+  assert.equal(en.uppercase, true);
+
+  const tw = resolvePrimaryCtaType({ node: fx.follow, nodesById: fx.nodesById, componentSets: sets, language: 'zh-TW', hasAdoptedCopy: true });
+  assert.equal(tw.fontFamily, 'Noto Sans TC');
+  assert.equal(tw.fontWeight, 700);
+  assert.equal(tw.letterSpacing, 13.8);
+  assert.equal(tw.uppercase, false);
+
+  const kr = resolvePrimaryCtaType({ node: fx.follow, nodesById: fx.nodesById, componentSets: sets, language: 'ko', hasAdoptedCopy: true });
+  assert.equal(kr.fontFamily, 'Noto Sans KR');
+  assert.equal(kr.fontWeight, 500);
+  assert.equal(kr.uppercase, false);
+
+  const secondary = resolvePrimaryCtaType({ node: fx.secondaryText, nodesById: fx.nodesById, componentSets: sets, language: 'en', hasAdoptedCopy: true });
+  assert.equal(secondary.status, 'not-applicable');
+  assert.equal(secondary.reason, 'not-primary-cta');
+  assert.equal(secondary.uppercase, false);
+
+  const missingCopy = resolvePrimaryCtaType({ node: fx.follow, nodesById: fx.nodesById, componentSets: sets, language: 'en', hasAdoptedCopy: false });
+  assert.equal(missingCopy.status, 'not-applicable');
+  assert.equal(missingCopy.reason, 'unadopted-copy-keeps-source');
+  assert.equal(missingCopy.uppercase, true);
+
+  const heroEn = resolvePrimaryCtaType({ node: fx.heroText, nodesById: fx.nodesById, componentSets: sets, language: 'en', hasAdoptedCopy: true });
+  assert.equal(heroEn.uppercase, true);
+  assert.equal(heroEn.fontFamily, 'Noto Sans');
+  assert.equal(heroEn.fontWeight, 600);
+
+  const ja = resolvePrimaryCtaType({ node: fx.follow, nodesById: fx.nodesById, componentSets: sets, language: 'ja', hasAdoptedCopy: true });
+  assert.equal(ja.status, 'not-applicable');
+  assert.equal(ja.reason, 'anchor-variant-absent');
+  assert.equal(ja.uppercase, false);
+
+  const jaGate = assessPrimaryCtaType([{
+    nodeId: fx.follow.id,
+    language: 'ja',
+    primaryCta: ja,
+  }]);
+  assert.equal(jaGate.ok, true);
+
+  const emptyEn = {
+    ...fx.hero,
+    variants: fx.hero.variants.map((variant) => (
+      langValueOfImgVariant(variant) === 'en' ? { ...variant, nodes: [] } : variant
+    )),
+  };
+  const emptyText = resolvePrimaryCtaType({
+    node: fx.follow,
+    nodesById: fx.nodesById,
+    componentSets: [emptyEn, fx.primary, fx.secondary],
+    language: 'en',
+    hasAdoptedCopy: true,
+  });
+  assert.equal(emptyText.status, 'unverified-primary-cta-type');
+  assert.equal(emptyText.reason, 'anchor-text-missing');
+  assert.equal(assessPrimaryCtaType([{ nodeId: fx.follow.id, language: 'en', primaryCta: emptyText }]).ok, false);
+
+  const emptyTextUnadopted = resolvePrimaryCtaType({
+    node: fx.follow,
+    nodesById: fx.nodesById,
+    componentSets: [emptyEn, fx.primary, fx.secondary],
+    language: 'en',
+    hasAdoptedCopy: false,
+  });
+  assert.equal(emptyTextUnadopted.status, 'unverified-primary-cta-type');
+  assert.equal(emptyTextUnadopted.reason, 'anchor-text-missing');
+  assert.equal(assessPrimaryCtaType([{ nodeId: fx.follow.id, language: 'en', primaryCta: emptyTextUnadopted }]).ok, false);
+
+  const blankFamily = {
+    ...fx.hero,
+    variants: fx.hero.variants.map((variant) => {
+      if (langValueOfImgVariant(variant) !== 'en') return variant;
+      const node = { ...(variant.nodes[0] || {}), text: { characters: 'PRE-REGISTER NOW', fontFamily: '  ', fontWeight: 600, letterSpacing: 0 } };
+      return { ...variant, nodes: [node] };
+    }),
+  };
+  const blank = resolvePrimaryCtaType({
+    node: fx.follow,
+    nodesById: fx.nodesById,
+    componentSets: [blankFamily, fx.primary, fx.secondary],
+    language: 'en',
+    hasAdoptedCopy: true,
+  });
+  assert.equal(blank.status, 'unverified-primary-cta-type');
+  assert.equal(blank.reason, 'anchor-text-missing');
+  assert.equal(assessPrimaryCtaType([{ nodeId: fx.follow.id, language: 'en', primaryCta: blank }]).ok, false);
+
+  const enDomPass = assessPrimaryCtaType([{
+    nodeId: fx.follow.id,
+    language: 'en',
+    primaryCta: en,
+    fontFamily: '"Noto Sans", "PingFang SC", sans-serif',
+    fontWeight: 600,
+    letterSpacing: '0px',
+    textTransform: 'uppercase',
+  }]);
+  assert.equal(enDomPass.ok, true);
+
+  const enDomFail = assessPrimaryCtaType([{
+    nodeId: fx.follow.id,
+    language: 'en',
+    primaryCta: en,
+    fontFamily: 'Noto Sans',
+    fontWeight: 600,
+    letterSpacing: 0,
+    textTransform: 'none',
+  }]);
+  assert.equal(enDomFail.ok, false);
+  assert.equal(enDomFail.failures[0].reason, 'primary-cta-uppercase-missing');
+
+  const secondaryGate = assessPrimaryCtaType([{
+    nodeId: fx.secondaryText.id,
+    language: 'en',
+    primaryCta: secondary,
+    fontFamily: 'FZVariable-YouHeiS WT W H',
+    fontWeight: 600,
+    textTransform: 'none',
+  }]);
+  assert.equal(secondaryGate.ok, true);
+
+  const missingEvidence = assessPrimaryCtaType([{
+    nodeId: fx.follow.id,
+    language: 'en',
+    primaryCta: en,
+    textTransform: 'uppercase',
+  }]);
+  assert.equal(missingEvidence.ok, false);
+  assert.deepEqual(missingEvidence.failures.map((item) => item.reason).sort(), [
+    'primary-cta-family-unverified',
+    'primary-cta-letter-spacing-unverified',
+    'primary-cta-weight-unverified',
+  ]);
 });
