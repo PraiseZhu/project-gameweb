@@ -1,6 +1,6 @@
 /* name-semantics + owner-model 的单元测试。【通用 Skill 层，纯函数，无 IO】
  * 跑法：node scripts/__tests__/name-semantics.test.mjs */
-import { parseLayerName, deriveRole, assetPolicyHint, bgScopeHint, auditNames, KNOWN_ROLES, LEGACY_COMPATIBILITY_ROLES } from '../lib/figma-name-semantics.mjs';
+import { parseLayerName, deriveRole, assetPolicyHint, bgScopeHint, auditNames, pageUsesIndicatorRole, KNOWN_ROLES, LEGACY_COMPATIBILITY_ROLES } from '../lib/figma-name-semantics.mjs';
 import { STRUCT_CONTRACT, checkStructContract, isPassthroughContainer, classifyBgScope, auditStructure } from '../lib/figma-owner-model.mjs';
 
 let pass = 0, fail = 0;
@@ -34,6 +34,13 @@ F('INSTANCE switch/ → switch', deriveRole({ name: 'switch/角色', type: 'INST
 F('无名 image 填充不推断成 img', deriveRole({ name: 'Rectangle', type: 'RECTANGLE', fills: [{ type: 'IMAGE' }] }).role === null);
 F('无名 component 不推断成 switch', deriveRole({ name: 'Component 1', type: 'INSTANCE' }).role === null);
 F('无名无填充 → role null（诚实）', deriveRole({ name: 'Rectangle', type: 'RECTANGLE', fills: [] }).role === null);
+
+console.log('— pageUsesIndicatorRole —');
+F('无 ind/ 的稿不算进度条页', pageUsesIndicatorRole({ sections: { 'sec:1': { nodes: [{ id: '1', type: 'FRAME', name: 'sec/1' }] } } }) === false);
+F('有 ind/ owner 才算进度条页', pageUsesIndicatorRole({ sections: { 'sec:1': { nodes: [{ id: '2', type: 'INSTANCE', name: 'ind/进度条' }] } } }) === true);
+F('provenance 包一层也能认出 ind/', pageUsesIndicatorRole({ value: { id: '2', name: 'ind/进度条', type: 'INSTANCE' }, provenance: { src: 'figma' } }) === true);
+F('没有图层 id 的 name 不算进度条页', pageUsesIndicatorRole({ name: 'ind/进度条', type: 'INSTANCE' }) === false);
+F('空 truth 不算进度条页', pageUsesIndicatorRole(null) === false);
 
 console.log('— assetPolicyHint —');
 F('bg/ → wantAsset', assetPolicyHint({ name: 'bg/pc', type: 'INSTANCE' }).wantAsset === true);

@@ -19,6 +19,30 @@ test('missing figma-indicator fallback sources fail closed', () => {
   );
 });
 
+test('pages without ind/ skip figma-indicator fallback sources', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-skip-'));
+  const assetsDir = join(dir, 'assets');
+  mkdirSync(assetsDir);
+  const result = installIndicatorFallbacks(assetsDir, {}, {
+    sections: { 'sec:1': { nodes: [{ id: '1:1', type: 'FRAME', name: 'sec/1' }] } },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, 'no-ind-role');
+});
+
+test('pages with ind/ still fail closed without fallback sources', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-need-'));
+  const assetsDir = join(dir, 'assets');
+  mkdirSync(assetsDir);
+  assert.throws(
+    () => installIndicatorFallbacks(assetsDir, {}, {
+      sections: { 'sec:1': { nodes: [{ id: '1:2', type: 'INSTANCE', name: 'ind/进度条' }] } },
+    }),
+    /missing figma-indicator fallback sources/,
+  );
+});
+
 test('asset locking is based on ownerPath when DOM parent stack is incomplete', () => {
   assert.match(renderer, /const bakedOwnerChain = \[\]/);
   assert.match(renderer, /ancestorIds still\s+names those passed-through parents/);

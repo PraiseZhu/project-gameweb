@@ -18,7 +18,9 @@ A declared slice owner is a source-backed visual contract even when the owner
 has no IMAGE fill of its own (composite `bg/`, `img/` frames, BOOLEAN `btn/`
 arrows, page-used `ind/` variant roots, navigation rails, card borders). Nested
 slice descendants are covered by the outermost source owner; they must not
-require a second DOM host.
+require a second DOM host. `figma-indicator-*` fallback files are required only
+when the ready truth still has an `ind/` owner; a page without `ind/` must not
+fail closed on those files.
 
 The Main static axis audits the current page tree only. Modal and
 component-variant trees stay in truth for Interaction/Switch, but they are not

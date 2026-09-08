@@ -6,6 +6,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, realpathSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
+import { pageUsesIndicatorRole } from './figma-name-semantics.mjs';
 
 export const DEFAULT_PACK_BUDGET_BYTES = 15 * 1024 * 1024;
 export const DEFAULT_PACK_WEBP_QUALITY = 70;
@@ -134,7 +135,20 @@ export function isWebpFile(path) {
   }
 }
 
+function packedPageUsesIndicator(demoDir, html) {
+  const truthPath = join(demoDir, 'truth.json');
+  if (existsSync(truthPath)) {
+    try {
+      return pageUsesIndicatorRole(JSON.parse(readFileSync(truthPath, 'utf8')));
+    } catch {
+      /* unreadable truth keeps the old HTML-ref fail-closed */
+    }
+  }
+  return collectFallbackRefs(html).length > 0;
+}
+
 export function missingFallbackFiles(demoDir, html) {
+  if (!packedPageUsesIndicator(demoDir, html)) return [];
   const missing = [];
   for (const rel of collectFallbackRefs(html)) {
     const direct = join(demoDir, rel);
@@ -237,6 +251,7 @@ function localReferences(text = '') {
 
 function collectRuntimeReferenceState(demoDir, html = '') {
   const root = packRoot(demoDir);
+  const requireIndicatorFallback = packedPageUsesIndicator(demoDir, html);
   const queue = [{ base: root, text: String(html) }];
   const seenFiles = new Set();
   const present = new Set();
@@ -244,6 +259,7 @@ function collectRuntimeReferenceState(demoDir, html = '') {
   while (queue.length) {
     const { base, text } = queue.shift();
     for (const ref of localReferences(text)) {
+      if (!requireIndicatorFallback && PACK_FALLBACK_RE.test(String(ref || ''))) continue;
       const file = resolveRuntimeReference(root, base, ref);
       const inspected = inspectPackPath(root, file);
       if (!inspected.ok) { missing.add(ref); continue; }

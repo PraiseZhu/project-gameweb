@@ -121,7 +121,10 @@ not installed into `.claude/skills/`.
 
 The default workflow is the **Main Skill**: extract Figma truth, structure
 content/geometry/components/states/interactions, record official behavior
-references, wire the Demo, and run deterministic gates/final review. It is
+references, wire the Demo, and run deterministic gates/final review. Slice
+export (`figma-assets`) installs `figma-indicator-*` fallback files only when
+the ready truth still has an `ind/` owner. A page without `ind/` must not fail
+closed on those files, and must not invent a progress mark. It is
 complemented by independent reusable capabilities and one optional audit:
 
 - **Translation Skill** — locale/copy context plus font, glyph, weight, and
@@ -148,9 +151,9 @@ complemented by independent reusable capabilities and one optional audit:
   stretch stays here with the rest of Resize.
 - **Pack (delivery, not a Skill axis)** — after Resize acceptance only.
   Lossy WebP, font subset/woff2, SHA collapse, truth externalize, 15MB
-  served-folder budget. Keep `figma-indicator-*` fallback files. See
-  `docs/pack-skill.md`. Slice-time WebP (alpha lossless / opaque q90) and the
-  10MB `index.html` gate stay in Main.
+  served-folder budget. Keep `figma-indicator-*` fallback files only when the
+  page still has an `ind/` owner. See `docs/pack-skill.md`. Slice-time WebP
+  (alpha lossless / opaque q90) and the 10MB `index.html` gate stay in Main.
 
 **Figma Prototype Truth Audit** is optional evidence, not a prerequisite. It is
 read-only and fail-closed when explicitly requested. `observed` can support a

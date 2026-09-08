@@ -32,7 +32,7 @@ Unlabelled nodes must not be inferred as img or switch from node type, component
 
 `inventory/v2` may promote image-fill leaves under `mix/` to determined `img` (`via=structure`) with `sliceExport`. Page-building consumes that inventory role; it does not re-guess skipped art-fragments. `scroll/` nested in `mix/` keeps clip-and-slide behavior.
 
-`ind/` is a structural owner. Page-used `ind/` component-set variants carry `sliceExport` on the variant root; unnamed SOLID RECTANGLE/VECTOR descendants stay `slice-child` and are not inferred as `progress`. Do not invent CSS diamonds. PC and mobile keep separate geometry trees.
+`ind/` is a structural owner. Page-used `ind/` component-set variants carry `sliceExport` on the variant root; unnamed SOLID RECTANGLE/VECTOR descendants stay `slice-child` and are not inferred as `progress`. Do not invent CSS diamonds. PC and mobile keep separate geometry trees. `figma-indicator-*` fallback files are required only when the ready truth still has an `ind/` owner; a page without `ind/` must not fail closed on those files, and must not invent a progress mark.
 
 ## Owner model
 
