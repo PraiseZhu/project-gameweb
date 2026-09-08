@@ -99,6 +99,9 @@ test('language dropmenu matches one option label, not the whole menu tree', () =
   assert.match(renderer, /syncLanguageDropmenuHighlight/);
   assert.match(renderer, /optionLang === current \? 'highlight' : 'normal'/);
   assert.match(renderer, /syncLanguageDropmenuHighlight\(owner, currentPageLang\(\)\)/);
+  assert.match(renderer, /frame\.__fxRenderPrefs = ctx\.prefs \|\| \{\}/);
+  assert.match(renderer, /data-btn-variant-fill-source/);
+  assert.match(renderer, /authored COMPONENT root/);
   assert.doesNotMatch(renderer, /dropmenuLangFromNode/);
 });
 
@@ -185,6 +188,9 @@ test('named modal pin drops host zoom so Figma sheet is not scaled twice', () =>
   assert.match(pin, /frame\.style\.width/);
   assert.match(pin, /frame\.clientWidth/);
   assert.match(pin, /host\.style\.position = 'absolute'/);
+  assert.match(pin, /data-modal-sheet/);
+  assert.match(pin, /layer\.style\.width = visibleW \+ 'px'/);
+  assert.match(pin, /sheet\.style\.width = designW \+ 'px'/);
   assert.doesNotMatch(pin, /frame\.style\.zoom/);
   assert.doesNotMatch(pin, /visibleW = frameRect\.width \/ \(pageZoom/);
   assert.doesNotMatch(pin, /const visibleW = frameRect\.width;/);

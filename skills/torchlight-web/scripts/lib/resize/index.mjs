@@ -239,7 +239,7 @@ export function widthScale({
     ? width * (OFFICIAL_ROOT_FONT_VW / 100)
     : null;
   if (!Number.isFinite(width) || width <= 0) {
-    return { k: null, designWidth: used, officialRootFontPx: null, columnWidth: null };
+    return { k: null, designWidth: used, officialRootFontPx: null, columnWidth: null, columnLeft: null };
   }
   if (width <= TORCHLIGHT_COMPOSITION_BREAKPOINTS[0].max) {
     return {
@@ -247,6 +247,7 @@ export function widthScale({
       designWidth: DESIGN_WIDTHS.mobile,
       officialRootFontPx,
       columnWidth: width,
+      columnLeft: 0,
     };
   }
   if (width <= PC_COLUMN_FREEZE_MAX) {
@@ -255,6 +256,9 @@ export function widthScale({
       designWidth: DESIGN_WIDTHS.pc,
       officialRootFontPx,
       columnWidth: PC_COLUMN_FREEZE_MAX,
+      /* Official freeze crop is centered: left = (viewportW − 1920) / 2.
+         1494-wide window → −213. Do not left-align the 1920 column. */
+      columnLeft: (width - PC_COLUMN_FREEZE_MAX) / 2,
     };
   }
   return {
@@ -262,6 +266,7 @@ export function widthScale({
     designWidth: DESIGN_WIDTHS.pc,
     officialRootFontPx,
     columnWidth: width,
+    columnLeft: 0,
   };
 }
 
@@ -291,14 +296,15 @@ export function heroViewportFill({
   const slotH = vh * (fill / 100);
   const slotScale = Math.max(k, slotH / heroH);
   const designHeight = slotH / k;
-  const layoutOffsetDesign = Math.max(0, designHeight - heroH);
+  /* Later sections start at the real viewport edge (slotH / k), even when
+     that is shorter than the Figma hero. Positive = pad; negative = crop.
+     Official SS13 abuts in CSS (gap:0); used-size snap lives in the renderer. */
+  const layoutOffsetDesign = designHeight - heroH;
   const cropWindowDesign = slotH / slotScale;
-  /* Size stays on k. When the 100vh slot is taller than k×hero, hero UI
-     blocks anchor their BOTTOM fraction of the slot so a lower-hero title
-     keeps its Figma distance above the first-screen bottom edge instead of
-     riding y×k upward or floating in the middle. Never compress below
-     source Y. */
-  const uiYRatio = Math.max(1, designHeight / heroH);
+  /* Size stays on k. Lower-hero title / CTA anchor their BOTTOM fraction of
+     the 100vh slot so they stay on this screen instead of riding y×k into
+     the top half or sitting below the fold. */
+  const uiYRatio = designHeight / heroH;
   return {
     slotScale,
     fillsViewport: true,
@@ -373,14 +379,17 @@ export function heroCoverCrop({
   const dw = n(designWidth, NaN);
   const dh = n(heroDesignHeight, NaN);
   const k = n(pageScale, NaN);
-  if (![w, h, dw, dh, k].every(Number.isFinite) || w <= 0 || h <= 0 || dw <= 0 || dh <= 0 || k <= 0) {
-    return { scale: k, cropLeft: 0, applied: false };
+  if (![w, h, dw, dh].every(Number.isFinite) || w <= 0 || h <= 0 || dw <= 0 || dh <= 0) {
+    return { scale: Number.isFinite(k) ? k : null, cropLeft: 0, applied: false };
   }
-  const cover = Math.max(k, h / dh);
+  /* Official first-screen slot is the real viewport (1440 → 1440×900), not the
+     frozen 1920 column. Cover both axes; UI k stays on pageScale separately. */
+  const cover = Math.max(w / dw, h / dh);
+  const uiK = Number.isFinite(k) && k > 0 ? k : cover;
   return {
     scale: cover,
     cropLeft: (w / cover - dw) / 2,
-    applied: cover > k + 1e-6,
+    applied: cover > uiK + 1e-6 || Math.abs(w / dw - uiK) > 1e-6,
     plane: 'kv-visual',
     uiPlane: 'source-ui-scale',
   };
@@ -427,6 +436,7 @@ export function classifyResizeIntent({
     composition,
     widthScale: ruler,
     columnWidth: ruler.columnWidth,
+    columnLeft: ruler.columnLeft,
     heroFill: heroViewportFill({
       viewportH,
       widthScaleK: ruler.k,
@@ -462,8 +472,8 @@ export function resizeOwns() {
   return [
     'product/QA tree from composition width (torchlight official 0–1126 mobile, ≥1127 pc; no pad tree)',
     'device-picker buckets stay 0–750 / 751–1023 / ≥1024 and do not select the Figma tree',
-    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5; ≤1126 k=viewportW/750 (official 10vw html font stays 0.1*viewportW)',
-    'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; inventory stays one sheet)',
+    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5 and center-crop (left=(viewportW-1920)/2); ≤1126 k=viewportW/750 (official 10vw html font stays 0.1*viewportW)',
+    'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; KV window is the real viewport, not the frozen 1920 column; inventory stays one sheet)',
     'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
     'left directory rail stretches to the current viewport height without SS5 node IDs',
     'product-view page overflow-x clip (official adaptive-width)',

@@ -244,6 +244,37 @@ test('empty later-axes samples and self-exempted inert controls are not green', 
     problems: [],
   }), false);
   assert.equal(laterAxesProbeRecordIsGreen(greenLaterAxesProbeFixture()), true);
+  const missingKv = greenLaterAxesProbeFixture();
+  delete missingKv.productKv;
+  assert.equal(laterAxesProbeRecordIsGreen(missingKv), false);
+  const frozenKv = greenLaterAxesProbeFixture();
+  frozenKv.productKv[0] = {
+    ...frozenKv.productKv[0],
+    kvWidth: 1920,
+    kvHeight: 1071,
+    ok: true,
+    measured: true,
+  };
+  assert.equal(laterAxesProbeRecordIsGreen(frozenKv), false);
+  const laterInside = greenLaterAxesProbeFixture();
+  laterInside.productKv[0] = {
+    ...laterInside.productKv[0],
+    laterOutside: false,
+    ok: true,
+    measured: true,
+  };
+  assert.equal(laterAxesProbeRecordIsGreen(laterInside), false);
+  const ctaOff = greenLaterAxesProbeFixture();
+  ctaOff.productKv[0] = {
+    ...ctaOff.productKv[0],
+    ctaOnScreen: false,
+    ok: true,
+    measured: true,
+  };
+  assert.equal(laterAxesProbeRecordIsGreen(ctaOff), false);
+  const missingCover = greenLaterAxesProbeFixture();
+  delete missingCover.productKv[0].coversViewport;
+  assert.equal(laterAxesProbeRecordIsGreen(missingCover), false);
   const missingFont = greenLaterAxesProbeFixture();
   delete missingFont.samples[0].measuredOfficialRootPx;
   assert.equal(laterAxesProbeRecordIsGreen(missingFont), false);

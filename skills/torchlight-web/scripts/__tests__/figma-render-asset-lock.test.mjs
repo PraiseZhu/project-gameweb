@@ -308,14 +308,15 @@ test('authored multiline text keeps source metrics instead of height step-fit', 
 
 test('hero cover scale stays on the hero slot, not the released page stage', () => {
   assert.match(renderer, /heroVisualScale = slotScale/);
-  assert.match(renderer, /scale: Number\(heroVisualScale\) > 0 \? Number\(heroVisualScale\) : pageStageScale/);
+  /* Later sections stay on width-scale k. KV cover is a visual plane on top. */
+  assert.match(renderer, /scale: pageStageScale/);
   assert.match(renderer, /data-hero-visual-scale/);
   assert.match(renderer, /heroVisualScale \/ pageStageScale/);
   assert.doesNotMatch(renderer, /pageStageScale = slotScale/);
   assert.match(renderer, /data-kv-cover-plane/);
   assert.match(renderer, /data-hero-ui-plane/);
   assert.match(renderer, /stage\.style\.zoom = String\(pageStageMode \? pageStageScale : \(pageScope \? 1 : k\)\)/);
-  assert.match(renderer, /planeRatio > 1\.001/);
+  assert.match(renderer, /Math\.abs\(planeRatio - 1\) > 0\.001/);
   assert.match(renderer, /heroVisualPlane \|\| firstScreenKvInSection/);
   assert.match(renderer, /coverHeroSlot/);
   assert.match(renderer, /coverHeroVisualScale/);
