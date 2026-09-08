@@ -2,7 +2,7 @@
 
 触发词：`torchlightweb`（也可说 `torchlight-web` / `火炬网页还原`）。召回机制与「出清单」相同：仓根 `CLAUDE.md` 触发表命中后立即执行 `skills/torchlight-web/SKILL.md`，只跑 `npm run torchlightweb` 状态机。本包不装进 `.claude/skills/`（gitignore + 夜间健康检查会红）。没有触发表那一行，说 `torchlightweb` 不会加载本 Skill。禁止 showcase、跳过人核、直连出页。
 
-**完成标准（与 SKILL.md、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 / 1440 `?product=1`，sec 无缝、满铺子层不重画）→ 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
+**完成标准（与 SKILL.md、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 / 1440 `?product=1`，sec 无缝、满铺子层不重画）→ 像素门必须绿（每屏截已有页对规范稿分区图；超阈值拦，差异图在 `artifacts/stop1-pixel/`）→ 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
 | 情况 | 走哪条 |
 |---|---|
@@ -135,7 +135,9 @@ templates/
 ## 测试
 
 ```bash
-node --test 'scripts/__tests__/*.test.mjs'   # 或裸 npm test
+npm run test:changed                                         # 只跑相对 HEAD 的改动相关公开测试
+npm test -- scripts/__tests__/select-public-tests.test.mjs   # 指定单个文件
+npm test                                                     # 完整公开套件（夜间 / PR 闸门）
 ```
 
 测试是对抗式的：大量 fixture 专门构造「旧实现会假绿」的场景（合成 click 自证、mask 隐藏
@@ -148,5 +150,5 @@ MIT
 ## 环境坑备忘
 
 - **typescript 必须 5.x**：keyPath 写回（writeback AST 定位）依赖 TS Compiler API；TS7 起默认包（原生版）移除了该 API，裸 `npm i typescript` 会拉到 TS7 导致 keyPath 相关测试红。安装用 `npm i --no-save typescript@^5`，或让 writeback 从产品仓 node_modules 解析（推荐，零依赖）。
-- **`node --test scripts/__tests__/`（目录形式）在 Node 24 不可用**——用 `node --test 'scripts/__tests__/*.test.mjs'` 或裸 `npm test`。
+- **`node --test scripts/__tests__/`（目录形式）在 Node 24 不可用**——本地改文件用 `npm run test:changed` 或 `npm test -- scripts/__tests__/<file>.test.mjs`；完整公开套件才裸 `npm test`。
 - worktree/异地跑测试需 `QA_HIFI_MODULE_ROOT=<装了 playwright 的项目>`。

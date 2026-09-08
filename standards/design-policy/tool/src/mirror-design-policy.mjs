@@ -90,6 +90,12 @@ export function implementationFromPolicy(policy) {
           zeroLangs: [...policy.letterSpacingPolicy.zeroLangs],
         }
       : undefined,
+    localeFontFamily: policy.localeFontFamily
+      ? JSON.parse(JSON.stringify(policy.localeFontFamily))
+      : undefined,
+    localeInvariantFamilies: Array.isArray(policy.localeInvariantFamilies)
+      ? [...policy.localeInvariantFamilies]
+      : undefined,
     chromeOfficialRootFontVw: policy.officialRootFontVw,
   };
 }
@@ -138,6 +144,31 @@ export function mirrorDesignPolicy({ policy, implementation, path = 'DESIGN.md' 
     const expZero = policy.letterSpacingPolicy.zeroLangs.join(',');
     if (keep !== expKeep) problems.push(`letterSpacingPolicy.keepSourceLangs [${keep}] != YAML [${expKeep}]`);
     if (zero !== expZero) problems.push(`letterSpacingPolicy.zeroLangs [${zero}] != YAML [${expZero}]`);
+  }
+  if (policy.localeFontFamily) {
+    const got = implementation.localeFontFamily;
+    if (!got || typeof got !== 'object') {
+      problems.push('localeFontFamily missing');
+    } else {
+      for (const lang of Object.keys(policy.localeFontFamily)) {
+        const expectedRow = policy.localeFontFamily[lang];
+        const actualRow = got[lang];
+        if (!actualRow) {
+          problems.push(`localeFontFamily.${lang} missing`);
+          continue;
+        }
+        for (const role of Object.keys(expectedRow)) {
+          if (actualRow[role] !== expectedRow[role]) {
+            problems.push(`localeFontFamily.${lang}.${role} ${actualRow[role]} != YAML ${expectedRow[role]}`);
+          }
+        }
+      }
+    }
+    const expectedInv = Array.isArray(policy.localeInvariantFamilies) ? policy.localeInvariantFamilies.join(',') : '';
+    const actualInv = Array.isArray(implementation.localeInvariantFamilies) ? implementation.localeInvariantFamilies.join(',') : '';
+    if (actualInv !== expectedInv) {
+      problems.push(`localeInvariantFamilies [${actualInv}] != YAML [${expectedInv}]`);
+    }
   }
   if (implementation.chromeOfficialRootFontVw == null) {
     problems.push('chromeOfficialRootFontVw missing');

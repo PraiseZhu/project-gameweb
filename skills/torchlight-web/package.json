@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node scripts/test-public.mjs",
-    "test:public": "node scripts/test-public.mjs",
+    "test": "node scripts/test-public.mjs --",
+    "test:public": "node scripts/test-public.mjs --",
+    "test:changed": "node scripts/test-public.mjs --changed",
     "test:demo": "node scripts/test-demo.mjs",
     "figma:onboard": "node scripts/onboard.mjs",
     "figma:preview:first": "node scripts/preview-first.mjs",

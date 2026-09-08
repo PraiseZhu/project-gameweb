@@ -639,61 +639,74 @@
     return this._orderKey(loc);
   },
 
-  /* Font source-truth routing — single source of truth is
-     scripts/lib/translation/font-routing.mjs; mirrored inline here because this
-     renderer is a self-contained inlined artifact. Keyed ONLY by normalized
-     language + generic role (title/button/body), never by page/node id.
-     A missing local file is NOT faked: the truth family is still routed, and the
-     missing load surfaces via fonts-manifest `missing` + evidence font.loaded. */
-  /* 字体角色以【源字体家族】为真源签名，不靠脆弱的名称正则：Figma 里
-     title/button 用 display 家族（Torch 优黑 / Bebas Neue），body 正文用同一份
-     优黑或目标语言的思源/Noto。源家族是 display 类 → 该节点在目标语言里也用
-     display/标题/按钮家族；源是正文类 → 目标语言用正文家族。这比从 role 字符串猜
-     更稳：同一 heading-content-card 角色里既有标题也有正文，但它们的源家族不同。 */
+  /* Font source-truth routing — family names come from DESIGN.md YAML via
+     window.__designPolicy.localeFontFamily / localeInvariantFamilies. Keyed ONLY
+     by normalized language + generic role (title/button/body), never by page/node
+     id. A missing local file is NOT faked: the truth family is still routed. */
+  /* 字体角色以【源字体家族】为真源签名：Figma 里 title/button 用 display 家族
+     （Torch 优黑），body 用同一份优黑或目标语言思源/Noto。YAML
+     localeInvariantFamilies 命中的源家族全语言不换。 */
+  _isLocaleInvariantFamily(family = '') {
+    const name = String(family || '').trim();
+    const list = designPolicy().localeInvariantFamilies;
+    return !!name && Array.isArray(list) && list.includes(name);
+  },
   _fontRoleFor({ sourceFamily = '', role = '', semanticClass = '' } = {}) {
     const fam = String(sourceFamily || '');
-    /* Bebas Neue 只承载 latin/ASCII 字形（日期/兑换码/计数），任何语言都保持
-       Bebas（weight 400）：换成 CJK display 家族会改字重并撑爆固定框（如兑换码）。 */
-    if (/Bebas/i.test(fam)) return 'latin-display';
+    if (this._isLocaleInvariantFamily(fam)) return 'latin-display';
     if (/Alimama/i.test(fam) || /YouHei/i.test(fam) || /FZVariable/i.test(fam)) {
-      /* display 家族：再分 title / button。按钮标签由结构 role 决定。 */
       const hay = (String(role || '') + ' ' + String(semanticClass || '')).toLowerCase();
       if (/button|btn|skill-label|tag|label|badge/.test(hay)) return 'button';
       return 'title';
     }
     return 'body';
   },
+  /* Mirror scripts/lib/translation/font-routing.mjs#routeFontWeight. */
+  _routeFontWeight({ family = null, sourceWeight = null } = {}) {
+    const requested = Number(sourceWeight);
+    if (this._isLocaleInvariantFamily(family)) return 400;
+    if (/Alimama/i.test(String(family || ''))) return 700;
+    if (/YouHei/i.test(String(family || '')) || /FZVariable/i.test(String(family || ''))) {
+      return Number.isFinite(requested) ? requested : 600;
+    }
+    return Number.isFinite(requested) ? requested : 400;
+  },
   _routeFontFamily({ language = 'unknown', role = '', semanticClass = '', sourceFamily = null, sourceWeight = 400 } = {}) {
     const raw = String(language || '').replace('_', '-').toLowerCase();
     const lang = raw.startsWith('zh-tw') || raw.startsWith('zh-hk') ? 'zh-TW'
       : raw.startsWith('zh') ? 'zh-CN' : raw.startsWith('ja') ? 'ja'
       : raw.startsWith('ko') ? 'ko' : raw.startsWith('en') ? 'en' : raw;
-    const TABLE = {
-      'zh-CN': { title: 'FZVariable-YouHeiS WT W H', button: 'FZVariable-YouHeiS WT W H', body: 'FZVariable-YouHeiS WT W H' },
-      'en':    { title: 'Noto Sans',        button: 'Noto Sans',        body: 'Noto Sans' },
-      'ja':    { title: 'Noto Sans JP',     button: 'Noto Sans JP',     body: 'Noto Sans JP' },
-      'ko':    { title: 'Noto Sans KR',     button: 'Noto Sans KR',     body: 'Noto Sans KR' },
-      'zh-TW': { title: 'Noto Sans HK',     button: 'Noto Sans HK',     body: 'Noto Sans HK' },
-    };
-    const fontRole = this._fontRoleFor({ sourceFamily, role, semanticClass });
-    /* latin-only display 家族全语言原样保留：本地化不是替换成 CJK display（那是回归）。 */
-    if (fontRole === 'latin-display') {
-      return { family: sourceFamily, weight: sourceWeight, role: fontRole, language: lang, routed: false };
+    const table = designPolicy().localeFontFamily;
+    if (!table || typeof table !== 'object') {
+      throw new Error('figma-render: missing designPolicy().localeFontFamily');
     }
-    const t = TABLE[lang];
-    if (!t) return { family: sourceFamily, weight: sourceWeight, role: fontRole, language: lang, routed: false };
+    const fontRole = this._fontRoleFor({ sourceFamily, role, semanticClass });
+    if (this._isLocaleInvariantFamily(sourceFamily)) {
+      return {
+        family: sourceFamily,
+        weight: this._routeFontWeight({ family: sourceFamily, sourceWeight }),
+        role: fontRole,
+        language: lang,
+        routed: false,
+      };
+    }
+    const t = table[lang];
+    if (!t || typeof t !== 'object') {
+      throw new Error('figma-render: missing localeFontFamily.' + lang);
+    }
     const family = /^Noto Sans/i.test(String(sourceFamily || ''))
-      ? (lang === 'zh-CN' ? sourceFamily : (t.body || sourceFamily))
-      : (t[fontRole] || t.body || sourceFamily);
-    /* Torch zh-CN keeps the source YouHei weight (600/900). en Bebas Neue only
-       ships 400. The routed weight follows the family. */
-    const requestedWeight = Number(sourceWeight);
-    const weight = /Alimama/.test(family) ? 700
-      : /Bebas/i.test(family) ? 400
-      : /YouHei/i.test(family) || /FZVariable/i.test(family)
-        ? (Number.isFinite(requestedWeight) ? requestedWeight : 600)
-      : Number.isFinite(requestedWeight) ? requestedWeight : 400;
-    return { family, weight, role: fontRole, language: lang, routed: family !== sourceFamily };
+      ? (lang === 'zh-CN' ? sourceFamily : t.body)
+      : (t[fontRole] || t.body);
+    if (!family) {
+      throw new Error('figma-render: missing localeFontFamily.' + lang + '.' + (fontRole || 'body'));
+    }
+    return {
+      family,
+      weight: this._routeFontWeight({ family, sourceWeight }),
+      role: fontRole,
+      language: lang,
+      routed: family !== sourceFamily,
+    };
   },
   /* Mirror scripts/lib/translation/font-routing.mjs#youHeiVariationSettings.
      The inlined renderer cannot import that module. */
@@ -5045,8 +5058,8 @@
 
              【2026-08-12 缺译字体回退】翻译采用判定必须早于字体路由：
              缺译文本显示的是**源 Figma 原文**（多为中文），若仍按当前 locale 路由
-             （如 en→Bebas Neue / ja→Noto Sans JP），会用拉丁/日文字体渲染中文字形，
-             回退字体与源 Alimama ShuHeiTi 视觉不一致 —— 09「源格觉醒」标题即此错。
+             （如 en→Noto Sans / ja→Noto Sans JP），会用拉丁/日文字体渲染中文字形，
+             回退字体与源优黑视觉不一致。
              规则（通用、不看文案/node id）：仅当**采用了真实译文**才走 locale 路由；
              缺译回退原文时保留源 Figma family/weight，不路由。data-copy-missing 在
              下方照常打标留痕。 */

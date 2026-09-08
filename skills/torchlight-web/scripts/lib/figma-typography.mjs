@@ -352,10 +352,9 @@ export function classifyTypographyRange({ truth = {}, browser = {}, language = '
   const clipped = browser.visible === false || browser.clipPath || browser.overflow === 'hidden';
   const ellipsis = browser.textOverflow === 'ellipsis' || browser.ellipsis === true;
   const font = browser.font || {};
-  /* routed 请求字重优先：非 zh-CN 的 display 文本被 font routing 重路由（如 en 标题 Figma 源
-     Alimama 700 -> Bebas Neue 400，官网实测 Bebas 仅 400）。synthetic-weight 应判【路由后请求】
-     （400 在 Bebas 可用字重里 -> requested-weight），而 Figma 源 700 保留在 source.style 作对照。
-     用源 700 判会把合法的 400 路由误报成 synthetic。zh-CN 无重路由，仍用源字重。 */
+  /* routed 请求字重优先：非 zh-CN 文本按 DESIGN.md localeFontFamily 重路由。
+     synthetic-weight 应判【路由后请求】是否落在实际加载字体的可用字重里。
+     Figma 源字重保留在 source.style 作对照。invariant 家族保持源家族/字重 400。 */
   const requestedWeight = Number.isFinite(Number(font.routedRequestedWeight)) ? Number(font.routedRequestedWeight) : style.fontWeight;
   const weight = classifyFontWeight({
     requestedWeight,

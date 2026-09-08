@@ -28,7 +28,7 @@
 
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { FONT_SOURCE_ROUTING, routeFontFamily } from './lib/translation/font-routing.mjs';
+import { FONT_SOURCE_ROUTING, LOCALE_INVARIANT_FAMILIES, routeFontFamily } from './lib/translation/font-routing.mjs';
 import { dirname, join, resolve } from 'node:path';
 
 function fail(msg) {
@@ -137,12 +137,15 @@ function main() {
 
   const truth = unwrap(JSON.parse(readFileSync(truthPath, 'utf8')));
   const usage = collectUsage(truth);
-  /* 语言+角色路由的目标字体也必须纳入收集：truth 只记 zh 源家族，路由表
-     （FONT_SOURCE_ROUTING）声明的 en/ja/ko/zh-TW 家族（Noto 系列、Bebas）不在 truth
+  /* 语言+角色路由的目标字体也必须纳入收集：truth 只记 zh 源家族，YAML
+     localeFontFamily / localeInvariantFamilies 声明的外文家族不在 truth
      里，但它们会被渲染层真实引用。不收集就会漏注入 @font-face、missing 清单也不全。
      有文件的注入、没文件的进 missing —— 都不许静默。 */
   {
-    const sourceTruthFamilies = new Set([...(Object.values(FONT_SOURCE_ROUTING['zh-CN'] || {})), 'Bebas Neue']);
+    const sourceTruthFamilies = new Set([
+      ...Object.values(FONT_SOURCE_ROUTING['zh-CN'] || {}),
+      ...LOCALE_INVARIANT_FAMILIES,
+    ]);
     const sourceUsage = usage.filter((u) => sourceTruthFamilies.has(u.family) || /^Noto Sans/i.test(u.family));
     const byFamily = new Map(usage.map((u) => [u.family, u]));
     for (const source of sourceUsage) {

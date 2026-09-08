@@ -221,6 +221,18 @@ export function implementationSnapshotFromModules({
         throw new Error('implementation snapshot missing live letterSpacingPolicy pin');
       }
     }
+    if (policy.localeFontFamily) {
+      const stripped = String(renderSource).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+      if (!/localeFontFamily/.test(renderSource)
+        || !/localeInvariantFamilies/.test(renderSource)
+        || !/_routeFontFamily/.test(renderSource)
+        || !/designPolicy\(\)\.localeFontFamily/.test(renderSource)) {
+        throw new Error('implementation snapshot missing live localeFontFamily pin');
+      }
+      if (/const TABLE = \{/.test(stripped) && /'Noto Sans'/.test(stripped)) {
+        throw new Error('implementation snapshot render still inlines localeFontFamily table');
+      }
+    }
   }
   if (chromeSource != null) {
     const chromeComp = chromeCompositionFromSource(chromeSource);
@@ -265,6 +277,12 @@ export function implementationSnapshotFromModules({
           keepSourceLangs: [...policy.letterSpacingPolicy.keepSourceLangs],
           zeroLangs: [...policy.letterSpacingPolicy.zeroLangs],
         }
+      : undefined,
+    localeFontFamily: policy.localeFontFamily
+      ? JSON.parse(JSON.stringify(policy.localeFontFamily))
+      : undefined,
+    localeInvariantFamilies: Array.isArray(policy.localeInvariantFamilies)
+      ? [...policy.localeInvariantFamilies]
       : undefined,
     chromeOfficialRootFontVw: chromeVw,
   };

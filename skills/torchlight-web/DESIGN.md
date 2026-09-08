@@ -64,24 +64,47 @@ letterSpacingPolicy:
     - en
     - ja
     - ko
+localeFontFamily:
+  zh-CN:
+    title: FZVariable-YouHeiS WT W H
+    button: FZVariable-YouHeiS WT W H
+    body: FZVariable-YouHeiS WT W H
+  en:
+    title: Noto Sans
+    button: Noto Sans
+    body: Noto Sans
+  ja:
+    title: Noto Sans JP
+    button: Noto Sans JP
+    body: Noto Sans JP
+  ko:
+    title: Noto Sans KR
+    button: Noto Sans KR
+    body: Noto Sans KR
+  zh-TW:
+    title: Noto Sans HK
+    button: Noto Sans HK
+    body: Noto Sans HK
+localeInvariantFamilies:
+  - Bebas Neue
 ---
 
 # 火炬之光宣发页 DESIGN.md
 
-本文件是火炬做页的**政策入口**。清单仍是数据入口：它回答这一稿画了什么。本文件回答窗口怎么切、尺子怎么量、外文怎么缩。数字写在这里，不焊进 inventory JSON，也不替代 `figma:from-handoff`。切树、稿宽、`10vw`、`100vh`、外文比例、缩字阶梯以文首 YAML 为准。PC 列在 `1127–1920` 冻 1920（`k=0.5`）写在第 5.0 节；当前 parser 尚未收这条，实现合同听第 5.0 节，不得另开一套 `k`。产品切树是 `composition`（0–1126 / ≥1127），QA 样品桶是 `qaBuckets`，两表不得并成一张。
+本文件是火炬做页的**政策入口**。清单仍是数据入口：它回答这一稿画了什么。本文件回答窗口怎么切、尺子怎么量、外文用哪套字体、怎么缩。数字与家族名写在这里，不焊进 inventory JSON，也不替代 `figma:from-handoff`。切树、稿宽、`10vw`、`100vh`、外文比例、缩字阶梯、字体家族以文首 YAML 为准。PC 列在 `1127–1920` 冻 1920（`k=0.5`）写在第 5.0 节；当前 parser 尚未收这条，实现合同听第 5.0 节，不得另开一套 `k`。产品切树是 `composition`（0–1126 / ≥1127），QA 样品桶是 `qaBuckets`，两表不得并成一张。
 
 ## 1. 权威边界
 
 | 入口 | 回答什么 | 不回答什么 |
 |---|---|---|
-| 交接包 / inventory | 数据：`pageBox`、`fonts`、`role` + `params`、`variants`、`determined` / `unknown`、组件集名 | 断点、`k`、`100vh`、外文比例、Auto Layout 上限、字距、主 CTA 字样跟谁 |
-| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、Auto Layout 上限、弹窗铺满与遮罩、字距、主 CTA 字样跟谁 | 这一稿有哪些图层、哪条关系 determined、哪句对哪语 |
-| `docs/copy-extraction-adapter.md` | 切语言时怎么取字 | 断点、`k`、外文缩字比例、字距 |
+| 交接包 / inventory | 数据：`pageBox`、`fonts`、`role` + `params`、`variants`、`determined` / `unknown` | 断点、`k`、`100vh`、外文比例、字体家族、Auto Layout 上限、字距、主 CTA 字样跟谁 |
+| 本文件 DESIGN.md | 政策：断点、`k`、`100vh`、外文比例、字体家族、Auto Layout 上限、弹窗铺满与遮罩、字距、主 CTA 字样跟谁 | 这一稿有哪些图层、哪条关系 determined、哪句对哪语 |
+| `docs/copy-extraction-adapter.md` | 切语言时怎么取字 | 断点、`k`、外文缩字比例、字体家族、字距 |
 
 - 做页只吃 `kind=ready` 的交接包。`unknown` 只画不接线。
 - 吃包命令仍是 `figma:from-handoff`（只验包、打印消费计划，不写 HTML）。出页命令是 `figma:html-from-handoff`。
 - 没有 ready 包就停下来要包。禁止把清单 JSON 焊进本文件当数据源。
-- 本文件不替代 `figma:from-handoff`，也不改 renderer / naming spec。
+- 本文件不替代 `figma:from-handoff`，也不改 naming spec。政策进 YAML 后，路由 / `_routeFontFamily` 必须读 YAML，不许另开字体名单。
 
 ## 2. 正式产品入口
 
@@ -102,8 +125,8 @@ letterSpacingPolicy:
 ## 4. 视觉听谁的
 
 - 几何、切图、简中字号、图层结构听清单 + Figma 源。
-- 窗口切树、宽度尺子、首屏高度、三平面听本文件第 5 章（官方自适应尺寸模型）。外文档位比例、Auto Layout 上限听第 6 章。
-- 实现合同（resize / locale / typography）描述怎么做；政策数字以本文件第 5、6 章为准。YAML 管切树 / 稿宽 / `10vw` / `100vh` / 外文；第 5.0 节管 PC 冻列。
+- 窗口切树、宽度尺子、首屏高度、三平面听本文件第 5 章（官方自适应尺寸模型）。外文档位比例、字体家族、Auto Layout 上限听第 6 章。
+- 实现合同（resize / locale / typography）描述怎么做；政策数字以本文件第 5、6 章为准。YAML 管切树 / 稿宽 / `10vw` / `100vh` / 外文比例与字体家族；第 5.0 节管 PC 冻列。
 - 官方 `is-pc` / `is-mobile` 是 UA body class，不选树。哈希 class / 季节切图 URL 不是产品选择器。
 
 ## 5. 画幅与平面（官方自适应尺寸 = 产品拉伸规范）
@@ -266,11 +289,13 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 
 字距听本文件，不听 copy 适配器。`zh-CN` / `zh-TW` 共用稿上 `letterSpacing`（简繁一致）；`en` / `ja` / `ko` 强制 `0`。缺 YAML 时才退回稿值。切语言后必须重写 `letter-spacing`，禁止把中文拉开的字距带到拉丁/韩文。
 
+切语言换字体家族听文首 `localeFontFamily`（语言 × title/button/body）。角色仍按稿上源字体认：优黑 / 数黑体当标题或按钮，其余走正文。稿上源家族名落在 `localeInvariantFamilies`（现为 `Bebas Neue`：兑换码 / 日期）时，全语言不换、字重 400；实现必须按 YAML 列表精确匹配源家族名，禁止另开 `/Bebas/i` 名单。不按语言改大小写；只有稿上 `textCase=UPPER` 才 `uppercase`。识别出的主 CTA / 首屏主按钮在 `en` 强制 `uppercase`，详见 6.2。
+
 缺目标文案输出 `unverified-no-locale-copy`，禁止拿简中顶上当通过。切语言、对文案时取字纪律听 [`docs/copy-extraction-adapter.md`](docs/copy-extraction-adapter.md)，本文件不写哪句对哪语。
 
 ### 6.1 执行清单
 
-四项按这个顺序落地。extract 先写 `layout.maxWidth` / `layout.maxHeight`，再改 `_fitText`。本清单只授权改 extract 这两键的接线，以及 renderer 的 `_fitText` / 镜像 `_fitAuthorization`；不改 naming spec、Interaction、Pack、语义换行。
+四项按这个顺序落地。extract 先写 `layout.maxWidth` / `layout.maxHeight`，再改 `_fitText`。本清单授权改 extract 这两键的接线，renderer 的 `_fitText` / 镜像 `_fitAuthorization`，以及 `_routeFontFamily` 去读 YAML 字体家族；不改 naming spec、Interaction、Pack、语义换行。
 
 #### A. 数据字段
 
@@ -304,31 +329,15 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 - extract：fixture `maxWidth: 400` → truth `layout.maxWidth === 400`；没写的键必须缺席。
 - owner：近层无 max、外层 `maxWidth: 400` → 用 400；近层 `maxWidth: 200`、外层 400 → 用 200；外层 AL max 与 TEXT 之间夹着被穿过的纯容器 → `parentId` 挂到外层，owner 仍是外层，不得在缺失 wrapper 处断链。
 - `_fitText`：基准 24px、宽放不进 `maxWidth` → 23、22… 直到放下；只有 `maxWidth`、高度变长 → 不因高度缩；缩到源基准的 75% 仍超 → 继续减 1px，不许打 `floor-exceeded` 当绿。
-- 门：外文主张必须带 owner id、用到的 `maxWidth`（有则加 `maxHeight`）、缩完整数 px。`data-fit-scale` 百分比和 `floor-exceeded` 不再当通过证据。省略号 / clip 过关即红。
+- 门：外文主张必须带 owner id、用到的 `maxWidth`（有则加 `maxHeight`）、缩完整数 px、实际字体家族名。`data-fit-scale` 百分比和 `floor-exceeded` 不再当通过证据。省略号 / clip 过关即红。
 - 旧单测里「HUG 永不缩」「75% 地板」「阶梯档」按本清单改口，不许留两条规则。
 
 ### 6.2 主 CTA 字样（`btn/主要按钮` 跟 `首屏主按钮` 该语言）
 
-同一语言下，`btn/主要按钮` 的**字体类型数据**必须和 `首屏主按钮` 对应语言变体上的活字一致。本条只跟字样，不跟文案、不跟字号。字号仍走第 6 章按钮档（清单源字号，书面 max 放得下就不预缩）。本条不改 naming spec。不焊 node id，不写 `sec/2` / `sec/3`。
+`btn/主要按钮` 跟同端 `首屏主按钮` 该语言变体的 `fontFamily` / `fontWeight` / `letterSpacing`。身份只认组件集名与 owning INSTANCE 的 `componentId`，不认页实例名；类型跟随发生在已采用译文之后。
 
-**谁跟谁**（看组件集名，不看页实例名、不看文案原文）：
-
-- 锚：组件集名精确为 `首屏主按钮`（无前缀语言壳，`lang` 轴）。当前语言取该端组件集里对应变体上的 TEXT：`zh-CN→cn`，`zh-TW→tw`，`en→en`，`ja→jp`，`ko→kr`。PC / 手机各跟自己那一套，不串端。
-- 跟随：组件集名精确为 `btn/主要按钮` 的页实例活字。页上实例名可以仍是 `btn/按钮`；以组件集名为准。`btn/次要按钮` 的实例也叫 `btn/按钮`，不得误跟。
-- 不在本条：`btn/次要按钮`、`btn/关闭按钮`、`btn/播放按钮`、`btn/icon`、顶栏折扣、导航、语言切换、兑换码。Bebas 拉丁 display（日期 / 兑换码）仍全语 Bebas 400。
-
-**跟哪些字段（字体类型数据）**
-
-| 字段 | 规则 |
-|---|---|
-| `fontFamily` | 跟锚该语言变体的 `text.fontFamily` |
-| `fontWeight` | 跟锚该语言变体的 `text.fontWeight` |
-| `letterSpacing` | 跟锚该语言变体的 `text.letterSpacing`；同时仍守第 6 章字距政策（简繁可非 0，`en` / `ja` / `ko` 为 `0`） |
-| 大小写 | `en` **页面强制大写**：`首屏主按钮` 与 `btn/主要按钮` 都画成 uppercase。本地化原文可以是 `View More`；页面必须是 `VIEW MORE`。不改文案表，用 `text-transform: uppercase`。稿上 `textCase` 没写 UPPER 也不许跟成不变换。`zh-CN` / `zh-TW` / `ja` / `ko` 不变换大小写。 |
-
-不跟：`characters` / 文案行（`en` 只变显示大小写，不改表里的字）、`fontSize` / `lineHeight`、按钮宽度、切图。缺该语言译文时仍走缺译纪律：不路由字族/字重、不冒充已对齐。`en` 页面强制大写仍生效，前提是该语言变体存在。
-
-**锚缺该语言变体**（稿上没出这语，例如没有 `jp`）→ 本条不适用，不报红，也不拿简中顶。**变体在但上面没有活字** → `unverified-primary-cta-type`，禁止拿简中、另一端、或 `btn/次要按钮` 顶上当通过。
+- 缺变体为 `not-applicable` / `anchor-variant-absent`，不报红；变体在但没有活字为 `unverified-primary-cta-type`。
+- `en` 主 CTA / 首屏主按钮强制 `text-transform: uppercase`，即使 `textCase` 为空、文案为 `View More`；不改文案表。缺译保留源家族/字重但仍强制大写，不走类型跟随。
 
 ## 7. 不许改的
 
@@ -337,13 +346,13 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 - `kind=ready` 才吃；`unknown` 只画不接线。
 - Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=viewportW/750`。首屏 100vh 只垫短稿，高稿保持 pageBox 往下排。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
-- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。
-- `btn/主要按钮` 的字体类型数据跟同端 `首屏主按钮` 该语言变体，不另开一套。`en` 主 CTA 页面强制大写，不听文案表大小写，也不听稿上有没有 `textCase=UPPER`。
-- 不把 inventory JSON 焊进本文件。不改 naming spec、Interaction / Pack / 语义换行。`_fitText` 与 extract 的 max 字段只按第 6.1 节改。
+- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。
+- `btn/主要按钮` 的字体类型数据跟同端 `首屏主按钮` 该语言变体，不另开一套；`en` 主 CTA 页面强制大写，不听文案表大小写，也不听稿上有没有 `textCase=UPPER`；稿上没出该语言变体（如没有 `jp`）不算失败。
+- 不把 inventory JSON 焊进本文件。不改 naming spec、Interaction / Pack / 语义换行。`_fitText` 与 extract 的 max 字段只按第 6.1 节改；`_routeFontFamily` 只许改成读 YAML。
 
 ## 8. 别造第二份
 
-- 断点、`k`、`100vh`、外文比例、Auto Layout 上限、主 CTA 字样只在本文件定政策。resize / locale / typography 合同只描述实现，不再自称 owns the numbers。
+- 断点、`k`、`100vh`、外文比例、字体家族、Auto Layout 上限、主 CTA 字样只在本文件定政策。resize / locale / typography 合同只描述实现，不再自称 owns the numbers。
 - 自适应尺寸只在第 5.0 节定政策。5.1 是官方闭包清单。resize 合同只描述实现，不得另开一套 `k`。
 - 不要为样品宽度（360 / 375 / 390 / 412 / 414 / 430）发明中间布局，也不要发明 pad 树。
 - 不要把 live Figma extract 当成交接包。
@@ -354,7 +363,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 2. 出页：`npm run torchlightweb -- --handoff <dir> --demo <dir>` 写出 demo/`index.html`。直连 `figma:html-from-handoff` 锁死。
 3. `preview:first` 必须绿，才给人 `?product=1`。
 4. 拉伸主张要带视口 `w×h`、树（≤1126 手机 / ≥1127 PC）、列宽（`>1920` 随视口 / `1127–1920` 冻 1920 / 手机 = 视口）、实际 `k`、两层 hero 是否都等于 `innerHeight`、`html` 字号是否等于 `10vw`。不得用 UA `is-pc` / `is-mobile` 当切树证据。`1127–1920` 若仍用 `k = viewportW/3840`（随视口变）即失败。
-5. 外文主张要带档位 × 语言比例、B 找到的 owner id、用到的 `maxWidth`（有则加 `maxHeight`）、缩完的整数 px。超出已写上限、用裁切 / 省略号顶过关、或仍用 `data-fit-scale` / `floor-exceeded` 当通过，即失败。详见第 6.1 节 D。
+5. 外文主张要带档位 × 语言比例、实际字体家族名、B 找到的 owner id、用到的 `maxWidth`（有则加 `maxHeight`）、缩完的整数 px。超出已写上限、用裁切 / 省略号顶过关、或仍用 `data-fit-scale` / `floor-exceeded` 当通过，即失败。详见第 6.1 节 D。
 6. `btn/主要按钮` 主张要带同端 `首屏主按钮` 该语言变体的 `fontFamily` / `fontWeight` / `letterSpacing`。`en` 主 CTA（锚和跟随）页面必须 uppercase；本地化不是大写也要强制大写。跟随节点仍用自己的源字族、源字重、源字距，或英文仍显示 `View More` 即失败。稿上没出该语言变体（如没有 `jp`）不算失败。变体在但没有活字才打 `unverified-primary-cta-type`。详见第 6.2 节。
 7. 政策镜像闸保证 YAML 与 resize / 字号 / chrome / render 数字同源。它不保证三平面、Hero 钉底边、或缺文案不许拿简中顶上已经在页面上成立。镜像绿不是页面对。当前 YAML 尚未收录 1920 冻列，第 5.0 节仍是这条的政策入口。
 
@@ -362,7 +371,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 
 ## 10. 怎么改、还缺什么
 
-改政策数字：只改本文件第 5、6 章和文首 YAML，然后让实现合同跟上。不要在 inventory、renderer、官方站 CSS 里另开一条数字。第 6 章怎么落地见 6.1。
+改政策数字与字体家族：只改本文件第 5、6 章和文首 YAML，然后让实现合同跟上。不要在 inventory、renderer、官方站 CSS 里另开一条数字或第二张字体表。第 6 章怎么落地见 6.1。
 
 还缺什么（本文件不补）：
 

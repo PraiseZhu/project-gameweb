@@ -539,6 +539,21 @@ function tapFailureNames(output, limit = 6) {
 
 const TRUSTED_TAP_MAX_BUFFER = 32 * 1024 * 1024;
 
+function tapProcessDetail(result) {
+  const parts = [];
+  if (result?.status != null) parts.push(`退出码 ${result.status}`);
+  if (result?.signal) parts.push(`信号 ${result.signal}`);
+  return parts.length ? parts.join(' / ') : '无退出码与信号';
+}
+
+function missingTapTestsMessage(label, { cases = 0, result } = {}) {
+  const detail = tapProcessDetail(result);
+  if (cases > 0) {
+    return `${label}: TAP 摘要被截断（已看到 ${cases} 个真实用例，但没有 # tests；${detail}），不能当作有自测`;
+  }
+  return `${label}: TAP 里看不到 # tests，不能当作有自测（${detail}）`;
+}
+
 function runTrustedTests(label, packageDir) {
   const listed = listPublicTests(packageDir);
   if (listed && listed.error) return `${label}: ${listed.error}`;
@@ -547,7 +562,7 @@ function runTrustedTests(label, packageDir) {
   console.log(`\n==> ${label} trusted tap\n    node --test --test-reporter=tap (${files.length} files)`);
   const childEnv = { ...process.env };
   delete childEnv.NODE_TEST_CONTEXT;
-  const result = spawnSync(process.execPath, ['--test', '--test-reporter=tap', '--test-force-exit', ...files], {
+  const result = spawnSync(process.execPath, ['--test', '--test-reporter=tap', ...files], {
     cwd: packageDir,
     encoding: 'utf8',
     env: childEnv,
@@ -565,14 +580,14 @@ function runTrustedTests(label, packageDir) {
   const output = `${result.stdout || ''}\n${result.stderr || ''}`;
   const tap = parseTap(output);
   const cases = countRealTapCases(output, files);
-  if (tap.tests == null) return `${label}: TAP 里看不到 # tests，不能当作有自测`;
+  if (tap.tests == null) return missingTapTestsMessage(label, { cases, result });
   if (cases < 1) return `${label}: TAP 没有真实用例名，只算文件包装层，不能当作有自测`;
   if (tap.pass < 1) return `${label}: TAP 没有实际通过的用例，全 skip/todo 不能当作有自测`;
-  if (result.status !== 0 || tap.fail > 0) {
+  if (result.status !== 0 || result.signal || tap.fail > 0) {
     const names = tapFailureNames(output);
     const detail = names.length ? `\n    挂的用例（前 ${names.length}）:\n${names.map((n) => `    - ${n}`).join('\n')}` : '';
     console.error(detail);
-    return `${label}: TAP 失败 ${tap.fail} / 退出码 ${result.status}${names.length ? `（如: ${names.slice(0, 3).join('；')}）` : ''}`;
+    return `${label}: TAP 失败 ${tap.fail} / ${tapProcessDetail(result)}${names.length ? `（如: ${names.slice(0, 3).join('；')}）` : ''}`;
   }
   return null;
 }
@@ -840,6 +855,8 @@ export {
   collectTestFiles,
   parseTap,
   countRealTapCases,
+  missingTapTestsMessage,
+  tapProcessDetail,
   listPublicTests,
   hasDeclaredTest,
   fingerprintOf,

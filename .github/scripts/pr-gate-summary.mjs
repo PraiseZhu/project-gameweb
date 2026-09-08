@@ -65,6 +65,13 @@ const RULES = [
     problem: '这个包自己的公开自测没过。',
     consequence: '合进去等于把红测试带上主干；做页公开套件不再能当「还能用」的依据。',
   },
+  {
+    id: 'tap-truncated',
+    test: (line) => /TAP 摘要被截断|看不到 # tests/.test(line),
+    error: (line) => clip(line),
+    problem: '公开自测的 TAP 摘要没写完，闸门不能把它当成已经验过。已经跑出用例但缺 # tests 仍算截断，不是「没自测」。',
+    consequence: '合进去后夜间同一把尺子还会红；说不清这包今晚到底有没有完整自测。',
+  },
 ];
 
 function snippet(line) {

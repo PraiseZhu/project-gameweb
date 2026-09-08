@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { FONT_SOURCE_ROUTING, routeFontFamily, youHeiVariationSettings } from '../lib/translation/font-routing.mjs';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { DESIGN_POLICY } from '../lib/design-policy.generated.mjs';
+import { FONT_SOURCE_ROUTING, LOCALE_INVARIANT_FAMILIES, routeFontFamily, youHeiVariationSettings } from '../lib/translation/font-routing.mjs';
 
 const YOUHEI = 'FZVariable-YouHeiS WT W H';
 
@@ -40,4 +44,16 @@ test('latin-only Bebas stays Bebas in every language', () => {
     assert.equal(routed.family, 'Bebas Neue');
     assert.equal(routed.weight, 400);
   }
+});
+
+test('FONT_SOURCE_ROUTING freezes DESIGN_POLICY.localeFontFamily', () => {
+  assert.equal(FONT_SOURCE_ROUTING.en.title, DESIGN_POLICY.localeFontFamily.en.title);
+  assert.deepEqual([...LOCALE_INVARIANT_FAMILIES], [...DESIGN_POLICY.localeInvariantFamilies]);
+});
+
+test('renderer source has no inline five-language Noto table after stripping comments', () => {
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/figma-render.js'), 'utf8');
+  const stripped = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  assert.match(stripped, /designPolicy\(\)\.localeFontFamily/);
+  assert.doesNotMatch(stripped, /const TABLE = \{/);
 });

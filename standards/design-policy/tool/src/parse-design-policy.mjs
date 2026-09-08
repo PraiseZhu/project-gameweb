@@ -32,6 +32,8 @@ export const REGISTERED_KEYS = Object.freeze([
   'modalScrimOpacity',
   'modalLockPageScroll',
   'letterSpacingPolicy',
+  'localeFontFamily',
+  'localeInvariantFamilies',
 ]);
 
 const OPTIONAL_KEYS = Object.freeze([
@@ -40,6 +42,8 @@ const OPTIONAL_KEYS = Object.freeze([
   'modalScrimOpacity',
   'modalLockPageScroll',
   'letterSpacingPolicy',
+  'localeFontFamily',
+  'localeInvariantFamilies',
 ]);
 const REQUIRED_KEYS = Object.freeze(REGISTERED_KEYS.filter((key) => !OPTIONAL_KEYS.includes(key)));
 
@@ -307,7 +311,55 @@ export function parseDesignPolicyMarkdown(markdown, { path = 'DESIGN.md' } = {})
     shrinkMode,
     ...assertOptionalModalPolicy(doc),
     ...assertOptionalLetterSpacingPolicy(doc),
+    ...assertOptionalLocaleFontFamily(doc),
   });
+}
+
+function assertOptionalLocaleFontFamily(doc) {
+  const hasFamily = hasOwn(doc, 'localeFontFamily');
+  const hasInvariant = hasOwn(doc, 'localeInvariantFamilies');
+  if (!hasFamily && !hasInvariant) return {};
+  if (!hasFamily || !hasInvariant) {
+    fail('localeFontFamily and localeInvariantFamilies must be declared together');
+  }
+  const langs = ['zh-CN', 'en', 'ja', 'ko', 'zh-TW'];
+  const roles = ['title', 'button', 'body'];
+  const value = doc.localeFontFamily;
+  if (!isPlainObject(value)) fail('localeFontFamily must be a mapping');
+  const extraLangs = Object.keys(value).filter((key) => !langs.includes(key));
+  if (extraLangs.length) fail(`localeFontFamily has unregistered langs: ${extraLangs.join(', ')}`);
+  const out = {};
+  for (const lang of langs) {
+    if (!hasOwn(value, lang)) fail(`localeFontFamily.${lang} is required`);
+    const row = value[lang];
+    if (!isPlainObject(row)) fail(`localeFontFamily.${lang} must be a mapping`);
+    const extraRoles = Object.keys(row).filter((key) => !roles.includes(key));
+    if (extraRoles.length) fail(`localeFontFamily.${lang} has unregistered roles: ${extraRoles.join(', ')}`);
+    const next = {};
+    for (const role of roles) {
+      if (!hasOwn(row, role)) fail(`localeFontFamily.${lang}.${role} is required`);
+      const family = row[role];
+      if (typeof family !== 'string' || !family.trim()) {
+        fail(`localeFontFamily.${lang}.${role} must be a non-empty string`);
+      }
+      next[role] = family;
+    }
+    out[lang] = Object.freeze(next);
+  }
+  const invariant = doc.localeInvariantFamilies;
+  if (!Array.isArray(invariant) || !invariant.length) {
+    fail('localeInvariantFamilies must be a non-empty list');
+  }
+  const families = invariant.map((item, index) => {
+    if (typeof item !== 'string' || !item.trim()) {
+      fail(`localeInvariantFamilies[${index}] must be a non-empty string`);
+    }
+    return item;
+  });
+  return {
+    localeFontFamily: Object.freeze(out),
+    localeInvariantFamilies: Object.freeze(families),
+  };
 }
 
 function assertOptionalLetterSpacingPolicy(doc) {
