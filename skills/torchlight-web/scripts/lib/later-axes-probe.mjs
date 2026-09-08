@@ -253,17 +253,44 @@ async function collectLanguageOptions(page) {
     if (owner.getAttribute('data-dropmenu-state') !== 'on') {
       owner.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     }
-    const options = [...owner.querySelectorAll('[data-btn-name="切换语言"]')].map((el) => {
+    const painted = (el) => {
+      if (!el || el.hidden) return false;
+      if (el.closest && el.closest('[hidden], [aria-hidden="true"]')) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const box = el.getBoundingClientRect();
+      return box.width >= 1 && box.height >= 1;
+    };
+    const fillImage = (node) => {
+      if (!painted(node)) return '';
+      const cs = getComputedStyle(node);
+      const image = cs.backgroundImage;
+      if (image && image !== 'none') return image;
+      const color = cs.backgroundColor;
+      if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') {
+        return `linear-gradient(0deg, ${color} 0%, ${color} 100%)`;
+      }
+      return '';
+    };
+    const options = [...owner.querySelectorAll('[data-btn-name="切换语言"]')].filter(painted).map((el) => {
       const nested = [...el.querySelectorAll('.fx-t, [data-figma-type="TEXT"]')]
-        .filter((node) => !node.hidden && getComputedStyle(node).display !== 'none')
+        .filter((node) => painted(node))
         .map((node) => (node.textContent || '').trim())
         .filter(Boolean);
+      const fillNodes = [
+        el,
+        ...el.querySelectorAll('[data-figma-type="VECTOR"], [data-figma-type="RECTANGLE"], [data-btn-variant-layer="true"]'),
+      ].filter(painted);
+      const childFill = fillNodes.map(fillImage).find(Boolean);
+      const activeLayer = [...el.querySelectorAll('[data-btn-variant-layer="true"]')].find(painted);
+      const state = (activeLayer && activeLayer.getAttribute('data-btn-variant-state'))
+        || el.getAttribute('data-btn-variant-state');
       return {
         text: nested[0] || (el.textContent || '').replace(/\s+/g, ' ').trim(),
         visibleCount: nested.length || ((el.textContent || '').trim() ? 1 : 0),
-        state: el.getAttribute('data-btn-variant-state'),
-        fillSource: el.getAttribute('data-btn-variant-fill-source'),
-        ownerBg: getComputedStyle(el).backgroundImage,
+        state,
+        fillSource: el.getAttribute('data-btn-variant-fill-source') || state,
+        ownerBg: childFill || '',
       };
     });
     return { missing: false, options };
@@ -271,7 +298,8 @@ async function collectLanguageOptions(page) {
 }
 
 async function measureVisibleOpenerCatalog(page, { plat }) {
-  const measured = await page.evaluate((wantedPlat) => {
+  const measured = await page.evaluate(async (wantedPlat) => {
+    const langs = ['zh-CN', 'zh-TW', 'en', 'ko'];
     const visible = (el) => {
       if (!el || el.hidden) return false;
       const cs = getComputedStyle(el);
@@ -279,47 +307,225 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       const box = el.getBoundingClientRect();
       return box.width >= 1 && box.height >= 1;
     };
+    const realClick = (el) => {
+      if (!el) return;
+      if (typeof el.click === 'function') el.click();
+      else el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    };
+    const hitClick = (el) => {
+      if (!el) return false;
+      const box = el.getBoundingClientRect();
+      const x = box.left + Math.min(8, Math.max(1, box.width / 2));
+      const y = box.top + Math.min(8, Math.max(1, box.height / 2));
+      const stack = document.elementsFromPoint(x, y);
+      return stack.includes(el);
+    };
+    const optionFillOf = (btn) => {
+      if (!btn) return false;
+      const filled = (cs) => {
+        if (!cs) return false;
+        const color = cs.backgroundColor;
+        if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') return true;
+        const image = cs.backgroundImage;
+        if (image && image !== 'none') return true;
+        const fill = cs.fill || '';
+        return Boolean(fill && fill !== 'none' && fill !== 'rgba(0, 0, 0, 0)' && fill !== 'transparent');
+      };
+      const visible = (node) => {
+        if (!node || node.hidden) return false;
+        if (node.closest && node.closest('[hidden], [aria-hidden="true"]')) return false;
+        const cs = getComputedStyle(node);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+        const box = node.getBoundingClientRect();
+        return box.width >= 1 && box.height >= 1;
+      };
+      if (visible(btn) && filled(getComputedStyle(btn))) return true;
+      return [...btn.querySelectorAll('[data-figma-type="VECTOR"], [data-figma-type="RECTANGLE"], [data-figma-type="BOOLEAN_OPERATION"], [data-btn-variant-layer="true"], path, svg, img')].some((child) => (
+        visible(child) && (filled(getComputedStyle(child)) || (child.tagName === 'IMG' && child.getAttribute('src')))
+      ));
+    };
     const closeOpenModal = () => {
       const layer = document.querySelector('[data-modal-open="true"]');
       if (!layer) return true;
       const close = [...layer.querySelectorAll('[data-btn-name], [data-name], [data-node-name]')]
         .find((el) => /关闭按钮/.test(`${el.getAttribute('data-btn-name') || ''} ${el.getAttribute('data-name') || ''} ${el.getAttribute('data-node-name') || ''}`));
-      if (close) close.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      if (close) realClick(close);
       const still = document.querySelector('[data-modal-open="true"]');
       return !still || still.hidden || still.getAttribute('data-modal-open') !== 'true';
     };
-    const mountedNames = [...document.querySelectorAll('[data-modal-name], [data-name^="modal/"]')]
-      .map((el) => el.getAttribute('data-modal-name') || String(el.getAttribute('data-name') || '').replace(/^modal\//, ''))
-      .filter(Boolean);
-    const homepage = [...document.querySelectorAll('[data-go]')].filter((el) => {
+    const wait = (ms) => new Promise((resolveWait) => setTimeout(resolveWait, ms));
+    const platOk = (go) => {
+      if (wantedPlat === 'pc' && /mobile/i.test(go)) return false;
+      if (wantedPlat === 'mobile' && /(?:^|\/)(?:modal\/)?pc(?![a-z])/i.test(go) && !/mobile/i.test(go)) return false;
+      return true;
+    };
+    const collectHomepage = () => [...document.querySelectorAll('[data-go]')].filter((el) => {
       if (!visible(el)) return false;
       if (el.closest('[data-modal-open], [data-prefix="modal"], [data-name^="modal/"]')) return false;
       const go = el.getAttribute('data-go') || '';
       if (!go) return false;
       /* Visible homepage @go is in-scope. Do not guess platform from the go
          label. A mobile-labelled go on PC (or pc on mobile) is the other tree. */
-      if (wantedPlat === 'pc' && /mobile/i.test(go)) return false;
-      if (wantedPlat === 'mobile' && /(?:^|\/)(?:modal\/)?pc(?![a-z])/i.test(go) && !/mobile/i.test(go)) return false;
-      return true;
+      return platOk(go);
     });
+    const measureOpenLayer = (el, layer, lang) => {
+      const dropmenus = [];
+      let calendarLang = null;
+      const calendarCopy = [];
+      if (!layer) return { dropmenus, calendarLang, calendarCopy };
+      for (const menu of [...layer.querySelectorAll('[data-dropmenu="true"]')]) {
+        const before = menu.getAttribute('data-dropmenu-state') || '';
+        const invalid = before !== 'on' && before !== 'off';
+        if (invalid) {
+          dropmenus.push({
+            name: menu.getAttribute('data-dropmenu-name') || menu.getAttribute('data-name') || null,
+            before,
+            after: before,
+            invalid: true,
+            toggled: false,
+            optionFill: false,
+          });
+          continue;
+        }
+        const fieldH = Number(menu.__fxDropmenuFieldH);
+        const closedHost = menu.getBoundingClientRect();
+        /* Inventory default may already be on. Clicking then would close the
+           panel and measure empty options. Open first, then sample fill. */
+        if (before !== 'on') realClick(menu);
+        const after = menu.getAttribute('data-dropmenu-state') || '';
+        const openHost = menu.getBoundingClientRect();
+        const panel = [...menu.querySelectorAll('[data-dropmenu-layer="true"]')].find((hit) => {
+          const state = hit.getAttribute('data-dropmenu-state') || '';
+          if (state !== 'on') return false;
+          const cs = getComputedStyle(hit);
+          return !hit.hidden && cs.display !== 'none' && cs.visibility !== 'hidden';
+        });
+        const optionRoot = panel || menu;
+        const optionBtns = [...optionRoot.querySelectorAll('[data-btn-name], [data-name]')].filter((hit) => {
+          if (hit.hidden) return false;
+          const cs = getComputedStyle(hit);
+          if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+          const box = hit.getBoundingClientRect();
+          if (box.width < 1 || box.height < 1) return false;
+          const raw = `${hit.getAttribute('data-btn-name') || ''} ${hit.getAttribute('data-name') || ''}`;
+          return /号码地区选择/.test(raw);
+        });
+        const optionFill = optionBtns.length ? optionBtns.every(optionFillOf) : null;
+        const hostGrew = Number.isFinite(fieldH) && fieldH > 0
+          ? openHost.height > fieldH + 2
+          : openHost.height > closedHost.height + 2;
+        let closedConsentClickable = true;
+        const consent = [...layer.querySelectorAll('[data-btn-name], [data-name]')].find((hit) => /勾选按钮/.test(`${hit.getAttribute('data-btn-name') || ''} ${hit.getAttribute('data-name') || ''}`));
+        if (consent && after === 'on') {
+          realClick(menu);
+          closedConsentClickable = hitClick(consent);
+          if (menu.getAttribute('data-dropmenu-state') !== 'on') realClick(menu);
+        }
+        const coversConsent = hostGrew || closedConsentClickable === false;
+        dropmenus.push({
+          name: menu.getAttribute('data-dropmenu-name') || menu.getAttribute('data-name') || null,
+          before,
+          after,
+          invalid: false,
+          toggled: after === 'on',
+          coversConsent,
+          optionFill,
+          hostGrew,
+          closedConsentClickable,
+          fieldH: Number.isFinite(fieldH) ? fieldH : null,
+          openHostH: openHost.height,
+        });
+        if (menu.getAttribute('data-dropmenu-state') === 'on') realClick(menu);
+      }
+      const calendarShell = [...layer.querySelectorAll('[data-name], [data-node-name]')].find((hit) => {
+        const name = `${hit.getAttribute('data-name') || ''} ${hit.getAttribute('data-node-name') || ''}`;
+        return /(?:^|[\s/>])日历(?:@|$)/.test(name.trim());
+      });
+      if (calendarShell || /订阅赛季日程/.test(`${layer.getAttribute('data-modal-name') || ''} ${layer.getAttribute('data-name') || ''}`)) {
+        const wanted = lang === 'zh-TW' ? 'tw'
+          : lang === 'en' ? 'en'
+            : lang === 'ko' ? 'kr'
+              : 'cn';
+        const got = calendarShell
+          ? (calendarShell.getAttribute('data-lang-shell-value') || calendarShell.getAttribute('data-img-lang-value') || '')
+          : '';
+        const missingCopy = [...layer.querySelectorAll('[data-copy-missing]')].map((hit) => ({
+          node: hit.getAttribute('data-node') || hit.getAttribute('data-name') || null,
+          lang: hit.getAttribute('data-copy-missing'),
+          missing: true,
+        }));
+        calendarCopy.push(...missingCopy);
+        const copyOk = missingCopy.filter((hit) => hit.lang && hit.lang !== 'zh-CN').length === 0;
+        calendarLang = {
+          wanted,
+          got,
+          matched: Boolean(calendarShell) && got === wanted && copyOk,
+          copyMissing: missingCopy.length,
+        };
+      }
+      return { dropmenus, calendarLang, calendarCopy };
+    };
+    const mountedNames = [...document.querySelectorAll('[data-modal-name], [data-name^="modal/"]')]
+      .map((el) => el.getAttribute('data-modal-name') || String(el.getAttribute('data-name') || '').replace(/^modal\//, ''))
+      .filter(Boolean);
+    const homepage = [];
+    const seen = new Set();
+    for (const lang of langs) {
+      if (window.__qa && typeof window.__qa.setPref === 'function') window.__qa.setPref('lang', lang);
+      await wait(80);
+      for (const el of collectHomepage()) {
+        const node = el.getAttribute('data-node') || '';
+        const go = el.getAttribute('data-go') || '';
+        const calendar = /订阅赛季日程/.test(go);
+        const key = calendar ? `${lang}::${node}::${go}` : `${node}::${go}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        homepage.push({ node, go, lang, calendar });
+      }
+    }
+    const liveOpener = (row) => {
+      if (window.__qa && typeof window.__qa.setPref === 'function') window.__qa.setPref('lang', row.lang);
+      return [...document.querySelectorAll('[data-go]')].find((el) => {
+        if ((el.getAttribute('data-node') || '') !== row.node) return false;
+        if ((el.getAttribute('data-go') || '') !== row.go) return false;
+        return visible(el);
+      }) || null;
+    };
     const openers = [];
-    homepage.forEach((el, index) => {
-      const go = el.getAttribute('data-go') || '';
-      if (!go) return;
-      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    for (let index = 0; index < homepage.length; index += 1) {
+      const row = homepage[index];
+      const go = row.go;
+      if (!go) continue;
+      if (window.__qa && typeof window.__qa.setPref === 'function') window.__qa.setPref('lang', row.lang);
+      await wait(80);
+      const el = liveOpener(row);
+      if (!el) {
+        openers.push({
+          go, index, node: row.node, lang: row.lang, opened: false, closed: true, openedGo: null,
+          dropmenus: [], calendarLang: null, calendarCopy: [],
+        });
+        continue;
+      }
+      realClick(el);
       const layer = document.querySelector('[data-modal-open="true"]');
       const opened = !!layer;
-      const openedGo = layer && (layer.getAttribute('data-name') || layer.getAttribute('data-modal-name') || '');
+      const openedGo = layer && (layer.getAttribute('data-modal-name') || layer.getAttribute('data-name') || '');
+      const extra = measureOpenLayer(el, layer, row.lang);
       const closed = closeOpenModal();
       openers.push({
         go,
         index,
         node: el.getAttribute('data-node') || el.getAttribute('data-name') || null,
+        lang: row.lang,
         opened,
         closed,
         openedGo,
+        dropmenus: extra.dropmenus,
+        calendarLang: extra.calendarLang,
+        calendarCopy: extra.calendarCopy,
       });
-    });
+    }
+    if (window.__qa && typeof window.__qa.setPref === 'function') window.__qa.setPref('lang', 'zh-CN');
     const inertCandidates = [...document.querySelectorAll('[data-btn-name], [data-prefix="btn"]')].filter((el) => {
       if (!visible(el)) return false;
       if (el.getAttribute('data-go')) return false;
@@ -331,7 +537,7 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
     let clicked = 0;
     for (const el of inertCandidates) {
       clicked += 1;
-      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      realClick(el);
       if (document.querySelector('[data-modal-open="true"]')) {
         openedModal = true;
         closeOpenModal();
@@ -348,10 +554,17 @@ export function scoreOpenerCatalog(raw, plat) {
   const mountedNames = Array.isArray(raw?.mountedNames) ? raw.mountedNames : null;
   const openers = (Array.isArray(raw?.openers) ? raw.openers : []).map((row) => {
     const matched = Boolean(row.opened) && catalogOpenedGoMatches(row.go, row.openedGo);
+    const dropmenus = Array.isArray(row.dropmenus) ? row.dropmenus : [];
+    const dropOk = dropmenus.every((hit) => hit.invalid !== true && hit.toggled === true
+      && hit.coversConsent !== true && hit.optionFill !== false);
+    const calendarLang = row.calendarLang || null;
+    const calendarOk = !calendarLang || calendarLang.matched === true;
     return {
       ...row,
+      dropmenus,
+      calendarLang,
       matched,
-      ok: Boolean(row.opened) && Boolean(row.closed) && matched,
+      ok: Boolean(row.opened) && Boolean(row.closed) && matched && dropOk && calendarOk,
       measured: true,
       skipped: false,
     };
@@ -364,6 +577,20 @@ export function scoreOpenerCatalog(raw, plat) {
     if (!row.opened) problems.push(`${platKey}-opener-did-not-open:${label}`);
     if (row.opened && !row.matched) problems.push(`${platKey}-opener-opened-wrong:${label}=>${row.openedGo}`);
     if (!row.closed) problems.push(`${platKey}-opener-did-not-close:${label}`);
+    for (const hit of row.dropmenus || []) {
+      if (hit.invalid === true) problems.push(`${platKey}-dropmenu-invalid:${hit.name || label}`);
+      else if (hit.toggled !== true) problems.push(`${platKey}-dropmenu-did-not-toggle:${hit.name || label}`);
+      else if (hit.coversConsent === true) problems.push(`${platKey}-dropmenu-covers-consent:${hit.name || label}`);
+      else if (hit.optionFill === false) problems.push(`${platKey}-dropmenu-option-unfilled:${hit.name || label}`);
+    }
+    if (row.calendarLang && row.calendarLang.matched !== true) {
+      problems.push(`${platKey}-calendar-lang:${row.lang || row.calendarLang.wanted}=>${row.calendarLang.got}`);
+    }
+    for (const hit of row.calendarCopy || []) {
+      if (hit.missing === true && hit.lang && hit.lang !== 'zh-CN') {
+        problems.push(`${platKey}-calendar-copy-missing:${hit.node || label}:${hit.lang || row.lang || ''}`);
+      }
+    }
   }
   const inertVisible = Number(raw?.inert?.visible);
   const inertClicked = Number(raw?.inert?.clicked) || 0;

@@ -107,9 +107,8 @@ export function demoHasReusablePngs(demoDir) {
 }
 
 export function htmlFromHandoffArgs({ handoffDir, demoDir }) {
-  /* Re-running Main for an existing demo must reuse on-disk slices.
-     A first Main with an empty assets/ still has to hit Figma for new slices
-     (timeline line + arrows). --reuse-existing fail-closes on missing PNGs. */
+  /* Re-running Main for an existing demo reuses on-disk slices. Newly painted
+     owners still fetch missing PNGs; empty assets/ always hits Figma. */
   const args = ['--handoff', handoffDir, '--demo', demoDir];
   if (demoHasReusablePngs(demoDir)) args.push('--reuse-existing');
   return args;

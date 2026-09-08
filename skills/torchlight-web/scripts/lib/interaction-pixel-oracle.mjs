@@ -29,11 +29,24 @@ export const PC_MODAL_SHEET = Object.freeze({
   panel: Object.freeze({ x: 0, y: 199, w: 3840, h: 1340 }),
 });
 
+export function rgbTriples(css) {
+  const out = [];
+  const re = /rgba?\(\s*(\d+)\s*[, ]\s*(\d+)\s*[, ]\s*(\d+)/g;
+  let match;
+  while ((match = re.exec(String(css || '')))) out.push(`${match[1]},${match[2]},${match[3]}`);
+  return out;
+}
+
 export function backgroundMatchesFill(backgroundImage, state) {
   const fill = LANG_BTN_FILL[state];
-  if (!fill || typeof backgroundImage !== 'string') return false;
+  if (!fill || typeof backgroundImage !== 'string' || !backgroundImage) return false;
   const other = LANG_BTN_FILL[state === 'highlight' ? 'normal' : 'highlight'];
-  return backgroundImage.includes(fill.cssRgb) && !backgroundImage.includes(other.cssRgb);
+  const triples = rgbTriples(backgroundImage);
+  const has = (rgb) => {
+    const token = rgbTriples(rgb)[0];
+    return Boolean(token && triples.includes(token));
+  };
+  return has(fill.cssRgb) && !has(other.cssRgb);
 }
 
 export function languageOptionVerdict(options, currentLang) {
@@ -174,6 +187,11 @@ export function catalogEvidenceOk(catalog, { plat } = {}) {
   const mountedNames = Array.isArray(catalog.mountedNames) ? catalog.mountedNames : null;
   if (openers.some((row) => !catalogGoMatchesPlat(row.go, wanted, { mountedNames }))) return false;
   if (openers.some((row) => !catalogOpenedGoMatches(row.go, row.openedGo))) return false;
+  const dropOk = (hit) => hit.invalid !== true && hit.toggled === true
+    && hit.coversConsent !== true && hit.optionFill !== false;
+  if (openers.some((row) => (row.dropmenus || []).some((hit) => !dropOk(hit)))) return false;
+  if (openers.some((row) => row.calendarLang && row.calendarLang.matched !== true)) return false;
+  if (openers.some((row) => (row.calendarCopy || []).some((hit) => hit.missing === true && hit.lang && hit.lang !== 'zh-CN'))) return false;
   if (!measuredOk(catalog.inert)) return false;
   if (catalog.inert.openedModal === true) return false;
   return true;

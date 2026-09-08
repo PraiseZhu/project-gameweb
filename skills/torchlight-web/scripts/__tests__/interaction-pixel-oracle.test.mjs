@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   LANG_BTN_FILL,
   LANG_OPTION_PAGES,
+  backgroundMatchesFill,
   catalogEvidenceOk,
   catalogGoMatchesPlat,
   catalogOpenedGoMatches,
@@ -25,6 +26,14 @@ function option(text, state) {
     ownerBg: `linear-gradient(0deg, ${fill.cssRgb} 0%, ${fill.cssRgbEnd} 100%)`,
   };
 }
+
+test('backgroundMatchesFill reads rgb triples, not a single cssRgb substring', () => {
+  const highlight = `linear-gradient(180deg, ${LANG_BTN_FILL.highlight.cssRgb} 0%, ${LANG_BTN_FILL.highlight.cssRgbEnd} 100%)`;
+  assert.equal(backgroundMatchesFill(highlight, 'highlight'), true);
+  assert.equal(backgroundMatchesFill(highlight, 'normal'), false);
+  const mixed = `linear-gradient(180deg, ${LANG_BTN_FILL.highlight.cssRgb} 0%, ${LANG_BTN_FILL.normal.cssRgb} 100%)`;
+  assert.equal(backgroundMatchesFill(mixed, 'highlight'), false);
+});
 
 test('language verdict requires authored fill pixels, not only state attrs', () => {
   const rows = [
@@ -288,4 +297,89 @@ test('unprefixed same-platform homepage @go stays in the opener catalog', () => 
   }, 'pc');
   assert.equal(scored.ok, true);
   assert.equal(scored.openers[0].matched, true);
+});
+
+test('open dropmenu without option fill and missing calendar copy fail closed', () => {
+  const unfilled = scoreOpenerCatalog({
+    plat: 'mobile',
+    openers: [{
+      go: 'modal/mobile订阅赛季日程',
+      opened: true,
+      closed: true,
+      openedGo: 'mobile订阅赛季日程',
+      dropmenus: [{ name: '切换地区', invalid: false, toggled: true, coversConsent: false, optionFill: false }],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'mobile');
+  assert.equal(unfilled.ok, false);
+  assert.ok(unfilled.problems.some((item) => item.includes('dropmenu-option-unfilled')));
+  const missingCopy = scoreOpenerCatalog({
+    plat: 'pc',
+    openers: [{
+      go: 'modal/pc_cn订阅赛季日程',
+      lang: 'en',
+      opened: true,
+      closed: true,
+      openedGo: 'pc_cn订阅赛季日程',
+      calendarLang: { wanted: 'en', got: 'cn', matched: false, copyMissing: 1 },
+      calendarCopy: [{ node: '721:8525', lang: 'en', missing: true }],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'pc');
+  assert.equal(missingCopy.ok, false);
+  assert.ok(missingCopy.problems.some((item) => item.includes('calendar-lang')));
+  assert.equal(catalogEvidenceOk({
+    ok: true, measured: true, skipped: false, plat: 'pc',
+    openers: [{
+      go: 'modal/pc适龄提示',
+      openedGo: 'pc适龄提示',
+      ok: true, measured: true, skipped: false, opened: true, closed: true,
+      dropmenus: [{ invalid: false, toggled: true, coversConsent: false, optionFill: false }],
+    }],
+    inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
+  }, { plat: 'pc' }), false);
+  const noRegionOptions = scoreOpenerCatalog({
+    plat: 'mobile',
+    openers: [{
+      go: 'modal/mobile订阅赛季日程',
+      opened: true,
+      closed: true,
+      openedGo: 'mobile订阅赛季日程',
+      dropmenus: [{ name: '切换地区', invalid: false, toggled: true, coversConsent: false, optionFill: null }],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'mobile');
+  assert.equal(noRegionOptions.ok, true);
+  const calendarNoShell = scoreOpenerCatalog({
+    plat: 'pc',
+    openers: [{
+      go: 'modal/pc_cn订阅赛季日程',
+      lang: 'en',
+      opened: true,
+      closed: true,
+      openedGo: 'pc_cn订阅赛季日程',
+      calendarLang: { wanted: 'en', got: '', matched: false, copyMissing: 0 },
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'pc');
+  assert.equal(calendarNoShell.ok, false);
+  assert.ok(calendarNoShell.problems.some((item) => item.includes('calendar-lang')));
+});
+
+test('later-axes opens an already-on region dropmenu before sampling option fill', () => {
+  const src = readFileSync(new URL('../lib/later-axes-probe.mjs', import.meta.url), 'utf8');
+  assert.match(src, /Inventory default may already be on/);
+  assert.match(src, /if \(before !== 'on'\) realClick\(menu\)/);
+  assert.match(src, /backgroundImage/);
+  assert.match(src, /fillImage/);
+  assert.match(src, /fillNodes\.map\(fillImage\)\.find\(Boolean\)/);
+  assert.match(src, /closest\('\[hidden\], \[aria-hidden="true"\]'\)/);
+  assert.match(src, /querySelectorAll\('\[data-btn-name="切换语言"\]'\)\]\.filter/);
+  assert.match(src, /matched: Boolean\(calendarShell\) && got === wanted && copyOk/);
+  assert.doesNotMatch(src, /got === wanted \|\| !calendarShell/);
+  assert.match(src, /optionBtns\.length \? optionBtns\.every\(optionFillOf\) : null/);
+  assert.match(src, /linear-gradient\(0deg, \$\{color\} 0%, \$\{color\} 100%\)/);
+  assert.match(src, /path, svg, img/);
+  assert.match(src, /data-btn-variant-layer="true"/);
+  assert.match(src, /child\.tagName === 'IMG' && child\.getAttribute\('src'\)/);
 });

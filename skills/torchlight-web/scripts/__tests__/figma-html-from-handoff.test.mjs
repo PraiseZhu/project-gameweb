@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { runFromHandoff } from '../figma-from-handoff.mjs';
 import { buildHtmlFromHandoff, parsePreviewJson } from '../figma-html-from-handoff.mjs';
+import { htmlFromHandoffArgs } from '../torchlightweb.mjs';
 import { writeHandoffPack } from '../../../../standards/figma-naming/tool/src/handoff.mjs';
 import { rebuildInventoryIndexes } from '../../../../standards/figma-naming/tool/src/inventory.mjs';
 import {
@@ -364,7 +365,17 @@ test('skipPreview still runs inventory static gate and never marks skipped-ok', 
   const orch = readFileSync(new URL('../torchlightweb.mjs', import.meta.url), 'utf8');
   assert.match(orch, /--reuse-existing/);
   assert.match(orch, /demoHasReusablePngs/);
-  assert.match(orch, /A first Main with an empty assets\/ still has to hit Figma/);
+  const emptyAssets = mkdtempSync(join(tmpdir(), 'html-from-handoff-empty-assets-'));
+  mkdirSync(join(emptyAssets, 'assets'), { recursive: true });
+  assert.equal(
+    htmlFromHandoffArgs({ handoffDir: pack.outDir, demoDir: emptyAssets }).includes('--reuse-existing'),
+    false,
+  );
+  const missingAssets = mkdtempSync(join(tmpdir(), 'html-from-handoff-no-assets-'));
+  assert.equal(
+    htmlFromHandoffArgs({ handoffDir: pack.outDir, demoDir: missingAssets }).includes('--reuse-existing'),
+    false,
+  );
   assert.doesNotMatch(src, /\|\| true/);
   assert.doesNotMatch(src, /--skip-preview/);
   assert.doesNotMatch(src, /design-policy-dom-probe/);
