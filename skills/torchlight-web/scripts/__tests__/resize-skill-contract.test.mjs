@@ -209,11 +209,18 @@ test('width scale is segmented: freeze k=0.5 on 1127–1920, stretch only above 
   assert.equal(widthScale({ viewportW: 1126 }).columnWidth, 1126);
   assert.equal(widthScale({ viewportW: 1127 }).k, 0.5);
   assert.equal(widthScale({ viewportW: 1127 }).columnWidth, 1920);
+  assert.equal(widthScale({ viewportW: 1127 }).columnLeft, (1127 - 1920) / 2);
+  assert.equal(widthScale({ viewportW: 390 }).columnLeft, 0);
+  assert.equal(widthScale({ viewportW: 2560 }).columnLeft, 0);
   const at1440 = widthScale({ viewportW: 1440 });
   assert.equal(at1440.k, 0.5, '1440 must freeze k=0.5, not 1440/3840=0.375');
   assert.notEqual(at1440.k, 1440 / 3840, 'single-formula k=viewportW/3840 at 1440 must fail closed');
   assert.equal(at1440.columnWidth, 1920);
+  assert.equal(at1440.columnLeft, (1440 - 1920) / 2);
   assert.equal(at1440.officialRootFontPx, 144);
+  const at1494 = widthScale({ viewportW: 1494 });
+  assert.equal(at1494.columnWidth, 1920);
+  assert.equal(at1494.columnLeft, -213, 'official 1494 freeze is left:-213, not left-aligned 1920');
   const at1920 = widthScale({ viewportW: 1920 });
   assert.equal(at1920.k, 0.5);
   assert.equal(at1920.columnWidth, 1920);
@@ -251,8 +258,17 @@ test('hero fill uses YAML fillVh of the viewport so later sections leave the fir
   const shortHero = heroViewportFill({
     viewportH: 728, widthScaleK: 0.5, heroDesignHeight: 2143,
   });
-  assert.equal(shortHero.layoutOffsetDesign, 0);
-  assert.ok(shortHero.layoutOffsetDesign >= 0);
+  assert.equal(shortHero.layoutOffsetDesign, 728 / 0.5 - 2143);
+  assert.ok(shortHero.layoutOffsetDesign < 0, 'tall Figma hero must crop so later starts at 100vh');
+  const freeze1440 = heroViewportFill({
+    viewportH: 900, widthScaleK: 0.5, heroDesignHeight: 2143,
+  });
+  assert.equal(freeze1440.layoutOffsetDesign, 1800 - 2143);
+  assert.equal(freeze1440.uiYRatio, 1800 / 2143);
+  const phone390 = heroViewportFill({
+    viewportH: 844, widthScaleK: 390 / 750, heroDesignHeight: 1334,
+  });
+  assert.ok(phone390.layoutOffsetDesign > 0, 'short k×hero must pad later to the viewport edge');
 });
 
 test('product view clips page X; QA keeps X auto for no-clip probes', () => {
@@ -300,6 +316,7 @@ test('resize skill names its own axis and refuses translation/interaction owners
   assert.equal(intent.widthScale.k, 0.5);
   assert.equal(intent.widthScale.columnWidth, 1920);
   assert.equal(intent.columnWidth, 1920);
+  assert.equal(intent.columnLeft, (1846 - 1920) / 2);
   assert.equal(intent.overflow.overflowX, 'auto');
   assert.ok(resizeDoesNotOwn().some((item) => /Translation/i.test(item)));
   assert.ok(resizeDoesNotOwn().some((item) => /Interaction/i.test(item)));
@@ -322,6 +339,7 @@ test('classifyResizeIntent hands k + columnWidth + composition in one shot', () 
   assert.equal(pc.widthScale.k, 0.5);
   assert.equal(pc.widthScale.columnWidth, 1920);
   assert.equal(pc.columnWidth, 1920);
+  assert.equal(pc.columnLeft, (1440 - 1920) / 2);
   const phone = classifyResizeIntent({
     width: 1126,
     platforms: { mobile: true },
@@ -358,6 +376,28 @@ test('PC cover crop belongs to the KV plane, not homepage UI width-scale', () =>
   assert.equal(tall.cropLeft, (2130 - 3840) / 2);
   assert.equal(tall.plane, 'kv-visual');
   assert.equal(tall.uiPlane, 'source-ui-scale');
+
+  /* Official 1440×900 background slot is the real viewport. Frozen UI
+     column stays 1920 at k=0.5; KV cover is max(1440/3840, 900/2143)≈0.42
+     so the painted sheet is ≥1440×900, not the column's 1920×1071. */
+  const freezeShort = heroCoverCrop({
+    viewportW: 1440,
+    viewportH: 900,
+    designWidth: 3840,
+    heroDesignHeight: 2143,
+    pageScale: 0.5,
+  });
+  const expectedCover = Math.max(1440 / 3840, 900 / 2143);
+  assert.equal(freezeShort.applied, true, '1440×900 KV window is the viewport, not frozen k=0.5');
+  assert.ok(Math.abs(freezeShort.scale - expectedCover) < 1e-9);
+  assert.ok(Math.abs(freezeShort.scale - 0.5) > 1e-6, 'must not stay on width-scale k');
+  assert.equal(freezeShort.plane, 'kv-visual');
+  assert.equal(freezeShort.uiPlane, 'source-ui-scale');
+  const measuredW = 3840 * freezeShort.scale;
+  const measuredH = 2143 * freezeShort.scale;
+  assert.ok(measuredW + 1e-6 >= 1440, `KV width ${measuredW} must cover 1440`);
+  assert.ok(measuredH + 1e-6 >= 900, `KV height ${measuredH} must cover 900`);
+  assert.ok(Math.abs(measuredW - 1920) > 1, 'KV must not stay on the frozen 1920 column');
 });
 
 test('directory stretch locates rail parts by name, not a season node id', () => {
@@ -369,6 +409,13 @@ test('directory stretch locates rail parts by name, not a season node id', () =>
   assert.match(chromeSrc, /if \(!railOwner\) return false/);
   assert.doesNotMatch(chromeSrc, /if \(!items\.length && !railOwner\) return false/);
   assert.match(chromeSrc, /viewportLockedHero: heroActive/);
+  assert.match(chromeSrc, /if \(i === 0\) desiredHeight = targetHeroBoundaryLocal/);
+  assert.match(chromeSrc, /Official 100vh slot follows the \*current\* drag height/);
+  assert.match(chromeSrc, /_abutHeroJoinCss/);
+  assert.match(chromeSrc, /no 1px overlap/);
+  assert.match(chromeSrc, /function syncDragHeroCover/);
+  assert.match(chromeSrc, /syncDragHeroCover\(vp\)/);
+  assert.doesNotMatch(chromeSrc, /item\.el\.style\.height = item\.height \+ 'px';\s*\}/);
   assert.doesNotMatch(chromeSrc, /I52:3263/);
   assert.doesNotMatch(chromeSrc, /data-node\$="25633"/);
   assert.doesNotMatch(chromeSrc, /directChildByNodeId\(/);
@@ -412,16 +459,36 @@ function evalProductColumnWidth(src, fnName) {
   return new Function('viewportW', fnName.includes('ColumnWidth') && src.includes('_productColumnWidth') && fnName === '_productColumnWidth' ? 'designWidth' : 'plat', body);
 }
 
-test('sc-product-view-only: 1440 freeze is PRODUCT_VIEW only; QA fit/bezel stay unfrozen', () => {
+test('sc-shared-freeze: 1440 freeze is the shared ruler; QA fit/bezel stay QA-only', () => {
   assert.match(chromeSrc, /function productColumnWidth\(viewportW, plat\)/);
-  assert.match(chromeSrc, /if \(!PRODUCT_VIEW \|\| !isFinite\(w\) \|\| w <= 0\) return w/);
-  assert.match(chromeSrc, /var columnW = PRODUCT_VIEW \? productColumnWidth\(vp\.w, productPlat\) : vp\.w/);
+  assert.match(chromeSrc, /if \(!isFinite\(w\) \|\| w <= 0\) return w/);
+  assert.doesNotMatch(chromeSrc, /if \(!PRODUCT_VIEW \|\| !isFinite\(w\) \|\| w <= 0\) return w/);
+  assert.match(chromeSrc, /var columnW = productColumnWidth\(vp\.w, productPlat\)/);
+  assert.doesNotMatch(chromeSrc, /var columnW = PRODUCT_VIEW \? productColumnWidth\(vp\.w, productPlat\) : vp\.w/);
   assert.match(chromeSrc, /fit: !PRODUCT_VIEW/);
   assert.match(chromeSrc, /BEZEL = PRODUCT_VIEW \? 0 : 22/);
   assert.match(chromeSrc, /productView: !!PRODUCT_VIEW/);
-  assert.match(renderSrc, /this\._frameWidth = productView/);
-  assert.match(renderSrc, /this\._productColumnWidth\(viewportW, designWidth\)/);
+  assert.match(renderSrc, /this\._frameWidth = this\._productColumnWidth\(viewportW, designWidth\)/);
+  assert.doesNotMatch(renderSrc, /this\._frameWidth = productView/);
+  assert.match(chromeSrc, /freezeColumnUiK/);
+  assert.match(chromeSrc, /nextK \/ baseK/);
 
+  assert.match(chromeSrc, /function productColumnLeft\(viewportW, columnW\)/);
+  assert.match(chromeSrc, /frame\.style\.position = 'relative'/);
+  assert.match(chromeSrc, /frame\.style\.width = vp\.w \+ 'px'/);
+  assert.match(chromeSrc, /frame\.style\.left = '0'/);
+  assert.doesNotMatch(chromeSrc, /frame\.style\.left = columnLeft \+ 'px'/);
+  assert.match(renderSrc, /pageStageCropLeft = this\._columnLeftCss\(\) \/ pageStageScale/);
+  assert.match(chromeSrc, /syncDragColumnCrop/);
+  assert.match(chromeSrc, /pageRoot\.style\.left = cropLeftDesign \+ 'px'/);
+  assert.match(chromeSrc, /data-product-column-left/);
+  assert.match(chromeSrc, /applyOfficialRootScale/);
+  assert.match(chromeSrc, /HarmonyOS/);
+  assert.match(chromeSrc, /\/Android\/i/);
+  assert.match(chromeSrc, /document\.documentElement\.style\.removeProperty\('--fx-root-scale'\)/);
+  assert.doesNotMatch(chromeSrc, /if \(PRODUCT_VIEW\) \{\s*document\.documentElement\.style\.setProperty\('--fx-root-scale', '1'\)/);
+  const freezeShellSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/demo-shell.html'), 'utf8');
+  assert.match(freezeShellSrc, /maximum-scale=1, user-scalable=no, viewport-fit=cover/);
   const column = evalProductColumnWidth(renderSrc, '_productColumnWidth');
   assert.equal(column(1440, 3840), 1920);
   assert.equal(column(1920, 3840), 1920);
@@ -450,15 +517,22 @@ test('sc-product-view-only: 1440 freeze is PRODUCT_VIEW only; QA fit/bezel stay 
   });
   assert.equal(qa.composition.key, 'pc');
   assert.equal(product.composition.key, 'pc');
+  assert.equal(qa.widthScale.k, 0.5);
+  assert.equal(product.widthScale.k, 0.5);
+  assert.equal(qa.widthScale.columnWidth, 1920);
+  assert.equal(qa.widthScale.columnLeft, (1440 - 1920) / 2);
   assert.equal(qa.overflow.overflowX, 'auto');
   assert.equal(product.overflow.overflowX, 'hidden');
   assert.equal(qa.viewFit.scale < 1 || qa.viewFit.scale === 1, true);
 });
 
 test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () => {
-  assert.match(renderSrc, /Cover 窗宽永远是真实 viewport/);
+  assert.match(renderSrc, /Official background window is the real viewport/);
   assert.match(renderSrc, /coverW \/ slotScale - designWidth/);
   assert.match(renderSrc, /this\._viewportWidth/);
+  assert.match(renderSrc, /columnLeftDesign/);
+  assert.match(renderSrc, /coverLeftDesign/);
+  assert.match(renderSrc, /data-kv-cover-window', 'viewport'/);
   assert.doesNotMatch(renderSrc, /heroVisualCropLeft = \(this\._frameWidth \/ slotScale/);
   const fill = heroViewportFill({
     viewportH: 900,
@@ -469,4 +543,29 @@ test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () =
   assert.equal(fill.designHeight, 900 / 0.5);
   assert.equal(fill.cropWindowDesign, 900 / fill.slotScale);
   assert.ok(fill.slotScale >= 900 / 2160);
+});
+
+test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stays on buttons', () => {
+  assert.match(renderSrc, /data-later-slot-window', '100vh'/);
+  assert.match(renderSrc, /data-later-cover-plane', 'cover-crop'/);
+  assert.match(renderSrc, /data-later-cover-window', 'later-stage'/);
+  assert.match(renderSrc, /data-hero-slg-stretch', 'viewport-width'/);
+  assert.match(renderSrc, /data-hero-slg-origin', 'bottom'/);
+  assert.match(renderSrc, /el\.style\.transformOrigin = '0 100%'/);
+  assert.match(renderSrc, /Later bg fills the later stage box/);
+  assert.match(renderSrc, /_laterStageHeight/);
+  assert.match(renderSrc, /_columnLeftCss/);
+  assert.match(renderSrc, /data-later-layout-shift/);
+  assert.doesNotMatch(renderSrc, /const laterShift = heroLayoutOffsetDesign > 0 \? heroLayoutOffsetDesign : 0/);
+  assert.match(renderSrc, /Official first-screen SLG\/title art is width-stretched/);
+  assert.match(renderSrc, /backgroundHeroShift \? afterHeroBackgroundShift/);
+  assert.doesNotMatch(renderSrc, /laterSlotHeight = !isHeroStage && !pageStageMode && heroSlot && Number\(heroSlot\.designHeight\) > 0\s*\n\s*\? Math\.max\(_snapH, Number\(heroSlot\.designHeight\)\)/);
+  assert.match(renderSrc, /_abutHeroJoinCss/);
+  assert.match(renderSrc, /data-hero-join-css', 'abut'/);
+  assert.match(renderSrc, /never stack 1px of overlap/);
+  assert.match(chromeSrc, /freezeColumnUiK/);
+  const freeze = widthScale({ viewportW: 1268 });
+  assert.equal(freeze.k, 0.5);
+  assert.equal(freeze.columnWidth, 1920);
+  assert.equal(freeze.columnLeft, (1268 - 1920) / 2);
 });
