@@ -8,9 +8,10 @@ is accepted by `npm run torchlightweb -- accept`. The machine must not write
 `resize-acceptance.json`. Missing either fails before mutation.
 
 SS6 4173 / `yise-ss6-web` is a fixture consumer. No rule here may depend on
-Etheria node IDs. Indicator fallback files are a generic runtime contract:
-any `figma-indicator-*.png` (or later `.webp`) referenced from the demo root
-or `assets/` is a served file, not audit junk.
+Etheria node IDs. Indicator fallback files are a runtime contract **for pages
+that still have an `ind/` owner**: any `figma-indicator-*.png` (or later
+`.webp`) referenced from the demo root or `assets/` is a served file, not
+audit junk. A page without `ind/` must not fail closed on those files.
 
 ## Why it sits after Resize
 
@@ -57,9 +58,10 @@ export to pack quality so static review happens on crushed art.
    (the renderer mounts `variants[].nodes` + `variantTrees`). Keep ancestor
    fields. Compact `#qa-assets` JSON (drop default `exportBounds`, collapse
    file-only records) but keep `assets/` paths and `exportBox`.
-5. Keep runtime fallback files (`figma-indicator-*.png` / `.webp`, calendar
-   fallback slices). After rewrite, delete unreferenced image files. Move
-   only audit/probe/screenshot trees out.
+5. Keep runtime fallback files when the page still has an `ind/` owner
+   (`figma-indicator-*.png` / `.webp`, calendar fallback slices). Pages
+   without `ind/` skip those files. After rewrite, delete unreferenced
+   image files. Move only audit/probe/screenshot trees out.
 6. Fail if the served folder **after mutation** exceeds 15MB, or if any
    `qa-assets` / fallback path 404s. `--dry-run` reports current bytes and
    planned actions; it must not fail because the working folder is still
@@ -104,9 +106,10 @@ A pack claim needs:
 - `fonts.glyphs` / `fonts.bytesAfter`
 - `truth.bytesAfter`
 - `unreferenced.removed`
-- every `qa-assets` path and every `figma-indicator-*` fallback exists
-- a Chrome open of the packed `index.html` (progress marks must not show the
-  layer name `ind/进度条` as visible text)
+- every `qa-assets` path exists; every `figma-indicator-*` fallback exists
+  only when the page still has an `ind/` owner
+- a Chrome open of the packed `index.html` (when `ind/` is present, progress
+  marks must not show the layer name `ind/进度条` as visible text)
 
 A claim without `images.reencodedWebp` did not re-encode existing WebP.
 

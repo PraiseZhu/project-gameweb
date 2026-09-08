@@ -141,6 +141,25 @@ test('missing figma-indicator fallback fails closed', () => {
   assert.deepEqual(missingFallbackFiles(dir, html), []);
 });
 
+test('pages without ind/ do not require figma-indicator fallback files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-no-ind-'));
+  const html = "file: 'assets/figma-indicator-active-alpha.webp'";
+  writeFileSync(join(dir, 'truth.json'), JSON.stringify({
+    sections: { 'sec:1': { nodes: [{ id: '1', type: 'FRAME', name: 'sec/1' }] } },
+  }));
+  assert.deepEqual(missingFallbackFiles(dir, html), []);
+  assert.deepEqual(missingRuntimeReferences(dir, html), []);
+});
+
+test('pages with ind/ still require figma-indicator fallback files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-has-ind-'));
+  const html = "file: 'assets/figma-indicator-active-alpha.webp'";
+  writeFileSync(join(dir, 'truth.json'), JSON.stringify({
+    sections: { 'sec:1': { nodes: [{ id: '2', type: 'INSTANCE', name: 'ind/进度条' }] } },
+  }));
+  assert.deepEqual(missingFallbackFiles(dir, html), ['assets/figma-indicator-active-alpha.webp']);
+});
+
 test('invalid webp bytes on figma-indicator fallback fail closed', () => {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-fake-webp-'));
   mkdirSync(join(dir, 'assets'));

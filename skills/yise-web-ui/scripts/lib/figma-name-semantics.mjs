@@ -124,6 +124,32 @@ export function isVisualTextSlice(node) {
   return asString(node && node.type).toUpperCase() === 'TEXT' && VISUAL_TEXT_ROLES.has(parseLayerName(node && node.name).role);
 }
 
+function unwrapProvenance(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)
+    && Object.hasOwn(value, 'value') && Object.hasOwn(value, 'provenance')) {
+    return unwrapProvenance(value.value);
+  }
+  return value;
+}
+
+/**
+ * True only when the ready truth still has an `ind/` owner.
+ * Indicator fallback PNGs/WebPs are a runtime contract for that owner,
+ * not a page-wide file. Pages without `ind/` must not fail closed on them.
+ */
+export function pageUsesIndicatorRole(truth) {
+  const seen = new Set();
+  const visit = (value) => {
+    const node = unwrapProvenance(value);
+    if (!node || typeof node !== 'object' || seen.has(node)) return false;
+    seen.add(node);
+    if (Array.isArray(node)) return node.some(visit);
+    if ((node.id || node.componentId) && deriveRole(node).role === 'ind') return true;
+    return Object.values(node).some(visit);
+  };
+  return visit(truth);
+}
+
 export function assetPolicyHint(node) {
   const derived = deriveRole(node);
   if (derived.role === 'img' || derived.role === 'bg' || derived.role === 'kv') return { wantAsset: true, via: 'role:' + derived.role };

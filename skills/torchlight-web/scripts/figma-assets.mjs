@@ -29,6 +29,9 @@
  *   非 ready 的 showcase 仍可按前缀 img/bg/kv、BOOLEAN 箭头、IMAGE fill 切。
  *   其余              →  不切（scroll/ 是容器；普通 btn/ 无 sliceExport 不切）
  *
+ *   figma-indicator-* 备用图只在 ready truth 仍有 `ind/` owner 时安装。
+ *   没有 `ind/` 的页（火炬阶段一）跳过，不得拿旧稿 397:35947/35949 卡死切图。
+ *
  * ═══ 用法 ═══
  *   node scripts/figma-assets.mjs --demo <dir>              # 按 truth.json 找出该切的节点并导出
  *   node scripts/figma-assets.mjs --demo <dir> --dry-run    # 只列清单不下载
@@ -42,7 +45,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { encodeWebpBatch } from './lib/encode-webp.mjs';
-import { deriveRole } from './lib/figma-name-semantics.mjs';
+import { deriveRole, pageUsesIndicatorRole } from './lib/figma-name-semantics.mjs';
 import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../standards/figma-naming/spec/inventory.mjs';
 import { requireFigmaToken } from './lib/figma-token.mjs';
 import {
@@ -562,7 +565,10 @@ function indicatorSourceFile(assetsDir, manifest, nodeId) {
   return null;
 }
 
-export function installIndicatorFallbacks(assetsDir, manifest) {
+export function installIndicatorFallbacks(assetsDir, manifest, truth) {
+  if (truth !== undefined && !pageUsesIndicatorRole(truth)) {
+    return { ok: true, skipped: true, reason: 'no-ind-role' };
+  }
   mkdirSync(assetsDir, { recursive: true });
   const missing = [];
   for (const item of INDICATOR_FALLBACKS) {
@@ -950,7 +956,7 @@ async function main() {
     }
     bytes = Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0);
   }
-  installIndicatorFallbacks(assetsDir, manifest);
+  installIndicatorFallbacks(assetsDir, manifest, truth);
   out.webp = webp;
 
   const mergedNoUrl = previous ? (previous.noUrl || []).filter((x) => !onlySet.has(x.nodeId)).concat(noUrl) : noUrl;
