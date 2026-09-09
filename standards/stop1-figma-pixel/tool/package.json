@@ -1,0 +1,19 @@
+{
+  "name": "gameweb-stop1-figma-pixel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stop-1 per-section Figma pixel gate shared by torchlight-web and yise-web-ui",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "probe": "node src/stop1-figma-pixel-probe.mjs"
+  },
+  "dependencies": {
+    "odiff-bin": "^4.5.0",
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

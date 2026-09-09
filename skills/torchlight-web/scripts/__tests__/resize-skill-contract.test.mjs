@@ -255,9 +255,24 @@ test('hero fill uses YAML fillVh of the viewport so later sections leave the fir
   assert.ok(shortHero.layoutOffsetDesign >= 0);
 });
 
-test('product view clips page X; QA keeps X auto for no-clip probes', () => {
+test('QA frame and product view both clip page X; viewport width still resizes', () => {
   assert.equal(pageOverflowPolicy({ productView: true }).overflowX, 'hidden');
-  assert.equal(pageOverflowPolicy({ productView: false }).overflowX, 'auto');
+  assert.equal(pageOverflowPolicy({ productView: false }).overflowX, 'hidden');
+  assert.equal(pageOverflowPolicy({ productView: false }).clipsPageX, true);
+});
+
+test('QA and product share the same width ruler and page overflow policy', () => {
+  const cases = [
+    [390, 'mobile', 390], [1440, 'pc', 1920], [1920, 'pc', 1920], [2560, 'pc', 2560],
+  ];
+  const column = evalProductColumnWidth(chromeSrc, 'productColumnWidth');
+  for (const [width, platform, expectedColumn] of cases) {
+    assert.equal(pageOverflowPolicy({ productView: false }).overflowX, 'hidden');
+    assert.equal(pageOverflowPolicy({ productView: true }).overflowX, 'hidden');
+    assert.equal(pageOverflowPolicy({ productView: false }).clipsPageX, true);
+    assert.equal(pageOverflowPolicy({ productView: true }).clipsPageX, true);
+    assert.equal(column(width, platform), expectedColumn);
+  }
 });
 
 test('a lone page-paint sibling without sectionIds can still own the hero slot', () => {
@@ -300,7 +315,7 @@ test('resize skill names its own axis and refuses translation/interaction owners
   assert.equal(intent.widthScale.k, 0.5);
   assert.equal(intent.widthScale.columnWidth, 1920);
   assert.equal(intent.columnWidth, 1920);
-  assert.equal(intent.overflow.overflowX, 'auto');
+  assert.equal(intent.overflow.overflowX, 'hidden');
   assert.ok(resizeDoesNotOwn().some((item) => /Translation/i.test(item)));
   assert.ok(resizeDoesNotOwn().some((item) => /Interaction/i.test(item)));
   assert.ok(resizeDoesNotOwn().some((item) => /per-device/i.test(item)));
@@ -412,14 +427,15 @@ function evalProductColumnWidth(src, fnName) {
   return new Function('viewportW', fnName.includes('ColumnWidth') && src.includes('_productColumnWidth') && fnName === '_productColumnWidth' ? 'designWidth' : 'plat', body);
 }
 
-test('sc-product-view-only: 1440 freeze is PRODUCT_VIEW only; QA fit/bezel stay unfrozen', () => {
+test('sc-product-view-only: QA fit/bezel stay shell-only; freeze+clip apply inside the frame', () => {
   assert.match(chromeSrc, /function productColumnWidth\(viewportW, plat\)/);
-  assert.match(chromeSrc, /if \(!PRODUCT_VIEW \|\| !isFinite\(w\) \|\| w <= 0\) return w/);
-  assert.match(chromeSrc, /var columnW = PRODUCT_VIEW \? productColumnWidth\(vp\.w, productPlat\) : vp\.w/);
+  assert.match(chromeSrc, /if \(!isFinite\(w\) \|\| w <= 0\) return w/);
+  assert.match(chromeSrc, /var columnW = productColumnWidth\(vp\.w, productPlat\)/);
   assert.match(chromeSrc, /fit: !PRODUCT_VIEW/);
   assert.match(chromeSrc, /BEZEL = PRODUCT_VIEW \? 0 : 22/);
+  assert.match(chromeSrc, /columnW \* scale \+ BEZEL/);
   assert.match(chromeSrc, /productView: !!PRODUCT_VIEW/);
-  assert.match(renderSrc, /this\._frameWidth = productView/);
+  assert.match(renderSrc, /this\._frameWidth = this\._productColumnWidth\(viewportW, designWidth\)/);
   assert.match(renderSrc, /this\._productColumnWidth\(viewportW, designWidth\)/);
 
   const column = evalProductColumnWidth(renderSrc, '_productColumnWidth');
@@ -450,15 +466,17 @@ test('sc-product-view-only: 1440 freeze is PRODUCT_VIEW only; QA fit/bezel stay 
   });
   assert.equal(qa.composition.key, 'pc');
   assert.equal(product.composition.key, 'pc');
-  assert.equal(qa.overflow.overflowX, 'auto');
+  assert.equal(qa.overflow.overflowX, 'hidden');
   assert.equal(product.overflow.overflowX, 'hidden');
   assert.equal(qa.viewFit.scale < 1 || qa.viewFit.scale === 1, true);
 });
 
 test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () => {
   assert.match(renderSrc, /Cover 窗宽永远是真实 viewport/);
-  assert.match(renderSrc, /coverW \/ slotScale - designWidth/);
+  assert.match(renderSrc, /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
+  assert.match(renderSrc, /heroVisualCropLeft = 0/);
   assert.match(renderSrc, /this\._viewportWidth/);
+  assert.doesNotMatch(renderSrc, /coverW \/ slotScale - designWidth/);
   assert.doesNotMatch(renderSrc, /heroVisualCropLeft = \(this\._frameWidth \/ slotScale/);
   const fill = heroViewportFill({
     viewportH: 900,

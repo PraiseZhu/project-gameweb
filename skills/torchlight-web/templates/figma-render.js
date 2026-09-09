@@ -108,7 +108,7 @@
     return fallback;
   },
   /* DESIGN.md §5.0 产品列宽。只冻 UI 列：1127–1920（含两端）= 1920；
-     >1920 随视口；≤1126 手机列 = 视口。QA 不走这把尺。 */
+     >1920 随视口；≤1126 手机列 = 视口。QA 框内画面走同一把尺。 */
   _productColumnWidth(viewportW, designWidth) {
     const w = Number(viewportW);
     const dw = Number(designWidth) || 3840;
@@ -2182,6 +2182,16 @@
     };
     const __base = __platBases[__normalizedPlat] || 'pc';
     const __hasNative = (__base === __normalizedPlat);
+    /* The click listener is installed once on `.frame`. Language remount and
+       QA platform switches reuse that listener, so live lang / composition
+       must sit on the frame, not the first-paint closure. */
+    frame.__fxRenderPrefs = {
+      lang: String((ctx.prefs && ctx.prefs.lang) || ''),
+      plat: String(__plat || ''),
+      base: String(__base || ''),
+    };
+    frame.setAttribute('data-fx-base', __base);
+    frame.setAttribute('data-fx-lang', String((ctx.prefs && ctx.prefs.lang) || ''));
     /* Static mobile scale: native 20:2205 tree at designWidth 750.
        Fallback to the PC tree on a phone viewport is not a scale fix. */
     const __activeTruth = __platforms[__base] || t;
@@ -2256,9 +2266,7 @@
     const productView = this._productViewFromCtx(ctx);
     this._viewportWidth = viewportW;
     this._productView = productView;
-    this._frameWidth = productView
-      ? this._productColumnWidth(viewportW, designWidth)
-      : viewportW;
+    this._frameWidth = this._productColumnWidth(viewportW, designWidth);
     const k = this.scale();
 
     const sections = __activeTruth.sections || {};
@@ -2404,15 +2412,18 @@
         throw new Error('figma-render: heroViewportFillVh missing from DESIGN.md YAML');
       }
       const slotH = viewportH * (fillVh / 100);
-      const slotScale = Math.max(k, slotH / Number(first.height));
-      if (Number.isFinite(slotScale) && slotScale > 0) {
-        heroVisualScale = slotScale;
-        /* Cover 窗宽永远是真实 viewport，不得把背景冻成 1920。UI k 走 _frameWidth。 */
-        const coverW = Number.isFinite(Number(this._viewportWidth)) && this._viewportWidth > 0
-          ? this._viewportWidth
-          : viewportW;
-        heroVisualCropLeft = (coverW / slotScale - designWidth) / 2;
-        heroCropWindowDesign = slotH / slotScale;
+      /* Cover 窗宽永远是真实 viewport，不得把背景冻成 1920。UI k 走 _frameWidth。
+         Cover scale is max(width-k, viewportH / sourceH). Layout extra still
+         uses width-k so the first-screen stage opens to 100vh CSS and later
+         sections abut it. Do not pass cover scale into _buildHeroScrollSlot:
+         that zeroed extra and clipped kv back to width-k (390×844 → 693px). */
+      const coverScale = Math.max(k, slotH / Number(first.height));
+      if (Number.isFinite(coverScale) && coverScale > 0) {
+        heroVisualScale = coverScale;
+        /* Single cover: CSS scale + transform-origin. A second cropLeft
+           plus origin 50% 0 double-shifted the art (left −77 instead of −42). */
+        heroVisualCropLeft = 0;
+        heroCropWindowDesign = Number(pageStageScale) > 0 ? slotH / pageStageScale : slotH / coverScale;
       }
       /* Cover-crop fills the viewport visually. Later sections stay on their
          Figma y and only follow width-scale; do not push the document down to
@@ -2423,9 +2434,9 @@
         .sort((a, b) => Number(a.meta.y) - Number(b.meta.y));
       return this._buildHeroScrollSlot({
         viewportHeight: viewportH,
-        /* Later sections must follow the same cover-crop scale as first-screen
-           kv, or the 100vh window leaves a black gap before sec/2. */
-        scale: Number(heroVisualScale) > 0 ? Number(heroVisualScale) : pageStageScale,
+        /* Width-k layout: extra = 100vh design − first.height so sec/2 starts
+           at the crop window bottom. KV visual scale stays on heroVisualScale. */
+        scale: pageStageScale,
         pageOriginY,
         firstSection: { id: sectionId, y: first.y, height: first.height },
         followingSections: following.map((entry) => ({ id: entry.id, y: entry.meta.y })),
@@ -2530,6 +2541,12 @@
         stage.style.left = pageStageCropLeft + 'px';
         stage.setAttribute('data-page-stage-scale', String(pageStageScale));
         stage.setAttribute('data-page-stage-crop-left', String(pageStageCropLeft));
+        /* Page-root strays (e.g. +886 at x=26315) must not expand .frame
+           scrollWidth. Clip them on the page stage without deleting them. */
+        stage.style.overflowX = 'clip';
+        stage.style.touchAction = 'pan-y';
+        stage.style.overscrollBehaviorX = 'none';
+        stage.setAttribute('data-overflow-x', 'clip');
       }
       /* Page composition has one continuous content-root coordinate system.
          A Figma section root is a sibling component, not an implicit crop
@@ -2627,6 +2644,15 @@
          Figma y as a fraction of the 100vh slot, not y×k. KV cover-crop is
          applied to the kv/bg visual plane, not this UI section. */
       stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? 1 : k));
+      /* Keep page-stage at designWidth so zoom k still maps the Figma plane.
+         clipW = frameWidth/k was 1920/0.5=3840 — a no-op. Horizontal clip
+         belongs on .frame / .stage-wrap (overflow-x:clip + scrollLeft lock). */
+      if (pageStageMode && Number(this._frameWidth) > 0) {
+        stage.style.overflowX = 'clip';
+        stage.style.touchAction = 'pan-y';
+        stage.style.overscrollBehaviorX = 'none';
+        stage.setAttribute('data-product-column-clip', String(this._frameWidth));
+      }
       if (pageStageMode && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes) {
         frame.style.position = frame.style.position || 'relative';
         fixedHost = document.createElement('div');
@@ -2767,12 +2793,14 @@
         return pairs;
       };
       const dropmenuPropertyMap = (n) => {
-        const raw = n && (n.componentProperties || n.properties || n.prototype?.componentProperties) || {};
-        const props = __plain(raw) || {};
+        /* Do not __plain the map first: { "Property 1": { value: "off" } }
+           would collapse to { off: {} } and lose the axis name. */
+        const raw = __u(n && (n.componentProperties || n.properties || n.prototype?.componentProperties)) || {};
         const out = {};
-        for (const [key, item] of Object.entries(props)) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+        for (const [key, item] of Object.entries(raw)) {
           const current = __u(item && typeof item === 'object' && item && 'value' in item ? item.value : item);
-          if (typeof current === 'string') out[key] = current;
+          if (typeof current === 'string') out[String(key)] = current;
         }
         return out;
       };
@@ -2809,15 +2837,22 @@
         const variants = Array.isArray(graph && graph.variants) ? graph.variants : [];
         const axis = dropmenuAxisName(variants, (variant) => __u(variant && variant.name));
         if (!axis) return 'invalid';
+        const onOffToken = (token) => (token === 'on' || token === 'off' ? token : '');
         const props = dropmenuPropertyMap(n);
         if (axis !== '*' && Object.prototype.hasOwnProperty.call(props, axis)) {
-          const current = props[axis];
-          return current === 'on' || current === 'off' ? current : 'invalid';
+          const current = onOffToken(props[axis]);
+          if (current) return current;
         }
         if (axis === '*') {
           const onOff = Object.entries(props).filter(([, current]) => current === 'on' || current === 'off');
           if (onOff.length === 1) return onOff[0][1];
         }
+        /* Page instances may omit componentProperties. Property 1=on/off still
+           lives on the selected COMPONENT (949:5516 / 949:5526). */
+        const selectedId = String(__u(n && n.componentId) || '');
+        const selected = variants.find((variant) => String(__u(variant && variant.componentId)) === selectedId);
+        const fromName = onOffToken(dropmenuVariantToken(__u(selected && selected.name), axis));
+        if (fromName) return fromName;
         return 'invalid';
       };
       const dropmenuOnOffTokens = (variants, nameOf) => Boolean(dropmenuAxisName(variants, nameOf));
@@ -4569,7 +4604,13 @@
              stack vertically. Only a proven Auto Layout child may flow. */
           el.style.position = 'absolute';
           el.style.left = ((box.x ?? 0) - originX) + 'px';
-          const sourceTop = ((box.y ?? 0) - originY);
+          let sourceTop = ((box.y ?? 0) - originY);
+          const viewportOverlayRoot = pfx === 'fix' && evidenceAttrs?.['data-fix-pin'] === 'viewport'
+            && container === fixedStage && !parent;
+          if (viewportOverlayRoot) {
+            el.style.left = (n.parentBox?.x ?? 0) + 'px';
+            sourceTop = n.parentBox?.y ?? 0;
+          }
           /* Size stays on k. When the first-screen slot is taller than the
              Figma hero, top-level blocks anchor their BOTTOM fraction of the
              slot so a lower-hero title stays at the first-screen bottom. A
@@ -4674,8 +4715,8 @@
             const origin = __normalizedPlat === 'mobile' ? 'center 0' : 'center center';
             const planeRatio = coverHeroVisualScale / coverPageStageScale;
             if (planeRatio > 1.001) {
-              const planeLeft = Number.parseFloat(el.style.left || '0') || 0;
-              el.style.left = (planeLeft + heroVisualCropLeft) + 'px';
+              /* One cover: scale from origin. cropLeft stays 0 so origin 50% 0
+                 is the only horizontal crop (390×844 → left ≈ −42, not −77). */
               el.style.transformOrigin = origin === 'center 0' ? '50% 0' : '50% 50%';
               el.style.transform = ((el.style.transform ? el.style.transform + ' ' : '') + 'scale(' + planeRatio + ')').trim();
               el.setAttribute('data-hero-visual-plane-scale', String(planeRatio));
@@ -6535,13 +6576,25 @@
           const axis = dropmenuAxisName(variants, (variant) => __u(variant && variant.name));
           const token = dropmenuVariantToken(__u(variants[index] && variants[index].name), axis);
           const state = token === 'on' || token === 'off' ? token : 'invalid';
-          if (state === 'invalid' || !root || !Number.isFinite(Number(rootBox.w)) || !Number.isFinite(Number(rootBox.h))
-            || !Number.isFinite(ownerWidth) || Math.abs(Number(rootBox.w) - ownerWidth) > 0.5) {
+          const rootW = Number(rootBox.w);
+          const widthRatio = Number.isFinite(ownerWidth) && ownerWidth > 0 && Number.isFinite(rootW) && rootW > 0
+            ? ownerWidth / rootW
+            : NaN;
+          /* Page instances may uniformly scale the COMPONENT (mobile 预约弹窗
+             切换地区 is 95 vs master 151). Uniform scale is still on/off. */
+          const uniformScale = Number.isFinite(widthRatio) && widthRatio > 0.2 && widthRatio < 5
+            && Math.abs(widthRatio - 1) > 0.01;
+          if (state === 'invalid' || !root || !Number.isFinite(rootW) || !Number.isFinite(Number(rootBox.h))
+            || !Number.isFinite(ownerWidth)
+            || (!uniformScale && Math.abs(rootW - ownerWidth) > 0.5)) {
             mountBlocked = true;
             owner.el.setAttribute('data-dropmenu-mount-status', 'blocked-owner-extent-or-axis');
             owner.el.setAttribute('data-dropmenu-state', 'invalid');
             break;
           }
+          if (uniformScale) owner.el.setAttribute('data-dropmenu-scale', String(widthRatio));
+          const instanceScale = Number.isFinite(widthRatio) && widthRatio > 0 ? widthRatio : 1;
+          const paintedH = Number(rootBox.h) * instanceScale;
           if (index === owner.initialIndex) {
             owner.el.setAttribute('data-dropmenu-index', String(index));
             owner.el.setAttribute('data-dropmenu-state', state);
@@ -6550,7 +6603,7 @@
               sibling.setAttribute('data-dropmenu-index', String(index));
               hideInPlace(sibling, false);
             }
-            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true, rootH: Number(rootBox.h) });
+            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true, rootH: paintedH });
             continue;
           }
           const layer = document.createElement('div');
@@ -6562,8 +6615,12 @@
           layer.style.left = '0';
           layer.style.top = '0';
           layer.style.width = '100%';
-          layer.style.height = Number(rootBox.h) + 'px';
-          layer.style.overflow = 'visible';
+          layer.style.height = (uniformScale ? Number(rootBox.h) : paintedH) + 'px';
+          layer.style.overflow = 'hidden';
+          if (uniformScale) {
+            layer.style.transformOrigin = '0 0';
+            layer.style.transform = 'scale(' + instanceScale + ')';
+          }
           layer.hidden = true;
           owner.el.appendChild(layer);
           const menuName = String(owner.el.getAttribute('data-dropmenu-name') || owner.el.getAttribute('data-name') || '');
@@ -6578,7 +6635,7 @@
             suppressInteractions: /多语言|语言|language/i.test(menuName) ? false : true,
           });
           hideInPlace(layer, true);
-          layers.push({ index, state, el: layer, externals: [], isBase: false, rootH: Number(rootBox.h) });
+          layers.push({ index, state, el: layer, externals: [], isBase: false, rootH: paintedH });
         }
         if (!mountBlocked && layers.length === trees.length) {
           owner.el.style.overflow = 'visible';
@@ -7283,7 +7340,7 @@
           return hits;
         };
         const uniqueDropmenuLang = (raw) => {
-          const hits = dropmenuLangHits(raw);
+          const hits = [...new Set(dropmenuLangHits(raw))];
           return hits.length === 1 ? hits[0] : null;
         };
         const dropmenuLangFromSelfLabel = (raw) => uniqueDropmenuLang(raw);
@@ -7327,11 +7384,16 @@
           }
           return out;
         };
-        const currentPageLang = () => String(
-          (frame.__fxRenderPrefs && frame.__fxRenderPrefs.lang)
-          || (ctx.prefs && ctx.prefs.lang)
-          || '',
-        ).trim();
+        const currentPageLang = () => {
+          const qa = typeof window !== 'undefined' ? window.__qa : null;
+          const qaLang = qa && typeof qa.prefs === 'function' ? qa.prefs().lang : '';
+          return String(
+            (frame.__fxRenderPrefs && frame.__fxRenderPrefs.lang)
+            || qaLang
+            || (ctx.prefs && ctx.prefs.lang)
+            || '',
+          ).trim();
+        };
         const syncLanguageDropmenuHighlight = (owner, lang) => {
           if (!owner || !isLanguageDropmenu(owner)) return false;
           const current = String(lang || currentPageLang()).trim();
@@ -7414,6 +7476,16 @@
           if (ok && next === 'on') syncLanguageDropmenuHighlight(owner, currentPageLang());
           return ok;
         };
+        /* setPref('lang') rebuilds the page from the Figma rest state (all
+           language rows Property 1=normal). Re-apply the current-lang
+           highlight after that remount, not only when the user opens the menu.
+           The surviving click listener reads frame.__fxRenderPrefs.lang. */
+        frame.__fxSyncLanguageDropmenuHighlight = () => {
+          for (const owner of [...frame.querySelectorAll('[data-dropmenu="true"]')]) {
+            syncLanguageDropmenuHighlight(owner, currentPageLang());
+          }
+        };
+        frame.__fxSyncLanguageDropmenuHighlight();
         const closeDropmenuOwners = (root) => {
           const scope = root && typeof root.querySelectorAll === 'function' ? root : frame;
           for (const owner of [...scope.querySelectorAll('[data-dropmenu="true"][data-dropmenu-mount-status="owner-local-mutually-exclusive"]')]) {
@@ -7794,7 +7866,15 @@
           };
           const modalPolicy = () => {
             const policy = designPolicy();
-            const fill = policy.modalViewportFill === 'cover' ? 'cover' : 'contain';
+            /* YAML default is cover (PC 3840 sheet on a frozen 1920 column).
+               Mobile 750×1334 cover on 390×844 becomes 474×844 and overflows
+               the sheet. Contain keeps the authored sheet inside the viewport.
+               Read data-fx-base from this remount; the click listener itself
+               is installed once and must not keep the first-paint PC base. */
+            const liveBase = frame.getAttribute('data-fx-base') || __base;
+            const fill = (liveBase === 'mobile')
+              ? 'contain'
+              : (policy.modalViewportFill === 'cover' ? 'cover' : 'contain');
             const scrim = Number(policy.modalScrimOpacity);
             const lock = policy.modalLockPageScroll === true;
             return {
@@ -7854,8 +7934,9 @@
             const frameRect = frame.getBoundingClientRect();
             if (!frameRect.width || !frameRect.height) return;
             const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
-            const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
-            const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
+            const liveBase = frame.getAttribute('data-fx-base') || __base;
+            const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[liveBase] || DW[__base];
+            const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (liveBase === 'mobile' ? 1334 : 2160);
             /* Host zoom is the page-stage ruler for closed overlays. Pinning
                to the visible frame must drop it, or cover/contain scale
                multiplies k and the Figma sheet shrinks to a card.
@@ -8333,6 +8414,9 @@
         })();
       }
       if (typeof frame.__fxSyncFixedNavigation === 'function') frame.__fxSyncFixedNavigation();
+      if (typeof frame.__fxSyncLanguageDropmenuHighlight === 'function') {
+        frame.__fxSyncLanguageDropmenuHighlight();
+      }
       this._installHeroScrollSlot(frame, heroSlot);
       this._installMotionAdapter(frame, motionAdapter);
       this._installAssetScheduler(frame);

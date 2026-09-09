@@ -502,6 +502,58 @@ test('html-from-handoff binds lark-copy into truth.copy.byNode and switches lang
   assert.match(src, /attachHandoffCopy\(demoDir, truth, spec, inventories\)/);
 });
 
+test('html-from-handoff designations bind duplicate 查看更多 to phase-1 row 26', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-designate-'));
+  const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920, copyId: 'I949:5195;949:5333', copyText: '查看更多' });
+  const mobileDoc = sample('2:2', { roles: GOLD_MOBILE_PREFIX_CLASSES, pageWidth: 750, copyId: 'I949:6080;949:6214', copyText: '查看更多' });
+  const pcPath = join(dir, 'pc.json');
+  const mobilePath = join(dir, 'mo.json');
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: 'ready', outDir: join(dir, 'out'),
+  });
+  const demoDir = join(dir, 'demo');
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: {
+      langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' },
+      langs: ['zh-CN', 'en', 'zh-TW', 'ko'],
+      fetchedAt: '2026-09-08T00:00:00Z',
+      phase: '阶段一：赛季前瞻直播',
+    },
+    rows: {
+      26: { 'zh-CN': '查看更多', en: 'View More', 'zh-TW': '查看更多', ko: '더 보기' },
+      81: { 'zh-CN': '查看更多', en: 'More', 'zh-TW': '查看更多', ko: '더 보기' },
+    },
+  }, null, 2));
+  writeFileSync(join(demoDir, 'copy-designations.json'), JSON.stringify({
+    designations: {
+      'I949:5195;949:5333': { row: 26, designCharacters: '查看更多', tableZhCN: '查看更多', why: 'phase-1 PC' },
+      'I949:6080;949:6214': { row: 26, designCharacters: '查看更多', tableZhCN: '查看更多', why: 'phase-1 mobile' },
+    },
+  }));
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const truth = JSON.parse(readFileSync(join(demoDir, 'truth.json'), 'utf8'));
+  assert.equal(truth.copy.byNode['I949:5195;949:5333'].en, 'View More');
+  assert.equal(truth.copy.byNode['I949:5195;949:5333'].ko, '더 보기');
+  assert.equal(truth.copy.byNode['I949:6080;949:6214'].en, 'View More');
+  assert.notEqual(truth.copy.byNode['I949:5195;949:5333'].en, 'More');
+  writeFileSync(join(demoDir, 'copy-designations.json'), JSON.stringify({
+    designations: {
+      'I949:5195;949:5333': { row: 26, designCharacters: '错误文案', tableZhCN: '查看更多', why: 'inconsistent designation' },
+    },
+  }));
+  const invalid = buildHtmlFromHandoff({ handoffDir: pack.outDir, demoDir, skipPreview: true });
+  assert.equal(invalid.wroteHtml, false);
+  assert.match((invalid.problems || []).join('\\n'), /designation|row|copy/i);
+});
+
 test('html-from-handoff fail-closes when the lark copy table file is missing', () => {
   const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-missing-copy-'));
   const pack = packedReady(dir);

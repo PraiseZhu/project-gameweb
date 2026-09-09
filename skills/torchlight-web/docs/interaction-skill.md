@@ -117,10 +117,13 @@ display. Flattened `I{owner};…` descendants must not be reparented.
 
 Stop-2 completion for `dropmenu/多语言` `btn/切换语言` is the authored
 COMPONENT root fill, not `data-btn-variant-state`. Current page language
-gets Property 1=highlight (`758:1713`, `rgb(169, 177, 220)`); every other
-option stays Property 1=normal (`758:1710`, `rgb(127, 133, 162)`). Labels
-stay visible. After a language remount, open-menu highlight must read
-`frame.__fxRenderPrefs.lang`, never the first-paint closure. `later-axes-probe`
+gets Property 1=highlight (`949:5363`, `rgb(241, 200, 116)`); every other
+option stays Property 1=normal (`949:5360`, `rgb(189, 142, 92)`). Labels
+stay visible. Fill pixels may be that CSS rgb or the visible
+`img/选中背景` / `img/未选中背景` VECTOR slice. After a language remount, open-menu highlight must read
+`frame.__fxRenderPrefs.lang` written at the start of every `renderApp`,
+never the first-paint `ctx.prefs` closure. Duplicate TEXT
+(`EnglishEnglish`) still maps to one lang. `later-axes-probe`
 fails closed if any of en / zh-TW / zh-CN / ko opens with the wrong fill,
 if a remount keeps stale `prefs.lang`, or if skip / unmeasured rows try
 to go green.
@@ -143,6 +146,8 @@ links for them.
 highlight/normal assets in place. It is not an independent `btn/`.
 
 ### Named modal contracts
+
+PC age-gate modal geometry uses `3840×2160` basis and its panel y is `199`; on mobile, a modal must not appear as a full-screen `390px` layer.
 
 `@go` copies the modal layer name, not a node id:
 
@@ -175,6 +180,13 @@ enough when the match is unique on that platform:
 - page `btn/播放按钮` (not inside a modal) → same-platform `modal/视频弹窗`
 - mobile `btn/导航按钮` → `modal/顶部导航-1624尺寸`
 - mobile `btn/多语言按钮` → `modal/多语言按钮弹窗`
+
+Phase-1 duplicate `查看更多` accepts only `nodeRow=26` with
+`designCharacters/tableZhCN` reconciled; without that evidence, never guess
+row 81 from visual order.
+
+Indicator fallback demand comes from the current page manifest; an absent
+indicator root does not trigger a fallback cutout.
 
 ### `fix/@from`
 

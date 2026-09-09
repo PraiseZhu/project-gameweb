@@ -270,6 +270,11 @@ async function collectLanguageOptions(page) {
       if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') {
         return `linear-gradient(0deg, ${color} 0%, ${color} 100%)`;
       }
+      const named = String(node.getAttribute('data-name') || '');
+      if (/img\/(?:选中背景|未选中背景)/.test(named)) {
+        const slice = node.tagName === 'IMG' ? node : node.querySelector('img');
+        if (slice && slice.getAttribute('src') && painted(slice)) return named;
+      }
       return '';
     };
     const options = [...owner.querySelectorAll('[data-btn-name="切换语言"]')].filter(painted).map((el) => {
@@ -279,7 +284,7 @@ async function collectLanguageOptions(page) {
         .filter(Boolean);
       const fillNodes = [
         el,
-        ...el.querySelectorAll('[data-figma-type="VECTOR"], [data-figma-type="RECTANGLE"], [data-btn-variant-layer="true"]'),
+        ...el.querySelectorAll('[data-figma-type="VECTOR"], [data-figma-type="RECTANGLE"], [data-btn-variant-layer="true"], img'),
       ].filter(painted);
       const childFill = fillNodes.map(fillImage).find(Boolean);
       const activeLayer = [...el.querySelectorAll('[data-btn-variant-layer="true"]')].find(painted);

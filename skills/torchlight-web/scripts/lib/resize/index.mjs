@@ -310,18 +310,18 @@ export function heroViewportFill({
 }
 
 /**
- * Official `.adaptive-width` clips the page, not inner carousels. Product view
- * therefore hides page-level X overflow. QA keeps X auto so no-clip probes can
- * still see a legal scroll surface.
+ * Official `.adaptive-width` clips the page, not inner carousels. QA frame
+ * and product view share that page-level clip so the simulated screen matches
+ * the live page. Viewport width still resizes; only page X is clipped.
+ * no-clip probes inspect inner tracks, not `.frame` page overflow.
  */
 export function pageOverflowPolicy({ productView = false } = {}) {
+  void productView;
   return {
-    overflowX: productView ? 'hidden' : 'auto',
+    overflowX: 'hidden',
     overflowY: 'auto',
-    clipsPageX: !!productView,
-    reason: productView
-      ? 'product-view-matches-official-adaptive-width-clip'
-      : 'qa-keeps-x-auto-for-no-clip-probe',
+    clipsPageX: true,
+    reason: 'page-matches-official-adaptive-width-clip',
   };
 }
 
@@ -466,7 +466,7 @@ export function resizeOwns() {
     'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; inventory stays one sheet)',
     'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
     'left directory rail stretches to the current viewport height without SS5 node IDs',
-    'product-view page overflow-x clip (official adaptive-width)',
+    'page overflow-x clip on QA frame and product view (official adaptive-width)',
     'light-drag vs full rebuild',
     'preview 1:1 fit scale',
     'background cover-crop vs UI source-scale vs sea aspect-crop',

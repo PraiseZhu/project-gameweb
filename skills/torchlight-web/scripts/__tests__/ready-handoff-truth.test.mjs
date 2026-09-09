@@ -424,6 +424,50 @@ test('fix overlay descendants leave sections and pin with parentBox, not later-s
   assert.deepEqual(btn.sliceExport.box, { x: 2764, y: 70, w: 516, h: 150 });
 });
 
+test('right-side fix overlay keeps viewport parentBox while descendants stay owner-local', () => {
+  const inv = fixture();
+  inv.overlays = [{ id: 'fix-right', role: 'fix', label: '右侧浮层', pin: 'viewport' }];
+  inv.nodes.push(
+    {
+      id: 'fix-right',
+      scope: 'page',
+      type: 'GROUP',
+      name: 'fix/右侧浮层',
+      parentId: '100:2',
+      ancestorIds: [PAGE_ID, '100:2'],
+      orderKey: '0.0.1',
+      status: 'determined',
+      role: 'fix',
+      pin: 'viewport',
+      pageBox: { x: 2764, y: 70, w: 1029, h: 423 },
+      parentBox: { x: 2764, y: 70, w: 1029, h: 423 },
+    },
+    {
+      id: 'fix-right-dropmenu',
+      scope: 'page',
+      type: 'INSTANCE',
+      name: 'dropmenu/下拉菜单',
+      parentId: 'fix-right',
+      ancestorIds: [PAGE_ID, '100:2', 'fix-right'],
+      orderKey: '0.0.1.0',
+      status: 'determined',
+      role: 'dropmenu',
+      pageBox: { x: 3539, y: 76, w: 254, h: 417 },
+      parentBox: { x: 775, y: 6, w: 254, h: 417 },
+    },
+  );
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  const overlay = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-right');
+  const child = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-right-dropmenu');
+  assert.ok(overlay);
+  assert.ok(child);
+  assert.deepEqual(overlay.box, { x: 0, y: 0, w: 1029, h: 423 });
+  assert.deepEqual(overlay.pageBox, { x: 0, y: 0, w: 1029, h: 423 });
+  assert.deepEqual(overlay.parentBox, { x: 2764, y: 70, w: 1029, h: 423 });
+  assert.deepEqual(child.box, { x: 775, y: 6, w: 254, h: 417 });
+});
+
 test('fix nested sliceExport stays offset from the local owner box, not page x', () => {
   const inv = fixture();
   inv.overlays = [{ id: 'fix-1', role: 'fix', label: '顶部信息', pin: 'viewport' }];

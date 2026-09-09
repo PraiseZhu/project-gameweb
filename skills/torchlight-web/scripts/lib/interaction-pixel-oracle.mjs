@@ -1,18 +1,20 @@
 /**
  * Stop-2 pixel oracle. Completion is the authored fill / sheet pose, not
- * data-btn-variant-state. Numbers come from btn/切换语言 758:1710/758:1713
- * and modal/pc* img/弹窗背景 3840×1340 @ y=199.
+ * data-btn-variant-state. Language fills come from this page's
+ * btn/切换语言 COMPONENT_SET 949:5359 (normal 949:5360 / highlight 949:5363),
+ * not Etheria 758:1710/758:1713. PC modal pose still uses
+ * modal/pc* img/弹窗背景 3840×1340 @ y=199.
  */
 export const LANG_BTN_FILL = Object.freeze({
   highlight: Object.freeze({
-    componentId: '758:1713',
-    cssRgb: 'rgb(169, 177, 220)',
-    cssRgbEnd: 'rgb(81, 93, 127)',
+    componentId: '949:5363',
+    cssRgb: 'rgb(241, 200, 116)',
+    cssRgbEnd: 'rgb(166, 99, 57)',
   }),
   normal: Object.freeze({
-    componentId: '758:1710',
-    cssRgb: 'rgb(127, 133, 162)',
-    cssRgbEnd: 'rgb(59, 68, 94)',
+    componentId: '949:5360',
+    cssRgb: 'rgb(189, 142, 92)',
+    cssRgbEnd: 'rgb(91, 66, 50)',
   }),
 });
 
@@ -46,7 +48,17 @@ export function backgroundMatchesFill(backgroundImage, state) {
     const token = rgbTriples(rgb)[0];
     return Boolean(token && triples.includes(token));
   };
-  return has(fill.cssRgb) && !has(other.cssRgb);
+  if (has(fill.cssRgb) && !has(other.cssRgb)) return true;
+  /* This page paints btn/切换语言 as VECTOR img/选中背景|未选中背景 slices,
+     not a CSS gradient on the INSTANCE. Completion is the visible authored
+     layer, not a reconstructed rgb triple. */
+  if (state === 'highlight' && /img\/选中背景/.test(backgroundImage) && !/img\/未选中背景/.test(backgroundImage)) {
+    return true;
+  }
+  if (state === 'normal' && /img\/未选中背景/.test(backgroundImage) && !/img\/选中背景/.test(backgroundImage)) {
+    return true;
+  }
+  return false;
 }
 
 export function languageOptionVerdict(options, currentLang) {

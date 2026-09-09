@@ -564,8 +564,12 @@ function indicatorSourceFile(assetsDir, manifest, nodeId) {
 
 export function installIndicatorFallbacks(assetsDir, manifest) {
   mkdirSync(assetsDir, { recursive: true });
+  const needed = INDICATOR_FALLBACKS.filter((item) => manifest && manifest[item.nodeId]);
+  /* 旧稿 ind/ 高亮/普通根是 397:35947 / 397:35949。本页没有这些节点时
+     不许拿旧 id 卡死整份 assets-manifest；有这些根却导不出图才红停。 */
+  if (!needed.length) return { ok: true, skipped: true, missing: [] };
   const missing = [];
-  for (const item of INDICATOR_FALLBACKS) {
+  for (const item of needed) {
     const dest = join(assetsDir, item.dest);
     if (isWebpFile(dest)) continue;
     const src = indicatorSourceFile(assetsDir, manifest, item.nodeId);

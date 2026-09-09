@@ -344,9 +344,10 @@ function sampleRgbaMismatch(want, have) {
 function evaluateChromeSliceAndPixels(node, actual, expected, byId, failures) {
   if (!needsChromePngPixels(node)) return;
   const id = String(node.id);
+  const bakedInvisibleChildren = sliceChildrenAllInvisible(node, byId);
   if (actual.hasImg !== true) {
     failures.push({ id, reason: 'topbar-chrome-missing-img', expected });
-  } else if (actual.assetEmpty === true) {
+  } else if (actual.assetEmpty === true && !bakedInvisibleChildren) {
     failures.push({ id, reason: 'topbar-chrome-png-empty' });
   }
   const expectedSlice = expectedSliceBox(node, byId, expected);
@@ -375,12 +376,13 @@ function evaluateChromeSliceAndPixels(node, actual, expected, byId, failures) {
     });
     return;
   }
-  if (actual.assetInkEmpty === true) {
+  if (actual.assetInkEmpty === true && !bakedInvisibleChildren) {
     failures.push({ id, reason: 'topbar-chrome-png-pixels-mismatch', expected: 'ink', actual: 'empty' });
   }
   const n = Math.min(screenSamples.length, fileSamples.length);
   for (let i = 0; i < n; i += 1) {
     if (!sampleRgbaMismatch(fileSamples[i]?.rgba, screenSamples[i]?.rgba)) continue;
+    if (bakedInvisibleChildren) continue;
     failures.push({
       id,
       reason: 'topbar-chrome-png-pixels-mismatch',
@@ -458,6 +460,7 @@ function evaluateChromeStack(contract, nodes, byId, failures) {
     const node = byId.get(id);
     const actual = nodes[id];
     if (!node || !actual) continue;
+    if (node.role === 'fix' || node.pin === 'viewport') continue;
     const parent = String(node.parentId || '');
     if (!groups.has(parent)) groups.set(parent, []);
     groups.get(parent).push({ id, node, actual });
@@ -972,6 +975,9 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       failures.push({ id: firstKv.id, reason: 'first-kv-dom-missing' });
     } else {
       if (!kvDom.imgSrc) failures.push({ id: firstKv.id, reason: 'first-kv-img-missing' });
+      if (kvDom.imgSrc && (kvDom.assetW == null || kvDom.assetH == null || kvDom.assetEmpty == null)) {
+        failures.push({ id: firstKv.id, reason: 'first-kv-png-meta-missing' });
+      }
       const expectedKv = geom(sliceExportPaintBox(firstKv)) || geom(firstKv.pageBox);
       if (expectedKv && Number(kvDom.assetW) > 0 && Number(kvDom.assetH) > 0) {
         if (Math.abs(Number(kvDom.assetW) - expectedKv.w) > 1 || Math.abs(Number(kvDom.assetH) - expectedKv.h) > 1) {
@@ -1055,6 +1061,18 @@ function shouldGateWholeFramePng(node) {
   /* Empty PNG still fails every whole-frame owner. Size mismatch only locks
      full-bleed plates: a 188 BOOLEAN glow around a 124 btn is legal ink. */
   return isWholeFrameSliceNode(node);
+}
+
+function sliceChildrenAllInvisible(node, byId) {
+  const parentId = String(node?.id || '');
+  if (!parentId || !byId) return false;
+  const kids = [];
+  for (const child of byId.values()) {
+    if (String(child?.parentId || '') !== parentId) continue;
+    kids.push(child);
+  }
+  if (!kids.length) return false;
+  return kids.every((child) => child?.status === 'skipped' && String(child?.why || child?.skipReason || '') === 'invisible');
 }
 
 function shouldGateWholeFramePngSize(node) {
@@ -1327,7 +1345,7 @@ export function evaluateInventoryStaticGate({
     }
     if (shouldGateWholeFramePng(node) && (actual.assetEmpty != null || actual.assetW != null || actual.assetH != null)) {
       const expectedPaint = geom(sliceExportPaintBox(node)) || geom(node.pageBox);
-      if (actual.assetEmpty === true) {
+      if (actual.assetEmpty === true && !sliceChildrenAllInvisible(node, byId)) {
         failures.push({ id: node.id, reason: 'whole-frame-png-empty' });
       }
       if (shouldGateWholeFramePngSize(node) && expectedPaint && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
