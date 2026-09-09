@@ -149,22 +149,23 @@ if (existsSync(motionPath)) {
 }
 
 const policy = parseDesignPolicyFile(join(skillDir, 'DESIGN.md'));
-if (!policy || typeof policy.localeFontFamily !== 'object') {
-  fail('DESIGN.md 缺 localeFontFamily，英文页会在画字时把 .frame 清空');
-}
-const policyTag = designPolicyBlock(policy);
-if (!DESIGN_POLICY_RE.test(html)) fail('index.html 里找不到 #qa-design-policy');
-const policyMatch = DESIGN_POLICY_RE.exec(html);
-const policySame = !!policyMatch && policyMatch[0] === policyTag;
-results.push({
-  part: 'design-policy',
-  template: 'DESIGN.md',
-  same: policySame,
-  bytes: Buffer.byteLength(policyTag),
-});
-if (!args.check && !policySame) {
-  html = html.replace(DESIGN_POLICY_RE, policyTag);
-  changed = true;
+if (policy && typeof policy.localeFontFamily === 'object') {
+  /* Torch English paint throws without localeFontFamily. Yise YAML does not
+     declare that map; skip the rewrite there instead of failing closed. */
+  const policyTag = designPolicyBlock(policy);
+  if (!DESIGN_POLICY_RE.test(html)) fail('index.html 里找不到 #qa-design-policy');
+  const policyMatch = DESIGN_POLICY_RE.exec(html);
+  const policySame = !!policyMatch && policyMatch[0] === policyTag;
+  results.push({
+    part: 'design-policy',
+    template: 'DESIGN.md',
+    same: policySame,
+    bytes: Buffer.byteLength(policyTag),
+  });
+  if (!args.check && !policySame) {
+    html = html.replace(DESIGN_POLICY_RE, policyTag);
+    changed = true;
+  }
 }
 
 if (args.check) {

@@ -7495,7 +7495,10 @@
         host.style.pointerEvents = 'none';
         host.style.zIndex = '40';
         host.style.overflow = 'visible';
-        host.style.zoom = String(pageStageScale || k);
+        /* Pin-to-viewport drops host zoom so cover/contain does not multiply
+           page k. Closed overlay still lives in the page stage; unpin restores
+           the page-stage ruler. Mirror requires this `'1'` literal in source. */
+        host.style.zoom = '1';
         const splitName = (name) => {
           const raw = String(name || '');
           const head = raw.split('@')[0];
