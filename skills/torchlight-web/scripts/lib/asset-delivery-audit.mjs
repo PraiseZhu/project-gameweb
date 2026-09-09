@@ -454,7 +454,7 @@ export async function fetchOfficialAsset(url, { timeoutMs = DEFAULT_NETWORK_TIME
   };
 }
 
-export async function crawlOfficialSiteImages({ siteUrl = 'https://yise.xd.cn/', maxImages = 240, maxTextResources = 80, timeoutMs = DEFAULT_NETWORK_TIMEOUT_MS } = {}) {
+export async function crawlOfficialSiteImages({ siteUrl = 'https://torchlight.xd.cn/', maxImages = 240, maxTextResources = 80, timeoutMs = DEFAULT_NETWORK_TIMEOUT_MS } = {}) {
   const visitedText = new Set();
   const imageUrls = new Set();
   const textUrls = new Set([siteUrl]);
@@ -671,7 +671,7 @@ export async function runAssetDeliveryAudit({
   demoDir,
   outDir,
   docsFile,
-  officialSite = 'https://yise.xd.cn/',
+  officialSite = 'https://torchlight.xd.cn/',
   crawlOfficial = false,
   maxOfficialImages = 240,
   maxOfficialTextResources = 80,
@@ -720,7 +720,7 @@ export function parseArgs(argv) {
     demoDir: null,
     outDir: null,
     docsFile: null,
-    officialSite: 'https://yise.xd.cn/',
+    officialSite: 'https://torchlight.xd.cn/',
     crawlOfficial: false,
     maxOfficialImages: 240,
     maxOfficialTextResources: 80,

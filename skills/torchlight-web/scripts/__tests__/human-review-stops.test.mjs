@@ -11,14 +11,44 @@ import {
   canStartLaterAxis,
   packAllowedAfterSecondStop,
   presentStop,
+  readHumanReview,
 } from '../lib/human-review.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const CLI = join(ROOT, 'scripts/human-review.mjs');
 
 function demo() {
-  return mkdtempSync(join(tmpdir(), 'yise-human-review-'));
+  return mkdtempSync(join(tmpdir(), 'torchlight-human-review-'));
 }
+
+test('legacy yise-human-review schema still reads stop signatures', () => {
+  const dir = demo();
+  writeFileSync(join(dir, 'human-review.json'), `${JSON.stringify({
+    schema: 'yise-human-review/v1',
+    stops: {
+      'static-and-translation': { presented: true, previewOk: true, accepted: true, acceptedAt: '2026-08-27T00:00:00.000Z' },
+      'interaction-and-resize': { presented: false, previewOk: false, accepted: false, acceptedAt: null },
+    },
+  }, null, 2)}\n`);
+  const record = readHumanReview(dir);
+  assert.equal(record.missing, false);
+  assert.equal(record.invalid, undefined);
+  assert.equal(record.stops['static-and-translation'].accepted, true);
+  assert.equal(canStartLaterAxis(dir).ok, true);
+});
+
+test('unrelated human-review schema is invalid, not accepted', () => {
+  const dir = demo();
+  writeFileSync(join(dir, 'human-review.json'), `${JSON.stringify({
+    schema: 'other-human-review/v1',
+    stops: {
+      'static-and-translation': { presented: true, previewOk: true, accepted: true, acceptedAt: '2026-08-27T00:00:00.000Z' },
+    },
+  }, null, 2)}\n`);
+  const record = readHumanReview(dir);
+  assert.equal(record.invalid, true);
+  assert.equal(record.stops['static-and-translation'].accepted, false);
+});
 
 test('red preview cannot present the first human stop', () => {
   const dir = demo();
@@ -102,13 +132,13 @@ test('human-review refuses a symlink marker instead of following it', (t) => {
     t.skip(`无法创建 symlink（${capability.code}）`);
     return;
   }
-  const parent = mkdtempSync(join(tmpdir(), 'yise-human-review-link-'));
+  const parent = mkdtempSync(join(tmpdir(), 'torchlight-human-review-link-'));
   const outside = join(parent, 'outside');
   const dir = join(parent, 'demo');
   mkdirSync(outside);
   mkdirSync(dir);
   writeFileSync(join(outside, 'human-review.json'), JSON.stringify({
-    schema: 'yise-human-review/v1',
+    schema: 'torchlight-human-review/v1',
     stops: {
       'static-and-translation': { presented: true, previewOk: true, accepted: true, acceptedAt: '2026-08-27T00:00:00.000Z' },
       'interaction-and-resize': { presented: true, previewOk: true, accepted: true, acceptedAt: '2026-08-27T00:00:00.000Z' },

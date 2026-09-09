@@ -5,7 +5,7 @@
  * 这段代码消费的是 truth 的**固定形状**（sections[].nodes[] 的 box/style/text/renderBox），
  * 与具体是哪个页面、哪个项目无关 —— 它天然是通用件。
  *
- * 而它一度只存在于 demos/yise-ss5-preview/index.html 里。后果是实测过的：
+ * 而它一度只存在于单个历史 demo 的 index.html 里。后果是实测过的：
  * 嵌套还原、裁剪生效、渐变字、文字投影用 text-shadow、图层模糊、排版模式 ——
  * 这六项修复全都只落在那一个页面上，**下一个页面一样都拿不到**。
  * 那不叫做了一套可复用的 Skill，叫改了一个页面的效果。

@@ -69,7 +69,7 @@ entry.role = deriveRole(node).role;                  // role hint（不动结构
 - `scripts/__tests__/name-semantics.test.mjs`：36 条纯函数逻辑（解析/推导/穿透/bg 归类/audit）✅ 全绿。
 - `scripts/__tests__/owner-contract.test.mjs`：8 条契约↔truth 接线对账绿 + 7 项「待 extract 落地」标记（非失败）。
 
-跑法：`node scripts/__tests__/name-semantics.test.mjs`、`node scripts/__tests__/owner-contract.test.mjs`（后者用 `QA_DEMO_DIR` 指 demo，默认 `demos/yise-ss5-preview`）。
+跑法：`node scripts/__tests__/name-semantics.test.mjs`、`node scripts/__tests__/owner-contract.test.mjs`（后者用 `QA_DEMO_DIR` 指 demo，默认 `demos/torchlight-preview`）。
 
 ## 六、诚实边界
 - 契约件是**纯库**，不改 extraction 现状；7 个字段的 truth 落地归 extract/figma-geo（并发中），本任务只把契约、测试、调用点备齐。

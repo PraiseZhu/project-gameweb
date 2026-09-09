@@ -73,7 +73,7 @@ spec 中仍保留 tablet `TODO-待定`，不得称为专用 tablet 稿。
 
 ```powershell
 node --test scripts/__tests__/hero-scroll-slot.test.mjs
-node demos/yise-ss5-preview/_render-smoke.mjs
+node demos/torchlight-preview/_render-smoke.mjs
 $env:CHROME_PATH='<path-to-chrome.exe>'
-node scripts/lib/figma-chrome-browser-check.mjs --demo demos/yise-ss5-preview
+node scripts/lib/figma-chrome-browser-check.mjs --demo demos/torchlight-preview
 ```

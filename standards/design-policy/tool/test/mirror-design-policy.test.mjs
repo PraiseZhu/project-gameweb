@@ -16,6 +16,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '../../../..');
 const PARSE = join(HERE, '../src/parse-design-policy.mjs');
 const MIRROR = join(HERE, '../src/mirror-design-policy.mjs');
+const CONSUMER = process.env.DESIGN_POLICY_CONSUMER || '';
+const ALL_SKILL_PACKS = ['skills/yise-web-ui', 'skills/torchlight-web'];
+const SKILL_PACKS = CONSUMER
+  ? ALL_SKILL_PACKS.filter((rel) => rel === `skills/${CONSUMER}`)
+  : ALL_SKILL_PACKS;
+if (CONSUMER && !SKILL_PACKS.length) throw new Error(`未知 DESIGN_POLICY_CONSUMER: ${CONSUMER}`);
 
 function importRepo(rel) {
   return import(pathToFileURL(join(REPO, rel)).href);
@@ -126,10 +132,14 @@ test('CLI and library fail the same missing-key YAML', () => {
 
 test('real skill DESIGN.md mirrors against loaded modules and chrome source', async () => {
   const { implementationSnapshotFromModules } = await import('../src/implementation-snapshot.mjs');
-  const packs = [
-    ['skills/yise-web-ui', await importRepo('skills/yise-web-ui/scripts/lib/resize/index.mjs'), await importRepo('skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs')],
-    ['skills/torchlight-web', await importRepo('skills/torchlight-web/scripts/lib/resize/index.mjs'), await importRepo('skills/torchlight-web/scripts/lib/translation/typography-policy.mjs')],
-  ];
+  const packs = [];
+  for (const rel of SKILL_PACKS) {
+    packs.push([
+      rel,
+      await importRepo(`${rel}/scripts/lib/resize/index.mjs`),
+      await importRepo(`${rel}/scripts/lib/translation/typography-policy.mjs`),
+    ]);
+  }
   for (const [rel, resize, typography] of packs) {
     const abs = join(REPO, rel, 'DESIGN.md');
     const chromeSource = readFileSync(join(REPO, rel, 'templates/figma-chrome.js'), 'utf8');
@@ -143,6 +153,7 @@ test('real skill DESIGN.md mirrors against loaded modules and chrome source', as
 });
 
 test('sourceTitleInlineSafe 70/65 width-fit cannot mirror green', async () => {
+  if (CONSUMER && CONSUMER !== 'yise-web-ui') return;
   const { implementationSnapshotFromModules } = await import('../src/implementation-snapshot.mjs');
   const yiseResize = await importRepo('skills/yise-web-ui/scripts/lib/resize/index.mjs');
   const yiseType = await importRepo('skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs');
@@ -163,6 +174,7 @@ test('sourceTitleInlineSafe 70/65 width-fit cannot mirror green', async () => {
 });
 
 test('hardcoded render DW / FLOOR cannot mirror green', async () => {
+  if (CONSUMER && CONSUMER !== 'yise-web-ui') return;
   const { implementationSnapshotFromModules } = await import('../src/implementation-snapshot.mjs');
   const yiseResize = await importRepo('skills/yise-web-ui/scripts/lib/resize/index.mjs');
   const yiseType = await importRepo('skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs');
@@ -180,6 +192,7 @@ test('hardcoded render DW / FLOOR cannot mirror green', async () => {
 test('chrome silent || 10 is not a live implementation number', async () => {
   const { chromeOfficialRootFontVwFromSource, implementationSnapshotFromModules } = await import('../src/implementation-snapshot.mjs');
   assert.equal(chromeOfficialRootFontVwFromSource("html{--fx-official-root:calc((window.__designPolicy && window.__designPolicy.officialRootFontVw) || 10)vw}"), null);
+  if (CONSUMER && CONSUMER !== 'yise-web-ui') return;
   const yiseResize = await importRepo('skills/yise-web-ui/scripts/lib/resize/index.mjs');
   const yiseType = await importRepo('skills/yise-web-ui/scripts/lib/translation/typography-policy.mjs');
   const abs = join(REPO, 'skills/yise-web-ui/DESIGN.md');
@@ -192,12 +205,16 @@ test('chrome silent || 10 is not a live implementation number', async () => {
 });
 
 test('generated skill snapshots match live DESIGN.md YAML', async () => {
-  const { DESIGN_POLICY: yise } = await importRepo('skills/yise-web-ui/scripts/lib/design-policy.generated.mjs');
-  const { DESIGN_POLICY: torch } = await importRepo('skills/torchlight-web/scripts/lib/design-policy.generated.mjs');
-  assert.deepEqual(yise.shrinkSteps, parseDesignPolicyFile(join(REPO, 'skills/yise-web-ui/DESIGN.md')).shrinkSteps);
-  assert.deepEqual(torch.composition, parseDesignPolicyFile(join(REPO, 'skills/torchlight-web/DESIGN.md')).composition);
-  assert.equal(yise.officialRootFontVw, 10);
-  assert.equal(torch.composition[0].max, 1126);
+  if (!CONSUMER || CONSUMER === 'yise-web-ui') {
+    const { DESIGN_POLICY: yise } = await importRepo('skills/yise-web-ui/scripts/lib/design-policy.generated.mjs');
+    assert.deepEqual(yise.shrinkSteps, parseDesignPolicyFile(join(REPO, 'skills/yise-web-ui/DESIGN.md')).shrinkSteps);
+    assert.equal(yise.officialRootFontVw, 10);
+  }
+  if (!CONSUMER || CONSUMER === 'torchlight-web') {
+    const { DESIGN_POLICY: torch } = await importRepo('skills/torchlight-web/scripts/lib/design-policy.generated.mjs');
+    assert.deepEqual(torch.composition, parseDesignPolicyFile(join(REPO, 'skills/torchlight-web/DESIGN.md')).composition);
+    assert.equal(torch.composition[0].max, 1126);
+  }
 });
 
 function walkFiles(dir, acc = []) {
@@ -218,6 +235,7 @@ test('runtime override below YAML floor is not a production default', () => {
 });
 
 test('generated snapshot drift against YAML is red', async () => {
+  if (CONSUMER && CONSUMER !== 'yise-web-ui') return;
   const yisePath = join(REPO, 'skills/yise-web-ui/DESIGN.md');
   const { DESIGN_POLICY: generated } = await importRepo('skills/yise-web-ui/scripts/lib/design-policy.generated.mjs');
   const drifted = { ...generated, shrinkSteps: [100, 92, 85, 78, 75, 70, 65] };
@@ -228,7 +246,8 @@ test('generated snapshot drift against YAML is red', async () => {
 });
 
 test('skills do not copy parse/mirror source', () => {
-  for (const skill of ['skills/yise-web-ui/scripts', 'skills/torchlight-web/scripts']) {
+  const scripts = SKILL_PACKS.map((rel) => `${rel}/scripts`);
+  for (const skill of scripts) {
     for (const file of walkFiles(join(REPO, skill))) {
       if (!file.endsWith('.mjs') && !file.endsWith('.js')) continue;
       const text = readFileSync(file, 'utf8');

@@ -7,7 +7,7 @@
  * variants never authorize an input-to-state transition.
  */
 
-export const FIGMA_STATE_CANDIDATE_SCHEMA = 'yise-figma-state-candidate-audit/v1';
+export const FIGMA_STATE_CANDIDATE_SCHEMA = 'torchlight-figma-state-candidate-audit/v1';
 export const STATEFUL_CONTROL_STATUSES = Object.freeze([
   'wired',
   'recognized-but-evidence-insufficient',

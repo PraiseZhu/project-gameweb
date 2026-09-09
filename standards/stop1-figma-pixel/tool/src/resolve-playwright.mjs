@@ -122,17 +122,29 @@ function trustedRepoRoot(demoDir) {
    node_modules 既不入哈希链、也不在 checkDemoBuilderIntegrity 的具名文件表里。
    与 component-build-core 的 resolveFrom('esbuild', [QA_HIFI_MODULE_ROOT, repoRoot])
    同一模式:env 显式给定的根、git toplevel 得到的产品仓根、skill 自身位置,仅此三类。 */
+export function trustedSkillRoot(startDir) {
+  if (!startDir) return null;
+  const repo = trustedRepoRoot(startDir) || findGitRepoRoot(startDir);
+  if (!repo) return null;
+  const skillsRoot = join(repo, 'skills');
+  const skillsReal = real(skillsRoot);
+  for (const dir of ancestors(startDir)) {
+    if (!inside(skillsReal, real(dir))) continue;
+    const rel = real(dir).slice(skillsReal.length).replace(/^[/\\]+/, '');
+    const name = rel.split(/[/\\]/)[0];
+    if (name) return join(skillsRoot, name);
+  }
+  return null;
+}
+
 function candidateDirs(startDir) {
   const demoReal = demoScope(startDir);
-  const skillRoots = ['torchlight-web', 'yise-web-ui'].map((name) => {
-    const repo = startDir ? trustedRepoRoot(startDir) : findGitRepoRoot(import.meta.dirname);
-    return repo ? join(repo, 'skills', name) : null;
-  });
+  const skillRoot = trustedSkillRoot(startDir);
   const roots = [
     process.env.QA_HIFI_MODULE_ROOT,
     process.env.PLAYWRIGHT_MODULE_ROOT,
     startDir ? trustedRepoRoot(startDir) : null,
-    ...skillRoots,
+    skillRoot,
     import.meta.dirname,
   ].filter(Boolean);
   const out = [];

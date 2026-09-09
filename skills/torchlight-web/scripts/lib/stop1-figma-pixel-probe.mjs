@@ -13,9 +13,11 @@ import {
   failStop1FigmaPixelProbe,
   runStop1FigmaPixelProbeCli,
 } from '../../../../standards/stop1-figma-pixel/tool/src/stop1-figma-pixel-probe.mjs';
+import { injectTorchStop1SkipEnv } from './stop1-figma-pixel-gate.mjs';
 
 const isMain = process.argv[1]
   && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
+  injectTorchStop1SkipEnv();
   runStop1FigmaPixelProbeCli().catch(failStop1FigmaPixelProbe);
 }

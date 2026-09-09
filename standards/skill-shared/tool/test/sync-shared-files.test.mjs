@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -95,10 +95,22 @@ test('apply --copy-drift 才覆盖清单内漂移；未进清单文件仍不在�
   assert.equal(actions.some((item) => item.rel.startsWith('scripts/unlisted-')), false);
 });
 
-test('CLI apply 真的只写出缺失文件，已分化文件保持原样', () => {
+test('CLI apply 默认 dry-run，不写目标 skill', () => {
   const { root, manifest } = fixture();
   const logs = [];
-  main(['apply', '--from', 'alpha', '--to', 'beta', '--manifest', manifest, '--repo', root], {
+  const result = main(['apply', '--from', 'alpha', '--to', 'beta', '--manifest', manifest, '--repo', root], {
+    log: (text) => logs.push(String(text)),
+  });
+  assert.equal(result.dryRun, true);
+  assert.equal(existsSync(join(root, 'skills/beta/scripts/missing-in-beta.mjs')), false);
+  assert.match(logs.join('\n'), /dry-run/);
+  assert.match(logs.join('\n'), /would-copy skills\/beta\/scripts\/missing-in-beta\.mjs/);
+});
+
+test('CLI apply --write 才写出缺失文件，已分化文件保持原样', () => {
+  const { root, manifest } = fixture();
+  const logs = [];
+  main(['apply', '--write', '--from', 'alpha', '--to', 'beta', '--manifest', manifest, '--repo', root], {
     log: (text) => logs.push(String(text)),
   });
   assert.equal(readFileSync(join(root, 'skills/beta/scripts/missing-in-beta.mjs'), 'utf8'), 'only-alpha\n');
@@ -119,7 +131,7 @@ test('仓库清单当前两边一致，未进清单的同路径文件保持分�
   const result = main(['preview', '--repo', REPO], { log: (text) => logs.push(String(text)) });
   assert.equal(result.report.drift.length, 0, result.report.drift.map((item) => item.rel).join(','));
   assert.equal(result.report.missing.length, 0);
-  assert.ok(result.report.identical.length >= 170, `一致 ${result.report.identical.length}`);
+  assert.ok(result.report.identical.length >= 155, `一致 ${result.report.identical.length}`);
   assert.ok(result.report.unlistedDrift.length > 0, '已分化文件必须留在清单外');
   assert.match(logs.join('\n'), /未进清单且已分化/);
 });

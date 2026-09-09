@@ -28,7 +28,7 @@ function collectTypography(snapshot = {}, source = {}) {
       glyphsMissing: record.browser?.glyphsMissing === true || record.glyphsMissing === true,
     },
   }));
-  const result = { schema: 'yise-typography-visual-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null, sourceRef: source.fontManifest || null, fontFaces: faces, records };
+  const result = { schema: 'torchlight-typography-visual-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null, sourceRef: source.fontManifest || null, fontFaces: faces, records };
   const evaluation = evaluateTypographyEvidence(result);
   return { ...result, complete: evaluation.complete, failures: evaluation.failures, blocked: !evaluation.complete };
 }
@@ -36,7 +36,7 @@ function collectTypography(snapshot = {}, source = {}) {
 function collectPageFlow(snapshot = {}, source = {}) {
   const states = pageFlowStateNames(snapshot.states);
   const result = {
-    schema: 'yise-page-flow-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null,
+    schema: 'torchlight-page-flow-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null,
     sourceRef: source.truth || null, states,
     stateMeasurements: array(snapshot.states).filter((state) => state && typeof state === 'object'),
     scrollContainer: snapshot.scrollContainer || null,
@@ -47,7 +47,7 @@ function collectPageFlow(snapshot = {}, source = {}) {
 }
 
 function collectFixedChrome(snapshot = {}, source = {}) {
-  const result = { schema: 'yise-fixed-chrome-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null, sourceRef: source.truth || null,
+  const result = { schema: 'torchlight-fixed-chrome-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null, sourceRef: source.truth || null,
     brand: snapshot.brand || null, rail: snapshot.rail || null, decorative: snapshot.decorative || null, active: snapshot.active || null, anchors: snapshot.anchors || null,
     viewportAnchored: snapshot.viewportAnchored === true, scrollBehaviorMeasured: snapshot.scrollBehaviorMeasured === true, scrollSamples: array(snapshot.scrollSamples) };
   const evaluation = evaluateFixedChromeEvidence(result);
@@ -55,21 +55,21 @@ function collectFixedChrome(snapshot = {}, source = {}) {
 }
 
 function collectResize(snapshot = {}, source = {}) {
-  const result = { schema: 'yise-resize-evidence/v1', sourceRef: source.truth || null, runtimeWired: snapshot.runtimeWired === true, planePolicy: snapshot.planePolicy || null, cropPolicy: snapshot.cropPolicy || null,
+  const result = { schema: 'torchlight-resize-evidence/v1', sourceRef: source.truth || null, runtimeWired: snapshot.runtimeWired === true, planePolicy: snapshot.planePolicy || null, cropPolicy: snapshot.cropPolicy || null,
     viewports: array(snapshot.viewports).map((viewport) => ({ ...viewport, measured: viewport.measured === true })) };
   const evaluation = evaluateResizeEvidence(result);
   return { ...result, complete: evaluation.complete, failures: evaluation.failures, blocked: !evaluation.complete };
 }
 
 function collectInteraction(snapshot = {}, source = {}) {
-  const result = { schema: 'yise-interaction-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null, sourceRef: source.truth || null,
+  const result = { schema: 'torchlight-interaction-evidence/v1', platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null, sourceRef: source.truth || null,
     runtimeWired: snapshot.runtimeWired === true, steps: array(snapshot.steps).map((step) => ({ input: step.input || null, observedState: step.observedState || null, target: step.target || null, screenshot: step.screenshot || null })) };
   const evaluation = evaluateInteractionEvidence(result);
   return { ...result, complete: evaluation.complete, failures: evaluation.failures, blocked: !evaluation.complete };
 }
 
 function collectComparison(snapshot = {}, source = {}) {
-  const result = { schema: 'yise-region-comparison-evidence/v1', complete: snapshot.complete === true, platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null,
+  const result = { schema: 'torchlight-region-comparison-evidence/v1', complete: snapshot.complete === true, platform: snapshot.platform || source.platform || null, viewport: snapshot.viewport || source.viewport || null,
     figmaImage: snapshot.figmaImage || source.figmaImage || null, localImage: snapshot.localImage || null, intendedSections: array(snapshot.intendedSections), regions: array(snapshot.regions), status: snapshot.status || 'blocked', evidenceLevel: snapshot.evidenceLevel || 'not-claimed', notClaimed: snapshot.notClaimed === true,
     sourceRef: source.figmaImage || null };
   const evaluation = evaluateRegionComparisonEvidence(result);
@@ -84,13 +84,13 @@ export function collectVisualEvidence({ runtime = {}, source = {}, comparison = 
   const interaction = collectInteraction(runtime.interaction || {}, source);
   const regionComparison = collectComparison(comparison || runtime.comparison || {}, source);
   const failures = [typography, pageFlow, fixedChrome, resize, interaction, regionComparison].flatMap((part) => part.failures || []);
-  return { schema: 'yise-final-visual-evidence-collection/v1', platform: source.platform || null, viewport: source.viewport || null, source, typography, pageFlow, fixedChrome, resize, interaction, comparison: regionComparison, complete: failures.length === 0, blocked: failures.length > 0, failures };
+  return { schema: 'torchlight-final-visual-evidence-collection/v1', platform: source.platform || null, viewport: source.viewport || null, source, typography, pageFlow, fixedChrome, resize, interaction, comparison: regionComparison, complete: failures.length === 0, blocked: failures.length > 0, failures };
 }
 
 export function collectVisualEvidenceFromFile(inputPath) {
-  if (!existsSync(inputPath)) return { schema: 'yise-final-visual-evidence-collection/v1', complete: false, blocked: true, failures: [{ reason: 'collector-input-missing', inputPath }] };
+  if (!existsSync(inputPath)) return { schema: 'torchlight-final-visual-evidence-collection/v1', complete: false, blocked: true, failures: [{ reason: 'collector-input-missing', inputPath }] };
   try { return collectVisualEvidence(JSON.parse(readFileSync(inputPath, 'utf8'))); }
-  catch (error) { return { schema: 'yise-final-visual-evidence-collection/v1', complete: false, blocked: true, failures: [{ reason: 'collector-input-invalid', message: error.message }] }; }
+  catch (error) { return { schema: 'torchlight-final-visual-evidence-collection/v1', complete: false, blocked: true, failures: [{ reason: 'collector-input-invalid', message: error.message }] }; }
 }
 
 export { collectTypography, collectPageFlow, collectFixedChrome, collectResize, collectInteraction, collectComparison };

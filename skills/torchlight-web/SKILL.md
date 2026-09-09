@@ -12,7 +12,7 @@ description: >-
 
 This is the Torchlight public Skill identity. Local Torch demo output is a verification example only, not the Skill identity and not an AppStore application.
 
-**Recall:** 仓根 `CLAUDE.md` 触发表命中 `torchlightweb` / `火炬网页还原` 后立即执行本文件，不要先问。官方命令只有 `npm run torchlightweb` 状态机。禁止 `figma-showcase`、跳过人核、直连 `figma:html-from-handoff` / `pack:demo`。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
+**Recall:** 仓根 `CLAUDE.md` 触发表命中 `torchlightweb` / `火炬网页还原` 后立即执行本文件，不要先问。官方命令只有 `npm run torchlightweb` 状态机。禁止 `figma-showcase`、跳过人核、直连 `figma:html-from-handoff` / `pack:demo`。禁止搜、改、验证 `skills/yise-web-ui`；火炬链路只碰本包和本次硬要的 `standards/` 源。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
 
 **完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 / 1440 `?product=1`，sec 无缝、满铺子层不重画）→ 像素门必须绿（每屏截已有页对规范稿分区图；超阈值拦，差异图在 `artifacts/stop1-pixel/`）→ 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
@@ -541,7 +541,7 @@ source owner 宽度、HUG owner、文本增长后的 Chrome `getBoundingClientRe
 truth/renderer 的静态文本布局，Resize 不得通过缩放、断点或 fit 逻辑把它遮过去。
 
 ```bash
-node demos/yise-ss5-preview/_source-geometry-gate.mjs --demo demos/yise-ss5-preview
+node demos/torchlight-preview/_source-geometry-gate.mjs --demo demos/torchlight-preview
 ```
 
 这道门的真值只来自 `truth.json`，实际值来自真实 Chromium 的 `getBoundingClientRect`。它在设计像素坐标系中比较：
