@@ -174,9 +174,9 @@ Adapt 阶段只允许说明“可呈现方式”，不允许替 Figma 补设计�
 - 像素基准如果缺失或不是同一 Figma 版本，不能作为通过依据。
 - 预览壳的缩放、滚动和隐藏滚动条属于 Adapt/Verify 层，不应被 renderer 业务修复误伤。
 
-## 伊瑟案例的验证锚点
+## 历史案例的验证锚点
 
-当前伊瑟 demo 可用来验证 page-level scope 落地，而不是作为模板硬编码来源。
+历史 demo 只用来验证 page-level scope 落地，不是火炬模板硬编码来源。火炬固定链路不读伊瑟页。
 
 已知锚点：
 
@@ -185,7 +185,7 @@ Adapt 阶段只允许说明“可呈现方式”，不允许替 Figma 补设计�
 - 左侧固定目录：`52:3263`；目录背景：`I52:3263;17:53006`；最后星标链路：`I52:3263;12:47396;12:42993`。
 - 相关证据产物：`artifacts/left-nav-current-1080.png`、`artifacts/left-nav-current-dom.json`、`artifacts/left-nav-current-scroll.json`、`artifacts/page-scope-firstscreen-actual.png`。
 
-伊瑟验收必须同时满足：
+该历史案例验收必须同时满足：
 
 - page frame sibling 原始节点在 fixture 中可定位。
 - `truth.pageChrome` / `truth.fixedOverlays` 有 provenance。

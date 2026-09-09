@@ -406,7 +406,7 @@ test('machine-written resize-acceptance.json cannot authorize pack', async () =>
   });
   await runTorchlightweb({ command: 'accept', demoDir: demo, now: '2026-09-03T00:03:00.000Z' });
   writeFileSync(join(demo, 'resize-acceptance.json'), JSON.stringify({
-    schema: 'yise-resize-acceptance/v1',
+    schema: 'torchlight-resize-acceptance/v1',
     status: 'accepted',
     via: 'torchlightweb-machine',
   }));

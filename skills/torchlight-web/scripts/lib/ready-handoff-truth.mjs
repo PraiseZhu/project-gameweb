@@ -1,12 +1,15 @@
 /**
  * Ready-pack → renderer truth. Official page-build path only.
  * Distilled from the local adapter used to consume inventory/v2 into
- * `{ schema: 'yise-ready-platform-truth/v1', platforms: { pc, mobile } }`.
+ * `{ schema: 'torchlight-ready-platform-truth/v1', platforms: { pc, mobile } }`.
  * Does not fetch live Figma. Skipped nodes stay out of paint trees, except
  * CSS-paintable art-fragments (play triangle on btn/) which restoreOwnerComposites
  * stamps as paintAsFragment.
  */
 import { adaptInventoryToTruthShape, restoreOwnerComposites } from './figma-inventory-v2.mjs';
+import { torchlightSchema } from './torchlight-schema.mjs';
+
+export const READY_PLATFORM_TRUTH_SCHEMA = torchlightSchema('torchlight-ready-platform-truth/v1');
 
 const EMPTY_PLATFORM_SCOPE = Object.freeze({ nodes: [], platformRoots: [] });
 
@@ -332,7 +335,7 @@ export function readyPlatformTruth({ fingerprint, source, pc, mobile }) {
   if (mobile) platforms.mobile = mobile;
   const fileVersion = source?.lastModified || source?.snapshotHash || fingerprint || null;
   return {
-    schema: 'yise-ready-platform-truth/v1',
+    schema: READY_PLATFORM_TRUTH_SCHEMA,
     fingerprint,
     source,
     design: fileVersion ? { fileVersion } : undefined,

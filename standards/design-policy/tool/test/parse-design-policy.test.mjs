@@ -8,6 +8,7 @@ import { parseDesignPolicyFile, parseDesignPolicyMarkdown } from '../src/parse-d
 import { writeSkillPolicyModule } from '../src/write-skill-policy.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
+const CONSUMER = process.env.DESIGN_POLICY_CONSUMER || '';
 
 function yiseYaml(extra = '') {
   return `---
@@ -98,6 +99,7 @@ function throws(fn, re) {
 }
 
 test('parses yise DESIGN.md YAML', () => {
+  if (CONSUMER && CONSUMER !== 'yise-web-ui') return;
   const policy = parseDesignPolicyFile(join(REPO, 'skills/yise-web-ui/DESIGN.md'));
   assert.equal(policy.schema, 'gameweb-design-policy/v1');
   assert.equal(policy.designWidths.mobile, 750);
@@ -117,6 +119,7 @@ test('parses yise DESIGN.md YAML', () => {
 });
 
 test('parses torchlight DESIGN.md YAML with composition != qaBuckets', () => {
+  if (CONSUMER && CONSUMER !== 'torchlight-web') return;
   const policy = parseDesignPolicyFile(join(REPO, 'skills/torchlight-web/DESIGN.md'));
   assert.equal(policy.composition[0].max, 1126);
   assert.equal(policy.composition[1].min, 1127);
@@ -157,6 +160,7 @@ test('unregistered extraBreakpoint is red', () => {
 });
 
 test('yise DESIGN.md may omit named-modal YAML', () => {
+  if (CONSUMER && CONSUMER !== 'yise-web-ui') return;
   const policy = parseDesignPolicyFile(join(REPO, 'skills/yise-web-ui/DESIGN.md'));
   assert.equal(policy.modalViewportFill, undefined);
   assert.equal(policy.modalScrimOpacity, undefined);

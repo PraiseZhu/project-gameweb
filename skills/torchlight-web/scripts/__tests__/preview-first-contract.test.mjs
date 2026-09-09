@@ -15,7 +15,7 @@ const PREVIEW = fileURLToPath(new URL('../preview-first.mjs', import.meta.url));
 const SKILL_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
 test('preview-first decodes UTF-8, UTF-16LE, and UTF-16BE BOM JSON', () => {
-  const value = { platform: 'mobile', label: '伊瑟' };
+  const value = { platform: 'mobile', label: '火炬' };
   const json = JSON.stringify(value);
 
   assert.deepEqual(

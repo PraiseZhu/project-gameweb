@@ -11,11 +11,13 @@ import {
   cropRectForSection,
   DEFAULT_STOP1_PIXEL_THRESHOLD,
   failClosedSkipPreviewProbe,
+  injectTorchStop1SkipEnv,
   isStop1PixelSkippedSection,
   loadPngApi,
   pickExportScale,
   runStop1FigmaPixelGate,
   STOP1_PIXEL_DIR,
+  STOP1_PIXEL_SKIP_SECTIONS,
 } from '../lib/stop1-figma-pixel-gate.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -157,6 +159,23 @@ test('mobile later-section 949:6041 is skipped; other screens stay locked', () =
   assert.equal(isStop1PixelSkippedSection('pc', '949:5151'), false);
 });
 
+test('torch skip env always overwrites an attacker-supplied skip JSON', () => {
+  const previousSkip = process.env.STOP1_PIXEL_SKIP_JSON;
+  const previousRoot = process.env.PLAYWRIGHT_MODULE_ROOT;
+  process.env.STOP1_PIXEL_SKIP_JSON = '{"mobile":"949:6041"}';
+  process.env.PLAYWRIGHT_MODULE_ROOT = '/tmp/not-torch';
+  try {
+    injectTorchStop1SkipEnv();
+    assert.equal(process.env.STOP1_PIXEL_SKIP_JSON, JSON.stringify(STOP1_PIXEL_SKIP_SECTIONS));
+    assert.equal(process.env.PLAYWRIGHT_MODULE_ROOT, ROOT);
+  } finally {
+    if (previousSkip === undefined) delete process.env.STOP1_PIXEL_SKIP_JSON;
+    else process.env.STOP1_PIXEL_SKIP_JSON = previousSkip;
+    if (previousRoot === undefined) delete process.env.PLAYWRIGHT_MODULE_ROOT;
+    else process.env.PLAYWRIGHT_MODULE_ROOT = previousRoot;
+  }
+});
+
 test('stop-1 Figma export uses section.id and product=1', () => {
   const shim = readFileSync(PROBE, 'utf8');
   assert.match(shim, /standards\/stop1-figma-pixel\/tool\/src\/stop1-figma-pixel-probe\.mjs/);
@@ -178,6 +197,7 @@ test('stop-1 Figma export uses section.id and product=1', () => {
 test('stop-1 probe shim only re-exports the standards source', () => {
   const src = readFileSync(PROBE, 'utf8');
   assert.match(src, /export \* from .*standards\/stop1-figma-pixel\/tool\/src/);
+  assert.match(src, /injectTorchStop1SkipEnv/);
   assert.doesNotMatch(src, /function tryReadCachePng/);
   assert.doesNotMatch(src, /function writeCachePng/);
   assert.doesNotMatch(src, /renameSync/);

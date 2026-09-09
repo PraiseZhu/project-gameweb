@@ -21,6 +21,10 @@ npm run handoff:pack -- \
 ## 做页只有一个吃包入口
 
 ```bash
+# torchlight-web
+cd skills/torchlight-web
+npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
+# yise-web-ui
 cd skills/yise-web-ui
 npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 ```

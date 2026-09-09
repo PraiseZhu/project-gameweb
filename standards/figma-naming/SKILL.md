@@ -12,7 +12,7 @@ disable-model-invocation: false
 
 # 已规范稿 → ready 清单 → 吃包闸门
 
-命令一律从仓库根起跑，每步自己 `cd`，不要假定还停在上一步的目录。出清单 / 打包在 `standards/figma-naming/tool/`；吃包在 `skills/yise-web-ui/`。规范正文：`standards/figma-naming/spec/naming-spec.md`。
+命令一律从仓库根起跑，每步自己 `cd`，不要假定还停在上一步的目录。出清单 / 打包在 `standards/figma-naming/tool/`；吃包按做页 consumer：`skills/torchlight-web/` 或 `skills/yise-web-ui/`。规范正文：`standards/figma-naming/spec/naming-spec.md`。
 
 本仓只编已规范 ready。脚本按图层前缀抓树、几何、组件集、变体，出 `status: "ready"`。agent 核前缀/结构后打 ready 交接包，再跑做页 `figma:from-handoff`。闸门绿才算交付。对人只交交接包路径，不要把两份 inventory JSON 或核对页链接当交付物。做页只吃 ready。不做判断包看图写回。
 
@@ -107,6 +107,10 @@ npm run handoff:pack -- \
 这是本 skill 的交付终点。`figma:from-handoff` 只验包能不能吃，不写 HTML。
 
 ```bash
+# torchlight-web
+cd skills/torchlight-web
+npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
+# yise-web-ui
 cd skills/yise-web-ui
 npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 ```

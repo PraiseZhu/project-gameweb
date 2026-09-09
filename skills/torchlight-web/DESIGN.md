@@ -379,4 +379,4 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 - 本文件不替代 `figma:from-handoff`。
 - 火炬不发明 pad 树；设备选择器的 750/1024 桶不是产品页切树。
 - 未观察过的 role 仍是 `official-title-body-pattern`，缺文案仍是 `unverified-no-locale-copy`。
-- 6.1 A–D 已按执行清单改 extract / owner / `_fitText`；伊瑟 renderer 仍走旧阶梯，是接受残余。
+- 6.1 A–D 已按执行清单改 extract / owner / `_fitText`；历史拷贝的 renderer 旧阶梯是接受残余，不作为火炬入口。

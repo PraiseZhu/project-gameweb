@@ -20,7 +20,7 @@ const write = (path, value) => {
   writeFileSync(output, JSON.stringify(value, null, 2) + '\n');
 };
 const reportBlocked = (reason, detail = {}) => ({
-  schema: 'yise-static-golden-regression/v1',
+  schema: 'torchlight-static-golden-regression/v1',
   ok: false,
   complete: false,
   blocked: true,

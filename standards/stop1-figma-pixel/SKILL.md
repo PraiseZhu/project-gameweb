@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 做页 skill 只转口本包。改口径只改 `tool/src/`。
 
-Callers: `skills/torchlight-web` 与 `skills/yise-web-ui` 的 `stop1-figma-pixel-*.mjs` 转口；`figma-html-from-handoff` 出页闸。
+Callers: 各做页 skill 的 `stop1-figma-pixel-*.mjs` 转口；`figma-html-from-handoff` 出页闸。共享默认 skip 仍是 mobile `949:6041`，给伊瑟纯 re-export 用。火炬转口另有自己的 skip，并强制覆盖 `STOP1_PIXEL_SKIP_JSON`。Playwright 从当前 demo / skill 根解析，不再同时候选两个做页包；火炬转口会写入 `PLAYWRIGHT_MODULE_ROOT`。坏的 skip JSON fail-closed，形状必须是平台到字符串数组。
 Schema: `stop1-figma-pixel-gate/v1`。
 User: 「按照选项优化，优化完告诉我能提速多少」
 

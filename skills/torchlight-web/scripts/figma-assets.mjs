@@ -48,6 +48,7 @@ import { encodeWebpBatch } from './lib/encode-webp.mjs';
 import { deriveRole, pageUsesIndicatorRole } from './lib/figma-name-semantics.mjs';
 import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../standards/figma-naming/spec/inventory.mjs';
 import { requireFigmaToken } from './lib/figma-token.mjs';
+import { matchesSchema } from './lib/torchlight-schema.mjs';
 import {
   inspectPackPath,
   inspectPlannedPackPath,
@@ -160,7 +161,7 @@ export function pageAlignedExportBox(node, { exportBounds = 'box', renderBox = n
 }
 
 export function isReadyHandoffTruth(truth) {
-  return truth?.schema === 'yise-ready-platform-truth/v1'
+  return matchesSchema(truth?.schema, 'torchlight-ready-platform-truth/v1')
     || truth?.source?.schema === 'inventory/v2'
     || String(truth?.source?.kind || '') === 'ready-handoff';
 }

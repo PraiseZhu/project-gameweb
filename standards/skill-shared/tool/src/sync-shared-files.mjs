@@ -119,7 +119,7 @@ export function classifySharedFiles({ repoRoot, skills, listed }) {
 }
 
 export function parseSyncArgs(argv) {
-  const args = { command: '', from: '', to: '', copyDrift: false, manifest: '', repoRoot: '' };
+  const args = { command: '', from: '', to: '', copyDrift: false, write: false, manifest: '', repoRoot: '' };
   const rest = [...argv];
   if (!rest.length) throw new Error('必须给 preview / check / apply');
   args.command = rest.shift();
@@ -131,12 +131,14 @@ export function parseSyncArgs(argv) {
     if (token === '--from') args.from = rest.shift() || '';
     else if (token === '--to') args.to = rest.shift() || '';
     else if (token === '--copy-drift') args.copyDrift = true;
+    else if (token === '--write') args.write = true;
+    else if (token === '--dry-run') args.write = false;
     else if (token === '--manifest') args.manifest = rest.shift() || '';
     else if (token === '--repo') args.repoRoot = rest.shift() || '';
     else throw new Error(`未知参数: ${token}`);
   }
-  if (args.command !== 'apply' && (args.from || args.to || args.copyDrift)) {
-    throw new Error('preview / check 不接受 --from / --to / --copy-drift');
+  if (args.command !== 'apply' && (args.from || args.to || args.copyDrift || args.write)) {
+    throw new Error('preview / check 不接受 --from / --to / --copy-drift / --write');
   }
   if (args.command === 'apply') {
     if (!args.from || !args.to) throw new Error('apply 必须给 --from <skill> --to <skill>');
@@ -233,6 +235,19 @@ function main(argv = process.argv.slice(2), io = {}) {
     throw new Error('--from / --to 必须是清单里的 skill');
   }
   const actions = planApply({ report, from: args.from, to: args.to, copyDrift: args.copyDrift });
+  const copyActions = actions.filter((item) => !item.kind.startsWith('skip-'));
+  if (!args.write) {
+    const skippedDrift = actions.filter((item) => item.kind === 'skip-drift');
+    (io.log || console.log)([
+      `dry-run 从 ${args.from} 到 ${args.to}（未落盘；要写入再加 --write）`,
+      `将拷贝 ${copyActions.length}`,
+      `跳过漂移 ${skippedDrift.length}`,
+      `目标 skill ${args.to}`,
+      ...copyActions.map((item) => `would-copy skills/${args.to}/${item.rel}`),
+      ...skippedDrift.map((item) => `skip-drift ${item.rel}`),
+    ].join('\n'));
+    return { report, actions, dryRun: true, result: { copied: [], skipped: actions } };
+  }
   const result = applyActions({
     repoRoot,
     from: args.from,

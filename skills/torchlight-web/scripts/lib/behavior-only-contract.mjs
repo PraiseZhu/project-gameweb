@@ -7,7 +7,7 @@
  * behavior contract is emitted; it never reads or rewrites static truth.
  */
 
-export const BEHAVIOR_ONLY_SCHEMA = 'yise-behavior-only/v1';
+export const BEHAVIOR_ONLY_SCHEMA = 'torchlight-behavior-only/v1';
 
 const FORBIDDEN_KEYS = new Set([
   'x', 'y', 'left', 'top', 'right', 'bottom',

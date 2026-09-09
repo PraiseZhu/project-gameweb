@@ -7,9 +7,9 @@
  * into a reusable implementation.
  */
 
-export const STATIC_GOLDEN_REGRESSION_SCHEMA = 'yise-static-golden-regression/v1';
-export const STATIC_GOLDEN_BASELINE_SCHEMA = 'yise-static-golden-baseline/v1';
-export const STATIC_GOLDEN_CANDIDATE_SCHEMA = 'yise-static-golden-candidate/v1';
+export const STATIC_GOLDEN_REGRESSION_SCHEMA = 'torchlight-static-golden-regression/v1';
+export const STATIC_GOLDEN_BASELINE_SCHEMA = 'torchlight-static-golden-baseline/v1';
+export const STATIC_GOLDEN_CANDIDATE_SCHEMA = 'torchlight-static-golden-candidate/v1';
 export const STATIC_GOLDEN_DEFAULT_STATE = 'default';
 export const STATIC_GOLDEN_PLATFORMS = Object.freeze(['pc', 'mobile']);
 

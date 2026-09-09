@@ -63,6 +63,27 @@ function errorMessage(err) {
   return err && err.message ? err.message : String(err);
 }
 
+export function parseStop1SkipJson(raw = process.env.STOP1_PIXEL_SKIP_JSON) {
+  if (!raw) return undefined;
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`STOP1_PIXEL_SKIP_JSON is not valid JSON: ${errorMessage(err)}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('STOP1_PIXEL_SKIP_JSON must be an object of platform → string[]');
+  }
+  const out = {};
+  for (const [platform, ids] of Object.entries(parsed)) {
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) {
+      throw new Error(`STOP1_PIXEL_SKIP_JSON.${platform} must be an array of strings`);
+    }
+    out[platform] = Object.freeze([...ids]);
+  }
+  return Object.freeze(out);
+}
+
 async function fetchTimed(url, init = {}, timeoutMs = 30000) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -229,7 +250,7 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
   const shots = {};
   try {
     const base = await server.listen('127.0.0.1');
-    ({ browser } = await launchChromium(TOOL_ROOT, { headless: true }));
+    ({ browser } = await launchChromium(absDemo, { headless: true }));
     /* Product view picks PC/mobile from innerWidth (≤1126 mobile). CSS layout
        stays at design pageBox; deviceScaleFactor must equal Figma export scale. */
     const page = await browser.newPage({
@@ -338,6 +359,7 @@ export async function runLiveStop1FigmaPixelProbe({
   if (!platforms.length) throw new Error('handoff consume has no pc/mobile end');
   const token = requireFigmaToken(absHandoff);
   const { PNG, pixelmatch, odiff } = await loadPngApi(TOOL_ROOT);
+  const skipMap = parseStop1SkipJson();
 
   for (const platform of platforms) {
     const page = pageBoxOfConsume(consume, platform);
@@ -428,7 +450,7 @@ export async function runLiveStop1FigmaPixelProbe({
 
     for (const section of sections) {
       if (sectionResults[section.id]) continue;
-      if (isStop1PixelSkippedSection(platform, section.id)) {
+      if (isStop1PixelSkippedSection(platform, section.id, skipMap)) {
         sectionResults[section.id] = {
           ok: true,
           status: 'SKIPPED',

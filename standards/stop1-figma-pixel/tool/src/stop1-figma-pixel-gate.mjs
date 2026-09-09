@@ -1,11 +1,10 @@
 /**
  * Stop-1 Figma pixel gate: per-section screenshot of the existing demo
  * versus a Figma section-node export. Fail-closed. Empty baselines are red.
- * Shared by torchlight-web and yise-web-ui via re-export shims.
+ * Shared by page-making skills via re-export shims. Page-specific skip lists stay in the skill adapter.
  *
  * Callers: figma-html-from-handoff attachStop1FigmaPixelGate; stop1-figma-pixel-probe.mjs;
- *   skills/torchlight-web/scripts/lib/stop1-figma-pixel-gate.mjs (re-export);
- *   skills/yise-web-ui/scripts/lib/stop1-figma-pixel-gate.mjs (re-export).
+ *   each page-making skill's scripts/lib/stop1-figma-pixel-gate.mjs re-export.
  * Schema: stop1-figma-pixel-gate/v1. Artifacts under demo/artifacts/stop1-pixel/.
  * Cache files: demo/artifacts/stop1-pixel/figma-cache/<fileKey>.<id>.s<scale>.<snapshot>.png
  * User: 「按照选项优化，优化完告诉我能提速多少」
@@ -24,15 +23,15 @@ export const PIXEL_YIQ_THRESHOLD = 0.1;
 export const DEFAULT_STOP1_PIXEL_SCALE = 0.5;
 export const FIGMA_AREA_LIMIT_PX = 32_000_000;
 export const IMG_LANG_VALUES = Object.freeze(['cn', 'tw', 'en', 'jp', 'kr']);
-/* Draft copy on this later mobile section is wrong in Figma
- * (嘉年华直播目录 vs Lark 赛季前瞻直面会). User: skip this screen
- * this round; other screens stay at 0.50%. */
+/* Historical default for pure re-export consumers (Yise). Torch adapter
+ * still owns its own map and overwrites STOP1_PIXEL_SKIP_JSON. */
 export const STOP1_PIXEL_SKIP_SECTIONS = Object.freeze({
   mobile: Object.freeze(['949:6041']),
 });
 
-export function isStop1PixelSkippedSection(platform, secId) {
-  const ids = STOP1_PIXEL_SKIP_SECTIONS[String(platform || '')] || [];
+export function isStop1PixelSkippedSection(platform, secId, skipMap = STOP1_PIXEL_SKIP_SECTIONS) {
+  const ids = skipMap?.[String(platform || '')];
+  if (!Array.isArray(ids)) return false;
   return ids.includes(String(secId || ''));
 }
 

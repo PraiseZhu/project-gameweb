@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Stop-1 per-section Figma pixel gate shared by torchlight-web and yise-web-ui",
+  "description": "Stop-1 per-section Figma pixel gate shared by page-making skills",
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "probe": "node src/stop1-figma-pixel-probe.mjs"

@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { STRUCT_CONTRACT, checkStructContract, auditStructure } from '../lib/figma-owner-model.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const demoDir = process.env.QA_DEMO_DIR || join(here, '..', '..', 'demos', 'yise-ss5-preview');
+const demoDir = process.env.QA_DEMO_DIR || join(here, '..', '..', 'demos', 'torchlight-preview');
 
 let pass = 0, fail = 0, todo = 0;
 const F = (name, cond, extra) => { if (cond) { pass++; console.log('  ✅ ' + name); } else { fail++; console.log('  ❌ ' + name + (extra ? ' — ' + extra : '')); } };

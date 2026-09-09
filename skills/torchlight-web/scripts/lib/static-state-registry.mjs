@@ -7,7 +7,7 @@
  * node identifiers as behavior inputs.
  */
 
-export const STATIC_STATE_REGISTRY_SCHEMA = 'yise-static-state-registry/v1';
+export const STATIC_STATE_REGISTRY_SCHEMA = 'torchlight-static-state-registry/v1';
 
 const MATERIAL_KEYS = new Set([
   'x', 'y', 'left', 'top', 'right', 'bottom', 'w', 'h', 'width', 'height',
