@@ -7635,7 +7635,15 @@
         const namedModals = wired;
         const modalPolicy = () => {
           const policy = designPolicy();
-          const fill = policy.modalViewportFill === 'cover' ? 'cover' : 'contain';
+          /* YAML default is cover (PC 3840 sheet on a frozen 1920 column).
+             Mobile 750×1334 cover on 390×844 becomes 474×844 and overflows
+             the sheet. Contain keeps the authored sheet inside the viewport.
+             Read data-fx-base from this remount; the click listener itself
+             is installed once and must not keep the first-paint PC base. */
+          const liveBase = frame.getAttribute('data-fx-base') || __base;
+          const fill = (liveBase === 'mobile')
+            ? 'contain'
+            : (policy.modalViewportFill === 'cover' ? 'cover' : 'contain');
           const scrim = Number(policy.modalScrimOpacity);
           const lock = policy.modalLockPageScroll === true;
           return {
@@ -7695,8 +7703,9 @@
           const frameRect = frame.getBoundingClientRect();
           if (!frameRect.width || !frameRect.height) return;
           const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
-          const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
-          const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
+          const liveBase = frame.getAttribute('data-fx-base') || __base;
+          const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[liveBase] || DW[__base];
+          const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (liveBase === 'mobile' ? 1334 : 2160);
           /* Host zoom is the page-stage ruler for closed overlays. Pinning
              to the visible frame must drop it, or cover/contain scale
              multiplies k and the Figma sheet shrinks to a card.
