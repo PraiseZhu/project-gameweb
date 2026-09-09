@@ -86,8 +86,8 @@
 
   /* 当前「设计 px → CSS px」的缩放系数。门 D 的 scaled 绑定与门 F 都读它。
      产品页 UI 尺按 DESIGN.md §5.0 分段：PC 1127–1920 冻列宽 1920 → k=0.5；
-     >1920 随视口；手机 viewportW/750。背景 cover 窗仍用真实视口宽，不走这把冻尺。
-     产品页和 QA 模拟视口同一张表。html 10vw 不在这里改。 */
+     >1920 随视口；手机 k=min(1, viewportW/750)。背景 cover 窗仍用真实视口宽，
+     不走这把冻尺。产品页和 QA 模拟视口同一张表。html 10vw 不在这里改。 */
   _productViewFromCtx(ctx) {
     if (ctx && ctx.productView === true) return true;
     try {
@@ -108,7 +108,8 @@
     return fallback;
   },
   /* DESIGN.md §5.0 列宽。只冻 UI 列：1127–1920（含两端）= 1920；
-     >1920 随视口；≤1126 手机列 = 视口。产品页和 QA 模拟视口同一张表。 */
+     >1920 随视口。≤1126 手机 UI 仍 k=min(1, W/750)，但列宽跟窗口：
+     官网 751–1126 是整窗铺 KV，按钮保持 750 稿尺寸，不是再裁一列 750。 */
   _productColumnWidth(viewportW, designWidth) {
     const w = Number(viewportW);
     const dw = Number(designWidth) || 3840;
@@ -124,6 +125,172 @@
     if (!(fw > 0) || !(vw > 0)) return 0;
     return (vw - fw) / 2;
   },
+  /* Temporary lock-1920 name list (DESIGN.md §5.0, Resize Skill).
+     `fix/` prefix, COMPONENT_SET `btn/主要按钮`, `首屏主按钮`.
+     Not a lasting naming system; not @fit=. Match the set name, never
+     a page instance `btn/按钮`. */
+  _lock1920CtaSetNames() {
+    return ['btn/主要按钮', '首屏主按钮'];
+  },
+  _isLock1920CtaSetName(name) {
+    return this._lock1920CtaSetNames().includes(String(name || '').trim());
+  },
+  _lock1920Scale(pageK, viewportW, compositionKey) {
+    const page = Number(pageK);
+    const width = Number(viewportW);
+    if (!(page > 0) || !(width > 0)) {
+      return { applied: false, lockK: null, counterScale: 1, reason: 'invalid-viewport' };
+    }
+    if (compositionKey === 'mobile' || width <= 1126) {
+      return { applied: false, lockK: page, counterScale: 1, reason: 'mobile-tree' };
+    }
+    if (width <= 1920) {
+      return { applied: false, lockK: 0.5, counterScale: 1, reason: 'already-freeze-band' };
+    }
+    return {
+      applied: true,
+      lockK: 0.5,
+      counterScale: 0.5 / page,
+      reason: 'lock-1920-above-freeze',
+    };
+  },
+  _isLock1920CtaNode(node, componentSets) {
+    if (!node || String(node.type || '').toUpperCase() !== 'INSTANCE' || !node.componentId) return false;
+    const set = this._findComponentSetByMemberId(componentSets, node.componentId);
+    return this._isLock1920CtaSetName(this._primaryCtaSetName(set));
+  },
+  _isLock1920Node(node, pfx, componentSets) {
+    if (pfx === 'fix') return true;
+    return this._isLock1920CtaNode(node, componentSets);
+  },
+  /* `zoom` on an absolutely placed layer also shrinks its CSS left/top
+     toward the containing-block origin. Official lock-1920 keeps the
+     authored corner and only shrinks size. Origin is per-layer: logo 0 0,
+     right chrome 100% 0. Primary CTA / calendar stay with the SLG cluster
+     by sharing the same bottom-anchor; do not counter-scale them from
+     the CTA box center-bottom or they walk off the calendar above 1920. */
+  _applyLock1920CounterScale(el, lock1920, origin) {
+    if (!el || !lock1920 || !lock1920.applied) return;
+    const counter = Number(lock1920.counterScale);
+    if (!(counter > 0) || Math.abs(counter - 1) < 1e-4) return;
+    const originValue = origin || '100% 0';
+    el.style.transformOrigin = originValue;
+    const previous = String(el.style.transform || '').trim();
+    const next = previous && previous !== 'none'
+      ? previous + ' scale(' + counter + ')'
+      : 'scale(' + counter + ')';
+    el.style.transform = next;
+    el.setAttribute('data-lock-1920', 'true');
+    el.setAttribute('data-lock-1920-k', String(lock1920.lockK));
+    el.setAttribute('data-lock-1920-counter', String(counter));
+    el.setAttribute('data-lock-1920-origin', originValue);
+  },
+  /* Official SS13 top bar is `position:fixed; width:100%; justify-content:flex-end`.
+     Product `fix/` overlay still lives in the frozen 1920 / growing-k column, so
+     the right cluster is cropped in freeze-band and walks inward above 1920.
+     Shift a right-half overlay so its Figma right edge sits on the current
+     window. Logo / left art stays at Figma x=0. Children of a wide `fix/`
+     owner are still overlay siblings in truth (shop / globe / dropmenu),
+     so skip only when an ancestor already received this shift. */
+  _topbarViewportShiftDesign(box) {
+    const vw = Number(this._viewportWidth);
+    const k = Number(this.scale && this.scale());
+    const sourceRight = Number(box && ((box.x ?? 0) + (box.w ?? 0)));
+    if (!(vw > 0) || !(k > 0) || !(sourceRight > 0)) return 0;
+    /* Overlay host is viewport-wide (`fixedHost` width 100%), not the
+       frozen 1920 column. Pin the cluster right edge to the current
+       window; do not add columnLeft or freeze-band chrome is cropped. */
+    return (vw / k) - sourceRight;
+  },
+  _isRightTopbarChrome(box, designW) {
+    const x = Number(box && box.x);
+    const w = Number(box && box.w);
+    const pageW = Number(designW);
+    if (!(Number.isFinite(x) && Number.isFinite(w) && w > 0 && pageW > 0)) return false;
+    return (x + w / 2) > pageW * 0.5;
+  },
+  _isTopbarOverlayChrome(node, pfx, evidenceAttrs) {
+    if (!node) return false;
+    const name = String(node.name || '');
+    if (/日历icon|日历按钮|首屏主按钮|播放按钮/.test(name)) return false;
+    if (evidenceAttrs && evidenceAttrs['data-topbar-chrome'] === 'true') return true;
+    if (pfx === 'dropmenu') return true;
+    if (pfx === 'btn') {
+      return /官网|充值|地球|语言|按钮$/.test(name) && !/播放|日历/.test(name);
+    }
+    return name === '折扣信息' || name === '官方充值' || /进入官网|地球|语言/.test(name);
+  },
+  _scanTopbarClusterRight(nodes, designW) {
+    let right = 0;
+    const walk = (list) => {
+      for (const node of Array.isArray(list) ? list : []) {
+        const box = node && (node.pageBox || node.box);
+        const rawName = String(node && node.name || '');
+        const pfx = String(node && node.prefix || rawName.split('/')[0] || '').toLowerCase();
+        if (this._isRightTopbarChrome(box, designW) && this._isTopbarOverlayChrome(node, pfx, null)) {
+          const edge = Number(box.x ?? 0) + Number(box.w ?? 0);
+          if (edge > right) right = edge;
+        }
+        if (node && node.nodes) walk(node.nodes);
+        if (node && node.children) walk(node.children);
+      }
+    };
+    walk(nodes);
+    return right;
+  },
+  _openNamedModalNames(frame) {
+    if (!frame || typeof frame.querySelectorAll !== 'function') return [];
+    const names = [];
+    const seen = new Set();
+    for (const el of frame.querySelectorAll('[data-modal-open="true"]')) {
+      const name = String(el.getAttribute('data-modal-name') || '').trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      names.push(name);
+    }
+    return names;
+  },
+  /* Official SS13: PC popup stays mounted when the tree cuts at 1126; the
+     matching mobile sheet replaces it. Labels differ (`pc_cn订阅赛季日程`
+     vs `mobile订阅赛季日程`); strip platform / locale prefixes. */
+  _namedModalTopic(name) {
+    let raw = String(name || '').trim();
+    if (!raw) return '';
+    raw = raw.replace(/^modal\s*[\/／]\s*/i, '');
+    raw = raw.replace(/^(?:pc|mobile|pad|desktop|phone|tablet)(?:[_-](?:cn|tw|en|jp|kr|zh))?/i, '');
+    raw = raw.replace(/^(?:cn|tw|en|jp|kr|zh)[_-]/i, '');
+    return raw.replace(/^[_-]+/, '').trim();
+  },
+  _matchNamedModalByTopic(candidates, wantedName) {
+    const wanted = String(wantedName || '').trim();
+    if (!wanted) return null;
+    const list = Array.isArray(candidates) ? candidates : [];
+    const exact = list.find((item) => item && String(item.name || '').trim() === wanted) || null;
+    if (exact) return exact;
+    const topic = this._namedModalTopic(wanted);
+    if (!topic) return null;
+    const matches = list.filter((item) => item && this._namedModalTopic(item.name) === topic);
+    return matches.length === 1 ? matches[0] : null;
+  },
+  _restoreOpenNamedModals(frame, names) {
+    const list = Array.isArray(names) ? names.map((name) => String(name || '').trim()).filter(Boolean) : [];
+    if (!frame || !list.length || typeof frame.__fxOpenNamedModal !== 'function') return;
+    const wired = Array.isArray(frame.__fxNamedModals) ? frame.__fxNamedModals : [];
+    for (const name of list) {
+      const entry = this._matchNamedModalByTopic(wired, name);
+      if (entry) frame.__fxOpenNamedModal(entry);
+    }
+  },
+  _pinOpenNamedModals(frame) {
+    if (!frame || typeof frame.querySelectorAll !== 'function') return;
+    const wired = Array.isArray(frame.__fxNamedModals) ? frame.__fxNamedModals : [];
+    if (!wired.length || typeof frame.__fxOpenNamedModal !== 'function') return;
+    for (const entry of wired) {
+      if (entry && entry.layer && entry.layer.getAttribute('data-modal-open') === 'true') {
+        frame.__fxOpenNamedModal(entry);
+      }
+    }
+  },
   /* Freeze-band later pageBox 2143×k=1071.5 is 8.5px short of 1080.
      Pad only that CSS shortfall. >1920 k grows so 2143×k already exceeds
      the window — do not pad to viewport/k or #180f02 shows under bg. */
@@ -137,6 +304,12 @@
   },
   scale() {
     const dw = this._designWidth || 3840;
+    const w = Number(this._viewportWidth);
+    if (Number.isFinite(w) && w > 0) {
+      if (dw <= 750 || w <= 1126) return Math.min(1, w / 750);
+      if (w <= 1920) return 0.5;
+      return w / 3840;
+    }
     const fw = this._frameWidth || dw;
     return fw / dw;
   },
@@ -2178,6 +2351,9 @@
     if (typeof frame.__heroScrollSlotCleanup === 'function') frame.__heroScrollSlotCleanup();
     if (typeof frame.__motionAdapterCleanup === 'function') frame.__motionAdapterCleanup();
     if (typeof frame.__fxAssetSchedulerCleanup === 'function') frame.__fxAssetSchedulerCleanup();
+    /* Official named popup stays mounted across window resize. Full rebuild
+       wipes `.frame`; snapshot open modal names and restore after remount. */
+    const restoreOpenModalNames = this._openNamedModalNames(frame);
     frame.innerHTML = '';
     /* Later-axes remounts the tree on setPref('lang'). Open-menu highlight
        must read the current prefs, not the first-paint closure. */
@@ -2285,6 +2461,12 @@
     this._productView = productView;
     this._frameWidth = this._productColumnWidth(viewportW, designWidth);
     const k = this.scale();
+    const lock1920 = this._lock1920Scale(k, viewportW, __normalizedPlat === 'mobile' ? 'mobile' : 'pc');
+    this._lock1920 = lock1920;
+    this._topbarClusterRightDesign = this._scanTopbarClusterRight(
+      __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes,
+      designWidth,
+    );
 
     const sections = __activeTruth.sections || {};
     /* 分区绘制顺序按【稿内 y 升序】，不按 truth 里的键序。
@@ -2611,7 +2793,14 @@
         stage.setAttribute('data-hero-ui-plane', 'source-ui-scale');
         stage.setAttribute('data-hero-ui-y-ratio', String(heroUiYRatio));
       }
-      stage.style.width = designWidth + 'px';
+      /* ≤1126 official KV fills the window. A 750-wide overflow:hidden
+         stage clips that cover back to a brown-bezel strip. Keep UI k
+         at min(1, W/750); only the stage box follows the window. */
+      const stageWidthDesign = ((__normalizedPlat === 'mobile' || Number(this._viewportWidth) <= 1126)
+        && Number(this._viewportWidth) > 0 && Number(k) > 0)
+        ? Math.max(designWidth, Number(this._viewportWidth) / Number(k))
+        : designWidth;
+      stage.style.width = stageWidthDesign + 'px';
       /* 分区高度往上取整到【缩放后的整数 CSS px】。
          2026-08-04 实测：sec/3 稿高 1543，k=0.5 → 771.5px，半像素。
          半像素的后果不是"矮了半格"：
@@ -2702,7 +2891,9 @@
            position:fixed — that pins to the page canvas, not the scrollport.
            sticky + top:0 pins to `.frame` itself (the actual viewport).
            Do not put zoom/transform on this pin layer; inner wrapper takes k
-           so overlay-absolute pageBox stays 1:1. */
+           so overlay-absolute pageBox stays 1:1.
+           Official top bar is viewport-width flex-end. Frozen 1920 crop would
+           clip the right cluster; keep this host as wide as the window. */
         /* Height-0 sticky + overflow:visible paints overflow at rest, then
            Chromium clips that overflow as soon as `.frame` scrolls
            (mobile right chrome "runs up and vanishes"). Host height must
@@ -2728,7 +2919,7 @@
         fixedHost.style.position = 'sticky';
         fixedHost.style.left = '0';
         fixedHost.style.top = '0';
-        fixedHost.style.width = designWidth + 'px';
+        fixedHost.style.width = '100%';
         fixedHost.style.height = overlayHostH + 'px';
         fixedHost.style.marginBottom = (-overlayHostH) + 'px';
         fixedHost.style.overflow = 'visible';
@@ -3862,8 +4053,46 @@
           block's stretched top instead of being stretched themselves, or a
           top-bar button label drifts out of its button frame. heroUiHalf is
           the generic top/bottom-chrome split at half the Figma hero height. */
-       const heroUiBlocks = isHeroStage && Math.abs(heroUiYRatio - 1) > 0.001 ? [] : null;
+       const heroUiBlocks = isHeroStage ? [] : null;
        const heroUiHalf = heroUiBlocks && heroSlot ? Number(heroSlot.heroHeight || 0) / 2 : Infinity;
+       const heroClusterName = (name) => {
+         const raw = String(name || '');
+         if (/^slg(?:\/|$)/i.test(raw) || /^img\/标题slg(?:@|$)/i.test(raw)) return 'slg';
+         if (/日历icon|日历按钮/i.test(raw)) return 'calendar';
+         if (/播放按钮/.test(raw)) return 'play';
+         if (/^首屏主按钮/.test(raw) || /^标题(?:$|@)/.test(raw)) return raw.startsWith('首屏') ? 'cta' : 'title';
+         return '';
+       };
+       const heroClusterBottomShift = (() => {
+         if (!heroUiBlocks || !heroSlot) return 0;
+         let bottom = null;
+         let calendar = null;
+         let cta = null;
+         for (const item of list) {
+           const kind = heroClusterName(item && item.name);
+           if (!kind) continue;
+           const itemBox = item.pageBox || item.box;
+           const pageTop = Number(itemBox && itemBox.y) - Number(paintOriginY);
+           const h = Number(itemBox && itemBox.h);
+           const w = Number(itemBox && itemBox.w);
+           const pageLeft = Number(itemBox && itemBox.x) - Number(paintOriginX);
+           if (!Number.isFinite(pageTop) || !Number.isFinite(h) || h <= 0) continue;
+           /* Mobile leftover `img/标题slg` at overlay y=0 is top-bar art. */
+           if (kind === 'slg' && pageTop < heroUiHalf) continue;
+           const b = pageTop + h;
+           if (bottom == null || b > bottom) bottom = b;
+           if (kind === 'calendar') calendar = { pageTop, h, w, pageLeft, pageBottom: b };
+           if (kind === 'cta') cta = { pageTop, h, w, pageLeft, pageBottom: b };
+         }
+         if (!(bottom > 0)) return 0;
+         /* Shared shift is in PAGE coords. Nested title SLG lives in a
+            local owner, so the paint path must convert before writing top.
+            uiY < 1 (tall hero cropped to 100vh) pulls the cluster up;
+            uiY > 1 pads it down. Do not skip the pull. */
+         const shift = bottom * heroUiYRatio - bottom;
+         return { shift, calendar, cta, bottom };
+       })();
+       const heroClusterShiftValue = Number(heroClusterBottomShift && heroClusterBottomShift.shift) || 0;
        const heroUiOwnerBlock = (blocks, centerX, centerY) => {
          let best = null;
          for (const blk of blocks) {
@@ -4333,6 +4562,22 @@
           el.setAttribute('data-node-name', layerName);
         }
         if (pfx) el.setAttribute('data-prefix', pfx);
+        const lock1920Node = this._isLock1920Node(n, pfx, activeComponentSets);
+        if (lock1920Node) el.setAttribute('data-lock-1920', 'true');
+        const isSlgLayer = /^slg(?:\/|$)/i.test(String(n.name || ''))
+          || /^img\/标题slg(?:@|$)/i.test(String(n.name || ''));
+        const isHeroCta = this._isLock1920CtaNode(n, activeComponentSets)
+          || /^首屏主按钮/.test(String(n.name || ''));
+        const isHeroCalendar = /日历icon|日历按钮/i.test(String(n.name || ''));
+        const isHeroTitleOwner = /^标题(?:$|@)/.test(String(n.name || ''));
+        const isHeroPlay = /播放按钮/.test(String(n.name || ''));
+        /* Overlay leftover `img/标题slg` at y=0 is top-bar art, not the
+           first-screen cluster. Cluster skip for that leftover is applied
+           after sourceTop is known. Title owner (手机 `标题` group) takes
+           the shared page-Y shift so nested SLG does not get a page shift
+           written as a local top. */
+        const heroClusterCandidate = isSlgLayer || isHeroCta || isHeroCalendar || isHeroTitleOwner || isHeroPlay;
+        let heroClusterLayer = heroClusterCandidate;
         if (liveHscrollBakeRelease.has(nidKey)) el.setAttribute('data-asset-lock-released', 'live-hscroll-descendant');
         if (liveImgLangBakeRelease.has(nidKey)) el.setAttribute('data-asset-lock-released', 'live-img-lang-descendant');
         if (pfx === 'btn') {
@@ -4662,7 +4907,8 @@
              consuming normal-flow space and a KV's background/portrait/shadow
              stack vertically. Only a proven Auto Layout child may flow. */
           el.style.position = 'absolute';
-          el.style.left = ((box.x ?? 0) - originX) + 'px';
+          const sourceLeft = ((box.x ?? 0) - originX);
+          el.style.left = sourceLeft + 'px';
           const sourceTop = ((box.y ?? 0) - originY);
           /* Size stays on k. When the first-screen slot is taller than the
              Figma hero, top-level blocks anchor their BOTTOM fraction of the
@@ -4697,13 +4943,45 @@
             || /^bg(?:\/|$)/i.test(String(n.name || ''));
           const parentNodeId = parent && parent.nid != null ? String(parent.nid) : '';
           const parentIsHeroSection = !!(heroSlot && parentNodeId && parentNodeId === String(heroSlot.sectionId));
+          const parentAlreadyClustered = !!(parent && parent.el && parent.el.closest
+            && parent.el.closest('[data-hero-cluster="bottom"]'));
           /* Direct children of the hero section (title / CTA / calendar) must
-             remap onto the 100vh slot. Nested leaves ride a stretched owner
-             block when one already exists; otherwise they keep Figma y. */
-          const localX = (box.x ?? 0) - originX;
-          const rideOwner = heroUiBlocks && parent && !parentIsHeroSection && !pinViewport
+             remap onto the 100vh slot. Nested leaves inside an already-shifted
+             cluster owner keep local Figma y — do not re-apply the page shift
+             as a local top (that walked title SLG up over the play button). */
+          const localX = sourceLeft;
+          const rideOwner = heroUiBlocks && parent && !parentIsHeroSection && !pinViewport && !parentAlreadyClustered
             ? heroUiOwnerBlock(heroUiBlocks, localX + (box.w ?? 0) / 2, sourceTop + sourceH / 2)
             : null;
+          /* Official SS13: slg / calendar / primary CTA keep one vertical
+             stack. Do not remap them independently (that overlaps on mobile
+             and lets lock-1920 CTA drift off the SLG above 1920). Mobile
+             overlay also has a leftover `img/标题slg` at y=0 — that is
+             top-bar art, not the first-screen cluster. Nested title SLG
+             rides the already-shifted `标题` owner instead of taking the
+             page shift a second time as a local top. */
+          const pageTop = Number(box.y ?? 0) - Number(paintOriginY);
+          heroClusterLayer = heroClusterCandidate
+            && !(pinViewport && isSlgLayer && pageTop < heroUiHalf)
+            && !parentAlreadyClustered;
+          const ancestorAlreadyShifted = !!(parent && parent.el && parent.el.closest
+            && parent.el.closest('[data-topbar-viewport-shift]'));
+          /* Official flex-end pins the right cluster as one row. Overlay
+             shop / globe / dropmenu / 折扣信息 are siblings of the wide
+             `fix/` group, so they share one window-right shift from the
+             rightmost overlay (dropmenu), not each box's own right edge. */
+          if (!ancestorAlreadyShifted && this._isRightTopbarChrome(box, designWidth)
+            && this._isTopbarOverlayChrome(n, pfx, evidenceAttrs)
+            && !rideOwner) {
+            const clusterRight = Number(this._topbarClusterRightDesign) > 0
+              ? Number(this._topbarClusterRightDesign)
+              : ((box.x ?? 0) + (box.w ?? 0));
+            const shift = this._topbarViewportShiftDesign({ x: 0, w: clusterRight });
+            if (Math.abs(shift) > 0.5) {
+              el.style.left = (sourceLeft + shift) + 'px';
+              el.setAttribute('data-topbar-viewport-shift', String(shift));
+            }
+          }
           if (slotAnchor && pinViewport && heroSlot && Number(heroSlot.heroHeight) > 0 && Number(heroSlot.designHeight) > 0) {
             const slotH = Number(heroSlot.designHeight);
             const gapBelow = Number(heroSlot.heroHeight) - (sourceTop + sourceH);
@@ -4716,19 +4994,73 @@
             heroUiAnchored = true;
             el.setAttribute('data-fix-slot-top', String(heroUiTop));
             el.setAttribute('data-fix-slot-floor', String(slotH));
+          } else if (heroClusterLayer && heroUiBlocks && Number.isFinite(sourceTop) && !pinViewport) {
+            /* Cluster shift is page-Y. Nested layers (title SLG inside `标题`)
+               write local top, so convert: localTop + pageShift. */
+            heroUiTop = sourceTop + heroClusterShiftValue;
+            /* Official mobile first cut is a side-by-side CTA row, not the
+               overlapping Figma stack. Keep freeze / >1920 on the authored
+               relative Y; only the phone tree restyles calendar + CTA. */
+            if (__normalizedPlat === 'mobile' && isHeroTitleOwner
+              && Number(this._viewportWidth) > 750 && Number(k) > 0) {
+              /* 751–1126: buttons stay 750-authored size; the 750 title
+                 group (play + wordmark) must sit in the window, not at x=0
+                 of a now-full-bleed KV. */
+              const stageW = Number(this._viewportWidth) / Number(k);
+              const shiftX = (stageW - Number(designWidth)) / 2;
+              if (shiftX > 0.5) {
+                el.style.left = (sourceLeft + shiftX) + 'px';
+                el.setAttribute('data-hero-mobile-center', String(shiftX));
+              }
+            }
+            if (__normalizedPlat === 'mobile' && heroClusterBottomShift) {
+              const cal = heroClusterBottomShift.calendar;
+              const cta = heroClusterBottomShift.cta;
+              if (cal && cta && Number(cal.w) > 0 && Number(cta.w) > 0) {
+                const rowH = Math.max(Number(cal.h), Number(cta.h));
+                const rowBottom = Math.max(Number(cal.pageBottom), Number(cta.pageBottom));
+                const rowTopPage = rowBottom + heroClusterShiftValue - rowH;
+                const gap = 8;
+                const rowW = Number(cal.w) + gap + Number(cta.w);
+                const rowStageW = Number(this._viewportWidth) > 0 && Number(k) > 0
+                  ? Number(this._viewportWidth) / Number(k)
+                  : Number(designWidth);
+                const rowLeftPage = (rowStageW - rowW) / 2;
+                if (isHeroCalendar) {
+                  heroUiTop = rowTopPage + (rowH - Number(cal.h)) / 2;
+                  el.style.left = rowLeftPage + 'px';
+                  el.setAttribute('data-hero-cta-row', 'calendar');
+                } else if (isHeroCta) {
+                  heroUiTop = rowTopPage + (rowH - Number(cta.h)) / 2;
+                  el.style.left = (rowLeftPage + Number(cal.w) + gap) + 'px';
+                  el.setAttribute('data-hero-cta-row', 'cta');
+                }
+              }
+            }
+            el.setAttribute('data-hero-cluster', 'bottom');
+            el.setAttribute('data-hero-cluster-shift', String(heroUiTop - sourceTop));
+            heroUiBlocks.push({
+              x: localX,
+              y: sourceTop,
+              w: Number(box.w ?? 0),
+              h: sourceH,
+              stretchedTop: heroUiTop,
+              area: Math.max(1, (box.w ?? 0) * sourceH),
+            });
           } else if (rideOwner) {
             heroUiTop = rideOwner.stretchedTop + (sourceTop - rideOwner.y);
             heroUiAnchored = true;
           } else if (heroUiBlocks && (!parent || parentIsHeroSection) && Number.isFinite(sourceTop) && !pinViewport
-            && !(fullBleedHeroArt || listedHeroArt || /^slg(?:\/|$)/i.test(String(n.name || '')))) {
+            && !(fullBleedHeroArt || listedHeroArt)) {
             const sourceBottom = sourceTop + sourceH;
             /* Generic split, no node names: blocks whose Figma bottom sits in
                the upper half of the hero are top chrome and keep their top
                fraction; blocks ending in the lower half (a hero title, a
-               download CTA) anchor their BOTTOM fraction so they keep the
+               download CTA, slg) anchor their BOTTOM fraction so they keep the
                Figma distance above the first-screen bottom edge — pinned to
                the lower first screen at every viewport instead of drifting
-               to the middle. */
+               to the middle. slg / calendar / primary CTA already took the
+               shared cluster shift above. */
             heroUiTop = sourceBottom > heroUiHalf
               ? sourceBottom * heroUiYRatio - sourceH
               : sourceTop * heroUiYRatio;
@@ -4833,29 +5165,11 @@
             el.setAttribute('data-kv-cover-origin', origin);
           }
         }
-        const stretchToViewportW = /^slg(?:\/|$)/i.test(String(n.name || ''))
-          && isHeroStage
-          && Number(box.w) > 0
-          && Number(this._viewportWidth) > 0
-          && Number(k) > 0
-          && Number(this._viewportWidth) < Number(this._frameWidth) - 0.5;
-        if (stretchToViewportW) {
-          /* Official first-screen SLG/title art is width-stretched to the
-             current window (1920→1920×520, 1195→1195×323.6). Height follows
-             the same ratio. Buttons stay on freeze k. */
-          const sourceW = Number(box.w) || Number(n.box && n.box.w) || 0;
-          const stretch = sourceW > 0 ? Number(this._viewportWidth) / (sourceW * Number(k)) : 1;
-          if (Math.abs(stretch - 1) > 1e-4) {
-            const columnLeftCss = this._columnLeftCss();
-            el.style.left = (-columnLeftCss / Number(k)) + 'px';
-            /* Official SLG width-stretch is bottom-anchored (date strip stays,
-               play button rides up). `0 0` pinned the Figma top / play button. */
-            el.style.transformOrigin = '0 100%';
-            el.style.transform = 'scale(' + stretch + ')';
-            el.setAttribute('data-hero-slg-stretch', 'viewport-width');
-            el.setAttribute('data-hero-slg-origin', 'bottom');
-          }
-        } else if (isBg && !isFirstScreenVisual && !pageStageMode && !backgroundHeroShift && Number(k) > 0) {
+        /* SLG size is page k at every PC band. Freeze is already k=0.5 plus
+           center-crop; above 1920 the column already equals the window.
+           Extra viewport-width stretch (even uniform from the bottom)
+           grows the title over the calendar / play cluster. */
+        if (isBg && !isFirstScreenVisual && !pageStageMode && !backgroundHeroShift && Number(k) > 0) {
           /* Later bg fills the later stage box (Figma pageBox; freeze-band
              only pads when CSS height is short of the window). Official later
              `background-size:cover` is on that same box, not a second viewport
@@ -6159,6 +6473,31 @@
           }
         }
 
+        if (lock1920.applied) {
+          const parentIsTopbar = !!(parent && parent.el && parent.el.getAttribute && parent.el.getAttribute('data-topbar-chrome') === 'true');
+          const isTopbarOwner = evidenceAttrs?.['data-topbar-chrome'] === 'true';
+          /* Landscape fix/ owner is a 3793-wide group. Scaling it from any
+             origin walks either the logo or the right cluster. Lock overlay
+             chrome from 100% 0 (shop / globe / dropmenu sit as siblings of
+             the wide group in truth, not as nested children). Do not
+             counter-scale the first-screen CTA — it stays with the SLG /
+             calendar cluster via the shared bottom-anchor. */
+          if (parentIsTopbar) {
+            const origin = this._isRightTopbarChrome(box, designWidth) ? '100% 0' : '0 0';
+            this._applyLock1920CounterScale(el, lock1920, origin);
+          } else if (this._isTopbarOverlayChrome(n, pfx, evidenceAttrs) && !isTopbarOwner) {
+            const origin = this._isRightTopbarChrome(box, designWidth) ? '100% 0' : '0 0';
+            this._applyLock1920CounterScale(el, lock1920, origin);
+          } else if (isHeroCta && !isTopbarOwner) {
+            /* Official freeze CTA stays 298×96 above 1920. Scale size from
+               the box center so the shared cluster bottom-anchor does not
+               walk off the calendar. */
+            this._applyLock1920CounterScale(el, lock1920, '50% 50%');
+          } else if (lock1920Node && !isTopbarOwner && !heroClusterLayer) {
+            const origin = this._isRightTopbarChrome(box, designWidth) ? '100% 0' : '0 0';
+            this._applyLock1920CounterScale(el, lock1920, origin);
+          }
+        }
         // 挂到父节点下（没有父节点才挂 stage）。DFS 先序 → 同级 append 顺序即绘制顺序。
         (parent ? parent.el : container).appendChild(el);
         /* One inventory bg/* sheet, two views: the clipped first-screen crop
@@ -7286,6 +7625,185 @@
         frame.appendChild(host);
         frame.__fxNamedModals = wired;
         frame.setAttribute('data-named-modal-count', String(wired.length));
+        const namedModals = wired;
+        const modalPolicy = () => {
+          const policy = designPolicy();
+          const fill = policy.modalViewportFill === 'cover' ? 'cover' : 'contain';
+          const scrim = Number(policy.modalScrimOpacity);
+          const lock = policy.modalLockPageScroll === true;
+          return {
+            fill,
+            scrim: Number.isFinite(scrim) ? Math.min(1, Math.max(0, scrim)) : 0,
+            lock,
+          };
+        };
+        const ensureModalScrim = (scrimHost, opacity) => {
+          if (!scrimHost) return null;
+          let scrim = scrimHost.querySelector('[data-modal-scrim="true"]');
+          if (opacity <= 0) {
+            if (scrim) scrim.remove();
+            return null;
+          }
+          if (!scrim) {
+            scrim = document.createElement('div');
+            scrim.setAttribute('data-modal-scrim', 'true');
+            scrim.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+            scrimHost.insertBefore(scrim, scrimHost.firstChild);
+          }
+          scrim.style.background = 'rgba(0,0,0,' + opacity + ')';
+          return scrim;
+        };
+        const lockNamedModalScroll = (lock) => {
+          if (lock) {
+            if (frame.__fxModalPrevOverflow == null) frame.__fxModalPrevOverflow = frame.style.overflowY || '';
+            frame.style.overflowY = 'hidden';
+            frame.setAttribute('data-modal-scroll-lock', 'true');
+          } else {
+            if (frame.__fxModalPrevOverflow != null) frame.style.overflowY = frame.__fxModalPrevOverflow;
+            frame.removeAttribute('data-modal-scroll-lock');
+            frame.__fxModalPrevOverflow = null;
+          }
+        };
+        const unpinModalHost = (entry) => {
+          const modalHost = entry && entry.layer && entry.layer.parentElement;
+          if (!modalHost || !modalHost.classList || !modalHost.classList.contains('fx-named-modals')) return;
+          const rest = modalHost.__fxNamedModalRest || {};
+          modalHost.style.position = 'absolute';
+          modalHost.style.left = '0';
+          modalHost.style.top = '0';
+          modalHost.style.width = rest.width || (designWidth + 'px');
+          modalHost.style.height = rest.height || ((pageScrollHeight || 0) + 'px');
+          modalHost.style.transform = '';
+          modalHost.style.zoom = String(pageStageScale || k);
+          modalHost.style.pointerEvents = 'none';
+          modalHost.style.zIndex = '40';
+          modalHost.style.overflow = 'visible';
+          modalHost.removeAttribute('data-modal-fill');
+          ensureModalScrim(modalHost, 0);
+        };
+        const pinModalToViewport = (entry) => {
+          if (!entry || !entry.layer) return;
+          const layer = entry.layer;
+          const modalHost = layer.parentElement;
+          const frameRect = frame.getBoundingClientRect();
+          if (!frameRect.width || !frameRect.height) return;
+          const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
+          const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
+          const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
+          /* Host zoom is the page-stage ruler for closed overlays. Pinning
+             to the visible frame must drop it, or cover/contain scale
+             multiplies k and the Figma sheet shrinks to a card.
+             getBoundingClientRect already includes QA preview transform on
+             `.frame`; use the unscaled frame box so cover/contain matches
+             Figma 3840×2160 against the 1920×1080 screen, not the shrunk
+             preview pixels. */
+          const visibleW = Math.max(0, Number.parseFloat(frame.style.width) || frame.clientWidth || frameRect.width);
+          const visibleH = Math.max(0, Number.parseFloat(frame.style.height) || frame.clientHeight || frameRect.height);
+          const policy = modalPolicy();
+          const scale = policy.fill === 'cover'
+            ? Math.max(visibleW / designW, visibleH / designH)
+            : Math.min(visibleW / designW, visibleH / designH);
+          if (modalHost) {
+            if (!modalHost.__fxNamedModalRest) {
+              modalHost.__fxNamedModalRest = {
+                width: modalHost.style.width || (designWidth + 'px'),
+                height: modalHost.style.height || ((pageScrollHeight || 0) + 'px'),
+              };
+            }
+            modalHost.style.position = 'absolute';
+            modalHost.style.left = '0px';
+            modalHost.style.top = (Number(frame.scrollTop) || 0) + 'px';
+            modalHost.style.width = visibleW + 'px';
+            modalHost.style.height = visibleH + 'px';
+            modalHost.style.zoom = '1';
+            modalHost.style.transform = 'none';
+            modalHost.style.pointerEvents = 'auto';
+            modalHost.style.zIndex = '2147483001';
+            modalHost.style.overflow = 'hidden';
+            modalHost.setAttribute('data-modal-fill', policy.fill);
+            ensureModalScrim(modalHost, policy.scrim);
+          }
+          const scaledW = designW * scale;
+          const scaledH = designH * scale;
+          const phoneOverflow = scaledW > visibleW + 1 || scaledH > visibleH + 1;
+          if (phoneOverflow) {
+            /* Cover can make the 750×1334 phone sheet wider than the 390 host.
+               Keep cover on an inner sheet and clip the measured layer to the
+               visible frame so later-axes-probe stays inside the 390 sheet. */
+            let sheet = layer.querySelector(':scope > [data-modal-sheet="true"]');
+            if (!sheet) {
+              sheet = document.createElement('div');
+              sheet.setAttribute('data-modal-sheet', 'true');
+              sheet.style.position = 'absolute';
+              sheet.style.left = '0px';
+              sheet.style.top = '0px';
+              const kids = [...layer.childNodes];
+              for (const kid of kids) sheet.appendChild(kid);
+              layer.appendChild(sheet);
+            }
+            const offsetX = (visibleW - scaledW) / 2;
+            const offsetY = (visibleH - scaledH) / 2;
+            sheet.style.width = designW + 'px';
+            sheet.style.height = designH + 'px';
+            sheet.style.zoom = '1';
+            sheet.style.transformOrigin = '0 0';
+            sheet.style.transform = 'translate(' + offsetX + 'px,' + offsetY + 'px) scale(' + scale + ')';
+            layer.style.left = '0px';
+            layer.style.top = '0px';
+            layer.style.width = visibleW + 'px';
+            layer.style.height = visibleH + 'px';
+            layer.style.maxWidth = 'none';
+            layer.style.maxHeight = 'none';
+            layer.style.zoom = '1';
+            layer.style.transformOrigin = '0 0';
+            layer.style.transform = 'none';
+            layer.style.overflow = 'hidden';
+          } else {
+            layer.style.left = '0px';
+            layer.style.top = '0px';
+            layer.style.width = designW + 'px';
+            layer.style.height = designH + 'px';
+            layer.style.maxWidth = 'none';
+            layer.style.maxHeight = 'none';
+            layer.style.zoom = '1';
+            layer.style.transformOrigin = '0 0';
+            layer.style.transform = 'scale(' + scale + ')';
+            if (layer.getAttribute('data-modal-clip') === 'source') layer.style.overflow = 'hidden';
+            else layer.style.overflow = 'visible';
+          }
+          layer.style.pointerEvents = 'auto';
+          layer.style.zIndex = '41';
+        };
+        const closeNamedModal = (entry) => {
+          if (!entry || !entry.layer) return;
+          hideInPlace(entry.layer, true);
+          entry.layer.removeAttribute('data-modal-open');
+          unpinModalHost(entry);
+          const stillOpen = namedModals.some((other) => other && other.layer && other.layer.getAttribute('data-modal-open') === 'true');
+          if (!stillOpen) {
+            const modalHost = entry.layer.parentElement;
+            if (modalHost && modalHost.classList && modalHost.classList.contains('fx-named-modals')) {
+              modalHost.style.pointerEvents = 'none';
+            }
+            lockNamedModalScroll(false);
+          }
+        };
+        const openNamedModal = (entry) => {
+          if (!entry || !entry.layer) return;
+          for (const other of namedModals) {
+            if (other === entry) continue;
+            if (other.layer && other.layer.getAttribute('data-modal-open') === 'true') closeNamedModal(other);
+          }
+          hideInPlace(entry.layer, false);
+          entry.layer.setAttribute('data-modal-open', 'true');
+          pinModalToViewport(entry);
+          if (modalPolicy().lock) lockNamedModalScroll(true);
+          if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
+            frame.__fxAssetScheduler.prime(entry.layer);
+          }
+        };
+        frame.__fxCloseNamedModal = closeNamedModal;
+        frame.__fxOpenNamedModal = openNamedModal;
         const doc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
         if (doc && !frame.__fxNamedModalDocBound) {
           frame.__fxNamedModalDocBound = true;
@@ -8018,191 +8536,8 @@
             }
           }
           const namedModals = frame.__fxNamedModals || [];
-          const hideInPlace = (node, hidden) => {
-            if (!node || node.nodeType !== 1) return;
-            if (node.__fxOriginalDisplay === undefined) node.__fxOriginalDisplay = node.style.display;
-            node.hidden = hidden;
-            node.style.display = hidden ? 'none' : node.__fxOriginalDisplay;
-            node.setAttribute('aria-hidden', hidden ? 'true' : 'false');
-          };
-          const modalPolicy = () => {
-            const policy = designPolicy();
-            const fill = policy.modalViewportFill === 'cover' ? 'cover' : 'contain';
-            const scrim = Number(policy.modalScrimOpacity);
-            const lock = policy.modalLockPageScroll === true;
-            return {
-              fill,
-              scrim: Number.isFinite(scrim) ? Math.min(1, Math.max(0, scrim)) : 0,
-              lock,
-            };
-          };
-          const ensureModalScrim = (host, opacity) => {
-            if (!host) return null;
-            let scrim = host.querySelector('[data-modal-scrim="true"]');
-            if (opacity <= 0) {
-              if (scrim) scrim.remove();
-              return null;
-            }
-            if (!scrim) {
-              scrim = document.createElement('div');
-              scrim.setAttribute('data-modal-scrim', 'true');
-              scrim.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
-              host.insertBefore(scrim, host.firstChild);
-            }
-            scrim.style.background = 'rgba(0,0,0,' + opacity + ')';
-            return scrim;
-          };
-          const lockNamedModalScroll = (lock) => {
-            if (lock) {
-              if (frame.__fxModalPrevOverflow == null) frame.__fxModalPrevOverflow = frame.style.overflowY || '';
-              frame.style.overflowY = 'hidden';
-              frame.setAttribute('data-modal-scroll-lock', 'true');
-            } else {
-              if (frame.__fxModalPrevOverflow != null) frame.style.overflowY = frame.__fxModalPrevOverflow;
-              frame.removeAttribute('data-modal-scroll-lock');
-              frame.__fxModalPrevOverflow = null;
-            }
-          };
-          const unpinModalHost = (entry) => {
-            const host = entry && entry.layer && entry.layer.parentElement;
-            if (!host || !host.classList || !host.classList.contains('fx-named-modals')) return;
-            const rest = host.__fxNamedModalRest || {};
-            host.style.position = 'absolute';
-            host.style.left = '0';
-            host.style.top = '0';
-            host.style.width = rest.width || (designWidth + 'px');
-            host.style.height = rest.height || ((pageScrollHeight || 0) + 'px');
-            host.style.transform = '';
-            host.style.zoom = String(pageStageScale || k);
-            host.style.pointerEvents = 'none';
-            host.style.zIndex = '40';
-            host.style.overflow = 'visible';
-            host.removeAttribute('data-modal-fill');
-            ensureModalScrim(host, 0);
-          };
-          const pinModalToViewport = (entry) => {
-            if (!entry || !entry.layer) return;
-            const layer = entry.layer;
-            const host = layer.parentElement;
-            const frameRect = frame.getBoundingClientRect();
-            if (!frameRect.width || !frameRect.height) return;
-            const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
-            const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
-            const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
-            /* Host zoom is the page-stage ruler for closed overlays. Pinning
-               to the visible frame must drop it, or cover/contain scale
-               multiplies k and the Figma sheet shrinks to a card.
-               getBoundingClientRect already includes QA preview transform on
-               `.frame`; use the unscaled frame box so cover/contain matches
-               Figma 3840×2160 against the 1920×1080 screen, not the shrunk
-               preview pixels. */
-            const visibleW = Math.max(0, Number.parseFloat(frame.style.width) || frame.clientWidth || frameRect.width);
-            const visibleH = Math.max(0, Number.parseFloat(frame.style.height) || frame.clientHeight || frameRect.height);
-            const policy = modalPolicy();
-            const scale = policy.fill === 'cover'
-              ? Math.max(visibleW / designW, visibleH / designH)
-              : Math.min(visibleW / designW, visibleH / designH);
-            if (host) {
-              if (!host.__fxNamedModalRest) {
-                host.__fxNamedModalRest = {
-                  width: host.style.width || (designWidth + 'px'),
-                  height: host.style.height || ((pageScrollHeight || 0) + 'px'),
-                };
-              }
-              host.style.position = 'absolute';
-              host.style.left = '0px';
-              host.style.top = (Number(frame.scrollTop) || 0) + 'px';
-              host.style.width = visibleW + 'px';
-              host.style.height = visibleH + 'px';
-              host.style.zoom = '1';
-              host.style.transform = 'none';
-              host.style.pointerEvents = 'auto';
-              host.style.zIndex = '2147483001';
-              host.style.overflow = 'hidden';
-              host.setAttribute('data-modal-fill', policy.fill);
-              ensureModalScrim(host, policy.scrim);
-            }
-            const scaledW = designW * scale;
-            const scaledH = designH * scale;
-            const phoneOverflow = scaledW > visibleW + 1 || scaledH > visibleH + 1;
-            if (phoneOverflow) {
-              /* Cover can make the 750×1334 phone sheet wider than the 390 host.
-                 Keep cover on an inner sheet and clip the measured layer to the
-                 visible frame so later-axes-probe stays inside the 390 sheet. */
-              let sheet = layer.querySelector(':scope > [data-modal-sheet="true"]');
-              if (!sheet) {
-                sheet = document.createElement('div');
-                sheet.setAttribute('data-modal-sheet', 'true');
-                sheet.style.position = 'absolute';
-                sheet.style.left = '0px';
-                sheet.style.top = '0px';
-                const kids = [...layer.childNodes];
-                for (const kid of kids) sheet.appendChild(kid);
-                layer.appendChild(sheet);
-              }
-              const offsetX = (visibleW - scaledW) / 2;
-              const offsetY = (visibleH - scaledH) / 2;
-              sheet.style.width = designW + 'px';
-              sheet.style.height = designH + 'px';
-              sheet.style.zoom = '1';
-              sheet.style.transformOrigin = '0 0';
-              sheet.style.transform = 'translate(' + offsetX + 'px,' + offsetY + 'px) scale(' + scale + ')';
-              layer.style.left = '0px';
-              layer.style.top = '0px';
-              layer.style.width = visibleW + 'px';
-              layer.style.height = visibleH + 'px';
-              layer.style.maxWidth = 'none';
-              layer.style.maxHeight = 'none';
-              layer.style.zoom = '1';
-              layer.style.transformOrigin = '0 0';
-              layer.style.transform = 'none';
-              layer.style.overflow = 'hidden';
-            } else {
-              layer.style.left = '0px';
-              layer.style.top = '0px';
-              layer.style.width = designW + 'px';
-              layer.style.height = designH + 'px';
-              layer.style.maxWidth = 'none';
-              layer.style.maxHeight = 'none';
-              layer.style.zoom = '1';
-              layer.style.transformOrigin = '0 0';
-              layer.style.transform = 'scale(' + scale + ')';
-              if (layer.getAttribute('data-modal-clip') === 'source') layer.style.overflow = 'hidden';
-              else layer.style.overflow = 'visible';
-            }
-            layer.style.pointerEvents = 'auto';
-            layer.style.zIndex = '41';
-          };
-          const closeNamedModal = (entry) => {
-            if (!entry || !entry.layer) return;
-            hideInPlace(entry.layer, true);
-            entry.layer.removeAttribute('data-modal-open');
-            unpinModalHost(entry);
-            const stillOpen = namedModals.some((other) => other && other.layer && other.layer.getAttribute('data-modal-open') === 'true');
-            if (!stillOpen) {
-              const host = entry.layer.parentElement;
-              if (host && host.classList && host.classList.contains('fx-named-modals')) {
-                host.style.pointerEvents = 'none';
-              }
-              lockNamedModalScroll(false);
-            }
-          };
-          const openNamedModal = (entry) => {
-            if (!entry || !entry.layer) return;
-            for (const other of namedModals) {
-              if (other === entry) continue;
-              if (other.layer && other.layer.getAttribute('data-modal-open') === 'true') closeNamedModal(other);
-            }
-            hideInPlace(entry.layer, false);
-            entry.layer.setAttribute('data-modal-open', 'true');
-            pinModalToViewport(entry);
-            if (modalPolicy().lock) lockNamedModalScroll(true);
-            if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
-              frame.__fxAssetScheduler.prime(entry.layer);
-            }
-          };
-          frame.__fxCloseNamedModal = closeNamedModal;
-          frame.__fxOpenNamedModal = openNamedModal;
+          const closeNamedModal = frame.__fxCloseNamedModal;
+          const openNamedModal = frame.__fxOpenNamedModal;
           const closeBtn = this._closeControlFromEvent(ev);
           if (closeBtn) {
             const hostModal = namedModals.find((entry) => entry.layer.contains(closeBtn));
@@ -8570,6 +8905,10 @@
         }
         syncFixedNavigation();
         syncFixFromOverlays();
+      }
+      if (enablePageInteraction) this._restoreOpenNamedModals(frame, restoreOpenModalNames);
+      else if (restoreOpenModalNames.length) {
+        frame.setAttribute('data-named-modal-restore-skipped', 'interaction-inert');
       }
       /* renderApp can be called again for a device/scale change while the
          delegated listener deliberately survives. Rebuild the DOM-side nav

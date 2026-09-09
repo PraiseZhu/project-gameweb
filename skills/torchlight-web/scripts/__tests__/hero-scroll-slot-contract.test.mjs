@@ -87,6 +87,11 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /heroUiYRatio/);
   assert.match(render, /data-hero-ui-anchor/);
   assert.match(render, /owner-block/);
+  assert.match(render, /data-hero-cluster', 'bottom'/);
+  assert.match(render, /heroClusterBottomShift/);
+  assert.match(render, /data-hero-cta-row/);
+  assert.match(render, /isHeroTitleOwner/);
+  assert.match(render, /data-hero-mobile-center/);
   assert.match(render, /pfx === 'fix'/);
   assert.match(render, /listedHeroArt/);
   assert.match(render, /firstScreenKvInSection/);

@@ -144,7 +144,7 @@ complemented by independent reusable capabilities and one optional audit:
 - **Resize Skill** — viewport stretch, composition base, DESIGN.md §5.0
   segmented ruler (product and QA simulated viewport share the table:
   `>1920` `k=viewportW/3840`; `1127–1920` freeze column 1920
-  at `k=0.5` center-crop inside a `viewportW` window (do not put `width=1920; left=负值` on `.frame`); `≤1126` mobile `k=viewportW/750`), official `10vw`
+  at `k=0.5` center-crop inside a `viewportW` window (do not put `width=1920; left=负值` on `.frame`); `≤1126` mobile `k=min(1, viewportW/750)` so 751–1126 keeps 750-px UI while the window itself is the crop box), official `10vw`
   html font, first-screen slot = current window height (later section starts at the viewport bottom; title/CTA pin to that slot, not y×k mid-drift), first-screen KV window = real viewport (`max(viewportW/designW,
   viewportH/heroH)`, not the frozen 1920 column), product/QA tree from
   composition width (torchlight official `0–1126` mobile / `≥1127` pc),
