@@ -414,7 +414,7 @@ test('pixelGateProbe over threshold blocks product view', () => {
     pixelGateProbe: () => ({
       ok: false,
       skipped: false,
-      problems: ['pc 721:7867: diffRatio 12.00% > 0.50% (artifacts/stop1-pixel/pc.721-7867.diff.png)'],
+      problems: ['pc 721:7867: diffRatio 12.00% > 6.00% (artifacts/stop1-pixel/pc.721-7867.diff.png)'],
     }),
   });
   assert.equal(result.ok, false);

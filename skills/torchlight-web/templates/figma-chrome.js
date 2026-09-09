@@ -1636,6 +1636,13 @@
     return roots;
   }
 
+  function isViewportChromeEl(el) {
+    if (!el) return false;
+    if (el.getAttribute('data-topbar-chrome') === 'true') return true;
+    if (el.getAttribute('data-fix-slot-anchor') === 'first-screen-bottom') return true;
+    return /顶部信息|顶部固定/.test(String(el.getAttribute('data-name') || el.getAttribute('data-label') || ''));
+  }
+
   function parseZoomValue(value) {
     if (value == null || value === '' || value === 'normal') return 1;
     var n = String(value).indexOf('%') >= 0 ? parseFloat(value) / 100 : parseFloat(value);
@@ -1647,13 +1654,26 @@
       var overlays = frame.querySelectorAll('.fx-fixed-overlays');
       for (var i = 0; i < overlays.length; i++) {
         var stage = overlays[i];
-        /* sticky pin layer must stay height:0. Stretching it to 100vh makes
-           the overlay a scroll-box sibling: after scrollIntoView it is
-           clamped to the frame bottom and buttons drift 6–24px. Children
-           already paint overflow:visible from the sticky origin. */
-        stage.style.height = '0px';
-        stage.style.marginBottom = '0px';
-        stage.setAttribute('data-fix-pin-height', '0');
+        /* Do not squash the sticky host back to 0. Height-0 + overflow:visible
+           paints at rest then Chromium clips overflow on `.frame` scroll
+           (mobile right chrome vanishes). Keep the renderer's scaled span
+           and the matching negative margin so the page stage still starts
+           at y=0. Stretching to 100vh is still forbidden. */
+        var zoomEl = stage.querySelector('.fx-fixed-zoom');
+        if (zoomEl) {
+          var matrix = (getComputedStyle(zoomEl).transform || '').match(/matrix\(([^)]+)\)/);
+          var k = matrix ? parseFloat(matrix[1].split(',')[0]) : 1;
+          if (!isFinite(k) || k <= 0) k = 1;
+          var designSpan = parseFloat(zoomEl.getAttribute('data-fix-zoom-span') || '');
+          if (isFinite(designSpan) && designSpan > 0) {
+            var hostH = designSpan * k;
+            stage.style.height = hostH + 'px';
+            stage.style.marginBottom = (-hostH) + 'px';
+            stage.setAttribute('data-fix-pin-height', String(hostH));
+            continue;
+          }
+        }
+        stage.setAttribute('data-fix-pin-height', String(parseFloat(stage.style.height) || 0));
       }
     } catch (e) { /* fixed overlay sizing is a preview affordance; render remains source-backed */ }
   }
@@ -1977,10 +1997,11 @@
     var nodes = frame.querySelectorAll('[data-motion-role="navigationFooter"], [data-nav-shell="true"]');
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
-      /* Landscape fix/顶部信息 is viewport chrome (官方充值 / 地球 / 官网),
+      /* Landscape *or* named 顶部信息 is viewport chrome (官方充值 / 地球 / 官网),
          not a left directory. Stretching it to 100vh squashes mobile 736×401
-         by 844/1334. Skip even if an old render still stamped nav-shell. */
-      if (node.getAttribute('data-topbar-chrome') === 'true') continue;
+         by 844/1334, and a slightly portrait 366×374 right bar is still
+         chrome. Skip even if an old render still stamped nav-shell. */
+      if (isViewportChromeEl(node)) continue;
       var nested = false;
       for (var r = 0; r < roots.length; r++) {
         if (roots[r].contains(node)) { nested = true; break; }
@@ -2027,8 +2048,7 @@
           if (!isFinite(sourceLeft) || !isFinite(sourceTop)
             || !isFinite(sourceWidth) || sourceWidth <= 0
             || !isFinite(sourceHeight) || sourceHeight <= 0) continue;
-          if (root.getAttribute('data-topbar-chrome') === 'true'
-            || sourceWidth > sourceHeight) continue;
+          if (isViewportChromeEl(root) || sourceWidth > sourceHeight) continue;
           var sourceScaleY = stageZoom > 0 ? (yScale / stageZoom) : 1;
           if (!isFinite(sourceScaleY) || sourceScaleY <= 0) sourceScaleY = 1;
           /* Items belong to exactly one nav root. Ready consumers may paint

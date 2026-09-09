@@ -377,7 +377,7 @@ test('untagged duplicate fix/ copies do not all pin at the sticky origin', () =>
   assert.equal(truth.sections['100:2'].nodes.some((node) => node.id === 'fix-2' || node.id === 'fix-2-btn'), false);
 });
 
-test('fix overlay descendants leave sections and pin with parentBox, not later-section page y', () => {
+test('fix overlay descendants leave sections and keep inventory pageBox', () => {
   const inv = fixture();
   inv.overlays = [{ id: 'fix-2', role: 'fix', label: '顶部信息', pin: 'viewport' }];
   inv.nodes.push(
@@ -418,13 +418,12 @@ test('fix overlay descendants leave sections and pin with parentBox, not later-s
   const btn = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-btn');
   assert.ok(overlay);
   assert.ok(btn);
-  assert.deepEqual(overlay.box, { x: 0, y: 0, w: 3793, h: 493 });
-  assert.deepEqual(btn.box, { x: 2764, y: 70, w: 516, h: 150 });
-  assert.notEqual(btn.box.y, 2213);
-  assert.deepEqual(btn.sliceExport.box, { x: 2764, y: 70, w: 516, h: 150 });
+  assert.deepEqual(overlay.box, { x: 0, y: 2143, w: 3793, h: 493 });
+  assert.deepEqual(btn.box, { x: 2764, y: 2213, w: 516, h: 150 });
+  assert.deepEqual(btn.sliceExport.box, { x: 2764, y: 2213, w: 516, h: 150 });
 });
 
-test('fix nested sliceExport stays offset from the local owner box, not page x', () => {
+test('fix nested sliceExport keeps inventory pageBox, not overlay-local x/y', () => {
   const inv = fixture();
   inv.overlays = [{ id: 'fix-1', role: 'fix', label: '顶部信息', pin: 'viewport' }];
   inv.nodes.push(

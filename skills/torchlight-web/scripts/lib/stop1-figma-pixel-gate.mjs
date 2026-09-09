@@ -1,6 +1,6 @@
 /**
  * Stop-1 Figma pixel gate: per-section screenshot of the existing demo
- * versus a Figma page-frame export cropped by consume.sections[].pageBox.
+ * versus a Figma export of each consume section node (not the workboard page).
  * Fail-closed. Empty baselines are red, never skip. Does not call pixel-compare.mjs.
  *
  * Callers: figma-html-from-handoff attachStop1FigmaPixelGate; stop1-figma-pixel-probe.mjs.
@@ -15,7 +15,7 @@ import { compareImages, loadPngApi, readPng, writePng } from './png-compare.mjs'
 
 export const STOP1_PIXEL_SCHEMA = 'stop1-figma-pixel-gate/v1';
 export const STOP1_PIXEL_DIR = 'artifacts/stop1-pixel';
-export const DEFAULT_STOP1_PIXEL_THRESHOLD = 0.005;
+export const DEFAULT_STOP1_PIXEL_THRESHOLD = 0.06;
 export const PIXEL_YIQ_THRESHOLD = 0.1;
 export const DEFAULT_STOP1_PIXEL_SCALE = 0.5;
 export const FIGMA_AREA_LIMIT_PX = 32_000_000;

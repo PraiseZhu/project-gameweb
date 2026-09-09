@@ -64,22 +64,34 @@ test('heroUi stretch never moves pin=viewport fix descendants', () => {
   assert.match(renderer, /fx-fixed-zoom/);
   assert.match(renderer, /isTopBarChrome/);
   assert.match(renderer, /Number\(navRailBox\.w\) > Number\(navRailBox\.h\)/);
+  assert.match(renderer, /顶部信息\|顶部固定/);
   assert.match(renderer, /data-topbar-chrome/);
   assert.match(renderer, /landscapeFix/);
+  assert.match(renderer, /topInfoChrome/);
+  assert.match(renderer, /data-fix-slot-anchor/);
+  assert.match(renderer, /first-screen-bottom/);
+  assert.match(renderer, /data-fix-slot-top/);
+  assert.match(renderer, /slotH - gapBelow - sourceH/);
   assert.match(renderer, /fixedStage\.style\.transform = 'scale\(' \+ k \+ '\)'/);
+  assert.match(renderer, /overlayHostH/);
+  assert.match(renderer, /marginBottom = \(-overlayHostH\)/);
   assert.doesNotMatch(renderer, /fixedHost\.style\.position = 'fixed'/);
   assert.doesNotMatch(renderer, /fixedStage\.style\.position = 'sticky'/);
 });
 
-test('product sticky overlay stays height 0 after viewport sync', () => {
+test('product sticky overlay keeps scaled span after viewport sync', () => {
   const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
   assert.match(chrome, /function syncFixedOverlayViewport/);
-  assert.match(chrome, /stage\.style\.height = '0px'/);
-  assert.match(chrome, /data-fix-pin-height', '0'/);
+  assert.match(chrome, /data-fix-zoom-span/);
+  assert.match(chrome, /marginBottom = \(-hostH\)/);
+  assert.doesNotMatch(chrome, /stage\.style\.height = '0px'/);
   assert.doesNotMatch(chrome, /targetDesignHeight \+ 'px'/);
   assert.match(chrome, /if \(!PRODUCT_VIEW\) syncHeroEntryNavigation/);
-  assert.match(chrome, /data-topbar-chrome/);
+  assert.match(chrome, /function isViewportChromeEl/);
   assert.match(chrome, /sourceWidth > sourceHeight/);
+  assert.match(chrome, /顶部信息\|顶部固定/);
+  assert.match(chrome, /data-fix-slot-anchor/);
+  assert.match(chrome, /first-screen-bottom/);
 });
 
 test('only listed sliceExport owners bake descendants; canvas exportBox is not placement', () => {
@@ -437,9 +449,11 @@ test('listed img/bg/kv owners keep pageBox clip when ink slice is shorter', () =
 });
 
 test('sticky overlay host uses overlay root height, not descendant pageBoxes', () => {
-  assert.match(renderer, /Only read the overlay root itself/);
   assert.match(renderer, /Array\.isArray\(__activeTruth\.fixedOverlays\.nodes\)/);
+  assert.match(renderer, /data-fix-zoom-span/);
+  assert.match(renderer, /overlaySpan/);
   assert.doesNotMatch(renderer, /asArr\(__activeTruth\.fixedOverlays\.nodes\)\.map\(\(node\) => \{/);
+  assert.doesNotMatch(renderer, /overlayHeights\[0\]/);
 });
 
 test('legal lang-axis instances still paint under a baked ancestor', () => {

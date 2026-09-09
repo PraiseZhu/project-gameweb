@@ -2,7 +2,8 @@
 /**
  * Live Chromium + Figma probe for the stop-1 per-section pixel gate.
  * Screenshots the existing demo at design viewport zh-CN; exports each
- * platform page frame once from Figma and crops by consume pageBox.
+ * consume section node from Figma (not the workboard page, which also holds
+ * component-set siblings) and compares that PNG to the demo section shot.
  * Prints one JSON object. Missing args / token / Chrome / section → non-zero.
  *
  *   node scripts/lib/stop1-figma-pixel-probe.mjs --demo <dir> --handoff <dir>
@@ -25,8 +26,6 @@ import {
   STOP1_PIXEL_SCHEMA,
   assertExportNotFlattened,
   compareSectionPngs,
-  cropPng,
-  cropRectForSection,
   loadHandoffConsume,
   loadPngApi,
   pageBoxOfConsume,
@@ -58,14 +57,14 @@ async function figmaGet(url, token) {
 
 async function exportFramePng({ fileKey, frameId, scale, token, PNG }) {
   if (!fileKey) throw new Error('handoff fileKey missing; cannot export Figma frame');
-  if (!frameId) throw new Error('consume page.id missing; cannot export Figma frame');
+  if (!frameId) throw new Error('consume section.id missing; cannot export Figma section');
   const q = new URLSearchParams({
     ids: frameId,
     format: 'png',
     scale: String(scale),
-    /* Crop against consume pageBox. Absolute bounds include overflow
-       siblings and fail the flatten check (5193×6460 vs 3840×6429). */
   });
+  /* Same as figma-assets: force the node box, not ink/overflow siblings. */
+  q.set('use_absolute_bounds', 'true');
   const imgRes = await (await figmaGet(`${FIGMA_API}/images/${fileKey}?${q}`, token)).json();
   const imgUrl = imgRes.images?.[frameId];
   if (!imgUrl) throw new Error(`Figma images API returned no URL for ${frameId}`);
@@ -141,6 +140,16 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
       await el.evaluate((node) => {
         node.scrollIntoView({ block: 'start', inline: 'nearest' });
       });
+      /* Later-section Figma exports are the section node itself (no sticky
+         overlay). Demo screenshots that keep fx-fixed-overlays visible paint
+         the first-screen chrome onto sec/2 and inflate the pixel ratio. Hide
+         overlays only for later sections; first-screen still compares chrome. */
+      const hideOverlays = sections.indexOf(section) > 0;
+      await page.evaluate((hide) => {
+        document.querySelectorAll('.fx-fixed-overlays').forEach((host) => {
+          host.style.visibility = hide ? 'hidden' : '';
+        });
+      }, hideOverlays);
       await page.evaluate(() => new Promise((resolveWait) => setTimeout(resolveWait, 50)));
       const buf = Buffer.from(await el.screenshot({ type: 'png' }));
       await handle.dispose();
@@ -174,19 +183,6 @@ export async function runLiveStop1FigmaPixelProbe({
     const page = pageBoxOfConsume(consume, platform);
     const sections = sectionsOfConsume(consume, platform);
     const scale = pickExportScale(page);
-    const frameId = page.id;
-    let framePng;
-    try {
-      const exported = await exportFramePng({ fileKey, frameId, scale, token, PNG });
-      assertExportNotFlattened({ png: exported.png, frameBox: page, scale });
-      framePng = exported.png;
-    } catch (err) {
-      const message = err && err.message ? err.message : String(err);
-      problems.push(`${platform}: ${message}`);
-      platformsOut[platform] = { ok: false, problems: [message], sections: {} };
-      continue;
-    }
-
     let shots;
     try {
       shots = await screenshotSections({
@@ -219,19 +215,33 @@ export async function runLiveStop1FigmaPixelProbe({
         sectionResults[section.id] = { ok: false, status: 'MISSING', problems: [message] };
         continue;
       }
-      let crop;
       let baselinePng;
+      let expected;
       try {
-        crop = cropRectForSection(page, section.pageBox, scale);
-        baselinePng = cropPng(PNG, framePng, crop);
+        const exported = await exportFramePng({
+          fileKey,
+          frameId: section.id,
+          scale,
+          token,
+          PNG,
+        });
+        /* Workboard sec/ nodes export at their own box, not the stacked page.
+           Compare against that node box × scale, not consume pageBox y (2143.5
+           at 0.5× is a half-pixel and refused). */
+        expected = {
+          w: Math.round(section.pageBox.w * scale),
+          h: Math.round(section.pageBox.h * scale),
+        };
+        assertExportNotFlattened({ png: exported.png, frameBox: section.pageBox, scale });
+        baselinePng = exported.png;
       } catch (err) {
         const message = `${platform} ${section.id}: ${err && err.message ? err.message : String(err)}`;
         problems.push(message);
         sectionResults[section.id] = { ok: false, status: 'ERROR', problems: [message] };
         continue;
       }
-      if (shot.png.width !== crop.w || shot.png.height !== crop.h) {
-        const message = `${platform} ${section.id}: size mismatch ${shot.png.width}x${shot.png.height} vs ${crop.w}x${crop.h}`;
+      if (shot.png.width !== expected.w || shot.png.height !== expected.h) {
+        const message = `${platform} ${section.id}: size mismatch ${shot.png.width}x${shot.png.height} vs ${expected.w}x${expected.h}`;
         problems.push(message);
         const compared = await compareSectionPngs({
           PNG,

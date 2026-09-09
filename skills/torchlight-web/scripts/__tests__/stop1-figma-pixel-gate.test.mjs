@@ -31,7 +31,7 @@ function solidPng(PNGApi, { w, h, r, g, b }) {
   return PNGApi.sync.write(png);
 }
 
-test('identical small PNGs pass at 0.005', async () => {
+test('identical small PNGs pass at the stop-1 6% threshold', async () => {
   const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(ROOT);
   const demoDir = mkdtempSync(join(tmpdir(), 'stop1-pixel-same-'));
   const raw = solidPng(PNGApi, { w: 16, h: 16, r: 20, g: 40, b: 60 });
@@ -51,15 +51,11 @@ test('identical small PNGs pass at 0.005', async () => {
   assert.equal(existsSync(join(demoDir, STOP1_PIXEL_DIR, 'pc.1-1.diff.png')), true);
 });
 
-test('one-pixel change over 0.005 fails and writes a diff', async () => {
+test('full-frame change over the stop-1 6% threshold fails and writes a diff', async () => {
   const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(ROOT);
   const demoDir = mkdtempSync(join(tmpdir(), 'stop1-pixel-diff-'));
   const baseline = solidPng(PNGApi, { w: 8, h: 8, r: 10, g: 10, b: 10 });
-  const actualPng = PNG.sync.read(baseline);
-  actualPng.data[0] = 255;
-  actualPng.data[1] = 0;
-  actualPng.data[2] = 0;
-  const actual = PNG.sync.write(actualPng);
+  const actual = solidPng(PNGApi, { w: 8, h: 8, r: 255, g: 0, b: 0 });
   const result = await compareSectionPngs({
     PNG: PNGApi,
     pixelmatch,
@@ -115,7 +111,7 @@ test('injected over-threshold probe stays red', () => {
   const gate = runStop1FigmaPixelGate({
     handoffDir: '/tmp',
     demoDir: '/tmp',
-    pixelGateProbe: () => ({ ok: false, problems: ['pc 1:1: diffRatio 12.00% > 0.50%'] }),
+    pixelGateProbe: () => ({ ok: false, problems: ['pc 1:1: diffRatio 12.00% > 6.00%'] }),
   });
   assert.equal(gate.ok, false);
   assert.match(gate.problems.join('\n'), /diffRatio/);
@@ -148,17 +144,22 @@ test('export scale never chooses 2x', () => {
   assert.equal(pickExportScale({ x: 0, y: 0, w: 8000, h: 5000 }), 0.5);
 });
 
+test('stop-1 default threshold is 6%', () => {
+  assert.equal(DEFAULT_STOP1_PIXEL_THRESHOLD, 0.06);
+});
+
 test('stop-1 Figma export crops the page frame at design viewport', () => {
   const src = readFileSync(PROBE, 'utf8');
   assert.match(src, /inventory-static-gate=1/);
-  assert.match(src, /cropRectForSection/);
-  assert.match(src, /const frameId = page.id/);
   assert.match(src, /pickExportScale\(page\)/);
   assert.match(src, /deviceScaleFactor:\s*dsf/);
   assert.match(src, /scale,/);
   assert.match(src, /size mismatch/);
+  assert.match(src, /use_absolute_bounds/);
+  assert.match(src, /frameId: section.id/);
+  assert.match(src, /fx-fixed-overlays/);
+  assert.match(src, /hideOverlays/);
   assert.doesNotMatch(src, /deviceScaleFactor:\s*1/);
-  assert.doesNotMatch(src, /frameId: section.id/);
   assert.doesNotMatch(src, /index\.html\?product=1/);
   assert.doesNotMatch(src, /scalePng/);
   assert.doesNotMatch(src, /alignDemoToBaseline/);

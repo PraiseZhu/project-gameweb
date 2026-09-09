@@ -91,6 +91,8 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /listedHeroArt/);
   assert.match(render, /firstScreenKvInSection/);
   assert.match(render, /coverHeroSlot/);
+  assert.match(render, /const coverHeroSlot = heroSlot;/);
+  assert.doesNotMatch(render, /coverHeroSlot = heroSlot \|\| \(isKv && ids\[0\]/);
   assert.match(render, /scale: pageStageScale/);
   assert.match(render, /const extra = designHeight - heroHeight/);
   assert.match(render, /String\(heroSlot\.layoutOffsetDesign\)/);
@@ -100,6 +102,13 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /fixedHost\.style\.position = 'sticky'/);
   assert.match(render, /fx-fixed-zoom/);
   assert.match(render, /isTopBarChrome/);
+  assert.match(render, /data-fix-slot-anchor/);
+  assert.match(render, /first-screen-bottom/);
+  assert.match(render, /data-fix-zoom-span/);
+  assert.match(render, /overlaySpan/);
+  assert.match(render, /overlayHostH/);
+  assert.match(render, /slotH - gapBelow - sourceH/);
+  assert.match(render, /顶部信息\|顶部固定/);
   assert.match(render, /first-section-pagebox/);
   assert.doesNotMatch(render, /fixedHost\.style\.position = 'fixed'/);
   assert.doesNotMatch(render, /fixedStage\.style\.position = 'sticky'/);

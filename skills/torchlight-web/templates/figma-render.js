@@ -2703,11 +2703,34 @@
            sticky + top:0 pins to `.frame` itself (the actual viewport).
            Do not put zoom/transform on this pin layer; inner wrapper takes k
            so overlay-absolute pageBox stays 1:1. */
+        /* Height-0 sticky + overflow:visible paints overflow at rest, then
+           Chromium clips that overflow as soon as `.frame` scrolls
+           (mobile right chrome "runs up and vanishes"). Host height must
+           cover the *scaled* overlay span so the sticky box itself is the
+           paint box; inner overflow is then empty. Negative margin-bottom
+           cancels that height in the scroll flow so the page stage still
+           starts at y=0. */
+        const overlayRoots = Array.isArray(__activeTruth.fixedOverlays.nodes)
+          ? __activeTruth.fixedOverlays.nodes
+          : [];
+        const overlayBottoms = overlayRoots.map((node) => {
+          const box = node && (node.pageBox || node.box);
+          const y = Number(box && (box.y ?? box.top));
+          const h = Number(box && (box.h ?? box.height));
+          if (!Number.isFinite(y) || !Number.isFinite(h) || h <= 0) return 0;
+          return y + h;
+        }).filter((bottom) => Number.isFinite(bottom) && bottom > 0);
+        const slotFloor = heroSlot && Number(heroSlot.designHeight) > 0
+          ? Number(heroSlot.designHeight)
+          : 0;
+        const overlaySpan = Math.max.apply(null, overlayBottoms.concat([slotFloor, 1]));
+        const overlayHostH = overlaySpan * k;
         fixedHost.style.position = 'sticky';
         fixedHost.style.left = '0';
         fixedHost.style.top = '0';
         fixedHost.style.width = designWidth + 'px';
-        fixedHost.style.height = '0';
+        fixedHost.style.height = overlayHostH + 'px';
+        fixedHost.style.marginBottom = (-overlayHostH) + 'px';
         fixedHost.style.overflow = 'visible';
         fixedHost.style.pointerEvents = 'none';
         fixedHost.style.zIndex = '20';
@@ -2719,19 +2742,11 @@
         fixedStage.style.left = '0';
         fixedStage.style.top = '0';
         fixedStage.style.width = designWidth + 'px';
-        /* Sticky needs a real height or the bar cannot pin. Use the first
-           overlay's Figma height; overflow stays visible for hanging art.
-           Only read the overlay root itself — asArr() on a truth object
-           would also pick descendant pageBoxes (hero 2143) and stretch
-           the sticky host to a full first-screen. */
-        const overlayRoots = Array.isArray(__activeTruth.fixedOverlays.nodes)
-          ? __activeTruth.fixedOverlays.nodes
-          : [];
-        const overlayHeights = overlayRoots.map((node) => {
-          const box = node && (node.pageBox || node.box);
-          return Number(box && (box.h ?? box.height));
-        }).filter((h) => Number.isFinite(h) && h > 0);
-        fixedStage.style.height = (overlayHeights[0] || 1) + 'px';
+        /* Inner zoom wrapper must cover every overlay root's pageBox bottom
+           *and* the remapped first-screen-floor (mobile arrow 1534 vs
+           inventory 1315). Using only inventory bottoms clipped the arrow. */
+        fixedStage.style.height = overlaySpan + 'px';
+        fixedStage.setAttribute('data-fix-zoom-span', String(overlaySpan));
         fixedStage.style.overflow = 'visible';
         /* zoom on a sticky descendant subpixel-snaps while .frame scrolls
            (mobile dTop 3–24px). Scale from 0,0 keeps overlay-absolute pageBox
@@ -3394,12 +3409,15 @@
           /* A fixed navigation item is only targetable later if its complete
              source-ordered set can be paired 1:1 with page sections. */
           const fixedOwner = p.role === 'btn' ? ownerFixed(n) : null;
-          /* Directory nav-items pair 1:1 with sections. A wide top bar
+          /* Directory nav-items pair 1:1 with sections. A top bar
              (fix/顶部信息) holding 官方充值/进入官网 is viewport chrome, not a
-             rail; chrome syncHeroEntryNavigation would rewrite those tops. */
+             rail — even when the mobile box is slightly portrait (366×374).
+             Chrome syncHeroEntryNavigation would rewrite those tops. */
           const navRailOwner = fixedOwner && (fixedById.get(String(fixedOwner)) || byId.get(String(fixedOwner)));
           const navRailBox = navRailOwner && (navRailOwner.pageBox || navRailOwner.box);
-          const isTopBarChrome = !!(navRailBox && Number(navRailBox.w) > Number(navRailBox.h));
+          const navRailLabel = String((navRailOwner && (navRailOwner.label || navRailOwner.name)) || '');
+          const isTopBarChrome = /顶部信息|顶部固定/.test(navRailLabel)
+            || !!(navRailBox && Number(navRailBox.w) > Number(navRailBox.h));
           if (fixedOwner && !isTopBarChrome) {
             attrs['data-nav-item'] = 'true';
             attrs['data-nav-owner'] = fixedOwner;
@@ -3411,8 +3429,20 @@
             attrs['data-fix-pin'] = 'viewport';
             const fromRaw = p.params.from;
             if (fromRaw != null && /^[1-9]\d*$/.test(String(fromRaw))) attrs['data-fix-from'] = String(fromRaw);
-            if (landscapeFix) {
-              /* Landscape fix/顶部信息 is viewport chrome, not a left directory. */
+            const fixLabel = String(p.label || n.name || '');
+            const firstScreenBottomHint = /箭头|下滑|scroll/.test(fixLabel)
+              && Number(fixBox && (fixBox.h ?? 0)) > 0
+              && Number(fixBox && (fixBox.w ?? 0)) <= Number(fixBox.h) * 4;
+            const topInfoChrome = /顶部信息|顶部固定/.test(fixLabel);
+            if (firstScreenBottomHint) {
+              /* fix/箭头 sits on the first-screen floor in Figma. Product 100vh
+                 crops a tall hero, so keep it as viewport chrome and remap Y
+                 to the slot bottom — never a directory rail. */
+              attrs['data-topbar-chrome'] = 'true';
+              attrs['data-fix-slot-anchor'] = 'first-screen-bottom';
+            } else if (landscapeFix || topInfoChrome) {
+              /* Landscape *or* named 顶部信息 is viewport chrome, not a left
+                 directory. Mobile 366×374 fails w>h but is still the right bar. */
               attrs['data-topbar-chrome'] = 'true';
             } else {
               /* The sticky rail must stay visually above content, but its empty
@@ -4646,6 +4676,13 @@
           const pinViewport = evidenceAttrs?.['data-fix-pin'] === 'viewport'
             || pfx === 'fix'
             || !!(parent && parent.el && parent.el.closest && parent.el.closest('[data-fix-pin="viewport"]'));
+          const slotAnchor = evidenceAttrs?.['data-fix-slot-anchor'] === 'first-screen-bottom'
+            || !!(parent && parent.el && parent.el.closest && parent.el.closest('[data-fix-slot-anchor="first-screen-bottom"]'));
+          /* Product 100vh slot is shorter than a tall Figma hero (2143 → 2160
+             design px at 1440×900 / 0.5). Inventory pageBox y=2014 would paint
+             the arrow below the cropped first screen. Keep distance-to-hero-
+             bottom: slotBottom − (heroH − sourceBottom). Design-viewport
+             (heroUiYRatio≈1) is a no-op. */
           /* Full-bleed first-screen art (kv / img title / play btn) shares the
              section pageBox origin. heroUiYRatio was written for lower-hero CTA
              chrome; applying it here slides KV down and exposes --stage. Lock
@@ -4667,7 +4704,19 @@
           const rideOwner = heroUiBlocks && parent && !parentIsHeroSection && !pinViewport
             ? heroUiOwnerBlock(heroUiBlocks, localX + (box.w ?? 0) / 2, sourceTop + sourceH / 2)
             : null;
-          if (rideOwner) {
+          if (slotAnchor && pinViewport && heroSlot && Number(heroSlot.heroHeight) > 0 && Number(heroSlot.designHeight) > 0) {
+            const slotH = Number(heroSlot.designHeight);
+            const gapBelow = Number(heroSlot.heroHeight) - (sourceTop + sourceH);
+            /* Keep gap-to-hero-bottom on the 100vh slot, same as PC. KV
+               cover-crop fills the window, so the slot floor is the visible
+               first-screen floor — including a short Figma hero padded up
+               (mobile 1334 → 1623). Overlay span must cover this remapped
+               bottom or the arrow is clipped. */
+            heroUiTop = slotH - gapBelow - sourceH;
+            heroUiAnchored = true;
+            el.setAttribute('data-fix-slot-top', String(heroUiTop));
+            el.setAttribute('data-fix-slot-floor', String(slotH));
+          } else if (rideOwner) {
             heroUiTop = rideOwner.stretchedTop + (sourceTop - rideOwner.y);
             heroUiAnchored = true;
           } else if (heroUiBlocks && (!parent || parentIsHeroSection) && Number.isFinite(sourceTop) && !pinViewport
@@ -4718,11 +4767,12 @@
         const isKv = /^kv(?:\/|$)/i.test(layerName);
         const firstScreenKvInSection = isHeroStage && isKv
           && (!parent || String(__u(parent && parent.nid)) === String(__u(sid)));
-        /* Product 100vh cover-crop still applies when inventory-static-gate=1
-           nulls heroSlot (design-viewport coords). Unnamed `kv` under sec/1
-           is first-screen art either way; later bg/* stays on width-k. */
-        const coverHeroSlot = heroSlot || (isKv && ids[0] && String(sid) === String(ids[0])
-          ? { sectionId: ids[0] } : null);
+        /* Product 100vh cover-crop is product/QA only. inventory-static-gate=1
+           already nulls heroSlot so design-viewport coords stay pageBox;
+           do not re-apply cover-crop from the first-section kv fallback
+           (that was y=1071.5 at 3840×4286 vs a 2143 KV). Unnamed `kv`
+           under sec/1 is still first-screen art in product view. */
+        const coverHeroSlot = heroSlot;
         const coverHeroVisualScale = Number(heroVisualScale) > 0 ? Number(heroVisualScale)
           : (Number(k) > 0 ? Number(k) : 1);
         const coverPageStageScale = Number(pageStageScale) > 0 ? Number(pageStageScale) : 1;

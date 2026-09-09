@@ -114,52 +114,20 @@ function underFixedOwner(node, fixedIds) {
   return asArray(node?.ancestorIds).some((id) => fixedIds.has(String(id)));
 }
 
-function overlayLocalBox(node, owner) {
-  const page = node?.pageBox;
-  const ownerPage = owner?.pageBox;
-  if (!page || !ownerPage) return null;
-  return {
-    x: Number(page.x) - Number(ownerPage.x),
-    y: Number(page.y) - Number(ownerPage.y),
-    w: Number(page.w),
-    h: Number(page.h),
-  };
-}
-
-function remapSliceToOverlay(node, owner) {
-  const sliceBox = node?.sliceExport?.box;
-  const ownerPage = owner?.pageBox;
-  if (!sliceBox || !ownerPage) return node?.sliceExport || null;
-  return {
-    ...node.sliceExport,
-    box: {
-      x: Number(sliceBox.x) - Number(ownerPage.x),
-      y: Number(sliceBox.y) - Number(ownerPage.y),
-      w: Number(sliceBox.w),
-      h: Number(sliceBox.h),
-    },
-  };
-}
-
-/** fix/ pins to the viewport. Every descendant uses overlay-absolute
- *  (pageBox − owner.pageBox). parentBox is relative to the direct parent
- *  only — using it as overlay origin puts nested img/ at (57,34) on the
- *  page and clips the slice out of the button. */
+/** fix/ pins to the viewport. The sticky host sits at page origin, so the
+ *  overlay root keeps inventory pageBox (right chrome at 2764,70 — not 0,0).
+ *  Descendants keep inventory pageBox too: the renderer subtracts the painted
+ *  parent. Rewriting them to pageBox − owner here double-subtracts and parks
+ *  right chrome / arrow at the sticky origin. parentBox is relative to the
+ *  direct parent only — never the overlay origin. */
 function paintFixedNode(node, owner) {
   const painted = paintWithPageBox(node);
   if (!owner) return painted;
-  const ownerLocal = {
-    x: 0,
-    y: 0,
-    w: Number(owner.pageBox?.w ?? owner.box?.w ?? 0),
-    h: Number(owner.pageBox?.h ?? owner.box?.h ?? 0),
-  };
   if (String(node?.id) === String(owner?.id)) {
-    return { ...painted, box: ownerLocal, pageBox: ownerLocal, pin: owner.pin || 'viewport' };
+    const ownerPage = geomOf(owner.pageBox || owner.box);
+    return { ...painted, box: ownerPage, pageBox: ownerPage, pin: owner.pin || 'viewport' };
   }
-  const local = overlayLocalBox(node, owner);
-  if (!local) return painted;
-  return { ...painted, box: local, pageBox: local, sliceExport: remapSliceToOverlay(node, owner) };
+  return painted;
 }
 
 /**
