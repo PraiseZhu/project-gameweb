@@ -32,9 +32,18 @@ opacity. Figma motion truth is still absent; do not fake it.
   只有一个 sibling 且未重复列出 `sectionIds`（SS6 手机稿常见），该 sibling
   仍是内容 root，不得因此关掉 100vh 槽。
 
-首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 统一增加
-`max(0, slotDesignHeight - heroDesignHeight)` 的设计坐标偏移（`layoutOffsetDesign`），
-因此它们从实际 viewport 高度之后开始；长 `bg/*` 被裁掉的尾巴以 `bg-tail` 续画在
+首 section 作为 hero。KV cover-crop 只填满视口视觉平面；后续 section 按
+`layoutOffsetDesign = viewportH / k − heroDesignHeight` 偏移（可正可负），
+因此它们从实际 viewport 高度之后开始：短 hero 垫高，高稿裁到 100vh，
+`scrollTop=0` 时下一屏不得探进视口。官网 SS13 两屏 CSS 贴齐（1920×1080 /
+1440×900 均 gap:0），不叠像素；冻档 `zoom(k)` 若把交界栅成半像素细缝，
+只把后屏 used-top 吸到首屏 used-bottom（`data-hero-join-css="abut"`）。
+后屏 stage 已经带了这份偏移；坐在 sec/2、sec/3 里的 `bg/pc背景*` 不得再加一次
+`afterHeroBackgroundShift`（那会在冻档拉开交界、在 `>1920` 把图从 UI 上拽走）。
+这份二次偏移只留给整页长 `bg`（`backgroundHeroShift`）。后屏 `bg` cover 对着后屏
+stage 盒子，不是第二扇视口窗。冻档后屏 CSS 短于窗口时才把盒子垫到槽高；`>1920`
+k 变大后稿高已经够高，不再垫。`extra<0` 时后屏 paint-root 层高也跟着缩短，滚动高度跟 `bg/pc背景2` 的底，不在 sec/3 下面留 `#180f02`。
+长 `bg/*` 被裁掉的尾巴以 `bg-tail` 续画在
 偏移之后，页面背景跟着走，不会露出空带。KV/page chrome 与 fixed overlay 仍按
 原 sibling 顺序绘制。滚动槽只记账，不得给 hero 加 `%` 假离场。
 

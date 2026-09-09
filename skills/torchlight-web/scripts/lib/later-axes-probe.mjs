@@ -1,7 +1,8 @@
 /**
  * Later-axes Chrome probe (B1): interaction wiring still exists / unresolved
- * stays inert, 1126/1127 composition + 10vw ruler match DESIGN.md, and
- * language/modal pixels match the authored fill / sheet pose.
+ * stays inert, 1126/1127 composition + 10vw ruler match DESIGN.md,
+ * 1440 product-view KV fills the real viewport (not the frozen 1920 column),
+ * and language/modal pixels match the authored fill / sheet pose.
  * Does not write human-review accepted.
  */
 import { createHash } from 'node:crypto';
@@ -26,6 +27,12 @@ import {
 export const LATER_AXES_PROBE_SCHEMA = 'torchlightweb-later-axes-probe/v1';
 export const LATER_AXES_PROBE_FILE = 'later-axes-probe.json';
 export const LATER_AXES_PROBE_WIDTHS = Object.freeze([1126, 1127]);
+/* Product-view KV window. 1440 must fill the real viewport, not ride the
+   frozen 1920 column (1920×1071). Interaction pixels stay on WIDTHS. */
+export const LATER_AXES_PRODUCT_KV_SAMPLES = Object.freeze([
+  { width: 1440, height: 900 },
+]);
+const KV_WINDOW_TOLERANCE_PX = 2;
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const WIDTHS = LATER_AXES_PROBE_WIDTHS;
@@ -82,7 +89,40 @@ export function laterAxesProbeEvidenceComplete(parsed, { demoDir } = {}) {
     if (!Number.isFinite(expectedFont) || expectedFont <= 0) return false;
     if (!Number.isFinite(measuredFont) || Math.abs(measuredFont - expectedFont) > 0.5) return false;
   }
+  if (!laterAxesProductKvEvidenceComplete(parsed)) return false;
   if (!laterAxesPixelEvidenceComplete(parsed)) return false;
+  return true;
+}
+
+export function laterAxesProductKvEvidenceComplete(parsed) {
+  const samples = Array.isArray(parsed?.productKv) ? parsed.productKv : [];
+  const byKey = new Map(samples.map((sample) => [`${Number(sample?.width)}x${Number(sample?.height)}`, sample]));
+  for (const wanted of LATER_AXES_PRODUCT_KV_SAMPLES) {
+    const sample = byKey.get(`${wanted.width}x${wanted.height}`);
+    if (!sample) return false;
+    if (sample.ok !== true || sample.measured !== true) return false;
+    const kvW = Number(sample.kvWidth);
+    const kvH = Number(sample.kvHeight);
+    if (!Number.isFinite(kvW) || !Number.isFinite(kvH)) return false;
+    if (Math.abs(kvW - wanted.width) > KV_WINDOW_TOLERANCE_PX) return false;
+    if (Math.abs(kvH - wanted.height) > KV_WINDOW_TOLERANCE_PX) return false;
+    if (sample.coversViewport !== true) return false;
+    if (sample.laterOutside !== true) return false;
+    if (sample.ctaOnScreen !== true) return false;
+    const columnWidth = Number(sample.columnWidth);
+    const columnLeft = Number(sample.columnLeft);
+    const expectedScale = widthScale({ viewportW: wanted.width });
+    if (!Number.isFinite(columnWidth) || Math.abs(columnWidth - expectedScale.columnWidth) > KV_WINDOW_TOLERANCE_PX) {
+      return false;
+    }
+    if (!Number.isFinite(columnLeft) || Math.abs(columnLeft - expectedScale.columnLeft) > KV_WINDOW_TOLERANCE_PX) {
+      return false;
+    }
+    /* Fail closed if KV still rides the frozen column (1440 → 1920×1071). */
+    if (Math.abs(kvW - expectedScale.columnWidth) <= KV_WINDOW_TOLERANCE_PX && expectedScale.columnWidth !== wanted.width) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -115,6 +155,23 @@ export function greenLaterAxesProbeFixture({
         clickableInertCount: 0,
         wiredCount: 0,
         inertCount: 0,
+      };
+    }),
+    productKv: LATER_AXES_PRODUCT_KV_SAMPLES.map((sample) => {
+      const scale = widthScale({ viewportW: sample.width });
+      return {
+        width: sample.width,
+        height: sample.height,
+        ok: true,
+        measured: true,
+        kvWidth: sample.width,
+        kvHeight: sample.height,
+        coversViewport: true,
+        laterOutside: true,
+        ctaOnScreen: true,
+        columnWidth: scale.columnWidth,
+        columnLeft: scale.columnLeft,
+        k: scale.k,
       };
     }),
     pixel: {
@@ -189,6 +246,104 @@ function loadTruth(demoDir) {
   const path = join(packRoot(demoDir), 'truth.json');
   if (!existsSync(path)) throw new Error('demo truth.json missing; cannot probe later axes');
   return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+async function measureProductKvWindow(page, base, { width, height }) {
+  await page.setViewportSize({ width, height });
+  await page.goto(`${base}/index.html?product=1&interaction=1`, {
+    waitUntil: 'load',
+    timeout: 120000,
+  });
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('.frame[data-render-base]');
+    return !!(frame && window.__qa);
+  }, null, { timeout: 120000 });
+  await page.evaluate(() => new Promise((resolveWait) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolveWait));
+  }));
+  return page.evaluate((sample) => {
+    const frame = document.querySelector('.frame');
+    const wrap = document.querySelector('.wrap') || document.body;
+    const kv = document.querySelector('[data-kv-cover-plane="cover-crop"]')
+      || document.querySelector('[data-name="kv"]')
+      || document.querySelector('[data-node-name="kv"]');
+    const kvRect = kv ? kv.getBoundingClientRect() : null;
+    const frameRect = frame ? frame.getBoundingClientRect() : null;
+    const wrapCs = wrap ? getComputedStyle(wrap) : null;
+    const htmlCs = getComputedStyle(document.documentElement);
+    const bodyCs = getComputedStyle(document.body);
+    const overflowX = wrapCs?.overflowX || htmlCs.overflowX || bodyCs.overflowX;
+    const overflowY = wrapCs?.overflowY || htmlCs.overflowY || bodyCs.overflowY;
+    const columnWidth = frame ? Number(frame.getAttribute('data-product-column-width')) || frameRect.width : null;
+    const columnLeft = frame
+      ? Number(frame.getAttribute('data-product-column-left'))
+        || parseFloat(frame.style.left || '0')
+        || frameRect.left
+      : null;
+    const k = frame && window.__figmaRender && typeof window.__figmaRender.scale === 'function'
+      ? window.__figmaRender.scale()
+      : (frame ? Number(frame.getAttribute('data-page-scale')) : null);
+    const visibleLeft = kvRect ? Math.max(0, kvRect.left) : null;
+    const visibleTop = kvRect ? Math.max(0, kvRect.top) : null;
+    const visibleRight = kvRect ? Math.min(sample.width, kvRect.right) : null;
+    const visibleBottom = kvRect ? Math.min(sample.height, kvRect.bottom) : null;
+    const kvWidth = Number.isFinite(visibleLeft) && Number.isFinite(visibleRight)
+      ? Math.max(0, visibleRight - visibleLeft)
+      : null;
+    const kvHeight = Number.isFinite(visibleTop) && Number.isFinite(visibleBottom)
+      ? Math.max(0, visibleBottom - visibleTop)
+      : null;
+    const widthOk = Number.isFinite(kvWidth) && Math.abs(kvWidth - sample.width) <= 2;
+    const heightOk = Number.isFinite(kvHeight) && Math.abs(kvHeight - sample.height) <= 2;
+    const frozenColumnRide = Number.isFinite(kvRect && kvRect.width) && Number.isFinite(columnWidth)
+      && Math.abs(kvRect.width - columnWidth) <= 2
+      && Math.abs(columnWidth - sample.width) > 2;
+    const coversViewport = Number.isFinite(kvRect && kvRect.width) && Number.isFinite(kvRect && kvRect.height)
+      && kvRect.width + 2 >= sample.width
+      && kvRect.height + 2 >= sample.height;
+    const later = [...(frame?.querySelectorAll('[data-hero-slot-role="after-hero"]') || [])];
+    const firstLaterTop = later.length
+      ? Math.min(...later.map((el) => el.getBoundingClientRect().top))
+      : null;
+    const laterOutside = firstLaterTop == null || firstLaterTop >= sample.height - 1;
+    /* First-screen CTA only. A later-page 立即下载 / 查看更多 sits below the
+       100vh slot; picking the globally lowest match would fail a correct pin. */
+    const hero = frame?.querySelector('[data-hero-slot-role="hero"]');
+    const cta = [...(hero?.querySelectorAll('[data-prefix="btn"], [data-go], [data-btn-name]') || [])]
+      .map((el) => {
+        const name = `${el.getAttribute('data-btn-name') || ''} ${el.getAttribute('data-name') || ''} ${el.getAttribute('data-go') || ''}`;
+        if (!/下载|预约|cta|download/i.test(name) && !/立即下载|预约/.test(el.textContent || '')) return null;
+        const r = el.getBoundingClientRect();
+        if (r.width < 8 || r.height < 8) return null;
+        return { name, top: r.top, bottom: r.bottom };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.bottom - a.bottom)[0];
+    const ctaOnScreen = !!(cta && cta.top >= -2 && cta.bottom <= sample.height + 2);
+    return {
+      width: sample.width,
+      height: sample.height,
+      measured: !!kvRect,
+      kvWidth,
+      kvHeight,
+      kvSheetWidth: kvRect ? kvRect.width : null,
+      kvSheetHeight: kvRect ? kvRect.height : null,
+      kvLeft: kvRect ? kvRect.left : null,
+      columnWidth,
+      columnLeft,
+      k,
+      composition: frame ? (frame.getAttribute('data-render-base') || null) : null,
+      overflowX,
+      overflowY,
+      frozenColumnRide,
+      coversViewport,
+      firstLaterTop,
+      laterOutside,
+      ctaBottom: cta ? cta.bottom : null,
+      ctaOnScreen,
+      ok: widthOk && heightOk && coversViewport && !frozenColumnRide && laterOutside && ctaOnScreen,
+    };
+  }, { width, height });
 }
 
 async function measurePage(page, width) {
@@ -860,6 +1015,7 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
   const samples = [];
   const problems = [];
   let payloadPixel = { ok: false, languages: [], stalePrefs: { ok: false }, modal: { ok: false }, problems: ['pixel-not-measured'] };
+  const productKv = [];
   if (Number(DESIGN_POLICY.officialRootFontVw) !== 10) {
     problems.push(`DESIGN.md officialRootFontVw ${DESIGN_POLICY.officialRootFontVw} != 10`);
   }
@@ -901,6 +1057,36 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
       }
       samples.push(item);
     }
+    for (const sample of LATER_AXES_PRODUCT_KV_SAMPLES) {
+      const measured = await measureProductKvWindow(page, base, sample);
+      const expectedScale = widthScale({ viewportW: sample.width });
+      const item = {
+        ...measured,
+        expectedColumnWidth: expectedScale.columnWidth,
+        expectedColumnLeft: expectedScale.columnLeft,
+        expectedK: expectedScale.k,
+      };
+      if (!measured.measured) {
+        problems.push(`product ${sample.width}x${sample.height}: KV cover plane missing`);
+      } else if (measured.frozenColumnRide) {
+        problems.push(`product ${sample.width}x${sample.height}: KV ${measured.kvWidth}x${measured.kvHeight} still rides frozen column ${measured.columnWidth}`);
+      } else if (!measured.laterOutside) {
+        problems.push(`product ${sample.width}x${sample.height}: later section top ${measured.firstLaterTop} inside viewport ${sample.height}`);
+      } else if (!measured.ctaOnScreen) {
+        problems.push(`product ${sample.width}x${sample.height}: CTA bottom ${measured.ctaBottom} not on the 100vh slot`);
+      } else if (!measured.ok) {
+        problems.push(`product ${sample.width}x${sample.height}: KV ${measured.kvWidth}x${measured.kvHeight} != viewport ${sample.width}x${sample.height}`);
+      }
+      if (Number.isFinite(measured.columnWidth)
+        && Math.abs(measured.columnWidth - expectedScale.columnWidth) > KV_WINDOW_TOLERANCE_PX) {
+        problems.push(`product ${sample.width}x${sample.height}: columnWidth ${measured.columnWidth} != ${expectedScale.columnWidth}`);
+      }
+      if (Number.isFinite(measured.columnLeft)
+        && Math.abs(measured.columnLeft - expectedScale.columnLeft) > KV_WINDOW_TOLERANCE_PX) {
+        problems.push(`product ${sample.width}x${sample.height}: columnLeft ${measured.columnLeft} != ${expectedScale.columnLeft}`);
+      }
+      productKv.push(item);
+    }
     const pixel = await measureInteractionPixels(page, { base, width: 1920 });
     payloadPixel = pixel;
     for (const problem of pixel.problems || []) problems.push(problem);
@@ -915,6 +1101,7 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
     at: now,
     demoDigest: laterAxesDemoDigest(root),
     samples,
+    productKv,
     pixel: payloadPixel,
     problems,
   };

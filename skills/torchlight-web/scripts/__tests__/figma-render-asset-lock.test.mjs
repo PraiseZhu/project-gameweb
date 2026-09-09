@@ -31,6 +31,30 @@ test('missing figma-indicator fallback sources fail closed when those roots were
   );
 });
 
+test('pages without ind/ skip figma-indicator fallback sources', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-skip-'));
+  const assetsDir = join(dir, 'assets');
+  mkdirSync(assetsDir);
+  const result = installIndicatorFallbacks(assetsDir, {}, {
+    sections: { 'sec:1': { nodes: [{ id: '1:1', type: 'FRAME', name: 'sec/1' }] } },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, 'no-ind-role');
+});
+
+test('pages with ind/ still fail closed without fallback sources', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-need-'));
+  const assetsDir = join(dir, 'assets');
+  mkdirSync(assetsDir);
+  assert.throws(
+    () => installIndicatorFallbacks(assetsDir, {}, {
+      sections: { 'sec:1': { nodes: [{ id: '1:2', type: 'INSTANCE', name: 'ind/进度条' }] } },
+    }),
+    /missing figma-indicator fallback sources/,
+  );
+});
+
 test('indicator fallback checks only roots present in the manifest', () => {
   const dir = mkdtempSync(join(tmpdir(), 'torch-ind-one-root-'));
   const assetsDir = join(dir, 'assets');
@@ -341,7 +365,7 @@ test('hero cover scale stays on the hero slot, not the released page stage', () 
   assert.match(renderer, /data-kv-cover-plane/);
   assert.match(renderer, /data-hero-ui-plane/);
   assert.match(renderer, /stage\.style\.zoom = String\(pageStageMode \? pageStageScale : \(pageScope \? 1 : k\)\)/);
-  assert.match(renderer, /planeRatio > 1\.001/);
+  assert.match(renderer, /Math\.abs\(planeRatio - 1\) > 0\.001/);
   assert.match(renderer, /heroVisualPlane \|\| firstScreenKvInSection/);
   assert.match(renderer, /coverHeroSlot/);
   assert.match(renderer, /coverHeroVisualScale/);

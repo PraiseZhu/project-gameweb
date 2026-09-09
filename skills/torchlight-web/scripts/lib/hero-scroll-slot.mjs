@@ -46,11 +46,15 @@ export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, fi
     && Number.isFinite(firstY);
   if (!valid) return null;
   const designHeight = viewport / factor;
-  /* 100vh may pad a short hero. A taller Figma hero must keep its full
-     pageBox and flow downward — never crop, never pull later sections up. */
-  const extra = Math.max(0, designHeight - heroHeight);
+  /* Official first screen is the real viewport (100vh). Later sections start
+     at that edge in CSS: extra = viewport/k − heroH. Positive pads a short
+     hero; negative crops a tall Figma hero so scrollTop=0 never shows sec/2.
+     Do not keep later at k×hero when that is taller than the window. Official
+     SS13 abuts in CSS (gap:0); the renderer snaps later used-top to the hero
+     used-bottom so zoom(k) cannot leave a hairline. */
+  const extra = designHeight - heroHeight;
   const layoutOffsetDesign = extra;
-  const releaseDistance = extra * factor;
+  const releaseDistance = Math.max(0, extra) * factor;
   const startsAtPageOrigin = Math.abs(firstY - Number(pageOriginY || 0)) <= 0.5;
   if (!startsAtPageOrigin || contentRootId == null) return null;
   return {

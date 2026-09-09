@@ -123,7 +123,10 @@ not installed into `.claude/skills/`.
 
 The default workflow is the **Main Skill**: extract Figma truth, structure
 content/geometry/components/states/interactions, record official behavior
-references, wire the Demo, and run deterministic gates/final review. It is
+references, wire the Demo, and run deterministic gates/final review. Slice
+export (`figma-assets`) installs `figma-indicator-*` fallback files only when
+the ready truth still has an `ind/` owner. A page without `ind/` must not fail
+closed on those files, and must not invent a progress mark. It is
 complemented by independent reusable capabilities and one optional audit:
 
 - **Translation Skill** — locale/copy context plus font, glyph, weight, and
@@ -140,19 +143,22 @@ complemented by independent reusable capabilities and one optional audit:
   may land in `templates/figma-render.js` without changing accepted static
   geometry. Arrows are commands on one source-backed owner; incomplete
   graphs stay unresolved. See `docs/interaction-skill.md`.
-- **Resize Skill** — viewport stretch, composition base, continuous
-  `k = viewportW / designWidth` (official `10vw` ruler), first-screen fill of
-  current viewport height (official `100vh`), product/QA tree from composition
-  width (torchlight official `0–1126` mobile / `≥1127` pc), product-view page
-  X clip, preview 1:1 fit, background/UI/sea plane policies, and hero
-  lock/exit/release geometry while the window size changes
+- **Resize Skill** — viewport stretch, composition base, DESIGN.md §5.0
+  segmented ruler (product and QA simulated viewport share the table:
+  `>1920` `k=viewportW/3840`; `1127–1920` freeze column 1920
+  at `k=0.5` center-crop inside a `viewportW` window (do not put `width=1920; left=负值` on `.frame`); `≤1126` mobile `k=viewportW/750`), official `10vw`
+  html font, first-screen slot = current window height (later section starts at the viewport bottom; title/CTA pin to that slot, not y×k mid-drift), first-screen KV window = real viewport (`max(viewportW/designW,
+  viewportH/heroH)`, not the frozen 1920 column), product/QA tree from
+  composition width (torchlight official `0–1126` mobile / `≥1127` pc),
+  frozen-column page X clip, preview 1:1 fit, background/UI/sea plane policies,
+  and hero lock/exit/release geometry while the window size changes
   (`scripts/lib/resize/index.mjs`; see `docs/resize-skill.md`). Directory
   stretch stays here with the rest of Resize.
 - **Pack (delivery, not a Skill axis)** — after Resize acceptance only.
   Lossy WebP, font subset/woff2, SHA collapse, truth externalize, 15MB
-  served-folder budget. Keep `figma-indicator-*` fallback files. See
-  `docs/pack-skill.md`. Slice-time WebP (alpha lossless / opaque q90) and the
-  10MB `index.html` gate stay in Main.
+  served-folder budget. Keep `figma-indicator-*` fallback files only when the
+  page still has an `ind/` owner. See `docs/pack-skill.md`. Slice-time WebP
+  (alpha lossless / opaque q90) and the 10MB `index.html` gate stay in Main.
 
 **Figma Prototype Truth Audit** is optional evidence, not a prerequisite. It is
 read-only and fail-closed when explicitly requested. `observed` can support a

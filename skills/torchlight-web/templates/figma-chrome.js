@@ -355,7 +355,7 @@
     '.chip{position:absolute;left:10px;top:-21px;font-size:11px;color:var(--dim);white-space:nowrap;',
     'font-variant-numeric:tabular-nums}',
     '.chip b{color:#fff}',
-    '.frame{background:transparent;overflow:visible;transform-origin:0 0;border-radius:6px;',
+    '.frame{background:#180f02;overflow:visible;transform-origin:0 0;border-radius:6px;',
     'box-shadow:0 0 0 1px #000}',
     '[data-product-view="1"] .frame{background:transparent;border-radius:0;box-shadow:none;overflow-x:clip;touch-action:pan-y;overscroll-behavior-x:none}',
     'html{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1))}',
@@ -731,8 +731,9 @@
     };
   }
 
-  /* DESIGN.md §5.0: PC 列在 1127–1920（含 1920）冻 1920，overflow-x hidden 裁掉。
-     切树仍 1126。>1920 列随视口。QA 框内画面走同一把尺；fit/bezel 仍是壳装饰。 */
+  /* DESIGN.md §5.0 同一张表：字/按钮和列宽。产品页和 QA 模拟视口都走。
+     >1920 stretch；1127–1920 冻 1920 / k=0.5 居中裁；≤1126 手机 k=宽/750。
+     QA 的 fit/bezel 仍是壳装饰，不改这把尺。 */
   function productColumnWidth(viewportW, plat) {
     var w = Number(viewportW);
     if (!isFinite(w) || w <= 0) return w;
@@ -741,12 +742,49 @@
     return w;
   }
 
+  function productColumnLeft(viewportW, columnW) {
+    var w = Number(viewportW);
+    var col = Number(columnW);
+    if (!isFinite(w) || !isFinite(col) || w <= 0 || col <= 0) return 0;
+    if (col === w) return 0;
+    return (w - col) / 2;
+  }
+
   function productUiScaleK(viewportW, plat) {
     var w = Number(viewportW);
     if (!isFinite(w) || w <= 0) return null;
     if (plat === 'mobile' || w <= 1126) return w / 750;
     if (w <= 1920) return 0.5;
     return w / 3840;
+  }
+
+  /* DESIGN.md C4: --fx-root-scale only compensates Android / HarmonyOS system
+     font. Desktop must stay empty (official --moo-root-scale is unset). */
+  function applyOfficialRootScale() {
+    if (!PRODUCT_VIEW) return;
+    var ua = '';
+    try { ua = String(navigator.userAgent || ''); } catch (e) { ua = ''; }
+    if (!/Android/i.test(ua) && !/HarmonyOS/i.test(ua)) {
+      document.documentElement.style.removeProperty('--fx-root-scale');
+      return;
+    }
+    var probe = document.createElement('div');
+    probe.setAttribute('data-fx-root-scale-probe', '1');
+    probe.style.cssText = 'position:absolute;visibility:hidden;font-size:16px;width:1rem;height:0;pointer-events:none';
+    document.documentElement.appendChild(probe);
+    var cs = getComputedStyle(probe);
+    var fontPx = parseFloat(cs.fontSize);
+    var remW = parseFloat(cs.width);
+    probe.parentNode && probe.parentNode.removeChild(probe);
+    if (fontPx === 16) {
+      document.documentElement.style.removeProperty('--fx-root-scale');
+      return;
+    }
+    if (isFinite(remW) && Math.abs(remW - 16) > 0.01) {
+      document.documentElement.style.setProperty('--fx-root-scale', String(16 / (remW || 16)));
+      return;
+    }
+    document.documentElement.style.setProperty('--fx-root-scale', '1');
   }
 
   /* overflow-x:hidden still creates a scrollport: JS and touch can set
@@ -1171,10 +1209,19 @@
     stage.classList.remove('tiled');
     wrap.style.display = '';
 
-    var productPlat = PRODUCT_VIEW ? productViewportPlatform() : (compositionKeyForViewport(vp) === 'mobile' ? 'mobile' : 'pc');
+    var productPlat = PRODUCT_VIEW ? productViewportPlatform() : compositionKeyForViewport(vp);
     var columnW = productColumnWidth(vp.w, productPlat);
-    frame.style.width = columnW + 'px';
+    var columnLeft = productColumnLeft(vp.w, columnW);
+    /* The QA/product window is vp.w. Freeze column 1920 lives *inside* that
+       window (left = (vp.w − 1920) / 2). Putting width=1920 + left=-326 on
+       `.frame` itself shoved the crop box outside the bezel. */
+    frame.style.width = vp.w + 'px';
+    frame.style.position = 'relative';
+    frame.style.left = '0';
+    frame.style.marginLeft = '';
+    frame.style.marginRight = '';
     frame.setAttribute('data-product-column-width', String(columnW));
+    frame.setAttribute('data-product-column-left', String(columnLeft));
     if (columnW !== vp.w) frame.setAttribute('data-product-column-frozen', '1920');
     else frame.removeAttribute('data-product-column-frozen');
     if (PRODUCT_VIEW) {
@@ -1200,7 +1247,7 @@
       document.body.style.overflowX = 'clip';
       stage.style.overflowX = 'clip';
       wrap.style.overflow = 'hidden';
-      document.documentElement.style.setProperty('--fx-root-scale', '1');
+      applyOfficialRootScale();
     }
     frame.setAttribute('data-overflow-x', 'hidden');
     frame.style.transform = 'scale(' + scale + ')';
@@ -2171,6 +2218,7 @@
         sections: sections,
         viewportLockedHero: heroActive,
         heroBoundaryLocal: heroActive ? sections[1].top : 0,
+        heroSourceHeight: heroActive ? Number(sections[0] && sections[0].el && sections[0].el.getAttribute('data-hero-source-height')) || Number(sections[0] && sections[0].height) || 0 : 0,
       };
     } catch (e) {
       return null;
@@ -2184,23 +2232,96 @@
     var rootZoom = parseZoomValue(pageRoot && pageRoot.style ? pageRoot.style.zoom : null);
     if (!isFinite(rootZoom) || rootZoom <= 0) return;
     var nextH = Number(vp && vp.h) || Number(layout.vp && layout.vp.h) || frame.clientHeight || 0;
+    /* Official 100vh slot follows the *current* drag height, not the last
+       full-render hero pageBox. Keeping item.height here leaves a black band
+       under KV when W changes and H stays (1568×1080 on a 2143 hero). */
     var targetHeroBoundaryLocal = layout.viewportLockedHero ? (nextH / rootZoom) : 0;
     var baseHeroBoundaryLocal = Number(layout.heroBoundaryLocal) || 0;
+    var heroSourceH = Number(layout.heroSourceHeight) || Number(layout.sections[0] && layout.sections[0].height) || 0;
     for (var i = 0; i < layout.sections.length; i++) {
       var item = layout.sections[i];
       var desiredTop = item.top;
+      var desiredHeight = item.height;
       if (layout.viewportLockedHero) {
         desiredTop = i === 0 ? 0 : targetHeroBoundaryLocal + (item.top - baseHeroBoundaryLocal);
+        if (i === 0) desiredHeight = targetHeroBoundaryLocal;
       }
       item.el.style.top = desiredTop + 'px';
-      item.el.style.height = item.height + 'px';
+      item.el.style.height = desiredHeight + 'px';
+      if (layout.viewportLockedHero && i === 0) {
+        item.el.setAttribute('data-hero-clip-height', String(desiredHeight));
+        if (heroSourceH > 0) item.el.setAttribute('data-hero-source-height', String(heroSourceH));
+      }
     }
+    /* Official SS13 abuts in CSS (gap:0). Light-drag zoom can leave a
+       hairline; snap later used-top to hero used-bottom, no 1px overlap. */
+    if (layout.viewportLockedHero && window.__figmaRender
+      && typeof window.__figmaRender._abutHeroJoinCss === 'function') {
+      window.__figmaRender._abutHeroJoinCss(frame, layout.sections[0].el);
+    }
+  }
+
+  function syncDragHeroCover(vp) {
+    var hero = frame.querySelector('[data-hero-slot-role="hero"]');
+    if (!hero) return;
+    var pageRoot = frame.querySelector('.fx-stage[data-node="__page__"]');
+    var rootZoom = parseZoomValue(pageRoot && pageRoot.style ? pageRoot.style.zoom : null);
+    if (!(rootZoom > 0)) return;
+    var nextW = Number(vp && vp.w) || 0;
+    var nextH = Number(vp && vp.h) || 0;
+    if (!(nextW > 0) || !(nextH > 0)) return;
+    var kv = hero.querySelector('[data-kv-cover-plane="cover-crop"]');
+    if (!kv) return;
+    var sourceW = parseFloat(kv.style.width);
+    var sourceH = parseFloat(kv.style.height);
+    if (!(sourceW > 0) || !(sourceH > 0)) return;
+    var cover = Math.max(nextW / sourceW, nextH / sourceH);
+    var planeRatio = cover / rootZoom;
+    var viewportWDesign = nextW / rootZoom;
+    var viewportHDesign = nextH / rootZoom;
+    var origin = kv.getAttribute('data-kv-cover-origin') || 'center center';
+    var columnW = productColumnWidth(nextW, compositionKeyForViewport(vp));
+    var columnLeftCss = productColumnLeft(nextW, columnW);
+    var columnLeftDesign = columnLeftCss / rootZoom;
+    var coverLeftDesign = (viewportWDesign - sourceW * planeRatio) / 2 - columnLeftDesign;
+    var coverTopDesign = origin === 'center 0' ? 0 : (viewportHDesign - sourceH * planeRatio) / 2;
+    kv.style.left = coverLeftDesign + 'px';
+    kv.style.top = coverTopDesign + 'px';
+    kv.style.transformOrigin = '0 0';
+    kv.style.transform = 'scale(' + planeRatio + ')';
+  }
+
+  function freezeColumnUiK(vp) {
+    var w = Number(vp && vp.w) || 0;
+    var plat = compositionKeyForViewport(vp);
+    var k = productUiScaleK(w, plat);
+    return (k != null && isFinite(k) && k > 0) ? k : null;
+  }
+
+  function syncDragColumnCrop(vp) {
+    var pageRoot = frame.querySelector('.fx-stage[data-node="__page__"]');
+    if (!pageRoot) return;
+    var rootZoom = parseZoomValue(pageRoot.style && pageRoot.style.zoom);
+    if (!(rootZoom > 0)) return;
+    var columnW = productColumnWidth(vp.w, compositionKeyForViewport(vp));
+    var columnLeftCss = productColumnLeft(vp.w, columnW);
+    /* Page-root zoom scales `left`. Design px so CSS crop = (vp.w − 1920) / 2. */
+    var cropLeftDesign = columnLeftCss / rootZoom;
+    pageRoot.style.position = 'relative';
+    pageRoot.style.left = cropLeftDesign + 'px';
+    pageRoot.setAttribute('data-page-stage-crop-left', String(cropLeftDesign));
   }
 
   function syncDragContentFollow(vp) {
     try {
       var baseVp = _lastRenderVp;
-      var followScale = (baseVp && baseVp.w > 0) ? (vp.w / baseVp.w) : 1;
+      var nextK = freezeColumnUiK(vp);
+      var baseK = freezeColumnUiK(baseVp);
+      /* DESIGN.md §5.0：1127–1920 冻 k=0.5。轻拖不得再按窗口宽/上次宽改 UI 尺，
+         否则 1920→1268 会把按钮从 298×96 缩到 ~196。手机档 / >1920 仍跟宽。 */
+      var followScale = (nextK != null && baseK != null && baseK > 0)
+        ? (nextK / baseK)
+        : ((baseVp && baseVp.w > 0) ? (vp.w / baseVp.w) : 1);
       var stages = _dragRootStages || dragFollowRoots();
       for (var i = 0; i < stages.length; i++) {
         var stage = stages[i];
@@ -2210,8 +2331,10 @@
         }
         stage.style.zoom = String(stage.__fxBaseZoom * followScale);
       }
+      syncDragColumnCrop(vp);
       syncFixedOverlayViewport(vp);
       syncDragSectionLayout(vp, followScale);
+      syncDragHeroCover(vp);
       syncStaticKvChrome(vp);
     } catch (error) { /* 临时缩放失败不阻塞拖拽，松手后完整 render 会纠正 */ }
   }

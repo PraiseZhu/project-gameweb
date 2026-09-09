@@ -87,7 +87,7 @@
   /* 当前「设计 px → CSS px」的缩放系数。门 D 的 scaled 绑定与门 F 都读它。
      产品页 UI 尺按 DESIGN.md §5.0 分段：PC 1127–1920 冻列宽 1920 → k=0.5；
      >1920 随视口；手机 viewportW/750。背景 cover 窗仍用真实视口宽，不走这把冻尺。
-     QA 帧继续用被模拟视口宽 ÷ 设计稿宽。html 10vw 不在这里改。 */
+     产品页和 QA 模拟视口同一张表。html 10vw 不在这里改。 */
   _productViewFromCtx(ctx) {
     if (ctx && ctx.productView === true) return true;
     try {
@@ -107,8 +107,8 @@
     if (Number.isFinite(fromFrame) && fromFrame > 0) return fromFrame;
     return fallback;
   },
-  /* DESIGN.md §5.0 产品列宽。只冻 UI 列：1127–1920（含两端）= 1920；
-     >1920 随视口；≤1126 手机列 = 视口。QA 框内画面走同一把尺。 */
+  /* DESIGN.md §5.0 列宽。只冻 UI 列：1127–1920（含两端）= 1920；
+     >1920 随视口；≤1126 手机列 = 视口。产品页和 QA 模拟视口同一张表。 */
   _productColumnWidth(viewportW, designWidth) {
     const w = Number(viewportW);
     const dw = Number(designWidth) || 3840;
@@ -116,6 +116,24 @@
     if (dw <= 750 || w <= 1126) return w;
     if (w <= 1920) return 1920;
     return w;
+  },
+  /* Freeze crop is centered: CSS (viewportW − columnW) / 2. */
+  _columnLeftCss() {
+    const vw = Number(this._viewportWidth);
+    const fw = Number(this._frameWidth);
+    if (!(fw > 0) || !(vw > 0)) return 0;
+    return (vw - fw) / 2;
+  },
+  /* Freeze-band later pageBox 2143×k=1071.5 is 8.5px short of 1080.
+     Pad only that CSS shortfall. >1920 k grows so 2143×k already exceeds
+     the window — do not pad to viewport/k or #180f02 shows under bg. */
+  _laterStageHeight(sectionH, { k, viewportH, slotH } = {}) {
+    const h = Number(sectionH) || 0;
+    const scale = Number(k);
+    const vh = Number(viewportH);
+    const slot = Number(slotH);
+    if (!(scale > 0) || !(vh > 0) || !(slot > 0)) return h;
+    return (h * scale + 0.5) < vh ? Math.max(h, slot) : h;
   },
   scale() {
     const dw = this._designWidth || 3840;
@@ -335,7 +353,7 @@
     if (!c) return null;
     const n = (v) => Math.round((v ?? 0) * 255);
     const a = c.a == null ? 1 : c.a;
-    return a >= 1 ? `rgb(${n(c.r)} ${n(c.g)} ${n(c.b)})` : `rgba(${n(c.r)} ${n(c.g)} ${n(c.b)} / ${a})`;
+    return a >= 1 ? `rgb(${n(c.r)}, ${n(c.g)}, ${n(c.b)})` : `rgba(${n(c.r)}, ${n(c.g)}, ${n(c.b)}, ${a})`;
   },
 
   /** 富文本/字符级样式渲染：按 characterStyleOverrides 把 characters 切成段，
@@ -431,7 +449,7 @@
       const c = s.color || {};
       const a = (c.a == null ? 1 : c.a) * (fill.opacity == null ? 1 : fill.opacity);
       const n = (v) => Math.round((v ?? 0) * 255);
-      return `rgba(${n(c.r)} ${n(c.g)} ${n(c.b)} / ${a}) ${(s.position ?? 0) * 100}%`;
+      return `rgba(${n(c.r)}, ${n(c.g)}, ${n(c.b)}, ${a}) ${(s.position ?? 0) * 100}%`;
     }).join(', ');
     if (fill.type === 'GRADIENT_RADIAL' || fill.type === 'GRADIENT_DIAMOND') {
       return `radial-gradient(${list})`;
@@ -1753,9 +1771,12 @@
       && Number.isFinite(heroHeight) && heroHeight > 0 && Number.isFinite(firstY);
     if (!valid || Math.abs(firstY - Number(pageOriginY || 0)) > 0.5 || contentRootId == null) return null;
     const designHeight = viewport / factor;
-    const extra = Math.max(0, designHeight - heroHeight);
+    /* Official 100vh slot: later starts at viewport/k. Negative extra crops a
+       tall Figma hero so scrollTop=0 never shows sec/2. Official SS13 abuts
+       in CSS (gap:0); used-size snap in _installHeroScrollSlot. */
+    const extra = designHeight - heroHeight;
     const layoutOffsetDesign = extra;
-    const releaseDistance = extra * factor;
+    const releaseDistance = Math.max(0, extra) * factor;
     return {
       stateVersion: 'hero-scroll-slot/v3',
       sectionId: firstSection.id == null ? null : String(firstSection.id),
@@ -2115,6 +2136,9 @@
         heroStage.removeAttribute('data-hero-visual-motion');
         heroStage.removeAttribute('data-hero-visual-progress');
       }
+      /* Official SS13 abuts in CSS (gap:0). Hairline snap lives on
+         _abutHeroJoinCss; never stack 1px of overlap. */
+      if (top <= 0.5) this._abutHeroJoinCss(frame, heroStage);
       /* Only the immediate successor that leaks into the viewport receives a
          temporary reveal translate. Every other section is painted at its
          original Figma y from the start; this is not a page-wide offset. */
@@ -2155,6 +2179,9 @@
     if (typeof frame.__motionAdapterCleanup === 'function') frame.__motionAdapterCleanup();
     if (typeof frame.__fxAssetSchedulerCleanup === 'function') frame.__fxAssetSchedulerCleanup();
     frame.innerHTML = '';
+    /* Later-axes remounts the tree on setPref('lang'). Open-menu highlight
+       must read the current prefs, not the first-paint closure. */
+    frame.__fxRenderPrefs = ctx.prefs || {};
 
     // 当前端对应的设计稿宽度。规范只有 mobile(750) 与 pc(3840) 两套稿；
     // tablet 区间用哪套稿在 spec.adaptation.knownDeviations 里标着 TODO，未定，暂按 pc。
@@ -2261,7 +2288,7 @@
        小数字号栅格化 → 每个字笔画落在不同子像素上 → 「字有粗有细有大有小」。
        用 1920：k = 0.5 → 30×0.5 = 15px 整数，笔画落整像素。
        取不到 viewport（直调 renderApp 的旁路）才退回 clientWidth。
-       产品页再按 §5.0 把 UI 列冻到 1920（k=0.5）；背景 cover 仍用真实视口。 */
+       §5.0 把 UI 列冻到 1920（k=0.5）；背景 cover 仍用真实视口。产品页和 QA 同一张表。 */
     const viewportW = this._viewportWidthFromCtx(ctx, frame, designWidth);
     const productView = this._productViewFromCtx(ctx);
     this._viewportWidth = viewportW;
@@ -2360,7 +2387,17 @@
        scale to the page root turns every released section into a widened,
        horizontally cropped hero. */
     let pageStageScale = k;
+    /* Window box is the real viewport (frame width = vp.w). Freeze column 1920
+       is a child inside that window. Page-root zoom(k) scales `left`, so this
+       is design px: CSS (viewportW − 1920) / 2 / k. Do not put this shift on
+       `.frame` — that shoved the crop box outside the QA bezel. */
     let pageStageCropLeft = 0;
+    if (Number(this._frameWidth) > 0
+        && Number(this._viewportWidth) > 0
+        && Math.abs(Number(this._frameWidth) - Number(this._viewportWidth)) > 0.5
+        && Number(pageStageScale) > 0) {
+      pageStageCropLeft = this._columnLeftCss() / pageStageScale;
+    }
     let heroVisualScale = k;
     let heroVisualCropLeft = 0;
     let heroCropWindowDesign = 0;
@@ -2388,11 +2425,10 @@
       if (!first || !Number.isFinite(Number(first.y)) || !Number.isFinite(Number(first.height)) || Number(first.height) <= 0
         || !Number.isFinite(viewportH) || viewportH <= 0) return null;
       /* Design-viewport static lock resizes to the full Figma page box.
-         100vh then equals the whole page, which would stretch sec/1 to
-         page height and shove later sections. Keep the hero slot for
-         real device viewports only. */
+         100vh then equals the whole page. Skip only that full-page case;
+         a viewport as tall as sec/1 (750×1334) still needs the slot. */
       if (Number.isFinite(pageContentHeight) && pageContentHeight > 0
-        && viewportH + 1 >= Math.min(pageContentHeight, Number(first.height))) return null;
+        && viewportH + 1 >= pageContentHeight) return null;
       const startsAtPageOrigin = Math.abs(Number(first.y) - pageOriginY) <= 0.5;
       const listedRoot = pagePaintOrder.find((entry) => {
         const sectionIds = Array.isArray(entry && entry.sectionIds) ? entry.sectionIds : [];
@@ -2425,10 +2461,9 @@
         heroVisualCropLeft = 0;
         heroCropWindowDesign = Number(pageStageScale) > 0 ? slotH / pageStageScale : slotH / coverScale;
       }
-      /* Cover-crop fills the viewport visually. Later sections stay on their
-         Figma y and only follow width-scale; do not push the document down to
-         reserve the leftover viewport, or the page background stays put and
-         the next block "runs away". */
+      /* KV cover uses the real viewport. Later sections stay on width-scale k
+         and start at the 100vh edge (pad or crop), so scrollTop=0 never shows
+         sec/2 and never leaves a gap under a cropped hero. */
       const following = ids.map((id) => ({ id, meta: sections[id] && sections[id].meta }))
         .filter((entry) => String(entry.id) !== String(sectionId) && Number(entry.meta && entry.meta.y) > Number(first.y))
         .sort((a, b) => Number(a.meta.y) - Number(b.meta.y));
@@ -2443,18 +2478,35 @@
         contentRootId: String(__u(contentRoot.id)),
       });
     })();
-    const heroLayoutOffsetDesign = heroSlot ? Number(heroSlot.layoutOffsetDesign || 0) : 0;
+    const heroLayoutOffsetDesign = heroSlot && Number.isFinite(Number(heroSlot.layoutOffsetDesign))
+      ? Number(heroSlot.layoutOffsetDesign)
+      : 0;
     const heroUiYRatio = heroSlot && Number(heroSlot.heroHeight) > 0
-      ? Math.max(1, Number(heroSlot.designHeight) / Number(heroSlot.heroHeight))
+      ? Number(heroSlot.designHeight) / Number(heroSlot.heroHeight)
       : 1;
     const shiftedSectionBottom = (id) => {
       const m = sections[id] && sections[id].meta;
       if (!m) return 0;
       const afterHero = heroSlot && String(id) !== String(heroSlot.sectionId) && Number(m.y) > pageOriginY + 0.5;
-      return (Number(m.y || 0) + Number(m.height || 0) + (afterHero ? heroLayoutOffsetDesign : 0)) - pageOriginY;
+      const sectionH = Number(m.height || 0);
+      /* Freeze-band later pageBox can be shorter than the window in CSS
+         (2143×0.5=1071.5 under 1080). Pad only that shortfall. >1920 k grows,
+         so 2143×k already exceeds the window — do not pad to viewport/k or
+         #180f02 shows under bg/pc背景2. */
+      const laterH = afterHero
+        ? this._laterStageHeight(sectionH, {
+          k,
+          viewportH: Number(ctx.viewport && ctx.viewport.h) || 0,
+          slotH: heroSlot && Number(heroSlot.designHeight) > 0 ? Number(heroSlot.designHeight) : 0,
+        })
+        : sectionH;
+      return (Number(m.y || 0) + laterH + (afterHero ? heroLayoutOffsetDesign : 0)) - pageOriginY;
     };
-    const pageScrollHeight = pageScope && heroLayoutOffsetDesign > 0
-      ? Math.max(pageContentHeight, ...ids.map((id) => shiftedSectionBottom(id)))
+    const pageScrollHeight = pageScope && heroSlot
+      ? Math.max(
+        Number(heroSlot.designHeight) || 0,
+        ...ids.map((id) => shiftedSectionBottom(id)),
+      )
       : pageContentHeight;
     /* Hero slot only moves after-hero *sections*. pageBackground stays at Figma
        y, so the last painted bg slice ends early and the shifted tail looks like
@@ -2466,7 +2518,7 @@
         + Number((sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && sections[heroSlot.sectionId].meta.height) || heroSlot.heroHeight || 0)
       : 0;
     const afterHeroBackgroundShift = (node) => {
-      if (!(heroLayoutOffsetDesign > 0) || !heroSlot) return 0;
+      if (!heroSlot || !Number.isFinite(heroLayoutOffsetDesign) || heroLayoutOffsetDesign === 0) return 0;
       const y = Number(node && node.box && node.box.y);
       if (!Number.isFinite(y)) return 0;
       return y > heroSectionBottomY + 0.5 ? heroLayoutOffsetDesign : 0;
@@ -2476,7 +2528,7 @@
       frame.setAttribute('data-hero-section', heroSlot.sectionId);
       frame.setAttribute('data-hero-content-root', heroSlot.contentRootId);
       frame.setAttribute('data-hero-slot-design-height', String(heroSlot.designHeight));
-      frame.setAttribute('data-hero-layout-offset-design', String(heroSlot.layoutOffsetDesign || 0));
+      frame.setAttribute('data-hero-layout-offset-design', String(heroSlot.layoutOffsetDesign));
       frame.setAttribute('data-hero-page-scale', String(pageStageScale));
       frame.setAttribute('data-hero-page-crop-left', String(pageStageCropLeft));
       frame.setAttribute('data-hero-visual-scale', String(heroVisualScale));
@@ -2599,15 +2651,29 @@
          inside sec/1) cover-crops into the same window; clipping the stage to
          pageBox.h (2143) would crop the scaled KV back to width-k. Later
          sections stay on their own pageBox via the paint-root clip. */
-      const heroUiHeight = isHeroStage && heroSlot && Number(heroSlot.designHeight) > 0
-        ? Number(heroSlot.designHeight)
+      /* Freeze-band later pageBox 2143×k=1071.5 is 8.5px short of 1080.
+         Pad only when the painted later box is shorter than the window.
+         >1920 k grows (2310/3840≈0.60 → 2143×k≈1291 > 1080); padding to
+         viewport/k there leaves #180f02 under bg/pc背景2. Official later
+         is rem, not a second 100vh. Do not squash later UI by viewportH. */
+      const laterSlotHeight = !isHeroStage && !pageStageMode
+        ? this._laterStageHeight(_snapH, {
+          k,
+          viewportH: Number(ctx.viewport && ctx.viewport.h) || 0,
+          slotH: heroSlot && Number(heroSlot.designHeight) > 0 ? Number(heroSlot.designHeight) : 0,
+        })
         : _snapH;
-      /* Section stage keeps Figma pageBox.h so sec/2 still abuts. Cover-crop
-         lives on the unnamed kv node, not by stretching this frame. */
-      const heroClipHeight = isHeroStage && heroLayoutOffsetDesign > 0
-        ? (_snapH + heroLayoutOffsetDesign)
-        : (isHeroStage && heroCropWindowDesign > 0 ? Math.max(_snapH, heroCropWindowDesign) : heroUiHeight);
+      /* Official first screen is 100vh. Hero stage height is the slot
+         (viewport/k), not Figma pageBox.h. KV cover-crop lives on the unnamed
+         kv node; later sections abut this clipped edge. */
+      const heroClipHeight = isHeroStage && heroSlot && Number(heroSlot.designHeight) > 0
+        ? Number(heroSlot.designHeight)
+        : laterSlotHeight;
       stage.style.height = (pageStageMode ? (pageScrollHeight || meta.height || _snapH) : heroClipHeight) + 'px';
+      if (!isHeroStage && !pageStageMode && laterSlotHeight > _snapH + 0.5) {
+        stage.setAttribute('data-later-slot-height', String(laterSlotHeight));
+        stage.setAttribute('data-later-slot-window', '100vh');
+      }
       if (isHeroStage) {
         stage.style.overflow = 'hidden';
         stage.setAttribute('data-hero-source-height', String(_rawH));
@@ -3803,7 +3869,7 @@
           block's stretched top instead of being stretched themselves, or a
           top-bar button label drifts out of its button frame. heroUiHalf is
           the generic top/bottom-chrome split at half the Figma hero height. */
-       const heroUiBlocks = isHeroStage && heroUiYRatio > 1.001 ? [] : null;
+       const heroUiBlocks = isHeroStage && Math.abs(heroUiYRatio - 1) > 0.001 ? [] : null;
        const heroUiHalf = heroUiBlocks && heroSlot ? Number(heroSlot.heroHeight || 0) / 2 : Infinity;
        const heroUiOwnerBlock = (blocks, centerX, centerY) => {
          let best = null;
@@ -4648,7 +4714,7 @@
             heroUiTop = rideOwner.stretchedTop + (sourceTop - rideOwner.y);
             heroUiAnchored = true;
           } else if (heroUiBlocks && (!parent || parentIsHeroSection) && Number.isFinite(sourceTop) && !pinViewport
-            && !(fullBleedHeroArt || listedHeroArt)) {
+            && !(fullBleedHeroArt || listedHeroArt || /^slg(?:\/|$)/i.test(String(n.name || '')))) {
             const sourceBottom = sourceTop + sourceH;
             /* Generic split, no node names: blocks whose Figma bottom sits in
                the upper half of the hero are top chrome and keep their top
@@ -4669,8 +4735,12 @@
               area: Math.max(1, (box.w ?? 0) * sourceH),
             });
           }
-          const afterHeroShift = afterHeroBackgroundShift(n);
-          if (afterHeroShift > 0 && (pfx === 'bg' || /^bg(?:\/|$)/i.test(String(n.name || '')))) {
+          /* Page-level long bg does not live in an after-hero stage, so it
+             must follow layoutOffsetDesign itself. Section-nested `bg/pc背景*`
+             already moved with the stage — shifting again opens the freeze
+             join seam (extra>0) or pulls later art off its UI (extra<0). */
+          const afterHeroShift = backgroundHeroShift ? afterHeroBackgroundShift(n) : 0;
+          if (afterHeroShift !== 0 && (pfx === 'bg' || /^bg(?:\/|$)/i.test(String(n.name || '')))) {
             heroUiTop += afterHeroShift;
             el.setAttribute('data-hero-bg-follow-y', String(afterHeroShift));
           }
@@ -4699,29 +4769,53 @@
         const coverHeroVisualScale = Number(heroVisualScale) > 0 ? Number(heroVisualScale)
           : (Number(k) > 0 ? Number(k) : 1);
         const coverPageStageScale = Number(pageStageScale) > 0 ? Number(pageStageScale) : 1;
+        const nodeYForCover = Number.isFinite(Number(n.box && n.box.y))
+          ? Number(n.box.y)
+          : Number(box.y);
+        const firstSectionBottomY = Number(heroSectionBottomY) > 0
+          ? Number(heroSectionBottomY)
+          : (Number(meta && meta.height) || 0);
+        const isFirstScreenVisual = firstScreenKvInSection
+          || (Number.isFinite(nodeYForCover) && nodeYForCover < firstSectionBottomY - 0.5);
         if ((heroVisualPlane || firstScreenKvInSection || (isKv && coverHeroSlot && String(sid) === String(coverHeroSlot.sectionId)))
           && coverHeroSlot && coverHeroVisualScale > 0 && coverPageStageScale > 0
           && Number.isFinite(Number(box.h)) && Number(box.h) > 0) {
-          const nodeY = Number(box.y);
-          const firstSectionBottomY = Number(heroSectionBottomY) > 0
-            ? Number(heroSectionBottomY)
-            : (Number(meta && meta.height) || 0);
-          const isFirstScreenVisual = firstScreenKvInSection
-            || !Number.isFinite(nodeY) || nodeY <= firstSectionBottomY + 0.5;
           /* Later-section bg/* (y=2143 / 4286) is not first-screen cover art.
              Cover-cropping it on the page chrome plane paints the wrong sheet
              under sec/2–3. Only the first-screen kv plane may scale. */
           if (isFirstScreenVisual && isKv) {
             const origin = __normalizedPlat === 'mobile' ? 'center 0' : 'center center';
             const planeRatio = coverHeroVisualScale / coverPageStageScale;
-            if (planeRatio > 1.001) {
-              /* One cover: scale from origin. cropLeft stays 0 so origin 50% 0
-                 is the only horizontal crop (390×844 → left ≈ −42, not −77). */
+            /* Frozen 1920 column sits at CSS left. KV fills the real viewport:
+               scale from the unscaled page origin, then shift by
+               (viewport − scaled sheet) / 2 in design px so 1440×900 measures
+               1440×900, not a 1612×900 sheet sitting inside the 1920 column. */
+            const columnLeftCss = this._columnLeftCss();
+            const columnLeftDesign = coverPageStageScale > 0 ? columnLeftCss / coverPageStageScale : 0;
+            const sourceW = Number(box.w) || 0;
+            const sourceH = Number(box.h) || 0;
+            const viewportWDesign = coverPageStageScale > 0
+              ? Number(this._viewportWidth) / coverPageStageScale
+              : sourceW;
+            const viewportHDesign = coverPageStageScale > 0 && Number(ctx.viewport && ctx.viewport.h) > 0
+              ? Number(ctx.viewport.h) / coverPageStageScale
+              : (heroCropWindowDesign > 0 ? heroCropWindowDesign : sourceH);
+            const coverLeftDesign = (viewportWDesign - sourceW) / 2 - columnLeftDesign;
+            const coverTopDesign = origin === 'center 0'
+              ? 0
+              : (viewportHDesign - sourceH) / 2;
+            if (Math.abs(planeRatio - 1) > 0.001
+              || Math.abs(coverLeftDesign) > 0.5
+              || Math.abs(coverTopDesign) > 0.5) {
+              el.style.left = coverLeftDesign + 'px';
+              el.style.top = coverTopDesign + 'px';
               el.style.transformOrigin = origin === 'center 0' ? '50% 0' : '50% 50%';
-              el.style.transform = ((el.style.transform ? el.style.transform + ' ' : '') + 'scale(' + planeRatio + ')').trim();
+              if (Math.abs(planeRatio - 1) > 0.001) {
+                el.style.transform = 'scale(' + planeRatio + ')';
+              }
               el.setAttribute('data-hero-visual-plane-scale', String(planeRatio));
+              el.setAttribute('data-kv-cover-window', 'viewport');
             }
-            const sourceH = Number(box.h);
             const clipH = heroCropWindowDesign > 0 ? Math.min(sourceH, heroCropWindowDesign) : sourceH;
             if (isBg && heroLayoutOffsetDesign > 0 && clipH > 0 && clipH < sourceH - 0.5) {
               el.style.clipPath = 'inset(0 0 ' + (sourceH - clipH) + 'px 0)';
@@ -4730,6 +4824,54 @@
             el.setAttribute('data-hero-visual-plane', isBg ? 'bg' : 'kv');
             el.setAttribute('data-kv-cover-plane', 'cover-crop');
             el.setAttribute('data-kv-cover-origin', origin);
+          }
+        }
+        const stretchToViewportW = /^slg(?:\/|$)/i.test(String(n.name || ''))
+          && isHeroStage
+          && Number(box.w) > 0
+          && Number(this._viewportWidth) > 0
+          && Number(k) > 0
+          && Number(this._viewportWidth) < Number(this._frameWidth) - 0.5;
+        if (stretchToViewportW) {
+          /* Official first-screen SLG/title art is width-stretched to the
+             current window (1920→1920×520, 1195→1195×323.6). Height follows
+             the same ratio. Buttons stay on freeze k. */
+          const sourceW = Number(box.w) || Number(n.box && n.box.w) || 0;
+          const stretch = sourceW > 0 ? Number(this._viewportWidth) / (sourceW * Number(k)) : 1;
+          if (Math.abs(stretch - 1) > 1e-4) {
+            const columnLeftCss = this._columnLeftCss();
+            el.style.left = (-columnLeftCss / Number(k)) + 'px';
+            /* Official SLG width-stretch is bottom-anchored (date strip stays,
+               play button rides up). `0 0` pinned the Figma top / play button. */
+            el.style.transformOrigin = '0 100%';
+            el.style.transform = 'scale(' + stretch + ')';
+            el.setAttribute('data-hero-slg-stretch', 'viewport-width');
+            el.setAttribute('data-hero-slg-origin', 'bottom');
+          }
+        } else if (isBg && !isFirstScreenVisual && !pageStageMode && !backgroundHeroShift && Number(k) > 0) {
+          /* Later bg fills the later stage box (Figma pageBox; freeze-band
+             only pads when CSS height is short of the window). Official later
+             `background-size:cover` is on that same box, not a second viewport
+             crop. Covering the window here would slide art off later UI.
+             Section zoom is 1; numbers are design px. */
+          const sourceW = Number(box.w) || 0;
+          const sourceH = Number(box.h) || 0;
+          const boxW = Number(designWidth) || sourceW;
+          const boxH = Number(laterSlotHeight) > 0 ? Number(laterSlotHeight) : sourceH;
+          if (sourceW > 0 && sourceH > 0 && boxW > 0 && boxH > 0) {
+            const cover = Math.max(boxW / sourceW, boxH / sourceH);
+            if (Math.abs(cover - 1) > 1e-6) {
+              const coverLeft = (boxW - sourceW * cover) / 2;
+              const coverTop = (boxH - sourceH * cover) / 2;
+              const sourceTopNow = parseFloat(el.style.top);
+              const baseTop = Number.isFinite(sourceTopNow) ? sourceTopNow : ((box.y ?? 0) - originY);
+              el.style.left = coverLeft + 'px';
+              el.style.top = (baseTop + coverTop) + 'px';
+              el.style.transformOrigin = '0 0';
+              el.style.transform = 'scale(' + cover + ')';
+              el.setAttribute('data-later-cover-plane', 'cover-crop');
+              el.setAttribute('data-later-cover-window', 'later-stage');
+            }
           }
         }
         el.style.width = (box.w ?? 0) + 'px';
@@ -6480,6 +6622,13 @@
           const rootBox = __plain(root && root.box || tree && tree.box || {});
           const variantName = String(__u(variants[index] && variants[index].name) || '').toLowerCase();
           const state = /highlight/.test(variantName) ? 'highlight' : (/disable/.test(variantName) ? 'disable' : 'normal');
+          const rootStyle = __plain(root && root.style) || {};
+          const rootFills = Array.isArray(rootStyle.fills) ? rootStyle.fills : [];
+          const visFills = rootFills.filter((fill) => fill && fill.visible !== false);
+          const firstFill = visFills[0];
+          const fillCss = firstFill && String(firstFill.type || '').startsWith('GRADIENT')
+            ? this._cssGradient(firstFill)
+            : (this._solidFill(visFills) || null);
           if (!root || !Number.isFinite(Number(rootBox.w)) || !Number.isFinite(Number(rootBox.h))
             || !Number.isFinite(ownerWidth) || Math.abs(Number(rootBox.w) - ownerWidth) > 0.5) {
             mountBlocked = true;
@@ -6496,7 +6645,7 @@
               sibling.setAttribute('data-btn-variant-index', String(index));
               hideInPlace(sibling, false);
             }
-            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true });
+            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true, fillCss });
             continue;
           }
           const layer = document.createElement('div');
@@ -6519,13 +6668,18 @@
             suppressInteractions: true,
           });
           hideInPlace(layer, true);
-          layers.push({ index, state, el: layer, externals: [], isBase: false });
+          layers.push({ index, state, el: layer, externals: [], isBase: false, fillCss });
         }
         if (!mountBlocked && layers.length === trees.length) {
           if (!owner.el.style.overflow || owner.el.style.overflow === 'visible') owner.el.style.overflow = 'hidden';
           owner.el.setAttribute('data-btn-variant-mount-status', 'owner-local-mutually-exclusive');
           owner.el.setAttribute('data-btn-variant-count', String(layers.length));
           owner.el.__fxButtonVariantLayers = layers;
+          const selected = layers.find((layer) => layer.index === owner.initialIndex) || layers[0];
+          if (selected) {
+            owner.el.setAttribute('data-btn-variant-fill-source', selected.state);
+            if (selected.fillCss) owner.el.style.background = selected.fillCss;
+          }
           /* Alternate COMPONENT trees keep master TEXT. Directory rows and other
              instances must keep their own label override on every variant layer. */
           const ownTexts = [...owner.el.querySelectorAll('.fx-t, [data-figma-type="TEXT"]')]
@@ -6807,20 +6961,26 @@
           const sectionY = Number(sectionMeta && sectionMeta.y);
           const sectionH = Number(sectionMeta && sectionMeta.height);
           if (isFirstSectionRoot && firstPageH > 0) {
-            /* Product 100vh cover-crop: clip to the viewport design height so a
-               nested unnamed kv can scale past pageBox.h. inventory-static-gate=1
-               keeps pageBox so design-viewport coordinates still match. */
-            const heroWindowH = heroSlot && heroCropWindowDesign > 0
-              ? Math.max(firstPageH, heroCropWindowDesign)
-              : firstPageH;
+            /* Official first screen is 100vh. Clip this paint root to the CSS
+               slot (viewport/k), not Figma pageBox.h: 2143×k=1071.5 is a
+               half-pixel compositing edge in the freeze band. Nested unnamed kv
+               still cover-crops inside the hero stage, which clips to the same
+               slot. inventory-static-gate=1 keeps pageBox. */
+            const heroWindowH = heroSlot && Number(heroSlot.designHeight) > 0
+              ? Number(heroSlot.designHeight)
+              : (heroSlot && heroCropWindowDesign > 0
+                ? Math.max(firstPageH, heroCropWindowDesign)
+                : firstPageH);
             layer.style.left = '0';
             layer.style.top = '0';
             layer.style.width = designWidth + 'px';
             layer.style.height = heroWindowH + 'px';
             layer.style.overflow = 'hidden';
-            layer.setAttribute('data-hero-crop-window', heroSlot && heroCropWindowDesign > firstPageH + 0.5
+            layer.setAttribute('data-hero-crop-window', heroSlot && Number(heroSlot.designHeight) > 0
               ? '100vh'
-              : 'first-section-pagebox');
+              : (heroSlot && heroCropWindowDesign > firstPageH + 0.5
+                ? '100vh'
+                : 'first-section-pagebox'));
             layer.setAttribute('data-hero-crop-window-design', String(heroWindowH));
           } else if (Number.isFinite(sectionY) && Number.isFinite(sectionH) && sectionH > 0 && String(rootId) !== firstSectionId) {
             /* Later section roots must clip to their own pageBox height, not a
@@ -6828,14 +6988,25 @@
                page coordinates, and the section stage itself is placed at sec.y.
                A y=0 full-page layer lets first-screen KV show through a
                transparent bg PNG. After-hero stages are shifted by
-               layoutOffsetDesign; the paint-root clip must cover that shift. */
-            const laterShift = heroLayoutOffsetDesign > 0 ? heroLayoutOffsetDesign : 0;
+               layoutOffsetDesign (pad or crop). Extra>0 lengthens this clip so
+               the moved stage is not cut; extra<0 shortens it so the empty tail
+               past bg/pc背景* is not a #180f02 band under sec/3. */
+            const laterShift = Number.isFinite(Number(heroLayoutOffsetDesign))
+              ? Number(heroLayoutOffsetDesign)
+              : 0;
+            const laterMinH = this._laterStageHeight(sectionH, {
+              k,
+              viewportH: Number(ctx.viewport && ctx.viewport.h) || 0,
+              slotH: heroSlot && Number(heroSlot.designHeight) > 0 ? Number(heroSlot.designHeight) : 0,
+            });
             layer.style.left = '0';
             layer.style.top = '0';
             layer.style.width = designWidth + 'px';
-            layer.style.height = (sectionY - pageY + sectionH + laterShift) + 'px';
+            layer.style.height = (sectionY - pageY + laterMinH + laterShift) + 'px';
             layer.style.overflow = 'hidden';
             layer.setAttribute('data-section-layer-box', 'pageBox-clip');
+            layer.setAttribute('data-later-layout-shift', String(laterShift));
+            if (laterMinH > sectionH + 0.5) layer.setAttribute('data-later-slot-window', '100vh');
           } else if (heroSlot && Number(heroSlot.designHeight) > 0 && /^kv(?:\/|$)/i.test(layerName)) {
             layer.style.height = Number(heroSlot.designHeight) + 'px';
             layer.style.overflow = 'hidden';
@@ -6884,8 +7055,17 @@
                 const kvRatio = heroVisualScale / pageStageScale;
                 const firstMeta = sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta;
                 const kvClipH = Number(firstMeta && firstMeta.height) || Number(heroSlot.heroHeight) || 0;
+                /* Frozen 1920 column sits at CSS left. KV fills the real
+                   viewport: place the zoomed sheet so its CSS box covers
+                   viewportW, not the frozen column. */
+                const columnLeftCss = this._columnLeftCss();
+                const columnLeftDesign = pageStageScale > 0 ? columnLeftCss / pageStageScale : 0;
+                const viewportWDesign = pageStageScale > 0
+                  ? Number(this._viewportWidth) / pageStageScale
+                  : designWidth;
+                const coverLeftDesign = (viewportWDesign - designWidth * kvRatio) / 2 - columnLeftDesign;
                 layer.style.zoom = String(kvRatio);
-                layer.style.left = heroVisualCropLeft + 'px';
+                layer.style.left = coverLeftDesign + 'px';
                 layer.style.top = '0';
                 layer.style.width = designWidth + 'px';
                 if (kvClipH > 0) layer.style.height = kvClipH + 'px';
@@ -6894,6 +7074,7 @@
                 layer.setAttribute('data-kv-cover-plane', 'cover-crop');
                 layer.setAttribute('data-hero-visual-scale', String(heroVisualScale));
                 layer.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
+                layer.setAttribute('data-kv-cover-window', 'viewport');
               }
             }
             if (bg) {
@@ -7308,6 +7489,10 @@
           }
           owner.setAttribute('data-btn-variant-state', next.state);
           owner.setAttribute('data-btn-variant-index', String(next.index));
+          /* Stop-2 completion for btn/切换语言 is the authored COMPONENT root
+             fill, not only data-btn-variant-state. Current lang = 758:1713. */
+          owner.setAttribute('data-btn-variant-fill-source', next.state);
+          if (next.fillCss) owner.style.background = next.fillCss;
           if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
             const target = next.isBase ? owner : next.el;
             frame.__fxAssetScheduler.prime(target);
@@ -7970,19 +8155,56 @@
               host.setAttribute('data-modal-fill', policy.fill);
               ensureModalScrim(host, policy.scrim);
             }
-            layer.style.left = '0px';
-            layer.style.top = '0px';
-            layer.style.width = designW + 'px';
-            layer.style.height = designH + 'px';
-            layer.style.maxWidth = 'none';
-            layer.style.maxHeight = 'none';
-            layer.style.zoom = '1';
-            layer.style.transformOrigin = '0 0';
-            layer.style.transform = 'scale(' + scale + ')';
+            const scaledW = designW * scale;
+            const scaledH = designH * scale;
+            const phoneOverflow = scaledW > visibleW + 1 || scaledH > visibleH + 1;
+            if (phoneOverflow) {
+              /* Cover can make the 750×1334 phone sheet wider than the 390 host.
+                 Keep cover on an inner sheet and clip the measured layer to the
+                 visible frame so later-axes-probe stays inside the 390 sheet. */
+              let sheet = layer.querySelector(':scope > [data-modal-sheet="true"]');
+              if (!sheet) {
+                sheet = document.createElement('div');
+                sheet.setAttribute('data-modal-sheet', 'true');
+                sheet.style.position = 'absolute';
+                sheet.style.left = '0px';
+                sheet.style.top = '0px';
+                const kids = [...layer.childNodes];
+                for (const kid of kids) sheet.appendChild(kid);
+                layer.appendChild(sheet);
+              }
+              const offsetX = (visibleW - scaledW) / 2;
+              const offsetY = (visibleH - scaledH) / 2;
+              sheet.style.width = designW + 'px';
+              sheet.style.height = designH + 'px';
+              sheet.style.zoom = '1';
+              sheet.style.transformOrigin = '0 0';
+              sheet.style.transform = 'translate(' + offsetX + 'px,' + offsetY + 'px) scale(' + scale + ')';
+              layer.style.left = '0px';
+              layer.style.top = '0px';
+              layer.style.width = visibleW + 'px';
+              layer.style.height = visibleH + 'px';
+              layer.style.maxWidth = 'none';
+              layer.style.maxHeight = 'none';
+              layer.style.zoom = '1';
+              layer.style.transformOrigin = '0 0';
+              layer.style.transform = 'none';
+              layer.style.overflow = 'hidden';
+            } else {
+              layer.style.left = '0px';
+              layer.style.top = '0px';
+              layer.style.width = designW + 'px';
+              layer.style.height = designH + 'px';
+              layer.style.maxWidth = 'none';
+              layer.style.maxHeight = 'none';
+              layer.style.zoom = '1';
+              layer.style.transformOrigin = '0 0';
+              layer.style.transform = 'scale(' + scale + ')';
+              if (layer.getAttribute('data-modal-clip') === 'source') layer.style.overflow = 'hidden';
+              else layer.style.overflow = 'visible';
+            }
             layer.style.pointerEvents = 'auto';
             layer.style.zIndex = '41';
-            if (layer.getAttribute('data-modal-clip') === 'source') layer.style.overflow = 'hidden';
-            else layer.style.overflow = 'visible';
           };
           const closeNamedModal = (entry) => {
             if (!entry || !entry.layer) return;
@@ -8543,6 +8765,40 @@
         runFit();   // 没有 FontFaceSet 的环境（Node 冒烟桩）按原样量一次
         growHugOwners();
       }
+  },
+
+  /* Official SS13 abuts in CSS (gap:0), no overlap. Zoom(k) can rasterize
+     two design boxes 0.5px apart. Nudge later.top so used later.top ===
+     hero.bottom. Hairline only (<2 CSS px); never stack 1px of overlap. */
+  _abutHeroJoinCss(frame, heroStage) {
+    if (!frame || !heroStage || typeof frame.querySelectorAll !== 'function'
+      || typeof heroStage.getBoundingClientRect !== 'function') return;
+    const laterStages = [...frame.querySelectorAll('[data-hero-slot-role="after-hero"]')];
+    const firstLater = laterStages.reduce((lowest, el) => {
+      const y = Number.parseFloat(el.style.top);
+      const low = lowest == null ? Infinity : Number.parseFloat(lowest.style.top);
+      return Number.isFinite(y) && y < low ? el : lowest;
+    }, null);
+    if (!firstLater || typeof firstLater.getBoundingClientRect !== 'function' || !firstLater.style) return;
+    const gap = firstLater.getBoundingClientRect().top - heroStage.getBoundingClientRect().bottom;
+    const pageRoot = typeof frame.querySelector === 'function'
+      ? frame.querySelector('.fx-stage[data-node="__page__"]') : null;
+    const pageZoom = pageRoot && pageRoot.style
+      ? (Number.parseFloat(pageRoot.style.zoom) || 1) : 1;
+    let frameScale = 1;
+    const tr = frame.style && frame.style.transform;
+    const scaleMatch = tr && /scale\(([-0-9.]+)/.exec(tr);
+    if (scaleMatch) frameScale = Number.parseFloat(scaleMatch[1]) || 1;
+    const usedK = pageZoom * frameScale;
+    if (!(usedK > 0) || Math.abs(gap) <= 0.05 || Math.abs(gap) >= 2) return;
+    const deltaDesign = gap / usedK;
+    for (const stage of laterStages) {
+      if (!stage || !stage.style) continue;
+      const y = Number.parseFloat(stage.style.top);
+      if (!Number.isFinite(y)) continue;
+      stage.style.top = (y - deltaDesign) + 'px';
+      stage.setAttribute('data-hero-join-css', 'abut');
+    }
   },
   };
 })();

@@ -163,7 +163,7 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   const pack = read('docs/pack-skill.md');
   const lib = read('scripts/lib/pack-demo.mjs');
   assert.match(skill, /Main static → Translation/);
-  assert.match(skill, /After the second\n?human stop is accepted, the orchestrator Pack phase runs/s);
+  assert.match(skill, /After the second\r?\n?human stop is accepted, the orchestrator Pack phase runs/s);
   assert.match(skill, /Pack is not a restore axis/);
   assert.match(arch, /Pack delivery/);
   assert.match(arch, /not a restore axis/);
