@@ -57,3 +57,11 @@ test('renderer source has no inline five-language Noto table after stripping com
   assert.match(stripped, /designPolicy\(\)\.localeFontFamily/);
   assert.doesNotMatch(stripped, /const TABLE = \{/);
 });
+
+test('figma-inline rewrites stale qa-design-policy so English paint has localeFontFamily', () => {
+  const inline = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../figma-inline.mjs'), 'utf8');
+  assert.match(inline, /parseDesignPolicyFile/);
+  assert.match(inline, /part: 'design-policy'/);
+  assert.match(inline, /localeFontFamily/);
+  assert.match(inline, /DESIGN_POLICY_RE/);
+});

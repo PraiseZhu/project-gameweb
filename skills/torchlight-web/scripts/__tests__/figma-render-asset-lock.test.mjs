@@ -298,7 +298,9 @@ test('zh-CN static keeps authored pageBox instead of Auto Layout flex restack', 
 });
 
 test('paint siblings are absolute unless source-backed Auto Layout admits flow', () => {
-  assert.match(renderer, /el\.style\.position = 'absolute';\s*el\.style\.left = \(\(box\.x/);
+  assert.match(renderer, /el\.style\.position = 'absolute';/);
+  assert.match(renderer, /const sourceLeft = \(\(box\.x \?\? 0\) - originX\);/);
+  assert.match(renderer, /el\.style\.left = sourceLeft \+ 'px';/);
   assert.match(renderer, /Only a proven Auto Layout child may flow/);
 });
 

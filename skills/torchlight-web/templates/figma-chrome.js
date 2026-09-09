@@ -732,8 +732,9 @@
   }
 
   /* DESIGN.md §5.0 同一张表：字/按钮和列宽。产品页和 QA 模拟视口都走。
-     >1920 stretch；1127–1920 冻 1920 / k=0.5 居中裁；≤1126 手机 k=宽/750。
-     QA 的 fit/bezel 仍是壳装饰，不改这把尺。 */
+     >1920 stretch；1127–1920 冻 1920 / k=0.5 居中裁；≤1126 手机
+     k=min(1, 宽/750)。751–1126 按钮保持 750 稿尺寸，列宽跟窗口铺 KV，
+     不要再裁一列 750。QA 的 fit/bezel 仍是壳装饰。 */
   function productColumnWidth(viewportW, plat) {
     var w = Number(viewportW);
     if (!isFinite(w) || w <= 0) return w;
@@ -753,7 +754,7 @@
   function productUiScaleK(viewportW, plat) {
     var w = Number(viewportW);
     if (!isFinite(w) || w <= 0) return null;
-    if (plat === 'mobile' || w <= 1126) return w / 750;
+    if (plat === 'mobile' || w <= 1126) return Math.min(1, w / 750);
     if (w <= 1920) return 0.5;
     return w / 3840;
   }
@@ -2300,11 +2301,36 @@
         }
         stage.style.zoom = String(stage.__fxBaseZoom * followScale);
       }
+      /* lock-1920 layers keep the authored origin (right chrome 100% 0).
+         Light drag above 1920 also zooms `.fx-fixed-overlays` by followScale
+         (that host is a frame-child `.fx-stage`). Recompute counter against
+         the *current* page k so freeze size stays 0.5, not the stale
+         paint-time counter. Do not use zoom on the layer — zoom also
+         shrinks CSS left/top toward the containing-block origin. */
+      var liveLock = (nextK != null && nextK > 0) ? (0.5 / nextK) : null;
+      var locked = frame.querySelectorAll('[data-lock-1920="true"]');
+      for (var li = 0; li < locked.length; li++) {
+        var lockEl = locked[li];
+        var painted = parseFloat(lockEl.getAttribute('data-lock-1920-counter'));
+        if (!(isFinite(painted) && painted > 0)) continue;
+        var counter = (liveLock != null && isFinite(liveLock) && liveLock > 0)
+          ? liveLock
+          : painted;
+        lockEl.style.transformOrigin = lockEl.getAttribute('data-lock-1920-origin') || '100% 0';
+        var prev = String(lockEl.style.transform || '').replace(/\s*scale\([^)]*\)/g, '').trim();
+        lockEl.style.transform = prev ? prev + ' scale(' + counter + ')' : 'scale(' + counter + ')';
+        lockEl.setAttribute('data-lock-1920-counter', String(counter));
+      }
       syncDragColumnCrop(vp);
       syncFixedOverlayViewport(vp);
       syncDragSectionLayout(vp, followScale);
       syncDragHeroCover(vp);
       syncStaticKvChrome(vp);
+      /* Official popup stays mounted and re-sizes with the window. Light
+         drag keeps DOM, so re-pin open named modals to the current frame. */
+      if (window.__figmaRender && typeof window.__figmaRender._pinOpenNamedModals === 'function') {
+        window.__figmaRender._pinOpenNamedModals(frame);
+      }
     } catch (error) { /* 临时缩放失败不阻塞拖拽，松手后完整 render 会纠正 */ }
   }
 
