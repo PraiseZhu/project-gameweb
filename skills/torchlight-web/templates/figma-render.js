@@ -2947,6 +2947,57 @@
           }
           return { role, label, params };
         };
+        const constraintAxis = (n, axis) => String((n && n.pinEdges && n.pinEdges[axis])
+          || (n && n.layout && n.layout.constraints && n.layout.constraints[axis])
+          || (n && n.constraints && n.constraints[axis]) || '').toUpperCase();
+        const writeFixPinAttrs = (attrs, n) => {
+          attrs['data-fix-pin'] = 'viewport';
+          const pinEdges = n.pinEdges || {};
+          const pinV = constraintAxis(n, 'vertical');
+          const pinH = constraintAxis(n, 'horizontal');
+          if (pinV) attrs['data-fix-pin-v'] = pinV;
+          if (pinH) attrs['data-fix-pin-h'] = pinH;
+          for (const [key, attr] of Object.entries({
+            gapBottom: 'data-fix-gap-bottom',
+            gapTop: 'data-fix-gap-top',
+            gapLeft: 'data-fix-gap-left',
+            gapRight: 'data-fix-gap-right',
+            boardW: 'data-fix-board-w',
+            boardH: 'data-fix-board-h',
+          })) {
+            if (Number.isFinite(Number(pinEdges[key]))) attrs[attr] = String(pinEdges[key]);
+          }
+          return pinV;
+        };
+        /* DESIGN.md §5: pin to viewportH / k. Gap is Figma parent-board
+           remainder × k via overlay zoom; do not use the cover hero slot. */
+        const applyFixViewportPin = (el, evidenceAttrs, box, k, ctx) => {
+          const pinV = String(evidenceAttrs?.['data-fix-pin-v'] || '').toUpperCase();
+          const pinH = String(evidenceAttrs?.['data-fix-pin-h'] || '').toUpperCase();
+          const viewportH = Number(ctx && ctx.viewport && ctx.viewport.h);
+          const slotH = Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(k) && k > 0
+            ? viewportH / k
+            : 0;
+          const gapBottom = Number(evidenceAttrs?.['data-fix-gap-bottom']);
+          const gapRight = Number(evidenceAttrs?.['data-fix-gap-right']);
+          const boardW = Number(evidenceAttrs?.['data-fix-board-w']);
+          const sourceW = Number(box.w ?? 0);
+          const sourceH = Number(box.h ?? 0);
+          let top;
+          if (pinV === 'BOTTOM' && Number.isFinite(gapBottom) && slotH > 0) {
+            top = slotH - gapBottom - sourceH;
+            el.setAttribute('data-fix-anchor', 'bottom-gap');
+          } else if (pinV === 'CENTER' && slotH > 0) {
+            top = (slotH - sourceH) / 2;
+            el.setAttribute('data-fix-anchor', 'center');
+          }
+          if (pinH === 'RIGHT' && Number.isFinite(gapRight) && Number.isFinite(boardW) && boardW > 0) {
+            el.style.left = (boardW - gapRight - sourceW) + 'px';
+          } else if (pinH === 'CENTER' && Number.isFinite(boardW) && boardW > 0) {
+            el.style.left = ((boardW - sourceW) / 2) + 'px';
+          }
+          return top;
+        };
         const byId = new Map(items.map((n) => [id(n), n]));
         /* Fixed overlay roots are rendered in the page stage, while their
            truth-backed descendants can legitimately live in the section
@@ -3445,10 +3496,14 @@
           } else if (p.role === 'fix') {
             const fixBox = n.pageBox || n.box;
             const landscapeFix = !!(fixBox && Number(fixBox.w) > Number(fixBox.h));
-            attrs['data-fix-pin'] = 'viewport';
+            const pinV = writeFixPinAttrs(attrs, n);
             const fromRaw = p.params.from;
             if (fromRaw != null && /^[1-9]\d*$/.test(String(fromRaw))) attrs['data-fix-from'] = String(fromRaw);
-            if (landscapeFix) {
+            if (pinV === 'BOTTOM' || pinV === 'CENTER') {
+              /* DESIGN.md §5: Bottom/Center overlays are viewport chrome, not a
+                 left directory. Stretching them to 100vh would pull the arrow. */
+              attrs['data-fix-chrome'] = pinV === 'BOTTOM' ? 'bottom' : 'center';
+            } else if (landscapeFix) {
               /* Landscape fix/顶部信息 is viewport chrome, not a left directory. */
               attrs['data-topbar-chrome'] = 'true';
             } else {
@@ -4449,7 +4504,9 @@
         /* Directory stretch does not require a motion adapter. A fix/ overlay
            owner is the left rail; chrome reads this role to map source y onto
            the current viewport height. */
-        if (pfx === 'fix' && !el.getAttribute('data-motion-role')) {
+        const fixChrome = el.getAttribute('data-fix-chrome');
+        if (pfx === 'fix' && !el.getAttribute('data-motion-role')
+          && !/^(bottom|center)$/.test(fixChrome || '')) {
           el.setAttribute('data-motion-role', 'navigationFooter');
           el.setAttribute('data-motion-navigation', 'true');
         }
@@ -4707,6 +4764,10 @@
              remap onto the 100vh slot. Nested leaves ride a stretched owner
              block when one already exists; otherwise they keep Figma y. */
           const localX = (box.x ?? 0) - originX;
+          if (pinViewport && pfx === 'fix') {
+            const pinnedTop = applyFixViewportPin(el, evidenceAttrs, box, k, ctx);
+            if (pinnedTop != null) heroUiTop = pinnedTop;
+          }
           const rideOwner = heroUiBlocks && parent && !parentIsHeroSection && !pinViewport
             ? heroUiOwnerBlock(heroUiBlocks, localX + (box.w ?? 0) / 2, sourceTop + sourceH / 2)
             : null;
@@ -4745,7 +4806,7 @@
             el.setAttribute('data-hero-bg-follow-y', String(afterHeroShift));
           }
           el.style.top = heroUiTop + 'px';
-          if (heroUiTop !== sourceTop) {
+          if (heroUiTop !== sourceTop && !(pinViewport && pfx === 'fix')) {
             el.setAttribute('data-hero-ui-y', String(heroUiYRatio));
             el.setAttribute('data-hero-ui-anchor', heroUiAnchored ? 'owner-block' : 'slot-ratio');
           }
