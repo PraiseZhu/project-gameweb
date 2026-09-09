@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
@@ -54,6 +54,12 @@ test('viewport fix roots retain source height while language remount reads live 
   assert.match(chrome, /lockProductFrameScrollX\(frame\)/);
 });
 
+
+test('inventory-static-gate keeps pageBox: no lock-1920 and no topbar window-right shift', () => {
+  assert.match(renderer, /_isInventoryStaticGateView\(\) \{[\s\S]*?inventory-static-gate'\) \|\| ''\) === '1'/);
+  assert.match(renderer, /if \(this\._isInventoryStaticGateView\(\)\) \{[\s\S]*?reason: 'inventory-static-gate'/);
+  assert.match(renderer, /if \(!this\._isInventoryStaticGateView\(\) && !ancestorAlreadyShifted && this\._isRightTopbarChrome/);
+});
 test('right chrome, logo and arrow retain their inventory viewport pins', () => {
   for (const pageBox of [{ x: 2764, y: 70 }, { x: 0, y: 0 }, { x: 1885, y: 2014 }]) {
     const context = paintPosition({ box: { ...pageBox, w: 70, h: 70 }, originX: 0, originY: 0 });

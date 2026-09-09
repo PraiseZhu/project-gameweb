@@ -108,10 +108,10 @@ localeInvariantFamilies:
 
 ## 2. 正式产品入口
 
-完成标准原句不能改口径：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 政策镜像必须绿 → 才给人 `?product=1`。
+完成标准原句不能改口径：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 政策镜像必须绿 → 才给人 QA `index.html`（带工具栏）。`?product=1` 只给机器闸和截图。
 
-- `preview:first` 红：不许给人打开 `?product=1`，不许开 Interaction / Resize。
-- 给人的地址是命令结束后仍可打开的 `file://...?product=1`。内部检查可以走 HTTP。
+- `preview:first` 红：不许给人打开 QA `index.html`，不许开 Interaction / Resize。
+- 给人的地址是命令结束后仍可打开的 QA `file://.../index.html`。`?product=1` 只给机器闸和截图。内部检查可以走 HTTP。
 - Main 静态停下来等人验收。翻译轴只在有文案表时才算；简中装字体不是翻译通过。
 
 ## 3. 吃包判定
@@ -324,6 +324,8 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 
 没有 B 的 owner 就停，不缩。有 owner 才量换语言后的完整墨水：宽对 `maxWidth`，高只对已写的 `maxHeight`。超了就把 `fontSize` 减 `1px`，`lineHeight` 同比，再量，直到完整放下。不要 `100→92→85→78→75`，不要 75% 地板，不要停在 `floor-exceeded` 当通过。
 
+HEIGHT + 垂直 HUG 的 TEXT 用已写 maxWidth 做 CSS max-width 折行（display:block）。禁止 flex 竖对齐把长英文撑出框。没有 maxHeight 时只锁宽、允许长高。
+
 同一 owner、同一档位的兄弟，共用缩完后最小的那个整数字号。省略号、`text-overflow`、clip 当放下 = 失败。
 
 #### D. 测试与验收
@@ -363,7 +365,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 
 1. 有 ready 包：`cd skills/torchlight-web && npm run figma:from-handoff -- <handoff-dir>` 必须绿。
 2. 出页：`npm run torchlightweb -- --handoff <dir> --demo <dir>` 写出 demo/`index.html`。直连 `figma:html-from-handoff` 锁死。
-3. `preview:first` 必须绿，才给人 `?product=1`。
+3. `preview:first` 必须绿，才给人 QA `index.html`（带工具栏）。`?product=1` 只给机器闸和截图。
 4. 拉伸主张要带视口 `w×h`、树（≤1126 手机 / ≥1127 PC）、列宽（`>1920` 随视口 / `1127–1920` 冻 1920 / 手机列 = 视口）、实际 `k`、两层 hero 是否都等于 `innerHeight`、`html` 字号是否等于 `10vw`。不得用 UA `is-pc` / `is-mobile` 当切树证据。`1127–1920` 若仍用 `k = viewportW/3840`（随视口变）即失败。`≤1126` 若仍用 `k = viewportW/750` 且 `k>1`，或再裁一列 750 露出两边底色（含后屏 TorchCon 贴左、Shop 浮在褐底上），即失败。
 5. 外文主张要带档位 × 语言比例、实际字体家族名、B 找到的 owner id、用到的 `maxWidth`（有则加 `maxHeight`）、缩完的整数 px。超出已写上限、用裁切 / 省略号顶过关、或仍用 `data-fit-scale` / `floor-exceeded` 当通过，即失败。详见第 6.1 节 D。
 6. `btn/主要按钮` 主张要带同端 `首屏主按钮` 该语言变体的 `fontFamily` / `fontWeight` / `letterSpacing`。`en` 主 CTA（锚和跟随）页面必须 uppercase；本地化不是大写也要强制大写。跟随节点仍用自己的源字族、源字重、源字距，或英文仍显示 `View More` 即失败。稿上没出该语言变体（如没有 `jp`）不算失败。变体在但没有活字才打 `unverified-primary-cta-type`。详见第 6.2 节。

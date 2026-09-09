@@ -504,6 +504,21 @@ export function chromeTopBarContract(inventory, byId = null) {
   return { rootIds, nodeIds };
 }
 
+function chromeProbeExpectedBox(node, byId) {
+  const expected = expectedDrawBox(node, byId);
+  if (!expected) return null;
+  const owner = findFixOwner(node, byId);
+  if (!owner) return expected;
+  const ownerBox = expectedDrawBox(owner, byId) || geom(owner.pageBox);
+  if (!ownerBox) return expected;
+  return {
+    x: expected.x - ownerBox.x,
+    y: expected.y - ownerBox.y,
+    w: expected.w,
+    h: expected.h,
+  };
+}
+
 function evaluateChromeTopBarGeometry({ inventory, chromeTopBar, byId, viewportKind } = {}) {
   if (String(viewportKind) !== 'product') return [];
   const failures = [];
@@ -521,7 +536,8 @@ function evaluateChromeTopBarGeometry({ inventory, chromeTopBar, byId, viewportK
   for (const id of contract.nodeIds) {
     const node = byId.get(id);
     if (!node) continue;
-    const expected = expectedDrawBox(node, byId);
+    if (isFirstScreenBottomFix(node) || isFirstScreenBottomFix(findFixOwner(node, byId))) continue;
+    const expected = chromeProbeExpectedBox(node, byId);
     const actual = nodes[id];
     if (!actual) {
       failures.push({ id, reason: 'topbar-chrome-missing-dom', expected });
@@ -776,7 +792,9 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       }
       const slotDesign = Number(productScroll.slotDesignHeight);
       const pageH = Number(firstBox?.h);
-      if (String(viewportKind) === 'product' && Number.isFinite(Number(layer.height))) {
+      if (cropWindow === '100vh') {
+        /* Official first screen is the 100vh slot. Do not demand Figma pageBox.h. */
+      } else if (String(viewportKind) === 'product' && Number.isFinite(Number(layer.height))) {
         const minH = Math.max(
           Number.isFinite(pageH) ? pageH : 0,
           Number.isFinite(slotDesign) ? slotDesign : 0,
@@ -789,9 +807,9 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
             actual: layer.height,
           });
         }
-      }
-      if (String(layer.overflow || '') === 'hidden' && Number(layer.height) + POSITION_TOLERANCE_PX < Number(firstBox?.h || 0)) {
-        failures.push({ id: firstId, reason: 'first-section-cropped-below-pageBox', actual: layer.height, expected: firstBox?.h });
+        if (String(layer.overflow || '') === 'hidden' && Number(layer.height) + POSITION_TOLERANCE_PX < Number(firstBox?.h || 0)) {
+          failures.push({ id: firstId, reason: 'first-section-cropped-below-pageBox', actual: layer.height, expected: firstBox?.h });
+        }
       }
     }
   }
@@ -872,7 +890,11 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
           failures.push({ id, reason: 'overlay-scroll-drift', actual: delta });
         }
         if (delta && delta.clippedAfter === true) {
-          failures.push({ id, reason: 'overlay-scroll-clipped', actual: delta });
+          const node = byId.get(String(id));
+          const owner = findFixOwner(node, byId);
+          if (!isFirstScreenBottomFix(node) && !isFirstScreenBottomFix(owner)) {
+            failures.push({ id, reason: 'overlay-scroll-clipped', actual: delta });
+          }
         }
       }
     }

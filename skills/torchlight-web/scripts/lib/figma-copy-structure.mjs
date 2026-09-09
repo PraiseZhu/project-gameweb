@@ -12,12 +12,21 @@ function unwrap(value) {
   return value && typeof value === 'object' && 'value' in value ? value.value : value;
 }
 
-function cellLines(raw) {
+export function cellLines(raw) {
   return String(raw ?? '')
-    .replace(/\r\n/g, '\n')
+    .replace(/\r\n?|[\u2028\u2029]/g, '\n')
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line !== '');
+}
+
+export function lineBreakOf(raw) {
+  const text = String(raw ?? '');
+  if (text.includes('\r\n')) return '\r\n';
+  if (text.includes('\u2028')) return '\u2028';
+  if (text.includes('\u2029')) return '\u2029';
+  if (text.includes('\n')) return '\n';
+  return '\n';
 }
 
 function isCjkChar(ch) {
@@ -32,6 +41,43 @@ function isCjkChar(ch) {
 
 function isAsciiAlnum(ch) {
   return /^[0-9A-Za-z]$/.test(String(ch || ''));
+}
+
+/**
+ * Map a TEXT node's own characters onto consecutive sentences of a table cell.
+ * Used when one Feishu cell is split across layers (or one layer keeps two
+ * sentences). Never invents translations; only returns indices.
+ */
+export function inferCellLineSpan(nodeCharacters, cellZh) {
+  const nodeLines = cellLines(nodeCharacters);
+  const cell = cellLines(cellZh);
+  if (!nodeLines.length || !cell.length) return { unresolved: true, why: 'empty' };
+  if (cell.length === 1) return { wholeCell: true, lineCount: 1 };
+  const nodeJoined = nodeLines.map(cellLineKey).join('\n');
+  const cellJoined = cell.map(cellLineKey).join('\n');
+  if (nodeJoined === cellJoined) return { wholeCell: true, lineCount: cell.length };
+  const hits = [];
+  for (let start = 0; start <= cell.length - nodeLines.length; start++) {
+    const slice = cell.slice(start, start + nodeLines.length).map(cellLineKey).join('\n');
+    if (slice === nodeJoined) hits.push({ lineIndex: start, takeCount: nodeLines.length });
+  }
+  if (!hits.length && nodeLines.length === 1) {
+    const key = cellLineKey(nodeLines[0]);
+    cell.forEach((line, i) => {
+      if (cellLineKey(line) === key) hits.push({ lineIndex: i, takeCount: 1 });
+    });
+  }
+  if (hits.length === 1) {
+    return {
+      lineIndex: hits[0].lineIndex,
+      lineCount: cell.length,
+      takeCount: hits[0].takeCount,
+      partIndex: 0,
+      partCount: 1,
+    };
+  }
+  if (hits.length > 1) return { unresolved: true, why: 'ambiguous-span' };
+  return { unresolved: true, why: 'no-span' };
 }
 
 /** Date/time typesetting: "7月11日 16:30" vs "7月11日16:30" are the same line. */
@@ -208,7 +254,41 @@ function matchRowOnRuns(row, runs) {
     const partial = matchPartialLinesOnRun(lines, run);
     if (partial) return { ...partial, lines };
   }
+  for (const run of runs) {
+    const span = matchPartialSpanOnRun(lines, run);
+    if (span) return { ...span, lines };
+  }
   return null;
+}
+
+
+function matchPartialSpanOnRun(lines, run) {
+  const parts = [];
+  for (const node of run || []) {
+    const inferred = inferCellLineSpan(node.characters, lines.join('\n'));
+    if (!inferred || !Number.isInteger(inferred.lineIndex) || (inferred.takeCount || 1) < 2) continue;
+    if (inferred.lineCount !== lines.length) continue;
+    const take = inferred.takeCount || 1;
+    const overlap = parts.some((part) => {
+      const a0 = part.lineIndex;
+      const a1 = a0 + (part.takeCount || 1);
+      const b0 = inferred.lineIndex;
+      const b1 = b0 + take;
+      return a0 < b1 && b0 < a1;
+    });
+    if (overlap) return null;
+    parts.push({
+      lineIndex: inferred.lineIndex,
+      nodeIds: [String(node.nodeId)],
+      takeCount: take,
+    });
+  }
+  if (!parts.length) return null;
+  return {
+    nodeIds: parts.flatMap((part) => part.nodeIds),
+    parts,
+    lineCount: lines.length,
+  };
 }
 
 function groupFromHits(hits) {
@@ -309,16 +389,31 @@ export function splitLocaleCell(raw, lineIndex, lineCount, { partIndex = 0, part
  * layer count. Extra source layers past the locale's last sentence stay
  * absent; they must not fall back to zh-CN.
  */
-export function splitLocaleCellByOwnLines(raw, lineIndex, { partIndex = 0, partCount = 1 } = {}) {
+export function splitLocaleCellByOwnLines(raw, lineIndex, { partIndex = 0, partCount = 1, takeCount = 1, joinWith = '\n' } = {}) {
   const lines = cellLines(raw);
   if (!lines.length) return { kind: 'unresolved', localeLineCount: 0 };
   if (!Number.isInteger(lineIndex) || lineIndex < 0) {
     return { kind: 'unresolved', localeLineCount: lines.length };
   }
   if (lineIndex >= lines.length) return { kind: 'absent', localeLineCount: lines.length };
-  const piece = splitLocaleCell(raw, lineIndex, lines.length, { partIndex, partCount });
-  if (piece == null) return { kind: 'unresolved', localeLineCount: lines.length };
-  return { kind: 'piece', value: piece, localeLineCount: lines.length };
+  const count = Number.isInteger(takeCount) && takeCount > 1 ? takeCount : 1;
+  if (count === 1) {
+    const piece = splitLocaleCell(raw, lineIndex, lines.length, { partIndex, partCount });
+    if (piece == null) return { kind: 'unresolved', localeLineCount: lines.length };
+    return { kind: 'piece', value: piece, localeLineCount: lines.length };
+  }
+  const pieces = [];
+  for (let i = 0; i < count; i++) {
+    const idx = lineIndex + i;
+    if (idx >= lines.length) {
+      if (!pieces.length) return { kind: 'absent', localeLineCount: lines.length };
+      break;
+    }
+    const piece = splitLocaleCell(raw, idx, lines.length, { partIndex: 0, partCount: 1 });
+    if (piece == null) return { kind: 'unresolved', localeLineCount: lines.length };
+    pieces.push(piece);
+  }
+  return { kind: 'piece', value: pieces.join(joinWith), localeLineCount: lines.length };
 }
 
 /**
@@ -560,4 +655,4 @@ export function inferLeftoverUniqueRow({ nodeId, candidateRows, texts, byNode })
   };
 }
 
-export { cellLines, treeKeyOf };
+export { treeKeyOf };

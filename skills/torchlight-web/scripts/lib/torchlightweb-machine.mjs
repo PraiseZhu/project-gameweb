@@ -5,7 +5,7 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { inspectPackPath, packRoot } from './pack-demo.mjs';
 import {
@@ -195,9 +195,8 @@ function currentStop(phase) {
 function productViewForDemo(demoDir, { interaction = false } = {}) {
   const indexPath = join(packRoot(demoDir), 'index.html');
   if (!existsSync(indexPath)) return { url: null, command: null, blocked: true };
-  const url = interaction
-    ? `file://${indexPath}?product=1&interaction=1`
-    : `file://${indexPath}?product=1`;
+  const href = pathToFileURL(indexPath).href;
+  const url = interaction ? `${href}?interaction=1` : href;
   return { url, command: `open "${url}"` };
 }
 
@@ -289,7 +288,7 @@ function startMachine({ record, root, handoffDir, now, buildMain }) {
       error: 'main-static-red',
       main,
       productView: main?.productView || { url: null, command: null, blocked: true },
-      nextHumanStep: 'preview:first / 清单对账 / 政策镜像 / 像素门 红了不许给人打开 ?product=1，也不许开 Interaction / Resize。差异图在 artifacts/stop1-pixel/。',
+      nextHumanStep: 'preview:first / 清单对账 / 政策镜像 / 像素门 红了不许给人打开 QA 页，也不许开 Interaction / Resize。差异图在 artifacts/stop1-pixel/。',
     });
   }
 
@@ -309,7 +308,7 @@ function startMachine({ record, root, handoffDir, now, buildMain }) {
     waiting: true,
     main,
     humanReview: presented,
-    productView: main.productView || null,
+    productView: productViewForDemo(root),
     nextHumanStep: nextStep(record),
   });
 }

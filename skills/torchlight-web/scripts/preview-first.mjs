@@ -66,6 +66,10 @@ function productViewUrl(indexPath) {
   return `${pathToFileURL(indexPath).href}?${PRODUCT_QUERY}`;
 }
 
+function humanReviewUrl(indexPath) {
+  return pathToFileURL(indexPath).href;
+}
+
 function openProductViewCommand(url) {
   if (process.platform === 'win32') return `start "" "${url}"`;
   if (process.platform === 'darwin') return `open "${url}"`;
@@ -199,7 +203,7 @@ function previewPayload({ demoDir, screenshot, result, session, spec, truth, ind
 }
 
 function candidateCompletion({ ok, spec, truth, indexPath }) {
-  const url = productViewUrl(indexPath);
+  const url = humanReviewUrl(indexPath);
   const evidence = sourcePlatformEvidence(spec, truth);
   const productView = ok
     ? { url, command: openProductViewCommand(url) }
@@ -311,4 +315,4 @@ if (isCli) {
   await runPreviewFirst({ demoDir, outDir, protocol });
 }
 
-export { PREVIEW_THRESHOLDS, explainMeaningfulContract, candidateCompletion, productViewUrl };
+export { PREVIEW_THRESHOLDS, explainMeaningfulContract, candidateCompletion, productViewUrl, humanReviewUrl };
