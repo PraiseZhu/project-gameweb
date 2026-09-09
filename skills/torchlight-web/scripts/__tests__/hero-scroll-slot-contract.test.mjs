@@ -89,9 +89,12 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /owner-block/);
   assert.match(render, /data-hero-cluster', 'bottom'/);
   assert.match(render, /heroClusterBottomShift/);
-  assert.match(render, /data-hero-cta-row/);
+  assert.match(render, /Calendar \+ CTA stay on Figma pageBox/);
+  assert.match(render, /isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
   assert.match(render, /isHeroTitleOwner/);
   assert.match(render, /data-hero-mobile-center/);
+  assert.match(render, /data-later-mobile-center/);
+  assert.match(render, /_windowStageWidthDesign/);
   assert.match(render, /pfx === 'fix'/);
   assert.match(render, /listedHeroArt/);
   assert.match(render, /firstScreenKvInSection/);

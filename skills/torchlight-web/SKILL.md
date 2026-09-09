@@ -16,7 +16,7 @@ This is the Torchlight public Skill identity. Local Torch demo output is a verif
 
 **完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 / 1440 `?product=1`，sec 无缝、满铺子层不重画）→ 像素门必须绿（每屏截已有页对规范稿分区图；超阈值拦，差异图在 `artifacts/stop1-pixel/`）→ 才给人 `?product=1`。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
-停 1 锁死：整框 PNG 必须有实际像素，不得仅凭尺寸 metadata 判绿；首屏无名 `kv` 使用独立 `coverScale=max(k, slotH/sourceH)`，UI 使用 `pageStageScale`，`cropLeft` 不得二次叠加；viewport `fix/` 根使用 `parentBox` 定位且高度不得乘 hero yScale，子层保持 owner-local。
+停 1 锁死：整框 PNG 必须有实际像素，不得仅凭尺寸 metadata 判绿；首屏无名 `kv` 使用独立 `coverScale=max(viewportW/designW, slotH/sourceH)`，UI 使用 `pageStageScale`，`cropLeft` 不得二次叠加；viewport `fix/` 根使用 `parentBox` 定位且高度不得乘 hero yScale，子层保持 owner-local。
 
 | 情况 | 走哪条 |
 |---|---|

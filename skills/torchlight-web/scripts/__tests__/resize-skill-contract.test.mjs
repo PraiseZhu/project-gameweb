@@ -354,7 +354,7 @@ test('resize skill names its own axis and refuses translation/interaction owners
   assert.ok(resizeOwns().some((item) => /named modal stays open/.test(item)));
 });
 
-test('temporary lock-1920 name list stays on freeze k above 1920', () => {
+test('temporary lock-1920 names follow page k above 1920', () => {
   assert.equal(isLock1920FixPrefix('fix'), true);
   assert.equal(isLock1920FixPrefix('btn'), false);
   assert.deepEqual(LOCK_1920_CTA_SET_NAMES, ['btn/主要按钮', '首屏主按钮']);
@@ -363,9 +363,10 @@ test('temporary lock-1920 name list stays on freeze k above 1920', () => {
   assert.equal(isLock1920CtaSetName('btn/按钮'), false);
   assert.equal(isLock1920CtaSetName('btn/次要按钮'), false);
   const above = lock1920Scale({ viewportW: 2560, pageK: 2560 / 3840, compositionKey: 'pc' });
-  assert.equal(above.applied, true);
-  assert.equal(above.lockK, 0.5);
-  assert.equal(above.counterScale, 0.5 / (2560 / 3840));
+  assert.equal(above.applied, false);
+  assert.equal(above.lockK, 2560 / 3840);
+  assert.equal(above.counterScale, 1);
+  assert.equal(above.reason, 'follow-page-k-above-freeze');
   const freeze = lock1920Scale({ viewportW: 1440, pageK: 0.5, compositionKey: 'pc' });
   assert.equal(freeze.applied, false);
   assert.equal(freeze.reason, 'already-freeze-band');
@@ -376,8 +377,7 @@ test('temporary lock-1920 name list stays on freeze k above 1920', () => {
   assert.match(renderSrc, /data-lock-1920', 'true'/);
   assert.match(renderSrc, /Not a lasting naming system; not @fit=/);
   assert.match(renderSrc, /never[\s\S]{0,40}btn\/按钮/);
-  assert.match(renderSrc, /_applyLock1920CounterScale/);
-  assert.match(renderSrc, /100% 0/);
+  assert.match(renderSrc, /follow-page-k-above-freeze/);
   assert.match(renderSrc, /_topbarViewportShiftDesign/);
   assert.match(renderSrc, /_isRightTopbarChrome/);
   assert.match(renderSrc, /_isTopbarOverlayChrome/);
@@ -387,23 +387,30 @@ test('temporary lock-1920 name list stays on freeze k above 1920', () => {
   assert.match(renderSrc, /heroClusterBottomShift/);
   assert.match(renderSrc, /播放按钮/);
   assert.match(renderSrc, /_scanTopbarClusterRight/);
-  assert.match(renderSrc, /50% 50%/);
   assert.match(renderSrc, /isHeroPlay/);
   assert.match(renderSrc, /parentAlreadyClustered/);
   assert.match(renderSrc, /data-hero-mobile-center/);
-  assert.match(renderSrc, /data-hero-cta-row/);
+  assert.match(renderSrc, /data-later-mobile-center/);
+  assert.match(renderSrc, /_windowStageWidthDesign/);
+  assert.match(renderSrc, /Calendar \+ CTA stay on Figma pageBox/);
+  assert.match(renderSrc, /isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
+  assert.match(renderSrc, /parentHeroClusterLayout/);
+  assert.match(renderSrc, /!el.getAttribute\('data-hero-cluster'\)/);
+  assert.doesNotMatch(renderSrc, /Park the calendar immediately left/);
+  assert.doesNotMatch(renderSrc, /const gap = 24;/);
+  assert.doesNotMatch(renderSrc, /const gap = 8;/);
+  assert.doesNotMatch(renderSrc, /data-hero-cta-row/);
+  assert.match(chromeSrc, /wrap\.style\.width = Math\.round\(vp\.w \* scale \+ BEZEL\)/);
+  assert.doesNotMatch(chromeSrc, /wrap\.style\.width = Math\.round\(columnW \* scale \+ BEZEL\)/);
   assert.match(renderSrc, /isHeroTitleOwner/);
   assert.match(renderSrc, /heroClusterName/);
   assert.doesNotMatch(renderSrc, /el\.style\.zoom = String\(previousZoom \* lock1920\.counterScale\)/);
-  assert.match(chromeSrc, /data-lock-1920="true"/);
-  assert.match(chromeSrc, /data-lock-1920-counter/);
-  assert.match(chromeSrc, /data-lock-1920-origin/);
-  assert.doesNotMatch(chromeSrc, /lockEl\.style\.zoom = String\(counter\)/);
-  assert.equal(lock1920Scale({ viewportW: 2186, pageK: 2186 / 3840, compositionKey: 'pc' }).counterScale, 0.5 / (2186 / 3840));
-  assert.equal(lock1920Scale({ viewportW: 2560, pageK: 2560 / 3840, compositionKey: 'pc' }).counterScale, 0.5 / (2560 / 3840));
-  assert.match(chromeSrc, /liveLock = \(nextK != null && nextK > 0\) \? \(0\.5 \/ nextK\) : null/);
-  assert.match(chromeSrc, /overlay zoom followScale does not blow freeze size|Recompute counter against/);
-  assert.match(chromeSrc, /lockEl\.setAttribute\('data-lock-1920-counter', String\(counter\)\)/);
+  assert.doesNotMatch(renderSrc, /counterScale: 0\.5 \/ page/);
+  assert.doesNotMatch(chromeSrc, /liveLock = \(nextK != null && nextK > 0\) \? \(0\.5 \/ nextK\) : null/);
+  assert.match(chromeSrc, /size above 1920 follows page k \/ followScale/);
+  assert.equal(lock1920Scale({ viewportW: 2186, pageK: 2186 / 3840, compositionKey: 'pc' }).counterScale, 1);
+  assert.equal(lock1920Scale({ viewportW: 2560, pageK: 2560 / 3840, compositionKey: 'pc' }).counterScale, 1);
+  assert.equal(lock1920Scale({ viewportW: 3840, pageK: 1, compositionKey: 'pc' }).applied, false);
 });
 
 test('named modal stays open across light-drag and pointerup rebuild', () => {
@@ -577,7 +584,8 @@ test('sc-product-view-only / sc-shared-freeze: shared ruler and centered viewpor
   assert.doesNotMatch(chromeSrc, /var columnW = PRODUCT_VIEW \? productColumnWidth\(vp\.w, productPlat\) : vp\.w/);
   assert.match(chromeSrc, /fit: !PRODUCT_VIEW/);
   assert.match(chromeSrc, /BEZEL = PRODUCT_VIEW \? 0 : 22/);
-  assert.match(chromeSrc, /columnW \* scale \+ BEZEL/);
+  assert.match(chromeSrc, /vp\.w \* scale \+ BEZEL/);
+  assert.doesNotMatch(chromeSrc, /columnW \* scale \+ BEZEL/);
   assert.match(chromeSrc, /productView: !!PRODUCT_VIEW/);
   assert.match(renderSrc, /this\._frameWidth = this\._productColumnWidth\(viewportW, designWidth\)/);
   assert.doesNotMatch(renderSrc, /this\._frameWidth = productView/);
@@ -641,8 +649,9 @@ test('sc-product-view-only / sc-shared-freeze: shared ruler and centered viewpor
 
 test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () => {
   assert.match(renderSrc, /Cover 窗宽永远是真实 viewport/);
-  assert.match(renderSrc, /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
+  assert.match(renderSrc, /const coverScale = Math\.max\(coverW \/ designWidth, slotH \/ Number\(first\.height\)\)/);
   assert.match(renderSrc, /heroVisualCropLeft = 0/);
+  assert.doesNotMatch(renderSrc, /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
   assert.match(renderSrc, /this\._viewportWidth/);
   assert.doesNotMatch(renderSrc, /coverW \/ slotScale - designWidth/);
   assert.match(renderSrc, /columnLeftDesign/);
@@ -658,12 +667,29 @@ test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () =
   assert.equal(fill.designHeight, 900 / 0.5);
   assert.equal(fill.cropWindowDesign, 900 / fill.slotScale);
   assert.ok(fill.slotScale >= 900 / 2160);
+  /* 751–1126 UI k=1. Cover must still grow with the window or KV stays 750
+     and #180f02 shows on the right. Layout extra stays on k. */
+  const tabletCover = Math.max(993 / 750, 1080 / 1334);
+  assert.ok(tabletCover > 1);
+  assert.equal(tabletCover, 993 / 750);
+  const tabletFill = heroViewportFill({
+    viewportH: 1080,
+    widthScaleK: 1,
+    heroDesignHeight: 1334,
+  });
+  assert.equal(tabletFill.slotScale, 1);
+  assert.ok(tabletFill.slotScale < tabletCover);
 });
 
 test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stays on buttons', () => {
-  assert.match(renderSrc, /data-later-slot-window', '100vh'/);
   assert.match(renderSrc, /data-later-cover-plane', 'cover-crop'/);
   assert.match(renderSrc, /data-later-cover-window', 'later-stage'/);
+  assert.match(renderSrc, /boxW = Number\(stageWidthDesign\)/);
+  assert.match(renderSrc, /layer\.style\.width = windowStageWidth/);
+  assert.match(renderSrc, /if \(vw > 1920\) return dw;/);
+  assert.doesNotMatch(renderSrc, /if \(!\(vw > 0\) \|\| !\(scale > 0\) \|\| vw > 1126\) return dw;/);
+  assert.match(renderSrc, /Do not pad later pageBox/);
+  assert.doesNotMatch(renderSrc, /return \(h \* scale \+ 0\.5\) < vh \? Math\.max\(h, slot\) : h;/);
   assert.match(renderSrc, /SLG size is page k at every PC band/);
   assert.doesNotMatch(renderSrc, /data-hero-slg-stretch', 'viewport-width'/);
   assert.doesNotMatch(renderSrc, /scale\(' \+ stretch \+ ', 1\)/);

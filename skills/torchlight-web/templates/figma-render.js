@@ -125,6 +125,21 @@
     if (!(fw > 0) || !(vw > 0)) return 0;
     return (vw - fw) / 2;
   },
+  /* 751–1126: UI k stays 1 (750-authored). The painted stage / paint-root
+     must still follow the window, or later bg clips to 750 and the leftover
+     is #180f02. Below 750 this is just designWidth. */
+  _windowStageWidthDesign(designWidth, k) {
+    const dw = Number(designWidth);
+    const scale = Number(k);
+    const vw = Number(this._viewportWidth);
+    if (!(dw > 0)) return dw;
+    if (!(vw > 0) || !(scale > 0)) return dw;
+    /* 751–1126: UI k=1, stage follows the window so KV / later bg fill it.
+       1127–1920: freeze k=0.5, stage still follows the window so the
+       1920 column is not a brown strip on the right (1127×1535). */
+    if (vw > 1920) return dw;
+    return Math.max(dw, vw / scale);
+  },
   /* Temporary lock-1920 name list (DESIGN.md §5.0, Resize Skill).
      `fix/` prefix, COMPONENT_SET `btn/主要按钮`, `首屏主按钮`.
      Not a lasting naming system; not @fit=. Match the set name, never
@@ -147,11 +162,13 @@
     if (width <= 1920) {
       return { applied: false, lockK: 0.5, counterScale: 1, reason: 'already-freeze-band' };
     }
+    /* Relative size vs KV must follow page k. Freeze-size counter-scale
+       made Shop/充值 tiny, un-centered the label, and opened top-bar gaps. */
     return {
-      applied: true,
-      lockK: 0.5,
-      counterScale: 0.5 / page,
-      reason: 'lock-1920-above-freeze',
+      applied: false,
+      lockK: page,
+      counterScale: 1,
+      reason: 'follow-page-k-above-freeze',
     };
   },
   _isLock1920CtaNode(node, componentSets) {
@@ -162,28 +179,6 @@
   _isLock1920Node(node, pfx, componentSets) {
     if (pfx === 'fix') return true;
     return this._isLock1920CtaNode(node, componentSets);
-  },
-  /* `zoom` on an absolutely placed layer also shrinks its CSS left/top
-     toward the containing-block origin. Official lock-1920 keeps the
-     authored corner and only shrinks size. Origin is per-layer: logo 0 0,
-     right chrome 100% 0. Primary CTA / calendar stay with the SLG cluster
-     by sharing the same bottom-anchor; do not counter-scale them from
-     the CTA box center-bottom or they walk off the calendar above 1920. */
-  _applyLock1920CounterScale(el, lock1920, origin) {
-    if (!el || !lock1920 || !lock1920.applied) return;
-    const counter = Number(lock1920.counterScale);
-    if (!(counter > 0) || Math.abs(counter - 1) < 1e-4) return;
-    const originValue = origin || '100% 0';
-    el.style.transformOrigin = originValue;
-    const previous = String(el.style.transform || '').trim();
-    const next = previous && previous !== 'none'
-      ? previous + ' scale(' + counter + ')'
-      : 'scale(' + counter + ')';
-    el.style.transform = next;
-    el.setAttribute('data-lock-1920', 'true');
-    el.setAttribute('data-lock-1920-k', String(lock1920.lockK));
-    el.setAttribute('data-lock-1920-counter', String(counter));
-    el.setAttribute('data-lock-1920-origin', originValue);
   },
   /* Official SS13 top bar is `position:fixed; width:100%; justify-content:flex-end`.
      Product `fix/` overlay still lives in the frozen 1920 / growing-k column, so
@@ -291,16 +286,12 @@
       }
     }
   },
-  /* Freeze-band later pageBox 2143×k=1071.5 is 8.5px short of 1080.
-     Pad only that CSS shortfall. >1920 k grows so 2143×k already exceeds
-     the window — do not pad to viewport/k or #180f02 shows under bg. */
+  /* Later official is rem, not a second 100vh. Do not pad later pageBox
+     to the first-screen slot — that leaves #180f02 under sec/3 after
+     bg/pc背景2. Keep Figma height. */
   _laterStageHeight(sectionH, { k, viewportH, slotH } = {}) {
-    const h = Number(sectionH) || 0;
-    const scale = Number(k);
-    const vh = Number(viewportH);
-    const slot = Number(slotH);
-    if (!(scale > 0) || !(vh > 0) || !(slot > 0)) return h;
-    return (h * scale + 0.5) < vh ? Math.max(h, slot) : h;
+    void k; void viewportH; void slotH;
+    return Number(sectionH) || 0;
   },
   scale() {
     const dw = this._designWidth || 3840;
@@ -2471,8 +2462,8 @@
     this._productView = productView;
     this._frameWidth = this._productColumnWidth(viewportW, designWidth);
     const k = this.scale();
-    const lock1920 = this._lock1920Scale(k, viewportW, __normalizedPlat === 'mobile' ? 'mobile' : 'pc');
-    this._lock1920 = lock1920;
+    const windowStageWidth = this._windowStageWidthDesign(designWidth, k);
+    const windowStageShiftX = windowStageWidth - Number(designWidth);
     this._topbarClusterRightDesign = this._scanTopbarClusterRight(
       __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes,
       designWidth,
@@ -2630,16 +2621,17 @@
         throw new Error('figma-render: heroViewportFillVh missing from DESIGN.md YAML');
       }
       const slotH = viewportH * (fillVh / 100);
-      /* Cover 窗宽永远是真实 viewport，不得把背景冻成 1920。UI k 走 _frameWidth。
-         Cover scale is max(width-k, viewportH / sourceH). Layout extra still
-         uses width-k so the first-screen stage opens to 100vh CSS and later
-         sections abut it. Do not pass cover scale into _buildHeroScrollSlot:
-         that zeroed extra and clipped kv back to width-k (390×844 → 693px). */
-      const coverScale = Math.max(k, slotH / Number(first.height));
+      /* Cover 窗宽永远是真实 viewport，不得把背景冻成 1920，也不得在
+         751–1126 用 UI k=1 把 KV 冻成 750。UI k 走 _frameWidth。
+         Cover scale is max(viewportW/designW, viewportH/sourceH). Layout extra
+         still uses width-k so the first-screen stage opens to 100vh CSS.
+         Do not pass cover scale into _buildHeroScrollSlot. */
+      const coverW = Number.isFinite(Number(this._viewportWidth)) && this._viewportWidth > 0
+        ? this._viewportWidth
+        : viewportW;
+      const coverScale = Math.max(coverW / designWidth, slotH / Number(first.height));
       if (Number.isFinite(coverScale) && coverScale > 0) {
         heroVisualScale = coverScale;
-        /* Single cover: CSS scale + transform-origin. A second cropLeft
-           plus origin 50% 0 double-shifted the art (left −77 instead of −42). */
         heroVisualCropLeft = 0;
         heroCropWindowDesign = Number(pageStageScale) > 0 ? slotH / pageStageScale : slotH / coverScale;
       }
@@ -2815,10 +2807,7 @@
       /* ≤1126 official KV fills the window. A 750-wide overflow:hidden
          stage clips that cover back to a brown-bezel strip. Keep UI k
          at min(1, W/750); only the stage box follows the window. */
-      const stageWidthDesign = ((__normalizedPlat === 'mobile' || Number(this._viewportWidth) <= 1126)
-        && Number(this._viewportWidth) > 0 && Number(k) > 0)
-        ? Math.max(designWidth, Number(this._viewportWidth) / Number(k))
-        : designWidth;
+      const stageWidthDesign = windowStageWidth;
       stage.style.width = stageWidthDesign + 'px';
       /* 分区高度往上取整到【缩放后的整数 CSS px】。
          2026-08-04 实测：sec/3 稿高 1543，k=0.5 → 771.5px，半像素。
@@ -4103,33 +4092,26 @@
        const heroClusterBottomShift = (() => {
          if (!heroUiBlocks || !heroSlot) return 0;
          let bottom = null;
-         let calendar = null;
-         let cta = null;
          for (const item of list) {
            const kind = heroClusterName(item && item.name);
            if (!kind) continue;
            const itemBox = item.pageBox || item.box;
            const pageTop = Number(itemBox && itemBox.y) - Number(paintOriginY);
            const h = Number(itemBox && itemBox.h);
-           const w = Number(itemBox && itemBox.w);
-           const pageLeft = Number(itemBox && itemBox.x) - Number(paintOriginX);
            if (!Number.isFinite(pageTop) || !Number.isFinite(h) || h <= 0) continue;
            /* Mobile leftover `img/标题slg` at overlay y=0 is top-bar art. */
            if (kind === 'slg' && pageTop < heroUiHalf) continue;
            const b = pageTop + h;
            if (bottom == null || b > bottom) bottom = b;
-           if (kind === 'calendar') calendar = { pageTop, h, w, pageLeft, pageBottom: b };
-           if (kind === 'cta') cta = { pageTop, h, w, pageLeft, pageBottom: b };
          }
          if (!(bottom > 0)) return 0;
          /* Shared shift is in PAGE coords. Nested title SLG lives in a
             local owner, so the paint path must convert before writing top.
             uiY < 1 (tall hero cropped to 100vh) pulls the cluster up;
             uiY > 1 pads it down. Do not skip the pull. */
-         const shift = bottom * heroUiYRatio - bottom;
-         return { shift, calendar, cta, bottom };
+         return bottom * heroUiYRatio - bottom;
        })();
-       const heroClusterShiftValue = Number(heroClusterBottomShift && heroClusterBottomShift.shift) || 0;
+       const heroClusterShiftValue = Number(heroClusterBottomShift) || 0;
        const heroUiOwnerBlock = (blocks, centerX, centerY) => {
          let best = null;
          for (const blk of blocks) {
@@ -4605,7 +4587,7 @@
           || /^img\/标题slg(?:@|$)/i.test(String(n.name || ''));
         const isHeroCta = this._isLock1920CtaNode(n, activeComponentSets)
           || /^首屏主按钮/.test(String(n.name || ''));
-        const isHeroCalendar = /日历icon|日历按钮/i.test(String(n.name || ''));
+        const isHeroCalendar = /^btn\/.*(日历icon|日历按钮)/i.test(String(n.name || ''));
         const isHeroTitleOwner = /^标题(?:$|@)/.test(String(n.name || ''));
         const isHeroPlay = /播放按钮/.test(String(n.name || ''));
         /* Overlay leftover `img/标题slg` at y=0 is top-bar art, not the
@@ -4794,10 +4776,14 @@
           /* zh-CN static gate measures authored pageBox. Auto Layout flex
              restacks mixed-size children (vertical CENTER / overlapping
              horizontal CENTER) and walks them off the inventory box. Keep
-             source x/y for zh-CN; later Translation still uses flex. */
+             source x/y for zh-CN. First-screen calendar / CTA / title keep
+             that same pageBox x in every language so 751–1126 leftover
+             centering matches en/tw/kr. */
           const zhSourceExactLayout = String(ctx.prefs && ctx.prefs.lang || '') === 'zh-CN';
+          const parentHeroClusterLayout = !!(parent && parent.el && parent.el.closest
+            && parent.el.closest('[data-hero-cluster="bottom"]'));
           const participatesInAutoLayout = inAutoLayout && childLayoutAlign === 'INHERIT'
-            && sourceParticipatesInFlow && !zhSourceExactLayout;
+            && sourceParticipatesInFlow && !zhSourceExactLayout && !parentHeroClusterLayout;
           if (participatesInAutoLayout) {
           const pel = parent.el;
           /* A horizontal HUG owner with a FILL text track between fixed flow
@@ -4947,6 +4933,10 @@
           const sourceLeft = ((box.x ?? 0) - originX);
           el.style.left = sourceLeft + 'px';
           const sourceTop = ((box.y ?? 0) - originY);
+          /* 751–1126 later UI stays 750-authored. Center the 750 stack in the
+             now-window-wide stage so TorchCon / Learn More are not left-stuck
+             against a brown bezel. Nested children keep local x. Overlay
+             chrome / KV / later bg keep their own cover or window-right shift. */
           /* Size stays on k. When the first-screen slot is taller than the
              Figma hero, top-level blocks anchor their BOTTOM fraction of the
              slot so a lower-hero title stays at the first-screen bottom. A
@@ -5035,14 +5025,13 @@
             /* Cluster shift is page-Y. Nested layers (title SLG inside `标题`)
                write local top, so convert: localTop + pageShift. */
             heroUiTop = sourceTop + heroClusterShiftValue;
-            /* Official mobile first cut is a side-by-side CTA row, not the
-               overlapping Figma stack. Keep freeze / >1920 on the authored
-               relative Y; only the phone tree restyles calendar + CTA. */
-            if (__normalizedPlat === 'mobile' && isHeroTitleOwner
+            if (__normalizedPlat === 'mobile'
+              && (isHeroTitleOwner || isHeroCta || isHeroCalendar)
               && Number(this._viewportWidth) > 750 && Number(k) > 0) {
-              /* 751–1126: buttons stay 750-authored size; the 750 title
-                 group (play + wordmark) must sit in the window, not at x=0
-                 of a now-full-bleed KV. */
+              /* 751–1126: keep 750-authored size and Figma relative x
+                 (calendar 62 / CTA 133). Shift the whole cluster by the
+                 same leftover so CTA is not clipped at 750 while calendar
+                 stays left, and zh-CN / en / tw / kr share one x. */
               const stageW = Number(this._viewportWidth) / Number(k);
               const shiftX = (stageW - Number(designWidth)) / 2;
               if (shiftX > 0.5) {
@@ -5050,30 +5039,9 @@
                 el.setAttribute('data-hero-mobile-center', String(shiftX));
               }
             }
-            if (__normalizedPlat === 'mobile' && heroClusterBottomShift) {
-              const cal = heroClusterBottomShift.calendar;
-              const cta = heroClusterBottomShift.cta;
-              if (cal && cta && Number(cal.w) > 0 && Number(cta.w) > 0) {
-                const rowH = Math.max(Number(cal.h), Number(cta.h));
-                const rowBottom = Math.max(Number(cal.pageBottom), Number(cta.pageBottom));
-                const rowTopPage = rowBottom + heroClusterShiftValue - rowH;
-                const gap = 8;
-                const rowW = Number(cal.w) + gap + Number(cta.w);
-                const rowStageW = Number(this._viewportWidth) > 0 && Number(k) > 0
-                  ? Number(this._viewportWidth) / Number(k)
-                  : Number(designWidth);
-                const rowLeftPage = (rowStageW - rowW) / 2;
-                if (isHeroCalendar) {
-                  heroUiTop = rowTopPage + (rowH - Number(cal.h)) / 2;
-                  el.style.left = rowLeftPage + 'px';
-                  el.setAttribute('data-hero-cta-row', 'calendar');
-                } else if (isHeroCta) {
-                  heroUiTop = rowTopPage + (rowH - Number(cta.h)) / 2;
-                  el.style.left = (rowLeftPage + Number(cal.w) + gap) + 'px';
-                  el.setAttribute('data-hero-cta-row', 'cta');
-                }
-              }
-            }
+            /* Calendar + CTA stay on Figma pageBox (mobile 62/133 overlapping
+               stack). Do not invent a side-by-side row — that walks both off
+               the poster. Shared cluster shift still moves them together. */
             el.setAttribute('data-hero-cluster', 'bottom');
             el.setAttribute('data-hero-cluster-shift', String(heroUiTop - sourceTop));
             heroUiBlocks.push({
@@ -5118,6 +5086,15 @@
           if (afterHeroShift !== 0 && (pfx === 'bg' || /^bg(?:\/|$)/i.test(String(n.name || '')))) {
             heroUiTop += afterHeroShift;
             el.setAttribute('data-hero-bg-follow-y', String(afterHeroShift));
+          }
+          if (!parent && !pinViewport && !listedHeroArt && !fullBleedHeroArt
+              && windowStageShiftX > 0.5
+              && !el.getAttribute('data-hero-cluster')
+              && !el.getAttribute('data-hero-mobile-center')
+              && !el.getAttribute('data-topbar-viewport-shift')) {
+            const laterCenter = windowStageShiftX / 2;
+            el.style.left = (sourceLeft + laterCenter) + 'px';
+            el.setAttribute('data-later-mobile-center', String(laterCenter));
           }
           el.style.top = heroUiTop + 'px';
           if (heroUiTop !== sourceTop) {
@@ -5176,16 +5153,16 @@
             const viewportHDesign = coverPageStageScale > 0 && Number(ctx.viewport && ctx.viewport.h) > 0
               ? Number(ctx.viewport.h) / coverPageStageScale
               : (heroCropWindowDesign > 0 ? heroCropWindowDesign : sourceH);
-            const coverLeftDesign = (viewportWDesign - sourceW) / 2 - columnLeftDesign;
+            const coverLeftDesign = (viewportWDesign - sourceW * planeRatio) / 2 - columnLeftDesign;
             const coverTopDesign = origin === 'center 0'
               ? 0
-              : (viewportHDesign - sourceH) / 2;
+              : (viewportHDesign - sourceH * planeRatio) / 2;
             if (Math.abs(planeRatio - 1) > 0.001
               || Math.abs(coverLeftDesign) > 0.5
               || Math.abs(coverTopDesign) > 0.5) {
               el.style.left = coverLeftDesign + 'px';
               el.style.top = coverTopDesign + 'px';
-              el.style.transformOrigin = origin === 'center 0' ? '50% 0' : '50% 50%';
+              el.style.transformOrigin = '0 0';
               if (Math.abs(planeRatio - 1) > 0.001) {
                 el.style.transform = 'scale(' + planeRatio + ')';
               }
@@ -5214,19 +5191,19 @@
              Section zoom is 1; numbers are design px. */
           const sourceW = Number(box.w) || 0;
           const sourceH = Number(box.h) || 0;
-          const boxW = Number(designWidth) || sourceW;
+          const boxW = Number(stageWidthDesign) || Number(designWidth) || sourceW;
           const boxH = Number(laterSlotHeight) > 0 ? Number(laterSlotHeight) : sourceH;
           if (sourceW > 0 && sourceH > 0 && boxW > 0 && boxH > 0) {
             const cover = Math.max(boxW / sourceW, boxH / sourceH);
-            if (Math.abs(cover - 1) > 1e-6) {
-              const coverLeft = (boxW - sourceW * cover) / 2;
-              const coverTop = (boxH - sourceH * cover) / 2;
-              const sourceTopNow = parseFloat(el.style.top);
-              const baseTop = Number.isFinite(sourceTopNow) ? sourceTopNow : ((box.y ?? 0) - originY);
+            const coverLeft = (boxW - sourceW * cover) / 2;
+            const coverTop = (boxH - sourceH * cover) / 2;
+            const sourceTopNow = parseFloat(el.style.top);
+            const baseTop = Number.isFinite(sourceTopNow) ? sourceTopNow : ((box.y ?? 0) - originY);
+            if (Math.abs(cover - 1) > 1e-6 || Math.abs(coverLeft) > 0.5) {
               el.style.left = coverLeft + 'px';
               el.style.top = (baseTop + coverTop) + 'px';
               el.style.transformOrigin = '0 0';
-              el.style.transform = 'scale(' + cover + ')';
+              if (Math.abs(cover - 1) > 1e-6) el.style.transform = 'scale(' + cover + ')';
               el.setAttribute('data-later-cover-plane', 'cover-crop');
               el.setAttribute('data-later-cover-window', 'later-stage');
             }
@@ -6509,32 +6486,6 @@
             }
           }
         }
-
-        if (lock1920.applied) {
-          const parentIsTopbar = !!(parent && parent.el && parent.el.getAttribute && parent.el.getAttribute('data-topbar-chrome') === 'true');
-          const isTopbarOwner = evidenceAttrs?.['data-topbar-chrome'] === 'true';
-          /* Landscape fix/ owner is a 3793-wide group. Scaling it from any
-             origin walks either the logo or the right cluster. Lock overlay
-             chrome from 100% 0 (shop / globe / dropmenu sit as siblings of
-             the wide group in truth, not as nested children). Do not
-             counter-scale the first-screen CTA — it stays with the SLG /
-             calendar cluster via the shared bottom-anchor. */
-          if (parentIsTopbar) {
-            const origin = this._isRightTopbarChrome(box, designWidth) ? '100% 0' : '0 0';
-            this._applyLock1920CounterScale(el, lock1920, origin);
-          } else if (this._isTopbarOverlayChrome(n, pfx, evidenceAttrs) && !isTopbarOwner) {
-            const origin = this._isRightTopbarChrome(box, designWidth) ? '100% 0' : '0 0';
-            this._applyLock1920CounterScale(el, lock1920, origin);
-          } else if (isHeroCta && !isTopbarOwner) {
-            /* Official freeze CTA stays 298×96 above 1920. Scale size from
-               the box center so the shared cluster bottom-anchor does not
-               walk off the calendar. */
-            this._applyLock1920CounterScale(el, lock1920, '50% 50%');
-          } else if (lock1920Node && !isTopbarOwner && !heroClusterLayer) {
-            const origin = this._isRightTopbarChrome(box, designWidth) ? '100% 0' : '0 0';
-            this._applyLock1920CounterScale(el, lock1920, origin);
-          }
-        }
         // 挂到父节点下（没有父节点才挂 stage）。DFS 先序 → 同级 append 顺序即绘制顺序。
         (parent ? parent.el : container).appendChild(el);
         /* One inventory bg/* sheet, two views: the clipped first-screen crop
@@ -7327,7 +7278,7 @@
           layer.style.zIndex = String(paintIndex);
           layer.style.left = '0';
           layer.style.top = '0';
-          layer.style.width = designWidth + 'px';
+          layer.style.width = windowStageWidth + 'px';
           layer.style.height = (pageScrollHeight || meta.height || 0) + 'px';
           layer.style.pointerEvents = 'none';
           /* First-screen pagePaintOrder roots are section frames (sec/1),
@@ -7356,7 +7307,7 @@
                 : firstPageH);
             layer.style.left = '0';
             layer.style.top = '0';
-            layer.style.width = designWidth + 'px';
+            layer.style.width = windowStageWidth + 'px';
             layer.style.height = heroWindowH + 'px';
             layer.style.overflow = 'hidden';
             layer.setAttribute('data-hero-crop-window', heroSlot && Number(heroSlot.designHeight) > 0
@@ -7384,7 +7335,7 @@
             });
             layer.style.left = '0';
             layer.style.top = '0';
-            layer.style.width = designWidth + 'px';
+            layer.style.width = windowStageWidth + 'px';
             layer.style.height = (sectionY - pageY + laterMinH + laterShift) + 'px';
             layer.style.overflow = 'hidden';
             layer.setAttribute('data-section-layer-box', 'pageBox-clip');
@@ -7684,7 +7635,15 @@
         const namedModals = wired;
         const modalPolicy = () => {
           const policy = designPolicy();
-          const fill = policy.modalViewportFill === 'cover' ? 'cover' : 'contain';
+          /* YAML default is cover (PC 3840 sheet on a frozen 1920 column).
+             Mobile 750×1334 cover on 390×844 becomes 474×844 and overflows
+             the sheet. Contain keeps the authored sheet inside the viewport.
+             Read data-fx-base from this remount; the click listener itself
+             is installed once and must not keep the first-paint PC base. */
+          const liveBase = frame.getAttribute('data-fx-base') || __base;
+          const fill = (liveBase === 'mobile')
+            ? 'contain'
+            : (policy.modalViewportFill === 'cover' ? 'cover' : 'contain');
           const scrim = Number(policy.modalScrimOpacity);
           const lock = policy.modalLockPageScroll === true;
           return {
@@ -7744,8 +7703,9 @@
           const frameRect = frame.getBoundingClientRect();
           if (!frameRect.width || !frameRect.height) return;
           const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
-          const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
-          const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1334 : 2160);
+          const liveBase = frame.getAttribute('data-fx-base') || __base;
+          const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[liveBase] || DW[__base];
+          const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (liveBase === 'mobile' ? 1334 : 2160);
           /* Host zoom is the page-stage ruler for closed overlays. Pinning
              to the visible frame must drop it, or cover/contain scale
              multiplies k and the Figma sheet shrinks to a card.
