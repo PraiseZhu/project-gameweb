@@ -126,6 +126,43 @@ function overlayLocalBox(node, owner) {
   };
 }
 
+function constraintAxis(node, axis) {
+  const raw = node?.layout?.constraints?.[axis] ?? node?.constraints?.[axis];
+  return String(raw || '').trim().toUpperCase();
+}
+
+function pinBoardBox(node, inventory) {
+  const parent = asArray(inventory?.nodes).find((entry) => String(entry?.id || '') === String(node?.parentId || ''));
+  const parentPage = parent?.pageBox || parent?.box;
+  if (parentPage && Number(parentPage.w) > 0 && Number(parentPage.h) > 0) return geomOf(parentPage);
+  if (inventory?.page?.pageBox) return geomOf(inventory.page.pageBox);
+  return geomOf(node?.pageBox || node?.box);
+}
+
+function fixPinEdges(node, inventory) {
+  const page = geomOf(node?.pageBox || node?.box);
+  const board = pinBoardBox(node, inventory);
+  return {
+    horizontal: constraintAxis(node, 'horizontal'),
+    vertical: constraintAxis(node, 'vertical'),
+    gapTop: page.y - board.y,
+    gapBottom: (board.y + board.h) - (page.y + page.h),
+    gapLeft: page.x - board.x,
+    gapRight: (board.x + board.w) - (page.x + page.w),
+    boardW: board.w,
+    boardH: board.h,
+  };
+}
+
+/** DESIGN.md §5: Top/Left / missing stay at the overlay origin (0,0).
+ *  Center / Bottom / Right keep source size here; the renderer pins the
+ *  stored gap onto the live viewport (viewportH / k), not this local y. */
+function pinOwnerLocalBox(owner, inventory) {
+  const pinEdges = fixPinEdges(owner, inventory);
+  const page = geomOf(owner?.pageBox || owner?.box);
+  return { box: { x: 0, y: 0, w: page.w, h: page.h }, pinEdges };
+}
+
 function remapSliceToOverlay(node, owner) {
   const sliceBox = node?.sliceExport?.box;
   const ownerPage = owner?.pageBox;
@@ -147,17 +184,18 @@ function remapSliceToOverlay(node, owner) {
  *  (pageBox − owner.pageBox). parentBox is relative to the direct parent
  *  only — using it as overlay origin puts nested img/ at (57,34) on the
  *  page and clips the slice out of the button. */
-function paintFixedNode(node, owner) {
+function paintFixedNode(node, owner, inventory) {
   const painted = paintWithPageBox(node);
   if (!owner) return painted;
-  const ownerLocal = {
-    x: 0,
-    y: 0,
-    w: Number(owner.pageBox?.w ?? owner.box?.w ?? 0),
-    h: Number(owner.pageBox?.h ?? owner.box?.h ?? 0),
-  };
+  const pinned = pinOwnerLocalBox(owner, inventory);
   if (String(node?.id) === String(owner?.id)) {
-    return { ...painted, box: ownerLocal, pageBox: ownerLocal, pin: owner.pin || 'viewport' };
+    return {
+      ...painted,
+      box: pinned.box,
+      pageBox: pinned.box,
+      pin: owner.pin || 'viewport',
+      pinEdges: pinned.pinEdges,
+    };
   }
   const local = overlayLocalBox(node, owner);
   if (!local) return painted;
@@ -252,7 +290,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
   }
   const fixedNodes = ordered(liveNodes.filter((node) => (
     underFixedOwner(node, fixed) && !droppedClones.has(String(node?.id || ''))
-  ))).map((node) => paintFixedNode(node, ownerOf(node)));
+  ))).map((node) => paintFixedNode(node, ownerOf(node), inventory));
 
   const pageMeta = drawMeta(inventory.page);
   const chromeNodes = asArray(adapted.pageChrome?.nodes).map((node) => {

@@ -2026,6 +2026,7 @@
          not a left directory. Stretching it to 100vh squashes mobile 736×401
          by 844/1334. Skip even if an old render still stamped nav-shell. */
       if (node.getAttribute('data-topbar-chrome') === 'true') continue;
+      if (/^(bottom|center)$/.test(node.getAttribute('data-fix-chrome') || '')) continue;
       var nested = false;
       for (var r = 0; r < roots.length; r++) {
         if (roots[r].contains(node)) { nested = true; break; }

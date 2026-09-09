@@ -63,6 +63,39 @@ function paintWithPageBox(node) {
   return { ...node, box: node.pageBox };
 }
 
+function constraintAxis(node, axis) {
+  const raw = node?.layout?.constraints?.[axis] ?? node?.constraints?.[axis];
+  return String(raw || '').trim().toUpperCase();
+}
+
+function pinBoardBox(node, inventory) {
+  const parent = asArray(inventory?.nodes).find((entry) => String(entry?.id || '') === String(node?.parentId || ''));
+  const parentPage = parent?.pageBox || parent?.box;
+  if (parentPage && Number(parentPage.w) > 0 && Number(parentPage.h) > 0) return geomOf(parentPage);
+  if (inventory?.page?.pageBox) return geomOf(inventory.page.pageBox);
+  return geomOf(node?.pageBox || node?.box);
+}
+
+function fixPinEdges(node, inventory) {
+  const page = geomOf(node?.pageBox || node?.box);
+  const board = pinBoardBox(node, inventory);
+  return {
+    horizontal: constraintAxis(node, 'horizontal'),
+    vertical: constraintAxis(node, 'vertical'),
+    gapTop: page.y - board.y,
+    gapBottom: (board.y + board.h) - (page.y + page.h),
+    gapLeft: page.x - board.x,
+    gapRight: (board.x + board.w) - (page.x + page.w),
+    boardW: board.w,
+    boardH: board.h,
+  };
+}
+
+function stampFixPinEdges(node, inventory) {
+  if (!node || node.role !== 'fix') return node;
+  return { ...node, pinEdges: fixPinEdges(node, inventory) };
+}
+
 /**
  * Map one inventory/v2 document onto a renderer platform tree.
  * unknown stays drawable; skipped is omitted except CSS-paintable art-fragments.
@@ -120,7 +153,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
     },
     fixedOverlays: {
       ...(adapted.fixedOverlays || {}),
-      nodes: asArray(adapted.fixedOverlays?.nodes).map(paintWithPageBox),
+      nodes: asArray(adapted.fixedOverlays?.nodes).map((node) => stampFixPinEdges(paintWithPageBox(node), inventory)),
     },
     pagePaintOrder: adapted.pagePaintOrder,
     sections,

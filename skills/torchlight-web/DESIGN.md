@@ -163,6 +163,7 @@ localeInvariantFamilies:
 7. **背景**：首屏 KV / 长 `bg/*` 按 cover 填**真实视口**（官方 1440 背景槽 = 1440×900，不是冻列 1920）。后屏 `bg/pc背景*` cover 填后屏 stage 盒子，不是第二扇视口窗。产品页用清单长 `bg/*`，不抄官方 PC/手机两张 URL。首屏 cover 公式是 `max(viewportW/designW, viewportH/heroH)`，UI 仍走该档 `k`。cover 不得把首屏 UI 裁出视口外当消失；放不下的 UI / 后屏随 pageBox 往下滚，overflow-y 保持 auto。
 8. **锁缩放**：`width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`。
 9. **固定叠层**：官方另有 `position:fixed` 的顶栏 `.i_14pfw1l3`（`top:0;width:100%;justify-content:flex-end`）、底 CTA `.i_cwyomnms`、粒子 `.i_h6wakwff`。产品页对应 Figma overlay，不跟它们的 `vh`/`bottom` 季节补丁。
+   `fix/` 钉视口。钉哪条边只看该层 `layout.constraints`（稿上 Constraints），不猜图层名。所相对画板 = 直接父 frame 的 `pageBox`（不是 `sec/1`、不是相对父层的 `parentBox`）。垂直 **Bottom**：底边钉视窗底，空隙 = 该层底到父画板底 × 当前档 `k`（槽高 = 视窗高 / `k`，不跟 cover）。视窗变高空隙不拉长，滚走仍钉着。垂直 **Top** / 未写：仍钉顶（顶栏、导航不动）。垂直 **Center**：在视窗槽内垂直居中。水平 **Center**：在父画板宽内居中；**Left / 未写** 钉左；**Right** 钉右，空隙同样 × `k`。尺寸仍走该档 `k`，不跟 cover。里面的 `img/` 只负责切图。
 
 视口分段（产品必须按这个拉）：
 

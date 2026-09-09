@@ -1882,6 +1882,7 @@
     var nodes = frame.querySelectorAll('[data-motion-role="navigationFooter"], [data-nav-shell="true"]');
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
+      if (/^(bottom|center)$/.test(node.getAttribute('data-fix-chrome') || '')) continue;
       var nested = false;
       for (var r = 0; r < roots.length; r++) {
         if (roots[r].contains(node)) { nested = true; break; }
