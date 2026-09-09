@@ -139,12 +139,16 @@ export function trustedSkillRoot(startDir) {
 
 function candidateDirs(startDir) {
   const demoReal = demoScope(startDir);
-  const skillRoot = trustedSkillRoot(startDir);
+  const cwdSkillRoot = trustedSkillRoot(process.cwd());
+  const startSkillRoot = trustedSkillRoot(startDir);
+  const toolPackageRoot = findPackageRoot(import.meta.dirname);
   const roots = [
     process.env.QA_HIFI_MODULE_ROOT,
     process.env.PLAYWRIGHT_MODULE_ROOT,
     startDir ? trustedRepoRoot(startDir) : null,
-    skillRoot,
+    cwdSkillRoot,
+    startSkillRoot,
+    toolPackageRoot,
     import.meta.dirname,
   ].filter(Boolean);
   const out = [];

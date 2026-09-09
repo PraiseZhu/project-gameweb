@@ -204,6 +204,8 @@ test('Playwright skill root is the current skill, not both page-making skills', 
   assert.doesNotMatch(src, /launchChromium\(TOOL_ROOT/);
   const resolver = readFileSync(join(ROOT, 'src/resolve-playwright.mjs'), 'utf8');
   assert.doesNotMatch(resolver, /\['torchlight-web', 'yise-web-ui'\]/);
+  assert.match(resolver, /cwdSkillRoot/);
+  assert.match(resolver, /toolPackageRoot/);
 });
 
 test('stop-1 assembles node exports and product=1', () => {
