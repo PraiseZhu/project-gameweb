@@ -788,3 +788,44 @@ test('extractCopy: two remaining neighbor rows stay ambiguous', () => {
   assert.equal(out.byNode.M.matchKind, 'ambiguous');
   assert.equal(out.report.inferredNeighbor, 0);
 });
+
+test('extractCopy: phase-1 designation binds later-section 查看更多 to row 26, not 81', () => {
+  const moreSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' } },
+    rows: {
+      26: { 'zh-CN': '查看更多', en: 'View More', 'zh-TW': '查看更多', ko: '더 보기' },
+      81: { 'zh-CN': '查看更多', en: 'More', 'zh-TW': '查看更多', ko: '더 보기' },
+    },
+  };
+  const texts = [
+    { nodeId: 'I949:5195;949:5333', name: '立即下载', characters: '查看更多', parentId: 'pc-sec2', orderKey: '1', treeKey: 'pc' },
+    { nodeId: 'I949:6080;949:6214', name: '立即下载', characters: '查看更多', parentId: 'mo-sec2', orderKey: '1', treeKey: 'mobile' },
+  ];
+  const leaf = (p) => ({ value: at(moreSnap, p), provenance: { locator: p } });
+  const overlay = {
+    nodeRow: {
+      'I949:5195;949:5333': { row: 26, why: 'phase-1 later-section CTA on PC' },
+      'I949:6080;949:6214': { row: 26, why: 'phase-1 later-section CTA on mobile' },
+    },
+  };
+  const out = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode['I949:5195;949:5333'].matchKind, 'designated');
+  assert.equal(String(out.byNode['I949:5195;949:5333'].row), '26');
+  assert.equal(out.byNode['I949:5195;949:5333'].translations.en.value, 'View More');
+  assert.equal(out.byNode['I949:5195;949:5333'].translations.ko.value, '더 보기');
+  assert.equal(out.byNode['I949:6080;949:6214'].matchKind, 'designated');
+  assert.equal(String(out.byNode['I949:6080;949:6214'].row), '26');
+  assert.equal(out.byNode['I949:6080;949:6214'].translations.en.value, 'View More');
+  const unbound = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
+  assert.equal(unbound.byNode['I949:5195;949:5333'].matchKind, 'ambiguous');
+  assert.equal(unbound.byNode['I949:6080;949:6214'].matchKind, 'ambiguous');
+});
+
+test('extractCopy: phase-1 duplicate 查看更多 without designation stays unresolved', () => {
+  const snap = { _meta: { langCols: { D: 'zh-CN', F: 'en' } }, rows: { 26: { 'zh-CN': '查看更多', en: 'View More' }, 81: { 'zh-CN': '查看更多', en: 'More' } } };
+  const texts = [{ nodeId: 'later-more', name: '立即下载', characters: '查看更多', parentId: 'later-sec', orderKey: '1', treeKey: 'mobile' }];
+  const leaf = (path) => ({ value: at(snap, path), provenance: { locator: path } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.ok(['ambiguous', 'unresolved'].includes(out.byNode['later-more'].matchKind));
+  assert.equal(out.byNode['later-more'].translations?.en, undefined);
+});

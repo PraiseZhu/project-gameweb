@@ -357,17 +357,17 @@
     '.chip b{color:#fff}',
     '.frame{background:#180f02;overflow:visible;transform-origin:0 0;border-radius:6px;',
     'box-shadow:0 0 0 1px #000}',
-    '[data-product-view="1"] .frame{background:transparent;border-radius:0;box-shadow:none;overflow-x:hidden}',
+    '[data-product-view="1"] .frame{background:transparent;border-radius:0;box-shadow:none;overflow-x:clip;touch-action:pan-y;overscroll-behavior-x:none}',
     'html{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1))}',
-    'html[data-product-view="1"]{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1));overflow-x:hidden}',
+    'html[data-product-view="1"]{--fx-official-root:calc(' + officialRootFontVw() + 'vw * var(--fx-root-scale, 1));overflow-x:clip;touch-action:pan-y;overscroll-behavior-x:none}',
     /* Keep the official 10vw number as a reported ruler. Do not apply it as the
        document font-size: Figma stages size in px, and a 10vw html font-size
        makes Chromium treat the product stage as a zoomed rem tree. */
     'html[data-product-view="1"]{font-size:16px}',
-    'html[data-product-view="1"] body{overflow-x:hidden;overflow:hidden;font-size:16px}',
+    'html[data-product-view="1"] body{overflow-x:clip;overflow:hidden;font-size:16px;touch-action:pan-y;overscroll-behavior-x:none}',
     /* Official product view has no QA bezel. The frame is the window. */
-    'html[data-product-view="1"] .stage{padding:0;align-items:stretch;justify-content:stretch;overflow:hidden}',
-    'html[data-product-view="1"] .stage-wrap{padding:0;border:0;border-radius:0;box-shadow:none;background:transparent;display:block;width:100%!important;height:100%!important;max-width:none}',
+    'html[data-product-view="1"] .stage{padding:0;align-items:stretch;justify-content:stretch;overflow:hidden;overscroll-behavior-x:none}',
+    'html[data-product-view="1"] .stage-wrap{padding:0;border:0;border-radius:0;box-shadow:none;background:transparent;display:block;width:100%!important;height:100%!important;max-width:none;overflow-x:clip;touch-action:pan-y;overscroll-behavior-x:none}',
     '.resize-rail{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:11px}',
     '.resize-rail input{width:150px}',
     '.resize-rail .num{color:#fff;font-variant-numeric:tabular-nums;min-width:45px;text-align:center}',
@@ -787,6 +787,51 @@
     document.documentElement.style.setProperty('--fx-root-scale', '1');
   }
 
+  /* overflow-x:hidden still creates a scrollport: JS and touch can set
+     scrollLeft. The simulated screen only scrolls vertically; mix/carousel
+     tracks keep their own overflow. Lock the frame clip host, not html/body
+     in QA — the toolbar window still resizes. PC freeze can leave wrap
+     narrower than the 1920 column. */
+  function lockProductScrollX(el) {
+    if (!el) return;
+    var pin = function () {
+      try { if (el.scrollLeft !== 0) el.scrollLeft = 0; } catch (err) { /* getter may be locked */ }
+    };
+    pin();
+    if (el.getAttribute && el.getAttribute('data-product-scroll-x-lock') === '1') return;
+    if (el.setAttribute) el.setAttribute('data-product-scroll-x-lock', '1');
+    try {
+      el.style.overflowX = 'clip';
+      el.style.touchAction = 'pan-y';
+      el.style.overscrollBehaviorX = 'none';
+    } catch (err) { /* keep listener fallback */ }
+    try {
+      Object.defineProperty(el, 'scrollLeft', {
+        configurable: true,
+        enumerable: true,
+        get: function () { return 0; },
+        set: function () { /* product view is vertical-only */ },
+      });
+    } catch (err) { /* keep listener fallback */ }
+    el.addEventListener('scroll', pin, { passive: true });
+    el.addEventListener('wheel', function (ev) {
+      if (ev.deltaX && Math.abs(ev.deltaX) > Math.abs(ev.deltaY || 0)) {
+        ev.preventDefault();
+        pin();
+      }
+    }, { passive: false });
+  }
+
+  function lockProductFrameScrollX(frameEl) {
+    lockProductScrollX(frameEl);
+    lockProductScrollX(wrap);
+    if (PRODUCT_VIEW) {
+      lockProductScrollX(stage);
+      lockProductScrollX(document.documentElement);
+      lockProductScrollX(document.body);
+    }
+  }
+
   function renderInto(container, state) {
     var renderPrefs = cp(S.prefs);
     var productPlatform = productViewportPlatform();
@@ -1190,24 +1235,21 @@
        内容高度撑满。PC 拖拽改 H 时 vp.h 变、screen 可视高跟着变；非 PC 随 preset 高度变。 */
     frame.style.height = vp.h + 'px';
     frame.style.overflowY = 'auto';
-    /* Official freeze crop clips the 1920 column to the simulated viewport.
-       Product view also matches .adaptive-width. Unfrozen QA frames keep X auto
-       for no-clip probes. */
-    frame.style.overflowX = columnW !== vp.w || PRODUCT_VIEW ? 'hidden' : 'auto';
+    /* Official .adaptive-width clips page X. QA frame and product view share
+       that clip so the simulated screen matches the live page. Viewport width
+       still resizes; only page X is clipped. Inner mix/carousel tracks keep
+       their own overflow. */
+    frame.style.overflowX = 'clip';
+    wrap.style.overflowX = 'clip';
+    lockProductFrameScrollX(frame);
     if (PRODUCT_VIEW) {
-      document.documentElement.style.overflowX = 'hidden';
-      document.body.style.overflowX = 'hidden';
-      stage.style.overflowX = 'hidden';
+      document.documentElement.style.overflowX = 'clip';
+      document.body.style.overflowX = 'clip';
+      stage.style.overflowX = 'clip';
       wrap.style.overflow = 'hidden';
-    }
-    if (PRODUCT_VIEW) {
       applyOfficialRootScale();
     }
-    if (columnW !== vp.w || PRODUCT_VIEW) {
-      frame.setAttribute('data-overflow-x', 'hidden');
-    } else {
-      frame.removeAttribute('data-overflow-x');
-    }
+    frame.setAttribute('data-overflow-x', 'hidden');
     frame.style.transform = 'scale(' + scale + ')';
     /* wrap 是屏幕容器（bezel：1px border + 10px padding 四边）。全局 box-sizing:border-box，
        style.width 是边框盒宽 —— 必须加上 bezel 的 22px（左右各 1px border + 10px padding），
@@ -1215,7 +1257,10 @@
        wrap 内容宽 22px、屏面顶到 bezel 边上）。读数与 rail 都按 wrap.getBoundingClientRect() 现测，
        与这里的像素严格同源。 Product view has no bezel: the frame is the window. */
     var BEZEL = PRODUCT_VIEW ? 0 : 22;   /* (1 border + 10 padding) × 2 边 */
-    wrap.style.width = Math.round(vp.w * scale + BEZEL) + 'px';
+    /* Frozen PC column is 1920 while the chosen viewport may be 1440. Size the
+       bezel to the column, not vp.w, or wrap clips the same art the product
+       page shows. Fit scale still shrinks the whole screen into the toolbar. */
+    wrap.style.width = Math.round(columnW * scale + BEZEL) + 'px';
     wrap.style.minHeight = '';
     /* wrap 高度**固定**为缩后 screen 高（含 bezel），不是 auto —— 边框盒严格等于 screen
        尺寸，stage 才能按 wrap 居中、四边等距黑色呼吸空间；frame 固定 vp.h 且内部滚动，
@@ -2017,6 +2062,12 @@
           : stage.querySelectorAll('[data-motion-role="navigationFooter"], [data-prefix="fix"]');
         for (var r = 0; r < navRoots.length; r++) {
           var root = navRoots[r];
+          /* Viewport-pinned fix roots already use inventory parentBox/pageBox
+             geometry. They are not hero-entry navigation rails: applying the
+             hero viewport yScale here squashes the root while its owner-local
+             children remain at source size. */
+          if (root.getAttribute('data-fix-pin') === 'viewport'
+            && root.getAttribute('data-prefix') === 'fix') continue;
           saveHeroEntryStyle(root);
           var sourceLeft = parseFloat((root.__fxHeroEntryStyleBase && root.__fxHeroEntryStyleBase.left) || root.style.left);
           var sourceTop = parseFloat((root.__fxHeroEntryStyleBase && root.__fxHeroEntryStyleBase.top) || root.style.top);

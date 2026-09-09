@@ -9,6 +9,7 @@ import { packageManagerCommand, normalizePathForComparison, TRUSTED_TAP_MAX_BUFF
 
 const SCRIPT = fileURLToPath(new URL('./nightly-health.mjs', import.meta.url));
 const WORKFLOW = fileURLToPath(new URL('../workflows/nightly-health.yml', import.meta.url));
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 test('跨平台路径比较统一分隔符且 Windows 不区分盘符大小写', () => {
   assert.equal(normalizePathForComparison('C:\\Repo\\Package\\', 'win32'), 'c:/repo/package');
@@ -58,6 +59,12 @@ test('发现逻辑不依赖当前包名或可选附加脚本', () => {
   assert.match(res.stdout, /standards\/renamable-standard\/tool/);
   assert.equal((res.stdout.match(/npm test \+ file proof/g) ?? []).length, 2);
   assert.doesNotMatch(res.stdout, /release:audit|fonts:check/);
+});
+
+test('nightly discovers and validates the stop-1 standards tool package', () => {
+  const res = runList(REPO_ROOT);
+  assert.match(res.stdout, /standards\/stop1-figma-pixel\/tool/);
+  assert.doesNotMatch(res.stdout, /stop1-figma-pixel\/tool.*echo|stop1-figma-pixel\/tool.*true/);
 });
 
 test('守卫或列包失败后工作流仍会尝试真实夜间检查', () => {
@@ -1017,4 +1024,3 @@ test('脚本不写 GITHUB_STEP_SUMMARY，留给 workflow always 步骤', () => {
   assert.match(report, /夜巡 /);
   assert.equal(summaryText, '');
 });
-

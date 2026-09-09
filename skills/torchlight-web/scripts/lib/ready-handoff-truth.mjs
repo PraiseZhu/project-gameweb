@@ -141,7 +141,9 @@ function remapSliceToOverlay(node, owner) {
   };
 }
 
-/** fix/ pins to the viewport. Every descendant uses overlay-absolute
+/** fix/ pins to the viewport. The overlay owner box is overlay-local (0,0);
+ * parentBox is the viewport pin and the renderer must use it for CSS left/top
+ * of overlay roots. Every descendant uses overlay-absolute
  *  (pageBox − owner.pageBox). parentBox is relative to the direct parent
  *  only — using it as overlay origin puts nested img/ at (57,34) on the
  *  page and clips the slice out of the button. */
