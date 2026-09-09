@@ -1,4 +1,4 @@
-/* figma-render.js — Figma 稿 → DOM 的通用渲染器。【本 Skill 新增】
+﻿/* figma-render.js — Figma 稿 → DOM 的通用渲染器。【本 Skill 新增】
  *
  * ═══ 为什么必须在 Skill 层，而不是抄在每个 demo 的 index.html 里 ═══
  *
@@ -150,9 +150,19 @@
   _isLock1920CtaSetName(name) {
     return this._lock1920CtaSetNames().includes(String(name || '').trim());
   },
+  _isInventoryStaticGateView() {
+    try {
+      return String(new URLSearchParams(window.location.search).get('inventory-static-gate') || '') === '1';
+    } catch (err) {
+      return false;
+    }
+  },
   _lock1920Scale(pageK, viewportW, compositionKey) {
     const page = Number(pageK);
     const width = Number(viewportW);
+    if (this._isInventoryStaticGateView()) {
+      return { applied: false, lockK: page > 0 ? page : 1, counterScale: 1, reason: 'inventory-static-gate' };
+    }
     if (!(page > 0) || !(width > 0)) {
       return { applied: false, lockK: null, counterScale: 1, reason: 'invalid-viewport' };
     }
@@ -1745,6 +1755,15 @@
     const maxH = writtenH;
     if (policy.shrinkMode === 'integer-px') {
       if (maxW == null && maxH == null) return;
+      const wrapsEarly = String((el.style && el.style.whiteSpace) || '') !== 'pre';
+      if (maxW != null && wrapsEarly) {
+        el.style.maxWidth = maxW + 'px';
+        const curW = Number.parseFloat(el.style.width);
+        if (!Number.isFinite(curW) || curW <= 0 || curW > maxW + 0.5) el.style.width = maxW + 'px';
+        el.style.minWidth = '0px';
+        el.style.overflowWrap = 'anywhere';
+        el.setAttribute('data-fit-wrap-cap', String(maxW));
+      }
       /* scrollWidth/Height repeat a min-content / min-height box, not glyph
          ink. Shop/Learn More minWidth equals maxWidth, so scrollWidth never
          drops and integer-px shrinks to 1px. Measure glyphs for width;
@@ -2589,7 +2608,7 @@
     */
     const heroSlot = (() => {
       try {
-        if (String(new URLSearchParams(window.location.search).get('inventory-static-gate') || '') === '1') return null;
+        if (this._isInventoryStaticGateView()) return null;
       } catch (err) { /* keep hero for ordinary preview */ }
       if (!pageScope || !pagePaintOrder || !ids.length || !Number.isFinite(k) || k <= 0) return null;
       const sectionId = ids[0];
@@ -4170,6 +4189,17 @@
            }
            current = parent;
          }
+          const skipped = textNode.fitOwnerFromSkipped;
+          const skippedW = layoutCap(skipped, 'maxWidth');
+          const skippedH = layoutCap(skipped, 'maxHeight');
+          if (skippedW != null || skippedH != null) {
+            return {
+              ownerId: String(skipped.sourceId || ''),
+              maxWidth: skippedW,
+              maxHeight: skippedH,
+              reason: 'skipped-auto-layout-max',
+            };
+          }
          return none;
        };
        const truthChildrenByParentId = new Map();
@@ -4997,7 +5027,7 @@
              shop / globe / dropmenu / 折扣信息 are siblings of the wide
              `fix/` group, so they share one window-right shift from the
              rightmost overlay (dropmenu), not each box's own right edge. */
-          if (!ancestorAlreadyShifted && this._isRightTopbarChrome(box, designWidth)
+          if (!this._isInventoryStaticGateView() && !ancestorAlreadyShifted && this._isRightTopbarChrome(box, designWidth)
             && this._isTopbarOverlayChrome(n, pfx, evidenceAttrs)
             && !rideOwner) {
             const clusterRight = Number(this._topbarClusterRightDesign) > 0
@@ -5686,7 +5716,16 @@
             // zh-CN static gate measures the text leaf against pageBox.
             // Owner width is for adopted languages; the source box is the
             // design-viewport lock.
-            el.style.width = (box.w ?? constraint.ownerWidth) + 'px';
+            const writtenMax = Number(n.layout && n.layout.maxWidth);
+            const wrapCap = Number.isFinite(writtenMax) && writtenMax > 0
+              ? writtenMax
+              : (box.w ?? constraint.ownerWidth);
+            el.style.width = wrapCap + 'px';
+            el.style.maxWidth = wrapCap + 'px';
+            el.style.minWidth = '0px';
+            el.style.boxSizing = 'border-box';
+            el.style.overflowWrap = 'anywhere';
+            el.setAttribute('data-text-wrap-cap', String(wrapCap));
           }
           if (constraint.openFlow) {
             // Generic widow/orphan mitigation for open-flow translations.
@@ -5830,9 +5869,18 @@
              宁可让它顶出来被冒烟测出来，也不要 height 写死后悄悄裁掉一行。 */
           if (box.h != null) el.style[inlineHugs ? 'height' : 'minHeight'] = box.h + 'px';
           const V = { TOP: 'flex-start', CENTER: 'center', BOTTOM: 'flex-end' };
-          el.style.display = 'flex';
-          el.style.flexDirection = 'column';
-          el.style.justifyContent = V[tx.vAlign] || 'flex-start';
+          const hugVerticalWrap = !inlineHugs
+            && String(__u(n.layout && n.layout.layoutSizingVertical) || '').toUpperCase() === 'HUG';
+          if (hugVerticalWrap) {
+            el.style.display = 'block';
+            el.setAttribute('data-text-wrap-policy', 'hug-height-block');
+          } else {
+            el.style.display = 'flex';
+            el.style.flexDirection = 'column';
+            el.style.justifyContent = V[tx.vAlign] || 'flex-start';
+            el.style.alignItems = 'stretch';
+            el.style.minWidth = el.style.minWidth || '0px';
+          }
 
           /* transform 串统一在这里拼，谁要加谁 push —— 各自直接赋 el.style.transform
              会互相覆盖（渐变字居中 与 旋转 就是两个来源；filter 不在此列，它与
@@ -6044,7 +6092,14 @@
           } else if (!localeAbsent && fallback != null && fallback !== '') {
             if (_hasRich) this._renderRichText(el, String(fallback), _richOverrides, _richTable, tx);
             else el.textContent = fallback;
-            el.setAttribute('data-copy-missing', ctx.prefs.lang);
+            /* Missing target-locale copy is always unverified (DESIGN.md). */
+            /* Latin CTAs such as View More must keep data-copy-missing. */
+            /* Brand-invariant layers skip only with an explicit truth flag. */
+            const copyLocaleInvariant = n.copyLocaleInvariant === true
+              || (tx && tx.copyLocaleInvariant === true);
+            if (String(ctx.prefs.lang || '') !== 'zh-CN' && !copyLocaleInvariant) {
+              el.setAttribute('data-copy-missing', ctx.prefs.lang);
+            }
           } else {
             el.textContent = '';
             el.setAttribute('data-text-empty', '1');

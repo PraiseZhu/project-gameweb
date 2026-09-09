@@ -1562,7 +1562,7 @@ test('QA chrome does not compare independent viewport fix roots for stack order'
         id: 'fix-right', navShell: false, topbar: true, height: 401, sourceHeight: 401,
         nodes: {
           'fix-left': { x: 0, y: 0, w: 364, h: 173, stackIndex: 0 },
-          'fix-right': { x: 370, y: 0, w: 366, h: 374, stackIndex: 0 },
+          'fix-right': { x: 0, y: 0, w: 366, h: 374, stackIndex: 0 },
         },
       },
     },

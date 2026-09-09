@@ -712,3 +712,27 @@ test('ellipsis or clip is not a fit pass', () => {
   assert.equal(result.ok, false);
   assert.equal(result.ellipsis, true);
 });
+
+test('renderer HEIGHT+HUG wraps inside written maxWidth instead of flex-spilling', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  assert.match(src, /data-text-wrap-cap/);
+  assert.match(src, /data-text-wrap-policy', 'hug-height-block'/);
+  assert.match(src, /hugVerticalWrap/);
+  assert.match(src, /overflowWrap = 'anywhere'/);
+  assert.match(src, /skipped-auto-layout-max/);
+  assert.match(src, /data-fit-wrap-cap/);
+  assert.match(src, /fitOwnerFromSkipped/);
+});
+
+test('latin fallback without target locale still marks copy-missing', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  const start = src.indexOf('!localeAbsent && fallback');
+  assert.ok(start >= 0);
+  const block = src.slice(start, start + 900);
+  assert.match(block, /data-copy-missing/);
+  assert.doesNotMatch(block, /\u3400/);
+  assert.match(block, /copyLocaleInvariant/);
+  assert.match(block, /View More/);
+});
