@@ -9,12 +9,24 @@ const renderer = readFileSync(new URL('../../templates/figma-render.js', import.
 const assetPipeline = readFileSync(new URL('../figma-assets.mjs', import.meta.url), 'utf8');
 const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.url), 'utf8');
 
-test('missing figma-indicator fallback sources fail closed', () => {
+test('indicator fallbacks skip when this page has no 397:35947 / 397:35949', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-skip-'));
+  const assetsDir = join(dir, 'assets');
+  mkdirSync(assetsDir);
+  const skipped = installIndicatorFallbacks(assetsDir, {});
+  assert.equal(skipped.ok, true);
+  assert.equal(skipped.skipped, true);
+});
+
+test('missing figma-indicator fallback sources fail closed when those roots were sliced', () => {
   const dir = mkdtempSync(join(tmpdir(), 'torch-ind-'));
   const assetsDir = join(dir, 'assets');
   mkdirSync(assetsDir);
   assert.throws(
-    () => installIndicatorFallbacks(assetsDir, {}),
+    () => installIndicatorFallbacks(assetsDir, {
+      '397:35947': { file: 'assets/397-35947.png' },
+      '397:35949': { file: 'assets/397-35949.png' },
+    }),
     /missing figma-indicator fallback sources/,
   );
 });
@@ -40,6 +52,16 @@ test('pages with ind/ still fail closed without fallback sources', () => {
       sections: { 'sec:1': { nodes: [{ id: '1:2', type: 'INSTANCE', name: 'ind/进度条' }] } },
     }),
     /missing figma-indicator fallback sources/,
+  );
+});
+
+test('indicator fallback checks only roots present in the manifest', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-one-root-'));
+  const assetsDir = join(dir, 'assets');
+  mkdirSync(assetsDir);
+  assert.throws(
+    () => installIndicatorFallbacks(assetsDir, { '397:35947': { file: 'assets/397-35947.png' } }),
+    (error) => /figma-indicator-active-alpha\.webp/.test(String(error?.message)) && !/figma-indicator-normal-alpha\.webp/.test(String(error?.message)),
   );
 });
 
@@ -92,6 +114,8 @@ test('product sticky overlay keeps scaled span after viewport sync', () => {
   assert.match(chrome, /顶部信息\|顶部固定/);
   assert.match(chrome, /data-fix-slot-anchor/);
   assert.match(chrome, /first-screen-bottom/);
+  assert.match(chrome, /root\.getAttribute\('data-fix-pin'\) === 'viewport'[\s\S]*?continue/);
+  assert.doesNotMatch(chrome, /data-fix-pin.*viewport[\s\S]{0,240}sourceHeight \* sourceScaleY/);
 });
 
 test('only listed sliceExport owners bake descendants; canvas exportBox is not placement', () => {
@@ -345,12 +369,13 @@ test('authored multiline text keeps source metrics instead of height step-fit', 
 });
 
 test('hero cover scale stays on the hero slot, not the released page stage', () => {
-  assert.match(renderer, /heroVisualScale = slotScale/);
-  /* Later sections stay on width-scale k. KV cover is a visual plane on top. */
+  assert.match(renderer, /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
+  assert.match(renderer, /heroVisualScale = coverScale/);
   assert.match(renderer, /scale: pageStageScale/);
   assert.match(renderer, /data-hero-visual-scale/);
   assert.match(renderer, /heroVisualScale \/ pageStageScale/);
   assert.doesNotMatch(renderer, /pageStageScale = slotScale/);
+  assert.doesNotMatch(renderer, /heroVisualScale = slotScale/);
   assert.match(renderer, /data-kv-cover-plane/);
   assert.match(renderer, /data-hero-ui-plane/);
   assert.match(renderer, /stage\.style\.zoom = String\(pageStageMode \? pageStageScale : \(pageScope \? 1 : k\)\)/);

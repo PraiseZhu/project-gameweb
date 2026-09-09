@@ -606,6 +606,33 @@ test('empty first-screen kv PNG is red', () => {
   assert.ok(empty.problems.some((line) => line.includes('first-kv-png-size-mismatch')), (empty.problems || []).join('\n'));
 });
 
+test('first-screen kv rejects empty file, transparent pixels, and missing asset metadata independently', () => {
+  const base = {
+    inventory: {
+      schema: 'inventory/v2',
+      sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+      nodes: [{ id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } }, {
+        id: 'kv', status: 'unknown', name: 'kv', parentId: 'sec-1', ancestorIds: ['sec-1'],
+        pageBox: { x: 0, y: 0, w: 750, h: 1334 }, sliceExport: { box: { x: 0, y: 0, w: 750, h: 1334 }, file: 'kv.png' },
+      }],
+    },
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' }, overlayDeltas: {},
+      scrolled: 1, scrollTop: 1, layers: { 'sec-1': { cropWindow: '100vh', height: 1334, overflow: 'hidden' } }, backgrounds: {},
+      firstKv: { imgSrc: 'assets/kv.png', assetW: 750, assetH: 1334, assetEmpty: false, heroVisualPlane: 'kv', coverCrop: 'cover-crop' }, samples: [],
+    },
+  };
+  for (const firstKv of [
+    { ...base.productScroll.firstKv, assetEmpty: true },
+    { ...base.productScroll.firstKv, assetEmpty: true, assetSamples: [{ rgba: [0, 0, 0, 0] }] },
+    { ...base.productScroll.firstKv, assetW: undefined, assetH: undefined, assetEmpty: undefined },
+  ]) {
+    const result = evaluateProductScrollGate({ ...base, productScroll: { ...base.productScroll, firstKv } });
+    assert.equal(result.ok, false);
+    assert.ok(result.problems.some((line) => /first-kv-png-empty|first-kv-png-size-mismatch|first-kv-.*missing/.test(line)), result.problems.join('\\n'));
+  }
+});
+
 test('unnamed first-screen kv without cover-crop is red; cover-crop marker is green', () => {
   const inventory = {
     schema: 'inventory/v2',
@@ -749,6 +776,43 @@ test('whole-frame PNG empty or wrong size is red when probe reports asset meta',
   assert.equal(empty.ok, false);
   assert.ok(empty.problems.some((line) => line.includes('whole-frame-png-empty')), (empty.problems || []).join('\n'));
   assert.ok(empty.problems.some((line) => line.includes('whole-frame-png-size-mismatch')), (empty.problems || []).join('\n'));
+});
+
+test('whole-frame PNG empty is not red when every slice child is skipped invisible', () => {
+  const pageBox = { x: 2792, y: 70, w: 119, h: 85 };
+  const empty = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: '957:1279',
+          status: 'determined',
+          role: 'img',
+          name: 'img/折扣角标',
+          pageBox,
+          sliceExport: { box: pageBox, scale: 1, format: 'png', file: '957-1279.png', bounds: 'render' },
+        },
+        {
+          id: 'I957:1279;957:1250',
+          parentId: '957:1279',
+          status: 'skipped',
+          why: 'invisible',
+          name: 'Group',
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        '957:1279': {
+          x: 2792, y: 70, w: 119, h: 85, hasImg: true, imgBox: pageBox,
+          fontSize: 16, fontFamily: 'Source Han Sans', fontWeight: 400,
+          assetEmpty: true, assetW: 119, assetH: 85,
+        },
+      },
+    },
+  });
+  assert.equal(empty.ok, true, (empty.problems || []).join('\n'));
+  assert.ok(!(empty.problems || []).some((line) => line.includes('whole-frame-png-empty')));
 });
 
 test('ordinary whole-frame img/ empty or wrong-size PNG is red even when DOM matches pageBox', () => {
@@ -1430,6 +1494,81 @@ test('QA chrome squashing landscape top bar to 100vh is red', () => {
   });
   assert.equal(probeFailed.ok, false);
   assert.ok(probeFailed.problems.some((line) => line.includes('topbar-chrome-probe-failed')), (probeFailed.problems || []).join('\n'));
+});
+
+test('QA chrome empty PNG is allowed when all slice children are invisible', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '顶部固定内容' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', pageBox: { x: 0, y: 0, w: 736, h: 401 } },
+      {
+        id: '957:1279', status: 'determined', role: 'img', name: 'img/折扣角标', parentId: 'fix-1', ancestorIds: ['fix-1'],
+        pageBox: { x: 386, y: 27, w: 75.6, h: 54 }, sliceExport: { box: { x: 386, y: 27, w: 75.6, h: 54 }, file: 'badge.png' },
+      },
+      { id: '957:1250', status: 'skipped', why: 'invisible', parentId: '957:1279', ancestorIds: ['fix-1', '957:1279'] },
+    ],
+  };
+  const result = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } }, scrolled: 1, scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } }, backgrounds: {}, samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1', navShell: false, topbar: true, height: 401, sourceHeight: 401,
+        nodes: {
+          'fix-1': { x: 0, y: 0, w: 736, h: 401, overflow: 'visible', stackIndex: 0 },
+          '957:1279': {
+            x: 386, y: 27, w: 75.6, h: 54, hasImg: true, assetEmpty: true, assetW: 0, assetH: 0,
+            assetInkEmpty: true, assetSamples: [{ rgba: [0, 0, 0, 0] }], screenSamples: [{ rgba: [10, 10, 10, 255] }],
+          },
+        },
+      },
+    },
+  });
+  assert.equal(result.ok, true, (result.problems || []).join('\n'));
+  assert.equal((result.problems || []).some((line) => line.includes('957:1279: topbar-chrome-png-empty')), false);
+  assert.equal((result.problems || []).some((line) => line.includes('957:1279: topbar-chrome-png-pixels-mismatch')), false);
+});
+
+test('QA chrome does not compare independent viewport fix roots for stack order', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [
+      { id: 'fix-left', role: 'fix', pin: 'viewport', label: '左侧固定内容' },
+      { id: 'fix-right', role: 'fix', pin: 'viewport', label: '右侧固定内容' },
+    ],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-left', status: 'determined', role: 'fix', pin: 'viewport', parentId: 'sec-1', orderKey: '0.0', pageBox: { x: 0, y: 0, w: 364, h: 173 } },
+      { id: 'fix-right', status: 'determined', role: 'fix', pin: 'viewport', parentId: 'sec-1', orderKey: '0.1', pageBox: { x: 370, y: 0, w: 366, h: 374 } },
+    ],
+  };
+  const result = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-left': { dTop: 0, dLeft: 0 }, 'fix-right': { dTop: 0, dLeft: 0 } }, scrolled: 1, scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } }, backgrounds: {}, samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-right', navShell: false, topbar: true, height: 401, sourceHeight: 401,
+        nodes: {
+          'fix-left': { x: 0, y: 0, w: 364, h: 173, stackIndex: 0 },
+          'fix-right': { x: 370, y: 0, w: 366, h: 374, stackIndex: 0 },
+        },
+      },
+    },
+  });
+  assert.equal(result.ok, true, (result.problems || []).join('\n'));
+  assert.equal((result.problems || []).some((line) => line.includes('topbar-chrome-stack-mismatch')), false);
 });
 
 test('QA chrome top-bar button move, missing slice, and copy change are red', () => {

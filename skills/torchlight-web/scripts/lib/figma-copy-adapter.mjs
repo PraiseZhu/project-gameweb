@@ -96,11 +96,31 @@ function locatorOfText(snap, sectionId, nodeId) {
 /* ── 把 copy-designations.json 转成 explicit overlay（绝不手填译文）─────
  * designations.designations = { nodeId: { row, designCharacters, tableZhCN, why } }
  * 只取 nodeId→row 的映射；采用值由 larkLeaf 从该行机械取（行存在性由 extractCopy 的 overlay 校验把关）。 */
-function designationsToOverlay(designations) {
+function designationProblem(nodeId, designation, larkSnap) {
+  const row = Number(designation.row);
+  const tableZhCN = larkSnap?.rows?.[row]?.['zh-CN'];
+  if (tableZhCN == null) return 'copy-designation:' + nodeId + ':row-' + row + '-missing';
+  const expected = String(tableZhCN);
+  const declared = [designation.designCharacters, designation.tableZhCN]
+    .filter((value) => value != null)
+    .map(String);
+  return declared.some((value) => value !== expected) || new Set(declared).size > 1
+    ? 'copy-designation:' + nodeId + ':characters-mismatch'
+    : null;
+}
+
+function designationsToOverlay(designations, larkSnap = null) {
   if (!designations || (!designations.designations && !designations.deliberatelyUnbound)) return null;
   const nodeRow = {};
+  const problems = [];
   for (const [nodeId, d] of Object.entries(designations.designations || {})) {
-    if (d && typeof d.row === 'number') nodeRow[nodeId] = { row: d.row, via: 'designation', why: d.why || null };
+    if (!d || typeof d.row !== 'number') continue;
+    const problem = designationProblem(nodeId, d, larkSnap);
+    if (problem) {
+      problems.push(problem);
+      continue;
+    }
+    nodeRow[nodeId] = { row: Number(d.row), via: 'designation', why: d.why || null };
   }
   /* deliberatelyUnbound（lead 2026-08-10 路径②）：显式"以 Figma 稿字符为准"的节点，
      转成 overlay.suppress 排除集合，extractCopy 在任何匹配（含 designation）之前消费它，
@@ -109,8 +129,8 @@ function designationsToOverlay(designations) {
   for (const [nodeId, d] of Object.entries(designations.deliberatelyUnbound || {})) {
     suppress[nodeId] = { via: 'deliberatelyUnbound', why: (d && d.why) || null };
   }
-  return (Object.keys(nodeRow).length || Object.keys(suppress).length)
-    ? { nodeRow, suppress, _source: 'copy-designations.json (row 指认，值仍由 larkLeaf 机械取；deliberatelyUnbound 以稿为准)' }
+  return (Object.keys(nodeRow).length || Object.keys(suppress).length || problems.length)
+    ? { nodeRow, suppress, problems, _source: 'copy-designations.json (row 指认，值仍由 larkLeaf 机械取；deliberatelyUnbound 以稿为准)' }
     : null;
 }
 
@@ -129,7 +149,7 @@ export function buildCopyEnvelope({ demoDir, spec, at, larkLeaf, pcSnap = null }
   const fig = spec.figma || {};
   const larkSnap = readJson(join(absDemo, 'fixtures', 'lark-copy.json'));
   const designations = existsSync(join(absDemo, 'copy-designations.json')) ? readJson(join(absDemo, 'copy-designations.json')) : null;
-  const overlay = designationsToOverlay(designations);
+  const overlay = designationsToOverlay(designations, larkSnap);
 
   const report = { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [] };
   const byNode = {};
@@ -290,7 +310,8 @@ export function buildHandoffCopyEnvelope({ demoDir, spec = {}, pcInventory = nul
     return { byNode: {}, report: { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [] }, unread: [], sourceTexts: [], larkSnap: larkSnap || null };
   }
   const { at, larkLeaf } = larkTools(absDemo, larkSnap, spec);
-  const overlay = overlayFromDemo(absDemo);
+  const designations = existsSync(join(absDemo, 'copy-designations.json')) ? readJson(join(absDemo, 'copy-designations.json')) : null;
+  const overlay = designationsToOverlay(designations, larkSnap);
   const report = { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [] };
   const byNode = {};
   const unreadAll = [];
@@ -330,5 +351,5 @@ export function buildHandoffCopyEnvelope({ demoDir, spec = {}, pcInventory = nul
     report.contextual.push(...((res.report && res.report.contextual) || []).map((entry) => ({ plat: job.plat, ...entry })));
   }
   report.unread = unreadAll;
-  return { byNode, report, unread: unreadAll, sourceTexts, larkSnap };
+  return { byNode, report, unread: unreadAll, sourceTexts, larkSnap, problems: overlay?.problems || [] };
 }

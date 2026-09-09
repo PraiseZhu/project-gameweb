@@ -33,6 +33,9 @@ test('backgroundMatchesFill reads rgb triples, not a single cssRgb substring', (
   assert.equal(backgroundMatchesFill(highlight, 'normal'), false);
   const mixed = `linear-gradient(180deg, ${LANG_BTN_FILL.highlight.cssRgb} 0%, ${LANG_BTN_FILL.normal.cssRgb} 100%)`;
   assert.equal(backgroundMatchesFill(mixed, 'highlight'), false);
+  assert.equal(backgroundMatchesFill('img/选中背景', 'highlight'), true);
+  assert.equal(backgroundMatchesFill('img/选中背景', 'normal'), false);
+  assert.equal(backgroundMatchesFill('img/未选中背景', 'normal'), true);
 });
 
 test('language verdict requires authored fill pixels, not only state attrs', () => {
@@ -382,4 +385,52 @@ test('later-axes opens an already-on region dropmenu before sampling option fill
   assert.match(src, /path, svg, img/);
   assert.match(src, /data-btn-variant-layer="true"/);
   assert.match(src, /child\.tagName === 'IMG' && child\.getAttribute\('src'\)/);
+  assert.match(src, /img\\\/\(\?:选中背景\|未选中背景\)/);
+});
+
+test('language remount contract checks every requested language against live menu state', () => {
+  const src = readFileSync(new URL('../lib/later-axes-probe.mjs', import.meta.url), 'utf8');
+  const render = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  assert.match(src, /setPref\('lang', row\.lang\)/);
+  assert.match(src, /await waitMs\(page, 200\)/);
+  assert.match(src, /collectLanguageOptions\(page\)/);
+  assert.match(src, /stalePrefs/);
+  assert.match(render, /frame\.__fxRenderPrefs/);
+  assert.match(src, /menu/);
+  assert.deepEqual(LANG_OPTION_PAGES.map((row) => row.lang), ['en', 'zh-TW', 'zh-CN', 'ko']);
+});
+
+test('modal verdict locks PC 3840x2160 center and panel y=199, mobile 390 bounds', () => {
+  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 199 / 2160, panelBox: '0,199,3840,1340' }).ok, true);
+  assert.equal(pcModalSheetVerdict({ sheetCx: 1910, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 199 / 2160, panelBox: '0,199,3840,1340' }).ok, false);
+  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 230 / 2160, panelBox: '0,230,3840,1340' }).ok, false);
+  const base = { hostW: 390, hostH: 844, hostLeft: 0, hostTop: 0, modalH: 844, modalTop: 0, hasClose: true, closedAfterClose: true, hasNamedScroll: false, scrollbarHidden: true };
+  for (const bad of [{ modalW: 392, modalLeft: 0 }, { modalW: 390, modalLeft: -2 }, { modalW: 390, modalLeft: 3 }]) assert.equal(mobileModalSheetVerdict({ ...base, ...bad }).ok, false);
+});
+
+test('homepage opener catalog is fail-closed for empty, skipped, unmeasured, unopened, and wrong target', () => {
+  assert.equal(scoreOpenerCatalog({ plat: 'pc', openers: [], inert: {} }, 'pc').ok, false);
+  for (const row of [
+    { measured: false, skipped: false, opened: true, closed: true, openedGo: 'x' },
+    { measured: true, skipped: true, opened: true, closed: true, openedGo: 'x' },
+    { measured: true, skipped: false, opened: false, closed: false, openedGo: '' },
+    { measured: true, skipped: false, opened: true, closed: true, openedGo: 'other' },
+  ]) assert.equal(scoreOpenerCatalog({ plat: 'pc', openers: [{ go: 'modal/pc适龄提示', ...row }], inert: {} }, 'pc').ok, false);
+});
+
+test('language remount and mobile pin read live frame prefs, not first-paint closures', () => {
+  const render = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  assert.match(render, /frame\.__fxRenderPrefs = \{/);
+  assert.match(render, /frame\.setAttribute\('data-fx-base', __base\)/);
+  assert.match(render, /const liveBase = frame\.getAttribute\('data-fx-base'\) \|\| __base/);
+  assert.match(render, /new Set\(dropmenuLangHits\(raw\)\)/);
+  assert.match(render, /Do not __plain the map first/);
+  assert.match(render, /Page instances may omit componentProperties/);
+  assert.match(render, /const fromName = onOffToken\(dropmenuVariantToken\(__u\(selected && selected\.name\), axis\)\)/);
+  assert.match(render, /frame\.__fxSyncLanguageDropmenuHighlight/);
+  assert.match(render, /Page instances may uniformly scale the COMPONENT/);
+  assert.match(render, /const paintedH = Number\(rootBox\.h\) \* instanceScale/);
+  assert.match(render, /uniformScale \? Number\(rootBox\.h\) : paintedH/);
+  const interaction = readFileSync(new URL('../../docs/interaction-skill.md', import.meta.url), 'utf8');
+  assert.match(interaction, /written at the start of every `renderApp`/);
 });

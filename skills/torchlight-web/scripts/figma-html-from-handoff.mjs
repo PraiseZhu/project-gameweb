@@ -85,6 +85,10 @@ function failBuild(consume, problems, extra = {}) {
   return { ok: false, wroteHtml: false, consume, problems, ...extra };
 }
 
+function isCopyDesignationError(error) {
+  return String(error?.message || '').startsWith('copy-designation red:');
+}
+
 export function parsePreviewJson(stdout) {
   const text = String(stdout || '').trim();
   if (!text) return null;
@@ -184,6 +188,9 @@ function attachHandoffCopy(demoDir, truth, spec, inventories = {}) {
     pcInventory: inventories.pc || null,
     mobileInventory: inventories.mobile || null,
   });
+  if (copyEnv.problems?.length) {
+    throw new Error('copy-designation red: ' + copyEnv.problems.join('; '));
+  }
   if (!isPresentTable(copyEnv.larkSnap) && !hasTranslationTable(spec, truth)) {
     truth.copy = { byNode: {}, unread: [] };
     return { skipped: true, reason: 'empty-copy-table' };
@@ -380,7 +387,7 @@ export function buildHtmlFromHandoff({
     written = writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes, inventories);
   } catch (err) {
     return failBuild(consume, [err && err.message ? err.message : String(err)], {
-      wroteHtml: existsSync(join(demoDir, 'index.html')),
+      wroteHtml: !isCopyDesignationError(err) && existsSync(join(demoDir, 'index.html')),
     });
   }
   const { indexPath, htmlVolume } = written;

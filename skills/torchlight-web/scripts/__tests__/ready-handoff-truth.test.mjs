@@ -423,6 +423,50 @@ test('fix overlay descendants leave sections and keep inventory pageBox', () => 
   assert.deepEqual(btn.sliceExport.box, { x: 2764, y: 2213, w: 516, h: 150 });
 });
 
+test('right-side fix overlay keeps inventory pageBox, not overlay-local 0,0', () => {
+  const inv = fixture();
+  inv.overlays = [{ id: 'fix-right', role: 'fix', label: '右侧浮层', pin: 'viewport' }];
+  inv.nodes.push(
+    {
+      id: 'fix-right',
+      scope: 'page',
+      type: 'GROUP',
+      name: 'fix/右侧浮层',
+      parentId: '100:2',
+      ancestorIds: [PAGE_ID, '100:2'],
+      orderKey: '0.0.1',
+      status: 'determined',
+      role: 'fix',
+      pin: 'viewport',
+      pageBox: { x: 2764, y: 70, w: 1029, h: 423 },
+      parentBox: { x: 2764, y: 70, w: 1029, h: 423 },
+    },
+    {
+      id: 'fix-right-dropmenu',
+      scope: 'page',
+      type: 'INSTANCE',
+      name: 'dropmenu/下拉菜单',
+      parentId: 'fix-right',
+      ancestorIds: [PAGE_ID, '100:2', 'fix-right'],
+      orderKey: '0.0.1.0',
+      status: 'determined',
+      role: 'dropmenu',
+      pageBox: { x: 3539, y: 76, w: 254, h: 417 },
+      parentBox: { x: 775, y: 6, w: 254, h: 417 },
+    },
+  );
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  const overlay = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-right');
+  const child = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-right-dropmenu');
+  assert.ok(overlay);
+  assert.ok(child);
+  assert.deepEqual(overlay.box, { x: 2764, y: 70, w: 1029, h: 423 });
+  assert.deepEqual(overlay.pageBox, { x: 2764, y: 70, w: 1029, h: 423 });
+  assert.deepEqual(overlay.parentBox, { x: 2764, y: 70, w: 1029, h: 423 });
+  assert.deepEqual(child.box, { x: 3539, y: 76, w: 254, h: 417 });
+});
+
 test('fix nested sliceExport keeps inventory pageBox, not overlay-local x/y', () => {
   const inv = fixture();
   inv.overlays = [{ id: 'fix-1', role: 'fix', label: '顶部信息', pin: 'viewport' }];

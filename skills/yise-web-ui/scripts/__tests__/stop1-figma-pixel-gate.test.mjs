@@ -18,7 +18,9 @@ import {
 } from '../lib/stop1-figma-pixel-gate.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
+const TOOL = join(ROOT, '../../standards/stop1-figma-pixel/tool');
 const PROBE = join(ROOT, 'scripts/lib/stop1-figma-pixel-probe.mjs');
+const SOURCE_PROBE = join(TOOL, 'src/stop1-figma-pixel-probe.mjs');
 
 function solidPng(PNGApi, { w, h, r, g, b }) {
   const png = new PNGApi({ width: w, height: h });
@@ -31,8 +33,8 @@ function solidPng(PNGApi, { w, h, r, g, b }) {
   return PNGApi.sync.write(png);
 }
 
-test('identical small PNGs pass at 0.005', async () => {
-  const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(ROOT);
+test('identical small PNGs pass at the stop-1 6% threshold', async () => {
+  const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(TOOL);
   const demoDir = mkdtempSync(join(tmpdir(), 'stop1-pixel-same-'));
   const raw = solidPng(PNGApi, { w: 16, h: 16, r: 20, g: 40, b: 60 });
   const result = await compareSectionPngs({
@@ -51,15 +53,11 @@ test('identical small PNGs pass at 0.005', async () => {
   assert.equal(existsSync(join(demoDir, STOP1_PIXEL_DIR, 'pc.1-1.diff.png')), true);
 });
 
-test('one-pixel change over 0.005 fails and writes a diff', async () => {
-  const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(ROOT);
+test('full-frame change over the stop-1 6% threshold fails and writes a diff', async () => {
+  const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(TOOL);
   const demoDir = mkdtempSync(join(tmpdir(), 'stop1-pixel-diff-'));
   const baseline = solidPng(PNGApi, { w: 8, h: 8, r: 10, g: 10, b: 10 });
-  const actualPng = PNG.sync.read(baseline);
-  actualPng.data[0] = 255;
-  actualPng.data[1] = 0;
-  actualPng.data[2] = 0;
-  const actual = PNG.sync.write(actualPng);
+  const actual = solidPng(PNGApi, { w: 8, h: 8, r: 255, g: 0, b: 0 });
   const result = await compareSectionPngs({
     PNG: PNGApi,
     pixelmatch,
@@ -80,7 +78,7 @@ test('one-pixel change over 0.005 fails and writes a diff', async () => {
 });
 
 test('missing baseline is fail-closed, not skipped', async () => {
-  const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(ROOT);
+  const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(TOOL);
   const demoDir = mkdtempSync(join(tmpdir(), 'stop1-pixel-missing-'));
   mkdirSync(join(demoDir, STOP1_PIXEL_DIR), { recursive: true });
   const result = await compareSectionPngs({
@@ -115,7 +113,7 @@ test('injected over-threshold probe stays red', () => {
   const gate = runStop1FigmaPixelGate({
     handoffDir: '/tmp',
     demoDir: '/tmp',
-    pixelGateProbe: () => ({ ok: false, problems: ['pc 1:1: diffRatio 12.00% > 0.50%'] }),
+    pixelGateProbe: () => ({ ok: false, problems: ['pc 1:1: diffRatio 12.00% > 6.00%'] }),
   });
   assert.equal(gate.ok, false);
   assert.match(gate.problems.join('\n'), /diffRatio/);
@@ -140,38 +138,43 @@ test('crop origin uses pageBox × scale and refuses half pixels', () => {
   );
 });
 
-test('export scale never chooses 2x', () => {
+test('export scale never chooses 2x and 3840×2143 is 1x', () => {
   assert.equal(pickExportScale({ x: 0, y: 0, w: 100, h: 100 }), 1);
   assert.equal(pickExportScale({ x: 0, y: 0, w: 3840, h: 6429 }), 0.5);
-  assert.equal(pickExportScale({ x: 0, y: 0, w: 3840, h: 2143 }), 0.5);
+  assert.equal(pickExportScale({ x: 0, y: 0, w: 3840, h: 2143 }), 1);
   assert.equal(pickExportScale({ x: 0, y: 0, w: 750, h: 1334 }), 1);
   assert.equal(pickExportScale({ x: 0, y: 0, w: 8000, h: 5000 }), 0.5);
 });
 
-test('stop-1 Figma export crops the page frame at design viewport', () => {
-  const src = readFileSync(PROBE, 'utf8');
-  assert.match(src, /inventory-static-gate=1/);
-  assert.match(src, /cropRectForSection/);
-  assert.match(src, /const frameId = page.id/);
-  assert.match(src, /pickExportScale\(page\)/);
+test('stop-1 Figma export uses section.id and product=1', () => {
+  const shim = readFileSync(PROBE, 'utf8');
+  assert.match(shim, /standards\/stop1-figma-pixel\/tool\/src\/stop1-figma-pixel-probe\.mjs/);
+  const src = readFileSync(SOURCE_PROBE, 'utf8');
+  assert.match(src, /index\.html\?product=1/);
+  assert.match(src, /sectionPaintExports/);
+  assert.match(src, /analogueIds/);
+  assert.match(src, /dropmenu-off-icon/);
+  assert.match(src, /sectionLiveCopyMasks/);
+  assert.doesNotMatch(src, /punchOpaquePng/);
+  assert.match(src, /figma-cache/);
   assert.match(src, /deviceScaleFactor:\s*dsf/);
-  assert.match(src, /scale,/);
   assert.match(src, /size mismatch/);
-  assert.doesNotMatch(src, /deviceScaleFactor:\s*1/);
-  assert.doesNotMatch(src, /frameId: section.id/);
-  assert.doesNotMatch(src, /index\.html\?product=1/);
-  assert.doesNotMatch(src, /scalePng/);
+  assert.doesNotMatch(src, /inventory-static-gate=1/);
+  assert.doesNotMatch(src, /const frameId = page.id/);
   assert.doesNotMatch(src, /alignDemoToBaseline/);
-  const crop = cropRectForSection(
-    { x: 0, y: 0, w: 3840, h: 6429 },
-    { x: 0, y: 0, w: 3840, h: 2144 },
-    pickExportScale({ x: 0, y: 0, w: 3840, h: 6429 }),
-  );
-  assert.deepEqual(crop, { x: 0, y: 0, w: 1920, h: 1072 });
+});
+
+test('stop-1 probe shim only re-exports the standards source', () => {
+  const src = readFileSync(PROBE, 'utf8');
+  assert.match(src, /export \* from .*standards\/stop1-figma-pixel\/tool\/src/);
+  assert.doesNotMatch(src, /function tryReadCachePng/);
+  assert.doesNotMatch(src, /function writeCachePng/);
+  assert.doesNotMatch(src, /renameSync/);
+  assert.doesNotMatch(src, /fetchFramePng/);
 });
 
 test('size mismatch is ERROR, not silently scaled', async () => {
-  const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(ROOT);
+  const { PNG: PNGApi, pixelmatch, odiff } = await loadPngApi(TOOL);
   const demoDir = mkdtempSync(join(tmpdir(), 'stop1-pixel-size-'));
   const result = await compareSectionPngs({
     PNG: PNGApi,

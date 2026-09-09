@@ -143,7 +143,7 @@ test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not po
   assert.doesNotMatch(chrome, /sourceBoxWidth = parseFloat\(root\.style\.width\) \|\| 601/);
   assert.match(chrome, /source-y-scale/);
   assert.doesNotMatch(chrome, /I52:3263;17:53006/);
-  assert.match(chrome, /PRODUCT_VIEW \? 'hidden' : 'auto'/);
+  assert.match(chrome, /frame\.style\.overflowX = 'clip'/);
   assert.match(chrome, /function officialRootFontVw\(\)/);
   assert.match(chrome, /designPolicy\(\)\.officialRootFontVw/);
   assert.doesNotMatch(chrome, /officialRootFontVw\) \|\| 10/);
@@ -176,7 +176,14 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   assert.match(skill, /measured\s+on `zh-CN`/);
   assert.match(skill, /modal.lang=zh-CN/);
   const interaction = read('docs/interaction-skill.md');
-  assert.match(interaction, /758:1713/);
+  assert.match(interaction, /949:5363/);
+  assert.match(interaction, /img\/选中背景/);
+  assert.match(interaction, /written at the start of every `renderApp`/);
+  const renderLive = read('templates/figma-render.js');
+  assert.match(renderLive, /frame\.__fxRenderPrefs = \{/);
+  assert.match(renderLive, /data-fx-base/);
+  assert.match(renderLive, /Page instances may omit componentProperties/);
+  assert.match(renderLive, /Do not __plain the map first/);
   assert.match(interaction, /199\/2160/);
   assert.match(interaction, /scrollbarWidth: none/);
   assert.match(interaction, /Skip, missing\s+close, overflow, or a visible scrollbar cannot go green/s);
