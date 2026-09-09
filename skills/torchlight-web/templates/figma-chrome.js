@@ -733,8 +733,8 @@
 
   /* DESIGN.md §5.0 同一张表：字/按钮和列宽。产品页和 QA 模拟视口都走。
      >1920 stretch；1127–1920 冻 1920 / k=0.5 居中裁；≤1126 手机
-     k=min(1, 宽/750)。751–1126 按钮保持 750 稿尺寸，列宽跟窗口铺 KV，
-     不要再裁一列 750。QA 的 fit/bezel 仍是壳装饰。 */
+     k=min(1, 宽/750)。751–1126 按钮保持 750 稿尺寸，列宽跟窗口铺 KV
+     和后屏，不要再裁一列 750。QA 的 fit/bezel 仍是壳装饰。 */
   function productColumnWidth(viewportW, plat) {
     var w = Number(viewportW);
     if (!isFinite(w) || w <= 0) return w;
@@ -1258,10 +1258,10 @@
        wrap 内容宽 22px、屏面顶到 bezel 边上）。读数与 rail 都按 wrap.getBoundingClientRect() 现测，
        与这里的像素严格同源。 Product view has no bezel: the frame is the window. */
     var BEZEL = PRODUCT_VIEW ? 0 : 22;   /* (1 border + 10 padding) × 2 边 */
-    /* Frozen PC column is 1920 while the chosen viewport may be 1440. Size the
-       bezel to the column, not vp.w, or wrap clips the same art the product
-       page shows. Fit scale still shrinks the whole screen into the toolbar. */
-    wrap.style.width = Math.round(columnW * scale + BEZEL) + 'px';
+    /* Window / crop box is vp.w. Freeze 1920 is a child inside that window.
+       Sizing wrap to columnW=1920 while vp.w=1275 clips the right of the
+       screen (green empty strip). Fit scale still shrinks the whole screen. */
+    wrap.style.width = Math.round(vp.w * scale + BEZEL) + 'px';
     wrap.style.minHeight = '';
     /* wrap 高度**固定**为缩后 screen 高（含 bezel），不是 auto —— 边框盒严格等于 screen
        尺寸，stage 才能按 wrap 居中、四边等距黑色呼吸空间；frame 固定 vp.h 且内部滚动，
@@ -2352,26 +2352,9 @@
         }
         stage.style.zoom = String(stage.__fxBaseZoom * followScale);
       }
-      /* lock-1920 layers keep the authored origin (right chrome 100% 0).
-         Light drag above 1920 also zooms `.fx-fixed-overlays` by followScale
-         (that host is a frame-child `.fx-stage`). Recompute counter against
-         the *current* page k so freeze size stays 0.5, not the stale
-         paint-time counter. Do not use zoom on the layer — zoom also
-         shrinks CSS left/top toward the containing-block origin. */
-      var liveLock = (nextK != null && nextK > 0) ? (0.5 / nextK) : null;
-      var locked = frame.querySelectorAll('[data-lock-1920="true"]');
-      for (var li = 0; li < locked.length; li++) {
-        var lockEl = locked[li];
-        var painted = parseFloat(lockEl.getAttribute('data-lock-1920-counter'));
-        if (!(isFinite(painted) && painted > 0)) continue;
-        var counter = (liveLock != null && isFinite(liveLock) && liveLock > 0)
-          ? liveLock
-          : painted;
-        lockEl.style.transformOrigin = lockEl.getAttribute('data-lock-1920-origin') || '100% 0';
-        var prev = String(lockEl.style.transform || '').replace(/\s*scale\([^)]*\)/g, '').trim();
-        lockEl.style.transform = prev ? prev + ' scale(' + counter + ')' : 'scale(' + counter + ')';
-        lockEl.setAttribute('data-lock-1920-counter', String(counter));
-      }
+      /* Names stay lock-1920; size above 1920 follows page k / followScale.
+         Do not re-apply freeze counter 0.5/k during drag — that shrinks
+         Shop vs KV and opens top-bar gaps. */
       syncDragColumnCrop(vp);
       syncFixedOverlayViewport(vp);
       syncDragSectionLayout(vp, followScale);

@@ -79,14 +79,14 @@ test('other stages, roles and pins retain existing source-box placement', () => 
 test('product kv cover uses one scale and origin, not cropLeft plus origin', () => {
   const hero = renderer.match(/const slotH = viewportH \* \(fillVh \/ 100\);[\s\S]*?scale: pageStageScale,/);
   assert.ok(hero, 'hero slot cover math must stay source-visible');
-  assert.match(hero[0], /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
+  assert.match(hero[0], /const coverScale = Math\.max\(coverW \/ designWidth, slotH \/ Number\(first\.height\)\)/);
   assert.match(hero[0], /heroVisualCropLeft = 0/);
   assert.match(hero[0], /scale: pageStageScale/);
   assert.doesNotMatch(hero[0], /coverW \/ slotScale - designWidth/);
   const kv = renderer.match(/if \(isFirstScreenVisual && isKv\) \{[\s\S]*?el\.setAttribute\('data-kv-cover-origin'/);
   assert.ok(kv, 'kv cover-crop block must stay source-visible');
   assert.match(kv[0], /transformOrigin/);
-  assert.match(kv[0], /50% 0/);
+  assert.match(kv[0], /'0 0'/);
   assert.doesNotMatch(kv[0], /planeLeft \+ heroVisualCropLeft/);
   const expectedScale = Math.max(390 / 750, 844 / 1334);
   assert.ok(Math.abs(expectedScale - 0.632683657) < 1e-6);
@@ -96,6 +96,9 @@ test('product kv cover uses one scale and origin, not cropLeft plus origin', () 
   assert.ok(Math.abs(visualW - 474.5127) < 0.01);
   assert.ok(Math.abs(visualH - 844) < 0.01);
   assert.ok(Math.abs(left + 42.256) < 0.05);
+  const tabletScale = Math.max(993 / 750, 1080 / 1334);
+  assert.ok(tabletScale > 1, '993×1080 must cover wider than the 750 UI column');
+  assert.equal(tabletScale, 993 / 750);
 });
 
 test('product page stage clips overflow-x so stray page-root nodes cannot scroll', () => {

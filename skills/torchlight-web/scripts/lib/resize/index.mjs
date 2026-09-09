@@ -275,18 +275,16 @@ export function matchNamedModalByTopic(candidates, wantedName) {
 }
 
 /**
- * Temporary lock-1920 size plane. Above 1920 the page k grows with the
- * window; these named layers stay on freeze k=0.5 so CSS size matches
- * the 1920 freeze geometry. Counter-scale top-bar chrome from 100% 0
- * so authored left/top stay put (`zoom` would pull them toward the
- * origin). Do not counter-scale the first-screen CTA from 50% 100% —
- * it stays with the SLG / calendar cluster via the shared bottom
- * anchor. Landscape `fix/` top bar is viewport chrome: official is
+ * Temporary lock-1920 name list. Names stay for later seasons; size
+ * above 1920 now follows page k (relative size vs KV must not shrink).
+ * Counter-scaling freeze k=0.5 on each button pulled Shop/充值 toward
+ * the right origin, un-centered the label, and opened top-bar gaps.
+ * Landscape `fix/` top bar is still viewport chrome: official is
  * `position:fixed; width:100%; justify-content:flex-end` on both
  * 1127–1920 and >1920 — shift the Figma right edge onto the current
- * window, do not leave it on the frozen 1920 column. Overlay shop /
- * globe / dropmenu are siblings of the wide `fix/` group, not nested
- * children. Mobile stays on the phone tree. Not @fit=.
+ * window. Overlay shop / globe / dropmenu are siblings of the wide
+ * `fix/` group, not nested children. Mobile stays on the phone tree.
+ * Not @fit=.
  */
 export function lock1920Scale({
   viewportW,
@@ -305,10 +303,10 @@ export function lock1920Scale({
     return { applied: false, lockK: PC_COLUMN_FREEZE_K, counterScale: 1, reason: 'already-freeze-band' };
   }
   return {
-    applied: true,
-    lockK: PC_COLUMN_FREEZE_K,
-    counterScale: PC_COLUMN_FREEZE_K / page,
-    reason: 'lock-1920-above-freeze',
+    applied: false,
+    lockK: page,
+    counterScale: 1,
+    reason: 'follow-page-k-above-freeze',
   };
 }
 
@@ -329,11 +327,11 @@ export function widthScale({
   }
   if (width <= TORCHLIGHT_COMPOSITION_BREAKPOINTS[0].max) {
     /* Official mobile UI rem is authored at 750. 751–1126 keeps that
-       size (k=1) while the window itself is the crop box — KV cover fills
-       viewportW. Do not freeze a 750 column and center-crop: that paints
-       brown bezel beside the page and clips top-bar chrome. Below 750
-       then k = viewportW/750. k = viewportW/750 unbounded would blow
-       1126 to 1.5×. */
+       size (k=1) while the window itself is the crop box — KV and later
+       bg cover fill viewportW, 750 later UI centers. Do not freeze a 750
+       column and center-crop: that paints brown bezel beside the page
+       and clips top-bar chrome. Below 750 then k = viewportW/750.
+       k = viewportW/750 unbounded would blow 1126 to 1.5×. */
     const mobileK = Math.min(1, width / DESIGN_WIDTHS.mobile);
     return {
       k: mobileK,
@@ -387,6 +385,9 @@ export function heroViewportFill({
     };
   }
   const slotH = vh * (fill / 100);
+  /* Layout extra vs Figma hero, not KV visual cover. Cover uses
+     max(viewportW/designW, slotH/sourceH) in the renderer so 751–1126
+     k=1 cannot freeze the artwork at 750. */
   const slotScale = Math.max(k, slotH / heroH);
   const designHeight = slotH / k;
   /* Later sections start at the real viewport edge (slotH / k), even when
@@ -565,7 +566,7 @@ export function resizeOwns() {
   return [
     'product/QA tree from composition width (torchlight official 0–1126 mobile, ≥1127 pc; no pad tree)',
     'device-picker buckets stay 0–750 / 751–1023 / ≥1024 and do not select the Figma tree',
-    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5 and center-crop (left=(viewportW-1920)/2); ≤1126 mobile k=min(1, viewportW/750) so 751–1126 keeps 750-px UI while the window itself is the crop box (official 10vw html font stays 0.1*viewportW)',
+    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5 and center-crop (left=(viewportW-1920)/2); ≤1126 mobile k=min(1, viewportW/750) so 751–1126 keeps 750-px UI while the window itself is the crop box for KV and later bg (750 later UI centers; official 10vw html font stays 0.1*viewportW)',
     'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; KV window is the real viewport, not the frozen 1920 column; inventory stays one sheet)',
     'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
     'left directory rail stretches to the current viewport height without SS5 node IDs',
@@ -576,8 +577,8 @@ export function resizeOwns() {
     'KV cover-crop stays on the kv visual plane; homepage title/UI stay on width-scale',
     'fixed directory follows remaining viewport height without inheriting KV cover scale',
     'hero lock / exit / release geometry while the window size changes',
-    'temporary lock-1920 name list: fix/ prefix, COMPONENT_SET btn/主要按钮, 首屏主按钮 stay on freeze k=0.5 when viewportW>1920 (top-bar chrome counter-scale from 100% 0; first-screen CTA stays with the SLG cluster, no 50% 100% lock; landscape fix/ top bar is viewport flex-end on 1127–1920 and >1920; overlay shop/globe/dropmenu are siblings of the wide fix/ group; light-drag above 1920 recomputes lock counter against current page k so overlay zoom followScale does not blow freeze size; not a lasting naming system; not @fit=)',
-    'first-screen slg / calendar / primary CTA keep one vertical cluster: bottom-anchor together in page coords at every band, including ≤1126 on first cut (title-group nested SLG and play button ride the owner); phone tree restyles calendar + CTA as a side-by-side row on first cut, then only width-scales; SLG size stays page k at every PC band (no extra viewport-width stretch above 1920)',
+    'temporary lock-1920 name list: fix/ prefix, COMPONENT_SET btn/主要按钮, 首屏主按钮 follow page k when viewportW>1920 so relative size vs KV stays the freeze-band ratio (no per-button freeze counter; landscape fix/ top bar is viewport flex-end on 1127–1920 and >1920; overlay shop/globe/dropmenu are siblings of the wide fix/ group; not a lasting naming system; not @fit=)',
+    'first-screen slg / calendar / primary CTA keep one vertical cluster: bottom-anchor together in page coords at every band, including ≤1126 on first cut (title-group nested SLG and play button ride the owner); phone calendar + CTA stay on Figma pageBox (overlapping stack, no invented row); 751–1126 shifts title/calendar/CTA by the same leftover so the authored gap holds and CTA is not clipped at 750; zh-CN shares that pageBox x with other languages; freeze-band KV covers the real viewport and QA wrap is vp.w not 1920; later pageBox is not padded to 100vh; SLG size stays page k at every PC band (no extra viewport-width stretch above 1920)',
     'named modal stays open across light-drag and the pointerup full rebuild; overlay re-pins to the current frame (official popup is position:fixed and survives resize); tree switch at 1126 restores the matching mobile/PC sheet by topic, it does not close',
   ];
 }

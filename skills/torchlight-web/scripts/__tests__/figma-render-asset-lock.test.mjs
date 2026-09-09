@@ -318,7 +318,7 @@ test('owner-model scope/assetPolicy/role evidence is derived in the renderer, no
 
 test('zh-CN static keeps authored pageBox instead of Auto Layout flex restack', () => {
   assert.match(renderer, /zhSourceExactLayout/);
-  assert.match(renderer, /sourceParticipatesInFlow && !zhSourceExactLayout/);
+  assert.match(renderer, /sourceParticipatesInFlow && !zhSourceExactLayout && !parentHeroClusterLayout/);
 });
 
 test('paint siblings are absolute unless source-backed Auto Layout admits flow', () => {
@@ -369,7 +369,7 @@ test('authored multiline text keeps source metrics instead of height step-fit', 
 });
 
 test('hero cover scale stays on the hero slot, not the released page stage', () => {
-  assert.match(renderer, /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
+  assert.match(renderer, /const coverScale = Math\.max\(coverW \/ designWidth, slotH \/ Number\(first\.height\)\)/);
   assert.match(renderer, /heroVisualScale = coverScale/);
   assert.match(renderer, /scale: pageStageScale/);
   assert.match(renderer, /data-hero-visual-scale/);
