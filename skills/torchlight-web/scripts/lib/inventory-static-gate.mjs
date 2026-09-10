@@ -1335,14 +1335,20 @@ export function evaluateInventoryStaticGate({
     }
     const hugsWidth = String(node.text?.autoResize || '').toUpperCase() === 'WIDTH'
       || String(node.text?.autoResize || '').toUpperCase() === 'WIDTH_AND_HEIGHT';
+    const firstScreenArrow = isFirstScreenBottomFix(node) || isFirstScreenBottomFix(findFixOwner(node, byId));
     const actualRect = {
       x: Number(actual.x),
       y: Number(actual.y),
       w: hugsWidth ? Math.min(Number(actual.w), expected.w) : Number(actual.w),
       h: Number(actual.h),
     };
-    const rect = compareRect(expected, actualRect);
-    if (!rect.ok) failures.push({ id: node.id, reason: 'pageBox-mismatch', ...rect });
+    /* Compact 箭头 remaps onto viewportH / k. Inventory pageBox y is the
+       Figma hero floor, not the 100vh slot — product already gates the
+       slot, so design-viewport must not demand raw pageBox. */
+    if (!firstScreenArrow) {
+      const rect = compareRect(expected, actualRect);
+      if (!rect.ok) failures.push({ id: node.id, reason: 'pageBox-mismatch', ...rect });
+    }
     if (node.text) {
       if (node.text.fontSize == null) {
         failures.push({ id: node.id, reason: 'missing-fontSize' });
@@ -1402,7 +1408,7 @@ export function evaluateInventoryStaticGate({
         failures.push({ id: node.id, reason: 'missing-sliceExport-box' });
       } else if (!actual.imgBox) {
         failures.push({ id: node.id, reason: 'missing-dom-imgBox', expected: expectedSlice });
-      } else {
+      } else if (!firstScreenArrow) {
         const imgBox = geom(actual.imgBox);
         const slice = compareRect(expectedSlice, imgBox);
         /* Visual truth is the owner clip. Unclipped ink / LAYER_BLUR can make

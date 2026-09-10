@@ -1686,7 +1686,15 @@
     if (!el) return false;
     if (el.getAttribute('data-topbar-chrome') === 'true') return true;
     if (/^(bottom|center)$/.test(el.getAttribute('data-fix-chrome') || '')) return true;
-    return /顶部信息|顶部固定/.test(String(el.getAttribute('data-name') || el.getAttribute('data-label') || ''));
+    var chromeName = String(el.getAttribute('data-name') || el.getAttribute('data-label') || '');
+    if (/顶部信息|顶部固定/.test(chromeName)) return true;
+    /* Compact 箭头 overlays sit on the first-screen floor. SS14 stamps
+       pinV TOP, so data-fix-chrome never fires; still not a directory. */
+    var chromeW = parseFloat(el.style && el.style.width);
+    var chromeH = parseFloat(el.style && el.style.height);
+    return /箭头|下滑|scroll/.test(chromeName)
+      && isFinite(chromeH) && chromeH > 0
+      && isFinite(chromeW) && chromeW <= chromeH * 4;
   }
 
   function parseZoomValue(value) {

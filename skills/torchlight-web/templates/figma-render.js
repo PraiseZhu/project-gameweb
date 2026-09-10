@@ -3145,6 +3145,53 @@
         if (raw === 'on' || raw === 'off') return raw;
         return '';
       };
+      const compactArrowChrome = (label, box) => {
+        const w = Number(box && box.w);
+        const h = Number(box && box.h);
+        return /箭头|下滑|scroll/.test(String(label || '')) && h > 0 && w <= h * 4;
+      };
+      /* DESIGN.md §5: pin to viewportH / k. Gap is Figma parent-board
+         remainder × k via overlay zoom; do not use the cover hero slot.
+         Lives next to paint, not inside interactionBridge: paint mounts
+         fix/ overlays and would ReferenceError otherwise. */
+      const applyFixViewportPin = (el, evidenceAttrs, box, k, ctx) => {
+        const pinV = String(evidenceAttrs?.['data-fix-pin-v'] || '').toUpperCase();
+        const pinH = String(evidenceAttrs?.['data-fix-pin-h'] || '').toUpperCase();
+        const viewportH = Number(ctx && ctx.viewport && ctx.viewport.h);
+        const slotH = Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(k) && k > 0
+          ? viewportH / k
+          : 0;
+        const gapBottom = Number(evidenceAttrs?.['data-fix-gap-bottom']);
+        const gapRight = Number(evidenceAttrs?.['data-fix-gap-right']);
+        const boardW = Number(evidenceAttrs?.['data-fix-board-w']);
+        const sourceW = Number(box.w ?? 0);
+        const sourceH = Number(box.h ?? 0);
+        const compactArrow = compactArrowChrome(
+          evidenceAttrs?.['data-label']
+          || evidenceAttrs?.['data-name']
+          || el.getAttribute('data-label')
+          || el.getAttribute('data-name')
+          || '',
+          box,
+        );
+        let top;
+        if ((pinV === 'BOTTOM' || compactArrow) && Number.isFinite(gapBottom) && slotH > 0) {
+          /* Compact 箭头 still sits on the first-screen floor even when
+             Figma Constraints are TOP (SS14 70×70). Use parent-board
+             remainder × k on viewportH / k, not the cover crop. */
+          top = slotH - gapBottom - sourceH;
+          el.setAttribute('data-fix-anchor', 'bottom-gap');
+        } else if (pinV === 'CENTER' && slotH > 0) {
+          top = (slotH - sourceH) / 2;
+          el.setAttribute('data-fix-anchor', 'center');
+        }
+        if (pinH === 'RIGHT' && Number.isFinite(gapRight) && Number.isFinite(boardW) && boardW > 0) {
+          el.style.left = (boardW - gapRight - sourceW) + 'px';
+        } else if (pinH === 'CENTER' && Number.isFinite(boardW) && boardW > 0) {
+          el.style.left = ((boardW - sourceW) / 2) + 'px';
+        }
+        return top;
+      };
       /* Main Skill interaction bridge: derive evidence attributes from the
          source-backed owner path/name contract. No page IDs or selectors. */
       const interactionBridge = (items) => {
@@ -3182,35 +3229,6 @@
             if (Number.isFinite(Number(pinEdges[key]))) attrs[attr] = String(pinEdges[key]);
           }
           return pinV;
-        };
-        /* DESIGN.md §5: pin to viewportH / k. Gap is Figma parent-board
-           remainder × k via overlay zoom; do not use the cover hero slot. */
-        const applyFixViewportPin = (el, evidenceAttrs, box, k, ctx) => {
-          const pinV = String(evidenceAttrs?.['data-fix-pin-v'] || '').toUpperCase();
-          const pinH = String(evidenceAttrs?.['data-fix-pin-h'] || '').toUpperCase();
-          const viewportH = Number(ctx && ctx.viewport && ctx.viewport.h);
-          const slotH = Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(k) && k > 0
-            ? viewportH / k
-            : 0;
-          const gapBottom = Number(evidenceAttrs?.['data-fix-gap-bottom']);
-          const gapRight = Number(evidenceAttrs?.['data-fix-gap-right']);
-          const boardW = Number(evidenceAttrs?.['data-fix-board-w']);
-          const sourceW = Number(box.w ?? 0);
-          const sourceH = Number(box.h ?? 0);
-          let top;
-          if (pinV === 'BOTTOM' && Number.isFinite(gapBottom) && slotH > 0) {
-            top = slotH - gapBottom - sourceH;
-            el.setAttribute('data-fix-anchor', 'bottom-gap');
-          } else if (pinV === 'CENTER' && slotH > 0) {
-            top = (slotH - sourceH) / 2;
-            el.setAttribute('data-fix-anchor', 'center');
-          }
-          if (pinH === 'RIGHT' && Number.isFinite(gapRight) && Number.isFinite(boardW) && boardW > 0) {
-            el.style.left = (boardW - gapRight - sourceW) + 'px';
-          } else if (pinH === 'CENTER' && Number.isFinite(boardW) && boardW > 0) {
-            el.style.left = ((boardW - sourceW) / 2) + 'px';
-          }
-          return top;
         };
         const byId = new Map(items.map((n) => [id(n), n]));
         /* Fixed overlay roots are rendered in the page stage, while their
@@ -3697,13 +3715,16 @@
              source-ordered set can be paired 1:1 with page sections. */
           const fixedOwner = p.role === 'btn' ? ownerFixed(n) : null;
           /* Directory nav-items pair 1:1 with sections. A top bar
-             (fix/顶部信息) holding 官方充值/进入官网 is viewport chrome, not a
-             rail — even when the mobile box is slightly portrait (366×374).
-             Chrome syncHeroEntryNavigation would rewrite those tops. */
+             (fix/顶部信息, including 左侧/右侧顶部信息) holding 官方充值/进入官网
+             is viewport chrome, not a rail — even when the mobile box is
+             slightly portrait (366×374). Named 箭头/下滑 overlays sit on the
+             first-screen floor and are also chrome. Chrome
+             syncHeroEntryNavigation would rewrite those tops. */
           const navRailOwner = fixedOwner && (fixedById.get(String(fixedOwner)) || byId.get(String(fixedOwner)));
           const navRailBox = navRailOwner && (navRailOwner.pageBox || navRailOwner.box);
           const navRailLabel = String((navRailOwner && (navRailOwner.label || navRailOwner.name)) || '');
           const isTopBarChrome = /顶部信息|顶部固定/.test(navRailLabel)
+            || compactArrowChrome(navRailLabel, navRailBox)
             || !!(navRailBox && Number(navRailBox.w) > Number(navRailBox.h));
           if (fixedOwner && !isTopBarChrome) {
             attrs['data-nav-item'] = 'true';
@@ -3718,14 +3739,18 @@
             if (fromRaw != null && /^[1-9]\d*$/.test(String(fromRaw))) attrs['data-fix-from'] = String(fromRaw);
             const fixLabel = String(p.label || n.name || '');
             const topInfoChrome = /顶部信息|顶部固定/.test(fixLabel);
+            const arrowChrome = compactArrowChrome(fixLabel, fixBox);
             if (pinV === 'BOTTOM' || pinV === 'CENTER') {
               /* Bottom/Center overlays are viewport chrome, not a left
                  directory. Stretching them to 100vh would pull the arrow.
                  Bottom follows the parent-board gap on viewportH / k. */
               attrs['data-fix-chrome'] = pinV === 'BOTTOM' ? 'bottom' : 'center';
-            } else if (landscapeFix || topInfoChrome) {
-              /* Landscape *or* named 顶部信息 is viewport chrome, not a left
-                 directory. Mobile 366×374 fails w>h but is still the right bar. */
+            } else if (landscapeFix || topInfoChrome || arrowChrome) {
+              /* Landscape, named 顶部信息 (left/right variants included), or
+                 a compact 箭头 overlay is viewport chrome, not a left
+                 directory. Mobile 366×374 fails w>h but is still the right
+                 bar. SS14 箭头 is 70×70 with pinV TOP, so BOTTOM/CENTER
+                 never fires — still not a directory rail. */
               attrs['data-topbar-chrome'] = 'true';
             } else {
               /* The sticky rail must stay visually above content, but its empty
