@@ -7,11 +7,14 @@ const renderSource = () => readFileSync(new URL('../../templates/figma-render.js
 
 function applyFixViewportPinFromRender() {
   const render = renderSource();
+  const helper = render.indexOf('const compactArrowChrome =');
   const start = render.indexOf('const applyFixViewportPin =');
+  assert.notEqual(helper, -1, 'renderer must define compactArrowChrome next to applyFixViewportPin');
   assert.notEqual(start, -1, 'renderer must define applyFixViewportPin');
-  const sliced = render.slice(start);
-  const end = sliced.indexOf('\n        const byId =');
-  assert.notEqual(end, -1, 'applyFixViewportPin must sit before byId');
+  assert.ok(helper < start, 'compactArrowChrome must sit before applyFixViewportPin');
+  const sliced = render.slice(helper);
+  const end = sliced.indexOf('\n      const interactionBridge =');
+  assert.notEqual(end, -1, 'applyFixViewportPin must sit next to paint, before interactionBridge');
   const fn = new Function(`${sliced.slice(0, end)}\nreturn applyFixViewportPin;`)();
   assert.equal(typeof fn, 'function');
   return fn;
@@ -147,6 +150,8 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.doesNotMatch(render, /data-fix-slot-anchor/);
   assert.doesNotMatch(render, /first-screen-bottom/);
   assert.match(render, /顶部信息\|顶部固定/);
+  assert.match(render, /arrowChrome/);
+  assert.match(render, /箭头\|下滑\|scroll/);
   assert.match(render, /first-section-pagebox/);
   assert.doesNotMatch(render, /fixedHost\.style\.position = 'fixed'/);
   assert.doesNotMatch(render, /fixedStage\.style\.position = 'sticky'/);
@@ -203,4 +208,37 @@ test('BOTTOM fix/ visual gap stays gap × k on viewportH / k, not cover slot', (
   const coverSlotH = 1400 / coverScale;
   const coverVisualGap = 1400 - (coverSlotH - gapBottom - sourceH + sourceH) * k;
   assert.notEqual(coverVisualGap, 49);
+});
+
+test('TOP compact 箭头 still pins to viewportH / k by gapBottom', () => {
+  const applyFixViewportPin = applyFixViewportPinFromRender();
+  const gapBottom = 59;
+  const sourceH = 70;
+  const sourceW = 70;
+  const k = 0.5;
+  const attrs = {
+    'data-fix-pin-v': 'TOP',
+    'data-label': '箭头',
+    'data-fix-gap-bottom': String(gapBottom),
+    'data-fix-board-w': '3840',
+  };
+  const el = pinElement();
+  const top = applyFixViewportPin(el, attrs, { w: sourceW, h: sourceH }, k, { viewport: { h: 1080 } });
+  assert.equal(el.getAttribute('data-fix-anchor'), 'bottom-gap');
+  assert.equal(top, 1080 / k - gapBottom - sourceH);
+  assert.equal(1080 - (top + sourceH) * k, gapBottom * k);
+});
+
+test('applyFixViewportPin is visible to paint, not trapped inside interactionBridge', () => {
+  const render = renderSource();
+  const helper = render.indexOf('const applyFixViewportPin =');
+  const paintCall = render.indexOf('const pinnedTop = applyFixViewportPin(');
+  const bridge = render.indexOf('const interactionBridge =');
+  const bridgeEnd = render.indexOf('\n      const textContext =');
+  assert.notEqual(helper, -1);
+  assert.notEqual(paintCall, -1);
+  assert.notEqual(bridge, -1);
+  assert.notEqual(bridgeEnd, -1);
+  assert.ok(helper < bridge, 'helper must be declared before interactionBridge');
+  assert.ok(paintCall > bridgeEnd, 'paint call must sit after interactionBridge closes');
 });

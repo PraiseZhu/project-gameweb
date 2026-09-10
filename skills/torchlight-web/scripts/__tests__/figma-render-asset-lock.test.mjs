@@ -90,6 +90,8 @@ test('heroUi stretch never moves pin=viewport fix descendants', () => {
   assert.match(renderer, /data-topbar-chrome/);
   assert.match(renderer, /landscapeFix/);
   assert.match(renderer, /topInfoChrome/);
+  assert.match(renderer, /arrowChrome/);
+  assert.match(renderer, /箭头\|下滑\|scroll/);
   assert.match(renderer, /applyFixViewportPin/);
   assert.match(renderer, /data-fix-chrome/);
   assert.match(renderer, /slotH - gapBottom - sourceH/);
@@ -113,6 +115,7 @@ test('product sticky overlay keeps scaled span after viewport sync', () => {
   assert.match(chrome, /function isViewportChromeEl/);
   assert.match(chrome, /sourceWidth > sourceHeight/);
   assert.match(chrome, /顶部信息\|顶部固定/);
+  assert.match(chrome, /箭头\|下滑\|scroll/);
   assert.match(chrome, /data-fix-chrome/);
   assert.doesNotMatch(chrome, /data-fix-slot-anchor/);
   assert.doesNotMatch(chrome, /first-screen-bottom/);

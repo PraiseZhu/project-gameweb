@@ -46,8 +46,8 @@ k 变大后稿高已经够高，不再垫。`extra<0` 时后屏 paint-root 层�
 长 `bg/*` 被裁掉的尾巴以 `bg-tail` 续画在
 偏移之后，页面背景跟着走，不会露出空带。KV/page chrome 与 fixed overlay 仍按
 原 sibling 顺序绘制。滚动槽只记账，不得给 hero 加 `%` 假离场。
-`fix/箭头` 走稿上 Constraints Bottom：空隙 = 该层底到父画板底，钉在 `viewportH / k`，不跟 cover 首屏裁切窗。
-`fix/顶部信息` 按名字当视口 chrome，不靠 `w>h`；手机 366×374 仍是右侧栏，不是目录轨。 overlay 根仍用清单 pageBox，不要改写成 (0,0)。
+`fix/箭头` 走稿上 Constraints Bottom：空隙 = 该层底到父画板底，钉在 `viewportH / k`，不跟 cover 首屏裁切窗。Constraints 仍是 TOP 的紧凑箭头（`w ≤ h×4`）同样按视口 chrome 画，不得打 `data-nav-shell`。
+`fix/顶部信息` 按名字当视口 chrome（含 `左侧/右侧顶部信息`），不靠 `w>h`；手机 366×374 仍是右侧栏，不是目录轨。 overlay 根仍用清单 pageBox，不要改写成 (0,0)。
 sticky overlay 宿主高度是缩放后的 overlay span，负 margin 把文档流抵消；高度 0 加 overflow
 会在 `.frame` 一滑时把右侧栏裁掉。
 

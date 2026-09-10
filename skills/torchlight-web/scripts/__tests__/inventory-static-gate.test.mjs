@@ -2059,6 +2059,44 @@ test('portrait named 顶部信息 treated as a directory is red', () => {
   assert.ok(red.problems.some((line) => line.includes('topbar-chrome-treated-as-directory')), (red.problems || []).join('\n'));
 });
 
+test('compact named 箭头 treated as a directory is red', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+    overlays: [{ id: 'fix-arrow', role: 'fix', pin: 'viewport', label: '箭头' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 3840, h: 2143 } },
+      { id: 'fix-arrow', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/箭头', pageBox: { x: 1885, y: 2014, w: 70, h: 70 } },
+    ],
+  };
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-arrow': { dTop: 0, dLeft: 0 } },
+      overlayBoxes: { 'fix-arrow': { top: 1007, height: 35 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 1080, overflow: 'hidden' } },
+      slotDesignHeight: 2160,
+      scale: 0.5,
+      chromeTopBar: {
+        id: 'fix-arrow',
+        navShell: true,
+        kind: 'root',
+        topbar: false,
+        yScale: 1,
+        height: 70,
+        sourceHeight: 70,
+        nodes: { 'fix-arrow': { x: 1885, y: 2014, w: 70, h: 70 } },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-treated-as-directory')), (red.problems || []).join('\n'));
+});
+
 test('product overlay stretched to viewport height is red', () => {
   const inventory = {
     schema: 'inventory/v2',
@@ -2533,6 +2571,40 @@ test('product viewport rejects a first-screen arrow still at Figma pageBox y', (
   });
   assert.equal(designViewport.ok, true, (designViewport.problems || []).join('\n'));
   assert.equal((designViewport.problems || []).some((line) => line.includes('arrow-not-on-first-screen-floor')), false);
+});
+
+test('design viewport does not demand Figma pageBox y for a remapped compact 箭头', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    nodes: [
+      { id: 'fix-arrow', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/箭头', pageBox: { x: 1885, y: 2014, w: 70, h: 70 } },
+      {
+        id: 'fix-arrow-img',
+        status: 'determined',
+        role: 'img',
+        name: 'img/箭头示意',
+        parentId: 'fix-arrow',
+        ancestorIds: ['fix-arrow'],
+        pageBox: { x: 1885, y: 2014, w: 70, h: 70 },
+        sliceExport: { box: { x: 1885, y: 2014, w: 70, h: 70 }, file: 'arrow.png' },
+      },
+    ],
+  };
+  const green = evaluateInventoryStaticGate({
+    inventory,
+    lang: 'zh-CN',
+    viewportKind: 'design',
+    measurements: {
+      nodes: {
+        'fix-arrow': { x: 1885, y: 3348, w: 70, h: 70, inSection: false },
+        'fix-arrow-img': {
+          x: 1885, y: 3348, w: 70, h: 70, inSection: false, hasImg: true,
+          imgBox: { x: 1885, y: 3348, w: 70, h: 70 },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
 });
 
 test('product viewport keeps a short-hero arrow on the padded 100vh floor, not raw Figma y', () => {
