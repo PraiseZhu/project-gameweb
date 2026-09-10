@@ -18,7 +18,7 @@
 
 import { normalizeCopy, editDistance, fuzzyThreshold } from './figma-copy-normalize.mjs';
 import { deriveContext, resolveContextualRow, validateCopyOverlay } from './figma-copy-context.mjs';
-import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferSplitShareRow, splitLocaleCellByOwnLines } from './figma-copy-structure.mjs';
+import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferSplitShareRow, splitLocaleCellByOwnLines, inferCellLineSpan, cellLines, lineBreakOf } from './figma-copy-structure.mjs';
 
 const LANGS_FALLBACK = ['zh-CN', 'en', 'ko', 'ja', 'zh-TW'];
 
@@ -126,10 +126,50 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
   const _unread = [];
   const tally = { exact: 0, normalized: 0, fuzzy: 0, ambiguous: 0, none: 0, cellSplit: 0, inferredNeighbor: 0, inferredLeftover: 0, inferredAdjacent: 0, inferredSplitShare: 0 };
   const cellSplit = findCellSplitGroups(texts, table);
+
+  function designationSpanFits(lineIndex, takeCount, cellCount) {
+    const take = Number.isInteger(takeCount) && takeCount > 0 ? takeCount : 1;
+    return Number.isInteger(lineIndex)
+      && Number.isInteger(cellCount)
+      && lineIndex >= 0
+      && take >= 1
+      && lineIndex + take <= Math.max(cellCount, 1);
+  }
+
+  function splitMetaForDesignation(nodeRow, cellSplitMeta, nodeChars, cellZh, designatedRow, splitGroupRow) {
+    const cellCount = cellLines(cellZh).length;
+    const takeCount = Number.isInteger(nodeRow.takeCount) && nodeRow.takeCount > 0 ? nodeRow.takeCount : 1;
+    if (Number.isInteger(nodeRow.lineIndex)) {
+      if (!designationSpanFits(nodeRow.lineIndex, takeCount, cellCount)) {
+        return { unresolvedSplit: true, lineCount: cellCount };
+      }
+      return {
+        lineIndex: nodeRow.lineIndex,
+        lineCount: Math.max(cellCount, 1),
+        partIndex: Number.isInteger(nodeRow.partIndex) ? nodeRow.partIndex : 0,
+        partCount: Number.isInteger(nodeRow.partCount) && nodeRow.partCount > 0 ? nodeRow.partCount : 1,
+        takeCount,
+      };
+    }
+    const inferred = inferCellLineSpan(nodeChars, cellZh);
+    if (inferred && Number.isInteger(inferred.lineIndex)) return inferred;
+    if (inferred && inferred.wholeCell) return {};
+    const sameRow = splitGroupRow != null && Number(splitGroupRow) === Number(designatedRow);
+    if (
+      sameRow
+      && cellSplitMeta
+      && Number.isInteger(cellSplitMeta.lineIndex)
+      && designationSpanFits(cellSplitMeta.lineIndex, cellSplitMeta.takeCount, cellCount)
+    ) {
+      return { ...cellSplitMeta, lineCount: Math.max(cellCount, 1) };
+    }
+    if (cellCount > 1) return { unresolvedSplit: true, lineCount: cellCount };
+    return {};
+  }
   const _review = [];
 
   /** 命中唯一一行后造五语叶子；空语言列不造叶子（值是 null），记 missingLangs。 */
-  function adopt(t, kind, { lineIndex = null, lineCount = null, partIndex = 0, partCount = 1 } = {}) {
+  function adopt(t, kind, { lineIndex = null, lineCount = null, partIndex = 0, partCount = 1, takeCount = 1, joinWith = '\n' } = {}) {
     const translations = {};
     const missingLangs = [];
     const localeLineCounts = {};
@@ -144,7 +184,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
         translations[lang] = larkLeaf(`/rows/${t.row}/${lang}`);
         continue;
       }
-      const splitResult = splitLocaleCellByOwnLines(v, lineIndex, { partIndex, partCount });
+      const splitResult = splitLocaleCellByOwnLines(v, lineIndex, { partIndex, partCount, takeCount, joinWith });
       if (Number.isInteger(splitResult.localeLineCount)) localeLineCounts[lang] = splitResult.localeLineCount;
       if (splitResult.kind === 'absent') {
         translations[lang] = {
@@ -213,21 +253,51 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       const lineIndex = part ? part.lineIndex : cellGroup.nodeIds.indexOf(String(nodeId));
       const partIndex = part ? (part.nodeIds || []).indexOf(String(nodeId)) : 0;
       const partCount = part ? (part.nodeIds || []).length : 1;
-      return { lineIndex, lineCount: cellGroup.lines.length, partIndex, partCount };
+      const takeCount = part && Number.isInteger(part.takeCount) && part.takeCount > 1 ? part.takeCount : 1;
+      return { lineIndex, lineCount: cellGroup.lines.length, partIndex, partCount, ...(takeCount > 1 ? { takeCount } : {}) };
     })();
     const __nodeRow = copyOverlay && copyOverlay.nodeRow && copyOverlay.nodeRow[nodeId];
     if (__nodeRow && __nodeRow.row != null) {
       const __row = Number(__nodeRow.row);
       let __rawZh = '';
       try { __rawZh = String(at(larkSnap, `/rows/${__row}/zh-CN`) ?? ''); } catch { __rawZh = ''; }
-      const splitMeta = cellSplitMeta && Number.isInteger(cellSplitMeta.lineCount) && cellSplitMeta.lineCount > 1
-        ? cellSplitMeta
+      const splitMeta = splitMetaForDesignation(__nodeRow, cellSplitMeta, raw, __rawZh, __row, cellGroup && cellGroup.row);
+      if (splitMeta.unresolvedSplit) {
+        byNode[nodeId] = {
+          ...base,
+          matchKind: 'designated-split-unresolved',
+          row: __row,
+          tableZhCN: __rawZh,
+          translations: {},
+          missingLangs: langs.slice(),
+          note: `人工指认第 ${__row} 行，但该格有多句而本层对不上整格/单句，禁止整格灌入。copy-designations 请补 lineIndex/takeCount。`,
+        };
+        _unread.push({
+          ...base,
+          matchKind: 'designated-split-unresolved',
+          row: __row,
+          reason: `指认了第 ${__row} 行（多句格），本层简中对不上其中连续句，禁止把整格译文灌进这一层`,
+        });
+        tally.none += 1;
+        continue;
+      }
+      const adoptSplit = Number.isInteger(splitMeta.lineIndex)
+        ? { ...splitMeta, joinWith: lineBreakOf(raw) }
         : {};
+      const cellSplitOut = Number.isInteger(splitMeta.lineIndex)
+        ? {
+          lineIndex: splitMeta.lineIndex,
+          lineCount: splitMeta.lineCount,
+          partIndex: splitMeta.partIndex || 0,
+          partCount: splitMeta.partCount || 1,
+          ...(Number.isInteger(splitMeta.takeCount) && splitMeta.takeCount > 1 ? { takeCount: splitMeta.takeCount } : {}),
+        }
+        : null;
       byNode[nodeId] = {
         ...base,
-        ...adopt({ row: __row, rawZh: __rawZh }, 'designated', splitMeta),
-        ...(cellSplitMeta ? { cellSplit: cellSplitMeta } : {}),
-        note: `人工指认第 ${__row} 行（${__nodeRow.why || 'copy-designations'}）；值由 larkLeaf 机械取，非手填${cellSplitMeta ? `；拆格句序第 ${cellSplitMeta.lineIndex + 1}/${cellSplitMeta.lineCount} 句第 ${cellSplitMeta.partIndex + 1}/${cellSplitMeta.partCount} 截仍保留` : ''}`,
+        ...adopt({ row: __row, rawZh: __rawZh }, 'designated', adoptSplit),
+        ...(cellSplitOut ? { cellSplit: cellSplitOut } : {}),
+        note: `人工指认第 ${__row} 行（${__nodeRow.why || 'copy-designations'}）；值由 larkLeaf 机械取，非手填${Number.isInteger(splitMeta.lineIndex) ? `；拆格句序第 ${splitMeta.lineIndex + 1}/${splitMeta.lineCount} 句起共 ${splitMeta.takeCount || 1} 句` : ''}`,
       };
       tally.exact += 1; // designated 计入 exact 桶（已解析）
       continue;
@@ -252,7 +322,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       }
       byNode[nodeId] = {
         ...base,
-        ...adopt({ row: cellGroup.row, rawZh: cellGroup.rawZh }, 'cell-split', splitMeta),
+        ...adopt({ row: cellGroup.row, rawZh: cellGroup.rawZh }, 'cell-split', { ...splitMeta, joinWith: lineBreakOf(raw) }),
         cellSplit: splitMeta,
         note: `表第 ${cellGroup.row} 行一格 ${cellGroup.lines.length} 句对相邻 TEXT，本层第 ${splitMeta.lineIndex + 1} 句第 ${splitMeta.partIndex + 1}/${splitMeta.partCount} 截；请审拆句`,
       };
@@ -369,14 +439,22 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
     const candidates = Array.isArray(entry.candidates) ? entry.candidates : [];
     const hit = candidates.find((item) => Number(item.row) === Number(picked.row))
       || { row: picked.row, tableZhCN: at(larkSnap, `/rows/${picked.row}/zh-CN`) };
-    const split = entry.cellSplit && Number.isInteger(entry.cellSplit.lineIndex)
+    let split = entry.cellSplit && Number.isInteger(entry.cellSplit.lineIndex)
       ? {
         lineIndex: entry.cellSplit.lineIndex,
         lineCount: entry.cellSplit.lineCount,
         partIndex: entry.cellSplit.partIndex || 0,
         partCount: entry.cellSplit.partCount || 1,
+        takeCount: entry.cellSplit.takeCount || 1,
+        joinWith: lineBreakOf(entry.characters),
       }
       : {};
+    if (!Number.isInteger(split.lineIndex)) {
+      const inferred = inferCellLineSpan(entry.characters, String(hit.tableZhCN ?? hit.rawZh ?? ''));
+      if (inferred && Number.isInteger(inferred.lineIndex)) {
+        split = { ...inferred, joinWith: lineBreakOf(entry.characters) };
+      }
+    }
     byNode[nodeId] = {
       nodeId: entry.nodeId,
       name: entry.name,

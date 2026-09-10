@@ -3,7 +3,8 @@
  * Chromium DOM probe for the inventory static gate.
  * Measures design-viewport zh-CN boxes from the rendered demo.
  * Prints one JSON object: { nodes: { id: { x, y, w, h, fontSize, fontFamily, fontWeight, imgBox, inSection } } }.
- * pin=viewport nodes are measured from the sticky overlay owner, never a later section.
+ * pin=viewport roots and descendants are measured from the page origin
+ * (inventory pageBox). Never a later section.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -345,8 +346,7 @@ async function measureDemo({ demoDir, handoffDir, platform, lang, viewportKind =
         const el = find(id);
         if (!el) continue;
         const overlayOwner = overlayOwnerOf(el);
-        const originRect = overlayOwner ? overlayOwner.getBoundingClientRect() : origin;
-        const box = boxOf(el, originRect);
+        const box = boxOf(el, origin);
         const cs = getComputedStyle(el);
         const ownImg = el.matches('img')
           ? el
@@ -360,7 +360,7 @@ async function measureDemo({ demoDir, handoffDir, platform, lang, viewportKind =
         const boundsPolicy = el.getAttribute('data-asset-bounds-resolved') || '';
         let imgBox = img && (boundsPolicy === 'owner-ink-from-unclipped-png' || boundsPolicy === 'owner-ink-spill-natural')
           ? box
-          : (ownImg ? boxOf(ownImg, originRect) : (img ? boxOf(img, originRect) : null));
+          : (ownImg ? boxOf(ownImg, origin) : (img ? boxOf(img, origin) : null));
         if (ownImg && imgBox && box && boundsPolicy !== 'owner-ink-from-unclipped-png' && boundsPolicy !== 'owner-ink-spill-natural') {
           const far = Math.abs(imgBox.x - box.x) > Math.max(64, box.w)
             || Math.abs(imgBox.y - box.y) > Math.max(64, box.h);
@@ -446,9 +446,22 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       const el = find(id);
       if (!el) return null;
       const r = el.getBoundingClientRect();
-      return { top: r.top, left: r.left, width: r.width, height: r.height };
+      const frameBox = frame.getBoundingClientRect();
+      const overlapW = Math.max(0, Math.min(r.right, frameBox.right) - Math.max(r.left, frameBox.left));
+      const overlapH = Math.max(0, Math.min(r.bottom, frameBox.bottom) - Math.max(r.top, frameBox.top));
+      const area = Math.max(0, r.width) * Math.max(0, r.height);
+      const visibleArea = overlapW * overlapH;
+      return {
+        top: r.top,
+        left: r.left,
+        width: r.width,
+        height: r.height,
+        visibleArea,
+        clipped: area > 1 && visibleArea + 1 < area * 0.5,
+      };
     };
     const before = Object.fromEntries((ids || []).map((id) => [id, rectOf(id)]));
+    const overlayBoxes = Object.fromEntries((ids || []).map((id) => [id, before[id]]));
     const playEl = playSpec?.playId ? find(playSpec.playId) : null;
     const sliceEl = playSpec?.sliceId ? find(playSpec.sliceId) : null;
     const img = sliceEl ? sliceEl.querySelector('img.fx-img') : null;
@@ -522,6 +535,7 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       y: Math.max(0, (frameRect.height || window.innerHeight || 0) - 4),
     };
     const slotDesignHeight = Number(frame.getAttribute('data-hero-slot-design-height'));
+    const pageScale = Number(frame.getAttribute('data-hero-page-scale'));
     const scrollBefore = Number(frame.scrollTop) || 0;
     const nextStage = nextSectionId
       ? frame.querySelector(`[data-node-id="section-${cssEscape(nextSectionId)}"]`)
@@ -556,7 +570,12 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       const a = before[id];
       const b = after[id];
       if (!a || !b) continue;
-      overlayDeltas[id] = { dTop: Math.abs(b.top - a.top), dLeft: Math.abs(b.left - a.left) };
+      overlayDeltas[id] = {
+        dTop: Math.abs(b.top - a.top),
+        dLeft: Math.abs(b.left - a.left),
+        clippedAfter: b.clipped === true,
+        visibleAreaAfter: b.visibleArea,
+      };
     }
     let sample = null;
     const host = laterBgId ? find(laterBgId) : nextStage;
@@ -580,8 +599,10 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
         zoom: overlay ? overlay.style.zoom : null,
         height: overlay ? overlay.style.height : null,
         pinHeight: overlay ? overlay.getAttribute('data-fix-pin-height') : null,
+        marginBottom: overlay ? overlay.style.marginBottom : null,
       },
       overlayDeltas,
+      overlayBoxes,
       play,
       layers,
       sectionAbut,
@@ -593,6 +614,7 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
         : null,
       firstScreenFloorSample,
       slotDesignHeight: Number.isFinite(slotDesignHeight) ? slotDesignHeight : null,
+      scale: Number.isFinite(pageScale) && pageScale > 0 ? pageScale : null,
       viewport: { w: window.innerWidth, h: window.innerHeight },
       scrollTop: scrollAfter,
       scrolled: scrollAfter > scrollBefore + 1 ? 1 : 0,
@@ -898,7 +920,7 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       error: err && err.message ? err.message : String(err),
     };
   }
-  return { ...measured, backgrounds, samples, firstKv, seamPixels, firstScreenFloor, chromeTopBar };
+  return { ...measured, backgrounds, samples, firstKv, seamPixels, firstScreenFloor, chromeTopBar, overlayBoxes: measured?.overlayBoxes || null };
 }
 
 async function main(argv = process.argv.slice(2)) {

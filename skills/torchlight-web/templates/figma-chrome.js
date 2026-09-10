@@ -732,8 +732,9 @@
   }
 
   /* DESIGN.md §5.0 同一张表：字/按钮和列宽。产品页和 QA 模拟视口都走。
-     >1920 stretch；1127–1920 冻 1920 / k=0.5 居中裁；≤1126 手机 k=宽/750。
-     QA 的 fit/bezel 仍是壳装饰，不改这把尺。 */
+     >1920 stretch；1127–1920 冻 1920 / k=0.5 居中裁；≤1126 手机
+     k=min(1, 宽/750)。751–1126 按钮保持 750 稿尺寸，列宽跟窗口铺 KV
+     和后屏，不要再裁一列 750。QA 的 fit/bezel 仍是壳装饰。 */
   function productColumnWidth(viewportW, plat) {
     var w = Number(viewportW);
     if (!isFinite(w) || w <= 0) return w;
@@ -753,7 +754,7 @@
   function productUiScaleK(viewportW, plat) {
     var w = Number(viewportW);
     if (!isFinite(w) || w <= 0) return null;
-    if (plat === 'mobile' || w <= 1126) return w / 750;
+    if (plat === 'mobile' || w <= 1126) return Math.min(1, w / 750);
     if (w <= 1920) return 0.5;
     return w / 3840;
   }
@@ -1257,10 +1258,10 @@
        wrap 内容宽 22px、屏面顶到 bezel 边上）。读数与 rail 都按 wrap.getBoundingClientRect() 现测，
        与这里的像素严格同源。 Product view has no bezel: the frame is the window. */
     var BEZEL = PRODUCT_VIEW ? 0 : 22;   /* (1 border + 10 padding) × 2 边 */
-    /* Frozen PC column is 1920 while the chosen viewport may be 1440. Size the
-       bezel to the column, not vp.w, or wrap clips the same art the product
-       page shows. Fit scale still shrinks the whole screen into the toolbar. */
-    wrap.style.width = Math.round(columnW * scale + BEZEL) + 'px';
+    /* Window / crop box is vp.w. Freeze 1920 is a child inside that window.
+       Sizing wrap to columnW=1920 while vp.w=1275 clips the right of the
+       screen (green empty strip). Fit scale still shrinks the whole screen. */
+    wrap.style.width = Math.round(vp.w * scale + BEZEL) + 'px';
     wrap.style.minHeight = '';
     /* wrap 高度**固定**为缩后 screen 高（含 bezel），不是 auto —— 边框盒严格等于 screen
        尺寸，stage 才能按 wrap 居中、四边等距黑色呼吸空间；frame 固定 vp.h 且内部滚动，
@@ -1681,6 +1682,13 @@
     return roots;
   }
 
+  function isViewportChromeEl(el) {
+    if (!el) return false;
+    if (el.getAttribute('data-topbar-chrome') === 'true') return true;
+    if (/^(bottom|center)$/.test(el.getAttribute('data-fix-chrome') || '')) return true;
+    return /顶部信息|顶部固定/.test(String(el.getAttribute('data-name') || el.getAttribute('data-label') || ''));
+  }
+
   function parseZoomValue(value) {
     if (value == null || value === '' || value === 'normal') return 1;
     var n = String(value).indexOf('%') >= 0 ? parseFloat(value) / 100 : parseFloat(value);
@@ -1692,13 +1700,26 @@
       var overlays = frame.querySelectorAll('.fx-fixed-overlays');
       for (var i = 0; i < overlays.length; i++) {
         var stage = overlays[i];
-        /* sticky pin layer must stay height:0. Stretching it to 100vh makes
-           the overlay a scroll-box sibling: after scrollIntoView it is
-           clamped to the frame bottom and buttons drift 6–24px. Children
-           already paint overflow:visible from the sticky origin. */
-        stage.style.height = '0px';
-        stage.style.marginBottom = '0px';
-        stage.setAttribute('data-fix-pin-height', '0');
+        /* Do not squash the sticky host back to 0. Height-0 + overflow:visible
+           paints at rest then Chromium clips overflow on `.frame` scroll
+           (mobile right chrome vanishes). Keep the renderer's scaled span
+           and the matching negative margin so the page stage still starts
+           at y=0. Stretching to 100vh is still forbidden. */
+        var zoomEl = stage.querySelector('.fx-fixed-zoom');
+        if (zoomEl) {
+          var matrix = (getComputedStyle(zoomEl).transform || '').match(/matrix\(([^)]+)\)/);
+          var k = matrix ? parseFloat(matrix[1].split(',')[0]) : 1;
+          if (!isFinite(k) || k <= 0) k = 1;
+          var designSpan = parseFloat(zoomEl.getAttribute('data-fix-zoom-span') || '');
+          if (isFinite(designSpan) && designSpan > 0) {
+            var hostH = designSpan * k;
+            stage.style.height = hostH + 'px';
+            stage.style.marginBottom = (-hostH) + 'px';
+            stage.setAttribute('data-fix-pin-height', String(hostH));
+            continue;
+          }
+        }
+        stage.setAttribute('data-fix-pin-height', String(parseFloat(stage.style.height) || 0));
       }
     } catch (e) { /* fixed overlay sizing is a preview affordance; render remains source-backed */ }
   }
@@ -2022,11 +2043,13 @@
     var nodes = frame.querySelectorAll('[data-motion-role="navigationFooter"], [data-nav-shell="true"]');
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
-      /* Landscape fix/顶部信息 is viewport chrome (官方充值 / 地球 / 官网),
+      /* Landscape *or* named 顶部信息 is viewport chrome (官方充值 / 地球 / 官网),
          not a left directory. Stretching it to 100vh squashes mobile 736×401
-         by 844/1334. Skip even if an old render still stamped nav-shell. */
-      if (node.getAttribute('data-topbar-chrome') === 'true') continue;
-      if (/^(bottom|center)$/.test(node.getAttribute('data-fix-chrome') || '')) continue;
+         by 844/1334, and a slightly portrait 366×374 right bar is still
+         chrome. Bottom/Center fix/ is also not a directory (arrow would
+         stretch with the rail). Skip even if an old render still stamped
+         nav-shell. */
+      if (isViewportChromeEl(node)) continue;
       var nested = false;
       for (var r = 0; r < roots.length; r++) {
         if (roots[r].contains(node)) { nested = true; break; }
@@ -2079,8 +2102,7 @@
           if (!isFinite(sourceLeft) || !isFinite(sourceTop)
             || !isFinite(sourceWidth) || sourceWidth <= 0
             || !isFinite(sourceHeight) || sourceHeight <= 0) continue;
-          if (root.getAttribute('data-topbar-chrome') === 'true'
-            || sourceWidth > sourceHeight) continue;
+          if (isViewportChromeEl(root) || sourceWidth > sourceHeight) continue;
           var sourceScaleY = stageZoom > 0 ? (yScale / stageZoom) : 1;
           if (!isFinite(sourceScaleY) || sourceScaleY <= 0) sourceScaleY = 1;
           /* Items belong to exactly one nav root. Ready consumers may paint
@@ -2332,11 +2354,19 @@
         }
         stage.style.zoom = String(stage.__fxBaseZoom * followScale);
       }
+      /* Names stay lock-1920; size above 1920 follows page k / followScale.
+         Do not re-apply freeze counter 0.5/k during drag — that shrinks
+         Shop vs KV and opens top-bar gaps. */
       syncDragColumnCrop(vp);
       syncFixedOverlayViewport(vp);
       syncDragSectionLayout(vp, followScale);
       syncDragHeroCover(vp);
       syncStaticKvChrome(vp);
+      /* Official popup stays mounted and re-sizes with the window. Light
+         drag keeps DOM, so re-pin open named modals to the current frame. */
+      if (window.__figmaRender && typeof window.__figmaRender._pinOpenNamedModals === 'function') {
+        window.__figmaRender._pinOpenNamedModals(frame);
+      }
     } catch (error) { /* 临时缩放失败不阻塞拖拽，松手后完整 render 会纠正 */ }
   }
 

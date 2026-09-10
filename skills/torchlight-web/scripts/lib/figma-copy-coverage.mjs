@@ -10,10 +10,37 @@ import { assessLanguageCompleteness, DEFAULT_TRANSLATION_LANGUAGES } from './tra
 const unwrap = (value) => (value && typeof value === 'object' && 'value' in value ? value.value : value);
 const isLeaf = (value) => value && typeof value === 'object' && 'value' in value && 'provenance' in value;
 
+export function inventoryCopyNodes(inventory) {
+  const out = [];
+  const seen = new Set();
+  const push = (node) => {
+    if (!node || node.id == null) return;
+    const id = String(node.id);
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push(node);
+  };
+  const walkList = (list) => {
+    for (const node of Array.isArray(list) ? list : []) {
+      push(node);
+      walkList(node.nodes);
+      walkList(node.children);
+      walkList(node.variants);
+    }
+  };
+  walkList(inventory?.nodes);
+  const att = inventory?.attachments && typeof inventory.attachments === 'object'
+    ? inventory.attachments : {};
+  walkList(att.modals);
+  walkList(att.componentSets);
+  walkList(att.components);
+  return out;
+}
+
 export function collectInventoryTexts(inventory, { treeKey = 'default' } = {}) {
   const texts = [];
   const seen = new Set();
-  for (const node of Array.isArray(inventory?.nodes) ? inventory.nodes : []) {
+  for (const node of inventoryCopyNodes(inventory)) {
     if (!node || node.status === 'skipped') continue;
     const type = String(node.type || '').toUpperCase();
     const role = String(node.role || '');

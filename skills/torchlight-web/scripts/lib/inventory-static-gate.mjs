@@ -92,16 +92,9 @@ function findFixOwner(node, byId = null) {
   return null;
 }
 
-function overlayOffset(node, byId = null) {
-  const owner = findFixOwner(node, byId);
-  const ownerPage = geom(owner?.pageBox);
-  if (!ownerPage) return { x: 0, y: 0 };
-  return { x: ownerPage.x, y: ownerPage.y };
-}
-
 /** Drawing expectation is pageBox. Canvas `box` is never the expected rect.
- *  Nodes under a pin=viewport fix/ owner are overlay-absolute
- *  (pageBox − owner.pageBox), never later-section page y and never parentBox. */
+ *  A pin=viewport fix/ tree keeps inventory pageBox vs the page origin,
+ *  never later-section page y and never parentBox. */
 function sectionOriginX(node, byId = null) {
   if (!byId) return 0;
   const ids = [String(node?.id || ''), ...asArray(node?.ancestorIds).map(String)];
@@ -124,24 +117,10 @@ function hairlinePaintBox(node) {
 }
 
 export function expectedDrawBox(node, byId = null) {
-  if (node?.role === 'fix' || node?.pin === 'viewport') {
-    const ownerBox = geom(node?.pageBox);
-    if (!ownerBox) return null;
-    return { x: 0, y: 0, w: ownerBox.w, h: ownerBox.h };
-  }
   const page = geom(node?.pageBox);
   if (!page) return null;
   const paint = hairlinePaintBox(node) || page;
-  const owner = findFixOwner(node, byId);
-  if (owner) {
-    const delta = overlayOffset(node, byId);
-    return {
-      x: paint.x - delta.x,
-      y: paint.y - delta.y,
-      w: paint.w,
-      h: paint.h,
-    };
-  }
+  if (findFixOwner(node, byId)) return paint;
   const originX = sectionOriginX(node, byId);
   if (originX) return { ...paint, x: paint.x - originX };
   return paint;
@@ -149,16 +128,7 @@ export function expectedDrawBox(node, byId = null) {
 
 function foldBox(box, node, byId) {
   if (!box) return null;
-  const owner = findFixOwner(node, byId);
-  if (owner) {
-    const delta = overlayOffset(node, byId);
-    return {
-      x: box.x - delta.x,
-      y: box.y - delta.y,
-      w: box.w,
-      h: box.h,
-    };
-  }
+  if (findFixOwner(node, byId)) return box;
   const originX = sectionOriginX(node, byId);
   if (originX) return { ...box, x: box.x - originX };
   return box;
@@ -263,6 +233,37 @@ function descendantIdsOf(rootId, inventory) {
 function isLandscapeFixOwner(node) {
   const box = geom(node?.pageBox || node?.box);
   return !!(box && box.w > box.h);
+}
+
+function isNamedTopInfoFix(node) {
+  return /顶部信息|顶部固定/.test(fixLabelOf(node));
+}
+
+function isViewportChromeFix(node) {
+  return isLandscapeFixOwner(node) || isNamedTopInfoFix(node) || isFirstScreenBottomFix(node);
+}
+
+function fixLabelOf(node) {
+  return String(node?.label || splitName(node?.name).label || node?.name || '');
+}
+
+/** fix/箭头 sits on the first-screen floor in Figma. Product 100vh crops a
+ *  tall hero, so inventory pageBox y is below the slot — gate the slot
+ *  bottom, not the raw pageBox. */
+function isFirstScreenBottomFix(node) {
+  if (!node || (node.role !== 'fix' && node.pin !== 'viewport')) return false;
+  const box = geom(node.pageBox || node.box);
+  if (!box || !(box.h > 0)) return false;
+  return /箭头|下滑|scroll/.test(fixLabelOf(node)) && box.w <= box.h * 4;
+}
+
+function firstScreenBottomFixIds(inventory, byId) {
+  const ids = new Set();
+  for (const id of keptViewportFixIds(inventory, byId)) {
+    const node = byId.get(String(id));
+    if (isFirstScreenBottomFix(node)) ids.add(String(id));
+  }
+  return [...ids];
 }
 
 function isChromeGatedNode(node) {
@@ -503,6 +504,21 @@ export function chromeTopBarContract(inventory, byId = null) {
   return { rootIds, nodeIds };
 }
 
+function chromeProbeExpectedBox(node, byId) {
+  const expected = expectedDrawBox(node, byId);
+  if (!expected) return null;
+  const owner = findFixOwner(node, byId);
+  if (!owner) return expected;
+  const ownerBox = expectedDrawBox(owner, byId) || geom(owner.pageBox);
+  if (!ownerBox) return expected;
+  return {
+    x: expected.x - ownerBox.x,
+    y: expected.y - ownerBox.y,
+    w: expected.w,
+    h: expected.h,
+  };
+}
+
 function evaluateChromeTopBarGeometry({ inventory, chromeTopBar, byId, viewportKind } = {}) {
   if (String(viewportKind) !== 'product') return [];
   const failures = [];
@@ -520,7 +536,8 @@ function evaluateChromeTopBarGeometry({ inventory, chromeTopBar, byId, viewportK
   for (const id of contract.nodeIds) {
     const node = byId.get(id);
     if (!node) continue;
-    const expected = expectedDrawBox(node, byId);
+    if (isFirstScreenBottomFix(node) || isFirstScreenBottomFix(findFixOwner(node, byId))) continue;
+    const expected = chromeProbeExpectedBox(node, byId);
     const actual = nodes[id];
     if (!actual) {
       failures.push({ id, reason: 'topbar-chrome-missing-dom', expected });
@@ -694,7 +711,12 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
   const overlayHeight = String(overlay.height || overlay.pinHeight || '');
   if (keptViewportFixIds(inventory, byId).length) {
     const h = Number.parseFloat(overlayHeight);
-    if (overlayHeight && overlayHeight !== '0' && overlayHeight !== '0px' && Number.isFinite(h) && h > 1) {
+    const margin = Number.parseFloat(overlay.marginBottom);
+    /* Scaled overlay span is legal when a matching negative margin keeps the
+       page stage at y=0. Stretching the sticky host into the scroll flow
+       (100vh, no collapse) is still the old scroll-box bug. */
+    const flowCollapsed = Number.isFinite(h) && h > 0 && Number.isFinite(margin) && Math.abs(h + margin) <= 1;
+    if (overlayHeight && overlayHeight !== '0' && overlayHeight !== '0px' && Number.isFinite(h) && h > 1 && !flowCollapsed) {
       failures.push({ reason: 'overlay-stretched-to-viewport', actual: overlay.height || overlay.pinHeight });
     }
   }
@@ -721,7 +743,7 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       : { [String(chrome.id || 'bar')]: chrome };
     for (const [rootId, rec] of Object.entries(rootMap)) {
       const rootNode = byId.get(String(rootId)) || (chrome.id ? byId.get(String(chrome.id)) : null);
-      const landscape = isLandscapeFixOwner(rootNode) || rec.topbar === true;
+      const landscape = isViewportChromeFix(rootNode) || rec.topbar === true;
       if (!landscape) continue;
       const yScale = Number(rec.yScale);
       const sourceH = Number(rec.sourceHeight);
@@ -770,7 +792,9 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       }
       const slotDesign = Number(productScroll.slotDesignHeight);
       const pageH = Number(firstBox?.h);
-      if (String(viewportKind) === 'product' && Number.isFinite(Number(layer.height))) {
+      if (cropWindow === '100vh') {
+        /* Official first screen is the 100vh slot. Do not demand Figma pageBox.h. */
+      } else if (String(viewportKind) === 'product' && Number.isFinite(Number(layer.height))) {
         const minH = Math.max(
           Number.isFinite(pageH) ? pageH : 0,
           Number.isFinite(slotDesign) ? slotDesign : 0,
@@ -783,9 +807,9 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
             actual: layer.height,
           });
         }
-      }
-      if (String(layer.overflow || '') === 'hidden' && Number(layer.height) + POSITION_TOLERANCE_PX < Number(firstBox?.h || 0)) {
-        failures.push({ id: firstId, reason: 'first-section-cropped-below-pageBox', actual: layer.height, expected: firstBox?.h });
+        if (String(layer.overflow || '') === 'hidden' && Number(layer.height) + POSITION_TOLERANCE_PX < Number(firstBox?.h || 0)) {
+          failures.push({ id: firstId, reason: 'first-section-cropped-below-pageBox', actual: layer.height, expected: firstBox?.h });
+        }
       }
     }
   }
@@ -865,6 +889,51 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
         if (!Number.isFinite(dTop) || dTop > PRODUCT_OVERLAY_TOP_TOLERANCE_PX) {
           failures.push({ id, reason: 'overlay-scroll-drift', actual: delta });
         }
+        if (delta && delta.clippedAfter === true) {
+          const node = byId.get(String(id));
+          const owner = findFixOwner(node, byId);
+          if (!isFirstScreenBottomFix(node) && !isFirstScreenBottomFix(owner)) {
+            failures.push({ id, reason: 'overlay-scroll-clipped', actual: delta });
+          }
+        }
+      }
+    }
+  }
+
+  const arrowIds = firstScreenBottomFixIds(inventory, byId);
+  const overlayBoxes = productScroll.overlayBoxes && typeof productScroll.overlayBoxes === 'object'
+    ? productScroll.overlayBoxes
+    : {};
+  const slotDesign = Number(productScroll.slotDesignHeight);
+  const scale = Number(productScroll.scale);
+  if (String(viewportKind) === 'product' && arrowIds.length) {
+    if (!(Number.isFinite(slotDesign) && slotDesign > 0)) {
+      failures.push({ reason: 'arrow-slot-height-missing' });
+    }
+    for (const id of arrowIds) {
+      const node = byId.get(id);
+      const box = geom(node?.pageBox || node?.box);
+      const actual = overlayBoxes[id];
+      if (!box) {
+        failures.push({ id, reason: 'arrow-pageBox-missing' });
+        continue;
+      }
+      if (!actual || !Number.isFinite(Number(actual.top)) || !Number.isFinite(Number(actual.height))) {
+        failures.push({ id, reason: 'arrow-product-box-missing' });
+        continue;
+      }
+      const heroH = Number(firstBox?.h);
+      const gapBelow = Number.isFinite(heroH) ? heroH - (box.y + box.h) : 0;
+      const expectedTopCss = Number.isFinite(slotDesign) && Number.isFinite(scale) && scale > 0
+        ? (slotDesign - gapBelow - box.h) * scale
+        : null;
+      if (Number.isFinite(expectedTopCss) && Math.abs(Number(actual.top) - expectedTopCss) > 2) {
+        failures.push({
+          id,
+          reason: 'arrow-not-on-first-screen-floor',
+          expected: { top: expectedTopCss, slotDesign, gapBelow },
+          actual,
+        });
       }
     }
   }
@@ -992,18 +1061,20 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       if (kvDom.assetEmpty === true) {
         failures.push({ id: firstKv.id, reason: 'first-kv-png-empty' });
       }
-      /* Product view cover-crops first-screen kv into 100vh. Missing the
-         marker means the unnamed kv under sec/1 stayed on width-k. */
-      const coverPlane = String(kvDom.heroVisualPlane || kvDom.coverCrop || kvDom.kvCoverPlane || '');
-      if (coverPlane !== 'kv' && coverPlane !== 'cover-crop') {
-        failures.push({
-          id: firstKv.id,
-          reason: 'first-kv-missing-cover-crop',
-          actual: {
-            heroVisualPlane: kvDom.heroVisualPlane || null,
-            coverCrop: kvDom.coverCrop || kvDom.kvCoverPlane || null,
-          },
-        });
+      /* Product view cover-crops first-screen kv into 100vh. Design-viewport
+         inventory-static-gate=1 keeps pageBox and must not require the marker. */
+      if (String(viewportKind || '') === 'product') {
+        const coverPlane = String(kvDom.heroVisualPlane || kvDom.coverCrop || kvDom.kvCoverPlane || '');
+        if (coverPlane !== 'kv' && coverPlane !== 'cover-crop') {
+          failures.push({
+            id: firstKv.id,
+            reason: 'first-kv-missing-cover-crop',
+            actual: {
+              heroVisualPlane: kvDom.heroVisualPlane || null,
+              coverCrop: kvDom.coverCrop || kvDom.kvCoverPlane || null,
+            },
+          });
+        }
       }
     }
   }

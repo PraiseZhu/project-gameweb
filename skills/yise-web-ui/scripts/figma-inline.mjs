@@ -30,6 +30,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { DEFAULT_MAX_HTML_BYTES, externalizeQaTruthIfOverLimit } from './lib/html-volume.mjs';
+import { safeJsonForScript } from './lib/fs-utils.mjs';
+import { parseDesignPolicyFile } from '../../../standards/design-policy/tool/src/parse-design-policy.mjs';
 
 /** 每段：模板文件、区间标记、模板首行注释头的替换目标 */
 const PARTS = {
@@ -66,6 +68,21 @@ if (args.only && !PARTS[args.only]) fail(`--only 只能是 ${Object.keys(PARTS).
 const skillDir = resolve(import.meta.dirname, '..');
 const idxPath = join(resolve(args.demo), 'index.html');
 if (!existsSync(idxPath)) fail(`缺 ${idxPath}`);
+
+/* Renderer throws if localeFontFamily is missing. html-from-handoff embeds
+   the block once; later template-only inlines used to leave a stale JSON
+   (no localeFontFamily) and English paint wiped the frame to #180f02. */
+const DESIGN_POLICY_RE = /<script id="qa-design-policy" type="application\/json">[\s\S]*?<\/script>(?:\s*<script>\s*\(function \(\) \{[\s\S]*?window\.__designPolicy[\s\S]*?<\/script>)?/;
+
+function designPolicyBlock(policy) {
+  return `<script id="qa-design-policy" type="application/json">${safeJsonForScript(policy)}</script>
+<script>
+(function () {
+  var el = document.getElementById('qa-design-policy');
+  window.__designPolicy = el && el.textContent ? JSON.parse(el.textContent) : {};
+})();
+</script>`;
+}
 
 // 统一 LF。踩过一次：文本模式写入把 LF 变成 CRLF（622 处），
 // 靠 indexOf('\n};\n</script>') 定位的冒烟测试全部失灵。
@@ -127,6 +144,26 @@ if (existsSync(motionPath)) {
       if (anchor < 0) fail('index.html 里找不到 qa-truth，无法内联 motion.config.json');
       html = html.slice(0, anchor) + motionTag + '\n' + html.slice(anchor);
     }
+    changed = true;
+  }
+}
+
+const policy = parseDesignPolicyFile(join(skillDir, 'DESIGN.md'));
+if (policy && typeof policy.localeFontFamily === 'object') {
+  /* Torch English paint throws without localeFontFamily. Yise YAML does not
+     declare that map; skip the rewrite there instead of failing closed. */
+  const policyTag = designPolicyBlock(policy);
+  if (!DESIGN_POLICY_RE.test(html)) fail('index.html 里找不到 #qa-design-policy');
+  const policyMatch = DESIGN_POLICY_RE.exec(html);
+  const policySame = !!policyMatch && policyMatch[0] === policyTag;
+  results.push({
+    part: 'design-policy',
+    template: 'DESIGN.md',
+    same: policySame,
+    bytes: Buffer.byteLength(policyTag),
+  });
+  if (!args.check && !policySame) {
+    html = html.replace(DESIGN_POLICY_RE, policyTag);
     changed = true;
   }
 }

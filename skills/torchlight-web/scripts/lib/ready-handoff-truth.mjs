@@ -117,18 +117,6 @@ function underFixedOwner(node, fixedIds) {
   return asArray(node?.ancestorIds).some((id) => fixedIds.has(String(id)));
 }
 
-function overlayLocalBox(node, owner) {
-  const page = node?.pageBox;
-  const ownerPage = owner?.pageBox;
-  if (!page || !ownerPage) return null;
-  return {
-    x: Number(page.x) - Number(ownerPage.x),
-    y: Number(page.y) - Number(ownerPage.y),
-    w: Number(page.w),
-    h: Number(page.h),
-  };
-}
-
 function constraintAxis(node, axis) {
   const raw = node?.layout?.constraints?.[axis] ?? node?.constraints?.[axis];
   return String(raw || '').trim().toUpperCase();
@@ -157,52 +145,28 @@ function fixPinEdges(node, inventory) {
   };
 }
 
-/** DESIGN.md §5: Top/Left / missing stay at the overlay origin (0,0).
- *  Center / Bottom / Right keep source size here; the renderer pins the
- *  stored gap onto the live viewport (viewportH / k), not this local y. */
-function pinOwnerLocalBox(owner, inventory) {
-  const pinEdges = fixPinEdges(owner, inventory);
-  const page = geomOf(owner?.pageBox || owner?.box);
-  return { box: { x: 0, y: 0, w: page.w, h: page.h }, pinEdges };
-}
-
-function remapSliceToOverlay(node, owner) {
-  const sliceBox = node?.sliceExport?.box;
-  const ownerPage = owner?.pageBox;
-  if (!sliceBox || !ownerPage) return node?.sliceExport || null;
-  return {
-    ...node.sliceExport,
-    box: {
-      x: Number(sliceBox.x) - Number(ownerPage.x),
-      y: Number(sliceBox.y) - Number(ownerPage.y),
-      w: Number(sliceBox.w),
-      h: Number(sliceBox.h),
-    },
-  };
-}
-
-/** fix/ pins to the viewport. The overlay owner box is overlay-local (0,0);
- * parentBox is the viewport pin and the renderer must use it for CSS left/top
- * of overlay roots. Every descendant uses overlay-absolute
- *  (pageBox − owner.pageBox). parentBox is relative to the direct parent
- *  only — using it as overlay origin puts nested img/ at (57,34) on the
- *  page and clips the slice out of the button. */
+/** fix/ pins to the viewport. The sticky host sits at page origin, so the
+ *  overlay root keeps inventory pageBox (right chrome at 2764,70 — not 0,0).
+ *  Descendants keep inventory pageBox too: the renderer subtracts the painted
+ *  parent. Rewriting them to pageBox − owner here double-subtracts and parks
+ *  right chrome / arrow at the sticky origin. parentBox is relative to the
+ *  direct parent only — never the overlay origin.
+ *  pinEdges still record the parent-board gap so Bottom arrows can pin to
+ *  viewportH / k without moving Top chrome to (0,0). */
 function paintFixedNode(node, owner, inventory) {
   const painted = paintWithPageBox(node);
   if (!owner) return painted;
-  const pinned = pinOwnerLocalBox(owner, inventory);
   if (String(node?.id) === String(owner?.id)) {
+    const ownerPage = geomOf(owner.pageBox || owner.box);
     return {
       ...painted,
-      box: pinned.box,
-      pageBox: pinned.box,
+      box: ownerPage,
+      pageBox: ownerPage,
       pin: owner.pin || 'viewport',
-      pinEdges: pinned.pinEdges,
+      pinEdges: fixPinEdges(owner, inventory),
     };
   }
-  const local = overlayLocalBox(node, owner);
-  if (!local) return painted;
-  return { ...painted, box: local, pageBox: local, sliceExport: remapSliceToOverlay(node, owner) };
+  return painted;
 }
 
 /**

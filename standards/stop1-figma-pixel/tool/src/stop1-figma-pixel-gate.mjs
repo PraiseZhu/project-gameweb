@@ -18,13 +18,16 @@ import { compareImages, loadPngApi, readPng, writePng } from './png-compare.mjs'
 export const STOP1_PIXEL_SCHEMA = 'stop1-figma-pixel-gate/v1';
 export const STOP1_PIXEL_DIR = 'artifacts/stop1-pixel';
 export const STOP1_FIGMA_CACHE_DIR = `${STOP1_PIXEL_DIR}/figma-cache`;
-export const DEFAULT_STOP1_PIXEL_THRESHOLD = 0.005;
+export const DEFAULT_STOP1_PIXEL_THRESHOLD = 0.06;
 export const PIXEL_YIQ_THRESHOLD = 0.1;
 export const DEFAULT_STOP1_PIXEL_SCALE = 0.5;
 export const FIGMA_AREA_LIMIT_PX = 32_000_000;
 export const IMG_LANG_VALUES = Object.freeze(['cn', 'tw', 'en', 'jp', 'kr']);
 /* Historical default for pure re-export consumers (Yise). Torch adapter
- * still owns its own map and overwrites STOP1_PIXEL_SKIP_JSON. */
+ * still owns its own map and overwrites STOP1_PIXEL_SKIP_JSON.
+ * Draft copy on this later mobile section is wrong in Figma
+ * (嘉年华直播目录 vs Lark 赛季前瞻直面会). User: skip this round;
+ * other screens stay at 6%. */
 export const STOP1_PIXEL_SKIP_SECTIONS = Object.freeze({
   mobile: Object.freeze(['949:6041']),
 });

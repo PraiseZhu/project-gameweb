@@ -108,10 +108,10 @@ localeInvariantFamilies:
 
 ## 2. 正式产品入口
 
-完成标准原句不能改口径：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 政策镜像必须绿 → 才给人 `?product=1`。
+完成标准原句不能改口径：吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿 → 政策镜像必须绿 → 才给人 QA `index.html`（带工具栏）。`?product=1` 只给机器闸和截图。
 
-- `preview:first` 红：不许给人打开 `?product=1`，不许开 Interaction / Resize。
-- 给人的地址是命令结束后仍可打开的 `file://...?product=1`。内部检查可以走 HTTP。
+- `preview:first` 红：不许给人打开 QA `index.html`，不许开 Interaction / Resize。
+- 给人的地址是命令结束后仍可打开的 QA `file://.../index.html`。`?product=1` 只给机器闸和截图。内部检查可以走 HTTP。
 - Main 静态停下来等人验收。翻译轴只在有文案表时才算；简中装字体不是翻译通过。
 
 ## 3. 吃包判定
@@ -155,15 +155,17 @@ localeInvariantFamilies:
 产品页映射：
 
 1. **根尺子**：`html` 永远 `10vw`（现测字号 = `0.1 × viewportW`）。**列内 `k` 按下面分段表，不是全程 `viewportW/3840`。** 不要写成 `viewportW/1920`（那会把 3840 稿缩成官方的两倍）。
-2. **PC 列宽**：`viewportW > 1920` → 列宽 = 视口（官方 stretch）。`1127 ≤ viewportW ≤ 1920` → 列按 **1920 设计宽** 排，盒子居中，左右一起裁（官方 `left: (viewportW-1920)/2`；1494 宽 → `left: -213`）。**窗口 / 裁切盒是当前视口宽**；1920 列是窗口里的子层。不得把 `.frame` 做成 1920 再 `left: 负值`（那会把裁切盒推出 QA 屏框）。这一档水平尺锁死 `k = 1920/3840 = 0.5`。不得把 1920 列贴左再 hidden。
+2. **PC 列宽**：`viewportW > 1920` → 列宽 = 视口（官方 stretch）。`1127 ≤ viewportW ≤ 1920` → 列按 **1920 设计宽** 排，盒子居中，左右一起裁（官方 `left: (viewportW-1920)/2`；1494 宽 → `left: -213`）。**窗口 / 裁切盒是当前视口宽**；1920 列是窗口里的子层。不得把 `.frame` 做成 1920 再 `left: 负值`（那会把裁切盒推出 QA 屏框）。QA wrap 也按视口宽，不要按冻列 1920 撑外框（1275 屏会在右侧空一截）。这一档水平尺锁死 `k = 1920/3840 = 0.5`。不得把 1920 列贴左再 hidden。
 3. **切树**：`viewportW ≤ 1126` 换手机树。没有 pad 树。
-4. **手机列宽**：列宽 = 视口，`k = viewportW / 750`，继续 `10vw`。
+4. **手机列宽**：`viewportW ≤ 750` 列宽 = 视口，`k = viewportW / 750`。`751–1126` 列宽跟窗口铺 KV **和后屏**，`k = 1`（官网这一档按钮/日历/播放仍是 750 稿尺寸，不是 `1126/750=1.5`，也不是再裁一列 750 露出两边底色）。后屏 paint-root / 后屏 `bg` 跟窗口宽；750 的海报/正文居中。继续 `10vw`。
 5. **首屏高**：官方首屏 = `innerHeight`，后屏 `>1920` 是 rem 盒子（现测 `5.625rem`），冻档后屏锁成 1920 上的那一格（1080px @1080 高）。层和层顶底相接（现测 1920×1080 / 1440×900 / 2399×1080 均 gap:0），不叠像素。产品页首屏槽 = 当前窗口高。KV cover 进这扇窗；标题 / 预约大小走该档 `k`，稿里下半屏的块底边钉在槽底。后面分区从窗口底边开始：`scrollTop=0` 时下一屏顶边贴齐窗口底边。后屏 `bg` 和后屏 UI 在同一个 stage 里；section 里的 `bg/pc背景*` 不得再跟一次 `layoutOffsetDesign`。后屏 cover 对着后屏盒子。`>1920` extra 为负时，后屏 paint-root 跟着缩短，页面底对齐 `bg/pc背景2`，不在 sec/3 下面留 `#180f02`。冻档 `zoom(k)` 若把交界栅成半像素细缝，只吸 used 边，不加 1px 重叠。禁止把整页（含后屏）再按窗口高缩一次。
 6. **字号**：默认 `calc(Nrem * --moo-font-rem-scale)`（`.15625rem` = 30px @1920）。PC 冻宽档改 `calc(Npx * --moo-font-scale)`（现测 18/23/25/30）。手机树回到 rem。产品页用 Figma 字号 × 该档 `k`，不抄 31 条官方 calc。
 7. **背景**：首屏 KV / 长 `bg/*` 按 cover 填**真实视口**（官方 1440 背景槽 = 1440×900，不是冻列 1920）。后屏 `bg/pc背景*` cover 填后屏 stage 盒子，不是第二扇视口窗。产品页用清单长 `bg/*`，不抄官方 PC/手机两张 URL。首屏 cover 公式是 `max(viewportW/designW, viewportH/heroH)`，UI 仍走该档 `k`。cover 不得把首屏 UI 裁出视口外当消失；放不下的 UI / 后屏随 pageBox 往下滚，overflow-y 保持 auto。
 8. **锁缩放**：`width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`。
 9. **固定叠层**：官方另有 `position:fixed` 的顶栏 `.i_14pfw1l3`（`top:0;width:100%;justify-content:flex-end`）、底 CTA `.i_cwyomnms`、粒子 `.i_h6wakwff`。产品页对应 Figma overlay，不跟它们的 `vh`/`bottom` 季节补丁。
-   `fix/` 钉视口。钉哪条边只看该层 `layout.constraints`（稿上 Constraints），不猜图层名。所相对画板 = 直接父 frame 的 `pageBox`（不是 `sec/1`、不是相对父层的 `parentBox`）。垂直 **Bottom**：底边钉视窗底，空隙 = 该层底到父画板底 × 当前档 `k`（槽高 = 视窗高 / `k`，不跟 cover）。视窗变高空隙不拉长，滚走仍钉着。垂直 **Top** / 未写：仍钉顶（顶栏、导航不动）。垂直 **Center**：在视窗槽内垂直居中。水平 **Center**：在父画板宽内居中；**Left / 未写** 钉左；**Right** 钉右，空隙同样 × `k`。尺寸仍走该档 `k`，不跟 cover。里面的 `img/` 只负责切图。
+10. **临时 lock-1920 名单**（不是长久命名，也不是 `@fit=`）：`fix/` 前缀、组件集 `btn/主要按钮`、组件集 `首屏主按钮`。身份只认前缀 / 组件集名，不认页实例 `btn/按钮`。`viewportW > 1920` 时这些层跟页 `k = viewportW/3840` 一起变大，相对 KV / 海报的大小跟冻档一样，不要再冻 1920 尺寸、也不要按颗反缩放（那会把充值字挤出正中、把右上几颗间距拉开、让按钮相对画面变小）。横版 `fix/` 顶栏在 `1127–1920` 和 `>1920` 都贴当前窗口右上角（官网 `position:fixed; width:100%; justify-content:flex-end`），不要跟 1920 列一起被裁。充值 / 地球 / 多语言是宽 `fix/` 组的兄弟层，不是组内孩子。`1127–1920` 已经是 `k=0.5`。手机树不锁。KV cover 仍跟窗口。`1127–1920` 的 `slg` 就是冻档 `k=0.5` 整体缩放再居中裁；`>1920` 也只走页 `k`，不要再按窗口宽二次拉伸（那会把标题叠到日历/播放上）。`slg` / 日历 icon / 播放按钮 / 首屏主按钮是同一竖向簇：三个档都按**页坐标**底边一起钉；套在 `标题` 组里的 `img/标题slg` 和播放按钮跟组走。`≤1126` 日历和首屏主按钮停在手机稿 pageBox（62 / 133 叠放），不要另排一行。`751–1126` 按钮/日历/播放保持 750 稿尺寸，整簇按同一 leftover 居中，间距跟稿；不要只挪标题组、把主按钮裁在 750 右缘。简中和其它语言同一套稿坐标。再缩小才等比缩。`1127–1920` KV 仍铺真实视口，不要在 1920 列右边留空。后屏不要再垫成 100vh，页面底对齐 `bg/pc背景2`。后面赛季先沿用这几个名字，命名方法另议。
+    `fix/` 钉视口。垂直 **Bottom**（稿上 Constraints）：底边钉视窗底，空隙 = 该层底到父画板底 × 当前档 `k`（槽高 = 视窗高 / `k`，不跟 cover 首屏裁切窗）。所相对画板 = 直接父 frame 的 `pageBox`。视窗变高空隙不拉长，滚走仍钉着。水平 **Center / Right / Left** 同样按父画板空隙 × `k`。顶栏仍按名字 `顶部信息|顶部固定` 当视口 chrome（手机 366×374 仍是右侧栏，不要改写成画板原点 0,0）。尺寸仍走该档 `k`，不跟 cover。里面的 `img/` 只负责切图。
+11. **弹窗跟窗口**：官方 named popup 是 `position:fixed` 铺当前窗，拉伸时不关。产品 named modal 轻拖要重新钉到当前 frame；松手全量重建前记下打开的 `data-modal-name`，重建后再 `__fxOpenNamedModal`。拖拽不是关闭。`≤1126` 切手机树时弹窗也不关：按同一主题换成手机稿弹窗（`pc_cn订阅赛季日程` → `mobile订阅赛季日程`），对不上才保持关。
 
 视口分段（产品必须按这个拉）：
 
@@ -171,7 +173,7 @@ localeInvariantFamilies:
 |---|---|---|---|---|---|
 | `>1920` | PC | `viewportW` | `k = viewportW / 3840` | **真实视口** `W×H` cover（2560×1080 → 2560×1080），不是列宽 | 默认 rem × 当前 10vw；列 stretch |
 | `1127–1920` | PC | **1920**，居中裁到视口 | **`k = 1920 / 3840 = 0.5`**（列内不再随视口变） | **真实视口** `W×H` cover（1440×900 → **1440×900**，不是 1920×1071） | `@media (max-width:1920px)` 冻 px |
-| `0–1126` | 手机 | `viewportW` | `k = viewportW / 750` | **真实视口** `W×H` cover | `@media (max-width:1126px)` display 切树 + rem |
+| `0–1126` | 手机 | 视口（KV **和后屏**铺满）；UI 仍 750 稿尺寸 | `k = min(1, viewportW / 750)` | **真实视口** `W×H` cover | `@media (max-width:1126px)` display 切树 + rem；751–1126 按钮冻 750 稿尺寸，列不另裁；后屏 750 内容居中 |
 
 现测对照（`html` 字号 = `10vw`；两层 hero 高 = `innerHeight`）：
 
@@ -323,6 +325,8 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 
 没有 B 的 owner 就停，不缩。有 owner 才量换语言后的完整墨水：宽对 `maxWidth`，高只对已写的 `maxHeight`。超了就把 `fontSize` 减 `1px`，`lineHeight` 同比，再量，直到完整放下。不要 `100→92→85→78→75`，不要 75% 地板，不要停在 `floor-exceeded` 当通过。
 
+HEIGHT + 垂直 HUG 的 TEXT 用已写 maxWidth 做 CSS max-width 折行（display:block）。禁止 flex 竖对齐把长英文撑出框。没有 maxHeight 时只锁宽、允许长高。
+
 同一 owner、同一档位的兄弟，共用缩完后最小的那个整数字号。省略号、`text-overflow`、clip 当放下 = 失败。
 
 #### D. 测试与验收
@@ -345,7 +349,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 - 完成标准原句。
 - `figma:from-handoff` 只验包、不写 HTML。
 - `kind=ready` 才吃；`unknown` 只画不接线。
-- Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=viewportW/750`。首屏槽 = 当前窗口高，后屏从窗口底开始。页面 `overflow-x: hidden`。
+- Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=min(1, viewportW/750)`（751–1126 按钮冻 750，列跟窗口铺 KV 和后屏，750 内容居中）。首屏槽 = 当前窗口高，后屏从窗口底开始。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
 - zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。
 - `btn/主要按钮` 的字体类型数据跟同端 `首屏主按钮` 该语言变体，不另开一套；`en` 主 CTA 页面强制大写，不听文案表大小写，也不听稿上有没有 `textCase=UPPER`；稿上没出该语言变体（如没有 `jp`）不算失败。
@@ -362,8 +366,8 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 
 1. 有 ready 包：`cd skills/torchlight-web && npm run figma:from-handoff -- <handoff-dir>` 必须绿。
 2. 出页：`npm run torchlightweb -- --handoff <dir> --demo <dir>` 写出 demo/`index.html`。直连 `figma:html-from-handoff` 锁死。
-3. `preview:first` 必须绿，才给人 `?product=1`。
-4. 拉伸主张要带视口 `w×h`、树（≤1126 手机 / ≥1127 PC）、列宽（`>1920` 随视口 / `1127–1920` 冻 1920 / 手机 = 视口）、实际 `k`、两层 hero 是否都等于 `innerHeight`、`html` 字号是否等于 `10vw`。不得用 UA `is-pc` / `is-mobile` 当切树证据。`1127–1920` 若仍用 `k = viewportW/3840`（随视口变）即失败。
+3. `preview:first` 必须绿，才给人 QA `index.html`（带工具栏）。`?product=1` 只给机器闸和截图。
+4. 拉伸主张要带视口 `w×h`、树（≤1126 手机 / ≥1127 PC）、列宽（`>1920` 随视口 / `1127–1920` 冻 1920 / 手机列 = 视口）、实际 `k`、两层 hero 是否都等于 `innerHeight`、`html` 字号是否等于 `10vw`。不得用 UA `is-pc` / `is-mobile` 当切树证据。`1127–1920` 若仍用 `k = viewportW/3840`（随视口变）即失败。`≤1126` 若仍用 `k = viewportW/750` 且 `k>1`，或再裁一列 750 露出两边底色（含后屏 TorchCon 贴左、Shop 浮在褐底上），即失败。
 5. 外文主张要带档位 × 语言比例、实际字体家族名、B 找到的 owner id、用到的 `maxWidth`（有则加 `maxHeight`）、缩完的整数 px。超出已写上限、用裁切 / 省略号顶过关、或仍用 `data-fit-scale` / `floor-exceeded` 当通过，即失败。详见第 6.1 节 D。
 6. `btn/主要按钮` 主张要带同端 `首屏主按钮` 该语言变体的 `fontFamily` / `fontWeight` / `letterSpacing`。`en` 主 CTA（锚和跟随）页面必须 uppercase；本地化不是大写也要强制大写。跟随节点仍用自己的源字族、源字重、源字距，或英文仍显示 `View More` 即失败。稿上没出该语言变体（如没有 `jp`）不算失败。变体在但没有活字才打 `unverified-primary-cta-type`。详见第 6.2 节。
 7. 政策镜像闸保证 YAML 与 resize / 字号 / chrome / render 数字同源。它不保证三平面、Hero 钉底边、或缺文案不许拿简中顶上已经在页面上成立。镜像绿不是页面对。当前 YAML 尚未收录 1920 冻列，第 5.0 节仍是这条的政策入口。

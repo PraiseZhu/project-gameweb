@@ -86,22 +86,36 @@ test('heroUi stretch never moves pin=viewport fix descendants', () => {
   assert.match(renderer, /fx-fixed-zoom/);
   assert.match(renderer, /isTopBarChrome/);
   assert.match(renderer, /Number\(navRailBox\.w\) > Number\(navRailBox\.h\)/);
+  assert.match(renderer, /顶部信息\|顶部固定/);
   assert.match(renderer, /data-topbar-chrome/);
   assert.match(renderer, /landscapeFix/);
+  assert.match(renderer, /topInfoChrome/);
+  assert.match(renderer, /applyFixViewportPin/);
+  assert.match(renderer, /data-fix-chrome/);
+  assert.match(renderer, /slotH - gapBottom - sourceH/);
+  assert.doesNotMatch(renderer, /data-fix-slot-anchor/);
+  assert.doesNotMatch(renderer, /first-screen-bottom/);
   assert.match(renderer, /fixedStage\.style\.transform = 'scale\(' \+ k \+ '\)'/);
+  assert.match(renderer, /overlayHostH/);
+  assert.match(renderer, /marginBottom = \(-overlayHostH\)/);
   assert.doesNotMatch(renderer, /fixedHost\.style\.position = 'fixed'/);
   assert.doesNotMatch(renderer, /fixedStage\.style\.position = 'sticky'/);
 });
 
-test('product sticky overlay stays height 0 after viewport sync', () => {
+test('product sticky overlay keeps scaled span after viewport sync', () => {
   const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
   assert.match(chrome, /function syncFixedOverlayViewport/);
-  assert.match(chrome, /stage\.style\.height = '0px'/);
-  assert.match(chrome, /data-fix-pin-height', '0'/);
+  assert.match(chrome, /data-fix-zoom-span/);
+  assert.match(chrome, /marginBottom = \(-hostH\)/);
+  assert.doesNotMatch(chrome, /stage\.style\.height = '0px'/);
   assert.doesNotMatch(chrome, /targetDesignHeight \+ 'px'/);
   assert.match(chrome, /if \(!PRODUCT_VIEW\) syncHeroEntryNavigation/);
-  assert.match(chrome, /data-topbar-chrome/);
+  assert.match(chrome, /function isViewportChromeEl/);
   assert.match(chrome, /sourceWidth > sourceHeight/);
+  assert.match(chrome, /顶部信息\|顶部固定/);
+  assert.match(chrome, /data-fix-chrome/);
+  assert.doesNotMatch(chrome, /data-fix-slot-anchor/);
+  assert.doesNotMatch(chrome, /first-screen-bottom/);
   assert.match(chrome, /root\.getAttribute\('data-fix-pin'\) === 'viewport'[\s\S]*?continue/);
   assert.doesNotMatch(chrome, /data-fix-pin.*viewport[\s\S]{0,240}sourceHeight \* sourceScaleY/);
 });
@@ -306,11 +320,13 @@ test('owner-model scope/assetPolicy/role evidence is derived in the renderer, no
 
 test('zh-CN static keeps authored pageBox instead of Auto Layout flex restack', () => {
   assert.match(renderer, /zhSourceExactLayout/);
-  assert.match(renderer, /sourceParticipatesInFlow && !zhSourceExactLayout/);
+  assert.match(renderer, /sourceParticipatesInFlow && !zhSourceExactLayout && !parentHeroClusterLayout/);
 });
 
 test('paint siblings are absolute unless source-backed Auto Layout admits flow', () => {
-  assert.match(renderer, /el\.style\.position = 'absolute';\s*el\.style\.left = \(\(box\.x/);
+  assert.match(renderer, /el\.style\.position = 'absolute';/);
+  assert.match(renderer, /const sourceLeft = \(\(box\.x \?\? 0\) - originX\);/);
+  assert.match(renderer, /el\.style\.left = sourceLeft \+ 'px';/);
   assert.match(renderer, /Only a proven Auto Layout child may flow/);
 });
 
@@ -355,7 +371,7 @@ test('authored multiline text keeps source metrics instead of height step-fit', 
 });
 
 test('hero cover scale stays on the hero slot, not the released page stage', () => {
-  assert.match(renderer, /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
+  assert.match(renderer, /const coverScale = Math\.max\(coverW \/ designWidth, slotH \/ Number\(first\.height\)\)/);
   assert.match(renderer, /heroVisualScale = coverScale/);
   assert.match(renderer, /scale: pageStageScale/);
   assert.match(renderer, /data-hero-visual-scale/);
@@ -462,9 +478,11 @@ test('listed img/bg/kv owners keep pageBox clip when ink slice is shorter', () =
 });
 
 test('sticky overlay host uses overlay root height, not descendant pageBoxes', () => {
-  assert.match(renderer, /Only read the overlay root itself/);
   assert.match(renderer, /Array\.isArray\(__activeTruth\.fixedOverlays\.nodes\)/);
+  assert.match(renderer, /data-fix-zoom-span/);
+  assert.match(renderer, /overlaySpan/);
   assert.doesNotMatch(renderer, /asArr\(__activeTruth\.fixedOverlays\.nodes\)\.map\(\(node\) => \{/);
+  assert.doesNotMatch(renderer, /overlayHeights\[0\]/);
 });
 
 test('legal lang-axis instances still paint under a baked ancestor', () => {

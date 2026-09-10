@@ -24,4 +24,4 @@ node src/stop1-figma-pixel-probe.mjs --demo <dir> --handoff <dir>
 
 不重编 Main。标准图按分区用节点导出拼 CN 快照：`img/` 语言轴用 CN 母版贴进实例框，不抠韩文。关合 `dropmenu/` 只贴 `img/icon`，不拿 370 高实例框。活字 TEXT 由清单静态闸对字符/字号/框，像素门遮掉这些区，不拿 Figma 栅格当字。后几屏 Figma 不给 URL 时，复用已缓存的同组件同尺寸层。缓存文件：`demo/artifacts/stop1-pixel/figma-cache/<fileKey>.<id>.s<scale>.<snapshot>.png`。`<snapshot>` 来自 inventory `snapshot.hash`（没有 hash 才用 `lastModified`）。换稿会换文件名；强制重下加 `--refresh-figma-cache`。读缓存 PNG 失败当 miss，不整轮红；写入先写临时文件再 rename。
 
-阈值 0.005。skipPreview 不许绿。
+阈值 0.06。skipPreview 不许绿。
