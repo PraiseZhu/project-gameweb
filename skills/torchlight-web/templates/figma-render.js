@@ -5,7 +5,7 @@
  * 这段代码消费的是 truth 的**固定形状**（sections[].nodes[] 的 box/style/text/renderBox），
  * 与具体是哪个页面、哪个项目无关 —— 它天然是通用件。
  *
- * 而它一度只存在于 demos/yise-ss5-preview/index.html 里。后果是实测过的：
+ * 而它一度只存在于单个历史 demo 的 index.html 里。后果是实测过的：
  * 嵌套还原、裁剪生效、渐变字、文字投影用 text-shadow、图层模糊、排版模式 ——
  * 这六项修复全都只落在那一个页面上，**下一个页面一样都拿不到**。
  * 那不叫做了一套可复用的 Skill，叫改了一个页面的效果。
@@ -3161,6 +3161,57 @@
           }
           return { role, label, params };
         };
+        const constraintAxis = (n, axis) => String((n && n.pinEdges && n.pinEdges[axis])
+          || (n && n.layout && n.layout.constraints && n.layout.constraints[axis])
+          || (n && n.constraints && n.constraints[axis]) || '').toUpperCase();
+        const writeFixPinAttrs = (attrs, n) => {
+          attrs['data-fix-pin'] = 'viewport';
+          const pinEdges = n.pinEdges || {};
+          const pinV = constraintAxis(n, 'vertical');
+          const pinH = constraintAxis(n, 'horizontal');
+          if (pinV) attrs['data-fix-pin-v'] = pinV;
+          if (pinH) attrs['data-fix-pin-h'] = pinH;
+          for (const [key, attr] of Object.entries({
+            gapBottom: 'data-fix-gap-bottom',
+            gapTop: 'data-fix-gap-top',
+            gapLeft: 'data-fix-gap-left',
+            gapRight: 'data-fix-gap-right',
+            boardW: 'data-fix-board-w',
+            boardH: 'data-fix-board-h',
+          })) {
+            if (Number.isFinite(Number(pinEdges[key]))) attrs[attr] = String(pinEdges[key]);
+          }
+          return pinV;
+        };
+        /* DESIGN.md §5: pin to viewportH / k. Gap is Figma parent-board
+           remainder × k via overlay zoom; do not use the cover hero slot. */
+        const applyFixViewportPin = (el, evidenceAttrs, box, k, ctx) => {
+          const pinV = String(evidenceAttrs?.['data-fix-pin-v'] || '').toUpperCase();
+          const pinH = String(evidenceAttrs?.['data-fix-pin-h'] || '').toUpperCase();
+          const viewportH = Number(ctx && ctx.viewport && ctx.viewport.h);
+          const slotH = Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(k) && k > 0
+            ? viewportH / k
+            : 0;
+          const gapBottom = Number(evidenceAttrs?.['data-fix-gap-bottom']);
+          const gapRight = Number(evidenceAttrs?.['data-fix-gap-right']);
+          const boardW = Number(evidenceAttrs?.['data-fix-board-w']);
+          const sourceW = Number(box.w ?? 0);
+          const sourceH = Number(box.h ?? 0);
+          let top;
+          if (pinV === 'BOTTOM' && Number.isFinite(gapBottom) && slotH > 0) {
+            top = slotH - gapBottom - sourceH;
+            el.setAttribute('data-fix-anchor', 'bottom-gap');
+          } else if (pinV === 'CENTER' && slotH > 0) {
+            top = (slotH - sourceH) / 2;
+            el.setAttribute('data-fix-anchor', 'center');
+          }
+          if (pinH === 'RIGHT' && Number.isFinite(gapRight) && Number.isFinite(boardW) && boardW > 0) {
+            el.style.left = (boardW - gapRight - sourceW) + 'px';
+          } else if (pinH === 'CENTER' && Number.isFinite(boardW) && boardW > 0) {
+            el.style.left = ((boardW - sourceW) / 2) + 'px';
+          }
+          return top;
+        };
         const byId = new Map(items.map((n) => [id(n), n]));
         /* Fixed overlay roots are rendered in the page stage, while their
            truth-backed descendants can legitimately live in the section
@@ -3662,20 +3713,16 @@
           } else if (p.role === 'fix') {
             const fixBox = n.pageBox || n.box;
             const landscapeFix = !!(fixBox && Number(fixBox.w) > Number(fixBox.h));
-            attrs['data-fix-pin'] = 'viewport';
+            const pinV = writeFixPinAttrs(attrs, n);
             const fromRaw = p.params.from;
             if (fromRaw != null && /^[1-9]\d*$/.test(String(fromRaw))) attrs['data-fix-from'] = String(fromRaw);
             const fixLabel = String(p.label || n.name || '');
-            const firstScreenBottomHint = /箭头|下滑|scroll/.test(fixLabel)
-              && Number(fixBox && (fixBox.h ?? 0)) > 0
-              && Number(fixBox && (fixBox.w ?? 0)) <= Number(fixBox.h) * 4;
             const topInfoChrome = /顶部信息|顶部固定/.test(fixLabel);
-            if (firstScreenBottomHint) {
-              /* fix/箭头 sits on the first-screen floor in Figma. Product 100vh
-                 crops a tall hero, so keep it as viewport chrome and remap Y
-                 to the slot bottom — never a directory rail. */
-              attrs['data-topbar-chrome'] = 'true';
-              attrs['data-fix-slot-anchor'] = 'first-screen-bottom';
+            if (pinV === 'BOTTOM' || pinV === 'CENTER') {
+              /* Bottom/Center overlays are viewport chrome, not a left
+                 directory. Stretching them to 100vh would pull the arrow.
+                 Bottom follows the parent-board gap on viewportH / k. */
+              attrs['data-fix-chrome'] = pinV === 'BOTTOM' ? 'bottom' : 'center';
             } else if (landscapeFix || topInfoChrome) {
               /* Landscape *or* named 顶部信息 is viewport chrome, not a left
                  directory. Mobile 366×374 fails w>h but is still the right bar. */
@@ -4736,7 +4783,9 @@
         /* Directory stretch does not require a motion adapter. A fix/ overlay
            owner is the left rail; chrome reads this role to map source y onto
            the current viewport height. */
-        if (pfx === 'fix' && !el.getAttribute('data-motion-role')) {
+        const fixChrome = el.getAttribute('data-fix-chrome');
+        if (pfx === 'fix' && !el.getAttribute('data-motion-role')
+          && !/^(bottom|center)$/.test(fixChrome || '')) {
           el.setAttribute('data-motion-role', 'navigationFooter');
           el.setAttribute('data-motion-navigation', 'true');
         }
@@ -4979,13 +5028,6 @@
           const pinViewport = evidenceAttrs?.['data-fix-pin'] === 'viewport'
             || pfx === 'fix'
             || !!(parent && parent.el && parent.el.closest && parent.el.closest('[data-fix-pin="viewport"]'));
-          const slotAnchor = evidenceAttrs?.['data-fix-slot-anchor'] === 'first-screen-bottom'
-            || !!(parent && parent.el && parent.el.closest && parent.el.closest('[data-fix-slot-anchor="first-screen-bottom"]'));
-          /* Product 100vh slot is shorter than a tall Figma hero (2143 → 2160
-             design px at 1440×900 / 0.5). Inventory pageBox y=2014 would paint
-             the arrow below the cropped first screen. Keep distance-to-hero-
-             bottom: slotBottom − (heroH − sourceBottom). Design-viewport
-             (heroUiYRatio≈1) is a no-op. */
           /* Full-bleed first-screen art (kv / img title / play btn) shares the
              section pageBox origin. heroUiYRatio was written for lower-hero CTA
              chrome; applying it here slides KV down and exposes --stage. Lock
@@ -5007,6 +5049,10 @@
              cluster owner keep local Figma y — do not re-apply the page shift
              as a local top (that walked title SLG up over the play button). */
           const localX = sourceLeft;
+          if (pinViewport && pfx === 'fix') {
+            const pinnedTop = applyFixViewportPin(el, evidenceAttrs, box, k, ctx);
+            if (pinnedTop != null) heroUiTop = pinnedTop;
+          }
           const rideOwner = heroUiBlocks && parent && !parentIsHeroSection && !pinViewport && !parentAlreadyClustered
             ? heroUiOwnerBlock(heroUiBlocks, localX + (box.w ?? 0) / 2, sourceTop + sourceH / 2)
             : null;
@@ -5039,19 +5085,7 @@
               el.setAttribute('data-topbar-viewport-shift', String(shift));
             }
           }
-          if (slotAnchor && pinViewport && heroSlot && Number(heroSlot.heroHeight) > 0 && Number(heroSlot.designHeight) > 0) {
-            const slotH = Number(heroSlot.designHeight);
-            const gapBelow = Number(heroSlot.heroHeight) - (sourceTop + sourceH);
-            /* Keep gap-to-hero-bottom on the 100vh slot, same as PC. KV
-               cover-crop fills the window, so the slot floor is the visible
-               first-screen floor — including a short Figma hero padded up
-               (mobile 1334 → 1623). Overlay span must cover this remapped
-               bottom or the arrow is clipped. */
-            heroUiTop = slotH - gapBelow - sourceH;
-            heroUiAnchored = true;
-            el.setAttribute('data-fix-slot-top', String(heroUiTop));
-            el.setAttribute('data-fix-slot-floor', String(slotH));
-          } else if (heroClusterLayer && heroUiBlocks && Number.isFinite(sourceTop) && !pinViewport) {
+          if (heroClusterLayer && heroUiBlocks && Number.isFinite(sourceTop) && !pinViewport) {
             /* Cluster shift is page-Y. Nested layers (title SLG inside `标题`)
                write local top, so convert: localTop + pageShift. */
             heroUiTop = sourceTop + heroClusterShiftValue;
@@ -5127,7 +5161,7 @@
             el.setAttribute('data-later-mobile-center', String(laterCenter));
           }
           el.style.top = heroUiTop + 'px';
-          if (heroUiTop !== sourceTop) {
+          if (heroUiTop !== sourceTop && !(pinViewport && pfx === 'fix')) {
             el.setAttribute('data-hero-ui-y', String(heroUiYRatio));
             el.setAttribute('data-hero-ui-anchor', heroUiAnchored ? 'owner-block' : 'slot-ratio');
           }

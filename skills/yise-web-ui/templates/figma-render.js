@@ -1955,6 +1955,55 @@
           }
           return { role, label, params };
         };
+        const constraintAxis = (n, axis) => String((n && n.pinEdges && n.pinEdges[axis])
+          || (n && n.layout && n.layout.constraints && n.layout.constraints[axis])
+          || (n && n.constraints && n.constraints[axis]) || '').toUpperCase();
+        const writeFixPinAttrs = (attrs, n) => {
+          attrs['data-fix-pin'] = 'viewport';
+          const pinEdges = n.pinEdges || {};
+          const pinV = constraintAxis(n, 'vertical');
+          const pinH = constraintAxis(n, 'horizontal');
+          if (pinV) attrs['data-fix-pin-v'] = pinV;
+          if (pinH) attrs['data-fix-pin-h'] = pinH;
+          for (const [key, attr] of Object.entries({
+            gapBottom: 'data-fix-gap-bottom',
+            gapTop: 'data-fix-gap-top',
+            gapLeft: 'data-fix-gap-left',
+            gapRight: 'data-fix-gap-right',
+            boardW: 'data-fix-board-w',
+            boardH: 'data-fix-board-h',
+          })) {
+            if (Number.isFinite(Number(pinEdges[key]))) attrs[attr] = String(pinEdges[key]);
+          }
+          return pinV;
+        };
+        const applyFixViewportPin = (el, evidenceAttrs, box, k, ctx) => {
+          const pinV = String(evidenceAttrs?.['data-fix-pin-v'] || '').toUpperCase();
+          const pinH = String(evidenceAttrs?.['data-fix-pin-h'] || '').toUpperCase();
+          const viewportH = Number(ctx && ctx.viewport && ctx.viewport.h);
+          const slotH = Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(k) && k > 0
+            ? viewportH / k
+            : 0;
+          const gapBottom = Number(evidenceAttrs?.['data-fix-gap-bottom']);
+          const gapRight = Number(evidenceAttrs?.['data-fix-gap-right']);
+          const boardW = Number(evidenceAttrs?.['data-fix-board-w']);
+          const sourceW = Number(box.w ?? 0);
+          const sourceH = Number(box.h ?? 0);
+          let top;
+          if (pinV === 'BOTTOM' && Number.isFinite(gapBottom) && slotH > 0) {
+            top = slotH - gapBottom - sourceH;
+            el.setAttribute('data-fix-anchor', 'bottom-gap');
+          } else if (pinV === 'CENTER' && slotH > 0) {
+            top = (slotH - sourceH) / 2;
+            el.setAttribute('data-fix-anchor', 'center');
+          }
+          if (pinH === 'RIGHT' && Number.isFinite(gapRight) && Number.isFinite(boardW) && boardW > 0) {
+            el.style.left = (boardW - gapRight - sourceW) + 'px';
+          } else if (pinH === 'CENTER' && Number.isFinite(boardW) && boardW > 0) {
+            el.style.left = ((boardW - sourceW) / 2) + 'px';
+          }
+          return top;
+        };
         const byId = new Map(items.map((n) => [id(n), n]));
         /* Fixed overlay roots are rendered in the page stage, while their
            truth-backed descendants can legitimately live in the section
@@ -2512,10 +2561,14 @@
                box must not swallow sibling switch arrows. Only explicit nav
                items re-enable pointer targeting. @from=N is scroll-gated pin,
                not a stretch rule. */
-            attrs['data-nav-shell'] = 'true';
-            attrs['data-fix-pin'] = 'viewport';
+            const pinV = writeFixPinAttrs(attrs, n);
             const fromRaw = p.params.from;
             if (fromRaw != null && /^[1-9]\d*$/.test(String(fromRaw))) attrs['data-fix-from'] = String(fromRaw);
+            if (pinV === 'BOTTOM' || pinV === 'CENTER') {
+              attrs['data-fix-chrome'] = pinV === 'BOTTOM' ? 'bottom' : 'center';
+            } else {
+              attrs['data-nav-shell'] = 'true';
+            }
           }
           if (switchId && p.role === 'swpage') {
             attrs['data-motion-carousel-page'] = 'true';
@@ -3346,7 +3399,9 @@
         /* Directory stretch does not require a motion adapter. A fix/ overlay
            owner is the left rail; chrome reads this role to map source y onto
            the current viewport height. */
-        if (pfx === 'fix' && !el.getAttribute('data-motion-role')) {
+        const fixChrome = el.getAttribute('data-fix-chrome');
+        if (pfx === 'fix' && !el.getAttribute('data-motion-role')
+          && !/^(bottom|center)$/.test(fixChrome || '')) {
           el.setAttribute('data-motion-role', 'navigationFooter');
           el.setAttribute('data-motion-navigation', 'true');
         }
@@ -3582,9 +3637,14 @@
              their button frames. */
           let heroUiTop = sourceTop;
           let heroUiAnchored = false;
-          if (heroUiBlocks && !parent && Number.isFinite(sourceTop)) {
+          const pinViewport = evidenceAttrs?.['data-fix-pin'] === 'viewport' || pfx === 'fix';
+          const sourceH = Number(box.h ?? 0);
+          if (pinViewport && pfx === 'fix') {
+            const pinnedTop = applyFixViewportPin(el, evidenceAttrs, box, k, ctx);
+            if (pinnedTop != null) heroUiTop = pinnedTop;
+          }
+          if (heroUiBlocks && !parent && Number.isFinite(sourceTop) && !pinViewport) {
             const localX = (box.x ?? 0) - originX;
-            const sourceH = Number(box.h ?? 0);
             const sourceBottom = sourceTop + sourceH;
             /* Generic split, no node names: blocks whose Figma bottom sits in
                the upper half of the hero are top chrome and keep their top
@@ -3611,7 +3671,7 @@
             });
           }
           el.style.top = heroUiTop + 'px';
-          if (heroUiTop !== sourceTop) {
+          if (heroUiTop !== sourceTop && !(pinViewport && pfx === 'fix')) {
             el.setAttribute('data-hero-ui-y', String(heroUiYRatio));
             el.setAttribute('data-hero-ui-anchor', heroUiAnchored ? 'owner-block' : 'slot-ratio');
           }

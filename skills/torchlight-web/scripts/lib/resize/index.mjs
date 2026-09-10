@@ -12,7 +12,7 @@ import {
 } from '../hero-scroll-slot.mjs';
 import { DESIGN_POLICY } from '../design-policy.generated.mjs';
 
-export const RESIZE_SKILL_SCHEMA = 'yise-resize-skill/v1';
+export const RESIZE_SKILL_SCHEMA = 'torchlight-resize-skill/v1';
 export {
   detectLayoutPlanes,
   LAYOUT_PLANES_SCHEMA,

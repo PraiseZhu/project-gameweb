@@ -14,7 +14,7 @@
 //   两者字节由 gateA 的双向 manifest + hash 复算对账。
 //
 // 跑法（gateX 由 verify 用 node <script> --demo <dir> 调用；也可手跑）：
-//   node scripts/lib/figma-chrome-browser-check.mjs --demo demos/yise-ss5-preview
+//   node scripts/lib/figma-chrome-browser-check.mjs --demo demos/torchlight-preview
 //   环境变量 CHROME_PATH 指向本机 Chrome（Windows 用反斜杠路径）。
 //
 // 通用性：不硬编码任何 demo 专属节点 id / 分区名 / 文案。所有几何都从 DOM 现测。

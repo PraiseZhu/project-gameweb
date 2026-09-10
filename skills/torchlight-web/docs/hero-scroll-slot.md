@@ -46,8 +46,8 @@ k 变大后稿高已经够高，不再垫。`extra<0` 时后屏 paint-root 层�
 长 `bg/*` 被裁掉的尾巴以 `bg-tail` 续画在
 偏移之后，页面背景跟着走，不会露出空带。KV/page chrome 与 fixed overlay 仍按
 原 sibling 顺序绘制。滚动槽只记账，不得给 hero 加 `%` 假离场。
-`fix/箭头` 跟稿到首屏底的距离，钉在 100vh 槽底（短稿垫高、高稿裁窗都走同一条）。
-`fix/顶部信息` 按名字当视口 chrome，不靠 `w>h`；手机 366×374 仍是右侧栏，不是目录轨。
+`fix/箭头` 走稿上 Constraints Bottom：空隙 = 该层底到父画板底，钉在 `viewportH / k`，不跟 cover 首屏裁切窗。
+`fix/顶部信息` 按名字当视口 chrome，不靠 `w>h`；手机 366×374 仍是右侧栏，不是目录轨。 overlay 根仍用清单 pageBox，不要改写成 (0,0)。
 sticky overlay 宿主高度是缩放后的 overlay span，负 margin 把文档流抵消；高度 0 加 overflow
 会在 `.frame` 一滑时把右侧栏裁掉。
 
@@ -78,7 +78,7 @@ spec 中仍保留 tablet `TODO-待定`，不得称为专用 tablet 稿。
 
 ```powershell
 node --test scripts/__tests__/hero-scroll-slot.test.mjs
-node demos/yise-ss5-preview/_render-smoke.mjs
+node demos/torchlight-preview/_render-smoke.mjs
 $env:CHROME_PATH='<path-to-chrome.exe>'
-node scripts/lib/figma-chrome-browser-check.mjs --demo demos/yise-ss5-preview
+node scripts/lib/figma-chrome-browser-check.mjs --demo demos/torchlight-preview
 ```

@@ -7,7 +7,7 @@ second human review stop (`interaction-and-resize` in `human-review.json`)
 is accepted by `npm run torchlightweb -- accept`. The machine must not write
 `resize-acceptance.json`. Missing either fails before mutation.
 
-SS6 4173 / `yise-ss6-web` is a fixture consumer. No rule here may depend on
+SS6 4173 / a later-season fixture consumer. No rule here may depend on
 Etheria node IDs. Indicator fallback files are a runtime contract **for pages
 that still have an `ind/` owner**: any `figma-indicator-*.png` (or later
 `.webp`) referenced from the demo root or `assets/` is a served file, not

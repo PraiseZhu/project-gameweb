@@ -34,7 +34,7 @@ function spawnPython(args, extra = {}) {
 
 function acceptedStops() {
   return {
-    schema: 'yise-human-review/v1',
+    schema: 'torchlight-human-review/v1',
     stops: {
       'static-and-translation': { presented: true, previewOk: true, accepted: true, acceptedAt: '2026-08-27T00:00:00.000Z' },
       'interaction-and-resize': { presented: true, previewOk: true, accepted: true, acceptedAt: '2026-08-27T00:00:00.000Z' },

@@ -38,7 +38,8 @@ import {
   runStop1FigmaPixelGate,
   STOP1_PIXEL_DIR,
 } from '../src/stop1-figma-pixel-gate.mjs';
-import { productProbeViewport, tryReadCachePng, writeCachePng } from '../src/stop1-figma-pixel-probe.mjs';
+import { parseStop1SkipJson, productProbeViewport, tryReadCachePng, writeCachePng } from '../src/stop1-figma-pixel-probe.mjs';
+import { trustedSkillRoot } from '../src/resolve-playwright.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PROBE = join(ROOT, 'src/stop1-figma-pixel-probe.mjs');
@@ -171,14 +172,40 @@ test('stop-1 default threshold is 6%', () => {
   assert.equal(DEFAULT_STOP1_PIXEL_THRESHOLD, 0.06);
 });
 
-test('mobile later-section 949:6041 is skipped; other screens stay locked', () => {
+test('shared default skip keeps 949:6041 for re-export consumers; other screens stay locked', () => {
   assert.equal(isStop1PixelSkippedSection('mobile', '949:6041'), true);
   assert.equal(isStop1PixelSkippedSection('mobile', '949:5968'), false);
-  assert.equal(isStop1PixelSkippedSection('pc', '949:6041'), false);
   assert.equal(isStop1PixelSkippedSection('pc', '949:5151'), false);
+  assert.equal(isStop1PixelSkippedSection('mobile', '949:6041', { mobile: '949:6041' }), false);
+  assert.equal(isStop1PixelSkippedSection('mobile', '949:6041', { mobile: ['949:6041'] }), true);
   const src = readFileSync(PROBE, 'utf8');
-  assert.match(src, /isStop1PixelSkippedSection\(platform, section\.id\)/);
+  assert.match(src, /isStop1PixelSkippedSection\(platform, section\.id/);
   assert.match(src, /status: 'SKIPPED'/);
+});
+
+test('invalid STOP1_PIXEL_SKIP_JSON fail-closes instead of skipping silently', () => {
+  assert.equal(parseStop1SkipJson(undefined), undefined);
+  assert.deepEqual(parseStop1SkipJson('{"mobile":["949:6041"]}'), { mobile: ['949:6041'] });
+  assert.throws(() => parseStop1SkipJson('{not-json'), /STOP1_PIXEL_SKIP_JSON is not valid JSON/);
+  assert.throws(() => parseStop1SkipJson('{"mobile":"949:6041"}'), /must be an array of strings/);
+  assert.throws(() => parseStop1SkipJson('["949:6041"]'), /must be an object of platform/);
+  assert.throws(() => parseStop1SkipJson('{"mobile":[949]}'), /must be an array of strings/);
+});
+
+test('Playwright skill root is the current skill, not both page-making skills', () => {
+  const repo = join(ROOT, '../../..');
+  const torch = join(repo, 'skills/torchlight-web');
+  const yise = join(repo, 'skills/yise-web-ui');
+  assert.equal(trustedSkillRoot(join(torch, 'scripts/lib')), torch);
+  assert.equal(trustedSkillRoot(join(yise, 'scripts/lib')), yise);
+  assert.equal(trustedSkillRoot(ROOT), null);
+  const src = readFileSync(PROBE, 'utf8');
+  assert.match(src, /launchChromium\(absDemo/);
+  assert.doesNotMatch(src, /launchChromium\(TOOL_ROOT/);
+  const resolver = readFileSync(join(ROOT, 'src/resolve-playwright.mjs'), 'utf8');
+  assert.doesNotMatch(resolver, /\['torchlight-web', 'yise-web-ui'\]/);
+  assert.match(resolver, /cwdSkillRoot/);
+  assert.match(resolver, /toolPackageRoot/);
 });
 
 test('stop-1 assembles node exports and product=1', () => {

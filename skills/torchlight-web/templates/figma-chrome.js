@@ -1685,7 +1685,7 @@
   function isViewportChromeEl(el) {
     if (!el) return false;
     if (el.getAttribute('data-topbar-chrome') === 'true') return true;
-    if (el.getAttribute('data-fix-slot-anchor') === 'first-screen-bottom') return true;
+    if (/^(bottom|center)$/.test(el.getAttribute('data-fix-chrome') || '')) return true;
     return /顶部信息|顶部固定/.test(String(el.getAttribute('data-name') || el.getAttribute('data-label') || ''));
   }
 
@@ -2046,7 +2046,9 @@
       /* Landscape *or* named 顶部信息 is viewport chrome (官方充值 / 地球 / 官网),
          not a left directory. Stretching it to 100vh squashes mobile 736×401
          by 844/1334, and a slightly portrait 366×374 right bar is still
-         chrome. Skip even if an old render still stamped nav-shell. */
+         chrome. Bottom/Center fix/ is also not a directory (arrow would
+         stretch with the rail). Skip even if an old render still stamped
+         nav-shell. */
       if (isViewportChromeEl(node)) continue;
       var nested = false;
       for (var r = 0; r < roots.length; r++) {

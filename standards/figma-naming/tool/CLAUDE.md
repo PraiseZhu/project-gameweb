@@ -20,7 +20,7 @@
    未规范稿去 `projects/project-unnamed-inventory`。本仓拒绝 `--status draft`。
    链接里的 `node-id` 是拉稿根，`--page` 只在已拉取的树中选页面，不能拿 `--page` 代替拉稿根。
 3. 命令产出仓库 `_tmp/inventory-<page>.json` 与 `.txt`，JSON 为 `schema: "inventory/v2"`、`status: ready`。抓取、整理或自验失败即停止。
-4. 稿上有的每一端 ready 后 `handoff:pack` 打交接包（只有一端就只传那一端）；再从仓库根 `cd skills/yise-web-ui` 跑 `figma:from-handoff`。吃包闸门绿才交付。对人只交交接包路径，不要把 inventory JSON 或核对页链接当交付物。命令不写 HTML。unknown 节点只画样子、不赋交互，unknown 的 `modal-trigger` 不自动接线。
+4. 稿上有的每一端 ready 后 `handoff:pack` 打交接包（只有一端就只传那一端）；再按做页 consumer 从仓库根吃包：`cd skills/torchlight-web` 或 `cd skills/yise-web-ui`，然后跑 `figma:from-handoff`。吃包闸门绿才交付。对人只交交接包路径，不要把 inventory JSON 或核对页链接当交付物。命令不写 HTML。unknown 节点只画样子、不赋交互，unknown 的 `modal-trigger` 不自动接线。
 
 做页消费边界：先按已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、完整
 组件变体树和 modal 附件本体搭页；`unknown` 节点只画样子、不赋交互；

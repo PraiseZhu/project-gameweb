@@ -4,8 +4,10 @@
 // 没有 package.json、没有可核验的 test、放错位置 → 失败，不静默跳过。
 // 完整夜间另出分级报告：今晚红 / 已知债 / 缺口；红灯只跟今晚红。
 //
-//   node .github/scripts/nightly-health.mjs           # 安装并跑完全部
+//   node .github/scripts/nightly-health.mjs           # 安装并跑完全部（cross-skill-audit）
 //   node .github/scripts/nightly-health.mjs --list    # 只打印将检查的包
+//   node .github/scripts/nightly-health.mjs --list --skill torchlight-web
+//   全仓结果不能当作火炬独立通过；火炬固定链路用 --skill torchlight-web。
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative as pathRelative, resolve } from 'node:path';
@@ -637,6 +639,34 @@ function placementProblems() {
   return problems;
 }
 
+function skillFilter() {
+  const raw = argValue('--skill');
+  if (!raw) return null;
+  const names = raw.split(',').map((name) => name.trim()).filter(Boolean);
+  if (!names.length) die('--skill 不能为空');
+  return new Set(names);
+}
+
+function targetMatchesSkillFilter(target, filter) {
+  if (!filter) return true;
+  const rel = String(target.name || '').replaceAll('\\', '/');
+  for (const name of filter) {
+    if (rel === `skills/${name}` || rel.startsWith(`skills/${name}/`)) return true;
+    if (rel === `standards/${name}` || rel.startsWith(`standards/${name}/`)) return true;
+    if (rel === name) return true;
+  }
+  return false;
+}
+
+function problemMatchesSkillFilter(message, filter) {
+  if (!filter) return true;
+  const text = String(message).replaceAll('\\', '/');
+  for (const name of filter) {
+    if (text.includes(`skills/${name}`) || text.includes(`standards/${name}`)) return true;
+  }
+  return false;
+}
+
 function discoverTargets() {
   const problems = placementProblems();
   const targets = [];
@@ -796,7 +826,14 @@ function noTargetFailures(discoveryProblems) {
 }
 
 function main() {
-  const { targets, problems: discoveryProblems } = discoverTargets();
+  const filter = skillFilter();
+  const discovered = discoverTargets();
+  const filtered = discovered.targets.filter((target) => targetMatchesSkillFilter(target, filter));
+  const discoveryProblems = discovered.problems.filter((message) => problemMatchesSkillFilter(message, filter));
+  if (filter && filtered.length === 0) {
+    discoveryProblems.push(`--skill ${[...filter].join(',')} 没有匹配到任何包`);
+  }
+  const targets = filtered;
   if (targets.length === 0) {
     const failures = noTargetFailures(discoveryProblems);
     if (LIST_ONLY) die(failures[0]);
@@ -846,6 +883,9 @@ function main() {
 
 export {
   collectTargets,
+  skillFilter,
+  targetMatchesSkillFilter,
+  problemMatchesSkillFilter,
   placementProblems,
   testLooksRunnable,
   looksLikeFakeSummary,

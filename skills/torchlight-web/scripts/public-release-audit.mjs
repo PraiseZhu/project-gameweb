@@ -140,12 +140,13 @@ function auditCoverage(rel) {
 for (const name of readdirSync(ROOT).sort()) auditCoverage(name);
 
 // 非阻断提示:可发布文件里出现的私有 demo 路径 / 官方页 URL 引用(发布复核时必须逐条过目,
-// 而不是只靠 4 条敏感正则)。SKILL.md/README/PUBLIC-RELEASE 里的 demos/yise-ss5-preview 是
+// 而不是只靠 4 条敏感正则)。SKILL.md/README/PUBLIC-RELEASE 里的 demos/torchlight-preview 是
 // 刻意保留的「仅本地验证示例」身份声明,列出来供复核,不判红。
 for (const file of publishFiles) {
   const text = read(file);
-  if (/demos\/yise-ss5-preview/.test(text)) notes.push(`${file}: 引用私有 demo 路径 demos/yise-ss5-preview(发布复核需逐条确认是"示例"还是"证据")`);
-  if (/yise\.xd\.cn|etheria\.xd\.com/i.test(text)) notes.push(`${file}: 引用官方页 URL(私有行为证据,发布复核需逐条确认)`);
+  if (/demos\/torchlight-preview/.test(text)) notes.push(`${file}: 引用私有 demo 路径 demos/torchlight-preview(发布复核需逐条确认是"示例"还是"证据")`);
+  if (/demos\/yise-ss5-preview/.test(text)) notes.push(`${file}: 仍引用伊瑟私有 demo 路径 demos/yise-ss5-preview(火炬发布面不得当入口)`);
+  if (/yise\.xd\.cn|etheria\.xd\.com/i.test(text)) notes.push(`${file}: 引用伊瑟官方页 URL(火炬发布面不得当默认官网)`);
 }
 
 console.log(JSON.stringify({ ok: problems.length === 0, identity: 'torchlight-web', publishableFiles: publishFiles.length, notes, problems }, null, 2));

@@ -5,7 +5,7 @@ const isUnitRatio = (value) => typeof value === 'number' && Number.isFinite(valu
 
 function asObject(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; }
 
-export const VECTOR_EVIDENCE_SCHEMA = 'yise-vector-evidence/v1';
+export const VECTOR_EVIDENCE_SCHEMA = 'torchlight-vector-evidence/v1';
 export const VECTOR_EVIDENCE_FAILURE = 'vector-shape-missing';
 
 export function collectVectorEvidence(rawTruth) {
@@ -49,7 +49,7 @@ export function evaluateRuntimeEvidence({ interaction = null, resize = null, req
   if (required.resize && resize?.cropPolicyPresent !== true) failures.push({ reason: 'crop-policy-missing' });
   if (required.resize && resize?.noOverflowOnly === true) failures.push({ reason: 'no-overflow-is-not-resize-evidence' });
   if (required.interaction && interaction?.stickyOnly === true) failures.push({ reason: 'sticky-is-not-interaction-evidence' });
-  return { schema: 'yise-runtime-evidence/v1', complete: failures.length === 0, failures };
+  return { schema: 'torchlight-runtime-evidence/v1', complete: failures.length === 0, failures };
 }
 
 export function evaluateCompositionEvidence({ composition = null, typography = null, pixel = null } = {}) {
@@ -57,7 +57,7 @@ export function evaluateCompositionEvidence({ composition = null, typography = n
   if (composition?.complete !== true) failures.push({ reason: 'composition-layer-mismatch' });
   if (typography?.complete !== true) failures.push({ reason: 'font-style-mismatch' });
   if (pixel?.complete !== true) failures.push({ reason: 'pixel-region-evidence-missing' });
-  return { schema: 'yise-composition-evidence/v1', complete: failures.length === 0, failures };
+  return { schema: 'torchlight-composition-evidence/v1', complete: failures.length === 0, failures };
 }
 
 export function evaluateVisualCompletionEvidence({ visualAssets = null, vectors = null, composition = null, runtime = null } = {}) {
@@ -66,7 +66,7 @@ export function evaluateVisualCompletionEvidence({ visualAssets = null, vectors 
   if (vectors?.complete !== true) failures.push(...(vectors?.failures || [{ reason: VECTOR_EVIDENCE_FAILURE }]));
   if (composition?.complete !== true) failures.push(...(composition?.failures || [{ reason: 'composition-layer-mismatch' }]));
   if (runtime?.complete !== true) failures.push(...(runtime?.failures || [{ reason: 'runtime-evidence-incomplete' }]));
-  return { schema: 'yise-visual-completion-evidence/v1', complete: failures.length === 0, failures };
+  return { schema: 'torchlight-visual-completion-evidence/v1', complete: failures.length === 0, failures };
 }
 
 export function evaluateTypographyEvidence(typography = null) {
@@ -82,7 +82,7 @@ export function evaluateTypographyEvidence(typography = null) {
     if (!browser?.computedFamily || !browser?.resolvedFamily) failures.push({ reason: 'resolved-font-evidence-missing', index });
     if (browser?.fallback === true || browser?.glyphsMissing === true) failures.push({ reason: 'font-fallback-unresolved', index });
   }
-  return { schema: 'yise-typography-visual-evidence/v1', complete: failures.length === 0, failures };
+  return { schema: 'torchlight-typography-visual-evidence/v1', complete: failures.length === 0, failures };
 }
 
 export function pageFlowStateNames(states) {
@@ -102,7 +102,7 @@ export function evaluatePageFlowEvidence(flow = null) {
     if (!section?.intendedId || section.reachable !== true || section.intersectsViewport !== true) failures.push({ reason: 'section-not-reachable-visible', index });
     if (!Number.isFinite(Number(section?.scrollTop)) || !section?.viewportRect) failures.push({ reason: 'section-viewport-measurement-missing', index });
   }
-  return { schema: 'yise-page-flow-evidence/v1', complete: failures.length === 0, failures };
+  return { schema: 'torchlight-page-flow-evidence/v1', complete: failures.length === 0, failures };
 }
 
 export function evaluateFixedChromeEvidence(chrome = null) {
@@ -112,7 +112,7 @@ export function evaluateFixedChromeEvidence(chrome = null) {
     if (evidence?.sourceBacked !== true || evidence?.measured !== true) failures.push({ reason: `fixed-chrome-${part}-evidence-missing` });
   }
   if (chrome?.viewportAnchored !== true || chrome?.scrollBehaviorMeasured !== true) failures.push({ reason: 'fixed-chrome-anchor-behavior-unverified' });
-  return { schema: 'yise-fixed-chrome-evidence/v1', complete: failures.length === 0, failures };
+  return { schema: 'torchlight-fixed-chrome-evidence/v1', complete: failures.length === 0, failures };
 }
 
 export function evaluateResizeEvidence(resize = null) {
@@ -126,7 +126,7 @@ export function evaluateResizeEvidence(resize = null) {
     if (!viewport?.measured || !viewport.geometry || !viewport.viewport) failures.push({ reason: 'resize-geometry-measurement-missing', index });
   }
   if (resize?.noOverflowOnly === true) failures.push({ reason: 'no-overflow-is-not-resize-evidence' });
-  return { schema: 'yise-resize-evidence/v1', complete: failures.length === 0, failures };
+  return { schema: 'torchlight-resize-evidence/v1', complete: failures.length === 0, failures };
 }
 
 export function evaluateInteractionEvidence(interaction = null) {
@@ -135,7 +135,7 @@ export function evaluateInteractionEvidence(interaction = null) {
   if (interaction?.runtimeWired !== true || steps.length === 0) failures.push({ reason: 'interaction-runtime-not-wired' });
   if (!steps.some((step) => step?.input && step?.observedState)) failures.push({ reason: 'interaction-observation-missing' });
   if (interaction?.stickyOnly === true) failures.push({ reason: 'sticky-is-not-interaction-evidence' });
-  return { schema: 'yise-interaction-evidence/v1', complete: failures.length === 0, failures };
+  return { schema: 'torchlight-interaction-evidence/v1', complete: failures.length === 0, failures };
 }
 
 export function evaluateRegionComparisonEvidence(comparison = null) {
@@ -167,7 +167,7 @@ export function evaluateRegionComparisonEvidence(comparison = null) {
       failures.push({ reason: 'section-visual-regression', intendedSectionId, diffRatio, maxDiffRatio });
     }
   }
-  return { schema: 'yise-region-comparison-evidence/v1', complete: failures.length === 0, failures };
+  return { schema: 'torchlight-region-comparison-evidence/v1', complete: failures.length === 0, failures };
 }
 
 export function evaluateFinalVisualEvidenceChain({ typography = null, pageFlow = null, fixedChrome = null, resize = null, interaction = null, comparison = null } = {}) {
@@ -176,6 +176,6 @@ export function evaluateFinalVisualEvidenceChain({ typography = null, pageFlow =
     evaluateFixedChromeEvidence(fixedChrome), evaluateResizeEvidence(resize),
     evaluateInteractionEvidence(interaction), evaluateRegionComparisonEvidence(comparison),
   ];
-  return { schema: 'yise-final-visual-evidence-chain/v1', complete: checks.every((check) => check.complete), failures: checks.flatMap((check) => check.failures) };
+  return { schema: 'torchlight-final-visual-evidence-chain/v1', complete: checks.every((check) => check.complete), failures: checks.flatMap((check) => check.failures) };
 }
 

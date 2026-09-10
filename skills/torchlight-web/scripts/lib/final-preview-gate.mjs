@@ -1,10 +1,11 @@
 import { evaluateVisualCompletionEvidence, evaluateFinalVisualEvidenceChain } from './visual-completion-gate.mjs';
+import { matchesSchema } from './torchlight-schema.mjs';
 
 /** Final user-preview gate. Candidate preview evidence is never user delivery. */
 const FINAL_EVIDENCE_LEVEL = 'confirmed-final';
 
 export function isCompleteVisualAssetAudit(audit) {
-  if (!audit || audit.schema !== 'yise-static-visual-asset-audit/v1') return false;
+  if (!audit || !matchesSchema(audit.schema, 'torchlight-static-visual-asset-audit/v1')) return false;
   if (audit.visualAssetsComplete !== true || audit.complete !== true) return false;
   if (!Array.isArray(audit.requirements) || !Array.isArray(audit.covered) || !Array.isArray(audit.platforms)) return false;
   if (!audit.requirements.length || audit.covered.length !== audit.requirements.length) return false;

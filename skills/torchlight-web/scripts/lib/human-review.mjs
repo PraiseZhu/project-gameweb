@@ -2,8 +2,9 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { HUMAN_REVIEW_STOPS } from './workflows.mjs';
 import { inspectPackPath, packRoot } from './pack-demo.mjs';
+import { matchesSchema, torchlightSchema } from './torchlight-schema.mjs';
 
-export const HUMAN_REVIEW_SCHEMA = 'yise-human-review/v1';
+export const HUMAN_REVIEW_SCHEMA = torchlightSchema('torchlight-human-review/v1');
 export const HUMAN_REVIEW_FILE = 'human-review.json';
 
 const STOP_IDS = HUMAN_REVIEW_STOPS.map((stop) => stop.id);
@@ -37,6 +38,9 @@ export function readHumanReview(demoDir) {
     const parsed = JSON.parse(readFileSync(inspected.path, 'utf8'));
     const record = emptyRecord();
     if (parsed && typeof parsed === 'object') {
+      if (parsed.schema && !matchesSchema(parsed.schema, HUMAN_REVIEW_SCHEMA)) {
+        return { ...emptyRecord(), missing: true, invalid: true, file };
+      }
       for (const id of STOP_IDS) {
         const stop = parsed.stops?.[id] || {};
         record.stops[id] = {

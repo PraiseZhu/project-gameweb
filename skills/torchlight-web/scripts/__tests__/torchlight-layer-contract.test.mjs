@@ -77,7 +77,7 @@ test('sc-open-not-done: opening the page is still a candidate', () => {
   assert.match(readme, /not-claimed|extraction recognition only/);
 });
 
-test('sc-yisewebui-layer-stop: two human review stops, Translation not-claimed without a table', () => {
+test('sc-torchlight-layer-stop: two human review stops, Translation not-claimed without a table', () => {
   const skill = read('SKILL.md');
   const arch = read('docs/skill-architecture.md');
   const readme = read('README.md');
@@ -226,4 +226,22 @@ test('sc-prior-test-gaps: unknown stays inert; #38 is record-only', () => {
   assert.match(entry, /Keep unresolved switch\/page relations\ninert/);
   assert.match(entry, /Issue #38: record\/analyse\nonly/);
   assert.match(entry, /do not change shaoshenze upstream completeness/);
+});
+
+test('sc-torch-yise-isolation: torchlightweb must not import or cwd into yise-web-ui', () => {
+  const orch = read('scripts/torchlightweb.mjs');
+  const html = read('scripts/figma-html-from-handoff.mjs');
+  const fromHandoff = read('scripts/figma-from-handoff.mjs');
+  const skill = read('SKILL.md');
+  const claude = readClaude();
+  for (const src of [orch, html, fromHandoff]) {
+    assert.doesNotMatch(src, /skills\/yise-web-ui/);
+    assert.doesNotMatch(src, /cd skills\/yise-web-ui/);
+    assert.doesNotMatch(src, /yisewebui/);
+  }
+  assert.match(skill, /禁止搜、改、验证 `skills\/yise-web-ui`/);
+  assert.match(claude, /火炬固定链路不得搜、改、验证 `skills\/yise-web-ui`/);
+  const gate = read('scripts/lib/stop1-figma-pixel-gate.mjs');
+  assert.match(gate, /PLAYWRIGHT_MODULE_ROOT/);
+  assert.match(gate, /STOP1_PIXEL_SKIP_JSON/);
 });

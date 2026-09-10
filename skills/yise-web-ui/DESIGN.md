@@ -126,6 +126,8 @@ openFlowNoShrink: true
 
 三平面不得共用一个 transform。Hero UI 大小走宽度尺 `k`；稿里底边落在首屏下半的块按底边比例钉在 `100vh` 槽上，避免 `y×k` 把标题抬到上半屏。
 
+`fix/` 钉视口。钉哪条边只看该层 `layout.constraints`（稿上 Constraints），不猜图层名。所相对画板 = 直接父 frame 的 `pageBox`（不是 `sec/1`、不是相对父层的 `parentBox`）。垂直 **Bottom**：底边钉视窗底，空隙 = 该层底到父画板底 × 当前档 `k`（槽高 = 视窗高 / `k`，不跟 cover）。视窗变高空隙不拉长，滚走仍钉着。垂直 **Top** / 未写：仍钉顶（顶栏、导航不动）。垂直 **Center**：在视窗槽内垂直居中。水平 **Center**：在父画板宽内居中；**Left / 未写** 钉左；**Right** 钉右，空隙同样 × `k`。尺寸仍走该档 `k`，不跟 cover。里面的 `img/` 只负责切图。
+
 ## 6. 语言与字号
 
 zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。

@@ -90,10 +90,11 @@ test('heroUi stretch never moves pin=viewport fix descendants', () => {
   assert.match(renderer, /data-topbar-chrome/);
   assert.match(renderer, /landscapeFix/);
   assert.match(renderer, /topInfoChrome/);
-  assert.match(renderer, /data-fix-slot-anchor/);
-  assert.match(renderer, /first-screen-bottom/);
-  assert.match(renderer, /data-fix-slot-top/);
-  assert.match(renderer, /slotH - gapBelow - sourceH/);
+  assert.match(renderer, /applyFixViewportPin/);
+  assert.match(renderer, /data-fix-chrome/);
+  assert.match(renderer, /slotH - gapBottom - sourceH/);
+  assert.doesNotMatch(renderer, /data-fix-slot-anchor/);
+  assert.doesNotMatch(renderer, /first-screen-bottom/);
   assert.match(renderer, /fixedStage\.style\.transform = 'scale\(' \+ k \+ '\)'/);
   assert.match(renderer, /overlayHostH/);
   assert.match(renderer, /marginBottom = \(-overlayHostH\)/);
@@ -112,8 +113,9 @@ test('product sticky overlay keeps scaled span after viewport sync', () => {
   assert.match(chrome, /function isViewportChromeEl/);
   assert.match(chrome, /sourceWidth > sourceHeight/);
   assert.match(chrome, /顶部信息\|顶部固定/);
-  assert.match(chrome, /data-fix-slot-anchor/);
-  assert.match(chrome, /first-screen-bottom/);
+  assert.match(chrome, /data-fix-chrome/);
+  assert.doesNotMatch(chrome, /data-fix-slot-anchor/);
+  assert.doesNotMatch(chrome, /first-screen-bottom/);
   assert.match(chrome, /root\.getAttribute\('data-fix-pin'\) === 'viewport'[\s\S]*?continue/);
   assert.doesNotMatch(chrome, /data-fix-pin.*viewport[\s\S]{0,240}sourceHeight \* sourceScaleY/);
 });

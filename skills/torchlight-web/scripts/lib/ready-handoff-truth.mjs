@@ -1,12 +1,15 @@
 /**
  * Ready-pack → renderer truth. Official page-build path only.
  * Distilled from the local adapter used to consume inventory/v2 into
- * `{ schema: 'yise-ready-platform-truth/v1', platforms: { pc, mobile } }`.
+ * `{ schema: 'torchlight-ready-platform-truth/v1', platforms: { pc, mobile } }`.
  * Does not fetch live Figma. Skipped nodes stay out of paint trees, except
  * CSS-paintable art-fragments (play triangle on btn/) which restoreOwnerComposites
  * stamps as paintAsFragment.
  */
 import { adaptInventoryToTruthShape, restoreOwnerComposites } from './figma-inventory-v2.mjs';
+import { torchlightSchema } from './torchlight-schema.mjs';
+
+export const READY_PLATFORM_TRUTH_SCHEMA = torchlightSchema('torchlight-ready-platform-truth/v1');
 
 const EMPTY_PLATFORM_SCOPE = Object.freeze({ nodes: [], platformRoots: [] });
 
@@ -114,18 +117,54 @@ function underFixedOwner(node, fixedIds) {
   return asArray(node?.ancestorIds).some((id) => fixedIds.has(String(id)));
 }
 
+function constraintAxis(node, axis) {
+  const raw = node?.layout?.constraints?.[axis] ?? node?.constraints?.[axis];
+  return String(raw || '').trim().toUpperCase();
+}
+
+function pinBoardBox(node, inventory) {
+  const parent = asArray(inventory?.nodes).find((entry) => String(entry?.id || '') === String(node?.parentId || ''));
+  const parentPage = parent?.pageBox || parent?.box;
+  if (parentPage && Number(parentPage.w) > 0 && Number(parentPage.h) > 0) return geomOf(parentPage);
+  if (inventory?.page?.pageBox) return geomOf(inventory.page.pageBox);
+  return geomOf(node?.pageBox || node?.box);
+}
+
+function fixPinEdges(node, inventory) {
+  const page = geomOf(node?.pageBox || node?.box);
+  const board = pinBoardBox(node, inventory);
+  return {
+    horizontal: constraintAxis(node, 'horizontal'),
+    vertical: constraintAxis(node, 'vertical'),
+    gapTop: page.y - board.y,
+    gapBottom: (board.y + board.h) - (page.y + page.h),
+    gapLeft: page.x - board.x,
+    gapRight: (board.x + board.w) - (page.x + page.w),
+    boardW: board.w,
+    boardH: board.h,
+  };
+}
+
 /** fix/ pins to the viewport. The sticky host sits at page origin, so the
  *  overlay root keeps inventory pageBox (right chrome at 2764,70 — not 0,0).
  *  Descendants keep inventory pageBox too: the renderer subtracts the painted
  *  parent. Rewriting them to pageBox − owner here double-subtracts and parks
  *  right chrome / arrow at the sticky origin. parentBox is relative to the
- *  direct parent only — never the overlay origin. */
-function paintFixedNode(node, owner) {
+ *  direct parent only — never the overlay origin.
+ *  pinEdges still record the parent-board gap so Bottom arrows can pin to
+ *  viewportH / k without moving Top chrome to (0,0). */
+function paintFixedNode(node, owner, inventory) {
   const painted = paintWithPageBox(node);
   if (!owner) return painted;
   if (String(node?.id) === String(owner?.id)) {
     const ownerPage = geomOf(owner.pageBox || owner.box);
-    return { ...painted, box: ownerPage, pageBox: ownerPage, pin: owner.pin || 'viewport' };
+    return {
+      ...painted,
+      box: ownerPage,
+      pageBox: ownerPage,
+      pin: owner.pin || 'viewport',
+      pinEdges: fixPinEdges(owner, inventory),
+    };
   }
   return painted;
 }
@@ -218,7 +257,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
   }
   const fixedNodes = ordered(liveNodes.filter((node) => (
     underFixedOwner(node, fixed) && !droppedClones.has(String(node?.id || ''))
-  ))).map((node) => paintFixedNode(node, ownerOf(node)));
+  ))).map((node) => paintFixedNode(node, ownerOf(node), inventory));
 
   const pageMeta = drawMeta(inventory.page);
   const chromeNodes = asArray(adapted.pageChrome?.nodes).map((node) => {
@@ -260,7 +299,7 @@ export function readyPlatformTruth({ fingerprint, source, pc, mobile }) {
   if (mobile) platforms.mobile = mobile;
   const fileVersion = source?.lastModified || source?.snapshotHash || fingerprint || null;
   return {
-    schema: 'yise-ready-platform-truth/v1',
+    schema: READY_PLATFORM_TRUTH_SCHEMA,
     fingerprint,
     source,
     design: fileVersion ? { fileVersion } : undefined,
