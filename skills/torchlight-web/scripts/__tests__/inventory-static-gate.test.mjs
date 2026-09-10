@@ -640,6 +640,7 @@ test('unnamed first-screen kv without cover-crop is red; cover-crop marker is gr
   };
   const red = evaluateProductScrollGate({
     inventory,
+    viewportKind: 'product',
     productScroll: {
       overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
       overlayDeltas: {},
@@ -661,8 +662,32 @@ test('unnamed first-screen kv without cover-crop is red; cover-crop marker is gr
   assert.equal(red.ok, false);
   assert.ok(red.problems.some((line) => line.includes('first-kv-missing-cover-crop')), (red.problems || []).join('\n'));
 
+  const designOk = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'design',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 2143, overflow: 'hidden' } },
+      backgrounds: {},
+      firstKv: {
+        imgSrc: 'assets/721-7868.webp',
+        assetW: 3840,
+        assetH: 2143,
+        assetEmpty: false,
+        heroVisualPlane: null,
+        coverCrop: null,
+      },
+      samples: [],
+    },
+  });
+  assert.equal(designOk.ok, true, (designOk.problems || []).join('\n'));
+
   const green = evaluateProductScrollGate({
     inventory,
+    viewportKind: 'product',
     productScroll: {
       overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
       overlayDeltas: {},

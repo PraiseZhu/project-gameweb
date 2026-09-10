@@ -55,6 +55,18 @@
       "sha256": "51ca196f49a33e79e7870ff88ebd2829a3f627a51e7d690986618f0e7ad2b52d",
       "bytes": 35820
     },
+    "Noto Sans SemiCondensed": {
+      "file": "NotoSans-SemiCondensed.ttf",
+      "postScriptName": "NotoSans-SemiCondensed",
+      "weight": 400,
+      "style": "normal",
+      "format": "truetype",
+      "source": "Google Fonts CSS Noto Sans wdth axis (semi-condensed 87.5%), official fonts.gstatic.com",
+      "license": "SIL Open Font License 1.1",
+      "usedBy": "Figma NotoSans-SemiCondensed source instance",
+      "sha256": "f30353ebd33723f887662efe56afc7eb0cad6d70b8e62f5496a7f5388c2ffe00",
+      "bytes": 559152
+    },
     "Noto Sans JP": {
       "file": "NotoSansJP-VariableFont_wght.ttf",
       "postScriptName": "NotoSansJP",

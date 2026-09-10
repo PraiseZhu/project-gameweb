@@ -22,6 +22,42 @@ import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inf
 
 const LANGS_FALLBACK = ['zh-CN', 'en', 'ko', 'ja', 'zh-TW'];
 
+/** 本页本地化只做阶段一：飞书表 3–54 行。缺失/空/畸形不得退成整表。 */
+export const PHASE_ONE_ROW_MIN = 3;
+export const PHASE_ONE_ROW_MAX = 54;
+
+export function parsePhaseRows(declared) {
+  if (!Array.isArray(declared) || declared.length === 0) {
+    return { ok: false, rows: new Set(), problem: 'phaseRows 缺失或空，拒绝退成整表' };
+  }
+  const nums = [];
+  for (const row of declared) {
+    const n = Number(row);
+    if (!Number.isInteger(n) || n <= 0) {
+      return { ok: false, rows: new Set(), problem: 'phaseRows 畸形，拒绝退成整表' };
+    }
+    nums.push(n);
+  }
+  return { ok: true, rows: new Set(nums.map(String)), problem: null };
+}
+
+export function assertPhaseOneRows(declared) {
+  const parsed = parsePhaseRows(declared);
+  if (!parsed.ok) return parsed;
+  const extra = [...parsed.rows].filter((row) => {
+    const n = Number(row);
+    return n < PHASE_ONE_ROW_MIN || n > PHASE_ONE_ROW_MAX;
+  });
+  if (extra.length) {
+    return {
+      ok: false,
+      rows: new Set(),
+      problem: `phaseRows 含阶段一以外的行 ${extra.join(',')}，入口只许 ${PHASE_ONE_ROW_MIN}–${PHASE_ONE_ROW_MAX}`,
+    };
+  }
+  return parsed;
+}
+
 /** 表里一行的"译文指纹"：五个语言列的原始值 canonical 比较用（判 ambiguous）。 */
 function translationTuple(larkSnap, at, row, langs) {
   return langs.map((lang) => {
@@ -70,13 +106,28 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
   }
 
   // ── 扫表：行号 → { rawZh, normZh }。值一律走 at() 取，与 locator 同一条路径 ──
-  const rows = Object.keys(larkSnap.rows).sort((a, b) => Number(a) - Number(b));
+  // 本页只做阶段一。_meta.phaseRows 缺失/空/畸形不得退成整表（后段 查看更多/立即下载会撞 SEO）。
+  let declaredPhaseRows;
+  try {
+    declaredPhaseRows = at(larkSnap, '/_meta/phaseRows');
+  } catch {
+    declaredPhaseRows = null;
+  }
+  const parsedPhase = parsePhaseRows(declaredPhaseRows);
+  const phaseRows = parsedPhase.rows;
+  const rows = Object.keys((larkSnap && larkSnap.rows) || {})
+    .filter((row) => phaseRows.has(String(row)))
+    .sort((a, b) => Number(a) - Number(b));
   const table = []; // [{ row, rawZh, normZh }]
   for (const row of rows) {
     const rawZh = at(larkSnap, `/rows/${row}/zh-CN`);
     if (rawZh === null || rawZh === undefined) continue; // 简中空的行做不了 key
     const raw = String(rawZh);
-    table.push({ row, rawZh: raw, normZh: normalizeCopy(raw) });
+    const localeRaw = {};
+    for (const lang of langs) {
+      try { localeRaw[lang] = at(larkSnap, `/rows/${row}/${lang}`); } catch { localeRaw[lang] = null; }
+    }
+    table.push({ row, rawZh: raw, normZh: normalizeCopy(raw), raw: localeRaw });
   }
 
   // ── 顺手统计（§6「地区差异」）：简中有值但某语言列为空的行。只统计，不定规则 ──
@@ -129,11 +180,12 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
   const _review = [];
 
   /** 命中唯一一行后造五语叶子；空语言列不造叶子（值是 null），记 missingLangs。 */
-  function adopt(t, kind, { lineIndex = null, lineCount = null, partIndex = 0, partCount = 1 } = {}) {
+  function adopt(t, kind, { lineIndex = null, lineCount = null, lineSpan = 1, partIndex = 0, partCount = 1 } = {}) {
     const translations = {};
     const missingLangs = [];
     const localeLineCounts = {};
     const split = Number.isInteger(lineIndex) && Number.isInteger(lineCount) && lineCount > 1;
+    const span = Number.isInteger(lineSpan) && lineSpan > 1 ? lineSpan : 1;
     for (const lang of langs) {
       const v = at(larkSnap, `/rows/${t.row}/${lang}`);
       if (v === null || v === undefined) {
@@ -144,30 +196,46 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
         translations[lang] = larkLeaf(`/rows/${t.row}/${lang}`);
         continue;
       }
-      const splitResult = splitLocaleCellByOwnLines(v, lineIndex, { partIndex, partCount });
-      if (Number.isInteger(splitResult.localeLineCount)) localeLineCounts[lang] = splitResult.localeLineCount;
-      if (splitResult.kind === 'absent') {
+      const pieces = [];
+      let localeLineCount = null;
+      let unresolved = false;
+      let absent = true;
+      for (let offset = 0; offset < span; offset++) {
+        const splitResult = splitLocaleCellByOwnLines(v, lineIndex + offset, { partIndex, partCount });
+        if (Number.isInteger(splitResult.localeLineCount)) localeLineCount = splitResult.localeLineCount;
+        if (splitResult.kind === 'piece' && splitResult.value != null) {
+          pieces.push(splitResult.value);
+          absent = false;
+          continue;
+        }
+        if (splitResult.kind === 'absent') continue;
+        unresolved = true;
+        break;
+      }
+      if (Number.isInteger(localeLineCount)) localeLineCounts[lang] = localeLineCount;
+      if (unresolved) {
+        missingLangs.push(lang);
+        continue;
+      }
+      if (absent) {
         translations[lang] = {
           ...larkLeaf(`/rows/${t.row}/${lang}`),
           value: '',
           splitLine: lineIndex,
           splitPart: partIndex,
-          localeLineCount: splitResult.localeLineCount,
+          localeLineCount,
           absent: true,
         };
-        continue;
-      }
-      if (splitResult.kind !== 'piece' || splitResult.value == null) {
-        missingLangs.push(lang);
         continue;
       }
       const leaf = larkLeaf(`/rows/${t.row}/${lang}`);
       translations[lang] = {
         ...leaf,
-        value: splitResult.value,
+        value: pieces.join('\n'),
         splitLine: lineIndex,
+        splitSpan: span,
         splitPart: partIndex,
-        localeLineCount: splitResult.localeLineCount,
+        localeLineCount,
       };
     }
     return {
@@ -209,11 +277,13 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
     const cellSplitMeta = (() => {
       if (!cellGroup) return null;
       const parts = Array.isArray(cellGroup.parts) ? cellGroup.parts : [];
-      const part = parts.find((item) => (item.nodeIds || []).includes(String(nodeId)));
+      const owned = parts.filter((item) => (item.nodeIds || []).includes(String(nodeId)));
+      const part = owned[0] || parts.find((item) => (item.nodeIds || []).includes(String(nodeId)));
       const lineIndex = part ? part.lineIndex : cellGroup.nodeIds.indexOf(String(nodeId));
+      const lineSpan = owned.length > 1 ? owned.length : 1;
       const partIndex = part ? (part.nodeIds || []).indexOf(String(nodeId)) : 0;
       const partCount = part ? (part.nodeIds || []).length : 1;
-      return { lineIndex, lineCount: cellGroup.lines.length, partIndex, partCount };
+      return { lineIndex, lineCount: cellGroup.lines.length, lineSpan, partIndex, partCount };
     })();
     const __nodeRow = copyOverlay && copyOverlay.nodeRow && copyOverlay.nodeRow[nodeId];
     if (__nodeRow && __nodeRow.row != null) {
@@ -473,6 +543,8 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
     emptyLangCells,
     contextual: _contextual, // 同字段多场景解析留痕：resolved/via/contextKey/why（进报告不进 truth）
     review: _review,
+    phaseRowsOk: parsedPhase.ok,
+    phaseRowsProblem: parsedPhase.problem,
   };
 
   return { byNode, report, _unread };

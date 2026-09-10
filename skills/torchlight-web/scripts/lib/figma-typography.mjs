@@ -38,6 +38,23 @@ export function isTextHugging(autoResize) {
   return autoResize === 'WIDTH' || autoResize === 'WIDTH_AND_HEIGHT';
 }
 
+/* DESIGN.md 6.1: HEIGHT is a fixed-width wrap box. Source CJK fitting on one
+   line is not a nowrap lock. Only WIDTH / WIDTH_AND_HEIGHT hug titles stay pre. */
+export function isSourceNoWrapTitle({ autoResize = 'FIXED', sourceSingleLine = false, displayTitle = false } = {}) {
+  const ar = String(autoResize || 'FIXED').toUpperCase();
+  return sourceSingleLine === true && displayTitle === true
+    && (ar === 'WIDTH_AND_HEIGHT' || ar === 'WIDTH');
+}
+
+export function integerPxWidthFitShouldWrap({ autoResize = 'FIXED', maxWidth = null, maxHeight = null } = {}) {
+  const ar = String(autoResize || 'FIXED').toUpperCase();
+  const width = Number(maxWidth);
+  const height = Number(maxHeight);
+  return ar === 'HEIGHT'
+    && Number.isFinite(width) && width > 0
+    && !(Number.isFinite(height) && height > 0);
+}
+
 export function isTruncating(autoResize, truncation) {
   return autoResize === 'TRUNCATE' || truncation === 'ENDING';
 }

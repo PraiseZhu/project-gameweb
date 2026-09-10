@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { PNG } from 'pngjs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_MAX_HTML_BYTES, externalizeQaTruthIfOverLimit } from '../lib/html-volume.mjs';
 import { detectWebpEncoder, encodeWebpBatch } from '../lib/encode-webp.mjs';
-import { cachedPngReusable, planWebpDelivery, safeRelativeAssetPath } from '../figma-assets.mjs';
+import { applyCollapsedWebpAlias, cachedPngReusable, planWebpDelivery, safeRelativeAssetPath } from '../figma-assets.mjs';
 // Importers: node:test via npm test / test:public. API: cachedPngReusable, planWebpDelivery, safeRelativeAssetPath.
 const PNG1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
@@ -110,4 +111,52 @@ test('encodeWebpBatch writes a real webp when Pillow is available', (t) => {
   assert.equal(r.ok, true, r.why);
   assert.equal(existsSync(webp), true);
   assert.ok(r.results[0].bytes > 0);
+});
+
+function solidPng(w, h, r, g, b) {
+  const img = new PNG({ width: w, height: h });
+  for (let i = 0; i < img.data.length; i += 4) {
+    img.data[i] = r; img.data[i + 1] = g; img.data[i + 2] = b; img.data[i + 3] = 255;
+  }
+  return PNG.sync.write(img);
+}
+
+test('5741 keeps its own PNG when 5740 webpCollapsed; missing dest PNG must not borrow 5740', () => {
+  const dir = tmpDemo();
+  mkdirSync(join(dir, 'assets'));
+  const png5740 = solidPng(2, 2, 10, 20, 30);
+  const png5741 = solidPng(2, 2, 200, 10, 10);
+  writeFileSync(join(dir, 'assets/949-5740.png'), png5740);
+  writeFileSync(join(dir, 'assets/949-5741.png'), png5741);
+  const hash5740 = createHash('sha256').update(png5740).digest('hex');
+  const hash5741 = createHash('sha256').update(png5741).digest('hex');
+  assert.notEqual(hash5740, hash5741);
+
+  const src = {
+    webpCollapsed: true,
+    pngFile: 'assets/949-5740.png',
+    pngSha256: hash5740,
+    webpFile: 'assets/949-5740.webp',
+    sha256: 'collapsed-webp-hash',
+    bytes: 114,
+    webp: { bytes: 114 },
+  };
+  const dest = {
+    pngFile: 'assets/949-5741.png',
+    pngSha256: hash5741,
+    file: 'assets/949-5740.webp',
+    sha256: 'collapsed-webp-hash',
+  };
+  applyCollapsedWebpAlias(src, dest);
+  assert.equal(dest.file, 'assets/949-5741.png');
+  assert.equal(dest.sha256, hash5741);
+  const decoded = PNG.sync.read(readFileSync(join(dir, dest.file)));
+  assert.ok(decoded.width > 0 && decoded.height > 0);
+  assert.equal(decoded.data[0], 200);
+
+  const missing = { file: 'assets/949-5740.webp', sha256: 'collapsed-webp-hash' };
+  applyCollapsedWebpAlias(src, missing);
+  assert.notEqual(missing.file, src.pngFile, '自己的 PNG 缺失时不得静默借 5740');
+  assert.equal(missing.aliasPngMissing, true);
+  assert.notEqual(missing.sha256, hash5740);
 });

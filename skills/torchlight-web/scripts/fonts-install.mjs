@@ -52,6 +52,10 @@ function main() {
       reinstall.push({ family, file: null, source: entry.source || null, license: entry.license || null, note: entry.missing || 'registry.file 为空' });
       continue;
     }
+    if (/\.ttc$/i.test(String(file))) {
+      problems.push(`${family}: fonts/${file} 是 ttc，禁止把系统字拷进 git；Apple SD Gothic Neo 只许 local()`);
+      continue;
+    }
     const abs = join(FONTS_DIR, file);
     if (!existsSync(abs)) {
       problems.push(`${family}: fonts/${file} 不在本地`);

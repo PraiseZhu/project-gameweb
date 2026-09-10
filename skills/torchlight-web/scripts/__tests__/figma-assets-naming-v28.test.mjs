@@ -129,6 +129,87 @@ test('BOOLEAN btn arrows are sliced even when inventory left sliceExport unset',
   assert.match(picks.find((pick) => pick.nodeId === '392:24682').reason, /btn 箭头轮廓/);
 });
 
+test('ready-handoff VECTOR 详细按钮 and 勾选按钮 variant roots slice without sliceExport', () => {
+  const picks = pickSliceNodes({
+    schema: 'yise-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    sections: { 'sec:1': { nodes: [] } },
+    platforms: {
+      pc: {
+        sections: { 'sec:1': { nodes: [] } },
+        modals: [{
+          id: '949:5675',
+          name: 'modal/pc_kr预约弹窗',
+          nodes: [
+            {
+              id: '949:5740',
+              type: 'VECTOR',
+              name: 'btn/详细按钮@go=modal/pc弹窗详细规则2',
+              status: 'determined',
+              role: 'btn',
+              box: { x: 0, y: 0, w: 26.5, h: 26.5 },
+              style: { fills: [{ type: 'SOLID', visible: true }] },
+            },
+            {
+              id: '949:5457',
+              type: 'INSTANCE',
+              name: 'btn/勾选按钮',
+              status: 'determined',
+              role: 'btn',
+              componentId: '949:5746',
+              box: { x: 40, y: 0, w: 46.4, h: 38.7 },
+            },
+          ],
+        }],
+      },
+    },
+    componentVariantGraph: {
+      componentSets: [{
+        componentSetId: '949:5745',
+        name: 'btn/勾选按钮',
+        variants: [
+          {
+            id: '949:5746',
+            componentId: '949:5746',
+            name: 'Property 1=highlight',
+            type: 'COMPONENT',
+            status: 'unknown',
+            ancestorNames: ['btn/勾选按钮'],
+            box: { x: 0, y: 0, w: 46.4, h: 38.7 },
+            nodes: [{
+              id: '949:5747',
+              type: 'BOOLEAN_OPERATION',
+              name: 'Union',
+              status: 'skipped',
+              why: 'art-fragment',
+              box: { x: 0, y: 0, w: 46.4, h: 38.7 },
+              style: { fills: [{ type: 'SOLID', visible: true }] },
+            }],
+          },
+          {
+            id: '949:5750',
+            componentId: '949:5750',
+            name: 'Property 1=normal',
+            type: 'COMPONENT',
+            status: 'unknown',
+            ancestorNames: ['btn/勾选按钮'],
+            box: { x: 0, y: 40, w: 46.4, h: 38.7 },
+            nodes: [],
+          },
+        ],
+      }],
+      components: [],
+      variantTrees: {},
+    },
+  });
+  const ids = picks.map((pick) => pick.nodeId).sort();
+  assert.deepEqual(ids, ['949:5740', '949:5746', '949:5750']);
+  assert.match(picks.find((pick) => pick.nodeId === '949:5740').reason, /btn 箭头轮廓/);
+  assert.match(picks.find((pick) => pick.nodeId === '949:5746').reason, /勾选按钮变体根/);
+  assert.equal(picks.some((pick) => pick.nodeId === '949:5747'), false);
+  assert.equal(picks.some((pick) => pick.nodeId === '949:5457'), false);
+});
+
 test('ind variant roots with sliceExport are sliced from componentVariantGraph', () => {
   const picks = pickSliceNodes({
     sections: { 'sec:1': { nodes: [] } },

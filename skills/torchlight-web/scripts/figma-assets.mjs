@@ -41,7 +41,7 @@
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-// Importers: html-volume.test.mjs (planWebpDelivery), figma-render-asset-lock.test.mjs (installIndicatorFallbacks), figma-html-from-handoff.mjs (CLI). API: cachedPngReusable / safeRelativeAssetPath / planWebpDelivery.
+// Importers: html-volume.test.mjs (planWebpDelivery, applyCollapsedWebpAlias), figma-render-asset-lock.test.mjs (installIndicatorFallbacks), figma-html-from-handoff.mjs (CLI). API: cachedPngReusable / safeRelativeAssetPath / planWebpDelivery / applyCollapsedWebpAlias.
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { encodeWebpBatch } from './lib/encode-webp.mjs';
@@ -58,6 +58,8 @@ import {
 const API = 'https://api.figma.com/v1';
 const SLICE_PREFIXES = new Set(['img', 'bg', 'kv']);
 const BTN_ARROW_NAME = /(?:左|右)(?:划动|滑动)?(?:按钮|箭头)|(?:prev|next)/i;
+const BTN_DETAIL_NAME = /详细按钮/;
+const BTN_CHECK_NAME = /勾选按钮/;
 const BATCH = 40;               // Figma images 接口一次给太多 id 会超时，分批
 const FIGMA_GET_TIMEOUT_MS = 120000;
 
@@ -175,11 +177,24 @@ function withChildNodes(item) {
 }
 
 /** Adapted componentVariantGraph plus captured variantTrees. Dedup happens in pickSliceNodes. */
+function inheritConsentSetName(node, setName) {
+  if (!node || typeof node !== 'object') return node;
+  const ancestorNames = [
+    ...nodesOf(node.ancestorNames).map((name) => String(name)),
+    String(setName || ''),
+  ].filter(Boolean);
+  return ancestorNames.length ? { ...node, ancestorNames } : node;
+}
+
 function collectVariantSliceNodes(graph) {
-  const fromSets = nodesOf(graph?.componentSets).flatMap((set) => [
-    ...nodesOf(set?.nodes),
-    ...nodesOf(set?.variants).flatMap(withChildNodes),
-  ]);
+  const fromSets = nodesOf(graph?.componentSets).flatMap((set) => {
+    const setName = set?.name;
+    return [
+      ...nodesOf(set?.nodes).map((node) => inheritConsentSetName(node, setName)),
+      ...nodesOf(set?.variants).flatMap((variant) =>
+        withChildNodes(inheritConsentSetName(variant, setName))),
+    ];
+  });
   const fromComponents = nodesOf(graph?.components).flatMap(withChildNodes);
   const fromTrees = Object.values(graph?.variantTrees || {}).flatMap((trees) =>
     nodesOf(trees).flatMap(withChildNodes));
@@ -268,13 +283,36 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
          Mask group under kv) still bake into the owner. */
       const bakedIntoWholeFrame = !listedSlice && list.some((owner) =>
         owner && isWholeFrameSliceNode(owner) && nodeAncestors.includes(String(owner.id)));
+      /* BOOLEAN/VECTOR directional btn/ arrows and KR rule-detail vectors are
+         composite contours. CSS chevrons are forbidden. Consent COMPONENT
+         roots (btn/勾选按钮 highlight/normal) bake Union+Vector art that
+         inventory skipped as art-fragment — slice the variant root, never
+         promote those fragments. */
+      const booleanBtnArrow = NONRECT.has(n.type) && derived.role === 'btn'
+        && (BTN_ARROW_NAME.test(String(n.name || '')) || BTN_DETAIL_NAME.test(String(n.name || '')));
+      const consentLabel = [
+        n.name,
+        n.role,
+        ...nodesOf(n.ancestorNames),
+      ].map((value) => String(value || '')).join(' ');
+      const consentVariantRoot = n.type === 'COMPONENT'
+        && BTN_CHECK_NAME.test(consentLabel)
+        && /Property 1=(highlight|normal)/i.test(String(n.name || ''));
+      const dropmenuOptionVariantRoot = n.type === 'COMPONENT'
+        && /(?:dropmenu[\/／]|号码地区选择)/i.test(consentLabel)
+        && /Property 1=(highlight|normal)/i.test(String(n.name || ''));
+      const fragmentLine = (n.type === 'LINE'
+        || (n.type === 'VECTOR' && /^line(?:\s|$)/i.test(String(n.name || ''))))
+        && n.status === 'skipped'
+        && String(n.why || '') === 'art-fragment';
       if (listedOnly) {
         /* Ready handoff: listed sliceExport owners, plus unnamed kv/bg/img
            even when an older pack omitted sliceExport. IMAGE descendants under a
-           whole-frame owner stay inside that PNG. */
-        if (n.status === 'skipped') continue;
+           whole-frame owner stay inside that PNG. Contour btn/ and consent
+           variant roots still slice when inventory left sliceExport unset. */
+        if (n.status === 'skipped' && !fragmentLine) continue;
         if (bakedIntoWholeFrame) continue;
-        if (!listedSlice && !hasImageFill) continue;
+        if (!listedSlice && !hasImageFill && !booleanBtnArrow && !consentVariantRoot && !dropmenuOptionVariantRoot && !fragmentLine) continue;
       }
       if (n.type === 'TEXT' && !pfx) continue;               // unprefixed TEXT is editable copy; visual names can override type
       /* Lead decision (2026-08-10): the page-background owner root (bg/*) is no
@@ -310,12 +348,6 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
        * 非矩形的轮廓 CSS 画不出 —— 实测漏过 2128×290 的 Union（OVERLAY 渐变），
        * 它就是"轮廓比渐变精确性更要紧"的反例。 */
       const bigNonRect = NONRECT.has(n.type) && Math.max(w, h) >= minDim;
-      /* BOOLEAN/VECTOR directional btn/ arrows are composite contours. CSS
-         chevrons/diamonds are forbidden; a missing slice must stay missing,
-         not become a white rectangle. Slice even when the inventory left
-         sliceExport unset — the name+type is the source identity. */
-      const booleanBtnArrow = NONRECT.has(n.type) && derived.role === 'btn'
-        && BTN_ARROW_NAME.test(String(n.name || ''));
       /* 多层填充且含位图（IMAGE）→ 整节点切图。Figma 叠层按各自 blendMode 混合
          （SOLID/NORMAL + IMAGE/SOFT_LIGHT 这类），CSS background-blend-mode 只能给
          一个元素里的多层背景统一一套模式，没法逐层指定 —— 硬画必错。整节点 PNG 把
@@ -330,10 +362,10 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
          alpha 与原始绘制顺序，拆成 CSS 节点会让局部纹理/背景跨出真实可见区。 */
       const hasMaskOwner = Array.isArray(n.maskChildren) && n.maskChildren.length > 0;
       const onlyGradient = fills.length === 1 && String(fills[0].type).startsWith('GRADIENT');
-      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !booleanBtnArrow && !hasMaskOwner) continue;
+      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !booleanBtnArrow && !fragmentLine && !hasMaskOwner) continue;
 
       const unnamedKvOwner = isWholeFrameSliceNode(n) && !listedSlice;
-      if (!(listedSlice || unnamedKvOwner || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
+      if (!(listedSlice || unnamedKvOwner || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || consentVariantRoot || dropmenuOptionVariantRoot || fragmentLine || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
       const effects = ((n.style || {}).effects || []).filter((e) => e && e.visible !== false);
       const descendantEffects = ((n.style || {}).descendantEffects || []).filter((e) => e && e.effectType);
       const allEffectTypes = [
@@ -388,7 +420,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
         .map((f) => String(f.imageRef)))];
       out.push({
         sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
-        reason: n.sliceExport ? '清单 sliceExport' : isWholeFrameSliceNode(n) ? '整框 pageBox' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
+        reason: n.sliceExport ? '清单 sliceExport' : isWholeFrameSliceNode(n) ? '整框 pageBox' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : consentVariantRoot ? 'btn/勾选按钮变体根' : dropmenuOptionVariantRoot ? 'dropmenu option variant root' : fragmentLine ? 'skipped art-fragment LINE' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
         w: outW, h: outH, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
         cropToVisibleBox: !pageBoxExport && exportBounds === 'box' && clippedVisible,
         imageRefs: imageRefs.length ? imageRefs : undefined,
@@ -531,6 +563,30 @@ export function planWebpDelivery(manifest, { assetsDir, demoDir }) {
     });
   }
   return { jobs, aliases };
+}
+
+/** Collapsed WebP aliases must not silently borrow another node's PNG.
+ *  949:5741 has its own PNG; missing dest.pngFile stays missing. */
+export function applyCollapsedWebpAlias(src, dest) {
+  if (!src || !dest || !src.webpFile) return dest;
+  const srcServesPng = !!src.webpCollapsed && !!src.pngFile;
+  if (srcServesPng) {
+    if (dest.pngFile) {
+      dest.file = dest.pngFile;
+      dest.sha256 = dest.pngSha256 || dest.sha256;
+      dest.webpCollapsed = true;
+    } else {
+      dest.aliasPngMissing = true;
+      dest.webpCollapsed = true;
+    }
+  } else {
+    dest.file = src.webpFile;
+    dest.sha256 = src.sha256;
+  }
+  dest.webpFile = src.webpFile;
+  dest.bytes = src.bytes;
+  dest.webp = src.webp;
+  return dest;
 }
 
 const INDICATOR_FALLBACKS = Object.freeze([
@@ -956,11 +1012,12 @@ async function main() {
       const src = recById(alias.duplicateOf);
       const dest = recById(alias.nodeId);
       if (!src || !dest || !src.webpFile) continue;
-      dest.file = src.webpFile;
-      dest.webpFile = src.webpFile;
-      dest.sha256 = src.sha256;
-      dest.bytes = src.bytes;
-      dest.webp = src.webp;
+      /* A collapsed WebP (< 2048 bytes) is a solid plate; the encoder path above
+         already fell back to PNG for its own record. Duplicate ids must make the
+         same choice, otherwise an alias keeps a blank WebP while its source
+         serves the real PNG (btn/详细按钮 949:5741 pointed at the 114-byte
+         949-5740.webp while 949:5740 fell back to 949-5740.png). */
+      applyCollapsedWebpAlias(src, dest);
       dest.duplicateOf = alias.duplicateOf;
     }
     bytes = Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0);

@@ -213,7 +213,13 @@ export function productProbeViewport(platform, pageBox, sections = []) {
   if (!(width > 0) || (platform === 'mobile' && width > 1126) || (platform !== 'mobile' && width <= 1126)) {
     throw new Error(`${platform}: invalid product probe viewport width ${width}`);
   }
-  return { w: Math.round(width), h: Math.max(Math.round(shelf.h), Math.round(sectionBox.h)) };
+  /* Pixel compare is against the Figma section pageBox. Height must be the
+     full page so product=1 skips the 100vh crop (figma-render skips heroSlot
+     when viewportH >= pageContentHeight). First-section-only height
+     (PC 2143 on a 4286 page) still cover-crops and blacks the top. */
+  const height = Math.max(Math.round(shelf.h), Math.round(sectionBox.h));
+  if (!(height > 0)) throw new Error(`${platform}: invalid product probe viewport height ${height}`);
+  return { w: Math.round(width), h: height };
 }
 
 async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, scale }) {
@@ -233,7 +239,7 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
     /* Product view picks PC/mobile from innerWidth (≤1126 mobile). CSS layout
        stays at design pageBox; deviceScaleFactor must equal Figma export scale. */
     const page = await browser.newPage({
-      viewport: { width: viewport.w, height: Math.max(viewport.h, 1080) },
+      viewport: { width: viewport.w, height: viewport.h },
       deviceScaleFactor: dsf,
     });
     await page.goto(`${base}/index.html?product=1`, { waitUntil: 'load', timeout: 120000 });
@@ -301,15 +307,37 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
          descendants that live in later sections' viewport, so later
          screens compared a scrolled overlay against a Figma export that
          only has that section's own fix/顶部信息. */
-      const clip = await el.evaluate((node) => {
-        const r = node.getBoundingClientRect();
-        return {
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-        };
+      await el.evaluate((node) => {
+        const frame = node.closest('.frame') || document.querySelector('.frame');
+        if (!frame) return;
+        const top = node.getBoundingClientRect().top + (Number(frame.scrollTop) || 0);
+        frame.scrollTop = Math.max(0, top);
       });
+      await page.evaluate(() => new Promise((resolveWait) => requestAnimationFrame(() => resolveWait())));
+      const clip = await page.evaluate((id) => {
+        const cssEscape = (value) => (globalThis.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/(["\\])/g, '\\$1'));
+        const node = document.querySelector(`[data-node="${cssEscape(id)}"]`)
+          || document.querySelector(`[data-node-id="section-${cssEscape(id)}"]`);
+        if (!node) return null;
+        const r = node.getBoundingClientRect();
+        const vw = window.innerWidth || 0;
+        const vh = window.innerHeight || 0;
+        const x = Math.max(0, r.x);
+        const y = Math.max(0, r.y);
+        const right = Math.min(vw, r.x + r.width);
+        const bottom = Math.min(vh, r.y + r.height);
+        return {
+          x,
+          y,
+          width: Math.max(0, right - x),
+          height: Math.max(0, bottom - y),
+        };
+      }, secId);
+      if (!clip || !(clip.width > 0) || !(clip.height > 0)) {
+        shots[secId] = { error: `${platform} ${secId}: clipped area empty or outside viewport` };
+        await handle.dispose();
+        continue;
+      }
       const buf = Buffer.from(await page.screenshot({ type: 'png', clip, omitBackground: false }));
       await handle.dispose();
       shots[secId] = { buf, png: readPng(PNG, buf) };

@@ -579,6 +579,44 @@
     if (file && Number.isFinite(bytes) && bytes > 0 && bytes < 2048 && png && png !== file) return png;
     return file || png || null;
   },
+  /* Page instances may uniformly scale a COMPONENT (mobile consent 30×25 vs
+     master 46.42×38.73). Width-only ratio treats a 30×10 strip as the same
+     scale and fitToBox-squishes it. Both axes must agree. */
+  _isUniformInstanceScale(ownerBox, rootBox) {
+    const ownerW = Number(ownerBox && ownerBox.w);
+    const ownerH = Number(ownerBox && ownerBox.h);
+    const rootW = Number(rootBox && rootBox.w);
+    const rootH = Number(rootBox && rootBox.h);
+    const widthRatio = (Number.isFinite(ownerW) && ownerW > 0 && Number.isFinite(rootW) && rootW > 0)
+      ? ownerW / rootW : NaN;
+    const heightRatio = (Number.isFinite(ownerH) && ownerH > 0 && Number.isFinite(rootH) && rootH > 0)
+      ? ownerH / rootH : NaN;
+    if (!Number.isFinite(widthRatio) || !Number.isFinite(heightRatio)) {
+      return { ok: false, widthRatio, heightRatio };
+    }
+    if (widthRatio <= 0.2 || widthRatio >= 5 || heightRatio <= 0.2 || heightRatio >= 5) {
+      return { ok: false, widthRatio, heightRatio };
+    }
+    const rel = Math.abs(widthRatio - heightRatio) / Math.max(widthRatio, heightRatio);
+    if (rel > 0.05) return { ok: false, widthRatio, heightRatio, reason: 'aspect-mismatch' };
+    const nearOne = Math.abs(widthRatio - 1) <= 0.01 && Math.abs(heightRatio - 1) <= 0.01;
+    return { ok: !nearOne, widthRatio, heightRatio };
+  },
+  /* Authored LINE stroke: never invent 1px or #fff. Missing fields stay
+     undetermined instead of Math.max(1, weight) / white fill. */
+  _sourceLineStroke(st) {
+    const weight = Number(st && st.strokeWeight);
+    const hasWeight = Number.isFinite(weight) && weight > 0;
+    const rawColor = st && st.strokeColor;
+    const color = rawColor && typeof rawColor === 'object'
+      ? (rawColor.color && typeof rawColor.color === 'object' ? rawColor.color : rawColor)
+      : null;
+    const hasColor = !!(color && (color.r != null || color.g != null || color.b != null));
+    const undetermined = [];
+    if (!hasWeight) undetermined.push('strokeWeight');
+    if (!hasColor) undetermined.push('strokeColor');
+    return { undetermined, heightPx: hasWeight ? weight : null, color: hasColor ? color : null };
+  },
   _assetRecForNode(n, platform = null) {
     const rec = this._assetRec(n && n.id, platform);
     if (rec) {
@@ -821,7 +859,7 @@
     if (this._geomReady(sliceExportBox)) return sliceExportBox;
     return this._geomReady(ownerBox) ? ownerBox : null;
   },
-  _mountOwnerSliceImg(el, url, ownerBox, exportBox, { alt = '', eager = false, sliceBox = null } = {}) {
+  _mountOwnerSliceImg(el, url, ownerBox, exportBox, { alt = '', eager = false, sliceBox = null, fitToBox = false } = {}) {
     if (!el || !url) return null;
     const img = document.createElement('img');
     img.className = 'fx-img';
@@ -833,6 +871,18 @@
     const placeExportBox = (placed, policy) => {
       const ownerX = Number(box.x ?? 0);
       const ownerY = Number(box.y ?? 0);
+      /* A uniformly scaled page instance wants the master art fitted into its
+         own box (one scale), not natural-size spill: the master PNG is larger
+         than the instance box by exactly the instance ratio. */
+      if (fitToBox) {
+        img.style.left = '0';
+        img.style.top = '0';
+        img.style.width = Number(box.w || 0) + 'px';
+        img.style.height = Number(box.h || 0) + 'px';
+        img.style.objectFit = 'fill';
+        el.setAttribute('data-asset-bounds-resolved', 'instance-uniform-scale-fill');
+        return;
+      }
       let exportX = Number(placed.x ?? ownerX);
       let exportY = Number(placed.y ?? ownerY);
       let exportW = Number(placed.w ?? box.w ?? 0);
@@ -1214,6 +1264,12 @@
     void boundedOwner;
     return { authorized: false, reason: 'preserve-source-metrics' };
   },
+  /* Mirror scripts/lib/figma-typography.mjs#isSourceNoWrapTitle. */
+  _isSourceNoWrapTitle({ autoResize = 'FIXED', sourceSingleLine = false, displayTitle = false } = {}) {
+    const ar = String(autoResize || 'FIXED').toUpperCase();
+    return sourceSingleLine === true && displayTitle === true
+      && (ar === 'WIDTH_AND_HEIGHT' || ar === 'WIDTH');
+  },
 
   /* Measure the actual single-line glyph run rather than the text element's
      fixed box.  A title slot has a fixed width, so scrollWidth only repeats
@@ -1234,6 +1290,7 @@
     probe.style.fontSize = style.fontSize != null ? Number(style.fontSize) + 'px' : ((computed && computed.fontSize) || '');
     probe.style.lineHeight = style.lineHeight != null ? Number(style.lineHeight) + 'px' : ((computed && computed.lineHeight) || '');
     probe.style.fontWeight = style.fontWeight != null ? String(style.fontWeight) : ((computed && computed.fontWeight) || '');
+    probe.style.fontStretch = style.fontStretch != null ? String(style.fontStretch) : ((computed && computed.fontStretch) || '');
     probe.style.fontStyle = (computed && computed.fontStyle) || '';
     probe.style.letterSpacing = style.letterSpacing != null ? String(style.letterSpacing) : ((computed && computed.letterSpacing) || '');
     probe.style.textTransform = (computed && computed.textTransform) || '';
@@ -2264,6 +2321,24 @@
         el.click();
       });
     }());
+    /* NotoSans-SemiCondensed is a latin-only static face (cmap has no Hangul),
+       so Hangul inside such a TEXT must fall to the OS Korean face Figma used.
+       macOS ships it at /System/Library/Fonts/AppleSDGothicNeo.ttc; that system
+       font may NOT be redistributed with this repo, so it is referenced only
+       through local() — nothing is copied into git or assets/fonts. If local()
+       ever fails to resolve, the next entry in the stack still paints. */
+    {
+      const doc = frame && (frame.ownerDocument || (typeof document !== 'undefined' ? document : null));
+      if (doc && doc.head && !doc.querySelector('style[data-fx-local-fallback-fonts]')) {
+        const localFallback = doc.createElement('style');
+        localFallback.setAttribute('data-fx-local-fallback-fonts', 'figma-local-fallback/v1');
+        localFallback.textContent = '@font-face{'
+          + 'font-family:"FX Apple SD Gothic Neo";'
+          + 'src:local("Apple SD Gothic Neo Regular"),local("AppleSDGothicNeo-Regular"),local("Apple SD Gothic Neo");'
+          + 'font-weight:100 900;font-style:normal;font-display:block}';
+        doc.head.appendChild(localFallback);
+      }
+    }
     frame.setAttribute('data-render-plat', __plat);
     frame.setAttribute('data-render-base', __base);
     if (motionAdapter && motionAdapter.roleResolution?.platformEvidence) {
@@ -2449,11 +2524,18 @@
       }
       const slotH = viewportH * (fillVh / 100);
       /* Cover 窗宽永远是真实 viewport，不得把背景冻成 1920。UI k 走 _frameWidth。
-         Cover scale is max(width-k, viewportH / sourceH). Layout extra still
-         uses width-k so the first-screen stage opens to 100vh CSS and later
-         sections abut it. Do not pass cover scale into _buildHeroScrollSlot:
-         that zeroed extra and clipped kv back to width-k (390×844 → 693px). */
-      const coverScale = Math.max(k, slotH / Number(first.height));
+         Cover scale is max(viewportW / designW, viewportH / sourceH).
+         Layout extra still uses width-k so the first-screen stage opens to
+         100vh CSS and later sections abut it. Do not pass cover scale into
+         _buildHeroScrollSlot: that zeroed extra and clipped kv back to
+         width-k (390×844 → 693px). */
+      const coverW = Number(this._viewportWidth);
+      const coverScale = Math.max(
+        (Number.isFinite(coverW) && coverW > 0 && Number(designWidth) > 0)
+          ? coverW / Number(designWidth)
+          : k,
+        slotH / Number(first.height),
+      );
       if (Number.isFinite(coverScale) && coverScale > 0) {
         heroVisualScale = coverScale;
         /* Single cover: CSS scale + transform-origin. A second cropLeft
@@ -2914,12 +2996,12 @@
           if (onOff.length === 1) return onOff[0][1];
         }
         /* Page instances may omit componentProperties. Property 1=on/off still
-           lives on the selected COMPONENT (949:5516 / 949:5526). */
+           lives on the selected COMPONENT (949:5516 / 949:5526). Resting paint
+           follows that source token; do not force on→off in the renderer. */
         const selectedId = String(__u(n && n.componentId) || '');
         const selected = variants.find((variant) => String(__u(variant && variant.componentId)) === selectedId);
         const fromName = onOffToken(dropmenuVariantToken(__u(selected && selected.name), axis));
-        if (fromName) return fromName;
-        return 'invalid';
+        return fromName || 'invalid';
       };
       const dropmenuOnOffTokens = (variants, nameOf) => Boolean(dropmenuAxisName(variants, nameOf));
       const dropmenuVariantToken = (name, axis) => {
@@ -4316,7 +4398,9 @@
            every other baked-subtree paint node is skipped to avoid double-draw. */
         const __inBakedSubtree = !!(bakedOwnerId) && !assetRec && !paintAsFragment && !ownImageFillPunchesBake;
         if (__inBakedSubtree && !bakedOwnerReleased && !hasStructuralInteraction && !liveCloseBtn && !underHscrollSurface && !__blendLiftable) continue;
-        const assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
+        /* let: a degenerate authored LINE (0-height export) draws the source
+           stroke instead of mounting its unusable 1px slice. */
+        let assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
           : (__indComponentFallback && __indComponentFallback.file);
         const NONRECT_SHAPE = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1 };
@@ -4761,11 +4845,11 @@
         const isKv = /^kv(?:\/|$)/i.test(layerName);
         const firstScreenKvInSection = isHeroStage && isKv
           && (!parent || String(__u(parent && parent.nid)) === String(__u(sid)));
-        /* Product 100vh cover-crop still applies when inventory-static-gate=1
-           nulls heroSlot (design-viewport coords). Unnamed `kv` under sec/1
-           is first-screen art either way; later bg/* stays on width-k. */
-        const coverHeroSlot = heroSlot || (isKv && ids[0] && String(sid) === String(ids[0])
-          ? { sectionId: ids[0] } : null);
+        /* Cover-crop is a product-view 100vh crop. inventory-static-gate=1
+           nulls heroSlot so design-viewport coords stay on pageBox (y=0).
+           Do not invent a fake slot: that recenters unnamed kv at
+           (pageH − kvH) / 2 (4286−2143)/2 = 1071.5 and fails pageBox. */
+        const coverHeroSlot = heroSlot;
         const coverHeroVisualScale = Number(heroVisualScale) > 0 ? Number(heroVisualScale)
           : (Number(k) > 0 ? Number(k) : 1);
         const coverPageStageScale = Number(pageStageScale) > 0 ? Number(pageStageScale) : 1;
@@ -4800,16 +4884,16 @@
             const viewportHDesign = coverPageStageScale > 0 && Number(ctx.viewport && ctx.viewport.h) > 0
               ? Number(ctx.viewport.h) / coverPageStageScale
               : (heroCropWindowDesign > 0 ? heroCropWindowDesign : sourceH);
-            const coverLeftDesign = (viewportWDesign - sourceW) / 2 - columnLeftDesign;
+            const coverLeftDesign = (viewportWDesign - sourceW * planeRatio) / 2 - columnLeftDesign;
             const coverTopDesign = origin === 'center 0'
               ? 0
-              : (viewportHDesign - sourceH) / 2;
+              : (viewportHDesign - sourceH * planeRatio) / 2;
             if (Math.abs(planeRatio - 1) > 0.001
               || Math.abs(coverLeftDesign) > 0.5
               || Math.abs(coverTopDesign) > 0.5) {
               el.style.left = coverLeftDesign + 'px';
               el.style.top = coverTopDesign + 'px';
-              el.style.transformOrigin = origin === 'center 0' ? '50% 0' : '50% 50%';
+              el.style.transformOrigin = '0 0';
               if (Math.abs(planeRatio - 1) > 0.001) {
                 el.style.transform = 'scale(' + planeRatio + ')';
               }
@@ -5282,11 +5366,38 @@
             el.style.textTransform = 'uppercase';
             el.setAttribute('data-primary-cta-uppercase', 'en');
           }
-          const effectiveFamily = fontRoute.family || tx.fontFamily;
+          const sourceSemiCondensed = String(tx.fontStyle || '').toLowerCase().includes('semicondensed')
+            && String(tx.fontPostScriptName || '').toLowerCase().includes('semicondensed');
+          const effectiveFamily = sourceSemiCondensed ? 'Noto Sans SemiCondensed' : (fontRoute.family || tx.fontFamily);
           if (fontRoute.routed) {
             el.setAttribute('data-font-routed', fontRoute.language + '/' + fontRoute.role + ':' + effectiveFamily);
           }
-          if (effectiveFamily) el.style.fontFamily = '"' + effectiveFamily + '", "PingFang SC", "Microsoft YaHei", sans-serif';
+          /* Coverage fallback behind the source family. A registered latin / CJK
+             subset cannot draw every script (the latin Noto Sans subset has no
+             CJK; NotoSans-SemiCondensed has no Hangul), so without a declared
+             fallback the browser silently drops to whatever the OS picks
+             (PingFang SC / Apple SD Gothic Neo) instead of a family this policy
+             knows about. The source family stays first, so unadopted copy keeps
+             its Figma look; no font-stretch / letter-spacing / wrap lock is
+             added, and zh-CN (authoring language) is left untouched. */
+          const localeRouteLang = String(fontRoute.language || '').replace('_', '-');
+          const localeTable = designPolicy().localeFontFamily;
+          const localeBody = localeRouteLang && localeRouteLang !== 'zh-CN'
+            && localeTable && localeTable[localeRouteLang]
+            && localeTable[localeRouteLang].body;
+          if (effectiveFamily) {
+            /* SemiCondensed source text: Hangul coverage = the same OS Korean
+               face Figma fell back to (not localeFontFamily.ko.body, which is
+               a different design). Other scripts keep the policy family. */
+            const coverage = sourceSemiCondensed ? 'FX Apple SD Gothic Neo' : localeBody;
+            const fallback = coverage && coverage !== effectiveFamily
+              ? '", "' + coverage + '", "PingFang SC", "Microsoft YaHei", sans-serif'
+              : '", "PingFang SC", "Microsoft YaHei", sans-serif';
+            el.style.fontFamily = '"' + effectiveFamily + fallback;
+            if (coverage && coverage !== effectiveFamily) {
+              el.setAttribute('data-font-locale-fallback', coverage);
+            }
+          }
           if (fontRoute.routed && fontRoute.weight != null) el.style.fontWeight = String(fontRoute.weight);
           /* Founder YouHei is a 3-axis variable. Named Regular is wdth=3 (wide);
              CSS default width lands on the condensed end, so copy looks thinner
@@ -5297,8 +5408,17 @@
               postScriptName: tx.fontPostScriptName,
               fontStyle: tx.fontStyle,
             });
+            el.style.fontSynthesis = 'none';
             el.setAttribute('data-font-variation', el.style.fontVariationSettings);
           }
+          /* Figma's Noto Sans SemiCondensed is a real width face. Preserve the
+             authored width style for browsers whose variable face exposes wdth;
+             this is font evidence, not a layout transform. */
+          const _fontStyleName = String(tx.fontStyle || '').toLowerCase();
+          /* Noto Sans SemiCondensed is delivered as a static SC instance;
+             applying CSS stretch would compress it twice. */
+          if (_fontStyleName.includes('condensed') && !_fontStyleName.includes('semicondensed')) el.style.fontStretch = '75%';
+          else if (_fontStyleName.includes('expanded')) el.style.fontStretch = '125%';
           el.setAttribute('data-text-container', constraint.mode);
           el.setAttribute('data-text-container-evidence', constraint.evidence);
           if (constraint.openFlow && constraint.sectionWidth != null) el.setAttribute('data-text-section-width', String(constraint.sectionWidth));
@@ -5344,7 +5464,15 @@
             && String(tx.lineTypes[0] || '').toUpperCase() === 'NONE'
             && !String(tx.characters || '').includes('\n');
           const displayTitle = this._fontRoleFor({ sourceFamily: tx.fontFamily, role: semantic.role, semanticClass: semantic.className }) === 'title';
-          const sourceNoWrapTitle = sourceSingleLine && displayTitle;
+          /* WIDTH / WIDTH_AND_HEIGHT hug titles stay one line. HEIGHT is a
+             fixed-width wrap box: Figma's Chinese may fit on one line, but
+             DESIGN.md 6.1 only caps written maxWidth — English must wrap
+             instead of shrinking the point size. Mirror isSourceNoWrapTitle. */
+          const sourceNoWrapTitle = this._isSourceNoWrapTitle({
+            autoResize: ar,
+            sourceSingleLine,
+            displayTitle,
+          });
           el.style.whiteSpace = (inlineHugs || sourceNoWrapTitle) ? 'pre' : 'pre-wrap';
           if (sourceNoWrapTitle) el.setAttribute('data-text-layout-policy', 'source-single-line-display-title');
           if (!constraint.openFlow && !inlineHugs) {
@@ -5709,7 +5837,15 @@
           } else if (!localeAbsent && fallback != null && fallback !== '') {
             if (_hasRich) this._renderRichText(el, String(fallback), _richOverrides, _richTable, tx);
             else el.textContent = fallback;
-            el.setAttribute('data-copy-missing', ctx.prefs.lang);
+            /* Bound-but-missing locale vs never-bound Figma characters:
+               later-axes only fails the former. Carnival vs SS14 is none. */
+            const boundKind = hit && hit.matchKind ? String(hit.matchKind) : '';
+            const unbound = !hit || !boundKind
+              || boundKind === 'none'
+              || boundKind === 'fuzzy'
+              || boundKind === 'ambiguous'
+              || boundKind === 'deliberately-unbound';
+            el.setAttribute(unbound ? 'data-copy-unbound' : 'data-copy-missing', ctx.prefs.lang);
           } else {
             el.textContent = '';
             el.setAttribute('data-text-empty', '1');
@@ -5836,7 +5972,12 @@
           /* DESIGN.md 6.1 B/C and semantic line-break: no written Auto Layout
              max → do not enqueue. semanticBreak keeps authored size; it must
              not join fitCandidates or a sibling minPx would crush it. */
-          if (!_zhSourceExact && !inlineHugs && !constraint.openFlow && hasAlCaps && !semanticBreak) {
+          /* A missing locale binding is source copy, not an adopted translation.
+             Keep its Figma font metrics even when relinkSkippedMaxOwners supplied
+             a broad Auto Layout max; fitting browser glyphs here shrinks modal
+             source bodies (e.g. KR rule dialog 2) below the authored size. */
+          const _copyUnbound = val == null || val === '';
+          if (!_zhSourceExact && !_copyUnbound && !inlineHugs && !constraint.openFlow && hasAlCaps && !semanticBreak) {
             el.setAttribute('data-fit-group', _fitGroupKey);
             if (_localizedSourceTitle && hasAlCaps) {
               el.setAttribute('data-fit-inline-policy', 'source-title-group-glyph-safe-width');
@@ -5894,7 +6035,7 @@
           const _fillsOwner = _ownerW != null && _ownerH != null && _srcW > 0 && _srcH > 0
             && _srcH >= _ownerH * 0.6 && _srcW >= _ownerW * 0.55;
           const boundedHugLabel = inlineHugs && !constraint.openFlow && _centered && _fillsOwner && hasAlCaps;
-          if (boundedHugLabel) {
+          if (boundedHugLabel && !_copyUnbound && !_zhSourceExact) {
             el.setAttribute('data-fit-policy', 'bounded-hug-label');
             if (alOwner.ownerId) el.setAttribute('data-fit-owner', String(alOwner.ownerId));
             if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
@@ -5932,6 +6073,39 @@
              asset decision is owned by assets-manifest. Do not re-create the
              extractor's img/bg/kv or gradient slicing heuristic here. */
           const requiresAsset = hasImageFill;
+          /* Authored LINE separators may have a near-zero geometric height;
+             preserve their source stroke as a 1px CSS rule when Figma cannot
+             export a zero-height PNG. This is a source stroke, not an invented
+             arrow/check shape. */
+          const isSourceLine = (n.type === 'LINE' || (n.type === 'VECTOR' && /^line(?:\s|$)/i.test(String(n.name || ''))))
+            && Number(st.strokeWeight) > 0;
+          /* A near-zero-height authored separator cannot be exported honestly:
+             Figma bakes a 0-height vector into a 1px PNG whose alpha is the
+             coverage of the stroke, so mounting that PNG under-draws the rule.
+             The source itself carries the truth (strokeColor + strokeWeight +
+             strokeAlign), so draw the authored stroke and do not mount the
+             degenerate export. Source geometry only — no invented opacity. */
+          const degenerateSourceLine = isSourceLine
+            && (Number(box.h) < 0.5 || Number(assetRec?.exportBox?.h) < 0.5);
+          if (degenerateSourceLine || (isSourceLine && !assetUrl)) {
+            const lineStroke = this._sourceLineStroke(st);
+            if (lineStroke.undetermined.length) {
+              el.setAttribute('data-source-line-undetermined', lineStroke.undetermined.join(','));
+            }
+            if (lineStroke.heightPx != null) {
+              el.style.height = lineStroke.heightPx + 'px';
+              el.setAttribute('data-source-line-stroke', String(st.strokeWeight));
+            }
+            if (lineStroke.color) {
+              el.style.background = this._rgba(lineStroke.color);
+            }
+            if (degenerateSourceLine) {
+              el.setAttribute('data-source-line-from', 'authored-stroke');
+              /* Do not also mount the degenerate slice: it would double-draw the
+                 same rule at a different sub-pixel phase. */
+              assetUrl = null;
+            }
+          }
           /* 非矩形节点没切到图 → 只能按外接矩形画填充（轮廓 CSS 画不出）。
              ≥24px 的已被 figma-assets 切走（第 13 项）；剩下 <24px 的（6×6 色点等）
              矩形近似肉眼无差 —— 但近似不许静默：打 data-shape-approx 留痕，
@@ -5943,9 +6117,14 @@
              略上扬。clip-path 在元素本地坐标，不能再叠 CSS rotate，否则 ▶ 拧成 ▲。
              圆角/外发光吃 style.radius 与 DROP_SHADOW，禁止直角尖刀。 */
           const _pc = Number(n.pointCount ?? n.pointcount ?? 3);
-           if (n.type === 'REGULAR_POLYGON' && !assetUrl && (!Number.isFinite(_pc) || _pc === 3)) {
-             /* Equilateral ▶ with the tip at 86% (not a right-triangle knife). */
-             el.style.clipPath = 'polygon(86% 50%, 18% 12%, 18% 88%)';
+          if (n.type === 'REGULAR_POLYGON' && !assetUrl && (!Number.isFinite(_pc) || _pc === 3)) {
+             /* Polygon 37 is the authored dropmenu indicator. Its source
+                geometry points upward in the on variant (open menu); do not
+                replace it with a right-facing chevron. */
+             const dropmenuState = el.closest && el.closest('[data-dropmenu-state]')?.getAttribute('data-dropmenu-state');
+             el.style.clipPath = dropmenuState === 'off'
+               ? 'polygon(50% 86%, 12% 18%, 88% 18%)'
+               : 'polygon(50% 14%, 12% 82%, 88% 82%)';
              const radius = Number(st.radius);
              if (Number.isFinite(radius) && radius > 0) {
                el.style.borderRadius = radius + 'px';
@@ -6626,11 +6805,29 @@
           const rootFills = Array.isArray(rootStyle.fills) ? rootStyle.fills : [];
           const visFills = rootFills.filter((fill) => fill && fill.visible !== false);
           const firstFill = visFills[0];
-          const fillCss = firstFill && String(firstFill.type || '').startsWith('GRADIENT')
+          let fillCss = firstFill && String(firstFill.type || '').startsWith('GRADIENT')
             ? this._cssGradient(firstFill)
             : (this._solidFill(visFills) || null);
+          const variantSlice = this._assetRec(wantedId, __base) || this._assetRecForNode(root, __base);
+          const variantSliceFile = variantSlice && this._usableAssetFile(variantSlice);
+          /* A page instance may uniformly scale the COMPONENT (mobile consent
+             checkbox 949:6494 is 30×25 against a 46.42×38.73 master, ratio
+             ≈0.646). Uniform scale is still the same variant art, just placed
+             at the instance's own box — mirror the dropmenu handling instead of
+             blocking the mount (that block is why mobile tw/kr 勾选按钮 lost its
+             slice entirely). */
+          const btnScale = this._isUniformInstanceScale(
+            { w: ownerWidth, h: ownerHeight },
+            rootBox,
+          );
+          const btnScaleRatio = btnScale.widthRatio;
+          const btnUniformScale = btnScale.ok === true;
           if (!root || !Number.isFinite(Number(rootBox.w)) || !Number.isFinite(Number(rootBox.h))
-            || !Number.isFinite(ownerWidth) || Math.abs(Number(rootBox.w) - ownerWidth) > 0.5) {
+            || !Number.isFinite(ownerWidth)
+            || (!btnUniformScale && (
+              Math.abs(Number(rootBox.w) - ownerWidth) > 0.5
+              || (Number.isFinite(ownerHeight) && Math.abs(Number(rootBox.h) - ownerHeight) > 0.5)
+            ))) {
             mountBlocked = true;
             owner.el.setAttribute('data-btn-variant-mount-status', 'blocked-owner-extent-mismatch');
             owner.el.setAttribute('data-btn-variant-mount-detail', JSON.stringify({
@@ -6638,14 +6835,32 @@
             }));
             break;
           }
+          if (btnUniformScale) owner.el.setAttribute('data-btn-variant-scale', String(btnScaleRatio));
           if (index === owner.initialIndex) {
             owner.el.setAttribute('data-btn-variant-index', String(index));
             owner.el.setAttribute('data-btn-variant-state', state);
+            if (variantSliceFile) {
+              const mountBox = {
+                x: 0,
+                y: 0,
+                w: ownerWidth,
+                h: Number.isFinite(ownerHeight) && ownerHeight > 0 ? ownerHeight : Number(rootBox.h),
+              };
+              this._mountOwnerSliceImg(owner.el, variantSliceFile, mountBox, mountBox, {
+                alt: String((root && root.name) || owner.el.getAttribute('data-name') || ''),
+                eager: true,
+                /* Uniformly scaled instance: fit the master art into the
+                   instance's own box instead of natural-size spill. */
+                fitToBox: btnUniformScale,
+              });
+              owner.el.setAttribute('data-owner-asset-policy', 'slice');
+              owner.el.setAttribute('data-btn-variant-slice', wantedId);
+            }
             for (const sibling of baseExternals) {
               sibling.setAttribute('data-btn-variant-index', String(index));
               hideInPlace(sibling, false);
             }
-            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true, fillCss });
+            layers.push({ index, state, el: owner.el, externals: baseExternals, isBase: true, fillCss, sliceFile: variantSliceFile });
             continue;
           }
           const layer = document.createElement('div');
@@ -6661,14 +6876,33 @@
           layer.style.overflow = 'hidden';
           layer.hidden = true;
           owner.el.appendChild(layer);
-          paint(treeNodes, treeNodes, layer, {
-            originX: Number(rootBox.x) || 0,
-            originY: Number(rootBox.y) || 0,
-            skipNodeIds: new Set([String(__u(root.id))]),
-            suppressInteractions: true,
-          });
+          if (variantSliceFile) {
+            const mountBox = {
+              x: 0,
+              y: 0,
+              w: ownerWidth,
+              h: Number.isFinite(ownerHeight) && ownerHeight > 0 ? ownerHeight : Number(rootBox.h),
+            };
+            const layerImg = this._mountOwnerSliceImg(layer, variantSliceFile, mountBox, mountBox, {
+              alt: String((root && root.name) || ''),
+              eager: true,
+            });
+            /* The alternate state is inactive at mount (the base layer above
+               already carries the selected variant art), so hide its slice
+               image explicitly. A display:none parent alone still left the
+               child <img> as display:block in the DOM. */
+            if (layerImg) hideInPlace(layerImg, true);
+            layer.setAttribute('data-btn-variant-slice', wantedId);
+          } else {
+            paint(treeNodes, treeNodes, layer, {
+              originX: Number(rootBox.x) || 0,
+              originY: Number(rootBox.y) || 0,
+              skipNodeIds: new Set([String(__u(root.id))]),
+              suppressInteractions: true,
+            });
+          }
           hideInPlace(layer, true);
-          layers.push({ index, state, el: layer, externals: [], isBase: false, fillCss });
+          layers.push({ index, state, el: layer, externals: [], isBase: false, fillCss, sliceFile: variantSliceFile });
         }
         if (!mountBlocked && layers.length === trees.length) {
           if (!owner.el.style.overflow || owner.el.style.overflow === 'visible') owner.el.style.overflow = 'hidden';
@@ -6735,7 +6969,9 @@
             ? ownerWidth / rootW
             : NaN;
           /* Page instances may uniformly scale the COMPONENT (mobile 预约弹窗
-             切换地区 is 95 vs master 151). Uniform scale is still on/off. */
+             切换地区 is 95 vs master 151). The on-panel is authored taller than
+             the closed field, so scale is the width ratio; do not demand the
+             host height match the open root (that is the checkbox fitToBox lock). */
           const uniformScale = Number.isFinite(widthRatio) && widthRatio > 0.2 && widthRatio < 5
             && Math.abs(widthRatio - 1) > 0.01;
           if (state === 'invalid' || !root || !Number.isFinite(rootW) || !Number.isFinite(Number(rootBox.h))
@@ -6749,10 +6985,52 @@
           if (uniformScale) owner.el.setAttribute('data-dropmenu-scale', String(widthRatio));
           const instanceScale = Number.isFinite(widthRatio) && widthRatio > 0 ? widthRatio : 1;
           const paintedH = Number(rootBox.h) * instanceScale;
+          /* Resting field is the off-state visible header, not the skipped
+             parent Frame (949:5459 h=123) and not the on-root 294.545.
+             Open host consumes the on-variant root height so the panel is
+             not clipped; closed host shrinks back so it does not overlay
+             the consent row. */
+          if (!Number.isFinite(owner.el.__fxDropmenuFieldH) || owner.el.__fxDropmenuFieldH <= 0) {
+            const offTree = trees.find((candidate, i) => {
+              const offToken = dropmenuVariantToken(__u(variants[i] && variants[i].name), axis);
+              return offToken === 'off';
+            }) || null;
+            const offNodes = (offTree && offTree.nodes) || [];
+            const offRootId = String(__u(offTree && offTree.componentId) || '');
+            let minY = Infinity;
+            let maxY = -Infinity;
+            for (const node of offNodes) {
+              if (!node || String(__u(node.id)) === offRootId) continue;
+              if (node.status === 'skipped' && String(node.why || '') === 'invisible') continue;
+              if (node.visible === false) continue;
+              const box = __plain(node.box || {});
+              const h = Number(box.h);
+              if (!Number.isFinite(h) || h <= 0) continue;
+              const y = Number(box.y) || 0;
+              minY = Math.min(minY, y);
+              maxY = Math.max(maxY, y + h);
+            }
+            const visibleH = (Number.isFinite(minY) && Number.isFinite(maxY) && maxY > minY)
+              ? (maxY - minY) * instanceScale
+              : NaN;
+            const fieldH = Number.isFinite(visibleH) && visibleH > 0
+              ? visibleH
+              : (Number.isFinite(ownerHeight) && ownerHeight > 0 ? ownerHeight : paintedH);
+            owner.el.__fxDropmenuFieldH = fieldH;
+            owner.el.__fxDropmenuOwnerH = fieldH;
+          }
           if (index === owner.initialIndex) {
             owner.el.setAttribute('data-dropmenu-index', String(index));
             owner.el.setAttribute('data-dropmenu-state', state);
-            owner.el.__fxDropmenuOwnerH = ownerHeight;
+            const fieldH = Number(owner.el.__fxDropmenuFieldH);
+            const initialH = state === 'on' ? paintedH : fieldH;
+            if (Number.isFinite(initialH) && initialH > 0) {
+              owner.el.style.height = initialH + 'px';
+              owner.el.setAttribute('data-dropmenu-host-height', state === 'on' ? 'open-variant-root' : 'closed-field');
+            } else {
+              owner.el.style.height = paintedH + 'px';
+              owner.el.setAttribute('data-dropmenu-host-height', 'variant-root');
+            }
             for (const sibling of baseExternals) {
               sibling.setAttribute('data-dropmenu-index', String(index));
               hideInPlace(sibling, false);
@@ -6768,7 +7046,12 @@
           layer.style.position = 'absolute';
           layer.style.left = '0';
           layer.style.top = '0';
-          layer.style.width = '100%';
+          /* Under a uniform page-instance scale the clone is authored at the
+             COMPONENT root size and then scaled down; using 100% (= the already
+             scaled host box) shrank it twice and clipped the panel's right
+             half (mobile 949:6505 展开被裁). Use the root box so the single
+             scale() maps master -> page instance exactly once. */
+          layer.style.width = (uniformScale ? Number(rootBox.w) : '100%') + (uniformScale ? 'px' : '');
           layer.style.height = (uniformScale ? Number(rootBox.h) : paintedH) + 'px';
           layer.style.overflow = 'hidden';
           if (uniformScale) {
@@ -6786,8 +7069,34 @@
             skipNodeIds: new Set(),
             /* Language menus need live option labels. Region / other menus keep
                inner @go / @link on the selected tree, not on the on-layer clone. */
-            suppressInteractions: /多语言|语言|language/i.test(menuName) ? false : true,
+            suppressInteractions: false,
           });
+          /* Dropmenu option instances are painted only after the initial
+             independent-button pass. Mount their selected COMPONENT slice now,
+             so highlight/normal roots (e.g. 949:5537/5540) are visible in the
+             on clone instead of remaining transparent. */
+          for (const option of [...layer.querySelectorAll('[data-btn-variant="true"]')]) {
+            if (option.getAttribute('data-btn-variant-slice')) continue;
+            const source = truthNodeById.get(String(option.getAttribute('data-node') || ''));
+            const cid = String(__u(source && source.componentId) || option.getAttribute('data-btn-variant-component') || '');
+            const rec = cid ? this._assetRec(cid, __base) : null;
+            const file = rec && this._usableAssetFile(rec);
+            if (!file) continue;
+            const optionBox = option.getBoundingClientRect();
+            const mountBox = {
+              x: 0,
+              y: 0,
+              w: Number(source && source.box && source.box.w) || optionBox.width || 0,
+              h: Number(source && source.box && source.box.h) || optionBox.height || 0,
+            };
+            if (!(mountBox.w > 0 && mountBox.h > 0)) continue;
+            this._mountOwnerSliceImg(option, file, mountBox, mountBox, {
+              alt: String((source && source.name) || ''),
+              eager: true,
+            });
+            option.setAttribute('data-btn-variant-slice', cid);
+            option.setAttribute('data-owner-asset-policy', 'slice');
+          }
           hideInPlace(layer, true);
           layers.push({ index, state, el: layer, externals: [], isBase: false, rootH: paintedH });
         }
@@ -7478,12 +7787,19 @@
           if (!next) return false;
           for (const layer of layers) {
             const active = layer === next;
-            hideBtnLayer(layer.el, layer.isBase ? false : !active);
             if (layer.isBase) {
-              for (const child of [...layer.el.children]) {
-                if (child.getAttribute && child.getAttribute('data-btn-variant-layer') === 'true') continue;
-                hideBtnLayer(child, !active);
-              }
+              /* The base layer is the page instance itself, so its own label
+                 TEXT must stay untouched; only the mounted variant-root slice
+                 (e.g. 949:5537 / 949:5540) belongs to the highlight/normal
+                 swap. Hiding every child wholesale also hid the host slice
+                 only through the layer it sat in on some mounts. */
+              hideBtnLayer(layer.el, false);
+              const hostImg = layer.el.querySelector(':scope > img.fx-img, :scope > img[data-asset-src]');
+              if (hostImg) hideBtnLayer(hostImg, !active);
+            } else {
+              hideBtnLayer(layer.el, !active);
+              const layerImg = layer.el.querySelector('img.fx-img, img[data-asset-src]');
+              if (layerImg) hideBtnLayer(layerImg, !active);
             }
             for (const sibling of layer.externals || []) hideBtnLayer(sibling, !active);
           }
@@ -7634,8 +7950,12 @@
           }
           owner.setAttribute('data-dropmenu-state', next.state);
           owner.setAttribute('data-dropmenu-index', String(next.index));
-          const nextH = Number(next.rootH);
-          if (Number.isFinite(nextH) && nextH > 0) owner.style.height = nextH + 'px';
+          const fieldH = Number(owner.__fxDropmenuFieldH);
+          const nextH = next.state === 'on' ? Number(next.rootH) : fieldH;
+          if (Number.isFinite(nextH) && nextH > 0) {
+            owner.style.height = nextH + 'px';
+            owner.setAttribute('data-dropmenu-host-height', next.state === 'on' ? 'open-variant-root' : 'closed-field');
+          }
           /* Open panel must sit above later sticky siblings (mobile 首充双倍).
              Restore the captured z-index when the menu closes. */
           if (next.state === 'on') {
@@ -7645,10 +7965,12 @@
             owner.style.zIndex = owner.__fxDropmenuPrevZ;
           }
           /* Hidden on-state trees keep data-asset-src without src. Prime them
-             when the menu opens so panel art is not left as broken-image alt. */
+             when the menu opens so panel art is not left as broken-image alt.
+             Resting Property 1=on paints options on the host, so always prime
+             the owner — not only the off-state clone. */
           if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
-            const target = next.isBase ? owner : next.el;
-            frame.__fxAssetScheduler.prime(target);
+            frame.__fxAssetScheduler.prime(owner);
+            if (!next.isBase) frame.__fxAssetScheduler.prime(next.el);
           }
           return true;
         };
@@ -7925,8 +8247,9 @@
         frame.addEventListener('click', (ev) => {
           const innerBtn = ev.target && ev.target.closest ? ev.target.closest('[data-prefix="btn"], [data-btn-name]') : null;
           const dropmenuOwner = ev.target && ev.target.closest ? ev.target.closest('[data-dropmenu="true"]') : null;
-          if (innerBtn && dropmenuOwner && dropmenuOwner.contains(innerBtn)
-            && dropmenuOwner.getAttribute('data-dropmenu-state') === 'on') {
+          const clickedOpenOption = Boolean(innerBtn && dropmenuOwner && dropmenuOwner.contains(innerBtn)
+            && dropmenuOwner.getAttribute('data-dropmenu-state') === 'on');
+          if (clickedOpenOption) {
             if (isLanguageDropmenu(dropmenuOwner)) {
               const visible = String((innerBtn.textContent || '')).replace(/\s+/g, ' ').trim();
               const named = String(innerBtn.getAttribute('data-btn-name') || innerBtn.getAttribute('data-name') || '').trim();
@@ -7941,8 +8264,7 @@
             /* Region / other dropmenus keep @go / @link on the inner btn. */
           }
           if (dropmenuOwner && dropmenuOwner.getAttribute('data-dropmenu-mount-status') === 'owner-local-mutually-exclusive'
-            && !(innerBtn && dropmenuOwner.contains(innerBtn) && dropmenuOwner.getAttribute('data-dropmenu-state') === 'on'
-              && !isLanguageDropmenu(dropmenuOwner))) {
+            && !clickedOpenOption) {
             toggleDropmenu(dropmenuOwner);
             ev.preventDefault();
             ev.stopPropagation();
@@ -7951,6 +8273,15 @@
           const btnVariantEarly = ev.target && ev.target.closest ? ev.target.closest('[data-btn-variant="true"]') : null;
           if (btnVariantEarly && btnVariantEarly.getAttribute('data-btn-variant-mount-status') === 'owner-local-mutually-exclusive'
             && btnVariantEarly.getAttribute('data-nav-item') !== 'true') {
+            // Consent checkboxes are independent toggles; navigation/option rows
+            // keep their existing mutually-exclusive highlight selection.
+            if (btnVariantEarly.getAttribute('data-btn-name') === '勾选按钮') {
+              const current = btnVariantEarly.getAttribute('data-btn-variant-state');
+              applyIndependentButtonVariant(btnVariantEarly, current === 'highlight' ? 'normal' : 'highlight');
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
+            }
             const group = btnVariantEarly.getAttribute('data-btn-variant-group');
             const siblings = group
               ? [...frame.querySelectorAll(`[data-btn-variant="true"][data-btn-variant-group="${group}"]`)]
@@ -8248,15 +8579,15 @@
           }
           const goHit = ev.target && ev.target.closest ? ev.target.closest('[data-go]') : null;
           if (goHit) {
-            const insideModal = namedModals.find((entry) => entry.layer.contains(goHit));
-            if (!insideModal) {
-              const modal = namedModals.find((entry) => entry.openerEls.includes(goHit));
-              if (modal) {
-                openNamedModal(modal);
-                ev.preventDefault();
-                ev.stopPropagation();
-                return;
-              }
+            /* Same-name @go is not an opener. Only triggerFrom-wired
+               openerEls may open; in-modal nested @go is on the *target*
+               modal's openerEls, not a global name match. */
+            const modal = namedModals.find((entry) => Array.isArray(entry.openerEls) && entry.openerEls.includes(goHit));
+            if (modal) {
+              openNamedModal(modal);
+              ev.preventDefault();
+              ev.stopPropagation();
+              return;
             }
           }
           const openerHit = ev.target && ev.target.closest ? ev.target.closest('[data-btn-name]') : null;

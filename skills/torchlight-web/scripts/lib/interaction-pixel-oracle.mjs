@@ -189,6 +189,11 @@ export function catalogOpenedGoMatches(go, openedGo) {
   return Boolean(wanted) && wanted === opened;
 }
 
+export function dropmenuOverlapEvidenceOk(hit) {
+  const evidence = hit && hit.sourceOverlapEvidence;
+  return Boolean(evidence && evidence.dropmenuNode && evidence.consentNode);
+}
+
 export function catalogEvidenceOk(catalog, { plat } = {}) {
   if (!measuredOk(catalog)) return false;
   const wanted = plat || catalog.plat;
@@ -200,7 +205,9 @@ export function catalogEvidenceOk(catalog, { plat } = {}) {
   if (openers.some((row) => !catalogGoMatchesPlat(row.go, wanted, { mountedNames }))) return false;
   if (openers.some((row) => !catalogOpenedGoMatches(row.go, row.openedGo))) return false;
   const dropOk = (hit) => hit.invalid !== true && hit.toggled === true
-    && hit.coversConsent !== true && hit.optionFill !== false;
+    && (hit.sourceOverlap === true ? dropmenuOverlapEvidenceOk(hit) : hit.coversConsent !== true)
+    && hit.closedConsentClickable !== false
+    && hit.optionFill !== false;
   if (openers.some((row) => (row.dropmenus || []).some((hit) => !dropOk(hit)))) return false;
   if (openers.some((row) => row.calendarLang && row.calendarLang.matched !== true)) return false;
   if (openers.some((row) => (row.calendarCopy || []).some((hit) => hit.missing === true && hit.lang && hit.lang !== 'zh-CN'))) return false;

@@ -15,6 +15,7 @@ function unwrap(value) {
 function cellLines(raw) {
   return String(raw ?? '')
     .replace(/\r\n/g, '\n')
+    .replace(/\u2028|\u2029/g, '\n')
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line !== '');
@@ -89,11 +90,33 @@ function uniqueRow(rows) {
   return nums.length === 1 ? nums[0] : null;
 }
 
+function exactParentId(text) {
+  return text && text.parentId != null ? String(unwrap(text.parentId)) : '';
+}
+
+function groupParentId(text, byExactParent) {
+  const parentId = exactParentId(text);
+  if (!parentId) return '';
+  const siblings = byExactParent.get(parentId) || [];
+  if (siblings.length === 1) {
+    const ancestors = Array.isArray(text.ancestorIds) ? text.ancestorIds.map(String).filter(Boolean) : [];
+    if (ancestors.length >= 2) return String(ancestors[ancestors.length - 2]);
+  }
+  return parentId;
+}
+
 function consecutiveRuns(texts, claimed) {
   const list = Array.isArray(texts) ? texts : [];
+  const byExactParent = new Map();
+  for (const text of list) {
+    const parentId = exactParentId(text);
+    if (!parentId) continue;
+    if (!byExactParent.has(parentId)) byExactParent.set(parentId, []);
+    byExactParent.get(parentId).push(text);
+  }
   const byParent = new Map();
   for (const text of list) {
-    const parentId = text && text.parentId != null ? String(unwrap(text.parentId)) : '';
+    const parentId = groupParentId(text, byExactParent);
     if (!parentId) continue;
     if (!byParent.has(parentId)) byParent.set(parentId, []);
     byParent.get(parentId).push(text);
@@ -148,16 +171,29 @@ function consumeNextLine(line, queue) {
   return null;
 }
 
+function consumeNextMergedLines(lines, start, queue) {
+  for (let count = 1; count <= lines.length - start; count++) {
+    const merged = lines.slice(start, start + count).join('\n');
+    const used = consumeNextLine(merged, queue);
+    if (used) return { used, consumed: count };
+  }
+  return null;
+}
+
 function matchLineRun(lines, nodes) {
   const queue = [...nodes];
   const parts = [];
-  for (let i = 0; i < lines.length; i++) {
-    const used = consumeNextLine(lines[i], queue);
-    if (!used) return null;
-    parts.push({ lineIndex: i, nodeIds: used.map((node) => String(node.nodeId)) });
+  let i = 0;
+  while (i < lines.length) {
+    const hit = consumeNextMergedLines(lines, i, queue);
+    if (!hit) return null;
+    for (let offset = 0; offset < hit.consumed; offset++) {
+      parts.push({ lineIndex: i + offset, nodeIds: hit.used.map((node) => String(node.nodeId)) });
+    }
+    i += hit.consumed;
   }
   return {
-    nodeIds: parts.flatMap((part) => part.nodeIds),
+    nodeIds: [...new Set(parts.flatMap((part) => part.nodeIds))],
     parts,
     lineCount: lines.length,
   };
@@ -211,10 +247,20 @@ function matchRowOnRuns(row, runs) {
   return null;
 }
 
+function translationFingerprint(row) {
+  if (row && row.raw && typeof row.raw === 'object') {
+    return Object.keys(row.raw).sort().map((lang) => `${lang}:${JSON.stringify(row.raw[lang] ?? null)}`).join('\0');
+  }
+  return JSON.stringify(row?.rawZh ?? null);
+}
+
 function groupFromHits(hits) {
   const nodeIds = hits[0].nodeIds;
-  const unique = uniqueRow(hits.map((hit) => hit.row.row));
-  const chosen = unique != null ? hits.find((hit) => Number(hit.row.row) === unique) : null;
+  const fingerprints = new Set(hits.map((hit) => translationFingerprint(hit.row)));
+  const unique = fingerprints.size === 1
+    ? uniqueRow(hits.map((hit) => hit.row.row)) ?? Number(hits[0].row.row)
+    : uniqueRow(hits.map((hit) => hit.row.row));
+  const chosen = unique != null ? hits.find((hit) => Number(hit.row.row) === unique) || hits[0] : null;
   if (chosen) {
     return {
       row: chosen.row.row,

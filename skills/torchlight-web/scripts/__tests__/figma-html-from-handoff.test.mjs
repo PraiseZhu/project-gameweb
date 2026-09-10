@@ -480,6 +480,7 @@ test('html-from-handoff binds lark-copy into truth.copy.byNode and switches lang
       langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' },
       langs: ['zh-CN', 'en', 'zh-TW', 'ko'],
       fetchedAt: '2026-09-05T00:00:00Z',
+      phaseRows: Array.from({ length: 52 }, (_, i) => i + 3),
     },
     rows: {
       3: { 'zh-CN': '官方充值', en: 'Shop', 'zh-TW': '官方儲值', ko: '충전' },
@@ -521,6 +522,7 @@ test('html-from-handoff designations bind duplicate 查看更多 to phase-1 row 
       langs: ['zh-CN', 'en', 'zh-TW', 'ko'],
       fetchedAt: '2026-09-08T00:00:00Z',
       phase: '阶段一：赛季前瞻直播',
+      phaseRows: Array.from({ length: 52 }, (_, i) => i + 3),
     },
     rows: {
       26: { 'zh-CN': '查看更多', en: 'View More', 'zh-TW': '查看更多', ko: '더 보기' },
@@ -611,6 +613,7 @@ test('html-from-handoff binds a custom lark snapshotFile name', () => {
       langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' },
       langs: ['zh-CN', 'en', 'zh-TW', 'ko'],
       fetchedAt: '2026-09-05T00:00:00Z',
+      phaseRows: Array.from({ length: 52 }, (_, i) => i + 3),
     },
     rows: {
       3: { 'zh-CN': '官方充值', en: 'Shop', 'zh-TW': '官方儲值', ko: '충전' },
