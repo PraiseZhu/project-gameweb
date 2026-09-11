@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  PAINTED_HANGUL_FACE,
   appleSdGothicLocalAvailable,
   codepointsToCover,
   hangulLocalFallbackStatus,
   missingGlyphsInFont,
+  paintedCoveragePlan,
   readFontNameIdentity,
   semiCondensedIdentityOk,
   uncoveredCodepoints,
@@ -194,7 +196,20 @@ test('WOFF2 cmap with fontTools present but brotli missing cannot pretend covera
   assert.equal(payload.missing, undefined, 'must not return an empty-gap success list');
 });
 
-test('cmap gap for Hangul on SemiCondensed is fail-closed and lists the codepoint', () => {
+test('paintedCoveragePlan sends Hangul to local Gothic and latin to SemiCondensed', () => {
+  const plan = paintedCoveragePlan({
+    fontFamily: 'Noto Sans',
+    fontStyle: 'SemiCondensed',
+    fontPostScriptName: 'NotoSans-SemiCondensed',
+    characters: 'Hello한',
+  }, new Set(['Noto Sans SemiCondensed']));
+  const byFamily = Object.fromEntries(plan.map((part) => [part.family, part.codepoints]));
+  assert.deepEqual(byFamily[PAINTED_HANGUL_FACE], [0xd55c]);
+  assert.ok(byFamily['Noto Sans SemiCondensed'].includes(0x48));
+  assert.equal(byFamily['Noto Sans SemiCondensed'].includes(0xd55c), false);
+});
+
+test('Hangul on SemiCondensed is covered by local Apple SD Gothic, not the registered latin file', () => {
   const root = mkdtempSync(join(tmpdir(), 'figma-fonts-sc-'));
   writeFileSync(join(root, 'registry.json'), JSON.stringify({
     families: {
@@ -224,14 +239,85 @@ test('cmap gap for Hangul on SemiCondensed is fail-closed and lists the codepoin
   }));
   writeFileSync(join(demo, 'index.html'), '<html><head></head><body><script id="qa-assets" type="application/json">{}</script></body></html>');
   const result = run(demo, root);
+  const manifest = JSON.parse(readFileSync(join(demo, 'fonts-manifest.json'), 'utf8'));
+  const hangulGap = (manifest.missing || []).find((item) => item.family === PAINTED_HANGUL_FACE || /U\+D55C/.test(item.why || ''));
+  if (appleSdGothicLocalAvailable()) {
+    assert.equal(hangulGap, undefined, JSON.stringify(manifest.missing, null, 2));
+  } else {
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    assert.ok(hangulGap, JSON.stringify(manifest.missing, null, 2));
+    assert.match(hangulGap.why, /Apple SD Gothic|未验证/);
+  }
+  assert.equal((manifest.missing || []).some((item) => item.family === 'Noto Sans SemiCondensed' && /U\+D55C/.test(item.why || '')), false);
+});
+
+test('CJK on latin Noto Sans is covered by registered YouHei, not the latin woff2', () => {
+  const youhei = join(ROOT, 'fonts/FZVariable-YouHeiJWTWH.ttf');
+  if (!existsSync(youhei)) return;
+  const root = mkdtempSync(join(tmpdir(), 'figma-fonts-cjk-'));
+  writeFileSync(join(root, 'registry.json'), JSON.stringify({
+    families: {
+      'Noto Sans': { file: 'NotoSans-Variable-latin.woff2', weight: '100 900', format: 'woff2', source: 'fixture', license: 'OFL' },
+      'FZVariable-YouHeiS WT W H': { file: 'FZVariable-YouHeiJWTWH.ttf', weight: '100 900', format: 'truetype', source: 'fixture', license: 'fixture' },
+    },
+  }));
+  copyFileSync(LATIN_FONT, join(root, 'NotoSans-Variable-latin.woff2'));
+  copyFileSync(youhei, join(root, 'FZVariable-YouHeiJWTWH.ttf'));
+  const demo = mkdtempSync(join(tmpdir(), 'figma-fonts-cjk-demo-'));
+  writeFileSync(join(demo, 'truth.json'), JSON.stringify({
+    design: { fileVersion: 'fixture-cjk' },
+    sections: {
+      one: {
+        nodes: [{
+          id: 'I949:5194;949:5934',
+          name: '视频号',
+          text: { fontFamily: 'Noto Sans', fontWeight: 400, characters: '视频号' },
+        }],
+      },
+    },
+  }));
+  writeFileSync(join(demo, 'index.html'), '<html><head></head><body><script id="qa-assets" type="application/json">{}</script></body></html>');
+  run(demo, root);
+  const manifest = JSON.parse(readFileSync(join(demo, 'fonts-manifest.json'), 'utf8'));
+  assert.equal((manifest.missing || []).some((item) => /U\+89C6|视频/.test(item.why || '')), false, JSON.stringify(manifest.missing, null, 2));
+});
+
+test('latin SemiCondensed still fail-closes when the registered file cannot paint latin text', () => {
+  const root = mkdtempSync(join(tmpdir(), 'figma-fonts-sc-latin-'));
+  writeFileSync(join(root, 'registry.json'), JSON.stringify({
+    families: {
+      'Noto Sans SemiCondensed': { file: 'empty-latin.ttf', weight: 400, format: 'truetype', source: 'fixture', license: 'OFL' },
+    },
+  }));
+  copyFileSync(SC_FONT, join(root, 'empty-latin.ttf'));
+  const demo = mkdtempSync(join(tmpdir(), 'figma-fonts-sc-latin-demo-'));
+  writeFileSync(join(demo, 'truth.json'), JSON.stringify({
+    design: { fileVersion: 'fixture-sc-latin' },
+    sections: {
+      one: {
+        nodes: [{
+          id: 'latin-only',
+          name: 'latin',
+          text: {
+            fontFamily: 'Noto Sans',
+            fontStyle: 'SemiCondensed',
+            fontPostScriptName: 'NotoSans-SemiCondensed',
+            fontWeight: 400,
+            characters: '☺',
+          },
+        }],
+      },
+    },
+  }));
+  writeFileSync(join(demo, 'index.html'), '<html><head></head><body><script id="qa-assets" type="application/json">{}</script></body></html>');
+  const missing = missingGlyphsInFont(SC_FONT, '☺');
+  assert.ok(missing.length, 'fixture SemiCondensed must lack U+263A so the gate can still fail-close');
+  const result = run(demo, root);
   assert.equal(result.status, 2, result.stdout + result.stderr);
   const manifest = JSON.parse(readFileSync(join(demo, 'fonts-manifest.json'), 'utf8'));
-  const gap = (manifest.missing || []).find((item) => /cmap|盖不住/.test(item.why || ''));
+  const gap = (manifest.missing || []).find((item) => item.family === 'Noto Sans SemiCondensed');
   assert.ok(gap, JSON.stringify(manifest.missing, null, 2));
-  assert.equal(gap.family, 'Noto Sans SemiCondensed');
-  assert.match(gap.why, /U\+D55C/);
-  assert.equal(gap.examples[0].nodeId, '949:5671');
-  assert.doesNotMatch(JSON.stringify(gap), /Apple SD Gothic|Noto Sans KR/);
+  assert.match(gap.why, /U\+263A/);
 });
 
 test('platforms-only truth collects desktop and mobile section fonts plus modal, fixed overlay, and page chrome text', () => {
