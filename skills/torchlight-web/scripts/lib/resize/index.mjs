@@ -262,7 +262,7 @@ export function namedModalTopic(name) {
   return raw.replace(/^[_-]+/, '').trim();
 }
 
-export function matchNamedModalByTopic(candidates, wantedName) {
+export function matchNamedModalByTopic(candidates, wantedName, prefs) {
   const wanted = String(wantedName || '').trim();
   if (!wanted) return null;
   const list = Array.isArray(candidates) ? candidates : [];
@@ -271,7 +271,23 @@ export function matchNamedModalByTopic(candidates, wantedName) {
   const topic = namedModalTopic(wanted);
   if (!topic) return null;
   const matches = list.filter((item) => item && namedModalTopic(item.name) === topic);
-  return matches.length === 1 ? matches[0] : null;
+  if (matches.length === 1) return matches[0];
+  if (!matches.length || !prefs) return null;
+  const lang = String((prefs && prefs.lang) || '').toLowerCase();
+  const plat = String((prefs && prefs.plat) || '');
+  const aliases = { ko: ['ko', 'kr'], kr: ['ko', 'kr'], 'zh-tw': ['tw', 'zh-tw'], tw: ['tw', 'zh-tw'], 'zh-cn': ['cn', 'zh-cn'], cn: ['cn', 'zh-cn'], en: ['en'] };
+  const tokens = aliases[lang] || (lang ? [lang] : []);
+  const scored = matches.map((item) => {
+    const raw = String((item && item.name) || '');
+    const lower = raw.toLowerCase();
+    let score = 0;
+    if (plat === 'mobile' && /mobile/i.test(raw)) score += 2;
+    if (plat && plat !== 'mobile' && /(^|\/|_)pc(_|$)/i.test(raw)) score += 2;
+    if (tokens.some((token) => lower.includes('_' + token) || lower.includes('/' + token) || lower.includes(token + '_'))) score += 2;
+    if (raw === wanted) score += 1;
+    return { item, score };
+  }).sort((a, b) => b.score - a.score);
+  return scored[0].score > 0 ? scored[0].item : null;
 }
 
 /**
@@ -579,7 +595,7 @@ export function resizeOwns() {
     'hero lock / exit / release geometry while the window size changes',
     'temporary lock-1920 name list: fix/ prefix, COMPONENT_SET btn/主要按钮, 首屏主按钮 follow page k when viewportW>1920 so relative size vs KV stays the freeze-band ratio (no per-button freeze counter; landscape fix/ top bar is viewport flex-end on 1127–1920 and >1920; overlay shop/globe/dropmenu are siblings of the wide fix/ group; not a lasting naming system; not @fit=)',
     'first-screen slg / calendar / primary CTA keep one vertical cluster: bottom-anchor together in page coords at every band, including ≤1126 on first cut (title-group nested SLG and play button ride the owner); phone calendar + CTA stay on Figma pageBox (overlapping stack, no invented row); 751–1126 shifts title/calendar/CTA by the same leftover so the authored gap holds and CTA is not clipped at 750; zh-CN shares that pageBox x with other languages; freeze-band KV covers the real viewport and QA wrap is vp.w not 1920; later pageBox is not padded to 100vh; SLG size stays page k at every PC band (no extra viewport-width stretch above 1920)',
-    'named modal stays open across light-drag and the pointerup full rebuild; overlay re-pins to the current frame (official popup is position:fixed and survives resize); tree switch at 1126 restores the matching mobile/PC sheet by topic, it does not close',
+    'named modal stays open across light-drag and the pointerup full rebuild; overlay re-pins to the current frame (official popup is position:fixed and survives resize); tree switch at 1126 restores the matching mobile/PC sheet by topic + locale, it does not close',
   ];
 }
 

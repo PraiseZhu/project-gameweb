@@ -376,3 +376,34 @@ zh-CN 严格保 Figma 静态指标；非 zh-CN 在保留 Figma 结构/位置/own
 - en：标题 55.8（0.93×）、正文 24
 - zh-TW：标题 60、正文 30（与 zh 同级）
 - 组内长/短标题同字号，正文组同步，无裁切。截图 artifacts/03-ja-groupfit.png。
+
+## Width-lock vs height-lock, brand copy, and metric preserve
+
+SS14 point-fix contracts live in `scripts/lib/page-behavior-contracts.mjs`.
+Typography still listens to `DESIGN.md` 第 6 章. This section only records
+who may wrap vs shrink, and what copy swap must not destroy.
+
+### Width-lock, height-free (SC-09, SC-10)
+
+A written `maxWidth` without `maxHeight` is **not** a shrink reason. Keep the
+locale-base font size, wrap, and grow vertically. Measure after fonts are
+ready and the modal is displayable. Do not encode page-specific `translateY`
+or a later-retracted height lock as policy.
+
+A written `maxHeight` (or truncation / clip / explicit fit) still authorizes
+integer-px shrink until the full translation fits. Ellipsis and clip are not
+a pass.
+
+### Brand-invariant names (SC-11)
+
+Calendar / vendor labels that are already the product name stay untranslated:
+`Outlook.com`, `Microsoft 365`, `Apple`, `Google`, and an `iCal文件` asset
+label. They are not copy-table rows.
+
+### Row binding and metrics (SC-12, SC-13)
+
+Copy mapping stays `explicit mapping > scene rule > length rule > neighbor
+inference > unresolved`. Empty target-language cells and ambiguous rows stay
+fail-closed. Swapping locale copy must keep `fontSize`, `lineHeight`,
+`letterSpacing`, and alignment from the source TEXT. Resetting tracking to 0
+is a translation fail, not a fit pass.

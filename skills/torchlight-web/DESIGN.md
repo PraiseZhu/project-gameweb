@@ -286,7 +286,7 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 | heading | 字重 ≥ 600 且源字号 ≤ 40px | 全语 `1.0` |
 | 按钮 / 顶栏折扣条 | 祖先名含 `btn/`（含下载/预约按钮）或 `折扣信息`，不进 body / card-title | 全语 `1.0`：清单源字号。书面 max 放得下就不预缩 |
 
-外文框听稿上包着文案的那层 Auto Layout：`maxWidth` 是宽度硬限；写了 `maxHeight` 的，高度也是硬限。没写的那一轴不拿来当缩字理由，也不发明框。`autoResize=HEIGHT` 是定宽可长高：源中文刚好一行不是「永远不准折行」。英文放不进已写 `maxWidth` 时先换行，禁止当成单行标题 `pre` 锁死再缩字号。换语言后文案必须**完整**落在这些已写的上限里，禁止裁切、省略号、截断顶过关。
+外文框听稿上包着文案的那层 Auto Layout：`maxWidth` 是宽度硬限；写了 `maxHeight` 的，高度也是硬限。没写的那一轴不拿来当缩字理由，也不发明框。`autoResize=HEIGHT` 是定宽可长高：源中文刚好一行不是「永远不准折行」。只写了 maxWidth、没写 maxHeight 的，保持字号、按宽度换行、高度自然增长。英文放不进已写 `maxWidth` 时先换行，禁止当成单行标题 `pre` 锁死再缩字号。禁止把页面 translateY 或后来撤销的锁高缩字写进本政策。换语言后文案必须**完整**落在这些已写的上限里，禁止裁切、省略号、截断顶过关。
 
 字重听清单：`fontWeight` / `fontStyle` / `fontPostScriptName`。可变优黑用元素上的 `font-variation-settings` 走 wght 轴。禁止 `@font-face` 写 `font-named-instance:"Regular"`：Regular 是 wght=600，稿上 Bold/900 会被钉死再假粗。
 

@@ -616,3 +616,10 @@ test('budget breakdown splits webp, truth, fonts, and other', () => {
   assert.equal(parts.fonts, 4);
   assert.equal(parts.other, 2);
 });
+
+test('pack report records hashes for index, truth, and fonts manifest', () => {
+  const src = readFileSync(new URL('../pack-demo.mjs', import.meta.url), 'utf8');
+  assert.match(src, /out\.hashes/);
+  assert.match(src, /indexHtml/);
+  assert.match(src, /fontsManifest/);
+});

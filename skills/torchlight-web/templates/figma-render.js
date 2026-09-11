@@ -251,7 +251,11 @@
       const name = String(el.getAttribute('data-modal-name') || '').trim();
       if (!name || seen.has(name)) continue;
       seen.add(name);
-      names.push(name);
+      names.push({
+        name,
+        sourceName: String(el.getAttribute('data-modal-source-name') || '').trim() || null,
+        returnTo: String(el.getAttribute('data-modal-return-to') || '').trim() || null,
+      });
     }
     return names;
   },
@@ -266,7 +270,7 @@
     raw = raw.replace(/^(?:cn|tw|en|jp|kr|zh)[_-]/i, '');
     return raw.replace(/^[_-]+/, '').trim();
   },
-  _matchNamedModalByTopic(candidates, wantedName) {
+  _matchNamedModalByTopic(candidates, wantedName, prefs) {
     const wanted = String(wantedName || '').trim();
     if (!wanted) return null;
     const list = Array.isArray(candidates) ? candidates : [];
@@ -275,15 +279,94 @@
     const topic = this._namedModalTopic(wanted);
     if (!topic) return null;
     const matches = list.filter((item) => item && this._namedModalTopic(item.name) === topic);
-    return matches.length === 1 ? matches[0] : null;
+    if (matches.length === 1) return matches[0];
+    if (!matches.length || !prefs) return null;
+    const names = matches.map((item) => item && item.name).filter(Boolean);
+    const next = this._persistNamedModal({
+      openName: wanted,
+      toComposition: prefs && prefs.plat === 'mobile' ? 'mobile' : 'pc',
+      lang: prefs && prefs.lang,
+      catalog: names,
+    });
+    if (!next.keep || !next.nextName) return null;
+    return matches.find((item) => item && item.name === next.nextName) || null;
   },
-  _restoreOpenNamedModals(frame, names) {
-    const list = Array.isArray(names) ? names.map((name) => String(name || '').trim()).filter(Boolean) : [];
+  _persistNamedModal(input) {
+    const openName = input && input.openName;
+    if (!openName) return { keep: false, nextName: null, reason: 'no-open-modal' };
+    const topic = this._namedModalTopic(openName);
+    const lang = String((input && input.lang) || '').toLowerCase();
+    const aliases = { ko: ['ko', 'kr'], kr: ['ko', 'kr'], 'zh-tw': ['tw', 'zh-tw'], tw: ['tw', 'zh-tw'], 'zh-cn': ['cn', 'zh-cn'], cn: ['cn', 'zh-cn'], en: ['en'] };
+    const tokens = aliases[lang] || (lang ? [lang] : []);
+    const nextComp = String((input && (input.toComposition || input.fromComposition)) || '');
+    const catalog = (input && input.catalog) || [];
+    const matches = catalog.filter((name) => this._namedModalTopic(name) === topic);
+    if (!matches.length) return { keep: true, nextName: openName, reason: 'same-name-fallback' };
+    const scored = matches.map((name) => {
+      const raw = String(name);
+      const lower = raw.toLowerCase();
+      let score = 0;
+      if (nextComp === 'mobile' && /mobile/i.test(raw)) score += 2;
+      if (nextComp === 'pc' && /(^|\/|_)pc(_|$)/i.test(raw)) score += 2;
+      if (tokens.some((token) => lower.includes('_' + token) || lower.includes('/' + token) || lower.includes(token + '_'))) score += 2;
+      if (raw === openName) score += 1;
+      return { name: raw, score };
+    }).sort((a, b) => b.score - a.score);
+    return { keep: true, nextName: scored[0].name, reason: 'topic-lang-composition' };
+  },
+  _authorizeNamedModalOpen(input) {
+    const triggerFrom = (input && input.triggerFrom) || [];
+    const allowed = new Set(triggerFrom.map((id) => String(id || '')).filter(Boolean));
+    const nodeId = input && input.clickNodeId != null ? String(input.clickNodeId) : '';
+    if (!allowed.size || !nodeId || !allowed.has(nodeId)) return { open: false, reason: 'not-authorized-opener' };
+    const box = input && input.paintedBox;
+    const px = Number(input && input.pointer && input.pointer.x);
+    const py = Number(input && input.pointer && input.pointer.y);
+    const x = Number(box && box.x), y = Number(box && box.y);
+    const w = Number(box && (box.w ?? box.width)), h = Number(box && (box.h ?? box.height));
+    if ([x, y, w, h, px, py].every(Number.isFinite) && w > 0 && h > 0) {
+      const inside = px >= x && px <= x + w && py >= y && py <= y + h;
+      if (!inside) return { open: false, reason: 'outside-painted-hit' };
+    }
+    return { open: true, reason: 'authorized-opener' };
+  },
+  _resolveModalReturn(input) {
+    const current = String((input && input.currentName) || '');
+    const source = String((input && input.sourceName) || '');
+    const explicit = input && input.returnTo != null ? String(input.returnTo) : '';
+    if (explicit) return { next: explicit, reason: 'explicit-return' };
+    if (/完成/.test(current) && (input && input.closeKind) === 'close') return { next: null, reason: 'complete-closes-to-page' };
+    if (/详细规则/.test(current) && /预约弹窗/.test(source)) return { next: source, reason: 'rules-return-to-reservation' };
+    if ((input && input.closeKind) === 'close') return { next: null, reason: 'close-to-page' };
+    return { next: null, reason: 'unresolved-return' };
+  },
+  _restoreOpenNamedModals(frame, names, prefs) {
+    const list = Array.isArray(names) ? names.map((item) => {
+      if (item && typeof item === 'object') {
+        return {
+          name: String(item.name || '').trim(),
+          sourceName: item.sourceName ? String(item.sourceName) : null,
+          returnTo: item.returnTo != null && String(item.returnTo).trim() ? String(item.returnTo) : null,
+        };
+      }
+      return { name: String(item || '').trim(), sourceName: null, returnTo: null };
+    }).filter((item) => item.name) : [];
     if (!frame || !list.length || typeof frame.__fxOpenNamedModal !== 'function') return;
     const wired = Array.isArray(frame.__fxNamedModals) ? frame.__fxNamedModals : [];
-    for (const name of list) {
-      const entry = this._matchNamedModalByTopic(wired, name);
-      if (entry) frame.__fxOpenNamedModal(entry);
+    for (const rec of list) {
+      const entry = this._matchNamedModalByTopic(wired, rec.name, prefs);
+      if (!entry) continue;
+      if (rec.sourceName) {
+        const sourceEntry = this._matchNamedModalByTopic(wired, rec.sourceName, prefs);
+        entry.sourceName = sourceEntry && sourceEntry.name ? sourceEntry.name : rec.sourceName;
+        if (entry.layer && entry.sourceName) entry.layer.setAttribute('data-modal-source-name', entry.sourceName);
+      }
+      if (rec.returnTo) {
+        const returnEntry = this._matchNamedModalByTopic(wired, rec.returnTo, prefs);
+        entry.returnTo = returnEntry && returnEntry.name ? returnEntry.name : rec.returnTo;
+        if (entry.layer && entry.returnTo) entry.layer.setAttribute('data-modal-return-to', entry.returnTo);
+      }
+      frame.__fxOpenNamedModal(entry);
     }
   },
   _pinOpenNamedModals(frame) {
@@ -5753,7 +5836,8 @@
              规则（通用、不看文案/node id）：仅当**采用了真实译文**才走 locale 路由；
              缺译回退原文时保留源 Figma family/weight，不路由。data-copy-missing 在
              下方照常打标留痕。 */
-          const _copyByNode = t.copy && t.copy.byNode ? t.copy.byNode[nid] : null;
+          const _calendarBrandCopy = /^(Microsoft 365|Apple|Outlook\.com|Google|iCal文件)$/i.test(String(n.name || ''));
+          const _copyByNode = _calendarBrandCopy ? null : (t.copy && t.copy.byNode ? t.copy.byNode[nid] : null);
           const _adoptedVal = _copyByNode ? _copyByNode[ctx.prefs.lang] : null;
           const _hasAdoptedCopy = _adoptedVal != null && _adoptedVal !== '';
           const primaryCta = this._resolvePrimaryCtaType({
@@ -6283,7 +6367,8 @@
                Latin CTAs such as View More must keep data-copy-missing.
                Brand-invariant layers skip only with an explicit truth flag. */
             const copyLocaleInvariant = n.copyLocaleInvariant === true
-              || (tx && tx.copyLocaleInvariant === true);
+              || (tx && tx.copyLocaleInvariant === true)
+              || /^(Microsoft 365|Apple|Outlook\.com|Google|iCal文件)$/i.test(String(n.name || ''));
             const boundKind = hit && hit.matchKind ? String(hit.matchKind) : '';
             const unbound = !hit || !boundKind
               || boundKind === 'none'
@@ -8021,6 +8106,9 @@
           } catch (err) {
             layer.setAttribute('data-modal-paint-error', String(err && err.message || err));
           }
+          const returnTo = modal.returnTo != null ? String(modal.returnTo)
+            : (modal.meta && modal.meta.returnTo != null ? String(modal.meta.returnTo) : '');
+          if (returnTo) layer.setAttribute('data-modal-return-to', returnTo);
           wired.push({
             id: String(modal.id || ''),
             name: parsed.label,
@@ -8031,6 +8119,8 @@
             ),
             openerEls: [],
             closeEls: this._closeControlEls(layer),
+            returnTo: returnTo || null,
+            sourceName: null,
           });
         }
         if (!wired.length) {
@@ -8152,6 +8242,7 @@
           const scale = policy.fill === 'cover'
             ? Math.max(visibleW / designW, visibleH / designH)
             : Math.min(visibleW / designW, visibleH / designH);
+          layer.setAttribute('data-modal-fit-k', String(scale));
           if (modalHost) {
             if (!modalHost.__fxNamedModalRest) {
               modalHost.__fxNamedModalRest = {
@@ -8223,11 +8314,28 @@
           layer.style.pointerEvents = 'auto';
           layer.style.zIndex = '41';
         };
+        let skipModalReturn = false;
         const closeNamedModal = (entry) => {
           if (!entry || !entry.layer) return;
           hideInPlace(entry.layer, true);
           entry.layer.removeAttribute('data-modal-open');
           unpinModalHost(entry);
+          const skipReturn = skipModalReturn;
+          skipModalReturn = false;
+          if (!skipReturn) {
+            const ret = this._resolveModalReturn({
+              currentName: entry.name,
+              closeKind: 'close',
+              returnTo: entry.returnTo,
+              sourceName: entry.sourceName || null,
+            });
+            if (ret && ret.next) {
+              const next = namedModals.find((other) => other && other.name === ret.next);
+              if (next) openNamedModal(next);
+            }
+          }
+          entry.sourceName = null;
+          if (entry.layer) entry.layer.removeAttribute('data-modal-source-name');
           const stillOpen = namedModals.some((other) => other && other.layer && other.layer.getAttribute('data-modal-open') === 'true');
           if (!stillOpen) {
             const modalHost = entry.layer.parentElement;
@@ -8241,7 +8349,7 @@
           if (!entry || !entry.layer) return;
           for (const other of namedModals) {
             if (other === entry) continue;
-            if (other.layer && other.layer.getAttribute('data-modal-open') === 'true') closeNamedModal(other);
+            if (other.layer && other.layer.getAttribute('data-modal-open') === 'true') { skipModalReturn = true; closeNamedModal(other); }
           }
           hideInPlace(entry.layer, false);
           entry.layer.setAttribute('data-modal-open', 'true');
@@ -9041,6 +9149,11 @@
                modal's openerEls, not a global name match. */
             const modal = namedModals.find((entry) => Array.isArray(entry.openerEls) && entry.openerEls.includes(goHit));
             if (modal) {
+              const insideModal = namedModals.find((entry) => entry.layer.contains(goHit));
+              if (insideModal && insideModal !== modal) {
+                modal.sourceName = insideModal.name;
+                if (modal.layer) modal.layer.setAttribute('data-modal-source-name', String(insideModal.name));
+              }
               openNamedModal(modal);
               ev.preventDefault();
               ev.stopPropagation();
@@ -9053,6 +9166,14 @@
             if (!insideModal) {
               const modal = namedModals.find((entry) => entry.openerEls.includes(openerHit));
               if (modal) {
+                const box = openerHit.getBoundingClientRect();
+                const allowed = this._authorizeNamedModalOpen({
+                  triggerFrom: [String(openerHit.getAttribute('data-node') || openerHit.getAttribute('data-btn-name') || 'opener')],
+                  clickNodeId: String(openerHit.getAttribute('data-node') || openerHit.getAttribute('data-btn-name') || 'opener'),
+                  pointer: { x: ev.clientX, y: ev.clientY },
+                  paintedBox: { x: box.left, y: box.top, w: box.width, h: box.height },
+                });
+                if (!allowed.open) return;
                 openNamedModal(modal);
                 ev.preventDefault();
                 ev.stopPropagation();
@@ -9392,7 +9513,7 @@
         syncFixedNavigation();
         syncFixFromOverlays();
       }
-      if (enablePageInteraction) this._restoreOpenNamedModals(frame, restoreOpenModalNames);
+      if (enablePageInteraction) this._restoreOpenNamedModals(frame, restoreOpenModalNames, ctx && ctx.prefs);
       else if (restoreOpenModalNames.length) {
         frame.setAttribute('data-named-modal-restore-skipped', 'interaction-inert');
       }

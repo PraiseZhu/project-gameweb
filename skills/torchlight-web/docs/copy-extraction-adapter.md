@@ -39,3 +39,5 @@ node --test scripts/__tests__/copy-context.test.mjs
 ```
 
 coverage 通过只表示链路完整且缺口已登记，不表示 unresolved 已由人工完成语义裁决。
+
+8. **品牌名不译。** 图层名已是产品名的日历/厂商标签（`Outlook.com` / `Microsoft 365` / `Apple` / `Google` / `iCal文件`）不查飞书行、不套普通译文。缺目标语或一行对多节点且无法唯一时，输出 unresolved / ambiguous，禁止把第一项的字搬到其它项。

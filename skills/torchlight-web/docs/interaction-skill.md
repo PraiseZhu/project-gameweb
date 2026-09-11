@@ -263,3 +263,50 @@ hover/press, named modal openers, and directory scrollspy are in
 `figma-interaction-contract.mjs`, `figma-button-press-contract.mjs`, and
 `templates/figma-render.js`. Renderer consumption is live for those
 families. Missing source structure stays unresolved, never guessed.
+
+## Named modal persistence, hit-testing, and return
+
+SS14 point-fix contracts live in `scripts/lib/page-behavior-contracts.mjs`.
+They are generic Interaction rules. Do not copy page node IDs, `-72px`, or
+season copy into this file.
+
+### Opener hit (SC-02)
+
+A named modal opens only when all of these are true:
+
+- the click node id is listed in that modal's `triggerFrom`;
+- the pointer is inside the opener's **painted** background box, not a
+  larger parent overlay or language-menu host;
+- nested `@go` / dropmenu children do not inherit the parent opener.
+
+Same-name buttons that were never determined stay inert. A secondary button
+must not open the language menu.
+
+### Dropmenu selection (SC-03, SC-04)
+
+`dropmenu/` uses exact lowercase `on/off`. Opening a reservation modal must
+start from `off`. Clicking the header opens it; choosing an option:
+
+- moves highlight / selected variant to that row;
+- writes only that row's value onto the closed header;
+- leaves sibling labels unchanged;
+- returns the menu to `off`.
+
+Do not clone the first option's TEXT onto later rows.
+
+### Return routing (SC-05)
+
+`btn/关闭按钮` closes the modal that contains it.
+
+- A completion modal (`预约完成`) closes to the current page. It must not
+  reopen the reservation modal.
+- A rules modal (`弹窗详细规则1` / `2`) that was opened from a reservation
+  modal returns to that same reservation modal and locale.
+- Explicit `returnTo` from source truth wins over name heuristics.
+
+### Composition persist (SC-06)
+
+Resize may switch the 1126/1127 tree. Interaction must keep the open modal
+by **topic + locale + composition**, not by a single raw name. If several
+`预约弹窗` layers exist, pick the matching `pc_` / `mobile_` plus current
+lang. Losing the modal or snapping to homepage is a fail.
