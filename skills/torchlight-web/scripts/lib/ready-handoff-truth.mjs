@@ -1,12 +1,15 @@
 /**
  * Ready-pack → renderer truth. Official page-build path only.
  * Distilled from the local adapter used to consume inventory/v2 into
- * `{ schema: 'yise-ready-platform-truth/v1', platforms: { pc, mobile } }`.
+ * `{ schema: 'torchlight-ready-platform-truth/v1', platforms: { pc, mobile } }`.
  * Does not fetch live Figma. Skipped nodes stay out of paint trees, except
  * CSS-paintable art-fragments (play triangle on btn/) which restoreOwnerComposites
  * stamps as paintAsFragment.
  */
 import { adaptInventoryToTruthShape, restoreOwnerComposites } from './figma-inventory-v2.mjs';
+import { torchlightSchema } from './torchlight-schema.mjs';
+
+export const READY_PLATFORM_TRUTH_SCHEMA = torchlightSchema('torchlight-ready-platform-truth/v1');
 
 const EMPTY_PLATFORM_SCOPE = Object.freeze({ nodes: [], platformRoots: [] });
 
@@ -114,54 +117,56 @@ function underFixedOwner(node, fixedIds) {
   return asArray(node?.ancestorIds).some((id) => fixedIds.has(String(id)));
 }
 
-function overlayLocalBox(node, owner) {
-  const page = node?.pageBox;
-  const ownerPage = owner?.pageBox;
-  if (!page || !ownerPage) return null;
+function constraintAxis(node, axis) {
+  const raw = node?.layout?.constraints?.[axis] ?? node?.constraints?.[axis];
+  return String(raw || '').trim().toUpperCase();
+}
+
+function pinBoardBox(node, inventory) {
+  const parent = asArray(inventory?.nodes).find((entry) => String(entry?.id || '') === String(node?.parentId || ''));
+  const parentPage = parent?.pageBox || parent?.box;
+  if (parentPage && Number(parentPage.w) > 0 && Number(parentPage.h) > 0) return geomOf(parentPage);
+  if (inventory?.page?.pageBox) return geomOf(inventory.page.pageBox);
+  return geomOf(node?.pageBox || node?.box);
+}
+
+function fixPinEdges(node, inventory) {
+  const page = geomOf(node?.pageBox || node?.box);
+  const board = pinBoardBox(node, inventory);
   return {
-    x: Number(page.x) - Number(ownerPage.x),
-    y: Number(page.y) - Number(ownerPage.y),
-    w: Number(page.w),
-    h: Number(page.h),
+    horizontal: constraintAxis(node, 'horizontal'),
+    vertical: constraintAxis(node, 'vertical'),
+    gapTop: page.y - board.y,
+    gapBottom: (board.y + board.h) - (page.y + page.h),
+    gapLeft: page.x - board.x,
+    gapRight: (board.x + board.w) - (page.x + page.w),
+    boardW: board.w,
+    boardH: board.h,
   };
 }
 
-function remapSliceToOverlay(node, owner) {
-  const sliceBox = node?.sliceExport?.box;
-  const ownerPage = owner?.pageBox;
-  if (!sliceBox || !ownerPage) return node?.sliceExport || null;
-  return {
-    ...node.sliceExport,
-    box: {
-      x: Number(sliceBox.x) - Number(ownerPage.x),
-      y: Number(sliceBox.y) - Number(ownerPage.y),
-      w: Number(sliceBox.w),
-      h: Number(sliceBox.h),
-    },
-  };
-}
-
-/** fix/ pins to the viewport. The overlay owner box is overlay-local (0,0);
- * parentBox is the viewport pin and the renderer must use it for CSS left/top
- * of overlay roots. Every descendant uses overlay-absolute
- *  (pageBox − owner.pageBox). parentBox is relative to the direct parent
- *  only — using it as overlay origin puts nested img/ at (57,34) on the
- *  page and clips the slice out of the button. */
-function paintFixedNode(node, owner) {
+/** fix/ pins to the viewport. The sticky host sits at page origin, so the
+ *  overlay root keeps inventory pageBox (right chrome at 2764,70 — not 0,0).
+ *  Descendants keep inventory pageBox too: the renderer subtracts the painted
+ *  parent. Rewriting them to pageBox − owner here double-subtracts and parks
+ *  right chrome / arrow at the sticky origin. parentBox is relative to the
+ *  direct parent only — never the overlay origin.
+ *  pinEdges still record the parent-board gap so Bottom arrows can pin to
+ *  viewportH / k without moving Top chrome to (0,0). */
+function paintFixedNode(node, owner, inventory) {
   const painted = paintWithPageBox(node);
   if (!owner) return painted;
-  const ownerLocal = {
-    x: 0,
-    y: 0,
-    w: Number(owner.pageBox?.w ?? owner.box?.w ?? 0),
-    h: Number(owner.pageBox?.h ?? owner.box?.h ?? 0),
-  };
   if (String(node?.id) === String(owner?.id)) {
-    return { ...painted, box: ownerLocal, pageBox: ownerLocal, pin: owner.pin || 'viewport' };
+    const ownerPage = geomOf(owner.pageBox || owner.box);
+    return {
+      ...painted,
+      box: ownerPage,
+      pageBox: ownerPage,
+      pin: owner.pin || 'viewport',
+      pinEdges: fixPinEdges(owner, inventory),
+    };
   }
-  const local = overlayLocalBox(node, owner);
-  if (!local) return painted;
-  return { ...painted, box: local, pageBox: local, sliceExport: remapSliceToOverlay(node, owner) };
+  return painted;
 }
 
 /**
@@ -252,7 +257,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
   }
   const fixedNodes = ordered(liveNodes.filter((node) => (
     underFixedOwner(node, fixed) && !droppedClones.has(String(node?.id || ''))
-  ))).map((node) => paintFixedNode(node, ownerOf(node)));
+  ))).map((node) => paintFixedNode(node, ownerOf(node), inventory));
 
   const pageMeta = drawMeta(inventory.page);
   const chromeNodes = asArray(adapted.pageChrome?.nodes).map((node) => {
@@ -294,7 +299,7 @@ export function readyPlatformTruth({ fingerprint, source, pc, mobile }) {
   if (mobile) platforms.mobile = mobile;
   const fileVersion = source?.lastModified || source?.snapshotHash || fingerprint || null;
   return {
-    schema: 'yise-ready-platform-truth/v1',
+    schema: READY_PLATFORM_TRUTH_SCHEMA,
     fingerprint,
     source,
     design: fileVersion ? { fileVersion } : undefined,

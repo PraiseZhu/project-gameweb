@@ -377,7 +377,7 @@ test('untagged duplicate fix/ copies do not all pin at the sticky origin', () =>
   assert.equal(truth.sections['100:2'].nodes.some((node) => node.id === 'fix-2' || node.id === 'fix-2-btn'), false);
 });
 
-test('fix overlay descendants leave sections and pin with parentBox, not later-section page y', () => {
+test('fix overlay descendants leave sections and keep inventory pageBox', () => {
   const inv = fixture();
   inv.overlays = [{ id: 'fix-2', role: 'fix', label: '顶部信息', pin: 'viewport' }];
   inv.nodes.push(
@@ -418,13 +418,12 @@ test('fix overlay descendants leave sections and pin with parentBox, not later-s
   const btn = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-btn');
   assert.ok(overlay);
   assert.ok(btn);
-  assert.deepEqual(overlay.box, { x: 0, y: 0, w: 3793, h: 493 });
-  assert.deepEqual(btn.box, { x: 2764, y: 70, w: 516, h: 150 });
-  assert.notEqual(btn.box.y, 2213);
-  assert.deepEqual(btn.sliceExport.box, { x: 2764, y: 70, w: 516, h: 150 });
+  assert.deepEqual(overlay.box, { x: 0, y: 2143, w: 3793, h: 493 });
+  assert.deepEqual(btn.box, { x: 2764, y: 2213, w: 516, h: 150 });
+  assert.deepEqual(btn.sliceExport.box, { x: 2764, y: 2213, w: 516, h: 150 });
 });
 
-test('right-side fix overlay keeps viewport parentBox while descendants stay owner-local', () => {
+test('right-side fix overlay keeps inventory pageBox, not overlay-local 0,0', () => {
   const inv = fixture();
   inv.overlays = [{ id: 'fix-right', role: 'fix', label: '右侧浮层', pin: 'viewport' }];
   inv.nodes.push(
@@ -462,13 +461,13 @@ test('right-side fix overlay keeps viewport parentBox while descendants stay own
   const child = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-right-dropmenu');
   assert.ok(overlay);
   assert.ok(child);
-  assert.deepEqual(overlay.box, { x: 0, y: 0, w: 1029, h: 423 });
-  assert.deepEqual(overlay.pageBox, { x: 0, y: 0, w: 1029, h: 423 });
+  assert.deepEqual(overlay.box, { x: 2764, y: 70, w: 1029, h: 423 });
+  assert.deepEqual(overlay.pageBox, { x: 2764, y: 70, w: 1029, h: 423 });
   assert.deepEqual(overlay.parentBox, { x: 2764, y: 70, w: 1029, h: 423 });
-  assert.deepEqual(child.box, { x: 775, y: 6, w: 254, h: 417 });
+  assert.deepEqual(child.box, { x: 3539, y: 76, w: 254, h: 417 });
 });
 
-test('fix nested sliceExport stays offset from the local owner box, not page x', () => {
+test('fix nested sliceExport keeps inventory pageBox, not overlay-local x/y', () => {
   const inv = fixture();
   inv.overlays = [{ id: 'fix-1', role: 'fix', label: '顶部信息', pin: 'viewport' }];
   inv.nodes.push(
@@ -606,4 +605,71 @@ test('canvas-offset modal draws from pageBox, never canvas box', () => {
   assert.deepEqual(child.pageBox, childPage);
   assert.deepEqual(child.box, childPage);
   assert.notEqual(child.box.x, childCanvas.x);
+});
+
+function bottomFixInventory(pageBox) {
+  const inv = fixture();
+  inv.page.pageBox = { ...pageBox };
+  inv.nodes[0].pageBox = { ...pageBox };
+  inv.overlays = [{ id: 'fix-arrow', role: 'fix', label: '箭头', pin: 'viewport' }];
+  inv.nodes.push({
+    id: 'fix-arrow',
+    scope: 'page',
+    type: 'GROUP',
+    name: 'fix/箭头',
+    parentId: PAGE_ID,
+    ancestorIds: [PAGE_ID],
+    orderKey: '0.3',
+    status: 'determined',
+    role: 'fix',
+    pin: 'viewport',
+    pageBox: { x: 1885, y: 2014, w: 70, h: 48 },
+    parentBox: { x: 1885, y: 2014, w: 70, h: 48 },
+    layout: { constraints: { horizontal: 'CENTER', vertical: 'BOTTOM' } },
+  });
+  return inv;
+}
+
+test('BOTTOM fix/ keeps source size and stores the parent-board bottom gap', () => {
+  const overlay = platformTruthFromInventory(bottomFixInventory({ x: 0, y: 0, w: 3840, h: 2160 }))
+    .fixedOverlays.nodes.find((node) => node.id === 'fix-arrow');
+  assert.ok(overlay);
+  assert.deepEqual(overlay.box, { x: 1885, y: 2014, w: 70, h: 48 });
+  assert.equal(overlay.pinEdges.vertical, 'BOTTOM');
+  assert.equal(overlay.pinEdges.horizontal, 'CENTER');
+  assert.equal(overlay.pinEdges.gapBottom, 2160 - (2014 + 48));
+  assert.equal(overlay.pinEdges.boardW, 3840);
+  assert.equal(overlay.pinEdges.boardH, 2160);
+});
+
+test('BOTTOM fix/ uses parent pageBox, not sec/1', () => {
+  const overlay = platformTruthFromInventory(bottomFixInventory({ x: 0, y: 0, w: 3840, h: 8000 }))
+    .fixedOverlays.nodes.find((node) => node.id === 'fix-arrow');
+  assert.equal(overlay.pinEdges.gapBottom, 8000 - (2014 + 48));
+  assert.notEqual(overlay.pinEdges.boardH, 1080);
+});
+
+test('TOP fix/ still pins at overlay origin', () => {
+  const inv = fixture();
+  inv.overlays = [{ id: 'fix-1', role: 'fix', label: '顶部信息', pin: 'viewport' }];
+  inv.nodes.push({
+    id: 'fix-1',
+    scope: 'page',
+    type: 'GROUP',
+    name: 'fix/顶部信息',
+    parentId: PAGE_ID,
+    ancestorIds: [PAGE_ID],
+    orderKey: '0.3',
+    status: 'determined',
+    role: 'fix',
+    pin: 'viewport',
+    pageBox: { x: 0, y: 0, w: 3793, h: 493 },
+    parentBox: { ...PAGE_BOX },
+    layout: { constraints: { horizontal: 'LEFT', vertical: 'TOP' } },
+  });
+  const truth = platformTruthFromInventory(inv);
+  const overlay = truth.fixedOverlays.nodes.find((node) => node.id === 'fix-1');
+  assert.ok(overlay);
+  assert.deepEqual(overlay.box, { x: 0, y: 0, w: 3793, h: 493 });
+  assert.equal(overlay.pinEdges.vertical, 'TOP');
 });

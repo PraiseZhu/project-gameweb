@@ -12,7 +12,7 @@ import {
 } from '../hero-scroll-slot.mjs';
 import { DESIGN_POLICY } from '../design-policy.generated.mjs';
 
-export const RESIZE_SKILL_SCHEMA = 'yise-resize-skill/v1';
+export const RESIZE_SKILL_SCHEMA = 'torchlight-resize-skill/v1';
 export {
   detectLayoutPlanes,
   LAYOUT_PLANES_SCHEMA,
@@ -30,6 +30,13 @@ export const DESIGN_WIDTHS = DESIGN_POLICY.designWidths;
    Tree cutoff stays 1126/1127. html 10vw is a separate number. */
 export const PC_COLUMN_FREEZE_MAX = 1920;
 export const PC_COLUMN_FREEZE_K = PC_COLUMN_FREEZE_MAX / DESIGN_WIDTHS.pc;
+
+/* Temporary lock-1920 name list. Not a lasting naming system.
+   Later seasons reuse these exact names until naming research lands.
+   `fix/` is the prefix. CTA identity is the COMPONENT_SET name, never
+   a page instance `btn/按钮`. */
+export const LOCK_1920_FIX_PREFIX = 'fix';
+export const LOCK_1920_CTA_SET_NAMES = Object.freeze(['btn/主要按钮', '首屏主按钮']);
 
 /* Official poster uses `html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`
    so 10rem = 100vw. Numbers come from DESIGN.md YAML, not a second table. */
@@ -222,10 +229,87 @@ export function viewFitScale({
  * Segmented width ruler (DESIGN.md 第 5.0). Not one k for every viewport:
  *   viewportW > 1920              → column follows viewport, k = viewportW / 3840
  *   1127 ≤ viewportW ≤ 1920       → freeze columnWidth 1920, k locked at 0.5
- *   viewportW ≤ 1126              → mobile tree, k = viewportW / 750
+ *   viewportW ≤ 1126              → mobile tree; k = min(1, viewportW / 750)
+ *                                   (official 751–1126 keeps 750-px button size
+ *                                   while the window is the crop box; do not
+ *                                   freeze a 750 column; do not let k>1 blow CTA)
  * officialRootFontPx stays 0.1 * viewportW (html 10vw). Tree cutoff stays 1126/1127.
  * Do not copy season patches (1440/1024/750/650 rem, aspect-ratio, hover, 812 QR).
  */
+export function isLock1920FixPrefix(prefix) {
+  return String(prefix || '').trim().toLowerCase() === LOCK_1920_FIX_PREFIX;
+}
+
+export function isLock1920CtaSetName(name) {
+  const raw = String(name || '').trim();
+  return LOCK_1920_CTA_SET_NAMES.includes(raw);
+}
+
+/**
+ * Cross-composition named-modal identity. Official SS13 keeps the popup
+ * mounted when the tree switches at 1126: the PC sheet is replaced by the
+ * matching mobile sheet, it is not closed. Inventory labels differ
+ * (`pc_cn订阅赛季日程` vs `mobile订阅赛季日程`); strip platform / locale
+ * prefixes so restore can find the counterpart. Exact leftover text still
+ * has to match — do not invent a second modal.
+ */
+export function namedModalTopic(name) {
+  let raw = String(name || '').trim();
+  if (!raw) return '';
+  raw = raw.replace(/^modal\s*[\/／]\s*/i, '');
+  raw = raw.replace(/^(?:pc|mobile|pad|desktop|phone|tablet)(?:[_-](?:cn|tw|en|jp|kr|zh))?/i, '');
+  raw = raw.replace(/^(?:cn|tw|en|jp|kr|zh)[_-]/i, '');
+  return raw.replace(/^[_-]+/, '').trim();
+}
+
+export function matchNamedModalByTopic(candidates, wantedName) {
+  const wanted = String(wantedName || '').trim();
+  if (!wanted) return null;
+  const list = Array.isArray(candidates) ? candidates : [];
+  const exact = list.find((item) => item && String(item.name || '').trim() === wanted) || null;
+  if (exact) return exact;
+  const topic = namedModalTopic(wanted);
+  if (!topic) return null;
+  const matches = list.filter((item) => item && namedModalTopic(item.name) === topic);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * Temporary lock-1920 name list. Names stay for later seasons; size
+ * above 1920 now follows page k (relative size vs KV must not shrink).
+ * Counter-scaling freeze k=0.5 on each button pulled Shop/充值 toward
+ * the right origin, un-centered the label, and opened top-bar gaps.
+ * Landscape `fix/` top bar is still viewport chrome: official is
+ * `position:fixed; width:100%; justify-content:flex-end` on both
+ * 1127–1920 and >1920 — shift the Figma right edge onto the current
+ * window. Overlay shop / globe / dropmenu are siblings of the wide
+ * `fix/` group, not nested children. Mobile stays on the phone tree.
+ * Not @fit=.
+ */
+export function lock1920Scale({
+  viewportW,
+  pageK,
+  compositionKey = null,
+} = {}) {
+  const width = n(viewportW, NaN);
+  const page = n(pageK, NaN);
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(page) || page <= 0) {
+    return { applied: false, lockK: null, counterScale: 1, reason: 'invalid-viewport' };
+  }
+  if (compositionKey === 'mobile' || width <= TORCHLIGHT_COMPOSITION_BREAKPOINTS[0].max) {
+    return { applied: false, lockK: page, counterScale: 1, reason: 'mobile-tree' };
+  }
+  if (width <= PC_COLUMN_FREEZE_MAX) {
+    return { applied: false, lockK: PC_COLUMN_FREEZE_K, counterScale: 1, reason: 'already-freeze-band' };
+  }
+  return {
+    applied: false,
+    lockK: page,
+    counterScale: 1,
+    reason: 'follow-page-k-above-freeze',
+  };
+}
+
 export function widthScale({
   viewportW,
   designWidth,
@@ -242,8 +326,15 @@ export function widthScale({
     return { k: null, designWidth: used, officialRootFontPx: null, columnWidth: null, columnLeft: null };
   }
   if (width <= TORCHLIGHT_COMPOSITION_BREAKPOINTS[0].max) {
+    /* Official mobile UI rem is authored at 750. 751–1126 keeps that
+       size (k=1) while the window itself is the crop box — KV and later
+       bg cover fill viewportW, 750 later UI centers. Do not freeze a 750
+       column and center-crop: that paints brown bezel beside the page
+       and clips top-bar chrome. Below 750 then k = viewportW/750.
+       k = viewportW/750 unbounded would blow 1126 to 1.5×. */
+    const mobileK = Math.min(1, width / DESIGN_WIDTHS.mobile);
     return {
-      k: width / DESIGN_WIDTHS.mobile,
+      k: mobileK,
       designWidth: DESIGN_WIDTHS.mobile,
       officialRootFontPx,
       columnWidth: width,
@@ -294,6 +385,9 @@ export function heroViewportFill({
     };
   }
   const slotH = vh * (fill / 100);
+  /* Layout extra vs Figma hero, not KV visual cover. Cover uses
+     max(viewportW/designW, slotH/sourceH) in the renderer so 751–1126
+     k=1 cannot freeze the artwork at 750. */
   const slotScale = Math.max(k, slotH / heroH);
   const designHeight = slotH / k;
   /* Later sections start at the real viewport edge (slotH / k), even when
@@ -472,7 +566,7 @@ export function resizeOwns() {
   return [
     'product/QA tree from composition width (torchlight official 0–1126 mobile, ≥1127 pc; no pad tree)',
     'device-picker buckets stay 0–750 / 751–1023 / ≥1024 and do not select the Figma tree',
-    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5 and center-crop (left=(viewportW-1920)/2); ≤1126 k=viewportW/750 (official 10vw html font stays 0.1*viewportW)',
+    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5 and center-crop (left=(viewportW-1920)/2); ≤1126 mobile k=min(1, viewportW/750) so 751–1126 keeps 750-px UI while the window itself is the crop box for KV and later bg (750 later UI centers; official 10vw html font stays 0.1*viewportW)',
     'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; KV window is the real viewport, not the frozen 1920 column; inventory stays one sheet)',
     'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
     'left directory rail stretches to the current viewport height without SS5 node IDs',
@@ -483,13 +577,16 @@ export function resizeOwns() {
     'KV cover-crop stays on the kv visual plane; homepage title/UI stay on width-scale',
     'fixed directory follows remaining viewport height without inheriting KV cover scale',
     'hero lock / exit / release geometry while the window size changes',
+    'temporary lock-1920 name list: fix/ prefix, COMPONENT_SET btn/主要按钮, 首屏主按钮 follow page k when viewportW>1920 so relative size vs KV stays the freeze-band ratio (no per-button freeze counter; landscape fix/ top bar is viewport flex-end on 1127–1920 and >1920; overlay shop/globe/dropmenu are siblings of the wide fix/ group; not a lasting naming system; not @fit=)',
+    'first-screen slg / calendar / primary CTA keep one vertical cluster: bottom-anchor together in page coords at every band, including ≤1126 on first cut (title-group nested SLG and play button ride the owner); phone calendar + CTA stay on Figma pageBox (overlapping stack, no invented row); 751–1126 shifts title/calendar/CTA by the same leftover so the authored gap holds and CTA is not clipped at 750; zh-CN shares that pageBox x with other languages; freeze-band KV covers the real viewport and QA wrap is vp.w not 1920; later pageBox is not padded to 100vh; SLG size stays page k at every PC band (no extra viewport-width stretch above 1920)',
+    'named modal stays open across light-drag and the pointerup full rebuild; overlay re-pins to the current frame (official popup is position:fixed and survives resize); tree switch at 1126 restores the matching mobile/PC sheet by topic, it does not close',
   ];
 }
 
 export function resizeDoesNotOwn() {
   return [
     'locale / copy / typography (Translation Skill)',
-    'click / switch / tab / scrollspy wiring (Interaction Skill)',
+    'click / switch / tab / scrollspy wiring (Interaction Skill; Resize preserves open named-modal names across rebuild, Interaction still owns open/close)',
     'Figma fetch, truth extraction, or asset export (Main Skill)',
     'page-specific node IDs or official-site one-off CSS',
     'per-device special-case layouts or official media-query size patches (1440/1024/750/650 rem, aspect-ratio, hover, 812 QR, device-vertical; 1126 is the tree cutoff only — 1127–1920 column freeze is owned by the segmented ruler)',

@@ -51,7 +51,7 @@ nodes and falsely make asset picking look complete.
 
 ## Resumable export
 
-Large source sets use `yise-asset-export-plan/v1`:
+Large source sets use `torchlight-asset-export-plan/v1`:
 
 - fixed bounded batches;
 - node ID and `imageRef` retained in every requirement;
@@ -77,7 +77,7 @@ Success on one platform never permits omission on another.
 ## Final preview
 
 `final-preview` requires both accepted complete static metadata and a successful
-`yise-static-visual-asset-audit/v1` result:
+`torchlight-static-visual-asset-audit/v1` result:
 
 ```json
 { "visualAssetsComplete": true, "complete": true }

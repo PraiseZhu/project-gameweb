@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { explainMeaningfulContract, candidateCompletion, decodeJsonBytes, productViewUrl, externalTruthFileProtocolFailure, EXTERNAL_TRUTH_FILE_FAILURE } from '../preview-first.mjs';
+import { explainMeaningfulContract, candidateCompletion, decodeJsonBytes, productViewUrl, humanReviewUrl, externalTruthFileProtocolFailure, EXTERNAL_TRUTH_FILE_FAILURE } from '../preview-first.mjs';
 import { parsePreviewJson } from '../figma-html-from-handoff.mjs';
 import { validateSpec } from '../lib/schema.mjs';
 import { qaTruthIsExternal } from '../lib/html-volume.mjs';
@@ -15,7 +15,7 @@ const PREVIEW = fileURLToPath(new URL('../preview-first.mjs', import.meta.url));
 const SKILL_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
 test('preview-first decodes UTF-8, UTF-16LE, and UTF-16BE BOM JSON', () => {
-  const value = { platform: 'mobile', label: '伊瑟' };
+  const value = { platform: 'mobile', label: '火炬' };
   const json = JSON.stringify(value);
 
   assert.deepEqual(
@@ -84,7 +84,7 @@ test('preview-first red never ships an open command', () => {
   assert.match(output.humanReview.nextHumanStep, /preview:first 红了不许给人打开/);
 });
 
-test('preview-first candidate output always uses a durable file:// product URL', () => {
+test('preview-first candidate output always uses a durable file:// QA URL', () => {
   const spec = { workflow: { id: 'figma-showcase', sourcePlatforms: ['desktop'] } };
   const indexPath = join(tmpdir(), 'demo', 'index.html');
   const output = candidateCompletion({
@@ -93,9 +93,9 @@ test('preview-first candidate output always uses a durable file:// product URL',
     truth: {},
     indexPath,
   });
-  assert.equal(output.productView.url, productViewUrl(indexPath));
+  assert.equal(output.productView.url, humanReviewUrl(indexPath));
   assert.match(output.productView.url, /^file:/);
-  assert.match(output.productView.url, /product=1/);
+  assert.doesNotMatch(output.productView.url, /product=1/);
   assert.doesNotMatch(output.productView.url, /^http:/);
   assert.equal(output.humanReview.presentPage, true);
   assert.equal(output.humanReview.id, 'static-and-translation');
@@ -129,7 +129,7 @@ test('preview-first candidate output carries product-view path and unclaimed cap
   const output = candidateCompletion({ ok: true, spec, truth, indexPath: '/tmp/demo/index.html' });
 
   assert.equal(output.evidenceLevel, 'candidate');
-  assert.match(output.productView.url, /product=1/);
+  assert.doesNotMatch(output.productView.url, /product=1/);
   assert.deepEqual(output.sourcePlatformEvidence.claimed, ['desktop']);
   assert.ok(output.unclaimedCapabilities.includes('mobileSourcePlatform'));
   assert.ok(output.unclaimedCapabilities.includes('productRepoIntegration'));

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateFinalPreviewGate, internalCandidatePreview } from '../lib/final-preview-gate.mjs';
 const staticAcceptance = { complete: true, accepted: true, partial: false, staticAcceptanceId: 'accepted-static-r1', staticTruthRef: 'static://accepted/r1' };
-const visualAssetAudit = { schema: 'yise-static-visual-asset-audit/v1', visualAssetsComplete: true, complete: true, requirements: [{ platform: 'pc', nodeId: 'hero', imageRefs: ['hero-ref'] }], covered: [{ platform: 'pc', nodeId: 'hero', file: 'assets/hero.png' }], platforms: [{ platform: 'pc', requirements: 1, covered: 1, complete: true }] };
+const visualAssetAudit = { schema: 'torchlight-static-visual-asset-audit/v1', visualAssetsComplete: true, complete: true, requirements: [{ platform: 'pc', nodeId: 'hero', imageRefs: ['hero-ref'] }], covered: [{ platform: 'pc', nodeId: 'hero', file: 'assets/hero.png' }], platforms: [{ platform: 'pc', requirements: 1, covered: 1, complete: true }] };
 const vectorEvidence = { complete: true, failures: [] }; const compositionEvidence = { complete: true, failures: [] }; const runtimeEvidence = { complete: true, failures: [] }; const finalEvidence = { accepted: true, evidenceLevel: 'confirmed-final', staticAcceptanceId: 'accepted-static-r1' };
 const finalChain = {
   typography: { complete: true, fontFaces: [{ family: 'Source', asset: 'fonts/source.woff2' }], records: [{ provenance: { source: 'fonts-manifest.json', asset: 'fonts/source.woff2' }, browser: { documentFontsStatus: 'loaded', documentFontsCheck: true, computedFamily: 'Source', resolvedFamily: 'Source', fallback: false, glyphsMissing: false } }] },
@@ -28,6 +28,18 @@ test('preview-first candidate remains internal', () => {
 });
 test('final preview blocks incomplete inputs', () => { assert.equal(evaluateFinalPreviewGate({ finalEvidence }).reason, 'static-acceptance-incomplete'); const partial = evaluateFinalPreviewGate({ staticAcceptance: { ...staticAcceptance, partial: true }, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence, ...finalChain }); assert.equal(partial.reason, 'partial-output-not-final'); const missingAssets = evaluateFinalPreviewGate({ staticAcceptance, finalEvidence }); assert.equal(missingAssets.reason, 'static-visual-assets-incomplete'); const candidate = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence: { accepted: true, evidenceLevel: 'candidate' }, ...finalChain }); assert.equal(candidate.reason, 'final-evidence-not-confirmed'); const unverified = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, report: { ok: true, partial: false, evidenceLevel: 'unverified' }, ...finalChain }); assert.equal(unverified.reason, 'final-evidence-not-confirmed'); });
 test('final-ready preview requires complete evidence', () => { const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence, ...finalChain }); assert.equal(result.userPreviewAllowed, true); });
+test('legacy yise visual-asset schema still completes the gate', () => {
+  const result = evaluateFinalPreviewGate({
+    staticAcceptance,
+    visualAssetAudit: { ...visualAssetAudit, schema: 'yise-static-visual-asset-audit/v1' },
+    vectorEvidence,
+    compositionEvidence,
+    runtimeEvidence,
+    finalEvidence,
+    ...finalChain,
+  });
+  assert.equal(result.userPreviewAllowed, true);
+});
 test('final preview blocks missing vector evidence', () => { const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, finalEvidence, vectorEvidence: { complete: false, failures: [{ reason: 'vector-shape-missing' }] }, compositionEvidence, runtimeEvidence, ...finalChain }); assert.equal(result.reason, 'vector-shape-missing'); });
 
 test('final preview blocks aggregate booleans without visual evidence chain', () => { const result = evaluateFinalPreviewGate({ staticAcceptance, visualAssetAudit, vectorEvidence, compositionEvidence, runtimeEvidence, finalEvidence }); assert.equal(result.userPreviewAllowed, false); assert.equal(result.reason, 'typography-evidence-incomplete'); });

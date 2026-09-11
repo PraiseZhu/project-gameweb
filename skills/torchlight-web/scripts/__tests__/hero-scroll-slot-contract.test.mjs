@@ -5,6 +5,30 @@ import { buildHeroScrollSlot, assertHeroScrollSlotState, resolveHeroContentRoot 
 
 const renderSource = () => readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
 
+function applyFixViewportPinFromRender() {
+  const render = renderSource();
+  const helper = render.indexOf('const compactArrowChrome =');
+  const start = render.indexOf('const applyFixViewportPin =');
+  assert.notEqual(helper, -1, 'renderer must define compactArrowChrome next to applyFixViewportPin');
+  assert.notEqual(start, -1, 'renderer must define applyFixViewportPin');
+  assert.ok(helper < start, 'compactArrowChrome must sit before applyFixViewportPin');
+  const sliced = render.slice(helper);
+  const end = sliced.indexOf('\n      const interactionBridge =');
+  assert.notEqual(end, -1, 'applyFixViewportPin must sit next to paint, before interactionBridge');
+  const fn = new Function(`${sliced.slice(0, end)}\nreturn applyFixViewportPin;`)();
+  assert.equal(typeof fn, 'function');
+  return fn;
+}
+
+function pinElement() {
+  const attrs = {};
+  return {
+    style: {},
+    setAttribute(name, value) { attrs[name] = String(value); },
+    getAttribute(name) { return attrs[name] ?? null; },
+  };
+}
+
 test('generic hero scroll-slot state machine locks, exits progressively, then releases', () => {
   const slot = buildHeroScrollSlot({
     viewportHeight: 900,
@@ -87,19 +111,47 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /heroUiYRatio/);
   assert.match(render, /data-hero-ui-anchor/);
   assert.match(render, /owner-block/);
+  assert.match(render, /data-hero-cluster', 'bottom'/);
+  assert.match(render, /heroClusterBottomShift/);
+  assert.match(render, /Calendar \+ CTA stay on Figma pageBox/);
+  assert.match(render, /isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
+  assert.match(render, /isHeroTitleOwner/);
+  assert.match(render, /data-hero-mobile-center/);
+  assert.match(render, /data-later-mobile-center/);
+  assert.match(render, /_windowStageWidthDesign/);
   assert.match(render, /pfx === 'fix'/);
   assert.match(render, /listedHeroArt/);
   assert.match(render, /firstScreenKvInSection/);
   assert.match(render, /coverHeroSlot/);
+  assert.match(render, /const coverHeroSlot = heroSlot;/);
+  assert.doesNotMatch(render, /coverHeroSlot = heroSlot \|\| \(isKv && ids\[0\]/);
   assert.match(render, /scale: pageStageScale/);
   assert.match(render, /const extra = designHeight - heroHeight/);
   assert.match(render, /String\(heroSlot\.layoutOffsetDesign\)/);
   assert.doesNotMatch(render, /Math\.max\(0, designHeight - heroHeight\)/);
   assert.doesNotMatch(render, /layoutOffsetDesign \|\| 0/);
   assert.match(render, /fullBleedHeroArt/);
+  assert.match(render, /data-fix-anchor/);
+  assert.match(render, /bottom-gap/);
+  assert.match(render, /data-fix-chrome/);
+  assert.match(render, /writeFixPinAttrs/);
+  assert.match(render, /n\.layout && n\.layout\.constraints/);
+  assert.match(render, /viewportH \/ k/);
+  assert.match(render, /data-fix-board-w/);
+  assert.doesNotMatch(render, /heroSlot && heroSlot\.designWidth/);
   assert.match(render, /fixedHost\.style\.position = 'sticky'/);
   assert.match(render, /fx-fixed-zoom/);
   assert.match(render, /isTopBarChrome/);
+  assert.match(render, /applyFixViewportPin/);
+  assert.match(render, /data-fix-zoom-span/);
+  assert.match(render, /overlaySpan/);
+  assert.match(render, /overlayHostH/);
+  assert.match(render, /slotH - gapBottom - sourceH/);
+  assert.doesNotMatch(render, /data-fix-slot-anchor/);
+  assert.doesNotMatch(render, /first-screen-bottom/);
+  assert.match(render, /顶部信息\|顶部固定/);
+  assert.match(render, /arrowChrome/);
+  assert.match(render, /箭头\|下滑\|scroll/);
   assert.match(render, /first-section-pagebox/);
   assert.doesNotMatch(render, /fixedHost\.style\.position = 'fixed'/);
   assert.doesNotMatch(render, /fixedStage\.style\.position = 'sticky'/);
@@ -128,4 +180,65 @@ test('QA shell does not rewrite logo to a hardcoded 840×300 overlay', () => {
   const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
   assert.doesNotMatch(chrome, /function syncHeroEntryBrand/);
   assert.doesNotMatch(chrome, /840, 300/);
+});
+
+test('BOTTOM fix/ visual gap stays gap × k on viewportH / k, not cover slot', () => {
+  const applyFixViewportPin = applyFixViewportPinFromRender();
+  const gapBottom = 2160 - (2014 + 48);
+  const sourceH = 48;
+  const sourceW = 70;
+  const k = 0.5;
+  const attrs = {
+    'data-fix-pin-v': 'BOTTOM',
+    'data-fix-pin-h': 'CENTER',
+    'data-fix-gap-bottom': String(gapBottom),
+    'data-fix-board-w': '3840',
+  };
+  const visualGap = (viewportH) => {
+    const el = pinElement();
+    const top = applyFixViewportPin(el, attrs, { w: sourceW, h: sourceH }, k, { viewport: { h: viewportH } });
+    assert.equal(el.getAttribute('data-fix-anchor'), 'bottom-gap');
+    assert.equal(el.style.left, ((3840 - sourceW) / 2) + 'px');
+    return viewportH - (top + sourceH) * k;
+  };
+  assert.equal(gapBottom, 98);
+  assert.equal(visualGap(1080), 49);
+  assert.equal(visualGap(1400), 49);
+  const coverScale = Math.max(k, 1400 / 2160);
+  const coverSlotH = 1400 / coverScale;
+  const coverVisualGap = 1400 - (coverSlotH - gapBottom - sourceH + sourceH) * k;
+  assert.notEqual(coverVisualGap, 49);
+});
+
+test('TOP compact 箭头 still pins to viewportH / k by gapBottom', () => {
+  const applyFixViewportPin = applyFixViewportPinFromRender();
+  const gapBottom = 59;
+  const sourceH = 70;
+  const sourceW = 70;
+  const k = 0.5;
+  const attrs = {
+    'data-fix-pin-v': 'TOP',
+    'data-label': '箭头',
+    'data-fix-gap-bottom': String(gapBottom),
+    'data-fix-board-w': '3840',
+  };
+  const el = pinElement();
+  const top = applyFixViewportPin(el, attrs, { w: sourceW, h: sourceH }, k, { viewport: { h: 1080 } });
+  assert.equal(el.getAttribute('data-fix-anchor'), 'bottom-gap');
+  assert.equal(top, 1080 / k - gapBottom - sourceH);
+  assert.equal(1080 - (top + sourceH) * k, gapBottom * k);
+});
+
+test('applyFixViewportPin is visible to paint, not trapped inside interactionBridge', () => {
+  const render = renderSource();
+  const helper = render.indexOf('const applyFixViewportPin =');
+  const paintCall = render.indexOf('const pinnedTop = applyFixViewportPin(');
+  const bridge = render.indexOf('const interactionBridge =');
+  const bridgeEnd = render.indexOf('\n      const textContext =');
+  assert.notEqual(helper, -1);
+  assert.notEqual(paintCall, -1);
+  assert.notEqual(bridge, -1);
+  assert.notEqual(bridgeEnd, -1);
+  assert.ok(helper < bridge, 'helper must be declared before interactionBridge');
+  assert.ok(paintCall > bridgeEnd, 'paint call must sit after interactionBridge closes');
 });

@@ -11,7 +11,7 @@ import {
 import { assertPhaseOneRows, extractCopy, parsePhaseRows, PHASE_ONE_ROW_MAX, PHASE_ONE_ROW_MIN } from '../lib/figma-copy-match.mjs';
 const PHASE_ONE = Array.from({ length: PHASE_ONE_ROW_MAX - PHASE_ONE_ROW_MIN + 1 }, (_, i) => i + PHASE_ONE_ROW_MIN);
 import { assessCopyCoverage, collectInventoryTexts } from '../lib/figma-copy-coverage.mjs';
-import { buildHandoffCopyEnvelope } from '../lib/figma-copy-adapter.mjs';
+import { buildHandoffCopyEnvelope, designationsToOverlay } from '../lib/figma-copy-adapter.mjs';
 
 /* ── deriveContext：场景信号机械派生，不手填 ─────────────────────────── */
 test('deriveContext: 目录/toggle 场景判 nav，正文判 content', () => {
@@ -334,7 +334,7 @@ test('extractCopy: fewer locale sentences keep their own line count and mark ext
   assert.equal(out.byNode.T1.missingLangs.includes('en'), false);
 });
 
-test('extractCopy: designated nodeRow wins over cell-split row but keeps split parts', () => {
+test('extractCopy: designated nodeRow to a different multiline cell does not keep old split index', () => {
   const splitSnap = {
     _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
@@ -355,11 +355,9 @@ test('extractCopy: designated nodeRow wins over cell-split row but keeps split p
   const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
   const overlay = { nodeRow: { T2: { row: 8, why: 'review fixture: designated beats cell-split' } } };
   const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
-  assert.equal(out.byNode.T2.matchKind, 'designated');
+  assert.equal(out.byNode.T2.matchKind, 'designated-split-unresolved');
   assert.equal(String(out.byNode.T2.row), '8');
-  assert.equal(out.byNode.T2.translations.en.value, 'SEASON LAUNCH');
-  assert.equal(out.byNode.T2.cellSplit.lineIndex, 1);
-  assert.equal(out.byNode.T2.cellSplit.lineCount, 2);
+  assert.equal(out.byNode.T2.translations?.en, undefined);
   assert.equal(out.byNode.T1.matchKind, 'cell-split');
   assert.equal(String(out.byNode.T1.row), '7');
   const without = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
@@ -367,6 +365,38 @@ test('extractCopy: designated nodeRow wins over cell-split row but keeps split p
   assert.equal(String(without.byNode.T2.row), '7');
 });
 
+
+test('extractCopy: designation to another multiline row re-infers lineIndex from the new cell', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
+    rows: {
+      7: {
+        'zh-CN': 'A\u53e5\nB\u53e5',
+        en: 'A-en\nB-en',
+      },
+      8: {
+        'zh-CN': 'B\u53e5\nC\u53e5',
+        en: 'B-en\nC-en',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'T1', name: 'a', characters: 'A句', parentId: 'hero', orderKey: '1' },
+    { nodeId: 'T2', name: 'b', characters: 'B句', parentId: 'hero', orderKey: '2' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const overlay = { nodeRow: { T2: { row: 8, why: 'remap B onto B\nC row' } } };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.T2.matchKind, 'designated');
+  assert.equal(String(out.byNode.T2.row), '8');
+  assert.equal(out.byNode.T2.translations.en.value, 'B-en');
+  assert.equal(out.byNode.T2.cellSplit.lineIndex, 0);
+  assert.notEqual(out.byNode.T2.translations.en.value, 'C-en');
+  const without = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(without.byNode.T2.matchKind, 'cell-split');
+  assert.equal(String(without.byNode.T2.row), '7');
+  assert.equal(without.byNode.T2.translations.en.value, 'B-en');
+});
 test('extractCopy: one visible TEXT can bind one line of a newline cell', () => {
   const splitSnap = {
     _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
@@ -1056,4 +1086,184 @@ test('buildHandoffCopyEnvelope: 入口硬验阶段一 3–54，缺/越界不得�
   assert.equal(String(ok.byNode.cta.row), '9');
   assert.equal(ok.byNode.cta.translations.en.value, 'Download Now');
   assert.equal(assertPhaseOneRows(PHASE_ONE).ok, true);
+});
+
+
+test('collectInventoryTexts includes modal and component-set copy', () => {
+  const texts = collectInventoryTexts({
+    nodes: [{ id: 'page-copy', type: 'TEXT', role: 'copy', status: 'determined', text: { characters: '立即下载' } }],
+    attachments: {
+      modals: [{
+        id: 'modal-1',
+        name: 'modal/pc_cn订阅赛季日程',
+        nodes: [{ id: '949:5258', type: 'TEXT', role: 'copy', status: 'determined', text: { characters: '订阅赛季日程' } }],
+      }],
+      componentSets: [{
+        id: 'cal',
+        name: '日历',
+        variants: [{ id: 'tw', name: 'lang=tw', nodes: [{ id: '949:5809', type: 'TEXT', role: 'copy', text: { characters: 'Apple' } }] }],
+      }],
+    },
+  }, { treeKey: 'pc' });
+  const ids = texts.map((row) => row.nodeId).sort();
+  assert.deepEqual(ids, ['949:5258', '949:5809', 'page-copy']);
+  assert.equal(texts.find((row) => row.nodeId === '949:5258').characters, '订阅赛季日程');
+});
+test('extractCopy: designated multiline cell without lineIndex infers the matching sentences', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      50: {
+        'zh-CN': '你还可以使用iCal文件导入其他常用的日历软件：\n1.下载iCalendar文件；\n2.打开文件，系统会自动获取日历。\n3.如Apple日历订阅失败，请重试。',
+        en: 'You can also import the iCal file into other commonly used calendar software:\n1. Download iCalendar file;\n2. Open the file, and the system will automatically retrieve the calendar.\n3. If Apple Calendar subscription fails, try again.',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'intro', name: 'intro', characters: '你还可以使用iCal文件导入其他常用的日历软件：', parentId: 'sheet', orderKey: '1' },
+    { nodeId: 'step1', name: 'step1', characters: '1.下载iCalendar文件；', parentId: 'btn', orderKey: '2' },
+    { nodeId: 'steps23', name: 'steps23', characters: '2.打开文件，系统会自动获取日历。\r\n3.如Apple日历订阅失败，请重试。', parentId: 'sheet', orderKey: '3' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const overlay = {
+    nodeRow: {
+      step1: { row: 50, why: 'share iCal row' },
+      steps23: { row: 50, why: 'share iCal row' },
+    },
+  };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.step1.matchKind, 'designated');
+  assert.equal(out.byNode.step1.translations.en.value, '1. Download iCalendar file;');
+  assert.equal(out.byNode.steps23.matchKind, 'designated');
+  assert.match(out.byNode.steps23.translations.en.value, /2\. Open the file[\s\S]*try again/);
+  assert.equal(out.byNode.steps23.cellSplit.lineIndex, 2);
+  assert.equal(out.byNode.steps23.cellSplit.takeCount, 2);
+  assert.equal(String(out.byNode.steps23.translations.en.value).includes('You can also import'), false);
+});
+
+test('extractCopy: designated lineIndex takes only that sentence', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      50: {
+        'zh-CN': '你还可以使用iCal文件导入其他常用的日历软件：\n1.下载iCalendar文件；\n2.打开文件。\n3.失败请重试。',
+        en: 'You can also import the iCal file:\n1. Download iCalendar file;\n2. Open the file.\n3. If it fails, try again.',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'steps23', name: 'steps23', characters: '2.打开文件。\n3.失败请重试。', parentId: 'sheet', orderKey: '1' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const overlay = { nodeRow: { steps23: { row: 50, lineIndex: 2, takeCount: 2, why: 'explicit span' } } };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.steps23.translations.en.value, '2. Open the file.\n3. If it fails, try again.');
+  assert.equal(String(out.byNode.steps23.translations.en.value).includes('Download'), false);
+});
+
+test('extractCopy: designated multiline cell does not dump the whole cell onto an unmatched layer', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      50: {
+        'zh-CN': '你还可以使用iCal文件导入其他常用的日历软件：\n1.下载iCalendar文件；\n2.打开文件。\n3.失败请重试。',
+        en: 'You can also import the iCal file:\n1. Download iCalendar file;\n2. Open the file.\n3. If it fails, try again.',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'other', name: 'other', characters: '将火炬嘉年华直播同步到日历', parentId: 'sheet', orderKey: '1' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const overlay = { nodeRow: { other: { row: 50, why: 'wrong layer' } } };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.other.matchKind, 'designated-split-unresolved');
+  assert.equal(out.byNode.other.translations.en, undefined);
+  assert.equal((out._unread || out.unread || []).some((item) => item.nodeId === 'other'), true);
+});
+
+test('extractCopy: Figma LINE SEPARATOR splits the same as newline for cell spans', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      50: {
+        'zh-CN': '你还可以使用iCal文件导入其他常用的日历软件：\n1.下载iCalendar文件；\n2.打开文件。\n3.失败请重试。',
+        en: 'You can also import the iCal file:\n1. Download iCalendar file;\n2. Open the file.\n3. If it fails, try again.',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'mobile23', name: 'mobile23', characters: '2.打开文件。\u20283.失败请重试。', parentId: 'm', orderKey: '1' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const overlay = { nodeRow: { mobile23: { row: 50, why: 'mobile span' } } };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.mobile23.matchKind, 'designated');
+  assert.equal(String(out.byNode.mobile23.translations.en.value).includes('Download'), false);
+  assert.match(out.byNode.mobile23.translations.en.value, /Open the file/);
+  assert.match(out.byNode.mobile23.translations.en.value, /try again/);
+});
+
+test('designationsToOverlay passes lineIndex and takeCount through to nodeRow', () => {
+  const overlay = designationsToOverlay({
+    designations: {
+      '949:5253': { row: 50, lineIndex: 2, takeCount: 2, why: 'steps 2-3' },
+    },
+  });
+  assert.equal(overlay.nodeRow['949:5253'].row, 50);
+  assert.equal(overlay.nodeRow['949:5253'].lineIndex, 2);
+  assert.equal(overlay.nodeRow['949:5253'].takeCount, 2);
+});
+
+test('extractCopy: unresolved split group does not reuse old lineIndex on a different designated row', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      7: { 'zh-CN': 'A\nB', en: 'A7\nB7' },
+      8: { 'zh-CN': 'A\nB', en: 'A8\nB8' },
+      9: { 'zh-CN': 'X\nY', en: 'X9\nY9' },
+    },
+  };
+  const texts = [
+    { nodeId: 'T1', name: 'a', characters: 'A', parentId: 'hero', orderKey: '1' },
+    { nodeId: 'T2', name: 'b', characters: 'B', parentId: 'hero', orderKey: '2' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const overlay = { nodeRow: { T2: { row: 9, why: 'point B at X/Y' } } };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.T2.matchKind, 'designated-split-unresolved');
+  assert.notEqual(out.byNode.T2.translations && out.byNode.T2.translations.en && out.byNode.T2.translations.en.value, 'Y9');
+  assert.equal(out.byNode.T2.translations && out.byNode.T2.translations.en, undefined);
+});
+
+test('extractCopy: designated lineCount 1 does not dump a multiline cell', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: {
+      50: {
+        'zh-CN': 'intro\n1.download',
+        en: 'You can also import\n1. Download iCalendar file;',
+      },
+    },
+  };
+  const texts = [{ nodeId: 'step1', name: 'step1', characters: 'intro', parentId: 'sheet', orderKey: '1' }];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const overlay = { nodeRow: { step1: { row: 50, lineIndex: 0, lineCount: 1, why: 'contradictory lineCount' } } };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.step1.matchKind, 'designated');
+  assert.equal(out.byNode.step1.translations.en.value, 'You can also import');
+  assert.equal(String(out.byNode.step1.translations.en.value).includes('Download'), false);
+});
+
+test('extractCopy: designated takeCount past the cell is unresolved', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: { 50: { 'zh-CN': 'A\nB', en: 'A-en\nB-en' } },
+  };
+  const texts = [{ nodeId: 't', name: 't', characters: 'B', parentId: 'sheet', orderKey: '1' }];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const overlay = { nodeRow: { t: { row: 50, lineIndex: 1, takeCount: 2, why: 'overflow span' } } };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.t.matchKind, 'designated-split-unresolved');
+  assert.equal(out.byNode.t.translations && out.byNode.t.translations.en, undefined);
 });

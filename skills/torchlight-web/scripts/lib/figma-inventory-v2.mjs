@@ -996,7 +996,7 @@ export function adaptInventoryToTruthShape(inv, options = {}) {
   const platformScope = options.platformScopeInput
     ? evaluatePlatformScopeComplete({ ...options.platformScopeInput, candidates: visualStateDiscovery.candidates })
     : {
-      schema: 'yise-figma-state-candidate-audit/v1',
+      schema: 'torchlight-figma-state-candidate-audit/v1',
       complete: false,
       blocked: true,
       reason: 'platform-scope-input-missing',

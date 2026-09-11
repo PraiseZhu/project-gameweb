@@ -289,7 +289,7 @@ test('img/ lang variant roots with sliceExport are sliced from componentVariantG
 
 test('ready-handoff slices listed sliceExport and visible IMAGE fills, not empty exportSettings frames', () => {
   const truth = {
-    schema: 'yise-ready-platform-truth/v1',
+    schema: 'torchlight-ready-platform-truth/v1',
     source: { schema: 'inventory/v2' },
     platforms: {
       pc: {
@@ -340,7 +340,7 @@ test('ready-handoff slices listed sliceExport and visible IMAGE fills, not empty
 
 test('IMAGE grandchildren under unnamed kv stay inside the whole-frame PNG', () => {
   const picks = pickSliceNodes({
-    schema: 'yise-ready-platform-truth/v1',
+    schema: 'torchlight-ready-platform-truth/v1',
     source: { schema: 'inventory/v2' },
     platforms: {
       mobile: {
@@ -385,7 +385,7 @@ test('IMAGE grandchildren under unnamed kv stay inside the whole-frame PNG', () 
 
 test('listed img/ time-bg and unnamed kv FRAME export the owner pageBox, not ink', () => {
   const truth = {
-    schema: 'yise-ready-platform-truth/v1',
+    schema: 'torchlight-ready-platform-truth/v1',
     source: { schema: 'inventory/v2' },
     platforms: {
       pc: {
@@ -441,7 +441,7 @@ test('listed img/ time-bg and unnamed kv FRAME export the owner pageBox, not ink
 
 test('unnamed kv without sliceExport still exports the owner pageBox', () => {
   const truth = {
-    schema: 'yise-ready-platform-truth/v1',
+    schema: 'torchlight-ready-platform-truth/v1',
     source: { schema: 'inventory/v2' },
     platforms: {
       mobile: {
@@ -480,7 +480,7 @@ test('unnamed kv without sliceExport still exports the owner pageBox', () => {
 
 test('play-button img/ DROP_SHADOW exports same-space ink, not the 124 pageBox', () => {
   const picks = pickSliceNodes({
-    schema: 'yise-ready-platform-truth/v1',
+    schema: 'torchlight-ready-platform-truth/v1',
     source: { schema: 'inventory/v2' },
     platforms: {
       pc: {
@@ -513,7 +513,7 @@ test('play-button img/ DROP_SHADOW exports same-space ink, not the 124 pageBox',
 
 test('listed bg/ with inventory bounds=render still exports the node box, not canvas ink', () => {
   const truth = {
-    schema: 'yise-ready-platform-truth/v1',
+    schema: 'torchlight-ready-platform-truth/v1',
     source: { schema: 'inventory/v2' },
     platforms: {
       pc: {
@@ -577,7 +577,7 @@ test('whole-frame box export requests use_absolute_bounds=true', () => {
   assert.match(src, /pageBoxExport = wholeFrameSlice && !softSpill/);
   assert.match(src, /if \(chunk\[0\]\.exportBounds !== 'render'\) q\.set\('use_absolute_bounds', 'true'\)/);
   const timeBg = pickSliceNodes({
-    schema: 'yise-ready-platform-truth/v1',
+    schema: 'torchlight-ready-platform-truth/v1',
     source: { schema: 'inventory/v2' },
     platforms: {
       pc: {
@@ -606,7 +606,7 @@ test('whole-frame box export requests use_absolute_bounds=true', () => {
 
 test('hairline img/ with LAYER_BLUR exports same-space renderBox, not 0-height pageBox', () => {
   const picks = pickSliceNodes({
-    schema: 'yise-ready-platform-truth/v1',
+    schema: 'torchlight-ready-platform-truth/v1',
     source: { schema: 'inventory/v2' },
     platforms: {
       pc: {

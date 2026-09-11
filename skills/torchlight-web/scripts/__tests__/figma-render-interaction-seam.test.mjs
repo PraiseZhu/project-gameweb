@@ -106,7 +106,7 @@ test('only language dropmenus consume inner btn as setPref lang', () => {
 test('named modal pin fills the visible frame with an 80% black scrim', () => {
   assert.match(renderer, /data-modal-scrim/);
   assert.match(renderer, /rgba\(0,0,0,' \+ opacity \+ '\)/);
-  assert.match(renderer, /host\.style\.zoom = '1'/);
+  assert.match(renderer, /modalHost\.style\.zoom = '1'/);
   assert.match(renderer, /modalViewportFill/);
   assert.match(renderer, /Math\.max\(visibleW \/ designW, visibleH \/ designH\)/);
   assert.doesNotMatch(renderer, /frameRect\.width \/ \(pageZoom \|\| 1\)/);
@@ -203,29 +203,41 @@ test('named modal pin drops host zoom so Figma sheet is not scaled twice', () =>
   assert.ok(pinAt > 0 && unpinAt > 0 && closeAt > pinAt);
   const pin = renderer.slice(pinAt, closeAt);
   const unpin = renderer.slice(unpinAt, pinAt);
-  assert.match(pin, /host\.style\.zoom = '1'/);
+  assert.match(pin, /modalHost\.style\.zoom = '1'/);
   assert.match(pin, /layer\.style\.zoom = '1'/);
   assert.match(pin, /frame\.style\.width/);
   assert.match(pin, /frame\.clientWidth/);
-  assert.match(pin, /host\.style\.position = 'absolute'/);
+  assert.match(pin, /modalHost\.style\.position = 'absolute'/);
   assert.match(pin, /data-modal-sheet/);
   assert.match(pin, /layer\.style\.width = visibleW \+ 'px'/);
   assert.match(pin, /sheet\.style\.width = designW \+ 'px'/);
   assert.doesNotMatch(pin, /frame\.style\.zoom/);
   assert.doesNotMatch(pin, /visibleW = frameRect\.width \/ \(pageZoom/);
   assert.doesNotMatch(pin, /const visibleW = frameRect\.width;/);
-  assert.match(unpin, /host\.style\.zoom = String\(pageStageScale \|\| k\)/);
-  assert.match(unpin, /host\.__fxNamedModalRest/);
+  assert.match(unpin, /modalHost\.style\.zoom = String\(pageStageScale \|\| k\)/);
+  assert.match(unpin, /modalHost\.__fxNamedModalRest/);
   assert.doesNotMatch(unpin, /pageMeta\.height/);
   assert.match(renderer, /rgba\(0,0,0,' \+ opacity \+ '\)/);
   assert.match(renderer, /frame\.style\.overflowY = 'hidden'/);
 });
 
+test('full rebuild restores open named modals instead of closing them', () => {
+  assert.match(renderer, /restoreOpenModalNames = this\._openNamedModalNames\(frame\)/);
+  assert.match(renderer, /_restoreOpenNamedModals\(frame, restoreOpenModalNames\)/);
+  assert.match(renderer, /data-modal-open="true"/);
+  assert.match(renderer, /Official named popup stays mounted across window resize/);
+  assert.match(renderer, /_matchNamedModalByTopic/);
+  assert.match(renderer, /pc_cn订阅赛季日程/);
+  const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
+  assert.match(chrome, /_pinOpenNamedModals\(frame\)/);
+  assert.match(chrome, /syncDragContentFollow/);
+});
+
 test('opening a named modal closes every other open named modal first', () => {
   const openAt = renderer.indexOf('const openNamedModal = (entry) =>');
-  const closeBtnAt = renderer.indexOf('const closeBtn = this._closeControlFromEvent(ev);', openAt);
-  assert.ok(openAt > 0 && closeBtnAt > openAt);
-  const open = renderer.slice(openAt, closeBtnAt);
+  const assignAt = renderer.indexOf('frame.__fxOpenNamedModal = openNamedModal;', openAt);
+  assert.ok(openAt > 0 && assignAt > openAt);
+  const open = renderer.slice(openAt, assignAt);
   assert.match(open, /other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) closeNamedModal\(other\)/);
   assert.doesNotMatch(open, /entry\.exclusive && other\.exclusive/);
   assert.doesNotMatch(renderer, /exclusive: parsed\.label !== '视频弹窗'/);

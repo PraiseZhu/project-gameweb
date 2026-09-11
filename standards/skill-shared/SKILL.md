@@ -20,12 +20,13 @@ cd standards/skill-shared/tool
 npm test
 node src/sync-shared-files.mjs preview
 node src/sync-shared-files.mjs check
-node src/sync-shared-files.mjs apply --from torchlight-web --to yise-web-ui
+node src/sync-shared-files.mjs apply --from torchlight-web --to yise-web-ui --dry-run
 ```
 
 - `preview`：列出一致 / 漂移 / 缺失 / 未进清单
 - `check`：清单内漂移或缺失则红
-- `apply`：只补缺失；清单内已经不一样的文件默认跳过
-- `apply --copy-drift`：才把清单内漂移从 `--from` 覆盖到 `--to`
+- `apply`：跨 skill 默认只 dry-run，打印将写入的路径，不落盘
+- `apply --write`：才真正拷贝；只补缺失；清单内已经不一样的文件默认跳过
+- `apply --write --copy-drift`：才把清单内漂移从 `--from` 覆盖到 `--to`
 
-未进清单的同路径文件一律不碰。那是各 skill 已经特化过的副本。
+未进清单的同路径文件一律不碰。那是各 skill 已经特化过的副本。火炬固定链路不得对伊瑟执行 `--write`。

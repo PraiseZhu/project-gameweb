@@ -24,7 +24,7 @@
 
 ```bash
 node scripts/lib/figma-typography-browser-check.mjs \
-  --demo demos/yise-ss5-preview \
+  --demo demos/torchlight-preview \
   --langs zh-CN,en,ja,ko,zh-TW \
   --out artifacts/typography-coverage.json
 ```
@@ -66,6 +66,6 @@ weights do not silently become synthetic weight.
 
 ## Current known gap
 
-`node scripts/figma-fonts.mjs --demo demos/yise-ss5-preview --dry-run` 应报告 `missingCount: 0`。如未来新增语言字体文件缺失，继续按缺字体清单暴露，不静默替换、不修改 Figma style，也不声称字重保真。
+`node scripts/figma-fonts.mjs --demo demos/torchlight-preview --dry-run` 应报告 `missingCount: 0`。如未来新增语言字体文件缺失，继续按缺字体清单暴露，不静默替换、不修改 Figma style，也不声称字重保真。
 
 integer-px 适配记录必须带语言和节点；`data-fit-px` / `data-fit-overflow` 不能被隐藏。旧 `data-fit-scale` 百分比和 75% 地板不再当通过证据。没有明确 Figma truncation 语义时不添加 ellipsis，不用固定字号掩盖缺字体或缺字形。

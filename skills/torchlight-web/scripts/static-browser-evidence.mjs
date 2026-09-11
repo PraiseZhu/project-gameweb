@@ -7,7 +7,7 @@ const args = process.argv.slice(2);
 const valueOf = (flag) => { const index = args.indexOf(flag); return index >= 0 ? args[index + 1] : null; };
 const demo = valueOf('--demo'); const contractPath = valueOf('--contract'); const out = valueOf('--out');
 const fail = (reason, detail = {}) => {
-  const report = { schema: 'yise-static-browser-snapshot/v1', complete: false, blocked: true, failures: [{ reason, ...detail }] };
+  const report = { schema: 'torchlight-static-browser-snapshot/v1', complete: false, blocked: true, failures: [{ reason, ...detail }] };
   if (out) { const target = resolve(out); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, JSON.stringify(report, null, 2) + '\n'); }
   console.log(JSON.stringify(report, null, 2)); process.exit(2);
 };

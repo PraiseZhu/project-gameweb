@@ -46,7 +46,7 @@ function stickyProductScroll(ids = ['fix-1', 'fix-1-btn']) {
   };
 }
 
-test('fix descendants expect parentBox in the sticky overlay, not later-section page y', () => {
+test('fix descendants expect inventory pageBox vs the page origin, not overlay-local y', () => {
   const box = expectedDrawBox({
     id: 'fix-btn',
     role: 'btn',
@@ -56,10 +56,20 @@ test('fix descendants expect parentBox in the sticky overlay, not later-section 
   }, new Map([
     ['fix-2', { id: 'fix-2', role: 'fix', pin: 'viewport', pageBox: { x: 0, y: 2143, w: 3793, h: 493 } }],
   ]));
-  assert.deepEqual(box, { x: 2764, y: 70, w: 516, h: 150 });
+  assert.deepEqual(box, { x: 2764, y: 2213, w: 516, h: 150 });
 });
 
-test('nested fix img expects overlay-absolute pageBox minus owner, not parentBox', () => {
+test('fix overlay root keeps inventory pageBox, not sticky 0,0', () => {
+  const box = expectedDrawBox({
+    id: 'fix-right',
+    role: 'fix',
+    pin: 'viewport',
+    pageBox: { x: 2764, y: 70, w: 1029, h: 423 },
+  });
+  assert.deepEqual(box, { x: 2764, y: 70, w: 1029, h: 423 });
+});
+
+test('nested fix img expects inventory pageBox vs the page origin, not parentBox', () => {
   const box = expectedDrawBox({
     id: 'fix-img',
     role: 'img',
@@ -70,7 +80,7 @@ test('nested fix img expects overlay-absolute pageBox minus owner, not parentBox
     ['fix-2', { id: 'fix-2', role: 'fix', pin: 'viewport', pageBox: { x: 0, y: 2143, w: 3793, h: 493 } }],
     ['fix-btn', { id: 'fix-btn', role: 'btn', pageBox: { x: 2764, y: 2213, w: 516, h: 150 } }],
   ]));
-  assert.deepEqual(box, { x: 2821, y: 104, w: 402, h: 84 });
+  assert.deepEqual(box, { x: 2821, y: 2247, w: 402, h: 84 });
 });
 
 test('expectation is pageBox, never canvas box', () => {
@@ -264,6 +274,8 @@ test('probe script is a shipped skill file, not an optional local extra', () => 
   assert.match(src, /frame\.scrollTop = Math\.max\(0, nextTop\)/);
   assert.match(src, /sectionAbutAfter/);
   assert.match(src, /nextRectAfter/);
+  assert.match(src, /overlayBoxes/);
+  assert.match(src, /data-hero-page-scale/);
   assert.match(src, /seamY = sectionAbutAfter && Number\.isFinite\(Number\(sectionAbutAfter\.nextTop\)\)/);
   assert.doesNotMatch(src, /const seamY = sectionAbut && Number\.isFinite\(Number\(sectionAbut\.nextTop\)\)/);
   assert.doesNotMatch(src, /Math\.min\(Number\(viewport\.h\) \|\| 720, 720\)/);
@@ -1266,7 +1278,7 @@ test('kept fix descendants measured inside a section are red', () => {
   assert.ok(red.problems.some((line) => line.includes('fix-btn: fix-in-section')), (red.problems || []).join('\n'));
 });
 
-test('fix nested sliceExport is compared in overlay space, not page y', () => {
+test('fix nested sliceExport is compared in page space, not overlay-local y', () => {
   const pageBox = { x: 2821, y: 2247, w: 402, h: 84 };
   const overlayBox = { x: 2821, y: 104, w: 402, h: 84 };
   const green = evaluateInventoryStaticGate({
@@ -1287,11 +1299,11 @@ test('fix nested sliceExport is compared in overlay space, not page y', () => {
     },
     measurements: {
       nodes: {
-        'fix-2': { x: 0, y: 0, w: 3793, h: 493, inSection: false },
+        'fix-2': { x: 0, y: 2143, w: 3793, h: 493, inSection: false },
         'fix-img': {
-          x: 2821, y: 104, w: 402, h: 84,
+          x: 2821, y: 2247, w: 402, h: 84,
           hasImg: true,
-          imgBox: overlayBox,
+          imgBox: pageBox,
           inSection: false,
         },
       },
@@ -1318,11 +1330,11 @@ test('fix nested sliceExport is compared in overlay space, not page y', () => {
     },
     measurements: {
       nodes: {
-        'fix-2': { x: 0, y: 0, w: 3793, h: 493, inSection: false },
+        'fix-2': { x: 0, y: 2143, w: 3793, h: 493, inSection: false },
         'fix-img': {
           x: 2821, y: 104, w: 402, h: 84,
           hasImg: true,
-          imgBox: pageBox,
+          imgBox: overlayBox,
           inSection: false,
         },
       },
@@ -1967,6 +1979,147 @@ test('QA chrome PNG ink and non-copy gradient CSS fill are red when they drift',
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
 });
 
+test('product overlay span with collapsing negative margin is green', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '顶部固定内容' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/顶部固定内容', pageBox: { x: 0, y: 0, w: 736, h: 401 } },
+    ],
+  };
+  const green = evaluateProductScrollGate({
+    inventory,
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '844px', marginBottom: '-844px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0, clippedAfter: false } },
+      overlayBoxes: { 'fix-1': { top: 0, height: 401 * 0.52 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'hidden' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('product overlay that stays laid out but is clipped after scroll is red', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '右侧顶部信息' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/右侧顶部信息', pageBox: { x: 370, y: 27, w: 366, h: 374 } },
+      { id: 'fix-btn', status: 'determined', role: 'btn', ancestorIds: ['fix-1'], pageBox: { x: 370, y: 27, w: 310, h: 90 } },
+    ],
+  };
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0, clippedAfter: true, visibleAreaAfter: 0 } },
+      overlayBoxes: { 'fix-1': { top: 14, height: 194 } },
+      scrolled: 1,
+      scrollTop: 500,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 1623, overflow: 'hidden' } },
+      slotDesignHeight: 1623,
+      scale: 0.52,
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 374,
+        sourceHeight: 374,
+        nodes: {
+          'fix-1': { x: 370, y: 27, w: 366, h: 374 },
+          'fix-btn': { x: 370, y: 27, w: 310, h: 90 },
+        },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('overlay-scroll-clipped')), (red.problems || []).join('\n'));
+});
+
+test('portrait named 顶部信息 treated as a directory is red', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '右侧顶部信息' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/右侧顶部信息', pageBox: { x: 370, y: 27, w: 366, h: 374 } },
+    ],
+  };
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      overlayBoxes: { 'fix-1': { top: 14, height: 194 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: true,
+        kind: 'root',
+        topbar: false,
+        yScale: 0.63,
+        height: 236,
+        sourceHeight: 374,
+        nodes: { 'fix-1': { x: 370, y: 27, w: 366, h: 374 } },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-treated-as-directory')), (red.problems || []).join('\n'));
+});
+
+test('compact named 箭头 treated as a directory is red', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+    overlays: [{ id: 'fix-arrow', role: 'fix', pin: 'viewport', label: '箭头' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 3840, h: 2143 } },
+      { id: 'fix-arrow', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/箭头', pageBox: { x: 1885, y: 2014, w: 70, h: 70 } },
+    ],
+  };
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-arrow': { dTop: 0, dLeft: 0 } },
+      overlayBoxes: { 'fix-arrow': { top: 1007, height: 35 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 1080, overflow: 'hidden' } },
+      slotDesignHeight: 2160,
+      scale: 0.5,
+      chromeTopBar: {
+        id: 'fix-arrow',
+        navShell: true,
+        kind: 'root',
+        topbar: false,
+        yScale: 1,
+        height: 70,
+        sourceHeight: 70,
+        nodes: { 'fix-arrow': { x: 1885, y: 2014, w: 70, h: 70 } },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('topbar-chrome-treated-as-directory')), (red.problems || []).join('\n'));
+});
+
 test('product overlay stretched to viewport height is red', () => {
   const inventory = {
     schema: 'inventory/v2',
@@ -2375,6 +2528,165 @@ test('product-scroll does not require a later sec/3 bg/ to be on-screen after sc
       }],
     
       seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('product viewport rejects a first-screen arrow still at Figma pageBox y', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+    overlays: [{ id: 'fix-arrow', role: 'fix', pin: 'viewport', label: '箭头' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 3840, h: 2143 } },
+      { id: 'fix-arrow', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/箭头', pageBox: { x: 1885, y: 2014, w: 70, h: 70 } },
+    ],
+  };
+  const productScroll = {
+    overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+    overlayDeltas: { 'fix-arrow': { dTop: 0, dLeft: 0 } },
+    overlayBoxes: { 'fix-arrow': { top: 2014 * 0.5, height: 70 * 0.5 } },
+    scrolled: 1,
+    scrollTop: 1,
+    layers: { 'sec-1': { cropWindow: '100vh', height: 2160, overflow: 'hidden' } },
+    slotDesignHeight: 1800,
+    scale: 0.5,
+    chromeTopBar: {
+      id: 'fix-arrow',
+      navShell: false,
+      topbar: true,
+      height: 70,
+      sourceHeight: 70,
+      nodes: { 'fix-arrow': { x: 1885, y: 2014, w: 70, h: 70 } },
+    },
+  };
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll,
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('arrow-not-on-first-screen-floor')), (red.problems || []).join('\n'));
+
+  const floorTop = (1800 - (2143 - (2014 + 70)) - 70) * 0.5;
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      ...productScroll,
+      overlayBoxes: { 'fix-arrow': { top: floorTop, height: 70 * 0.5 } },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+
+  const designViewport = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'design',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-arrow': { dTop: 0, dLeft: 0 } },
+      overlayBoxes: { 'fix-arrow': { top: 2014, height: 70 } },
+      scrolled: 1,
+      scrollTop: 1,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 2143, overflow: 'hidden' } },
+    },
+  });
+  assert.equal(designViewport.ok, true, (designViewport.problems || []).join('\n'));
+  assert.equal((designViewport.problems || []).some((line) => line.includes('arrow-not-on-first-screen-floor')), false);
+});
+
+test('design viewport does not demand Figma pageBox y for a remapped compact 箭头', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    nodes: [
+      { id: 'fix-arrow', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/箭头', pageBox: { x: 1885, y: 2014, w: 70, h: 70 } },
+      {
+        id: 'fix-arrow-img',
+        status: 'determined',
+        role: 'img',
+        name: 'img/箭头示意',
+        parentId: 'fix-arrow',
+        ancestorIds: ['fix-arrow'],
+        pageBox: { x: 1885, y: 2014, w: 70, h: 70 },
+        sliceExport: { box: { x: 1885, y: 2014, w: 70, h: 70 }, file: 'arrow.png' },
+      },
+    ],
+  };
+  const green = evaluateInventoryStaticGate({
+    inventory,
+    lang: 'zh-CN',
+    viewportKind: 'design',
+    measurements: {
+      nodes: {
+        'fix-arrow': { x: 1885, y: 3348, w: 70, h: 70, inSection: false },
+        'fix-arrow-img': {
+          x: 1885, y: 3348, w: 70, h: 70, inSection: false, hasImg: true,
+          imgBox: { x: 1885, y: 3348, w: 70, h: 70 },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('product viewport keeps a short-hero arrow on the padded 100vh floor, not raw Figma y', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-arrow', role: 'fix', pin: 'viewport', label: '箭头' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-arrow', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/箭头', pageBox: { x: 340, y: 1245, w: 70, h: 70 } },
+    ],
+  };
+  const paddedTop = (1623 - (1334 - (1245 + 70)) - 70) * 0.52;
+  const heroFloorTop = (1334 - (1334 - (1245 + 70)) - 70) * 0.52;
+  const red = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-arrow': { dTop: 0, dLeft: 0 } },
+      overlayBoxes: { 'fix-arrow': { top: heroFloorTop, height: 70 * 0.52 } },
+      scrolled: 1,
+      scrollTop: 1,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 1623, overflow: 'hidden' } },
+      slotDesignHeight: 1623,
+      scale: 0.52,
+      chromeTopBar: {
+        id: 'fix-arrow',
+        navShell: false,
+        topbar: true,
+        height: 70,
+        sourceHeight: 70,
+        nodes: { 'fix-arrow': { x: 340, y: 1245, w: 70, h: 70 } },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('arrow-not-on-first-screen-floor')), (red.problems || []).join('\n'));
+
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-arrow': { dTop: 0, dLeft: 0 } },
+      overlayBoxes: { 'fix-arrow': { top: paddedTop, height: 70 * 0.52 } },
+      scrolled: 1,
+      scrollTop: 1,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 1623, overflow: 'hidden' } },
+      slotDesignHeight: 1623,
+      scale: 0.52,
+      chromeTopBar: {
+        id: 'fix-arrow',
+        navShell: false,
+        topbar: true,
+        height: 70,
+        sourceHeight: 70,
+        nodes: { 'fix-arrow': { x: 340, y: 1245, w: 70, h: 70 } },
+      },
     },
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));

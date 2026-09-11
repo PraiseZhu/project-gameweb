@@ -178,7 +178,7 @@ export function createResumableAssetExportPlan({ requirements = [], batchSize = 
   const pendingBatches = [];
   for (let i = 0; i < pending.length; i += batchSize) pendingBatches.push(pending.slice(i, i + batchSize));
   return {
-    schema: 'yise-asset-export-plan/v1',
+    schema: 'torchlight-asset-export-plan/v1',
     batchSize,
     requiredNodeIds: normalized.map((entry) => entry.nodeId),
     requiredSourceKeys,
@@ -343,7 +343,7 @@ export function evaluateStaticVisualAssetCoverage({
   }
 
   return {
-    schema: 'yise-static-visual-asset-audit/v1',
+    schema: 'torchlight-static-visual-asset-audit/v1',
     structureComplete: null,
     visualAssetsComplete: failures.length === 0,
     complete: failures.length === 0,

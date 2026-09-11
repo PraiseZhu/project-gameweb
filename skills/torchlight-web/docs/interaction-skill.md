@@ -204,6 +204,13 @@ viewport) or `contain` (letterbox). YAML `modalScrimOpacity` paints a black
 scrim behind the sheet. YAML `modalLockPageScroll: true` locks the page
 frame `overflow-y` until the named modal is closed. Opening any named modal
 closes every other open named modal first, including `modal/视频弹窗`.
+Official popup stays `position:fixed` at the current window while the user
+resizes. Product named modals must stay open across QA light-drag and the
+pointerup full rebuild: snapshot `data-modal-name` before `innerHTML` wipe,
+restore with `__fxOpenNamedModal`, and re-pin during light drag. Do not
+treat a drag as a close. Crossing 1126 switches the Figma tree: restore the
+matching mobile/PC sheet by topic (`pc_cn订阅赛季日程` → `mobile订阅赛季日程`),
+the same way the rest of the page switches. A missing counterpart stays closed.
 The overlay host keeps page-stage `zoom` while closed;
 pinning must set host/layer `zoom` to `1` and scale only from the visible
 frame vs the Figma `pageBox`. Incomplete graphs stay unresolved.

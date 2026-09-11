@@ -29,8 +29,8 @@ function makeRoot() {
   return root;
 }
 
-function runList(root) {
-  return spawnSync(process.execPath, [SCRIPT, '--list'], {
+function runList(root, extraArgs = []) {
+  return spawnSync(process.execPath, [SCRIPT, '--list', ...extraArgs], {
     encoding: 'utf8',
     env: { ...process.env, NIGHTLY_HEALTH_ROOT: root },
   });
@@ -65,6 +65,13 @@ test('nightly discovers and validates the stop-1 standards tool package', () => 
   const res = runList(REPO_ROOT);
   assert.match(res.stdout, /standards\/stop1-figma-pixel\/tool/);
   assert.doesNotMatch(res.stdout, /stop1-figma-pixel\/tool.*echo|stop1-figma-pixel\/tool.*true/);
+});
+
+test('--skill torchlight-web 不列伊瑟做页包', () => {
+  const res = runList(REPO_ROOT, ['--skill', 'torchlight-web']);
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /skills\/torchlight-web/);
+  assert.doesNotMatch(res.stdout, /skills\/yise-web-ui/);
 });
 
 test('守卫或列包失败后工作流仍会尝试真实夜间检查', () => {

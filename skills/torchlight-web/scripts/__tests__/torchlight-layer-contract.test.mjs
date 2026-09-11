@@ -35,7 +35,7 @@ test('sc-61-recall: CLAUDE.md trigger table loads torchlight-web SKILL.md', () =
 });
 
 test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence', () => {
-  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg\/` `kv` \/ 无名 `kv` \/ 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 \/ 1440 `\?product=1`，sec 无缝、满铺子层不重画）→ 像素门必须绿（每屏截已有页对规范稿分区图；超阈值拦，差异图在 `artifacts\/stop1-pixel\/`）→ 才给人 `\?product=1`/;
+  const sentence = /吃 ready 包 → 写出 demo\/`index\.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg\/` `kv` \/ 无名 `kv` \/ 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 \/ 1440 `\?product=1`，sec 无缝、满铺子层不重画）→ 像素门必须绿（每屏截已有页对规范稿分区图；超阈值拦，差异图在 `artifacts\/stop1-pixel\/`）→ 才给人 QA `index.html`（带工具栏）/;
   const skill = read('SKILL.md');
   const readme = read('README.md');
   const claude = readClaude();
@@ -47,7 +47,7 @@ test('sc-61-completion-standard: SKILL / README / CLAUDE.md share one sentence',
   assert.match(readme, /政策镜像必须绿/);
   assert.doesNotMatch(skill, /DOM 已验 10vw|整份 DESIGN\.md 已上屏/);
   assert.doesNotMatch(readme, /DOM 已验 10vw|整份 DESIGN\.md 已上屏/);
-  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green \(whole-frame PNG non-empty; full-bleed `bg\/` `kv` \/ unnamed `kv` \/ time-bg size = `pageBox`; product-view first-screen unnamed `kv` cover-crops into 100vh\) → policy mirror must be green → product viewport gate must be green \(390 \/ 1440 `\?product=1`, section abut, no full-bleed child repaint\) → pixel gate must be green \(per-section screenshot of the existing page vs cropped Figma spec; over-threshold blocks, diffs in `artifacts\/stop1-pixel\/`\) → then show `\?product=1`/);
+  assert.match(entry, /eat ready pack → write demo\/`index\.html` → `preview:first` must be green → inventory static gate must be green \(whole-frame PNG non-empty; full-bleed `bg\/` `kv` \/ unnamed `kv` \/ time-bg size = `pageBox`; product-view first-screen unnamed `kv` cover-crops into 100vh\) → policy mirror must be green → product viewport gate must be green \(390 \/ 1440 `\?product=1`, section abut, no full-bleed child repaint\) → pixel gate must be green \(per-section screenshot of the existing page vs cropped Figma spec; over-threshold blocks, diffs in `artifacts\/stop1-pixel\/`\) → then show QA `index.html` \(toolbar included\)/);
   assert.match(skill, /figma:html-from-handoff/);
   assert.match(readme, /figma:html-from-handoff/);
   assert.match(skill, /停下来要包/);
@@ -77,7 +77,7 @@ test('sc-open-not-done: opening the page is still a candidate', () => {
   assert.match(readme, /not-claimed|extraction recognition only/);
 });
 
-test('sc-yisewebui-layer-stop: two human review stops, Translation not-claimed without a table', () => {
+test('sc-torchlight-layer-stop: two human review stops, Translation not-claimed without a table', () => {
   const skill = read('SKILL.md');
   const arch = read('docs/skill-architecture.md');
   const readme = read('README.md');
@@ -226,4 +226,22 @@ test('sc-prior-test-gaps: unknown stays inert; #38 is record-only', () => {
   assert.match(entry, /Keep unresolved switch\/page relations\ninert/);
   assert.match(entry, /Issue #38: record\/analyse\nonly/);
   assert.match(entry, /do not change shaoshenze upstream completeness/);
+});
+
+test('sc-torch-yise-isolation: torchlightweb must not import or cwd into yise-web-ui', () => {
+  const orch = read('scripts/torchlightweb.mjs');
+  const html = read('scripts/figma-html-from-handoff.mjs');
+  const fromHandoff = read('scripts/figma-from-handoff.mjs');
+  const skill = read('SKILL.md');
+  const claude = readClaude();
+  for (const src of [orch, html, fromHandoff]) {
+    assert.doesNotMatch(src, /skills\/yise-web-ui/);
+    assert.doesNotMatch(src, /cd skills\/yise-web-ui/);
+    assert.doesNotMatch(src, /yisewebui/);
+  }
+  assert.match(skill, /禁止搜、改、验证 `skills\/yise-web-ui`/);
+  assert.match(claude, /火炬固定链路不得搜、改、验证 `skills\/yise-web-ui`/);
+  const gate = read('scripts/lib/stop1-figma-pixel-gate.mjs');
+  assert.match(gate, /PLAYWRIGHT_MODULE_ROOT/);
+  assert.match(gate, /STOP1_PIXEL_SKIP_JSON/);
 });

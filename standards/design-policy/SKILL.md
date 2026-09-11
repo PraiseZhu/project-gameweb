@@ -17,9 +17,13 @@ disable-model-invocation: true
 ```bash
 cd standards/design-policy/tool
 npm test
+DESIGN_POLICY_CONSUMER=torchlight-web npm test
+DESIGN_POLICY_CONSUMER=yise-web-ui npm test
 node src/parse-design-policy.mjs <path-to-DESIGN.md>
 node src/mirror-design-policy.mjs --design <path-to-DESIGN.md> --impl <implementation.json>
 ```
+
+火炬固定链路只跑 `DESIGN_POLICY_CONSUMER=torchlight-web`。不传 consumer 的 `npm test` 是 cross-skill-audit，不能当作火炬独立通过。
 
 做页运行时 import 包内 `scripts/lib/design-policy.generated.mjs`（由本工具从 DESIGN.md 生成），禁止把 parse/mirror 源码拷进 `skills/`。改 YAML 后同一批跑：
 

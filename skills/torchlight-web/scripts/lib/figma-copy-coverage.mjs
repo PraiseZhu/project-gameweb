@@ -10,48 +10,57 @@ import { assessLanguageCompleteness, DEFAULT_TRANSLATION_LANGUAGES } from './tra
 const unwrap = (value) => (value && typeof value === 'object' && 'value' in value ? value.value : value);
 const isLeaf = (value) => value && typeof value === 'object' && 'value' in value && 'provenance' in value;
 
-function inventoryTextPools(inventory) {
-  const pools = [];
-  if (Array.isArray(inventory?.nodes)) pools.push(inventory.nodes);
-  const attachments = inventory?.attachments || {};
-  for (const modal of Array.isArray(attachments.modals) ? attachments.modals : []) {
-    if (Array.isArray(modal?.nodes)) pools.push(modal.nodes);
-  }
-  for (const set of Array.isArray(attachments.componentSets) ? attachments.componentSets : []) {
-    if (Array.isArray(set?.nodes)) pools.push(set.nodes);
-    for (const variant of Array.isArray(set?.variants) ? set.variants : []) {
-      if (Array.isArray(variant?.nodes)) pools.push(variant.nodes);
+export function inventoryCopyNodes(inventory) {
+  const out = [];
+  const seen = new Set();
+  const push = (node) => {
+    if (!node || node.id == null) return;
+    const id = String(node.id);
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push(node);
+  };
+  const walkList = (list) => {
+    for (const node of Array.isArray(list) ? list : []) {
+      push(node);
+      walkList(node.nodes);
+      walkList(node.children);
+      walkList(node.variants);
     }
-  }
-  return pools;
+  };
+  walkList(inventory?.nodes);
+  const att = inventory?.attachments && typeof inventory.attachments === 'object'
+    ? inventory.attachments : {};
+  walkList(att.modals);
+  walkList(att.componentSets);
+  walkList(att.components);
+  return out;
 }
 
 export function collectInventoryTexts(inventory, { treeKey = 'default' } = {}) {
   const texts = [];
   const seen = new Set();
-  for (const pool of inventoryTextPools(inventory)) {
-    for (const node of pool) {
-      if (!node || node.status === 'skipped') continue;
-      const type = String(node.type || '').toUpperCase();
-      const role = String(node.role || '');
-      const characters = node.text?.characters ?? node.characters;
-      const isText = type === 'TEXT' || role === 'copy' || role === 'txt'
-        || (characters != null && characters !== '' && (role === 'copy' || type === 'TEXT'));
-      if (!isText) continue;
-      const id = node.id != null ? String(node.id) : '';
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      const ancestorIds = Array.isArray(node.ancestorIds) ? node.ancestorIds.map(String) : [];
-      texts.push({
-        nodeId: id,
-        name: String(node.name ?? ''),
-        characters: String(characters ?? ''),
-        parentId: node.parentId != null ? String(node.parentId) : '',
-        ancestorIds,
-        orderKey: String(node.orderKey || ''),
-        treeKey: String(treeKey || 'default'),
-      });
-    }
+  for (const node of inventoryCopyNodes(inventory)) {
+    if (!node || node.status === 'skipped') continue;
+    const type = String(node.type || '').toUpperCase();
+    const role = String(node.role || '');
+    const characters = node.text?.characters ?? node.characters;
+    const isText = type === 'TEXT' || role === 'copy' || role === 'txt'
+      || (characters != null && characters !== '' && (role === 'copy' || type === 'TEXT'));
+    if (!isText) continue;
+    const id = node.id != null ? String(node.id) : '';
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const ancestorIds = Array.isArray(node.ancestorIds) ? node.ancestorIds.map(String) : [];
+    texts.push({
+      nodeId: id,
+      name: String(node.name ?? ''),
+      characters: String(characters ?? ''),
+      parentId: node.parentId != null ? String(node.parentId) : '',
+      ancestorIds,
+      orderKey: String(node.orderKey || ''),
+      treeKey: String(treeKey || 'default'),
+    });
   }
   return texts;
 }

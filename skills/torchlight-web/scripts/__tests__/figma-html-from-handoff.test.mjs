@@ -133,7 +133,7 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   assert.match(html, /id="qa-truth"/);
   assert.match(html, /FIGMA_RENDER_BEGIN/);
   const truth = JSON.parse(readFileSync(join(demoDir, 'truth.json'), 'utf8'));
-  assert.equal(truth.schema, 'yise-ready-platform-truth/v1');
+  assert.equal(truth.schema, 'torchlight-ready-platform-truth/v1');
   assert.ok(truth.platforms.pc);
   assert.ok(truth.platforms.mobile);
   const spec = JSON.parse(readFileSync(join(demoDir, 'spec.json'), 'utf8'));
@@ -414,7 +414,7 @@ test('pixelGateProbe over threshold blocks product view', () => {
     pixelGateProbe: () => ({
       ok: false,
       skipped: false,
-      problems: ['pc 721:7867: diffRatio 12.00% > 0.50% (artifacts/stop1-pixel/pc.721-7867.diff.png)'],
+      problems: ['pc 721:7867: diffRatio 12.00% > 6.00% (artifacts/stop1-pixel/pc.721-7867.diff.png)'],
     }),
   });
   assert.equal(result.ok, false);

@@ -14,8 +14,8 @@ test('collector produces exact final evidence schemas from runtime snapshot', ()
   const result = collectVisualEvidence(complete);
   assert.equal(result.complete, true, JSON.stringify(result.failures));
   for (const key of ['typography', 'pageFlow', 'fixedChrome', 'resize', 'interaction', 'comparison']) assert.equal(result[key].complete, true, key + ':' + JSON.stringify(result[key].failures));
-  assert.equal(result.typography.schema, 'yise-typography-visual-evidence/v1');
-  assert.equal(result.pageFlow.schema, 'yise-page-flow-evidence/v1');
+  assert.equal(result.typography.schema, 'torchlight-typography-visual-evidence/v1');
+  assert.equal(result.pageFlow.schema, 'torchlight-page-flow-evidence/v1');
 });
 
 test('collector blocks absent Figma/comparison and missing runtime facts', () => {

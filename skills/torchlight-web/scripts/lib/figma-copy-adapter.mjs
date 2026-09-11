@@ -16,9 +16,10 @@
  *   4. 解析优先级 explicit > scene > length > identical group > unresolved：
  *      由 extractCopy 内部（resolveContextualRow）按 overlay/contexts 执行；本适配器只负责把
  *      overlay 与 contexts 备齐喂进去，不自己实现优先级（避免双份规则漂移）。
- *   5. designations（copy-designations.json）是**人工行号指认**，不是第三真源：它只把 nodeId 指到
- *      Lark 行号，采用值仍由 larkLeaf 从该行机械取。本适配器把它转成 extractCopy 的 explicit
- *      overlay 形态；绝不在这里手填任何译文。
+ *   5. designations（copy-designations.json）是**人工行号指认**，不是第三真源：它把 nodeId 指到
+ *      Lark 行号，必要时还带 lineIndex/takeCount（一格拆成多层时的第几句、连续几句）。
+ *      采用值仍由 larkLeaf 从该行机械取，再按句序切开。只写 row、不写句序时，matcher 会按
+ *      该层简中去表里那一格对句；对不上又不是整格 → 禁止整格灌入。绝不在这里手填任何译文。
  *
  * ═══ 接线 ═══
  *   官方出页主线是 figma-html-from-handoff：handoff inventory TEXT 是分母，
@@ -29,7 +30,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { assertPhaseOneRows, extractCopy } from './figma-copy-match.mjs';
-import { collectFigmaTexts, collectInventoryTexts } from './figma-copy-coverage.mjs';
+import { cellLines } from './figma-copy-structure.mjs';
+import { collectFigmaTexts, collectInventoryTexts, inventoryCopyNodes } from './figma-copy-coverage.mjs';
 import { buildAncestorMap, deriveContext } from './figma-copy-context.mjs';
 import { makeFixtureLeaf } from './extract-helpers.mjs';
 import { isPresentTable } from './translation/locale-policy.mjs';
@@ -94,22 +96,45 @@ function locatorOfText(snap, sectionId, nodeId) {
 }
 
 /* ── 把 copy-designations.json 转成 explicit overlay（绝不手填译文）─────
- * designations.designations = { nodeId: { row, designCharacters, tableZhCN, why } }
- * 只取 nodeId→row 的映射；采用值由 larkLeaf 从该行机械取（行存在性由 extractCopy 的 overlay 校验把关）。 */
+ * designations.designations = { nodeId: { row, lineIndex, takeCount, designCharacters, tableZhCN, why } }
+ * 取 nodeId→row，以及可选的拆格句序；采用值由 larkLeaf 从该行机械取后再按句切开。 */
+function designationSlice(tableZhCN, designation) {
+  if (!Number.isInteger(designation.lineIndex)) return null;
+  const lines = cellLines(tableZhCN);
+  const take = Number.isInteger(designation.takeCount) && designation.takeCount > 0 ? designation.takeCount : 1;
+  if (designation.lineIndex < 0 || take < 1 || designation.lineIndex + take > lines.length) return null;
+  return lines.slice(designation.lineIndex, designation.lineIndex + take).join('\n');
+}
+
+function splitFieldsFromDesignation(d) {
+  const out = {};
+  for (const key of ['lineIndex', 'partIndex', 'partCount', 'takeCount']) {
+    if (Number.isInteger(d[key])) out[key] = d[key];
+  }
+  return out;
+}
+
 function designationProblem(nodeId, designation, larkSnap) {
   const row = Number(designation.row);
+  if (!larkSnap) return null;
   const tableZhCN = larkSnap?.rows?.[row]?.['zh-CN'];
   if (tableZhCN == null) return 'copy-designation:' + nodeId + ':row-' + row + '-missing';
+  if (Number.isInteger(designation.lineIndex) && designationSlice(tableZhCN, designation) == null) {
+    return 'copy-designation:' + nodeId + ':lineIndex-out-of-range';
+  }
   const expected = String(tableZhCN);
+  const slice = designationSlice(tableZhCN, designation);
+  const allowed = new Set([expected, ...(slice ? [slice] : [])]);
   const declared = [designation.designCharacters, designation.tableZhCN]
     .filter((value) => value != null)
     .map(String);
-  return declared.some((value) => value !== expected) || new Set(declared).size > 1
+  if (!declared.length) return null;
+  return declared.some((value) => !allowed.has(value))
     ? 'copy-designation:' + nodeId + ':characters-mismatch'
     : null;
 }
 
-function designationsToOverlay(designations, larkSnap = null) {
+export function designationsToOverlay(designations, larkSnap = null) {
   if (!designations || (!designations.designations && !designations.deliberatelyUnbound)) return null;
   const nodeRow = {};
   const problems = [];
@@ -120,7 +145,7 @@ function designationsToOverlay(designations, larkSnap = null) {
       problems.push(problem);
       continue;
     }
-    nodeRow[nodeId] = { row: Number(d.row), via: 'designation', why: d.why || null };
+    nodeRow[nodeId] = { row: Number(d.row), via: 'designation', why: d.why || null, ...splitFieldsFromDesignation(d) };
   }
   /* deliberatelyUnbound（lead 2026-08-10 路径②）：显式"以 Figma 稿字符为准"的节点，
      转成 overlay.suppress 排除集合，extractCopy 在任何匹配（含 designation）之前消费它，
@@ -130,7 +155,7 @@ function designationsToOverlay(designations, larkSnap = null) {
     suppress[nodeId] = { via: 'deliberatelyUnbound', why: (d && d.why) || null };
   }
   return (Object.keys(nodeRow).length || Object.keys(suppress).length || problems.length)
-    ? { nodeRow, suppress, problems, _source: 'copy-designations.json (row 指认，值仍由 larkLeaf 机械取；deliberatelyUnbound 以稿为准)' }
+    ? { nodeRow, suppress, problems, _source: 'copy-designations.json (row/句序指认，值仍由 larkLeaf 机械取；deliberatelyUnbound 以稿为准)' }
     : null;
 }
 
@@ -269,24 +294,9 @@ function inventorySectionIds(inventory) {
   return sections.map((entry) => entry && entry.id).filter((id) => id != null).map(String);
 }
 
-function inventoryContextNodes(inventory) {
-  const nodes = [];
-  if (Array.isArray(inventory?.nodes)) nodes.push(...inventory.nodes);
-  const attachments = inventory?.attachments || {};
-  for (const modal of Array.isArray(attachments.modals) ? attachments.modals : []) {
-    if (Array.isArray(modal?.nodes)) nodes.push(...modal.nodes);
-  }
-  for (const set of Array.isArray(attachments.componentSets) ? attachments.componentSets : []) {
-    if (Array.isArray(set?.nodes)) nodes.push(...set.nodes);
-    for (const variant of Array.isArray(set?.variants) ? set.variants : []) {
-      if (Array.isArray(variant?.nodes)) nodes.push(...variant.nodes);
-    }
-  }
-  return nodes;
-}
-
 function contextsFromInventory(inventory, texts) {
-  const nodes = inventoryContextNodes(inventory);
+  const nodes = inventoryCopyNodes(inventory);
+
   const byId = new Map(nodes.filter((node) => node && node.id).map((node) => [String(node.id), node]));
   const contexts = new Map();
   for (const text of texts) {
