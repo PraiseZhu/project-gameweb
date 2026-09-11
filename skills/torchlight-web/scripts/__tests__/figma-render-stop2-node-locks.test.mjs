@@ -389,6 +389,21 @@ function openNamedModalFromRenderer(namedModals) {
   return { open: bound, closed };
 }
 
+function runOpenerScan({ wired, openers = [], frameGo = [], hostGo = [] }) {
+  const start = rendererSrc.indexOf('const goScan = [');
+  assert.ok(start >= 0, 'goScan after modal paint');
+  const end = rendererSrc.indexOf('frame.__fxNamedModals = wired;', start);
+  assert.ok(end > start, 'goScan must finish before __fxNamedModals');
+  const snippet = rendererSrc.slice(start, end);
+  assert.doesNotMatch(snippet, /layer\.contains\(el\)/);
+  assert.match(snippet, /authorizedFrom\.has\(nodeId\)/);
+  assert.doesNotMatch(snippet, /name === wantedGo/);
+  const frame = { querySelectorAll(sel) { return String(sel).includes('[data-go]') ? frameGo : []; } };
+  const host = { querySelectorAll(sel) { return String(sel).includes('[data-go]') ? hostGo : []; } };
+  new Function('openers', 'frame', 'host', 'wired', snippet)(openers, frame, host, wired);
+  return wired;
+}
+
 function resolveGoHit(namedModals, goHit) {
   const start = rendererSrc.indexOf("const goHit = ev.target && ev.target.closest ? ev.target.closest('[data-go]') : null;");
   assert.ok(start >= 0, 'goHit');
@@ -660,6 +675,33 @@ test('E 预约弹窗内嵌套 @go：详细按钮带 data-go，播放钮不得当
     getAttribute(key) { return key === 'data-go' ? 'modal/pc弹窗详细规则2' : null; },
   };
   assert.deepEqual(resolveGoHit([rsvp, rules], unauthorizedGo), [], '同名未授权 @go 必须 inert');
+
+  const nestedGo = {
+    getAttribute(key) {
+      if (key === 'data-node') return '949:5740';
+      if (key === 'data-go') return 'modal/pc弹窗详细规则2';
+      return null;
+    },
+  };
+  const twinGo = {
+    getAttribute(key) {
+      if (key === 'data-node') return 'unauth-go';
+      if (key === 'data-go') return 'modal/pc弹窗详细规则2';
+      return null;
+    },
+  };
+  const rsvpLayer = { contains(el) { return el === nestedGo; } };
+  const wired = runOpenerScan({
+    wired: [
+      { name: 'pc_kr预约弹窗', layer: rsvpLayer, authorizedFrom: new Set(['open-rsvp']), openerEls: [] },
+      { name: 'pc弹窗详细规则2', layer: { contains() { return false; } }, authorizedFrom: new Set(['949:5740']), openerEls: [] },
+    ],
+    hostGo: [nestedGo, twinGo],
+  });
+  assert.equal(wired[1].openerEls.includes(nestedGo), true, '弹窗内嵌套 @go 必须进 openerEls');
+  assert.equal(wired[0].openerEls.includes(nestedGo), false, '嵌套 @go 不得绑到宿主弹窗');
+  assert.equal(wired[1].openerEls.includes(twinGo), false, '未授权同名 @go 不得进 openerEls');
+  assert.equal(Object.prototype.hasOwnProperty.call(wired[1], 'authorizedFrom'), false);
 });
 
 test('F LINE 0.5px 缺 strokeColor 不得加粗/补白，缺 color 不写 background', () => {

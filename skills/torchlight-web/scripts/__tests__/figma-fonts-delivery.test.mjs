@@ -155,6 +155,45 @@ test('registered latin file covering Hello stays green', () => {
   assert.deepEqual(missingGlyphsInFont(LATIN_FONT, 'Hello'), []);
 });
 
+test('WOFF2 cmap with fontTools present but brotli missing cannot pretend coverage', () => {
+  const src = readFileSync(join(ROOT, 'scripts/lib/font-cmap-coverage.mjs'), 'utf8');
+  const pyBlock = src.slice(src.indexOf('const READ_CMAP_PY'), src.indexOf('export function readCmapSet'));
+  assert.doesNotMatch(pyBlock, /\btry\b|\bexcept\b/);
+  assert.match(src, /if \(result\.status !== 0\) \{[\s\S]{0,220}throw err/);
+
+  const fontTools = spawnSync('python3', ['-c', 'from fontTools.ttLib import TTFont'], { encoding: 'utf8' });
+  assert.equal(fontTools.status, 0, 'fontTools must be present for this lock');
+
+  const blocker = mkdtempSync(join(tmpdir(), 'no-brotli-'));
+  writeFileSync(join(blocker, 'brotli.py'), 'raise ImportError("No module named brotli")\n');
+  writeFileSync(join(blocker, 'brotlicffi.py'), 'raise ImportError("No module named brotlicffi")\n');
+  const isolated = join(blocker, 'probe.woff2');
+  copyFileSync(LATIN_FONT, isolated);
+  const probeFile = join(blocker, 'probe-cmap.mjs');
+  writeFileSync(probeFile, `
+    import { missingGlyphsInFont, resetCmapCacheForTests } from ${JSON.stringify(join(ROOT, 'scripts/lib/font-cmap-coverage.mjs'))};
+    resetCmapCacheForTests();
+    try {
+      const missing = missingGlyphsInFont(${JSON.stringify(isolated)}, 'Hello');
+      console.log(JSON.stringify({ ok: true, missing }));
+    } catch (error) {
+      console.log(JSON.stringify({ ok: false, message: String(error && error.message || error) }));
+    }
+  `);
+  const pythonPath = [blocker, process.env.PYTHONPATH].filter(Boolean).join(':');
+  const result = spawnSync(process.execPath, [probeFile], {
+    encoding: 'utf8',
+    env: { ...process.env, PYTHONPATH: pythonPath },
+    cwd: ROOT,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(String(result.stdout || '').trim());
+  assert.equal(payload.ok, false, JSON.stringify(payload));
+  assert.match(payload.message, /无法读取 cmap/);
+  assert.match(payload.message, /brotli/i);
+  assert.equal(payload.missing, undefined, 'must not return an empty-gap success list');
+});
+
 test('cmap gap for Hangul on SemiCondensed is fail-closed and lists the codepoint', () => {
   const root = mkdtempSync(join(tmpdir(), 'figma-fonts-sc-'));
   writeFileSync(join(root, 'registry.json'), JSON.stringify({

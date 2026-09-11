@@ -83,14 +83,18 @@ test('other stages, roles and pins retain existing source-box placement', () => 
 test('product kv cover uses one scale and origin, not cropLeft plus origin', () => {
   const hero = renderer.match(/const slotH = viewportH \* \(fillVh \/ 100\);[\s\S]*?scale: pageStageScale,/);
   assert.ok(hero, 'hero slot cover math must stay source-visible');
-  assert.match(hero[0], /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
+  assert.match(hero[0], /const coverW = Number\(this\._viewportWidth\)/);
+  assert.match(hero[0], /const coverScale = Math\.max\(/);
+  assert.match(hero[0], /coverW \/ Number\(designWidth\)/);
+  assert.match(hero[0], /slotH \/ Number\(first\.height\)/);
   assert.match(hero[0], /heroVisualCropLeft = 0/);
   assert.match(hero[0], /scale: pageStageScale/);
   assert.doesNotMatch(hero[0], /coverW \/ slotScale - designWidth/);
   const kv = renderer.match(/if \(isFirstScreenVisual && isKv\) \{[\s\S]*?el\.setAttribute\('data-kv-cover-origin'/);
   assert.ok(kv, 'kv cover-crop block must stay source-visible');
   assert.match(kv[0], /transformOrigin/);
-  assert.match(kv[0], /50% 0/);
+  assert.match(kv[0], /center 0/);
+  assert.match(kv[0], /transformOrigin = '0 0'/);
   assert.doesNotMatch(kv[0], /planeLeft \+ heroVisualCropLeft/);
   const expectedScale = Math.max(390 / 750, 844 / 1334);
   assert.ok(Math.abs(expectedScale - 0.632683657) < 1e-6);

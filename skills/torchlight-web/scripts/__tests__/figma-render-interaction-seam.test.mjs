@@ -39,6 +39,15 @@ test('named modal runtime only wires openers listed in triggerFrom', () => {
   assert.doesNotMatch(renderer, /name === wantedGo \|\| String\(entry && entry\.id/);
   assert.doesNotMatch(renderer, /entry\.name === wanted/);
   assert.doesNotMatch(renderer, /entry\.name === '视频弹窗' && name === '播放按钮'/);
+  const scanAt = renderer.indexOf('const goScan = [');
+  const appendAt = renderer.lastIndexOf('frame.appendChild(host);');
+  const wiredAt = renderer.indexOf('frame.__fxNamedModals = wired;', appendAt);
+  assert.ok(scanAt > appendAt && wiredAt > scanAt, 'goScan must run after modal layers are on the host');
+  const block = renderer.slice(appendAt, wiredAt);
+  assert.match(block, /host\.querySelectorAll\('\[data-go\]'\)/);
+  assert.match(block, /authorizedFrom\.has\(nodeId\)/);
+  assert.doesNotMatch(block, /layer\.contains\(el\)/);
+  assert.doesNotMatch(block, /name === wantedGo/);
 });
 
 test('Main static leaves page clicks inert until Interaction opts in', () => {

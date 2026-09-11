@@ -7572,26 +7572,15 @@
           } catch (err) {
             layer.setAttribute('data-modal-paint-error', String(err && err.message || err));
           }
-          const authorizedFrom = new Set(
-            asArr(modal.triggerFrom).map((id) => String(id || '')).filter(Boolean)
-          );
-          const openerEls = [];
-          if (authorizedFrom.size) {
-            const seen = new Set();
-            for (const el of [...openers, ...Array.from(frame.querySelectorAll('[data-go]') || [])]) {
-              if (!el || layer.contains(el) || seen.has(el)) continue;
-              const nodeId = String(el.getAttribute('data-node') || '');
-              if (!nodeId || !authorizedFrom.has(nodeId)) continue;
-              seen.add(el);
-              openerEls.push(el);
-            }
-          }
           wired.push({
             id: String(modal.id || ''),
             name: parsed.label,
             layer,
             exclusive: !/^(?:pc|移动端)?视频弹窗$/.test(parsed.label),
-            openerEls,
+            authorizedFrom: new Set(
+              asArr(modal.triggerFrom).map((id) => String(id || '')).filter(Boolean)
+            ),
+            openerEls: [],
             closeEls: this._closeControlEls(layer),
           });
         }
@@ -7602,6 +7591,29 @@
         /* Overlay host stays inside `.frame` so close clicks hit the same
            listener. Host pointer-events stay none; the layer is the hit target. */
         frame.appendChild(host);
+        /* Scan [data-go] on the page and inside every painted modal layer.
+           Nested @go (e.g. 预约弹窗里的详细按钮) lives outside the *target*
+           rules layer but inside another modal layer. Do not skip a nested
+           opener just because it sits in some modal layer. Only triggerFrom
+           ids become openerEls — never global name/id matching. */
+        const goScan = [
+          ...openers,
+          ...Array.from(frame.querySelectorAll('[data-go]') || []),
+          ...Array.from(host.querySelectorAll('[data-go]') || []),
+        ];
+        for (const entry of wired) {
+          const authorizedFrom = entry.authorizedFrom;
+          delete entry.authorizedFrom;
+          if (!authorizedFrom || !authorizedFrom.size) continue;
+          const seen = new Set();
+          for (const el of goScan) {
+            if (!el || seen.has(el)) continue;
+            const nodeId = String(el.getAttribute('data-node') || '');
+            if (!nodeId || !authorizedFrom.has(nodeId)) continue;
+            seen.add(el);
+            entry.openerEls.push(el);
+          }
+        }
         frame.__fxNamedModals = wired;
         frame.setAttribute('data-named-modal-count', String(wired.length));
         const doc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
