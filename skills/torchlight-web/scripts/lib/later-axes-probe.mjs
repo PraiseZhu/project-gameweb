@@ -17,6 +17,7 @@ import { compositionForView, DESIGN_POLICY, OFFICIAL_ROOT_FONT_VW, widthScale } 
 import {
   LANG_OPTION_PAGES,
   catalogOpenedGoMatches,
+  dropmenuOverlapEvidenceOk,
   languageOptionVerdict,
   laterAxesPixelEvidenceComplete,
   mobileModalSheetVerdict,
@@ -480,6 +481,11 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       const stack = document.elementsFromPoint(x, y);
       return stack.includes(el);
     };
+    const parseNodeBox = (node) => {
+      const raw = String(node?.getAttribute?.('data-node-box') || '').split(',').map(Number);
+      if (raw.length !== 4 || raw.some((value) => !Number.isFinite(value))) return null;
+      return { x: raw[0], y: raw[1], w: raw[2], h: raw[3] };
+    };
     const optionFillOf = (btn) => {
       if (!btn) return false;
       const filled = (cs) => {
@@ -581,7 +587,17 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
           closedConsentClickable = hitClick(consent);
           if (menu.getAttribute('data-dropmenu-state') !== 'on') realClick(menu);
         }
-        const coversConsent = hostGrew || closedConsentClickable === false;
+        /* A source-authored on-state may overlap the consent row. This is a
+           Figma geometry fact, not a renderer defect: retain the intersection
+           evidence and exclude it from the visual interaction failure score. */
+        const menuBox = parseNodeBox(menu);
+        const consentBox = consent ? parseNodeBox(consent) : null;
+        const sourceOverlap = Boolean(menuBox && consentBox
+          && menuBox.x < consentBox.x + consentBox.w
+          && menuBox.x + menuBox.w > consentBox.x
+          && menuBox.y < consentBox.y + consentBox.h
+          && menuBox.y + menuBox.h > consentBox.y);
+        const coversConsent = !sourceOverlap && hostGrew;
         dropmenus.push({
           name: menu.getAttribute('data-dropmenu-name') || menu.getAttribute('data-name') || null,
           before,
@@ -589,6 +605,14 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
           invalid: false,
           toggled: after === 'on',
           coversConsent,
+          sourceOverlap,
+          overlapVerdict: sourceOverlap ? 'source-overlap/skip' : 'renderer-check',
+          sourceOverlapEvidence: sourceOverlap ? {
+            dropmenuNode: menu.getAttribute('data-node') || null,
+            consentNode: consent ? consent.getAttribute('data-node') || null : null,
+            dropmenuBox: menuBox,
+            consentBox,
+          } : null,
           optionFill,
           hostGrew,
           closedConsentClickable,
@@ -709,14 +733,31 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
   return scoreOpenerCatalog(measured, plat);
 }
 
+function dropmenuScoreProblems(hit, platKey, label) {
+  const name = (hit && hit.name) || label;
+  if (hit && hit.invalid === true) return [`${platKey}-dropmenu-invalid:${name}`];
+  if (!hit || hit.toggled !== true) return [`${platKey}-dropmenu-did-not-toggle:${name}`];
+  if (hit.sourceOverlap === true && !dropmenuOverlapEvidenceOk(hit)) {
+    return [`${platKey}-dropmenu-source-overlap-unproven:${name}`];
+  }
+  if (hit.sourceOverlap !== true && hit.coversConsent === true) {
+    return [`${platKey}-dropmenu-covers-consent:${name}`];
+  }
+  if (hit.closedConsentClickable === false) {
+    return [`${platKey}-dropmenu-closed-consent-not-clickable:${name}`];
+  }
+  if (hit.optionFill === false) return [`${platKey}-dropmenu-option-unfilled:${name}`];
+  return [];
+}
+
 export function scoreOpenerCatalog(raw, plat) {
   const platKey = raw?.plat || plat;
   const mountedNames = Array.isArray(raw?.mountedNames) ? raw.mountedNames : null;
   const openers = (Array.isArray(raw?.openers) ? raw.openers : []).map((row) => {
     const matched = Boolean(row.opened) && catalogOpenedGoMatches(row.go, row.openedGo);
     const dropmenus = Array.isArray(row.dropmenus) ? row.dropmenus : [];
-    const dropOk = dropmenus.every((hit) => hit.invalid !== true && hit.toggled === true
-      && hit.coversConsent !== true && hit.optionFill !== false);
+    const label = row.node ? `${row.go}@${row.node}` : row.go;
+    const dropProblems = dropmenus.flatMap((hit) => dropmenuScoreProblems(hit, platKey, label));
     const calendarLang = row.calendarLang || null;
     const calendarOk = !calendarLang || calendarLang.matched === true;
     return {
@@ -724,7 +765,8 @@ export function scoreOpenerCatalog(raw, plat) {
       dropmenus,
       calendarLang,
       matched,
-      ok: Boolean(row.opened) && Boolean(row.closed) && matched && dropOk && calendarOk,
+      dropProblems,
+      ok: Boolean(row.opened) && Boolean(row.closed) && matched && dropProblems.length === 0 && calendarOk,
       measured: true,
       skipped: false,
     };
@@ -737,12 +779,7 @@ export function scoreOpenerCatalog(raw, plat) {
     if (!row.opened) problems.push(`${platKey}-opener-did-not-open:${label}`);
     if (row.opened && !row.matched) problems.push(`${platKey}-opener-opened-wrong:${label}=>${row.openedGo}`);
     if (!row.closed) problems.push(`${platKey}-opener-did-not-close:${label}`);
-    for (const hit of row.dropmenus || []) {
-      if (hit.invalid === true) problems.push(`${platKey}-dropmenu-invalid:${hit.name || label}`);
-      else if (hit.toggled !== true) problems.push(`${platKey}-dropmenu-did-not-toggle:${hit.name || label}`);
-      else if (hit.coversConsent === true) problems.push(`${platKey}-dropmenu-covers-consent:${hit.name || label}`);
-      else if (hit.optionFill === false) problems.push(`${platKey}-dropmenu-option-unfilled:${hit.name || label}`);
-    }
+    problems.push(...row.dropProblems);
     if (row.calendarLang && row.calendarLang.matched !== true) {
       problems.push(`${platKey}-calendar-lang:${row.lang || row.calendarLang.wanted}=>${row.calendarLang.got}`);
     }

@@ -170,6 +170,8 @@ test('stop-1 Figma export uses section.id and product=1', () => {
   assert.match(src, /figma-cache/);
   assert.match(src, /deviceScaleFactor:\s*dsf/);
   assert.match(src, /size mismatch/);
+  assert.match(src, /Math\.min\(vw, r\.x \+ r\.width\)/);
+  assert.match(src, /clipped area empty or outside viewport/);
   assert.doesNotMatch(src, /inventory-static-gate=1/);
   assert.doesNotMatch(src, /const frameId = page.id/);
   assert.doesNotMatch(src, /alignDemoToBaseline/);

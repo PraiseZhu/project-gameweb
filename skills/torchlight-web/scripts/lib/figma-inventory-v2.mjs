@@ -57,6 +57,27 @@ function visibleFillsOf(node) {
 
 const CSS_PAINTABLE_FRAGMENT = new Set(['REGULAR_POLYGON', 'ELLIPSE', 'STAR', 'LINE']);
 
+/* The region dropmenu's on-state sheet is an authored solid Rectangle inside
+   a skipped art-fragment group. Keep that fragment as paintable material so
+   omitSkippedNodes does not erase the panel behind the live option instances;
+   its status remains skipped and it never becomes an interaction owner. */
+function isDropmenuPanelFragment(node, byId) {
+  if (!isPlainObject(node) || !isSkipped(node)) return false;
+  if (String(node.why || '') !== 'art-fragment' || node.isMask === true) return false;
+  if (String(node.type || '').toUpperCase() !== 'RECTANGLE') return false;
+  if (!firstVisibleSolidFill(node) && !firstGradientFill(node)) return false;
+  const seen = new Set();
+  let parentId = node.parentId;
+  while (parentId && !seen.has(String(parentId))) {
+    seen.add(String(parentId));
+    const parent = byId?.get(String(parentId));
+    if (!parent) return false;
+    if (!isSkipped(parent)) return parent.status === 'determined' && parent.role === 'dropmenu';
+    parentId = parent.parentId;
+  }
+  return false;
+}
+
 function firstVisibleSolidFill(node) {
   return visibleFillsOf(node).find((fill) => String(fill.type || '') === 'SOLID') || null;
 }
@@ -72,7 +93,12 @@ function isCssPaintableArtFragment(node) {
   if (!isPlainObject(node) || !isSkipped(node)) return false;
   if (String(node.why || '') !== 'art-fragment') return false;
   if (node.isMask === true) return false;
-  if (!CSS_PAINTABLE_FRAGMENT.has(String(node.type || '').toUpperCase())) return false;
+  const type = String(node.type || '').toUpperCase();
+  const lineVector = type === 'VECTOR' && /^line(?:\s|$)/i.test(String(node.name || ''));
+  if (!CSS_PAINTABLE_FRAGMENT.has(type) && !lineVector) return false;
+  if (type === 'LINE' || lineVector) {
+    return Boolean((node.strokeColor || node.style?.strokeColor) && Number(node.strokeWeight ?? node.style?.strokeWeight) > 0);
+  }
   return Boolean(firstVisibleSolidFill(node) || firstGradientFill(node));
 }
 
@@ -150,6 +176,7 @@ function coversOwnerPageBox(node, owner) {
 
 function keepSkippedPaintNode(node, byId = null) {
   if (isCssPaintableArtFragment(node)) return { ...node, paintAsFragment: true };
+  if (isDropmenuPanelFragment(node, byId)) return { ...node, paintAsFragment: true };
   /* bg/ is the whole listed export. Do not restore skipped slice-child KV sheets. */
   return null;
 }
@@ -186,7 +213,7 @@ function isAutoLayoutMaxOwner(node) {
  *  the same caps onto the live TEXT so the numbers stay locked. */
 function relinkSkippedMaxOwners(nodes, byId) {
   return asArray(nodes).map((node) => {
-    if (!isPlainObject(node) || isSkipped(node)) return node;
+    if (!isPlainObject(node) || (isSkipped(node) && !node.paintAsFragment)) return node;
     let parentId = node.parentId;
     const seen = new Set([String(node.id || '')]);
     let inherited = null;
@@ -579,6 +606,9 @@ function isInsideModal(node, modalIds, byId) {
  *
  * Ambiguous matches (two video modals, no platform) stay unknown.
  * A play button that already lives under a modal tree must not reopen it.
+ * A determined `@go` inside a modal may still open a *different* uniquely
+ * named modal (KR `btn/详细按钮@go=modal/pc弹窗详细规则1`). Same-host `@go`
+ * stays skipped so a player does not reopen its own overlay.
  */
 const NAMING_MODAL_CONTRACTS = Object.freeze([
   { openerLabel: '播放按钮', modalLabel: '视频弹窗' },
@@ -597,6 +627,22 @@ function platformOf(value) {
   return null;
 }
 
+function enclosingModalId(node, modalIds, byId) {
+  if (!node) return null;
+  if (modalIds.has(node.id)) return node.id;
+  for (const id of asArray(node.ownerPath)) {
+    if (modalIds.has(String(id))) return String(id);
+  }
+  let current = node;
+  for (let guard = 0; guard < 16 && current; guard++) {
+    const parentId = current.parentId;
+    if (parentId == null) break;
+    if (modalIds.has(String(parentId))) return String(parentId);
+    current = byId.get(String(parentId));
+  }
+  return null;
+}
+
 function collectNamedGoOpeners(nodes, { byName, modalIds, byId, requirePlatform }) {
   const extra = [];
   const openers = [];
@@ -606,7 +652,6 @@ function collectNamedGoOpeners(nodes, { byName, modalIds, byId, requirePlatform 
   for (const node of openers) {
     const parsed = splitInventoryName(node.name);
     if (parsed.role !== 'btn' && parsed.role !== 'hot') continue;
-    if (isInsideModal(node, modalIds, byId)) continue;
     const go = goParamOf(node);
     if (go == null || go === true || go === '') continue;
     const named = modalsNamed(byName, go);
@@ -618,6 +663,8 @@ function collectNamedGoOpeners(nodes, { byName, modalIds, byId, requirePlatform 
       })
       : named;
     if (hits.length !== 1) continue;
+    const hostModalId = enclosingModalId(node, modalIds, byId);
+    if (hostModalId && hostModalId === hits[0].id) continue;
     extra.push({
       toId: hits[0].id,
       fromId: node.id,
@@ -644,6 +691,14 @@ function namedGoModalTriggers(inv) {
   const byName = groupModalsByName(modals);
   const extra = collectNamedGoOpeners(inv.nodes, { byName, modalIds, byId, requirePlatform: true });
   const seen = new Set(extra.map((entry) => `${entry.fromId}->${entry.toId}`));
+  const modalTrees = [];
+  for (const modal of modals) modalTrees.push(...asArray(modal.nodes));
+  for (const entry of collectNamedGoOpeners(modalTrees, { byName, modalIds, byId, requirePlatform: false })) {
+    const key = `${entry.fromId}->${entry.toId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    extra.push(entry);
+  }
   const variantTrees = [];
   for (const set of componentSets) {
     variantTrees.push(...asArray(set.nodes));

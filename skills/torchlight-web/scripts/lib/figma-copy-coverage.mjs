@@ -10,28 +10,48 @@ import { assessLanguageCompleteness, DEFAULT_TRANSLATION_LANGUAGES } from './tra
 const unwrap = (value) => (value && typeof value === 'object' && 'value' in value ? value.value : value);
 const isLeaf = (value) => value && typeof value === 'object' && 'value' in value && 'provenance' in value;
 
+function inventoryTextPools(inventory) {
+  const pools = [];
+  if (Array.isArray(inventory?.nodes)) pools.push(inventory.nodes);
+  const attachments = inventory?.attachments || {};
+  for (const modal of Array.isArray(attachments.modals) ? attachments.modals : []) {
+    if (Array.isArray(modal?.nodes)) pools.push(modal.nodes);
+  }
+  for (const set of Array.isArray(attachments.componentSets) ? attachments.componentSets : []) {
+    if (Array.isArray(set?.nodes)) pools.push(set.nodes);
+    for (const variant of Array.isArray(set?.variants) ? set.variants : []) {
+      if (Array.isArray(variant?.nodes)) pools.push(variant.nodes);
+    }
+  }
+  return pools;
+}
+
 export function collectInventoryTexts(inventory, { treeKey = 'default' } = {}) {
   const texts = [];
   const seen = new Set();
-  for (const node of Array.isArray(inventory?.nodes) ? inventory.nodes : []) {
-    if (!node || node.status === 'skipped') continue;
-    const type = String(node.type || '').toUpperCase();
-    const role = String(node.role || '');
-    const characters = node.text?.characters ?? node.characters;
-    const isText = type === 'TEXT' || role === 'copy' || role === 'txt'
-      || (characters != null && characters !== '' && (role === 'copy' || type === 'TEXT'));
-    if (!isText) continue;
-    const id = node.id != null ? String(node.id) : '';
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    texts.push({
-      nodeId: id,
-      name: String(node.name ?? ''),
-      characters: String(characters ?? ''),
-      parentId: node.parentId != null ? String(node.parentId) : '',
-      orderKey: String(node.orderKey || ''),
-      treeKey: String(treeKey || 'default'),
-    });
+  for (const pool of inventoryTextPools(inventory)) {
+    for (const node of pool) {
+      if (!node || node.status === 'skipped') continue;
+      const type = String(node.type || '').toUpperCase();
+      const role = String(node.role || '');
+      const characters = node.text?.characters ?? node.characters;
+      const isText = type === 'TEXT' || role === 'copy' || role === 'txt'
+        || (characters != null && characters !== '' && (role === 'copy' || type === 'TEXT'));
+      if (!isText) continue;
+      const id = node.id != null ? String(node.id) : '';
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const ancestorIds = Array.isArray(node.ancestorIds) ? node.ancestorIds.map(String) : [];
+      texts.push({
+        nodeId: id,
+        name: String(node.name ?? ''),
+        characters: String(characters ?? ''),
+        parentId: node.parentId != null ? String(node.parentId) : '',
+        ancestorIds,
+        orderKey: String(node.orderKey || ''),
+        treeKey: String(treeKey || 'default'),
+      });
+    }
   }
   return texts;
 }

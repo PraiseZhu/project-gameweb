@@ -28,7 +28,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { extractCopy } from './figma-copy-match.mjs';
+import { assertPhaseOneRows, extractCopy } from './figma-copy-match.mjs';
 import { collectFigmaTexts, collectInventoryTexts } from './figma-copy-coverage.mjs';
 import { buildAncestorMap, deriveContext } from './figma-copy-context.mjs';
 import { makeFixtureLeaf } from './extract-helpers.mjs';
@@ -269,8 +269,24 @@ function inventorySectionIds(inventory) {
   return sections.map((entry) => entry && entry.id).filter((id) => id != null).map(String);
 }
 
+function inventoryContextNodes(inventory) {
+  const nodes = [];
+  if (Array.isArray(inventory?.nodes)) nodes.push(...inventory.nodes);
+  const attachments = inventory?.attachments || {};
+  for (const modal of Array.isArray(attachments.modals) ? attachments.modals : []) {
+    if (Array.isArray(modal?.nodes)) nodes.push(...modal.nodes);
+  }
+  for (const set of Array.isArray(attachments.componentSets) ? attachments.componentSets : []) {
+    if (Array.isArray(set?.nodes)) nodes.push(...set.nodes);
+    for (const variant of Array.isArray(set?.variants) ? set.variants : []) {
+      if (Array.isArray(variant?.nodes)) nodes.push(...variant.nodes);
+    }
+  }
+  return nodes;
+}
+
 function contextsFromInventory(inventory, texts) {
-  const nodes = Array.isArray(inventory?.nodes) ? inventory.nodes : [];
+  const nodes = inventoryContextNodes(inventory);
   const byId = new Map(nodes.filter((node) => node && node.id).map((node) => [String(node.id), node]));
   const contexts = new Map();
   for (const text of texts) {
@@ -310,6 +326,19 @@ export function buildHandoffCopyEnvelope({ demoDir, spec = {}, pcInventory = nul
     return { byNode: {}, report: { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [] }, unread: [], sourceTexts: [], larkSnap: larkSnap || null };
   }
   const { at, larkLeaf } = larkTools(absDemo, larkSnap, spec);
+  let declaredPhaseRows;
+  try { declaredPhaseRows = at(larkSnap, '/_meta/phaseRows'); } catch { declaredPhaseRows = null; }
+  const phaseGate = assertPhaseOneRows(declaredPhaseRows);
+  if (!phaseGate.ok) {
+    return {
+      byNode: {},
+      report: { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [], phaseRowsProblem: phaseGate.problem },
+      unread: [{ matchKind: 'none', reason: phaseGate.problem }],
+      sourceTexts: [],
+      larkSnap,
+      problems: [phaseGate.problem],
+    };
+  }
   const designations = existsSync(join(absDemo, 'copy-designations.json')) ? readJson(join(absDemo, 'copy-designations.json')) : null;
   const overlay = designationsToOverlay(designations, larkSnap);
   const report = { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [] };

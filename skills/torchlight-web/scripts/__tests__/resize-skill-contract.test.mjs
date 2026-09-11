@@ -545,7 +545,9 @@ test('sc-product-view-only / sc-shared-freeze: shared ruler and centered viewpor
 
 test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () => {
   assert.match(renderSrc, /Cover 窗宽永远是真实 viewport/);
-  assert.match(renderSrc, /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
+  assert.match(renderSrc, /const coverW = Number\(this\._viewportWidth\)/);
+  assert.match(renderSrc, /coverW \/ Number\(designWidth\)/);
+  assert.match(renderSrc, /sourceW \* planeRatio/);
   assert.match(renderSrc, /heroVisualCropLeft = 0/);
   assert.match(renderSrc, /this\._viewportWidth/);
   assert.doesNotMatch(renderSrc, /coverW \/ slotScale - designWidth/);

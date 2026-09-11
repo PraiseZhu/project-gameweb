@@ -7,6 +7,7 @@ import {
   backgroundMatchesFill,
   catalogEvidenceOk,
   catalogGoMatchesPlat,
+  dropmenuOverlapEvidenceOk,
   catalogOpenedGoMatches,
   languageOptionVerdict,
   laterAxesPixelEvidenceComplete,
@@ -353,6 +354,20 @@ test('open dropmenu without option fill and missing calendar copy fail closed', 
     inert: { openedModal: false, clicked: 1, visible: 1 },
   }, 'mobile');
   assert.equal(noRegionOptions.ok, true);
+  const unboundCarnival = scoreOpenerCatalog({
+    plat: 'pc',
+    openers: [{
+      go: 'modal/pc_cn订阅赛季日程',
+      lang: 'en',
+      opened: true,
+      closed: true,
+      openedGo: 'pc_cn订阅赛季日程',
+      calendarLang: { wanted: 'en', got: 'en', matched: true, copyMissing: 0 },
+      calendarCopy: [],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'pc');
+  assert.equal(unboundCarnival.ok, true);
   const calendarNoShell = scoreOpenerCatalog({
     plat: 'pc',
     openers: [{
@@ -367,6 +382,106 @@ test('open dropmenu without option fill and missing calendar copy fail closed', 
   }, 'pc');
   assert.equal(calendarNoShell.ok, false);
   assert.ok(calendarNoShell.problems.some((item) => item.includes('calendar-lang')));
+});
+
+test('sourceOverlap skip needs evidence; catalog ok follows dropProblems', () => {
+  const region = {
+    go: 'modal/mobile订阅赛季日程',
+    opened: true,
+    closed: true,
+    openedGo: 'mobile订阅赛季日程',
+  };
+  const skipped = scoreOpenerCatalog({
+    plat: 'mobile',
+    openers: [{
+      ...region,
+      dropmenus: [{
+        name: '切换地区',
+        invalid: false,
+        toggled: true,
+        coversConsent: false,
+        hostGrew: true,
+        sourceOverlap: true,
+        sourceOverlapEvidence: { dropmenuNode: '949:6505', consentNode: '949:6494' },
+        optionFill: null,
+      }],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'mobile');
+  assert.equal(skipped.ok, true, JSON.stringify(skipped.problems));
+  assert.equal(skipped.openers[0].ok, true);
+  assert.equal(skipped.problems.length, 0);
+
+  const unproven = scoreOpenerCatalog({
+    plat: 'mobile',
+    openers: [{
+      ...region,
+      dropmenus: [{
+        name: '切换地区',
+        invalid: false,
+        toggled: true,
+        coversConsent: false,
+        hostGrew: true,
+        sourceOverlap: true,
+        optionFill: null,
+      }],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'mobile');
+  assert.equal(unproven.ok, false);
+  assert.equal(unproven.openers[0].ok, false);
+  assert.ok(unproven.problems.some((item) => item.includes('dropmenu-source-overlap-unproven')));
+
+  const rendererCover = scoreOpenerCatalog({
+    plat: 'mobile',
+    openers: [{
+      ...region,
+      dropmenus: [{
+        name: '切换地区',
+        invalid: false,
+        toggled: true,
+        coversConsent: true,
+        sourceOverlap: false,
+        optionFill: null,
+      }],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'mobile');
+  assert.equal(rendererCover.ok, false);
+  assert.equal(rendererCover.openers[0].ok, false);
+  assert.ok(rendererCover.problems.some((item) => item.includes('dropmenu-covers-consent')));
+
+  const catalogBase = {
+    ok: true, measured: true, skipped: false, plat: 'mobile',
+    inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
+  };
+  const openerBase = {
+    go: 'modal/mobile订阅赛季日程',
+    openedGo: 'mobile订阅赛季日程',
+    ok: true, measured: true, skipped: false, opened: true, closed: true,
+  };
+  assert.equal(dropmenuOverlapEvidenceOk({ sourceOverlapEvidence: { dropmenuNode: '949:6505', consentNode: '949:6494' } }), true);
+  assert.equal(dropmenuOverlapEvidenceOk({ sourceOverlapEvidence: { dropmenuNode: '949:6505' } }), false);
+  assert.equal(catalogEvidenceOk({
+    ...catalogBase,
+    openers: [{
+      ...openerBase,
+      dropmenus: [{
+        invalid: false, toggled: true, coversConsent: false, sourceOverlap: true,
+        sourceOverlapEvidence: { dropmenuNode: '949:6505', consentNode: '949:6494' },
+        optionFill: null,
+      }],
+    }],
+  }, { plat: 'mobile' }), true);
+  assert.equal(catalogEvidenceOk({
+    ...catalogBase,
+    openers: [{
+      ...openerBase,
+      dropmenus: [{
+        invalid: false, toggled: true, coversConsent: false, sourceOverlap: true, optionFill: null,
+      }],
+    }],
+  }, { plat: 'mobile' }), false, 'sourceOverlap 无证据不得抬绿');
 });
 
 test('later-axes opens an already-on region dropmenu before sampling option fill', () => {

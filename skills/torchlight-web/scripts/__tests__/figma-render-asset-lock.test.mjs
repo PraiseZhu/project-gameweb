@@ -131,8 +131,8 @@ test('ind/ instances consume the selected componentId slice instead of inventing
 
 test('REGULAR_POLYGON play triangle uses non-rect shadow/clip mapping, not a CSS rectangle', () => {
   assert.match(renderer, /REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1/);
-  assert.match(renderer, /polygon\(86% 50%, 18% 12%, 18% 88%\)/);
-  assert.match(renderer, /data-shape-polygon-vertex', 'right'/);
+  assert.match(renderer, /polygon\(50% 14%, 12% 82%, 88% 82%\)/);
+  assert.match(renderer, /data-shape-polygon-vertex/);
   assert.match(renderer, /skipRotationForLocalClip/);
   assert.match(renderer, /drop-shadow/);
   assert.doesNotMatch(renderer, /rotate\(90deg\)/);
@@ -205,6 +205,13 @@ test('Founder YouHei live copy pins Regular width axis instead of CSS condensed 
   assert.match(renderer, /Named Regular is wdth=3 \(wide\)/);
   assert.match(renderer, /"wdth" \$\{wdth\}, "hght"/);
   assert.match(renderer, /el\.style\.fontVariationSettings = this\._youHeiVariationSettings\(/);
+  assert.match(renderer, /el\.style\.fontSynthesis = 'none'/);
+});
+
+test('HEIGHT display titles are not sourceNoWrapTitle; only WIDTH hugs stay pre', () => {
+  assert.match(renderer, /_isSourceNoWrapTitle/);
+  assert.match(renderer, /const sourceNoWrapTitle = this\._isSourceNoWrapTitle\(\{/);
+  assert.match(renderer, /el\.style\.whiteSpace = \(inlineHugs \|\| sourceNoWrapTitle\) \? 'pre' : 'pre-wrap'/);
 });
 
 test('FONT_SIZE_% lineHeightPercent becomes a px line-height', () => {
@@ -355,7 +362,11 @@ test('authored multiline text keeps source metrics instead of height step-fit', 
 });
 
 test('hero cover scale stays on the hero slot, not the released page stage', () => {
-  assert.match(renderer, /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
+  assert.match(renderer, /const coverW = Number\(this\._viewportWidth\)/);
+  assert.match(renderer, /coverW \/ Number\(designWidth\)/);
+  assert.match(renderer, /slotH \/ Number\(first\.height\)/);
+  assert.match(renderer, /sourceW \* planeRatio/);
+  assert.match(renderer, /transformOrigin = '0 0'/);
   assert.match(renderer, /heroVisualScale = coverScale/);
   assert.match(renderer, /scale: pageStageScale/);
   assert.match(renderer, /data-hero-visual-scale/);
@@ -369,6 +380,8 @@ test('hero cover scale stays on the hero slot, not the released page stage', () 
   assert.match(renderer, /heroVisualPlane \|\| firstScreenKvInSection/);
   assert.match(renderer, /coverHeroSlot/);
   assert.match(renderer, /coverHeroVisualScale/);
+  assert.match(renderer, /const coverHeroSlot = heroSlot;/);
+  assert.doesNotMatch(renderer, /coverHeroSlot = heroSlot \|\| \(isKv && ids\[0\]/);
 });
 
 test('page paint roots follow recorded pagePaintOrder locators on canvas-rooted snapshots', () => {
@@ -527,7 +540,7 @@ test('compact HUG label behavior remains geometry-authorized only', () => {
   assert.match(renderer, /verticalSlack <= sourceH \* 0\.6 \+ 0\.5/);
   assert.match(renderer, /sourceW >= ownerW \* 0\.55/);
   assert.match(renderer, /const boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner && hasAlCaps/);
-  assert.match(renderer, /if \(boundedHugLabel\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*maxWidth: alOwner\.maxWidth/);
+  assert.match(renderer, /if \(boundedHugLabel(?: && !_copyUnbound && !_zhSourceExact)?\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*maxWidth: alOwner\.maxWidth/);
   assert.doesNotMatch(renderer, /hasAlCaps \|\| semanticBreak/);
   assert.doesNotMatch(renderer, /widthFit: _ownerW/);
 });

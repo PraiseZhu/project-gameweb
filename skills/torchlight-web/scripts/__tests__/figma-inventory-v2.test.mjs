@@ -287,6 +287,53 @@ test("lang-shell multi-btn @go in variant trees becomes determined openers", () 
   assert.ok(!byId.get("m-apple").triggerFrom.includes("cal"), "page lang-shell instance stays unlifted");
 });
 
+test("in-modal @go to a different unique modal name becomes a determined trigger", () => {
+  const inv = fixture();
+  inv.attachments.modals = [
+    {
+      id: "100:90",
+      name: "modal/pc_kr预约弹窗",
+      platform: "pc",
+      box: { x: 0, y: 0, w: 3840, h: 2160 },
+      nodes: [
+        { id: "100:90", name: "modal/pc_kr预约弹窗", parentId: null },
+        {
+          id: "100:91",
+          name: "btn/详细按钮@go=modal/pc弹窗详细规则1",
+          type: "VECTOR",
+          parentId: "100:90",
+          status: "determined",
+          role: "btn",
+          params: { go: "modal/pc弹窗详细规则1" },
+          platform: "pc",
+        },
+        {
+          id: "100:92",
+          name: "btn/播放按钮",
+          parentId: "100:90",
+          status: "determined",
+          role: "btn",
+          platform: "pc",
+        },
+      ],
+    },
+    { id: "100:93", name: "modal/pc弹窗详细规则1", platform: "pc", box: { x: 0, y: 0, w: 3840, h: 2160 }, nodes: [{ id: "100:93", name: "modal/pc弹窗详细规则1" }] },
+    { id: "100:20", name: "modal/视频弹窗", platform: "pc", box: { x: 0, y: 0, w: 100, h: 100 }, nodes: [{ id: "100:20", name: "modal/视频弹窗" }] },
+  ];
+  inv.relations = [
+    { kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link", from: null, to: { id: "100:93", scope: "modal:100:93" } },
+    { kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link", from: null, to: { id: "100:20", scope: "modal:100:20" } },
+  ];
+  const triggers = classifyModalTriggers(inv);
+  assert.deepEqual((triggers.get("100:93") || []).filter((t) => t.status === "determined").map((t) => t.fromId), ["100:91"]);
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const byId = new Map(adapted.modals.map((modal) => [modal.id, modal]));
+  assert.equal(byId.get("100:93").triggerStatus, "determined");
+  assert.deepEqual(byId.get("100:93").triggerFrom, ["100:91"]);
+  assert.equal(byId.get("100:93").triggerEvidence[0].kind, "name-param:@go");
+  assert.ok(!byId.get("100:20").triggerFrom.includes("100:92"), "in-modal play stays a player, not a second opener");
+});
+
 test("same-label viewport fix overlays keep one pin", () => {
   const inv = fixture();
   inv.nodes.push(

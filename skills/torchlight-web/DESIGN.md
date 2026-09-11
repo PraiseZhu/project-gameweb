@@ -283,7 +283,9 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 | heading | 字重 ≥ 600 且源字号 ≤ 40px | 全语 `1.0` |
 | 按钮 / 顶栏折扣条 | 祖先名含 `btn/`（含下载/预约按钮）或 `折扣信息`，不进 body / card-title | 全语 `1.0`：清单源字号。书面 max 放得下就不预缩 |
 
-外文框听稿上包着文案的那层 Auto Layout：`maxWidth` 是宽度硬限；写了 `maxHeight` 的，高度也是硬限。没写的那一轴不拿来当缩字理由，也不发明框。换语言后文案必须**完整**落在这些已写的上限里，禁止裁切、省略号、截断顶过关。
+外文框听稿上包着文案的那层 Auto Layout：`maxWidth` 是宽度硬限；写了 `maxHeight` 的，高度也是硬限。没写的那一轴不拿来当缩字理由，也不发明框。`autoResize=HEIGHT` 是定宽可长高：源中文刚好一行不是「永远不准折行」。英文放不进已写 `maxWidth` 时先换行，禁止当成单行标题 `pre` 锁死再缩字号。换语言后文案必须**完整**落在这些已写的上限里，禁止裁切、省略号、截断顶过关。
+
+字重听清单：`fontWeight` / `fontStyle` / `fontPostScriptName`。可变优黑用元素上的 `font-variation-settings` 走 wght 轴。禁止 `@font-face` 写 `font-named-instance:"Regular"`：Regular 是 wght=600，稿上 Bold/900 会被钉死再假粗。
 
 溢出就缩：先套档位比例，再按整数 px 减字号（行高同比），直到完整放下。不走 `100→92→85→78→75`，没有 75% 地板。组内兄弟共用同一整数字号，取最严的那档。没有 B 的 owner 就停，不缩。
 
@@ -346,7 +348,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 - `kind=ready` 才吃；`unknown` 只画不接线。
 - Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=viewportW/750`。首屏槽 = 当前窗口高，后屏从窗口底开始。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
-- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。
+- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。`HEIGHT` + 只有 `maxWidth` 先折行，不发明单行锁。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。优黑字重听清单 900/Bold，禁止 named-instance 钉 Regular。
 - `btn/主要按钮` 的字体类型数据跟同端 `首屏主按钮` 该语言变体，不另开一套；`en` 主 CTA 页面强制大写，不听文案表大小写，也不听稿上有没有 `textCase=UPPER`；稿上没出该语言变体（如没有 `jp`）不算失败。
 - 不把 inventory JSON 焊进本文件。不改 naming spec、Interaction / Pack / 语义换行。`_fitText` 与 extract 的 max 字段只按第 6.1 节改；`_routeFontFamily` 只许改成读 YAML。
 

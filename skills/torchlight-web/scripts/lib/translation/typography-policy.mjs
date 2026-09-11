@@ -8,6 +8,8 @@ export {
   scriptsForText,
   isTextHugging,
   isTruncating,
+  isSourceNoWrapTitle,
+  integerPxWidthFitShouldWrap,
   classifySemanticText,
   classifyFontWeight,
   classifyTypographyRange,

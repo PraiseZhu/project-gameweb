@@ -771,10 +771,12 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       const slotDesign = Number(productScroll.slotDesignHeight);
       const pageH = Number(firstBox?.h);
       if (String(viewportKind) === 'product' && Number.isFinite(Number(layer.height))) {
-        const minH = Math.max(
-          Number.isFinite(pageH) ? pageH : 0,
-          Number.isFinite(slotDesign) ? slotDesign : 0,
-        );
+        /* Official first screen is 100vh. slotDesign = viewportH / k, which is
+           shorter than Figma pageBox.h on freeze-band PC (900/0.5=1800 vs 2143)
+           and mobile (844 / 0.52). Require the CSS slot, not the taller pageBox. */
+        const minH = Number.isFinite(slotDesign) && slotDesign > 0
+          ? slotDesign
+          : (Number.isFinite(pageH) ? pageH : 0);
         if (minH > 0 && Number(layer.height) + POSITION_TOLERANCE_PX < minH) {
           failures.push({
             id: firstId,
@@ -784,7 +786,8 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
           });
         }
       }
-      if (String(layer.overflow || '') === 'hidden' && Number(layer.height) + POSITION_TOLERANCE_PX < Number(firstBox?.h || 0)) {
+      const isHundredVh = cropWindow === '100vh';
+      if (String(layer.overflow || '') === 'hidden' && !isHundredVh && Number(layer.height) + POSITION_TOLERANCE_PX < Number(firstBox?.h || 0)) {
         failures.push({ id: firstId, reason: 'first-section-cropped-below-pageBox', actual: layer.height, expected: firstBox?.h });
       }
     }
@@ -992,18 +995,21 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       if (kvDom.assetEmpty === true) {
         failures.push({ id: firstKv.id, reason: 'first-kv-png-empty' });
       }
-      /* Product view cover-crops first-screen kv into 100vh. Missing the
-         marker means the unnamed kv under sec/1 stayed on width-k. */
-      const coverPlane = String(kvDom.heroVisualPlane || kvDom.coverCrop || kvDom.kvCoverPlane || '');
-      if (coverPlane !== 'kv' && coverPlane !== 'cover-crop') {
-        failures.push({
-          id: firstKv.id,
-          reason: 'first-kv-missing-cover-crop',
-          actual: {
-            heroVisualPlane: kvDom.heroVisualPlane || null,
-            coverCrop: kvDom.coverCrop || kvDom.kvCoverPlane || null,
-          },
-        });
+      /* Product view cover-crops first-screen kv into 100vh. Design-viewport
+         coords stay on pageBox and must not invent that crop. Missing the
+         marker on ?product=1 means the unnamed kv under sec/1 stayed on width-k. */
+      if (String(viewportKind) === 'product') {
+        const coverPlane = String(kvDom.heroVisualPlane || kvDom.coverCrop || kvDom.kvCoverPlane || '');
+        if (coverPlane !== 'kv' && coverPlane !== 'cover-crop') {
+          failures.push({
+            id: firstKv.id,
+            reason: 'first-kv-missing-cover-crop',
+            actual: {
+              heroVisualPlane: kvDom.heroVisualPlane || null,
+              coverCrop: kvDom.coverCrop || kvDom.kvCoverPlane || null,
+            },
+          });
+        }
       }
     }
   }

@@ -35,8 +35,19 @@ test('named modal runtime only wires openers listed in triggerFrom', () => {
   assert.match(renderer, /authorizedFrom\.has\(nodeId\)/);
   assert.match(renderer, /entry\.openerEls\.includes\(goHit\)/);
   assert.match(renderer, /entry\.openerEls\.includes\(openerHit\)/);
+  assert.match(renderer, /Same-name @go is not an opener/);
+  assert.doesNotMatch(renderer, /name === wantedGo \|\| String\(entry && entry\.id/);
   assert.doesNotMatch(renderer, /entry\.name === wanted/);
   assert.doesNotMatch(renderer, /entry\.name === '视频弹窗' && name === '播放按钮'/);
+  const scanAt = renderer.indexOf('const goScan = [');
+  const appendAt = renderer.lastIndexOf('frame.appendChild(host);');
+  const wiredAt = renderer.indexOf('frame.__fxNamedModals = wired;', appendAt);
+  assert.ok(scanAt > appendAt && wiredAt > scanAt, 'goScan must run after modal layers are on the host');
+  const block = renderer.slice(appendAt, wiredAt);
+  assert.match(block, /host\.querySelectorAll\('\[data-go\]'\)/);
+  assert.match(block, /authorizedFrom\.has\(nodeId\)/);
+  assert.doesNotMatch(block, /layer\.contains\(el\)/);
+  assert.doesNotMatch(block, /name === wantedGo/);
 });
 
 test('Main static leaves page clicks inert until Interaction opts in', () => {
@@ -76,9 +87,18 @@ test('only language dropmenus consume inner btn as setPref lang', () => {
   assert.match(renderer, /Keep the owner host visible/);
   assert.match(renderer, /Keep the COMPONENT root: Property 1=on carries the panel/);
   assert.match(renderer, /Hidden on-state trees keep data-asset-src without src/);
-  assert.match(renderer, /frame\.__fxAssetScheduler\.prime\(target\)/);
+  assert.match(renderer, /Resting Property 1=on paints options on the host/);
+  assert.match(renderer, /frame\.__fxAssetScheduler\.prime\(owner\)/);
   assert.match(renderer, /Open panel must sit above later sticky siblings/);
   assert.match(renderer, /owner\.style\.zIndex = '50'/);
+  assert.match(renderer, /__fxDropmenuFieldH/);
+  assert.match(renderer, /data-dropmenu-host-height/);
+  assert.match(renderer, /data-btn-variant-slice/);
+  assert.doesNotMatch(renderer, /if \(fromName === 'on'\) return 'off'/);
+  assert.doesNotMatch(renderer, /fromName === 'on'[\s\S]{0,80}return 'off'/);
+  assert.match(renderer, /do not force on→off in the renderer/);
+  assert.match(renderer, /Resting paint[\s\S]{0,40}follows that source token/);
+  assert.doesNotMatch(renderer, /node\.paintAsFragment !== true/);
   assert.match(renderer, /ctx\.setPref === 'function'/);
   assert.match(renderer, /qa && typeof qa\.setPref === 'function'/);
 });
@@ -222,4 +242,39 @@ test('unresolved model does not emit a direct-child runtime bridge', () => {
   ]));
   assert.equal(unresolved.switches.length, 0);
   assert.ok(!unresolved.attributes.some((entry) => entry.attrs['data-switch-page'] != null));
+});
+
+/* ── 手机预约弹窗三 bug（2026-09-10 用户截图）──────────────────────────────
+   1) 移动端韩语/繁中勾选按钮缺失
+   2) 移动端 tw 地区菜单展开被裁
+   3) tw 选完地区应收起（state=off，高度回 fieldH）
+   三条都靠「页实例对 COMPONENT 做了统一缩放」这一事实，行为和 PC 同一套代码。 */
+test('手机勾选按钮：统一缩放的页实例仍走变体根切片，不再 blocked', () => {
+  /* 页实例 30×25 vs 母版 46.42×38.73 → 比例 ≈0.646，属统一缩放。 */
+  assert.match(renderer, /_isUniformInstanceScale/);
+  assert.match(renderer, /btnUniformScale/);
+  assert.match(renderer, /aspect-mismatch/);
+  assert.match(renderer, /Math\.abs\(Number\(rootBox\.h\) - ownerHeight\) > 0\.5/);
+  assert.match(renderer, /data-btn-variant-scale/);
+  /* 统一缩放时主图按实例框贴合，而不是按母版自然尺寸溢出。 */
+  assert.match(renderer, /fitToBox: btnUniformScale/);
+  assert.match(renderer, /instance-uniform-scale-fill/);
+  /* 仍然禁止用 CSS 画勾：勾必须来自变体根切片。 */
+  assert.doesNotMatch(renderer, /勾选按钮['"]\s*\)[\s\S]{0,200}clip-path/);
+});
+
+test('手机地区菜单：展开 clone 用母版根宽再缩一次，不被二次缩小裁掉', () => {
+  /* 曾经 layer.style.width='100%' 拿到的是已缩放的宿主宽，再叠 scale 就二次缩小，
+     面板右侧被 layer 的 overflow:hidden 裁掉（截图里只剩半截字）。 */
+  assert.match(renderer, /layer\.style\.width = \(uniformScale \? Number\(rootBox\.w\) : '100%'\)/);
+  assert.match(renderer, /展开被裁/);
+});
+
+test('地区菜单选完必须收起：innerBtn 命中 closeDropmenuOwners，且不再被 toggle 重开', () => {
+  assert.match(renderer, /const clickedOpenOption = Boolean\(innerBtn && dropmenuOwner && dropmenuOwner\.contains\(innerBtn\)/);
+  assert.match(renderer, /if \(clickedOpenOption\) \{[\s\S]{0,1200}?closeDropmenuOwners\(frame\);/);
+  /* toggle 只允许发生在「展开态里没有点选项」的情况下，否则会在 close 之后又打开。 */
+  assert.match(renderer, /&& !clickedOpenOption\) \{[\s\S]{0,120}?toggleDropmenu\(dropmenuOwner\)/);
+  /* 关态高度必须回到可见字段高，而不是留在 on 根高。 */
+  assert.match(renderer, /owner\.el\.setAttribute\('data-dropmenu-host-height', state === 'on' \? 'open-variant-root' : 'closed-field'\)/);
 });
