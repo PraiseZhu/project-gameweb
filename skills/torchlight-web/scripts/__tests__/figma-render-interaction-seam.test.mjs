@@ -50,7 +50,7 @@ test('Main static leaves page clicks inert until Interaction opts in', () => {
   const renderIntoAt = chrome.indexOf('function renderInto(container, state)');
   const nextFnAt = chrome.indexOf('\n  function ', renderIntoAt + 1);
   const renderInto = chrome.slice(renderIntoAt, nextFnAt > renderIntoAt ? nextFnAt : chrome.length);
-  assert.match(renderInto, /enablePageInteraction: new URLSearchParams\(location\.search\)\.get\('interaction'\) === '1'/);
+  assert.match(renderInto, /enablePageInteraction: \(function \(\)/);
   assert.doesNotMatch(renderInto, /enablePageInteraction:\s*true/);
   assert.doesNotMatch(renderInto, /enablePageInteraction: !!PRODUCT_VIEW/);
   const laterAxes = readFileSync(new URL('../lib/later-axes-probe.mjs', import.meta.url), 'utf8');
@@ -107,7 +107,7 @@ test('language dropmenu matches one option label, not the whole menu tree', () =
 
 test('named modal overlays close when either side is exclusive', () => {
   assert.match(renderer, /exclusive: !\/\^\(\?:pc\|移动端\)\?视频弹窗\$\/\.test\(parsed\.label\)/);
-  assert.match(renderer, /other\.layer && other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) closeNamedModal\(other\)/);
+  assert.match(renderer, /other\.layer && other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) \{ skipModalReturn = true; closeNamedModal\(other\); \}/);
   assert.doesNotMatch(renderer, /entry\.exclusive && other\.exclusive/);
 });
 
@@ -203,7 +203,7 @@ test('named modal pin drops host zoom so Figma sheet is not scaled twice', () =>
 
 test('full rebuild restores open named modals instead of closing them', () => {
   assert.match(renderer, /restoreOpenModalNames = this\._openNamedModalNames\(frame\)/);
-  assert.match(renderer, /_restoreOpenNamedModals\(frame, restoreOpenModalNames\)/);
+  assert.match(renderer, /_restoreOpenNamedModals\(frame, restoreOpenModalNames/);
   assert.match(renderer, /data-modal-open="true"/);
   assert.match(renderer, /Official named popup stays mounted across window resize/);
   assert.match(renderer, /_matchNamedModalByTopic/);
@@ -218,7 +218,7 @@ test('opening a named modal closes every other open named modal first', () => {
   const assignAt = renderer.indexOf('frame.__fxOpenNamedModal = openNamedModal;', openAt);
   assert.ok(openAt > 0 && assignAt > openAt);
   const open = renderer.slice(openAt, assignAt);
-  assert.match(open, /other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) closeNamedModal\(other\)/);
+  assert.match(open, /other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) \{ skipModalReturn = true; closeNamedModal\(other\); \}/);
   assert.doesNotMatch(open, /entry\.exclusive && other\.exclusive/);
   assert.doesNotMatch(renderer, /exclusive: parsed\.label !== '视频弹窗'/);
   assert.doesNotMatch(renderer, /exclusive: true/);
@@ -234,4 +234,26 @@ test('unresolved model does not emit a direct-child runtime bridge', () => {
   ]));
   assert.equal(unresolved.switches.length, 0);
   assert.ok(!unresolved.attributes.some((entry) => entry.attrs['data-switch-page'] != null));
+});
+
+test('named modal persist scores locale, return routing, brand copy, and pack hashes', () => {
+  assert.match(renderer, /_persistNamedModal/);
+  assert.match(renderer, /_resolveModalReturn/);
+  assert.match(renderer, /_authorizeNamedModalOpen/);
+  assert.match(renderer, /complete-closes-to-page/);
+  assert.match(renderer, /rules-return-to-reservation/);
+  assert.match(renderer, /outside-painted-hit/);
+  assert.match(renderer, /data-modal-fit-k/);
+  assert.match(renderer, /_calendarBrandCopy/);
+  assert.match(renderer, /Outlook\\.com/);
+  const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
+  assert.match(chrome, /enablePageInteraction: \(function \(\)/);
+  assert.match(chrome, /PRODUCT_VIEW/);
+  const pack = readFileSync(new URL('../pack-demo.mjs', import.meta.url), 'utf8');
+  assert.match(pack, /out\.hashes/);
+  assert.match(pack, /indexHtml/);
+  assert.match(renderer, /returnTo: returnTo || null/);
+  assert.match(renderer, /data-modal-source-name/);
+  assert.match(renderer, /data-modal-return-to/);
+  assert.match(renderer, /sourceEntry = this\._matchNamedModalByTopic\(wired, rec\.sourceName, prefs\)/);
 });

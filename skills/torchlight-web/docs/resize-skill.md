@@ -120,3 +120,7 @@ size itself from the image's intrinsic pixel dimensions:
 
 This contract is enforced by `scripts/__tests__/figma-render-asset-lock.test.mjs`
 and implemented in `templates/figma-render.js` (the `fx-img` creation block).
+
+## Nested offsets, modal scale, and last-section scroll
+
+Named modals scale from their own pageBox once and expose data-modal-fit-k. Tree switch restore now scores topic + locale + composition. Parent-local nested x and last-section scroll clamp are specified in scripts/lib/page-behavior-contracts.mjs; do not invent page pixel offsets as policy.

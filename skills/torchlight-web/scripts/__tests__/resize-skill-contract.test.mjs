@@ -415,7 +415,7 @@ test('temporary lock-1920 names follow page k above 1920', () => {
 
 test('named modal stays open across light-drag and pointerup rebuild', () => {
   assert.match(renderSrc, /restoreOpenModalNames = this\._openNamedModalNames\(frame\)/);
-  assert.match(renderSrc, /_restoreOpenNamedModals\(frame, restoreOpenModalNames\)/);
+  assert.match(renderSrc, /_restoreOpenNamedModals\(frame, restoreOpenModalNames/);
   assert.match(renderSrc, /_pinOpenNamedModals/);
   assert.match(renderSrc, /Official named popup stays mounted across window resize/);
   assert.match(chromeSrc, /_pinOpenNamedModals\(frame\)/);
@@ -441,7 +441,7 @@ test('tree switch restores the matching named modal by topic, not the raw PC lab
   assert.equal(matchNamedModalByTopic(mobileSheets, 'pc弹窗详细规则1'), null);
   assert.match(renderSrc, /_namedModalTopic/);
   assert.match(renderSrc, /_matchNamedModalByTopic/);
-  assert.match(renderSrc, /const entry = this\._matchNamedModalByTopic\(wired, name\)/);
+  assert.match(renderSrc, /const entry = this\._matchNamedModalByTopic\(wired, rec\.name/);
   assert.ok(resizeOwns().some((item) => /matching mobile\/PC sheet by topic/.test(item)));
 });
 
@@ -710,4 +710,14 @@ test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stay
   assert.equal(freeze.k, 0.5);
   assert.equal(freeze.columnWidth, 1920);
   assert.equal(freeze.columnLeft, (1268 - 1920) / 2);
+});
+
+test('ambiguous modal topic picks locale + composition when prefs are provided', () => {
+  const sheets = [
+    { name: 'mobile_twRESERVE' },
+    { name: 'mobile_krRESERVE' },
+  ];
+  assert.equal(matchNamedModalByTopic(sheets, 'pc_twRESERVE'), null);
+  assert.equal(matchNamedModalByTopic(sheets, 'pc_twRESERVE', { plat: 'mobile', lang: 'zh-TW' }).name, 'mobile_twRESERVE');
+  assert.equal(matchNamedModalByTopic(sheets, 'pc_krRESERVE', { plat: 'mobile', lang: 'ko' }).name, 'mobile_krRESERVE');
 });

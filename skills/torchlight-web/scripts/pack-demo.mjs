@@ -595,6 +595,11 @@ function mutatePackedDemo(workDir, workProofDir, args, out, budgetBytes) {
   out.bytesAfter = out.budget.bytes;
   out.fonts.bytesAfter = out.budgetBreakdown.fonts;
   out.truth.bytesAfter = out.truthCompact?.bytes ?? out.budgetBreakdown.truth;
+  out.hashes = {
+    indexHtml: existsSync(join(workDir, 'index.html')) ? sha256File(join(workDir, 'index.html')) : null,
+    truth: existsSync(join(workDir, 'truth.json')) ? sha256File(join(workDir, 'truth.json')) : null,
+    fontsManifest: existsSync(join(workDir, 'fonts-manifest.json')) ? sha256File(join(workDir, 'fonts-manifest.json')) : null,
+  };
   if (out.budget.ok) return;
   const parts = out.budgetBreakdown;
   const error = new Error(`served folder ${out.bytesAfter} exceeds pack budget ${budgetBytes} (webp=${parts.webp}, png=${parts.png}, truth=${parts.truth}, fonts=${parts.fonts}, html=${parts.html}, other=${parts.other})`);

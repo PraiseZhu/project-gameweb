@@ -850,7 +850,13 @@
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
       interactionPayload: cfg.interactionPayload || null,
       productView: !!PRODUCT_VIEW,
-      enablePageInteraction: new URLSearchParams(location.search).get('interaction') === '1',
+      enablePageInteraction: (function () {
+        var interactionQ = '';
+        try { interactionQ = new URLSearchParams(window.location.search).get('interaction') || ''; } catch (e) { interactionQ = ''; }
+        return PRODUCT_VIEW
+          ? !(interactionQ === '0' || interactionQ === 'false' || interactionQ === 'no')
+          : (interactionQ === '1' || interactionQ === 'true' || interactionQ === 'yes');
+      }()),
       setPref: applyPref });
   }
 

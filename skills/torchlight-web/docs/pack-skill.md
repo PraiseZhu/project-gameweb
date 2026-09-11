@@ -114,3 +114,7 @@ A pack claim needs:
 A claim without `images.reencodedWebp` did not re-encode existing WebP.
 
 A green Main HTML-10MB gate is not a pack pass.
+
+## Pack freshness hashes
+
+After mutation, pack writes SHA-256 for index.html, truth.json, and fonts-manifest.json onto out.hashes. A stale zip or a previous demo folder cannot prove the current pack. Compare packed hashes with the deployed files before claiming the live page is this skill revision.
