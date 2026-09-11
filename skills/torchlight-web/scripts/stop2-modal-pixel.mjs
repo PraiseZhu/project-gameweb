@@ -7,7 +7,7 @@
  * 本脚本不是第二套判据：
  *   - 遮罩   ← 共享 gate 的 sectionLiveCopyMasks（清单 nodes + section box）；
  *   - 比对   ← phaseTolerantDiff（±2px 相位容差；≥3px 成块 / 贴错图仍 FAIL）；
- *   - 阈值   ← 共享 gate 的 DEFAULT_STOP1_PIXEL_THRESHOLD（0.005）。
+ *   - 阈值   ← 共享 gate 的 DEFAULT_STOP1_PIXEL_THRESHOLD。
  * 像素门因此只回答「框 / 图 / 线对不对」，不回答「栅格化像不像」。
  *
  * 数据来源：交接包 inventory 的 attachments.modals[<modalId>].nodes（活字清单），

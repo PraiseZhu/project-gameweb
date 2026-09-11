@@ -503,6 +503,33 @@ function expectedExportPx(pick) {
   };
 }
 
+export function isZeroExtentSlice(pick = {}) {
+  const box = pick?.exportBounds === 'render' && pick.exportBox ? pick.exportBox : pick;
+  return Math.round(box?.w ?? pick?.w ?? 0) <= 0 || Math.round(box?.h ?? pick?.h ?? 0) <= 0;
+}
+
+export function previousNoUrlNodeIds(previous = null) {
+  return new Set((previous?.noUrl || []).map((item) => String(item?.nodeId || '')).filter(Boolean));
+}
+
+export function reuseExistingMissingPicks(picks = [], cachedPaths = new Map(), previous = null) {
+  const knownNoUrl = previousNoUrlNodeIds(previous);
+  return (picks || []).filter((pick) => {
+    if (cachedPaths.has(pick.nodeId)) return false;
+    if (isZeroExtentSlice(pick)) return false;
+    if (knownNoUrl.has(String(pick.nodeId))) return false;
+    return true;
+  });
+}
+
+function skippedNoFetchPicks(picks = [], cachedPaths = new Map(), previous = null) {
+  const knownNoUrl = previousNoUrlNodeIds(previous);
+  return (picks || []).filter((pick) => (
+    !cachedPaths.has(pick.nodeId)
+    && (isZeroExtentSlice(pick) || knownNoUrl.has(String(pick.nodeId)))
+  ));
+}
+
 /**
  * Reuse a previous PNG only when this demo's designVersion, export params,
  * geometry, file containment, PNG magic/size, and sha256 all still match.
@@ -757,18 +784,35 @@ async function main() {
     if (hit) cachedPaths.set(p.nodeId, hit);
   }
   const reusedPicks = picks.filter((p) => cachedPaths.has(p.nodeId));
-  const fetchPicks = picks.filter((p) => !cachedPaths.has(p.nodeId));
+  const skippedNoFetch = skippedNoFetchPicks(picks, cachedPaths, reuseExisting ? previous : null);
+  const fetchPicks = reuseExisting
+    ? reuseExistingMissingPicks(picks, cachedPaths, previous)
+    : picks.filter((p) => !cachedPaths.has(p.nodeId) && !isZeroExtentSlice(p));
   out.reused = reusedPicks.length;
+  out.skippedNoFetch = skippedNoFetch.map((p) => ({
+    nodeId: p.nodeId,
+    name: p.name,
+    why: isZeroExtentSlice(p) ? 'zero-extent' : 'previous-noUrl',
+  }));
   /* --reuse-existing means "do not hit Figma". Missing PNGs fail loud so a
-     hung images API cannot stall html-from-handoff after local extract. */
+     hung images API cannot stall html-from-handoff after local extract.
+     Zero-extent slices and nodes already recorded as noUrl are listed, not
+     treated as a missing PNG. Real slices still fail closed. */
   if (reuseExisting && fetchPicks.length) {
     fail(`--reuse-existing 缺 PNG，拒绝打 Figma：${fetchPicks.map((p) => p.nodeId).join(',')}`);
   }
   const token = fetchPicks.length ? readToken(demoDir) : null;
+  const noUrl = skippedNoFetch.map((p) => ({
+    nodeId: p.nodeId,
+    name: p.name,
+    why: isZeroExtentSlice(p)
+      ? 'zero-extent：宽或高为 0，Figma 导不出，不算缺 PNG'
+      : (previous?.noUrl || []).find((item) => String(item?.nodeId) === String(p.nodeId))?.why
+        || 'Figma 未返回 URL（该图层可能异常，如带图像填充的 TEXT）',
+  }));
 
   // 1) 分批向 Figma 要图片 URL（按倍率分组，一批只能用一个 scale）
   const urlMap = {};
-  const noUrl = [];
   const groups = [];
   for (const key of [...new Set(fetchPicks.map((p) => `${p.scale}|${p.exportBounds}`))]) {
     const [scText, bounds] = key.split('|');

@@ -18,9 +18,10 @@
  *    @font-face 由脚本写进 index.html 的 #qa-fonts 块，**禁止手抄**（同 qa-truth/qa-assets）。
  * 2) 稿里出现、登记册里没有的字体 → 进 missing 清单，并写进 fonts-manifest.json。
  *    **绝不许拿别的字体顶上冒充做好了** —— 那正是老师防的那种「声明合格」。
- * 3) 登记文件的 cmap 必须盖住该节点 `characters`。盖不住（或缺 cmap）
- *    同样进 missing、exit 2。Figma 不会把系统回退脸写进 REST；浏览器静默
- *    换成苹方/苹果韩文会改折行。不许拿另一家族或系统字顶上。
+ * 3) cmap 查页面真正画字的那张脸，不查图层名。韩文走本机
+ *    `local()` Apple SD Gothic Neo（不拷 TTC）；拉丁 SemiCondensed 走登记
+ *    静态脸；落在拉丁子集上的中文走已登记悠黑/思源。盖不住或缺 cmap
+ *    进 missing、exit 2。不许拿 KR-VF 冒充 SemiCondensed。
  * 4) 每个字体文件记 sha256（同 assets 的做法：二进制没有 JSON locator，
  *    可校验的替代品是哈希 + 来源 + 许可）。
  *
@@ -33,12 +34,15 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { FONT_SOURCE_ROUTING, LOCALE_INVARIANT_FAMILIES, routeFontFamily } from './lib/translation/font-routing.mjs';
 import {
+  APPLE_SD_GOTHIC_LOCAL_PATHS,
+  PAINTED_CJK_FAMILY_CANDIDATES,
+  PAINTED_HANGUL_FACE,
   appleSdGothicLocalAvailable,
   codepointsToCover,
-  coverageFamilyFor,
   formatUncovered,
   hangulLocalFallbackStatus,
   missingGlyphsInFont,
+  paintedCoveragePlan,
   readFontNameIdentity,
   semiCondensedIdentityOk,
 } from './lib/font-cmap-coverage.mjs';
@@ -142,61 +146,99 @@ function collectUsage(truth) {
   return [...use.values()];
 }
 
+function unionCjkSrc(resolved) {
+  const byFamily = new Map(resolved.map((row) => [row.family, row]));
+  return PAINTED_CJK_FAMILY_CANDIDATES.map((name) => byFamily.get(name)?.src).filter(Boolean);
+}
+
+function paintedFaceSrc(family, byFamily) {
+  if (family === PAINTED_HANGUL_FACE) {
+    return APPLE_SD_GOTHIC_LOCAL_PATHS.find((path) => existsSync(path)) || null;
+  }
+  return byFamily.get(family)?.src || null;
+}
+
+function missingOnPaintedFace(family, src, codepoints, cjkSrcs) {
+  if (family !== PAINTED_HANGUL_FACE && PAINTED_CJK_FAMILY_CANDIDATES.includes(family) && cjkSrcs.length) {
+    return codepoints.filter((cp) => cjkSrcs.every((file) => missingGlyphsInFont(file, [cp]).length));
+  }
+  if (!src) {
+    const err = new Error(family === PAINTED_HANGUL_FACE
+      ? 'local() Apple SD Gothic Neo 不可用，韩文未验证，不能当已验收'
+      : `页面实际用字 ${family} 没有可查的字体文件`);
+    err.code = 'painted-face-missing';
+    throw err;
+  }
+  return missingGlyphsInFont(src, codepoints);
+}
+
+function alreadyMissingFamily(missing, family) {
+  return missing.some((item) => item.family === family);
+}
+
 function cmapCoverageGaps(resolved, usage, registeredFamilies) {
   const byFamily = new Map(resolved.map((row) => [row.family, row]));
   const gaps = [];
   const cmapFailed = new Set();
   const uncoveredByFamily = new Map();
+  const cjkSrcs = unionCjkSrc(resolved);
   for (const used of usage) {
     for (const node of used.nodes || []) {
-      const family = coverageFamilyFor({
+      const plan = paintedCoveragePlan({
         fontFamily: used.family,
         fontStyle: node.fontStyle,
         fontPostScriptName: node.fontPostScriptName,
+        characters: node.characters,
       }, registeredFamilies);
-      const rec = byFamily.get(family);
-      if (!rec) continue;
-      let missingCps;
-      try {
-        missingCps = missingGlyphsInFont(rec.src, node.characters);
-      } catch (error) {
-        if (cmapFailed.has(family)) continue;
-        cmapFailed.add(family);
-        gaps.push({
-          family,
-          weights: rec.weights,
-          affectedNodes: rec.nodes.length,
-          examples: (rec.nodes || []).slice(0, 3).map((item) => ({
-            nodeId: item.nodeId,
-            name: item.name,
-            chars: item.chars,
-          })),
-          why: error && error.message ? error.message : String(error),
-          howToFix: '登记一份能读出 cmap 的合法字体文件；禁止拿系统字或另一家族冒充',
-        });
-        continue;
+      for (const part of plan) {
+        const family = part.family;
+        const rec = byFamily.get(family);
+        const src = paintedFaceSrc(family, byFamily);
+        let missingCps;
+        try {
+          missingCps = missingOnPaintedFace(family, src, part.codepoints, cjkSrcs);
+        } catch (error) {
+          if (cmapFailed.has(family)) continue;
+          cmapFailed.add(family);
+          gaps.push({
+            family,
+            weights: rec?.weights || [400],
+            affectedNodes: rec?.nodes?.length || 1,
+            examples: [{ nodeId: node.nodeId, name: node.name, chars: node.chars }],
+            why: error && error.message ? error.message : String(error),
+            howToFix: family === PAINTED_HANGUL_FACE
+              ? '韩文覆盖只许 local() Apple SD Gothic Neo，不得拷 ttc 进 git，也不得用 KR-VF 冒充 SemiCondensed'
+              : '登记一份能读出 cmap 的合法字体文件；禁止拿系统字或另一家族冒充',
+          });
+          continue;
+        }
+        if (!missingCps.length) continue;
+        if (!uncoveredByFamily.has(family)) {
+          uncoveredByFamily.set(family, { rec, cps: new Set(), nodes: [] });
+        }
+        const bucket = uncoveredByFamily.get(family);
+        for (const cp of missingCps) bucket.cps.add(cp);
+        bucket.nodes.push({ nodeId: node.nodeId, name: node.name, chars: node.chars });
       }
-      if (!missingCps.length) continue;
-      if (!uncoveredByFamily.has(family)) {
-        uncoveredByFamily.set(family, { rec, cps: new Set(), nodes: [] });
-      }
-      const bucket = uncoveredByFamily.get(family);
-      for (const cp of missingCps) bucket.cps.add(cp);
-      bucket.nodes.push({ nodeId: node.nodeId, name: node.name, chars: node.chars });
     }
   }
   for (const [family, bucket] of uncoveredByFamily) {
     const uncovered = formatUncovered(bucket.cps);
     const extra = uncovered.extra ? ` 另有 ${uncovered.extra} 个` : '';
+    const fileHint = family === PAINTED_HANGUL_FACE
+      ? '本机 Apple SD Gothic Neo'
+      : `登记文件 ${bucket.rec?.entry?.file || family}`;
     gaps.push({
       family,
-      weights: bucket.rec.weights,
+      weights: bucket.rec?.weights || [400],
       affectedNodes: bucket.nodes.length,
       examples: bucket.nodes.slice(0, 3),
       uncovered: uncovered.shown,
       uncoveredCount: uncovered.count,
-      why: `登记文件 ${bucket.rec.entry.file} 的 cmap 盖不住稿上字符：${uncovered.shown.join('、')}${extra}。浏览器会静默换成系统字，折行与稿不同`,
-      howToFix: '登记一份 cmap 能覆盖这些码位的合法字体文件；禁止拿系统字或另一家族冒充',
+      why: `${fileHint} 的 cmap 盖不住页面实际用字：${uncovered.shown.join('、')}${extra}。浏览器会静默换成系统字，折行与稿不同`,
+      howToFix: family === PAINTED_HANGUL_FACE
+        ? '韩文覆盖只许 local() Apple SD Gothic Neo，不得拷 ttc 进 git，也不得用 KR-VF 冒充 SemiCondensed'
+        : '登记一份 cmap 能覆盖这些码位的合法字体文件；禁止拿 KR-VF 冒充 SemiCondensed',
     });
   }
   return gaps;
@@ -254,6 +296,31 @@ function main() {
       String(unwrap(n?.text)?.fontStyle || '').toLowerCase().includes('semicondensed'));
     if (hasSemiCondensed && reg['Noto Sans SemiCondensed'] && !byFamily.has('Noto Sans SemiCondensed')) {
       usage.push({ family: 'Noto Sans SemiCondensed', weights: new Set([400]), nodes: [], routedFor: ['source/SemiCondensed'] });
+    }
+    /* CJK that lands on a latin subset is painted by the registered YouHei /
+       Noto CJK face. Include that face so cmap can read it even when no
+       source node lists it as fontFamily. */
+    const hasCjkOnLatinSubset = textRecords(truth).some((n) => {
+      const tx = unwrap(n?.text) || {};
+      const family = String(unwrap(tx.fontFamily) || '');
+      const chars = String(unwrap(tx.characters) || '');
+      const semi = String(unwrap(tx.fontStyle) || '').toLowerCase().includes('semicondensed')
+        || String(unwrap(tx.fontPostScriptName) || '').toLowerCase().includes('semicondensed');
+      if (!(semi || family === 'Noto Sans' || family === 'Noto Serif SC')) return false;
+      return codepointsToCover(chars).some((cp) => (
+        (cp >= 0x3000 && cp <= 0x303f)
+        || (cp >= 0x3400 && cp <= 0x9fff)
+        || (cp >= 0xff00 && cp <= 0xffef)
+      ));
+    });
+    if (hasCjkOnLatinSubset) {
+      for (const family of PAINTED_CJK_FAMILY_CANDIDATES) {
+        if (!reg[family] || byFamily.has(family)) continue;
+        const u = { family, weights: new Set([400]), nodes: [], routedFor: ['painted/cjk-coverage'] };
+        byFamily.set(family, u);
+        usage.push(u);
+        break;
+      }
     }
   }
 
@@ -325,7 +392,9 @@ function main() {
     resolved.push({ ...u, weights: [...u.weights], entry, src, weightMismatch });
   }
 
-  missing.push(...cmapCoverageGaps(resolved, usage, new Set(Object.keys(reg))));
+  const cmapGaps = cmapCoverageGaps(resolved, usage, new Set(Object.keys(reg)))
+    .filter((gap) => !alreadyMissingFamily(missing, gap.family));
+  missing.push(...cmapGaps);
   {
     const hangulNodes = [];
     for (const used of usage) {

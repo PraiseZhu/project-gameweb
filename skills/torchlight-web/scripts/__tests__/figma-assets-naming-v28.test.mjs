@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { pickSliceNodes, pageAlignedExportBox, isReadyHandoffTruth } from '../figma-assets.mjs';
+import {
+  pickSliceNodes,
+  pageAlignedExportBox,
+  isReadyHandoffTruth,
+  isZeroExtentSlice,
+  reuseExistingMissingPicks,
+} from '../figma-assets.mjs';
 
 function truthWith(nodes) {
   return {
@@ -657,6 +663,33 @@ test('reuse-existing fail-closes when any listed PNG is missing', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
   assert.match(src, /reuseExisting && fetchPicks\.length/);
   assert.match(src, /--reuse-existing 缺 PNG，拒绝打 Figma/);
+});
+
+test('reuse-existing does not treat zero-extent or previous noUrl as missing PNG', () => {
+  assert.equal(isZeroExtentSlice({ w: 433, h: 0, nodeId: '949:6545' }), true);
+  assert.equal(isZeroExtentSlice({ w: 230, h: 370, nodeId: '949:6003' }), false);
+  const cached = new Map([['keep', '/tmp/keep.png']]);
+  const previous = { noUrl: [{ nodeId: '949:6545', why: 'Figma 未返回 URL' }] };
+  const missing = reuseExistingMissingPicks([
+    { nodeId: 'keep', w: 10, h: 10 },
+    { nodeId: '949:6545', w: 433, h: 0, name: 'Line 1' },
+    { nodeId: 'old-no-url', w: 20, h: 20 },
+    { nodeId: 'real-missing', w: 64, h: 64 },
+  ], cached, previous);
+  assert.deepEqual(missing.map((item) => item.nodeId), ['old-no-url', 'real-missing']);
+  const missingKnownNoUrl = reuseExistingMissingPicks([
+    { nodeId: 'keep', w: 10, h: 10 },
+    { nodeId: '949:6545', w: 433, h: 0, name: 'Line 1' },
+    { nodeId: 'old-no-url', w: 20, h: 20 },
+    { nodeId: 'real-missing', w: 64, h: 64 },
+  ], cached, { noUrl: [{ nodeId: '949:6545' }, { nodeId: 'old-no-url' }] });
+  assert.deepEqual(missingKnownNoUrl.map((item) => item.nodeId), ['real-missing']);
+});
+
+test('full fetch still retries previous noUrl and only skips zero-extent slices', () => {
+  const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
+  assert.match(src, /reuseExisting\s*\n\s*\? reuseExistingMissingPicks\(picks, cachedPaths, previous\)\s*\n\s*: picks\.filter\(\(p\) => !cachedPaths\.has\(p\.nodeId\) && !isZeroExtentSlice\(p\)\)/);
+  assert.match(src, /skippedNoFetchPicks\(picks, cachedPaths, reuseExisting \? previous : null\)/);
 });
 
 test('collapsed webp under 2KB keeps serving pngFile', () => {

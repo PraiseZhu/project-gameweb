@@ -1,13 +1,15 @@
 /**
- * Registered font file cmap vs authored TEXT characters.
+ * cmap of the face the page actually paints vs authored TEXT characters.
  *
  * Figma REST only names the layer family (e.g. NotoSans-SemiCondensed). It does
- * not record the OS fallback Figma used for missing glyphs. If the registered
- * file cannot draw the node's characters, the browser will silently pick
- * PingFang / Apple SD Gothic / Noto Sans KR and wrap differently.
+ * not record the OS fallback Figma used for missing glyphs. The renderer paints
+ * that fallback explicitly: Hangul → local() Apple SD Gothic Neo; CJK on a
+ * latin subset → registered YouHei / Noto CJK; SemiCondensed latin stays on
+ * the registered static face.
  *
- * This gate fail-closes on uncovered code points. It must not substitute
- * another family or a system face.
+ * This gate fail-closes on uncovered code points of the painted face. It must
+ * not treat the layer family name as the painted face, and must not copy a
+ * system TTC into git or assets/.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -19,6 +21,8 @@ const SKIP_CP = (cp) => (
   cp <= 0x20
   || cp === 0x7f
   || (cp >= 0x200b && cp <= 0x200d)
+  || cp === 0x2028
+  || cp === 0x2029
   || cp === 0xfeff
 );
 
@@ -43,12 +47,54 @@ export function isSourceSemiCondensed(text = {}) {
   return style.includes('semicondensed') || ps.includes('semicondensed');
 }
 
-export function coverageFamilyFor(text = {}, registeredFamilies = new Set()) {
+export const PAINTED_HANGUL_FACE = 'FX Apple SD Gothic Neo';
+export const PAINTED_CJK_FAMILY_CANDIDATES = Object.freeze([
+  'FZVariable-YouHeiS WT W H',
+  'Noto Sans SC',
+  'Noto Sans TC',
+  'Noto Sans HK',
+]);
+
+export function isHangulCodepoint(cp) {
+  return Number(cp) >= 0xac00 && Number(cp) <= 0xd7af;
+}
+
+export function isCjkCodepoint(cp) {
+  const n = Number(cp);
+  return (n >= 0x3000 && n <= 0x303f)
+    || (n >= 0x3400 && n <= 0x9fff)
+    || (n >= 0xf900 && n <= 0xfaff)
+    || (n >= 0xff00 && n <= 0xffef)
+    || (n >= 0x20000 && n <= 0x2ceaf);
+}
+
+/**
+ * Split one TEXT node's characters onto the faces the renderer actually
+ * paints. Hangul never stays on a registered latin/CJK subset; CJK never
+ * stays on a latin-only Noto Sans; SemiCondensed latin stays on the
+ * registered static face.
+ */
+export function paintedCoveragePlan(text = {}, registeredFamilies = new Set()) {
   const sourceFamily = String(text.fontFamily || '');
-  if (isSourceSemiCondensed(text) && registeredFamilies.has('Noto Sans SemiCondensed')) {
-    return 'Noto Sans SemiCondensed';
+  const characters = String(text.characters || '');
+  const cps = codepointsToCover(characters);
+  const buckets = new Map();
+  const add = (family, cp) => {
+    if (!family) return;
+    if (!buckets.has(family)) buckets.set(family, []);
+    buckets.get(family).push(cp);
+  };
+  const firstRegistered = (...names) => names.find((name) => registeredFamilies.has(name)) || null;
+  const cjkFamily = firstRegistered(...PAINTED_CJK_FAMILY_CANDIDATES);
+  const semi = isSourceSemiCondensed(text) && registeredFamilies.has('Noto Sans SemiCondensed');
+  const cjkOnLatinSubset = semi || sourceFamily === 'Noto Sans' || sourceFamily === 'Noto Serif SC';
+  for (const cp of cps) {
+    if (isHangulCodepoint(cp)) add(PAINTED_HANGUL_FACE, cp);
+    else if (isCjkCodepoint(cp) && cjkOnLatinSubset) add(cjkFamily || sourceFamily, cp);
+    else if (semi) add('Noto Sans SemiCondensed', cp);
+    else add(sourceFamily, cp);
   }
-  return sourceFamily;
+  return [...buckets.entries()].map(([family, codepoints]) => ({ family, codepoints }));
 }
 
 export function formatUncovered(codepoints, { limit = 16 } = {}) {
@@ -74,8 +120,9 @@ function pythonBin() {
 
 const READ_CMAP_PY = [
   'import json, sys',
-  'from fontTools.ttLib import TTFont',
-  'font = TTFont(sys.argv[1], lazy=True)',
+  'from fontTools.ttLib import TTFont, TTCollection',
+  'path = sys.argv[1]',
+  'font = TTCollection(path).fonts[0] if path.lower().endswith(".ttc") else TTFont(path, lazy=True)',
   'cmap = font.getBestCmap() or {}',
   'print(json.dumps([int(cp) for cp in cmap]))',
 ].join('; ');
