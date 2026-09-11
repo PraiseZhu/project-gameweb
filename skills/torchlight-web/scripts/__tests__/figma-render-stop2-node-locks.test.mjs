@@ -70,12 +70,14 @@ function compileMethod(src, needle) {
 function makeEl(attrs = {}) {
   const store = { ...attrs };
   const style = {};
-  return {
+  const el = {
     style,
     setAttribute(key, value) { store[key] = String(value); },
     getAttribute(key) { return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null; },
     removeAttribute(key) { delete store[key]; },
+    contains(node) { return node === el; },
   };
+  return el;
 }
 
 function regionGraph() {

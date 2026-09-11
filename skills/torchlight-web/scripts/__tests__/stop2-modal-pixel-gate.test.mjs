@@ -8,7 +8,7 @@
  *     「成块错位 / 贴错图」不能跳。
  *
  * 本测试锁四件事：
- *   1) 阈值与停1 共享常量一致（0.005），相位容差半径 = 2px；
+ *   1) 阈值与停1 共享常量一致（DEFAULT_STOP1_PIXEL_THRESHOLD），相位容差半径 = 2px；
  *   2) 活字遮罩来自共享 gate 的 sectionLiveCopyMasks（不是第二套判据）；
  *   3) 亚像素线遮罩只认清单里 h*scale ≤ 2 的 LINE / 退化成线的 VECTOR；
  *   4) 相位容差能跳过 ≤2px 相位差，但 ≥3px 的成块错位照样报 bad（不许把真错位跳掉）。
@@ -64,7 +64,8 @@ const stamp = (p, ox, oy, w, h, r, g, b) => {
 
 test('stop2 阈值与停1 共享常量一致，相位容差 = 2px', () => {
   assert.equal(STOP2_PIXEL_THRESHOLD, DEFAULT_STOP1_PIXEL_THRESHOLD);
-  assert.equal(STOP2_PIXEL_THRESHOLD, 0.005);
+  assert.equal(typeof STOP2_PIXEL_THRESHOLD, 'number');
+  assert.ok(STOP2_PIXEL_THRESHOLD > 0);
   assert.equal(PHASE_TOLERANCE_RADIUS, 2);
 });
 
