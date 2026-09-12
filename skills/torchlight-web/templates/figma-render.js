@@ -7597,7 +7597,7 @@
           /* Under a uniform page-instance scale the clone is authored at the
              COMPONENT root size and then scaled down; using 100% (= the already
              scaled host box) shrank it twice and clipped the panel's right
-             half (mobile expanded menu clipped). Use the root box so the single
+             half (mobile expanded menu 展开被裁). Use the root box so the single
              scale() maps master -> page instance exactly once. */
           layer.style.width = (uniformScale ? Number(rootBox.w) : '100%') + (uniformScale ? 'px' : '');
           layer.style.height = (uniformScale ? Number(rootBox.h) : paintedH) + 'px';
