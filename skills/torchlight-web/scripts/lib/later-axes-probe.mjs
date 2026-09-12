@@ -15,7 +15,6 @@ import { inspectPackPath, packRoot, sha256File } from './pack-demo.mjs';
 import { requireOrchestratorTicket } from './orchestrator-ticket.mjs';
 import { compositionForView, DESIGN_POLICY, OFFICIAL_ROOT_FONT_VW, widthScale } from './resize/index.mjs';
 import {
-  LANG_OPTION_PAGES,
   catalogOpenedGoMatches,
   dropmenuOverlapEvidenceOk,
   languageOptionVerdict,
@@ -177,18 +176,18 @@ export function greenLaterAxesProbeFixture({
     }),
     pixel: {
       ok: true,
-      languages: LANG_OPTION_PAGES.map((row) => ({ lang: row.lang, label: row.label, ok: true, measured: true, skipped: false, problems: [] })),
+      languages: [{ lang: 'zh-CN', label: 'zh-CN', ok: true, measured: true, skipped: false, problems: [] }],
       stalePrefs: { ok: true, measured: true, skipped: false, problems: [] },
-      modal: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/pc适龄提示', close: { ok: true, measured: true, skipped: false } },
-      mobile: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/mobile适龄提示', close: { ok: true, measured: true, skipped: false } },
+      modal: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/pc_sheet', close: { ok: true, measured: true, skipped: false } },
+      mobile: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/mobile_sheet', close: { ok: true, measured: true, skipped: false } },
       pcCatalog: {
         ok: true, measured: true, skipped: false, problems: [], plat: 'pc',
-        openers: [{ go: 'modal/pc适龄提示', openedGo: 'pc适龄提示', ok: true, measured: true, skipped: false, opened: true, closed: true }],
+        openers: [{ go: 'modal/pc_sheet', openedGo: 'pc_sheet', ok: true, measured: true, skipped: false, opened: true, closed: true }],
         inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
       },
       mobileCatalog: {
         ok: true, measured: true, skipped: false, problems: [], plat: 'mobile',
-        openers: [{ go: 'modal/mobile适龄提示', openedGo: 'mobile适龄提示', ok: true, measured: true, skipped: false, opened: true, closed: true }],
+        openers: [{ go: 'modal/mobile_sheet', openedGo: 'mobile_sheet', ok: true, measured: true, skipped: false, opened: true, closed: true }],
         inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
       },
     },
@@ -447,6 +446,7 @@ async function collectLanguageOptions(page) {
       const state = (activeLayer && activeLayer.getAttribute('data-btn-variant-state'))
         || el.getAttribute('data-btn-variant-state');
       return {
+        lang: el.getAttribute('data-lang') || el.getAttribute('data-btn-lang') || '',
         text: nested[0] || (el.textContent || '').replace(/\s+/g, ' ').trim(),
         visibleCount: nested.length || ((el.textContent || '').trim() ? 1 : 0),
         state,
@@ -460,7 +460,10 @@ async function collectLanguageOptions(page) {
 
 async function measureVisibleOpenerCatalog(page, { plat }) {
   const measured = await page.evaluate(async (wantedPlat) => {
-    const langs = ['zh-CN', 'zh-TW', 'en', 'ko'];
+    const langs = [...new Set([...document.querySelectorAll('[data-btn-name="切换语言"], [data-lang]')]
+      .map((el) => el.getAttribute('data-lang') || el.getAttribute('data-btn-lang'))
+      .filter(Boolean))];
+    if (!langs.length) langs.push('zh-CN');
     const visible = (el) => {
       if (!el || el.hidden) return false;
       const cs = getComputedStyle(el);
@@ -625,7 +628,7 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
         const name = `${hit.getAttribute('data-name') || ''} ${hit.getAttribute('data-node-name') || ''}`;
         return /(?:^|[\s/>])日历(?:@|$)/.test(name.trim());
       });
-      if (calendarShell || /订阅赛季日程/.test(`${layer.getAttribute('data-modal-name') || ''} ${layer.getAttribute('data-name') || ''}`)) {
+      if (calendarShell || /日历|订阅/.test(`${layer.getAttribute('data-modal-name') || ''} ${layer.getAttribute('data-name') || ''}`)) {
         const wanted = lang === 'zh-TW' ? 'tw'
           : lang === 'en' ? 'en'
             : lang === 'ko' ? 'kr'
@@ -660,7 +663,7 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       for (const el of collectHomepage()) {
         const node = el.getAttribute('data-node') || '';
         const go = el.getAttribute('data-go') || '';
-        const calendar = /订阅赛季日程/.test(go);
+        const calendar = /日历|订阅/.test(go);
         const key = calendar ? `${lang}::${node}::${go}` : `${node}::${go}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -822,8 +825,15 @@ async function measureInteractionPixels(page, { base, width }) {
     timeout: 120000,
   });
   await waitQa(page);
+  const seed = await collectLanguageOptions(page);
+  const langRows = (seed.options || [])
+    .map((row) => ({ lang: row.lang || row.code || '', label: row.text || row.lang || '' }))
+    .filter((row) => row.lang);
+  if (!seed.missing && (seed.options || []).length && !langRows.length) {
+    problems.push('language-lang-missing');
+  }
   const languages = [];
-  for (const row of LANG_OPTION_PAGES) {
+  for (const row of langRows) {
     await page.evaluate((lang) => window.__qa.setPref('lang', lang), row.lang);
     await waitMs(page, 200);
     const opened = await collectLanguageOptions(page);
@@ -842,21 +852,28 @@ async function measureInteractionPixels(page, { base, width }) {
       }
     });
   }
-  await page.evaluate(() => window.__qa.setPref('lang', 'en'));
-  await waitMs(page, 200);
-  const afterEn = await collectLanguageOptions(page);
-  const stalePrefs = afterEn.missing
-    ? { ok: false, measured: false, skipped: false, problems: ['language-dropmenu-missing-after-en'] }
-    : { ...languageOptionVerdict(afterEn.options, 'en'), measured: true, skipped: false };
-  if (!stalePrefs.ok) problems.push(`stale-prefs: ${(stalePrefs.problems || []).join(',')}`);
+  const otherLang = langRows.find((row) => row.lang && row.lang !== 'zh-CN');
+  let stalePrefs;
+  if (!otherLang) {
+    stalePrefs = { ok: true, measured: true, skipped: false, problems: [] };
+  } else {
+    await page.evaluate((lang) => window.__qa.setPref('lang', lang), otherLang.lang);
+    await waitMs(page, 200);
+    const afterOther = await collectLanguageOptions(page);
+    stalePrefs = afterOther.missing
+      ? { ok: false, measured: false, skipped: false, problems: ['language-dropmenu-missing-after-switch'] }
+      : { ...languageOptionVerdict(afterOther.options, otherLang.lang), measured: true, skipped: false };
+  }
+  if (!stalePrefs.ok) problems.push('stale-prefs: ' + (stalePrefs.problems || []).join(','));
 
-  // modal pixels lock to zh-CN: @lang=cn 适龄 opener is gone on leftover en.
+  // modal pixels lock to zh-CN: leftover en hides the cn-only opener.
   await page.evaluate(() => window.__qa.setPref('lang', 'zh-CN'));
   await waitMs(page, 200);
   const modal = await page.evaluate(() => {
     const prefs = typeof window.__qa.prefs === 'function' ? window.__qa.prefs() : {};
     const opener = [...document.querySelectorAll('[data-go]')].find((el) => {
-      if (!/适龄/.test(el.getAttribute('data-go') || '')) return false;
+      const go = el.getAttribute('data-go') || '';
+      if (!go.startsWith('modal/')) return false;
       if (el.hidden) return false;
       const cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden') return false;
@@ -888,6 +905,7 @@ async function measureInteractionPixels(page, { base, width }) {
       panelTopRatio: panelRect && layerRect.height
         ? (panelRect.top - layerRect.top) / layerRect.height
         : null,
+      sourceBox: layer.getAttribute('data-modal-source-box'),
       hasClose: !!close,
       hasNamedScroll: !!scroll,
       scrollbarHidden,
@@ -896,9 +914,21 @@ async function measureInteractionPixels(page, { base, width }) {
     pose.closedAfterClose = !layer.isConnected || layer.hidden || layer.getAttribute('data-modal-open') !== 'true';
     return pose;
   });
+  const parseBox = (raw) => {
+    const n = String(raw || '').split(',').map(Number);
+    if (n.length !== 4 || n.some((v) => !Number.isFinite(v))) return null;
+    return { x: n[0], y: n[1], w: n[2], h: n[3] };
+  };
+  const sourceBox = parseBox(modal.sourceBox);
+  const panelInv = parseBox(modal.panelBox);
+  const expected = (sourceBox && panelInv && sourceBox.h)
+    ? { panelTopRatio: (panelInv.y - sourceBox.y) / sourceBox.h }
+    : null;
   let modalVerdict = modal.missing
     ? { ok: false, measured: false, skipped: false, problems: ['pc-modal-missing'] }
-    : { ...pcModalSheetVerdict(modal), measured: true, skipped: false };
+    : !expected
+      ? { ok: false, measured: true, skipped: false, problems: ['inventory-panel-missing'] }
+      : { ...pcModalSheetVerdict({ ...modal, expected }), measured: true, skipped: false };
   if (modal.lang && modal.lang !== 'zh-CN') {
     modalVerdict.ok = false;
     modalVerdict.problems = [...(modalVerdict.problems || []), `pc-modal-lang:${modal.lang}`];
@@ -927,7 +957,8 @@ async function measureInteractionPixels(page, { base, width }) {
   const mobile = await page.evaluate(() => {
     const prefs = typeof window.__qa.prefs === 'function' ? window.__qa.prefs() : {};
     const opener = [...document.querySelectorAll('[data-go]')].find((el) => {
-      if (!/适龄/.test(el.getAttribute('data-go') || '')) return false;
+      const go = el.getAttribute('data-go') || '';
+      if (!go.startsWith('modal/')) return false;
       if (el.hidden) return false;
       const cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden') return false;

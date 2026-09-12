@@ -408,7 +408,6 @@ function main() {
     const hangul = hangulLocalFallbackStatus({
       localAvailable: local,
       nodes: hangulNodes,
-      nodeId: '949:5671',
     });
     if (hangul.unverified && hangulNodes.length) {
       missing.push({

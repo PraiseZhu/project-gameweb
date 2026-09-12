@@ -98,9 +98,9 @@ There are two explicit workflow declarations:
    and stop. Tell the user this axis is done. Do not Pack until they
    say continue, then `accept`, then `continue`. Later-axes Chrome probe
    must be green first, including language-button fill pixels
-   (current lang = highlight `758:1713`, others = normal `758:1710`),
-   PC modal sheet pose (3840×2160 centered, panel y = 199/2160) measured
-   on `zh-CN` with `modal.lang=zh-CN` and a `pc`/`mobile` 适龄 `go`,
+   (current lang = inventory highlight variant, others = normal),
+   PC modal sheet pose (sheet centered; panel from this page img/弹窗背景) measured
+   on `zh-CN` with `modal.lang=zh-CN` and a visible homepage named modal `go`,
    mobile modal inside the 390 sheet, close, and named-scroll
    `scrollbarWidth` none. Every visible homepage `@go` opener must open
    then close; a homepage `btn/` without `@go` must not open a modal.

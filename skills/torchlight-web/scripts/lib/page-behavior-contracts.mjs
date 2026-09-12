@@ -141,7 +141,9 @@ export function dropmenuSelect({ options = [], selectedIndex = 0 } = {}) {
 
 export function localeInvariantCopy(name) {
   const raw = String(name || '').trim();
-  return /^(Microsoft 365|Apple|Outlook\.com|Google|iCal文件)$/i.test(raw);
+  if (!raw) return false;
+  if (/^iCal/i.test(raw)) return true;
+  return !/[\u3400-\u9FFF]/.test(raw);
 }
 
 export function bindCopyRow({ nodeId, row, unique = true, empty = false } = {}) {

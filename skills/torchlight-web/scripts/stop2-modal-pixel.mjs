@@ -35,32 +35,99 @@ export const BLOCK_SHIFT_MIN_PX = 3;
 /** 与停1 同一遮罩上限：过度遮罩必须 FAIL。 */
 export const STOP2_MAX_MASK_RATIO = 0.40;
 
-/** 规则2 比较框必须锁在弹窗面板 band 内（设计 y199..1539 → CSS 99.5..769.5）。 */
-export const STOP2_KR_RULES2_PANEL = Object.freeze({ x: 0, y: 99.5, w: 1920, h: 670 });
+function langFromModalName(name) {
+  const n = String(name || '').toLowerCase();
+  if (/(^|_|\/)tw(\b|_|\/)|zh-tw/.test(n)) return 'zh-TW';
+  if (/(^|_|\/)kr(\b|_|\/)|(^|_|\/)ko(\b|_|\/)/.test(n)) return 'ko';
+  if (/(^|_|\/)en(\b|_|\/)/.test(n)) return 'en';
+  if (/(^|_|\/)cn(\b|_|\/)|zh-cn/.test(n)) return 'zh-CN';
+  return '';
+}
 
-/**
- * 三屏：key / Figma 基准节点 / 语言 / 入口 / 分区框（demo 1920×1080 CSS px）。
- * 比较框 = 用户报障的弹窗可视区。活字由 sectionLiveCopyMasks 遮掉，像素门只比框 / 图 / 线。
- */
-export const STOP2_SCREENS = Object.freeze([
-  {
-    key: 'tw', nodeId: '949:5420', lang: 'zh-TW', go: 'modal/pc_tw预约弹窗',
-    frame: { x: 643, y: 450, w: 635, h: 161 },
-  },
-  {
-    key: 'kr', nodeId: '949:5675', lang: 'ko', go: 'modal/pc_kr预约弹窗',
-    frame: { x: 786, y: 486, w: 352, h: 114 },
-  },
-  {
-    key: 'kr-rules2', nodeId: '949:5634', lang: 'ko', go: 'modal/pc_kr预约弹窗', rulesNode: '949:5740',
-    /* 比较框 = 该弹窗自己的面板（img/弹窗背景 设计 y199..1539 + 高 1340
-       → CSS y99.5..769.5，横跨整宽）。只比弹窗内，不把遮罩下的主页算进来：
-       早前把框放到 y440..820 时越过了面板下沿，拿主页的 시즌 프리뷰/火花
-       去比弹窗节点图，才出现 0.98% 的假红。正文本身由停1 口径遮掉
-       （mask 13.8% < 停1 的 40% 上限）。 */
-    frame: { x: 0, y: 100, w: 1920, h: 670 },
-  },
-]);
+function cssFrameFromBox(box, scale = 0.5) {
+  if (!box) return null;
+  const x = Number(box.x) || 0;
+  const y = Number(box.y) || 0;
+  const w = Number(box.w ?? box.width) || 0;
+  const h = Number(box.h ?? box.height) || 0;
+  if (w <= 0 || h <= 0) return null;
+  return {
+    x: Math.round(x * scale),
+    y: Math.round(y * scale),
+    w: Math.round(w * scale),
+    h: Math.round(h * scale),
+  };
+}
+
+function panelBoxFromModal(modal) {
+  const nodes = modal && modal.nodes || [];
+  const panel = nodes.find((n) => /img\/弹窗背景/.test(String(n.name || '')));
+  return (panel && (panel.pageBox || panel.box)) || modal.pageBox || modal.box || null;
+}
+
+function nestedRulesTarget(modal) {
+  const nodes = modal && modal.nodes || [];
+  const hit = nodes.find((n) => {
+    const name = String(n.name || '');
+    const fromParam = String(n.go || (n.params && n.params.go) || '').trim();
+    const fromName = String(name).match(/@go=([^@\s]+)/);
+    const go = fromParam || (fromName && fromName[1]) || '';
+    if (!go) return false;
+    return /详细规则/.test(name) || /详细规则/.test(go);
+  });
+  if (!hit) return null;
+  const fromParam = String(hit.go || (hit.params && hit.params.go) || '').trim();
+  const fromName = String(hit.name || '').match(/@go=([^@\s]+)/);
+  let go = fromParam || (fromName && fromName[1]) || '';
+  if (go && !go.startsWith('modal/')) go = 'modal/' + go;
+  return { buttonId: String(hit.id), go };
+}
+
+function findModalByGo(modals, go) {
+  const wanted = String(go || '').replace(/^modal\//, '').trim();
+  if (!wanted) return null;
+  return (modals || []).find((m) => String(m.name || '').replace(/^modal\//, '').trim() === wanted) || null;
+}
+
+export function screensFromInventory(inventory, { scale = 0.5 } = {}) {
+  const modals = (inventory && inventory.attachments && inventory.attachments.modals) || (inventory && inventory.modals) || [];
+  const screens = [];
+  for (const modal of modals) {
+    const name = String(modal.name || '');
+    if (!/预约/.test(name) || /完成/.test(name) || /详细规则/.test(name)) continue;
+    const box = panelBoxFromModal(modal);
+    const frame = cssFrameFromBox(box, scale);
+    if (!frame) continue;
+    const go = name.startsWith('modal/') ? name : 'modal/' + name;
+    const lang = langFromModalName(name);
+    const rules = nestedRulesTarget(modal);
+    screens.push({
+      key: [lang || 'und', String(modal.id).replace(/[^a-zA-Z0-9]+/g, '-')].join('-'),
+      nodeId: String(modal.id),
+      lang: lang || 'zh-CN',
+      go,
+      frame,
+      panel: frame,
+    });
+    const rulesModal = rules && rules.go ? findModalByGo(modals, rules.go) : null;
+    if (rules && rulesModal) {
+      const rulesBox = panelBoxFromModal(rulesModal);
+      const rulesFrame = cssFrameFromBox(rulesBox, scale);
+      if (rulesFrame) screens.push({
+        key: [lang || 'und', String(rulesModal.id).replace(/[^a-zA-Z0-9]+/g, '-'), 'rules'].join('-'),
+        nodeId: String(rulesModal.id),
+        lang: lang || 'zh-CN',
+        go,
+        rulesNode: rules.buttonId,
+        rulesGo: rules.go,
+        sourceNodeId: String(modal.id),
+        frame: rulesFrame,
+        panel: rulesFrame,
+      });
+    }
+  }
+  return screens;
+}
 
 /**
  * 停1 口径活字遮罩：共享 gate 的 sectionLiveCopyMasks 产出「section 内设计 px」矩形，
@@ -364,12 +431,18 @@ export async function runStop2ModalPixelProbe({ demoDir, inventory, outDir, demo
   const demo = resolve(demoDir);
   const base = outDir ? resolve(outDir) : join(demo, STOP2_PIXEL_DIR);
   mkdirSync(base, { recursive: true });
-  const { PNG } = await loadPngApi(SKILL_ROOT);
   const inv = inventory || JSON.parse(readFileSync(join(demo, 'inventory.json'), 'utf8'));
+  const screens = screensFromInventory(inv);
+  if (!screens.length) {
+    const empty = { ok: false, results: [], problems: ['inventory-no-reservation-modals'] };
+    writeFileSync(join(base, 'pixel-results.json'), JSON.stringify([{ ok: false, status: 'MISSING', problems: empty.problems }], null, 2));
+    return empty;
+  }
+  const { PNG } = await loadPngApi(SKILL_ROOT);
   const modals = (inv.attachments && inv.attachments.modals) || inv.modals || [];
   const modalById = new Map(modals.map((m) => [String(m.id), m]));
   const results = [];
-  for (const screen of STOP2_SCREENS) {
+  for (const screen of screens) {
     const figmaPath = join(base, `${screen.nodeId.replace(':', '-')}.figma.png`);
     const shotRel = demoShots && demoShots[screen.key];
     const demoPath = shotRel ? resolve(shotRel) : join(base, `demo.${screen.key}.png`);
@@ -415,7 +488,7 @@ export async function runStop2ModalPixelProbe({ demoDir, inventory, outDir, demo
       threshold: STOP2_PIXEL_THRESHOLD,
       maxMaskRatio: STOP2_MAX_MASK_RATIO,
     });
-    const panel = screen.key === 'kr-rules2' ? STOP2_KR_RULES2_PANEL : null;
+    const panel = screen.panel || null;
     const overflow = panel ? frameExceedsPanel(frame, panel) : false;
     const ok = judged.ok && !overflow;
     const problems = [
@@ -448,7 +521,7 @@ const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(imp
  * 采集三屏 demo 实拍（1920×1080，取消 QA fit，走真实交互入口）。
  * 只做截图，不做判定；判定在 runStop2ModalPixelProbe。
  */
-export async function captureStop2Shots({ demoDir, outDir, browser } = {}) {
+export async function captureStop2Shots({ demoDir, outDir, browser, inventory } = {}) {
   const demo = resolve(demoDir);
   const base = outDir ? resolve(outDir) : join(demo, STOP2_PIXEL_DIR);
   mkdirSync(base, { recursive: true });
@@ -461,7 +534,8 @@ export async function captureStop2Shots({ demoDir, outDir, browser } = {}) {
     await page.goto('file://' + join(demo, 'index.html') + '?interaction=1');
     await page.locator('label').filter({ hasText: '缩放到可视区' }).locator('input').uncheck();
     await page.waitForTimeout(500);
-    for (const screen of STOP2_SCREENS) {
+    const inv = inventory || (existsSync(join(demo, 'inventory.json')) ? JSON.parse(readFileSync(join(demo, 'inventory.json'), 'utf8')) : {});
+    for (const screen of screensFromInventory(inv)) {
       await page.evaluate((l) => window.__qa.setPref('lang', l), screen.lang);
       await page.waitForTimeout(500);
       await page.locator(`[data-go="${screen.go}"]`).first().click({ force: false });

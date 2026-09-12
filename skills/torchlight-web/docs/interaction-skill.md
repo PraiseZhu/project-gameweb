@@ -117,8 +117,8 @@ display. Flattened `I{owner};…` descendants must not be reparented.
 
 Stop-2 completion for `dropmenu/多语言` `btn/切换语言` is the authored
 COMPONENT root fill, not `data-btn-variant-state`. Current page language
-gets Property 1=highlight (`949:5363`, `rgb(241, 200, 116)`); every other
-option stays Property 1=normal (`949:5360`, `rgb(189, 142, 92)`). Labels
+gets Property 1=highlight from this page inventory; every other
+option stays Property 1=normal. Labels
 stay visible. Fill pixels may be that CSS rgb or the visible
 `img/选中背景` / `img/未选中背景` VECTOR slice. After a language remount, open-menu highlight must read
 `frame.__fxRenderPrefs.lang` written at the start of every `renderApp`,
@@ -147,7 +147,7 @@ highlight/normal assets in place. It is not an independent `btn/`.
 
 ### Named modal contracts
 
-PC age-gate modal geometry uses `3840×2160` basis and its panel y is `199`; on mobile, a modal must not appear as a full-screen `390px` layer.
+PC named modals pin the authored sheet in the current viewport; panel top comes from this page img/弹窗背景. On mobile, a modal must stay inside the phone sheet.
 
 `@go` copies the modal layer name, not a node id:
 
@@ -181,9 +181,9 @@ enough when the match is unique on that platform:
 - mobile `btn/导航按钮` → `modal/顶部导航-1624尺寸`
 - mobile `btn/多语言按钮` → `modal/多语言按钮弹窗`
 
-Phase-1 duplicate `查看更多` accepts only `nodeRow=26` with
+Duplicate later-section CTAs need a unique copy-designation row with
 `designCharacters/tableZhCN` reconciled; without that evidence, never guess
-row 81 from visual order.
+by visual order.
 
 Indicator fallback demand comes from the current page manifest; an absent
 indicator root does not trigger a fallback cutout.
@@ -218,7 +218,7 @@ frame vs the Figma `pageBox`. Incomplete graphs stay unresolved.
 PC named modals pin the authored 3840×2160 sheet in the current viewport.
 Do not geometrically center only `img/弹窗背景` (3840×1340 @ y=199); that
 drops the panel below the spec rest pose. Completion is sheet center =
-viewport center and panel top / sheet height = 199/2160. Mobile overflow
+viewport center; panel top comes from this page img/弹窗背景. Mobile overflow
 `img/背景` still stays inside the phone sheet. `later-axes-probe` measures
 this on the QA page after switching back to `zh-CN`, not leftover `en`.
 Mobile `modal/` must stay inside the 390 host; `btn/关闭按钮` must close

@@ -594,7 +594,7 @@ export function planWebpDelivery(manifest, { assetsDir, demoDir }) {
 }
 
 /** Collapsed WebP aliases must not silently borrow another node's PNG.
- *  949:5741 has its own PNG; missing dest.pngFile stays missing. */
+ *  each dest node has its own PNG; missing dest.pngFile stays missing. */
 export function applyCollapsedWebpAlias(src, dest) {
   if (!src || !dest || !src.webpFile) return dest;
   const srcServesPng = !!src.webpCollapsed && !!src.pngFile;
@@ -1060,8 +1060,7 @@ async function main() {
       /* A collapsed WebP (< 2048 bytes) is a solid plate; the encoder path above
          already fell back to PNG for its own record. Duplicate ids must make the
          same choice, otherwise an alias keeps a blank WebP while its source
-         serves the real PNG (btn/详细按钮 949:5741 pointed at the 114-byte
-         949-5740.webp while 949:5740 fell back to 949-5740.png). */
+         serves the real PNG (a sibling btn must not inherit another node's tiny webp). */
       applyCollapsedWebpAlias(src, dest);
       dest.duplicateOf = alias.duplicateOf;
     }

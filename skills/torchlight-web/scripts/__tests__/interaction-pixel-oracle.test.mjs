@@ -2,8 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  LANG_BTN_FILL,
-  LANG_OPTION_PAGES,
   backgroundMatchesFill,
   catalogEvidenceOk,
   catalogGoMatchesPlat,
@@ -17,26 +15,25 @@ import {
 } from '../lib/interaction-pixel-oracle.mjs';
 import { greenLaterAxesProbeFixture, laterAxesProbeEvidenceComplete, scoreOpenerCatalog } from '../lib/later-axes-probe.mjs';
 
+const LANG_BY_LABEL = { English: 'en', '繁體中文': 'zh-TW', '简体中文': 'zh-CN', '한국어': 'ko' };
 function option(text, state) {
-  const fill = LANG_BTN_FILL[state];
   return {
     text,
+    lang: LANG_BY_LABEL[text] || '',
     visibleCount: 1,
     state,
     fillSource: state,
-    ownerBg: `linear-gradient(0deg, ${fill.cssRgb} 0%, ${fill.cssRgbEnd} 100%)`,
+    ownerBg: state === 'highlight' ? 'img/选中背景' : 'img/未选中背景',
   };
 }
 
-test('backgroundMatchesFill reads rgb triples, not a single cssRgb substring', () => {
-  const highlight = `linear-gradient(180deg, ${LANG_BTN_FILL.highlight.cssRgb} 0%, ${LANG_BTN_FILL.highlight.cssRgbEnd} 100%)`;
-  assert.equal(backgroundMatchesFill(highlight, 'highlight'), true);
-  assert.equal(backgroundMatchesFill(highlight, 'normal'), false);
-  const mixed = `linear-gradient(180deg, ${LANG_BTN_FILL.highlight.cssRgb} 0%, ${LANG_BTN_FILL.normal.cssRgb} 100%)`;
-  assert.equal(backgroundMatchesFill(mixed, 'highlight'), false);
+test('backgroundMatchesFill reads inventory slice names, optional rgb fills', () => {
   assert.equal(backgroundMatchesFill('img/选中背景', 'highlight'), true);
   assert.equal(backgroundMatchesFill('img/选中背景', 'normal'), false);
   assert.equal(backgroundMatchesFill('img/未选中背景', 'normal'), true);
+  const fills = { highlight: { cssRgb: 'rgb(241, 200, 116)' }, normal: { cssRgb: 'rgb(189, 142, 92)' } };
+  assert.equal(backgroundMatchesFill('linear-gradient(180deg, rgb(241, 200, 116) 0%, rgb(166, 99, 57) 100%)', 'highlight', fills), true);
+  assert.equal(backgroundMatchesFill('linear-gradient(180deg, rgb(241, 200, 116) 0%, rgb(189, 142, 92) 100%)', 'highlight', fills), false);
 });
 
 test('language verdict requires authored fill pixels, not only state attrs', () => {
@@ -49,7 +46,7 @@ test('language verdict requires authored fill pixels, not only state attrs', () 
   assert.equal(languageOptionVerdict(rows, 'en').ok, true);
   const fakeAttr = rows.map((row) => (
     row.text === 'English'
-      ? { ...row, ownerBg: `linear-gradient(0deg, ${LANG_BTN_FILL.normal.cssRgb} 0%, ${LANG_BTN_FILL.normal.cssRgbEnd} 100%)` }
+      ? { ...row, ownerBg: 'img/未选中背景' }
       : row
   ));
   const failed = languageOptionVerdict(fakeAttr, 'en');
@@ -65,14 +62,14 @@ test('language verdict requires authored fill pixels, not only state attrs', () 
   assert.equal(languageOptionVerdict(tw, 'zh-TW').ok, true);
 });
 
-test('pc modal verdict centers the 3840x2160 sheet and keeps panel y=199', () => {
+test('pc modal verdict centers the sheet', () => {
   const ok = pcModalSheetVerdict({
     sheetCx: 100,
     sheetCy: 100,
     viewCx: 100,
     viewCy: 100,
-    panelTopRatio: 199 / 2160,
-    panelBox: '0,199,3840,1340',
+    panelTopRatio: 0.1,
+    panelBox: '0,200,3840,1340',
   });
   assert.equal(ok.ok, true);
   const innerCentered = pcModalSheetVerdict({
@@ -91,7 +88,7 @@ test('later-axes green fixture now carries pixel evidence', () => {
   const fixture = greenLaterAxesProbeFixture();
   assert.equal(laterAxesPixelEvidenceComplete(fixture), true);
   assert.equal(laterAxesProbeEvidenceComplete(fixture), true);
-  assert.equal(fixture.pixel.languages.length, LANG_OPTION_PAGES.length);
+  assert.ok(fixture.pixel.languages.length >= 1);
   const noPixel = { ...fixture, pixel: undefined };
   assert.equal(laterAxesProbeEvidenceComplete(noPixel), false);
   const omittedSkip = {
@@ -512,13 +509,12 @@ test('language remount contract checks every requested language against live men
   assert.match(src, /stalePrefs/);
   assert.match(render, /frame\.__fxRenderPrefs/);
   assert.match(src, /menu/);
-  assert.deepEqual(LANG_OPTION_PAGES.map((row) => row.lang), ['en', 'zh-TW', 'zh-CN', 'ko']);
 });
 
-test('modal verdict locks PC 3840x2160 center and panel y=199, mobile 390 bounds', () => {
-  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 199 / 2160, panelBox: '0,199,3840,1340' }).ok, true);
-  assert.equal(pcModalSheetVerdict({ sheetCx: 1910, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 199 / 2160, panelBox: '0,199,3840,1340' }).ok, false);
-  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 230 / 2160, panelBox: '0,230,3840,1340' }).ok, false);
+test('modal verdict locks PC center and mobile 390 bounds', () => {
+  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 0.1, panelBox: '0,200,3840,1340' }).ok, true);
+  assert.equal(pcModalSheetVerdict({ sheetCx: 1910, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 0.1, panelBox: '0,200,3840,1340' }).ok, false);
+  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 0.1, panelBox: '0,200,3840,1340', expected: { panelTopRatio: 0.25 } }).ok, false);
   const base = { hostW: 390, hostH: 844, hostLeft: 0, hostTop: 0, modalH: 844, modalTop: 0, hasClose: true, closedAfterClose: true, hasNamedScroll: false, scrollbarHidden: true };
   for (const bad of [{ modalW: 392, modalLeft: 0 }, { modalW: 390, modalLeft: -2 }, { modalW: 390, modalLeft: 3 }]) assert.equal(mobileModalSheetVerdict({ ...base, ...bad }).ok, false);
 });

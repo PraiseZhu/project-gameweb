@@ -22,10 +22,6 @@ import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inf
 
 const LANGS_FALLBACK = ['zh-CN', 'en', 'ko', 'ja', 'zh-TW'];
 
-/** 本页本地化只做阶段一：飞书表 3–54 行。缺失/空/畸形不得退成整表。 */
-export const PHASE_ONE_ROW_MIN = 3;
-export const PHASE_ONE_ROW_MAX = 54;
-
 export function parsePhaseRows(declared) {
   if (!Array.isArray(declared) || declared.length === 0) {
     return { ok: false, rows: new Set(), problem: 'phaseRows 缺失或空，拒绝退成整表' };
@@ -41,21 +37,9 @@ export function parsePhaseRows(declared) {
   return { ok: true, rows: new Set(nums.map(String)), problem: null };
 }
 
+/** 入口闸：必须声明 phaseRows。范围由这次表自己定，不再写死阶段一。 */
 export function assertPhaseOneRows(declared) {
-  const parsed = parsePhaseRows(declared);
-  if (!parsed.ok) return parsed;
-  const extra = [...parsed.rows].filter((row) => {
-    const n = Number(row);
-    return n < PHASE_ONE_ROW_MIN || n > PHASE_ONE_ROW_MAX;
-  });
-  if (extra.length) {
-    return {
-      ok: false,
-      rows: new Set(),
-      problem: `phaseRows 含阶段一以外的行 ${extra.join(',')}，入口只许 ${PHASE_ONE_ROW_MIN}–${PHASE_ONE_ROW_MAX}`,
-    };
-  }
-  return parsed;
+  return parsePhaseRows(declared);
 }
 
 /** 表里一行的"译文指纹"：五个语言列的原始值 canonical 比较用（判 ambiguous）。 */
@@ -106,7 +90,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
   }
 
   // ── 扫表：行号 → { rawZh, normZh }。值一律走 at() 取，与 locator 同一条路径 ──
-  // 本页只做阶段一。_meta.phaseRows 缺失/空/畸形不得退成整表（后段 查看更多/立即下载会撞 SEO）。
+  // _meta.phaseRows 缺失/空/畸形不得退成整表（后段 查看更多/立即下载会撞 SEO）。
   let declaredPhaseRows;
   try {
     declaredPhaseRows = at(larkSnap, '/_meta/phaseRows');

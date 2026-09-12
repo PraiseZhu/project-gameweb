@@ -1,36 +1,9 @@
 /**
  * Stop-2 pixel oracle. Completion is the authored fill / sheet pose, not
- * data-btn-variant-state. Language fills come from this page's
- * btn/切换语言 COMPONENT_SET 949:5359 (normal 949:5360 / highlight 949:5363),
- * not Etheria 758:1710/758:1713. PC modal pose still uses
- * modal/pc* img/弹窗背景 3840×1340 @ y=199.
+ * data-btn-variant-state. Language fills come from this page inventory:
+ * btn/切换语言 highlight/normal, img/选中背景 and img/未选中背景.
+ * PC modal pose is centered; panel box comes from img/弹窗背景 on this page.
  */
-export const LANG_BTN_FILL = Object.freeze({
-  highlight: Object.freeze({
-    componentId: '949:5363',
-    cssRgb: 'rgb(241, 200, 116)',
-    cssRgbEnd: 'rgb(166, 99, 57)',
-  }),
-  normal: Object.freeze({
-    componentId: '949:5360',
-    cssRgb: 'rgb(189, 142, 92)',
-    cssRgbEnd: 'rgb(91, 66, 50)',
-  }),
-});
-
-export const LANG_OPTION_PAGES = Object.freeze([
-  { lang: 'en', label: 'English' },
-  { lang: 'zh-TW', label: '繁體中文' },
-  { lang: 'zh-CN', label: '简体中文' },
-  { lang: 'ko', label: '한국어' },
-]);
-
-export const PC_MODAL_SHEET = Object.freeze({
-  w: 3840,
-  h: 2160,
-  panel: Object.freeze({ x: 0, y: 199, w: 3840, h: 1340 }),
-});
-
 export function rgbTriples(css) {
   const out = [];
   const re = /rgba?\(\s*(\d+)\s*[, ]\s*(\d+)\s*[, ]\s*(\d+)/g;
@@ -39,47 +12,47 @@ export function rgbTriples(css) {
   return out;
 }
 
-export function backgroundMatchesFill(backgroundImage, state) {
-  const fill = LANG_BTN_FILL[state];
-  if (!fill || typeof backgroundImage !== 'string' || !backgroundImage) return false;
-  const other = LANG_BTN_FILL[state === 'highlight' ? 'normal' : 'highlight'];
-  const triples = rgbTriples(backgroundImage);
-  const has = (rgb) => {
-    const token = rgbTriples(rgb)[0];
-    return Boolean(token && triples.includes(token));
-  };
-  if (has(fill.cssRgb) && !has(other.cssRgb)) return true;
-  /* This page paints btn/切换语言 as VECTOR img/选中背景|未选中背景 slices,
-     not a CSS gradient on the INSTANCE. Completion is the visible authored
-     layer, not a reconstructed rgb triple. */
+export function backgroundMatchesFill(backgroundImage, state, fills) {
+  if (typeof backgroundImage !== 'string' || !backgroundImage) return false;
   if (state === 'highlight' && /img\/选中背景/.test(backgroundImage) && !/img\/未选中背景/.test(backgroundImage)) {
     return true;
   }
   if (state === 'normal' && /img\/未选中背景/.test(backgroundImage) && !/img\/选中背景/.test(backgroundImage)) {
     return true;
   }
-  return false;
+  const fill = fills && fills[state];
+  const other = fills && fills[state === 'highlight' ? 'normal' : 'highlight'];
+  if (!fill || !fill.cssRgb) return false;
+  const triples = rgbTriples(backgroundImage);
+  const has = (rgb) => {
+    const token = rgbTriples(rgb)[0];
+    return Boolean(token && triples.includes(token));
+  };
+  return has(fill.cssRgb) && !(other && other.cssRgb && has(other.cssRgb));
 }
 
 export function languageOptionVerdict(options, currentLang) {
-  const wanted = LANG_OPTION_PAGES.find((row) => row.lang === currentLang);
-  if (!wanted) return { ok: false, error: `unknown-lang:${currentLang}` };
   const rows = Array.isArray(options) ? options : [];
   const problems = [];
   if (rows.length < 2) problems.push('language-option-count');
+  const highs = rows.filter((row) => row.state === 'highlight');
+  if (highs.length !== 1) problems.push('highlight-count:' + highs.length);
+  const current = (currentLang && rows.find((row) => row.lang === currentLang)) || highs[0] || null;
+  if (currentLang && current && current.lang && current.lang !== currentLang) {
+    problems.push('highlight-lang:' + current.lang + '!=' + currentLang);
+  }
+  if (currentLang && !current) problems.push('missing-current:' + currentLang);
   for (const row of rows) {
-    const isCurrent = row.text === wanted.label;
+    const isCurrent = Boolean(current && row === current);
     const expected = isCurrent ? 'highlight' : 'normal';
-    if (!row.visibleCount) problems.push(`missing-label:${row.text || '?'}`);
-    if (row.state !== expected) problems.push(`state:${row.text}:${row.state}!=${expected}`);
-    if (row.fillSource !== expected) problems.push(`fill-source:${row.text}:${row.fillSource}!=${expected}`);
-    if (!backgroundMatchesFill(row.ownerBg, expected)) {
-      problems.push(`fill-pixel:${row.text}:${expected}`);
+    if (!row.visibleCount) problems.push('missing-label:' + (row.text || '?'));
+    if (row.state !== expected) problems.push('state:' + (row.text || '?') + ':' + row.state + '!=' + expected);
+    if (row.fillSource !== expected) problems.push('fill-source:' + (row.text || '?') + ':' + row.fillSource + '!=' + expected);
+    if (!backgroundMatchesFill(row.ownerBg, expected, row.fills)) {
+      problems.push('fill-pixel:' + (row.text || '?') + ':' + expected);
     }
   }
-  const current = rows.find((row) => row.text === wanted.label);
-  if (!current) problems.push(`missing-current:${wanted.label}`);
-  return { ok: problems.length === 0, problems, currentLang, label: wanted.label };
+  return { ok: problems.length === 0, problems, currentLang, label: current && current.text };
 }
 
 export function pcModalSheetVerdict({
@@ -89,21 +62,24 @@ export function pcModalSheetVerdict({
   viewCy,
   panelTopRatio,
   panelBox,
+  expected = null,
 } = {}) {
   const problems = [];
-  const specRatio = PC_MODAL_SHEET.panel.y / PC_MODAL_SHEET.h;
-  const expectedBox = `${PC_MODAL_SHEET.panel.x},${PC_MODAL_SHEET.panel.y},${PC_MODAL_SHEET.panel.w},${PC_MODAL_SHEET.panel.h}`;
-  if (panelBox && panelBox !== expectedBox) problems.push(`panel-box:${panelBox}`);
   if (!Number.isFinite(sheetCx) || !Number.isFinite(viewCx) || Math.abs(sheetCx - viewCx) > 2) {
     problems.push('sheet-x-not-centered');
   }
   if (!Number.isFinite(sheetCy) || !Number.isFinite(viewCy) || Math.abs(sheetCy - viewCy) > 2) {
     problems.push('sheet-y-not-centered');
   }
-  if (!Number.isFinite(panelTopRatio) || Math.abs(panelTopRatio - specRatio) > 0.01) {
-    problems.push(`panel-y-ratio:${panelTopRatio}!=${specRatio}`);
+  if (!Number.isFinite(panelTopRatio)) problems.push('panel-y-missing');
+  if (expected && expected.panelBox && panelBox && panelBox !== expected.panelBox) {
+    problems.push('panel-box:' + panelBox);
   }
-  return { ok: problems.length === 0, problems, specPanelY: specRatio };
+  if (expected && Number.isFinite(Number(expected.panelTopRatio)) && Number.isFinite(panelTopRatio)
+    && Math.abs(panelTopRatio - Number(expected.panelTopRatio)) > 0.01) {
+    problems.push('panel-y-ratio:' + panelTopRatio + '!=' + expected.panelTopRatio);
+  }
+  return { ok: problems.length === 0, problems, specPanelY: expected && expected.panelTopRatio };
 }
 
 export function measuredOk(entry) {
@@ -164,7 +140,7 @@ export function pcModalCloseVerdict({ hasClose, closedAfterClose, scrollbarHidde
 
 function modalLangGoOk(entry, { plat }) {
   if (!entry || entry.lang !== 'zh-CN') return false;
-  if (!/适龄/.test(String(entry.go || ''))) return false;
+  if (!String(entry.go || '').replace(/^modal\//, '').trim()) return false;
   return catalogGoMatchesPlat(entry.go, plat);
 }
 
@@ -220,7 +196,7 @@ export function laterAxesPixelEvidenceComplete(parsed) {
   const pixel = parsed && parsed.pixel;
   if (!pixel || pixel.ok !== true) return false;
   const langs = Array.isArray(pixel.languages) ? pixel.languages : [];
-  if (langs.length !== LANG_OPTION_PAGES.length) return false;
+  if (langs.length < 1) return false;
   if (langs.some((row) => !measuredOk(row))) return false;
   const measured = [pixel.stalePrefs, pixel.modal, pixel.mobile, pixel.modal?.close, pixel.mobile?.close];
   if (measured.some((row) => !measuredOk(row))) return false;

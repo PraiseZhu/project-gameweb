@@ -29,7 +29,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { assertPhaseOneRows, extractCopy } from './figma-copy-match.mjs';
+import { parsePhaseRows, extractCopy } from './figma-copy-match.mjs';
 import { cellLines } from './figma-copy-structure.mjs';
 import { collectFigmaTexts, collectInventoryTexts, inventoryCopyNodes } from './figma-copy-coverage.mjs';
 import { buildAncestorMap, deriveContext } from './figma-copy-context.mjs';
@@ -338,7 +338,7 @@ export function buildHandoffCopyEnvelope({ demoDir, spec = {}, pcInventory = nul
   const { at, larkLeaf } = larkTools(absDemo, larkSnap, spec);
   let declaredPhaseRows;
   try { declaredPhaseRows = at(larkSnap, '/_meta/phaseRows'); } catch { declaredPhaseRows = null; }
-  const phaseGate = assertPhaseOneRows(declaredPhaseRows);
+  const phaseGate = parsePhaseRows(declaredPhaseRows);
   if (!phaseGate.ok) {
     return {
       byNode: {},
