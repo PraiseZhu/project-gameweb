@@ -8,8 +8,8 @@ import { join } from 'node:path';
 import {
   deriveContext, buildAncestorMap, validateCopyOverlay, resolveContextualRow,
 } from '../lib/figma-copy-context.mjs';
-import { assertPhaseOneRows, extractCopy, parsePhaseRows, PHASE_ONE_ROW_MAX, PHASE_ONE_ROW_MIN } from '../lib/figma-copy-match.mjs';
-const PHASE_ONE = Array.from({ length: PHASE_ONE_ROW_MAX - PHASE_ONE_ROW_MIN + 1 }, (_, i) => i + PHASE_ONE_ROW_MIN);
+import { assertPhaseOneRows, extractCopy, parsePhaseRows } from '../lib/figma-copy-match.mjs';
+const PHASE_ONE = Array.from({ length: 52 }, (_, i) => i + 3);
 import { assessCopyCoverage, collectInventoryTexts } from '../lib/figma-copy-coverage.mjs';
 import { buildHandoffCopyEnvelope, designationsToOverlay } from '../lib/figma-copy-adapter.mjs';
 
@@ -1055,7 +1055,8 @@ test('extractCopy: phase 3–54 后同文案负例不得匹配', () => {
   assert.equal(out.byNode.dl.translations.en.value, 'Download Now');
 });
 
-test('buildHandoffCopyEnvelope: 入口硬验阶段一 3–54，缺/越界不得匹配', () => {
+
+test('buildHandoffCopyEnvelope: 入口硬验 phaseRows，缺不得匹配；不限阶段一行号', () => {
   const demoDir = mkdtempSync(join(tmpdir(), 'handoff-phase-'));
   mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
   const pcInventory = {
@@ -1070,12 +1071,20 @@ test('buildHandoffCopyEnvelope: 入口硬验阶段一 3–54，缺/越界不得�
   assert.equal(missing.byNode.cta, undefined);
 
   writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
-    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [9, 86] },
-    rows: { 9: { 'zh-CN': '立即下载', en: 'Download Now' }, 86: { 'zh-CN': '立即下载', en: 'Install' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [61, 63] },
+    rows: {
+      61: { 'zh-CN': '赛季福利', en: 'Season Rewards' },
+      63: { 'zh-CN': '查看更多', en: 'More' },
+    },
   }));
-  const extra = buildHandoffCopyEnvelope({ demoDir, pcInventory });
-  assert.match(String(extra.problems && extra.problems[0] || ''), /阶段一以外/);
-  assert.equal(extra.byNode.cta, undefined);
+  const phaseTwoInv = {
+    nodes: [{ id: 'reward', type: 'TEXT', role: 'copy', status: 'determined', name: '赛季福利', text: { characters: '赛季福利' } }],
+  };
+  const phaseTwo = buildHandoffCopyEnvelope({ demoDir, pcInventory: phaseTwoInv });
+  assert.ok(!phaseTwo.problems || phaseTwo.problems.length === 0);
+  assert.equal(phaseTwo.byNode.reward?.matchKind, 'exact');
+  assert.equal(String(phaseTwo.byNode.reward.row), '61');
+  assert.equal(phaseTwo.byNode.reward.translations.en.value, 'Season Rewards');
 
   writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
     _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
@@ -1086,6 +1095,7 @@ test('buildHandoffCopyEnvelope: 入口硬验阶段一 3–54，缺/越界不得�
   assert.equal(String(ok.byNode.cta.row), '9');
   assert.equal(ok.byNode.cta.translations.en.value, 'Download Now');
   assert.equal(assertPhaseOneRows(PHASE_ONE).ok, true);
+  assert.equal(assertPhaseOneRows([61, 86]).ok, true);
 });
 
 

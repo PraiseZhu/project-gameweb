@@ -16,14 +16,17 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { DEFAULT_STOP1_PIXEL_THRESHOLD, sectionLiveCopyMasks } from '../lib/stop1-figma-pixel-gate.mjs';
 import {
   STOP2_PIXEL_THRESHOLD,
   PHASE_TOLERANCE_RADIUS,
-  STOP2_SCREENS,
   STOP2_MAX_MASK_RATIO,
-  STOP2_KR_RULES2_PANEL,
   BLOCK_SHIFT_MIN_PX,
+  screensFromInventory,
+  runStop2ModalPixelProbe,
   liveTextMasks,
   subpixelLineMasks,
   phaseTolerantDiff,
@@ -32,6 +35,8 @@ import {
 } from '../stop2-modal-pixel.mjs';
 
 const PNG_CTOR = (await import('pngjs')).PNG;
+const cropKr = { x: 786, y: 486, w: 352, h: 114 };
+const panelCss = { x: 0, y: 100, w: 1920, h: 670 };
 
 const modal = {
   id: '949:5675',
@@ -69,24 +74,127 @@ test('stop2 阈值与停1 共享常量一致，相位容差 = 2px', () => {
   assert.equal(PHASE_TOLERANCE_RADIUS, 2);
 });
 
-test('停2 三屏覆盖本次报障的 TW / KR / 规则2，比较框都在弹窗内', () => {
-  assert.deepEqual(STOP2_SCREENS.map((s) => s.key), ['tw', 'kr', 'kr-rules2']);
-  assert.equal(STOP2_SCREENS[0].nodeId, '949:5420');
-  assert.equal(STOP2_SCREENS[1].nodeId, '949:5675');
-  assert.equal(STOP2_SCREENS[2].nodeId, '949:5634');
-  assert.equal(STOP2_SCREENS[2].rulesNode, '949:5740');
-  for (const s of STOP2_SCREENS) assert.ok(s.frame && s.frame.w > 0 && s.frame.h > 0, `${s.key} 必须有比较框`);
-  /* 规则2 的比较框必须锁在弹窗面板 band（设计 y199..1539 → CSS 99.5..769.5）内，
-     不许越过面板下沿去吃遮罩下的主页内容。 */
-  const rules2 = STOP2_SCREENS[2].frame;
-  assert.ok(rules2.y >= 99 && rules2.y + rules2.h <= 771,
-    `规则2 比较框越出弹窗面板：${JSON.stringify(rules2)}`);
+
+test('清单没有预约弹窗时停2 fail-closed', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'stop2-empty-'));
+  writeFileSync(join(dir, 'inventory.json'), JSON.stringify({ attachments: { modals: [] } }));
+  const out = await runStop2ModalPixelProbe({ demoDir: dir, inventory: { attachments: { modals: [] } } });
+  assert.equal(out.ok, false);
+  assert.ok((out.problems || []).includes('inventory-no-reservation-modals'));
+});
+test('停2 屏幕从清单预约弹窗来，不写死节点 id', () => {
+  const screens = screensFromInventory({
+    attachments: {
+      modals: [{
+        id: 'm-kr',
+        name: 'modal/pc_kr预约弹窗',
+        pageBox: { x: 0, y: 200, w: 3840, h: 1340 },
+        nodes: [
+          { id: 'm-kr', type: 'FRAME', name: 'modal/pc_kr预约弹窗', pageBox: { x: 0, y: 200, w: 3840, h: 1340 } },
+          { id: 'panel', type: 'RECTANGLE', name: 'img/弹窗背景', pageBox: { x: 0, y: 200, w: 3840, h: 1340 } },
+          { id: 'rules-btn', type: 'INSTANCE', name: 'btn/详细规则@go=modal/pc详细规则1', go: 'modal/pc详细规则1', pageBox: { x: 10, y: 10, w: 80, h: 40 } },
+        ],
+      }],
+    },
+  });
+  assert.equal(screens.length, 1, '没有独立规则 modal 时只出预约屏');
+  assert.equal(screens[0].nodeId, 'm-kr');
+  assert.equal(screens[0].go, 'modal/pc_kr预约弹窗');
+  assert.equal(screens[0].lang, 'ko');
+  assert.deepEqual(screens[0].frame, { x: 0, y: 100, w: 1920, h: 670 });
+  assert.equal(screensFromInventory({ attachments: { modals: [] } }).length, 0);
 });
 
+
+test('规则屏走独立规则 modal 的清单，不复用预约弹窗', () => {
+  const screens = screensFromInventory({
+    attachments: {
+      modals: [
+        {
+          id: 'm-reserve',
+          name: 'modal/pc_kr预约弹窗',
+          pageBox: { x: 0, y: 200, w: 3840, h: 1340 },
+          nodes: [
+            { id: 'm-reserve', type: 'FRAME', name: 'modal/pc_kr预约弹窗', pageBox: { x: 0, y: 200, w: 3840, h: 1340 } },
+            { id: 'rules-btn', type: 'INSTANCE', name: 'btn/详细规则@go=modal/pc详细规则1', go: 'modal/pc详细规则1' },
+          ],
+        },
+        {
+          id: 'm-rules',
+          name: 'modal/pc详细规则1',
+          pageBox: { x: 10, y: 400, w: 2000, h: 1200 },
+          nodes: [
+            { id: 'm-rules', type: 'FRAME', name: 'modal/pc详细规则1', pageBox: { x: 10, y: 400, w: 2000, h: 1200 } },
+            { id: 'rules-panel', type: 'RECTANGLE', name: 'img/弹窗背景', pageBox: { x: 10, y: 400, w: 2000, h: 1200 } },
+          ],
+        },
+      ],
+    },
+  });
+  assert.equal(screens.length, 2);
+  assert.equal(screens[0].nodeId, 'm-reserve');
+  assert.equal(screens[1].nodeId, 'm-rules');
+  assert.equal(screens[1].rulesNode, 'rules-btn');
+  assert.equal(screens[1].rulesGo, 'modal/pc详细规则1');
+  assert.equal(screens[1].sourceNodeId, 'm-reserve');
+  assert.deepEqual(screens[1].frame, { x: 5, y: 200, w: 1000, h: 600 });
+});
+
+test('规则标题 TEXT 没有 @go 时不挡住真正的规则按钮', () => {
+  const screens = screensFromInventory({
+    attachments: {
+      modals: [
+        {
+          id: 'm-reserve',
+          name: 'modal/pc_kr预约弹窗',
+          pageBox: { x: 0, y: 200, w: 3840, h: 1340 },
+          nodes: [
+            { id: 'title', type: 'TEXT', name: '详细规则', pageBox: { x: 0, y: 0, w: 100, h: 20 } },
+            { id: 'rules-btn', type: 'INSTANCE', name: 'btn/详细规则@go=modal/pc详细规则1', go: 'modal/pc详细规则1' },
+          ],
+        },
+        {
+          id: 'm-rules',
+          name: 'modal/pc详细规则1',
+          pageBox: { x: 10, y: 400, w: 2000, h: 1200 },
+          nodes: [
+            { id: 'rules-panel', type: 'RECTANGLE', name: 'img/弹窗背景', pageBox: { x: 10, y: 400, w: 2000, h: 1200 } },
+          ],
+        },
+      ],
+    },
+  });
+  assert.equal(screens[1].nodeId, 'm-rules');
+  assert.equal(screens[1].rulesNode, 'rules-btn');
+});
+
+test('规则 modal 没有几何时不回退预约框', () => {
+  const screens = screensFromInventory({
+    attachments: {
+      modals: [
+        {
+          id: 'm-reserve',
+          name: 'modal/pc_kr预约弹窗',
+          pageBox: { x: 0, y: 200, w: 3840, h: 1340 },
+          nodes: [
+            { id: 'rules-btn', type: 'INSTANCE', name: 'btn/详细规则@go=modal/pc详细规则1', go: 'modal/pc详细规则1' },
+          ],
+        },
+        {
+          id: 'm-rules',
+          name: 'modal/pc详细规则1',
+          nodes: [{ id: 'm-rules', type: 'FRAME', name: 'modal/pc详细规则1' }],
+        },
+      ],
+    },
+  });
+  assert.equal(screens.length, 1);
+  assert.equal(screens[0].nodeId, 'm-reserve');
+});
 test('遮罩复用共享 gate：只遮活字，不遮 VECTOR/勾选/线', () => {
   const shared = sectionLiveCopyMasks({ nodes: modal.nodes }, modal);
   assert.equal(shared.length, 1, 'sectionLiveCopyMasks 应只认那一个活字 TEXT');
-  const masks = liveTextMasks({ nodes: modal.nodes }, modal, STOP2_SCREENS[1].frame, 0.5);
+  const masks = liveTextMasks({ nodes: modal.nodes }, modal, cropKr, 0.5);
   assert.equal(masks.length, 1);
   // 活字设计框 x1666 y977 w214 h38，scale .5 → x833 y488.5 w107 h19；crop x786 y486 → x47 y3
   assert.deepEqual(masks[0], { x: 47, y: 3, w: 107, h: 19 });
@@ -161,10 +269,9 @@ test('过度遮罩必须 FAIL', () => {
 
 test('规则2 框越出弹窗必须红', () => {
   assert.equal(BLOCK_SHIFT_MIN_PX, 3);
-  const rules2 = STOP2_SCREENS[2].frame;
-  assert.equal(frameExceedsPanel(rules2, STOP2_KR_RULES2_PANEL), false, '当前规则2 框必须在面板内');
+  assert.equal(frameExceedsPanel(panelCss, panelCss), false, '当前规则2 框必须在面板内');
   const overflow = { x: 0, y: 440, w: 1920, h: 380 };
-  assert.equal(frameExceedsPanel(overflow, STOP2_KR_RULES2_PANEL), true, '越出面板的比较框必须红');
+  assert.equal(frameExceedsPanel(overflow, panelCss), true, '越出面板的比较框必须红');
 });
 
 test('遮罩区不计入 total，也不计 bad；遮罩在 diff 图上涂灰留痕', () => {

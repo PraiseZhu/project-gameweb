@@ -269,16 +269,21 @@ export function appleSdGothicLocalAvailable(paths = APPLE_SD_GOTHIC_LOCAL_PATHS)
 export function hangulLocalFallbackStatus({
   localAvailable,
   nodes = [],
-  nodeId = '949:5671',
 } = {}) {
-  const hit = (nodes || []).filter((n) => String(n.nodeId || n.id || '') === String(nodeId) || /한|한글|Hangul/i.test(String(n.characters || n.chars || '')));
+  const hit = (nodes || []).filter((n) => {
+    const chars = String(n.characters || n.chars || '');
+    return /한|한글|Hangul/i.test(chars) || [...chars].some((ch) => {
+      const cp = ch.codePointAt(0);
+      return cp >= 0xac00 && cp <= 0xd7af;
+    });
+  });
   if (localAvailable) {
     return { unverified: false, localAvailable: true, nodes: hit };
   }
   return {
     unverified: true,
     localAvailable: false,
-    nodes: hit.length ? hit : [{ nodeId }],
+    nodes: hit,
     why: 'local() Apple SD Gothic Neo 不可用，韩文未验证，不能当已验收',
   };
 }

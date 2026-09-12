@@ -3292,7 +3292,7 @@
           if (onOff.length === 1) return onOff[0][1];
         }
         /* Page instances may omit componentProperties. Property 1=on/off still
-           lives on the selected COMPONENT (949:5516 / 949:5526). Resting paint
+           lives on the selected COMPONENT. Resting paint
            follows that source token; do not force on→off in the renderer. */
         const selectedId = String(__u(n && n.componentId) || '');
         const selected = variants.find((variant) => String(__u(variant && variant.componentId)) === selectedId);
@@ -4870,6 +4870,23 @@
         if (pfx === 'btn') {
           const btnLabel = String(n.name || '').replace(/^btn\s*[\/／]\s*/i, '').split('@')[0].trim();
           if (btnLabel) el.setAttribute('data-btn-name', btnLabel);
+          if (btnLabel === '切换语言') {
+            const bits = [];
+            if (Array.isArray(n.langs)) bits.push(...n.langs);
+            const props = n.componentProperties || n.variantProps || {};
+            const langProp = props.lang && (props.lang.value || props.lang);
+            if (langProp) bits.push(langProp);
+            const at = String(n.name || '').match(/@lang=([a-z0-9-]+)/i);
+            if (at) bits.push(at[1]);
+            const raw = String(bits[0] || '').trim().toLowerCase();
+            const pref = raw === 'cn' || raw === 'zh-cn' || raw === 'zh' ? 'zh-CN'
+              : raw === 'tw' || raw === 'zh-tw' ? 'zh-TW'
+              : raw === 'kr' || raw === 'ko' ? 'ko'
+              : raw === 'en' ? 'en'
+              : raw === 'jp' || raw === 'ja' ? 'ja'
+              : '';
+            if (pref) el.setAttribute('data-lang', pref);
+          }
         }
         if (pfx === 'dropmenu') {
           const menuLabel = String(n.name || '').replace(/^dropmenu\s*[\/／]\s*/i, '').split('@')[0].trim();
@@ -7342,7 +7359,7 @@
           const variantSlice = this._assetRec(wantedId, __base) || this._assetRecForNode(root, __base);
           const variantSliceFile = variantSlice && this._usableAssetFile(variantSlice);
           /* A page instance may uniformly scale the COMPONENT (mobile consent
-             checkbox 949:6494 is 30×25 against a 46.42×38.73 master, ratio
+             checkbox instance vs master ratio
              ≈0.646). Uniform scale is still the same variant art, just placed
              at the instance's own box — mirror the dropmenu handling instead of
              blocking the mount (that block is why mobile tw/kr 勾选按钮 lost its
@@ -7517,7 +7534,7 @@
           const instanceScale = Number.isFinite(widthRatio) && widthRatio > 0 ? widthRatio : 1;
           const paintedH = Number(rootBox.h) * instanceScale;
           /* Resting field is the off-state visible header, not the skipped
-             parent Frame (949:5459 h=123) and not the on-root 294.545.
+             parent Frame box and not the on-root width.
              Open host consumes the on-variant root height so the panel is
              not clipped; closed host shrinks back so it does not overlay
              the consent row. */
@@ -7580,7 +7597,7 @@
           /* Under a uniform page-instance scale the clone is authored at the
              COMPONENT root size and then scaled down; using 100% (= the already
              scaled host box) shrank it twice and clipped the panel's right
-             half (mobile 949:6505 展开被裁). Use the root box so the single
+             half (mobile expanded menu clipped). Use the root box so the single
              scale() maps master -> page instance exactly once. */
           layer.style.width = (uniformScale ? Number(rootBox.w) : '100%') + (uniformScale ? 'px' : '');
           layer.style.height = (uniformScale ? Number(rootBox.h) : paintedH) + 'px';
@@ -7604,7 +7621,7 @@
           });
           /* Dropmenu option instances are painted only after the initial
              independent-button pass. Mount their selected COMPONENT slice now,
-             so highlight/normal roots (e.g. 949:5537/5540) are visible in the
+             so highlight/normal roots are visible in the
              on clone instead of remaining transparent. */
           for (const option of [...layer.querySelectorAll('[data-btn-variant="true"]')]) {
             if (option.getAttribute('data-btn-variant-slice')) continue;
@@ -8081,6 +8098,11 @@
           layer.style.width = Number(box.w) + 'px';
           layer.style.height = Number(box.h) + 'px';
           layer.setAttribute('data-modal-source-box', [box.x, box.y, box.w, box.h].map((v) => Number(v || 0)).join(','));
+          const panelNode = nodes.find((node) => /img\/弹窗背景/.test(String(node && node.name || '')));
+          const panelBox = panelNode && (panelNode.pageBox || panelNode.box);
+          if (panelBox && Number.isFinite(Number(panelBox.w ?? panelBox.width)) && Number.isFinite(Number(panelBox.h ?? panelBox.height))) {
+            layer.setAttribute('data-modal-panel-box', [panelBox.x, panelBox.y, panelBox.w ?? panelBox.width, panelBox.h ?? panelBox.height].map((v) => Number(v || 0)).join(','));
+          }
           layer.style.pointerEvents = 'auto';
           layer.style.zIndex = '41';
           /* Paint the modal sheet, not a second nested root. Keep the Figma
@@ -8547,7 +8569,7 @@
             if (layer.isBase) {
               /* The base layer is the page instance itself, so its own label
                  TEXT must stay untouched; only the mounted variant-root slice
-                 (e.g. 949:5537 / 949:5540) belongs to the highlight/normal
+                 belongs to the highlight/normal
                  swap. Hiding every child wholesale also hid the host slice
                  only through the layer it sat in on some mounts. */
               hideBtnLayer(layer.el, false);
@@ -8563,7 +8585,7 @@
           owner.setAttribute('data-btn-variant-state', next.state);
           owner.setAttribute('data-btn-variant-index', String(next.index));
           /* Stop-2 completion for btn/切换语言 is the authored COMPONENT root
-             fill, not only data-btn-variant-state. Current lang = 758:1713. */
+             fill, not only data-btn-variant-state. Current lang = highlight variant. */
           owner.setAttribute('data-btn-variant-fill-source', next.state);
           if (next.fillCss) owner.style.background = next.fillCss;
           if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
@@ -8659,6 +8681,7 @@
           for (const option of languageOptionButtons(owner)) {
             const optionLang = dropmenuLangFromEvent(option, owner)
               || uniqueDropmenuLang(option.textContent);
+            if (optionLang && !option.getAttribute('data-lang')) option.setAttribute('data-lang', optionLang);
             const nextState = optionLang && optionLang === current ? 'highlight' : 'normal';
             if (option.getAttribute('data-btn-variant') === 'true'
               && option.getAttribute('data-btn-variant-mount-status') === 'owner-local-mutually-exclusive') {
