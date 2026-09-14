@@ -294,7 +294,7 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 
 字距听本文件，不听 copy 适配器。`zh-CN` / `zh-TW` 共用稿上 `letterSpacing`（简繁一致）；`en` / `ja` / `ko` 强制 `0`。缺 YAML 时才退回稿值。切语言后必须重写 `letter-spacing`，禁止把中文拉开的字距带到拉丁/韩文。
 
-切语言换字体家族听文首 `localeFontFamily`（语言 × title/button/body）。角色仍按稿上源字体认：优黑 / 数黑体当标题或按钮，其余走正文。稿上源家族名落在 `localeInvariantFamilies`（现为 `Bebas Neue`：兑换码 / 日期）时，全语言不换、字重 400；实现必须按 YAML 列表精确匹配源家族名，禁止另开 `/Bebas/i` 名单。不按语言改大小写；只有稿上 `textCase=UPPER` 才 `uppercase`。识别出的主 CTA / 首屏主按钮在 `en` 强制 `uppercase`，详见 6.2。
+切语言换字体家族听文首 `localeFontFamily`（语言 × title/button/body）。角色仍按稿上源字体认：优黑 / 数黑体当标题或按钮，其余走正文。稿上源家族名落在 `localeInvariantFamilies`（现为 `Bebas Neue`：兑换码 / 日期）时，全语言不换、字重 400；实现必须按 YAML 列表精确匹配源家族名，禁止另开 `/Bebas/i` 名单。有对应稿的文字对源家族；源家族 cmap 盖不住的韩文，以及翻译表新增、没有对应语言稿的韩文，走已确认的 `localeFontFamily.ko`。只有稿上或规则明确要求 Apple SD Gothic Neo 时才查本机 `local()`，不得把所有韩文写成必须装这套系统字。不按语言改大小写；只有稿上 `textCase=UPPER` 才 `uppercase`。识别出的主 CTA / 首屏主按钮在 `en` 强制 `uppercase`，详见 6.2。
 
 缺目标文案输出 `unverified-no-locale-copy`，禁止拿简中顶上当通过。切语言、对文案时取字纪律听 [`docs/copy-extraction-adapter.md`](docs/copy-extraction-adapter.md)，本文件不写哪句对哪语。
 
@@ -353,7 +353,7 @@ HEIGHT + 垂直 HUG 的 TEXT 用已写 maxWidth 做 CSS max-width 折行（displ
 - `kind=ready` 才吃；`unknown` 只画不接线。
 - Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=min(1, viewportW/750)`（751–1126 按钮冻 750，列跟窗口铺 KV 和后屏，750 内容居中）。首屏槽 = 当前窗口高，后屏从窗口底开始。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
-- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。`HEIGHT` + 只有 `maxWidth` 先折行，不发明单行锁。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。优黑字重听清单 900/Bold，禁止 named-instance 钉 Regular。
+- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。`HEIGHT` + 只有 `maxWidth` 先折行，不发明单行锁。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。韩文覆盖听 `localeFontFamily.ko`，不把 Apple SD Gothic Neo 写成所有韩文的硬门。优黑字重听清单 900/Bold，禁止 named-instance 钉 Regular。
 - `btn/主要按钮` 的字体类型数据跟同端 `首屏主按钮` 该语言变体，不另开一套；`en` 主 CTA 页面强制大写，不听文案表大小写，也不听稿上有没有 `textCase=UPPER`；稿上没出该语言变体（如没有 `jp`）不算失败。
 - 不把 inventory JSON 焊进本文件。不改 naming spec、Interaction / Pack / 语义换行。`_fitText` 与 extract 的 max 字段只按第 6.1 节改；`_routeFontFamily` 只许改成读 YAML。
 

@@ -5,11 +5,13 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DESIGN_POLICY } from '../lib/design-policy.generated.mjs';
 import {
   PAINTED_HANGUL_FACE,
   appleSdGothicLocalAvailable,
   codepointsToCover,
   hangulLocalFallbackStatus,
+  localeHangulFamily,
   missingGlyphsInFont,
   paintedCoveragePlan,
   readFontNameIdentity,
@@ -196,28 +198,65 @@ test('WOFF2 cmap with fontTools present but brotli missing cannot pretend covera
   assert.equal(payload.missing, undefined, 'must not return an empty-gap success list');
 });
 
-test('paintedCoveragePlan sends Hangul to local Gothic and latin to SemiCondensed', () => {
+test('paintedCoveragePlan sends Hangul to confirmed locale family and latin to SemiCondensed', () => {
   const plan = paintedCoveragePlan({
     fontFamily: 'Noto Sans',
     fontStyle: 'SemiCondensed',
     fontPostScriptName: 'NotoSans-SemiCondensed',
     characters: 'Hello한',
-  }, new Set(['Noto Sans SemiCondensed']));
+  }, new Set(['Noto Sans SemiCondensed', 'Noto Sans KR']), DESIGN_POLICY.localeFontFamily);
   const byFamily = Object.fromEntries(plan.map((part) => [part.family, part.codepoints]));
-  assert.deepEqual(byFamily[PAINTED_HANGUL_FACE], [0xd55c]);
+  assert.deepEqual(byFamily['Noto Sans KR'], [0xd55c]);
+  assert.equal(byFamily[PAINTED_HANGUL_FACE], undefined);
   assert.ok(byFamily['Noto Sans SemiCondensed'].includes(0x48));
   assert.equal(byFamily['Noto Sans SemiCondensed'].includes(0xd55c), false);
 });
 
-test('Hangul on SemiCondensed is covered by local Apple SD Gothic, not the registered latin file', () => {
+test('paintedCoveragePlan fail-closes Hangul when localeFontFamily.ko is missing', () => {
+  const plan = paintedCoveragePlan({
+    fontFamily: 'Noto Sans',
+    fontStyle: 'SemiCondensed',
+    fontPostScriptName: 'NotoSans-SemiCondensed',
+    characters: '한',
+  }, new Set(['Noto Sans SemiCondensed']));
+  const byFamily = Object.fromEntries(plan.map((part) => [part.family, part.codepoints]));
+  assert.deepEqual(byFamily['unconfirmed-hangul-locale'], [0xd55c]);
+});
+
+test('paintedCoveragePlan keeps Hangul on source family when that face covers it', () => {
+  const plan = paintedCoveragePlan({
+    fontFamily: 'Noto Sans KR',
+    characters: '한',
+  }, new Set(['Noto Sans KR']), DESIGN_POLICY.localeFontFamily, () => true);
+  const byFamily = Object.fromEntries(plan.map((part) => [part.family, part.codepoints]));
+  assert.deepEqual(byFamily['Noto Sans KR'], [0xd55c]);
+});
+
+test('paintedCoveragePlan routes Hangul to locale when source face cannot paint it', () => {
+  const plan = paintedCoveragePlan({
+    fontFamily: 'Noto Sans',
+    characters: '한',
+  }, new Set(['Noto Sans', 'Noto Sans KR']), DESIGN_POLICY.localeFontFamily, () => false);
+  const byFamily = Object.fromEntries(plan.map((part) => [part.family, part.codepoints]));
+  assert.deepEqual(byFamily['Noto Sans KR'], [0xd55c]);
+  assert.equal(byFamily['Noto Sans'], undefined);
+});
+
+test('Hangul on SemiCondensed is covered by confirmed locale KR, not Apple local() or the latin file', () => {
+  const krPath = join(ROOT, 'fonts/NotoSansKR-VF.ttf');
+  if (!existsSync(krPath)) return;
   const root = mkdtempSync(join(tmpdir(), 'figma-fonts-sc-'));
   writeFileSync(join(root, 'registry.json'), JSON.stringify({
     families: {
       'Noto Sans': { file: 'NotoSans-SemiCondensed.ttf', weight: 400, format: 'truetype', source: 'fixture', license: 'OFL' },
       'Noto Sans SemiCondensed': { file: 'NotoSans-SemiCondensed.ttf', weight: 400, format: 'truetype', source: 'fixture', license: 'OFL' },
+      'Noto Sans KR': { file: 'NotoSansKR-VF.ttf', weight: '100 900', format: 'truetype', source: 'fixture', license: 'OFL' },
+      'Noto Sans JP': { file: 'NotoSans-SemiCondensed.ttf', weight: 400, format: 'truetype', source: 'fixture', license: 'OFL' },
+      'Noto Sans HK': { file: 'NotoSans-SemiCondensed.ttf', weight: 400, format: 'truetype', source: 'fixture', license: 'OFL' },
     },
   }));
   copyFileSync(SC_FONT, join(root, 'NotoSans-SemiCondensed.ttf'));
+  copyFileSync(krPath, join(root, 'NotoSansKR-VF.ttf'));
   const demo = mkdtempSync(join(tmpdir(), 'figma-fonts-hangul-'));
   writeFileSync(join(demo, 'truth.json'), JSON.stringify({
     design: { fileVersion: 'fixture-hangul' },
@@ -239,16 +278,79 @@ test('Hangul on SemiCondensed is covered by local Apple SD Gothic, not the regis
   }));
   writeFileSync(join(demo, 'index.html'), '<html><head></head><body><script id="qa-assets" type="application/json">{}</script></body></html>');
   const result = run(demo, root);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
   const manifest = JSON.parse(readFileSync(join(demo, 'fonts-manifest.json'), 'utf8'));
-  const hangulGap = (manifest.missing || []).find((item) => item.family === PAINTED_HANGUL_FACE || /U\+D55C/.test(item.why || ''));
-  if (appleSdGothicLocalAvailable()) {
-    assert.equal(hangulGap, undefined, JSON.stringify(manifest.missing, null, 2));
-  } else {
-    assert.equal(result.status, 2, result.stdout + result.stderr);
-    assert.ok(hangulGap, JSON.stringify(manifest.missing, null, 2));
-    assert.match(hangulGap.why, /Apple SD Gothic|未验证/);
-  }
+  assert.equal((manifest.missing || []).some((item) => item.family === PAINTED_HANGUL_FACE), false, JSON.stringify(manifest.missing, null, 2));
   assert.equal((manifest.missing || []).some((item) => item.family === 'Noto Sans SemiCondensed' && /U\+D55C/.test(item.why || '')), false);
+  assert.ok(manifest.fonts['Noto Sans KR'], JSON.stringify(manifest.fonts, null, 2));
+});
+
+test('Hangul on a covering source family stays on that family, not locale KR', () => {
+  const krPath = join(ROOT, 'fonts/NotoSansKR-VF.ttf');
+  if (!existsSync(krPath)) return;
+  const root = mkdtempSync(join(tmpdir(), 'figma-fonts-src-ko-'));
+  writeFileSync(join(root, 'registry.json'), JSON.stringify({
+    families: {
+      'Source Hangul Face': { file: 'NotoSansKR-VF.ttf', weight: '100 900', format: 'truetype', source: 'fixture', license: 'OFL' },
+      'Noto Sans KR': { file: 'NotoSansKR-VF.ttf', weight: '100 900', format: 'truetype', source: 'fixture', license: 'OFL' },
+    },
+  }));
+  copyFileSync(krPath, join(root, 'NotoSansKR-VF.ttf'));
+  const demo = mkdtempSync(join(tmpdir(), 'figma-fonts-src-ko-demo-'));
+  writeFileSync(join(demo, 'truth.json'), JSON.stringify({
+    design: { fileVersion: 'fixture-src-ko' },
+    sections: {
+      one: {
+        nodes: [{
+          id: 'src-ko',
+          name: 'source hangul',
+          text: { fontFamily: 'Source Hangul Face', fontWeight: 400, characters: '한' },
+        }],
+      },
+    },
+  }));
+  writeFileSync(join(demo, 'index.html'), '<html><head></head><body><script id="qa-assets" type="application/json">{}</script></body></html>');
+  const result = run(demo, root);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const manifest = JSON.parse(readFileSync(join(demo, 'fonts-manifest.json'), 'utf8'));
+  assert.ok(manifest.fonts['Source Hangul Face'], JSON.stringify(manifest.fonts, null, 2));
+  assert.equal((manifest.missing || []).some((item) => /U\+D55C/.test(item.why || '')), false, JSON.stringify(manifest.missing, null, 2));
+});
+
+test('translation Hangul is covered by locale KR, not Apple local()', () => {
+  const krPath = join(ROOT, 'fonts/NotoSansKR-VF.ttf');
+  if (!existsSync(krPath)) return;
+  const root = mkdtempSync(join(tmpdir(), 'figma-fonts-copy-ko-'));
+  writeFileSync(join(root, 'registry.json'), JSON.stringify({
+    families: {
+      'Noto Sans': { file: 'latin.woff2', weight: '100 900', format: 'woff2', source: 'fixture', license: 'OFL' },
+      'Noto Sans JP': { file: 'latin.woff2', weight: 400, format: 'woff2', source: 'fixture', license: 'OFL' },
+      'Noto Sans KR': { file: 'NotoSansKR-VF.ttf', weight: '100 900', format: 'truetype', source: 'fixture', license: 'OFL' },
+      'Noto Sans HK': { file: 'latin.woff2', weight: 400, format: 'woff2', source: 'fixture', license: 'OFL' },
+    },
+  }));
+  writeFileSync(join(root, 'latin.woff2'), latinBytes());
+  copyFileSync(krPath, join(root, 'NotoSansKR-VF.ttf'));
+  const demo = mkdtempSync(join(tmpdir(), 'figma-fonts-copy-ko-demo-'));
+  writeFileSync(join(demo, 'truth.json'), JSON.stringify({
+    design: { fileVersion: 'fixture-copy-ko' },
+    copy: { byNode: { 'text-en': { ko: '한국어' } } },
+    sections: {
+      one: {
+        nodes: [{
+          id: 'text-en',
+          name: 'title',
+          text: { fontFamily: 'Noto Sans', fontWeight: 400, characters: 'Hello' },
+        }],
+      },
+    },
+  }));
+  writeFileSync(join(demo, 'index.html'), '<html><head></head><body><script id="qa-assets" type="application/json">{}</script></body></html>');
+  const result = run(demo, root);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const manifest = JSON.parse(readFileSync(join(demo, 'fonts-manifest.json'), 'utf8'));
+  assert.equal((manifest.missing || []).some((item) => item.family === PAINTED_HANGUL_FACE), false, JSON.stringify(manifest.missing, null, 2));
+  assert.ok(manifest.fonts['Noto Sans KR'], JSON.stringify(manifest.fonts, null, 2));
 });
 
 test('CJK on latin Noto Sans is covered by registered YouHei, not the latin woff2', () => {
@@ -384,19 +486,59 @@ test('Apple SD Gothic 只许 local()，fonts/ 与产物不得出现 ttc 拷贝',
   assert.doesNotMatch(face, /\.ttc/);
 });
 
-test('local() 缺失时 5671 韩文标未验证，不能当已验收', () => {
-  const missing = hangulLocalFallbackStatus({
+test('local() 缺失只挡住稿上/规则要求 Apple 的韩文，不挡住已确认的 locale KR', () => {
+  const appleMissing = hangulLocalFallbackStatus({
     localAvailable: false,
-    nodes: [{ nodeId: '949:5671', characters: '한' }],
-    nodeId: '949:5671',
+    nodes: [{ nodeId: '949:5671', characters: '한', family: PAINTED_HANGUL_FACE }],
   });
-  assert.equal(missing.unverified, true);
-  assert.match(missing.why, /未验证/);
+  assert.equal(appleMissing.unverified, true);
+  assert.match(appleMissing.why, /Apple SD Gothic|不可用/);
+  const localeOk = hangulLocalFallbackStatus({
+    localAvailable: false,
+    nodes: [{ nodeId: 'copy-ko', characters: '한', family: localeHangulFamily(DESIGN_POLICY.localeFontFamily) }],
+    localeFontFamily: DESIGN_POLICY.localeFontFamily,
+  });
+  assert.equal(localeOk.unverified, false);
   const present = hangulLocalFallbackStatus({
     localAvailable: true,
-    nodes: [{ nodeId: '949:5671', characters: '한' }],
+    nodes: [{ nodeId: '949:5671', characters: '한', family: PAINTED_HANGUL_FACE }],
   });
   assert.equal(present.unverified, false);
   void appleSdGothicLocalAvailable;
+});
+
+test('Apple source family still fail-closes when local() is missing', () => {
+  const root = mkdtempSync(join(tmpdir(), 'figma-fonts-apple-'));
+  writeFileSync(join(root, 'registry.json'), JSON.stringify({
+    families: {
+      'Noto Sans': { file: 'NotoSans-SemiCondensed.ttf', weight: 400, format: 'truetype', source: 'fixture', license: 'OFL' },
+    },
+  }));
+  copyFileSync(SC_FONT, join(root, 'NotoSans-SemiCondensed.ttf'));
+  const demo = mkdtempSync(join(tmpdir(), 'figma-fonts-apple-demo-'));
+  writeFileSync(join(demo, 'truth.json'), JSON.stringify({
+    design: { fileVersion: 'fixture-apple' },
+    sections: {
+      one: {
+        nodes: [{
+          id: 'apple-ko',
+          name: 'apple hangul',
+          text: { fontFamily: 'Apple SD Gothic Neo', fontWeight: 400, characters: '한' },
+        }],
+      },
+    },
+  }));
+  writeFileSync(join(demo, 'index.html'), '<html><head></head><body><script id="qa-assets" type="application/json">{}</script></body></html>');
+  const result = run(demo, root);
+  if (appleSdGothicLocalAvailable()) {
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  } else {
+    assert.equal(result.status, 2, result.stdout + result.stderr);
+    const manifest = JSON.parse(readFileSync(join(demo, 'fonts-manifest.json'), 'utf8'));
+    const gap = (manifest.missing || []).find((item) => /Apple SD Gothic|不可用|未验证/.test(JSON.stringify(item)));
+    assert.ok(gap, JSON.stringify(manifest.missing, null, 2));
+    assert.doesNotMatch(JSON.stringify(gap), /登记册/);
+    assert.match(JSON.stringify(gap), /local\(\)|不可用|未验证/);
+  }
 });
 
