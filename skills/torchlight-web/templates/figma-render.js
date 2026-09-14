@@ -2590,12 +2590,10 @@
         el.click();
       });
     }());
-    /* NotoSans-SemiCondensed is a latin-only static face (cmap has no Hangul),
-       so Hangul inside such a TEXT must fall to the OS Korean face Figma used.
-       macOS ships it at /System/Library/Fonts/AppleSDGothicNeo.ttc; that system
-       font may NOT be redistributed with this repo, so it is referenced only
-       through local() — nothing is copied into git or assets/fonts. If local()
-       ever fails to resolve, the next entry in the stack still paints. */
+    /* Apple SD Gothic Neo is a system face and may NOT be redistributed.
+       Keep a local()-only @font-face for nodes whose confirmed painted face
+       is that family. Hangul that the source face cannot paint uses
+       localeFontFamily.ko, not this local() alias. */
     {
       const doc = frame && (frame.ownerDocument || (typeof document !== 'undefined' ? document : null));
       if (doc && doc.head && !doc.querySelector('style[data-fx-local-fallback-fonts]')) {
@@ -5897,23 +5895,23 @@
             el.setAttribute('data-font-routed', fontRoute.language + '/' + fontRoute.role + ':' + effectiveFamily);
           }
           /* Coverage fallback behind the source family. A registered latin / CJK
-             subset cannot draw every script (the latin Noto Sans subset has no
-             CJK; NotoSans-SemiCondensed has no Hangul), so without a declared
-             fallback the browser silently drops to whatever the OS picks
-             (PingFang SC / Apple SD Gothic Neo) instead of a family this policy
-             knows about. The source family stays first, so unadopted copy keeps
-             its Figma look; no font-stretch / letter-spacing / wrap lock is
-             added, and zh-CN (authoring language) is left untouched. */
+             subset cannot draw every script, so without a declared fallback the
+             browser silently drops to an OS face this policy does not know.
+             The source family stays first; Hangul the source face cannot paint
+             uses localeFontFamily.ko, not a hard-coded Apple local() face. */
           const localeRouteLang = String(fontRoute.language || '').replace('_', '-');
           const localeTable = designPolicy().localeFontFamily;
           const localeBody = localeRouteLang && localeRouteLang !== 'zh-CN'
             && localeTable && localeTable[localeRouteLang]
             && localeTable[localeRouteLang].body;
+          const localeHangul = localeTable && localeTable.ko
+            && (localeTable.ko.body || localeTable.ko.title || localeTable.ko.button);
           if (effectiveFamily) {
-            /* SemiCondensed source text: Hangul coverage = the same OS Korean
-               face Figma fell back to (not localeFontFamily.ko.body, which is
-               a different design). Other scripts keep the policy family. */
-            const coverage = sourceSemiCondensed ? 'FX Apple SD Gothic Neo' : localeBody;
+            const looksLikeApple = /Apple SD Gothic/i.test(String(effectiveFamily || ''))
+              || /AppleSDGothic/i.test(String(effectiveFamily || ''));
+            const coverage = looksLikeApple
+              ? effectiveFamily
+              : (localeHangul || localeBody);
             const fallback = coverage && coverage !== effectiveFamily
               ? '", "' + coverage + '", "PingFang SC", "Microsoft YaHei", sans-serif'
               : '", "PingFang SC", "Microsoft YaHei", sans-serif';

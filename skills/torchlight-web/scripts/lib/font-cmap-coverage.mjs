@@ -2,10 +2,12 @@
  * cmap of the face the page actually paints vs authored TEXT characters.
  *
  * Figma REST only names the layer family (e.g. NotoSans-SemiCondensed). It does
- * not record the OS fallback Figma used for missing glyphs. The renderer paints
- * that fallback explicitly: Hangul → local() Apple SD Gothic Neo; CJK on a
- * latin subset → registered YouHei / Noto CJK; SemiCondensed latin stays on
- * the registered static face.
+ * not record the OS fallback Figma used for missing glyphs. Coverage follows
+ * the painted face: authored TEXT stays on the source / registered face when
+ * that face can paint it; Hangul the source face cannot paint uses the
+ * confirmed localeFontFamily.ko family, not a hard-coded Apple local() face.
+ * CJK on a latin subset → registered YouHei / Noto CJK; SemiCondensed latin
+ * stays on the registered static face.
  *
  * This gate fail-closes on uncovered code points of the painted face. It must
  * not treat the layer family name as the painted face, and must not copy a
@@ -55,6 +57,23 @@ export const PAINTED_CJK_FAMILY_CANDIDATES = Object.freeze([
   'Noto Sans HK',
 ]);
 
+function familyLooksLikeAppleGothic(family = '') {
+  const name = String(family || '');
+  return /Apple SD Gothic/i.test(name) || /AppleSDGothic/i.test(name);
+}
+
+export function localeHangulFamily(localeFontFamily = null) {
+  const ko = localeFontFamily && localeFontFamily.ko;
+  const family = String((ko && (ko.body || ko.title || ko.button)) || '').trim();
+  return family || null;
+}
+
+export function isLocalHangulFace(family = '') {
+  const name = String(family || '');
+  if (!name) return false;
+  return name === PAINTED_HANGUL_FACE || familyLooksLikeAppleGothic(name);
+}
+
 export function isHangulCodepoint(cp) {
   return Number(cp) >= 0xac00 && Number(cp) <= 0xd7af;
 }
@@ -70,11 +89,12 @@ export function isCjkCodepoint(cp) {
 
 /**
  * Split one TEXT node's characters onto the faces the renderer actually
- * paints. Hangul never stays on a registered latin/CJK subset; CJK never
- * stays on a latin-only Noto Sans; SemiCondensed latin stays on the
- * registered static face.
+ * paints. Hangul stays on the source/registered face when that face cmap
+ * can paint it; otherwise it uses the confirmed locale Hangul family. CJK never stays on
+ * a latin-only Noto Sans; SemiCondensed latin stays on the registered
+ * static face.
  */
-export function paintedCoveragePlan(text = {}, registeredFamilies = new Set()) {
+export function paintedCoveragePlan(text = {}, registeredFamilies = new Set(), localeFontFamily = null, sourceCoversCp = null) {
   const sourceFamily = String(text.fontFamily || '');
   const characters = String(text.characters || '');
   const cps = codepointsToCover(characters);
@@ -88,9 +108,16 @@ export function paintedCoveragePlan(text = {}, registeredFamilies = new Set()) {
   const cjkFamily = firstRegistered(...PAINTED_CJK_FAMILY_CANDIDATES);
   const semi = isSourceSemiCondensed(text) && registeredFamilies.has('Noto Sans SemiCondensed');
   const cjkOnLatinSubset = semi || sourceFamily === 'Noto Sans' || sourceFamily === 'Noto Serif SC';
+  const localeHangul = localeHangulFamily(localeFontFamily);
+  const appleSource = familyLooksLikeAppleGothic(sourceFamily) || sourceFamily === PAINTED_HANGUL_FACE;
+  const covers = typeof sourceCoversCp === 'function' ? sourceCoversCp : null;
   for (const cp of cps) {
-    if (isHangulCodepoint(cp)) add(PAINTED_HANGUL_FACE, cp);
-    else if (isCjkCodepoint(cp) && cjkOnLatinSubset) add(cjkFamily || sourceFamily, cp);
+    if (isHangulCodepoint(cp)) {
+      if (appleSource) add(sourceFamily || PAINTED_HANGUL_FACE, cp);
+      else if (covers && sourceFamily && covers(cp)) add(sourceFamily, cp);
+      else if (localeHangul) add(localeHangul, cp);
+      else add('unconfirmed-hangul-locale', cp);
+    } else if (isCjkCodepoint(cp) && cjkOnLatinSubset) add(cjkFamily || sourceFamily, cp);
     else if (semi) add('Noto Sans SemiCondensed', cp);
     else add(sourceFamily, cp);
   }
@@ -269,14 +296,17 @@ export function appleSdGothicLocalAvailable(paths = APPLE_SD_GOTHIC_LOCAL_PATHS)
 export function hangulLocalFallbackStatus({
   localAvailable,
   nodes = [],
+  localeFontFamily = null,
 } = {}) {
   const hit = (nodes || []).filter((n) => {
     const chars = String(n.characters || n.chars || '');
-    return /한|한글|Hangul/i.test(chars) || [...chars].some((ch) => {
-      const cp = ch.codePointAt(0);
-      return cp >= 0xac00 && cp <= 0xd7af;
-    });
+    const family = String(n.family || n.fontFamily || '');
+    if (!isLocalHangulFace(family, localeFontFamily)) return false;
+    return /한|한글|Hangul/i.test(chars) || [...chars].some((ch) => isHangulCodepoint(ch.codePointAt(0)));
   });
+  if (!hit.length) {
+    return { unverified: false, localAvailable: Boolean(localAvailable), nodes: [] };
+  }
   if (localAvailable) {
     return { unverified: false, localAvailable: true, nodes: hit };
   }
@@ -284,6 +314,6 @@ export function hangulLocalFallbackStatus({
     unverified: true,
     localAvailable: false,
     nodes: hit,
-    why: 'local() Apple SD Gothic Neo 不可用，韩文未验证，不能当已验收',
+    why: '稿上/规则要求 local() Apple SD Gothic Neo，本机不可用，不能当已验收',
   };
 }
