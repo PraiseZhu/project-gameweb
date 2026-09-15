@@ -214,11 +214,20 @@
     if (!(Number.isFinite(x) && Number.isFinite(w) && w > 0 && pageW > 0)) return false;
     return (x + w / 2) > pageW * 0.5;
   },
+  _isIndicatorOwner(node, pfx) {
+    return pfx === 'ind' || String((node && node.role) || '') === 'ind'
+      || /^ind(?:\/|$)/i.test(String((node && node.name) || ''));
+  },
   _isTopbarOverlayChrome(node, pfx, evidenceAttrs) {
     if (!node) return false;
     const name = String(node.name || '');
     if (/日历icon|日历按钮|首屏主按钮|播放按钮/.test(name)) return false;
+    if (/箭头|下滑|scroll/.test(name)) return false;
     if (evidenceAttrs && evidenceAttrs['data-topbar-chrome'] === 'true') return true;
+    /* Landscape / named right `fix/` is the cluster owner. Shop / globe /
+       dropmenu may paint as overlay siblings; they must share this owner's
+       window-right shift instead of each moving on its own box. */
+    if (pfx === 'fix' || /^fix(?:\/|$)/i.test(name)) return true;
     if (pfx === 'dropmenu') return true;
     if (pfx === 'btn') {
       return /官网|充值|地球|语言|按钮$/.test(name) && !/播放|日历/.test(name);
@@ -2098,7 +2107,14 @@
        tall Figma hero so scrollTop=0 never shows sec/2. Official SS13 abuts
        in CSS (gap:0); used-size snap in _installHeroScrollSlot. */
     const extra = designHeight - heroHeight;
-    const layoutOffsetDesign = extra;
+    /* Later CSS top is next.y + offset. Offset from the first following
+       section so later starts at the 100vh slot edge. No following section
+       (or a non-numeric y) keeps extra. Do not Number() a missing next:
+       Number(false/null) is 0. */
+    const rawNextY = followingSections && followingSections[0] && followingSections[0].y;
+    const nextY = (typeof rawNextY === 'number' && Number.isFinite(rawNextY)) ? rawNextY : NaN;
+    const laterStart = Number.isFinite(nextY) ? nextY : (firstY + heroHeight);
+    const layoutOffsetDesign = designHeight - (laterStart - firstY);
     const releaseDistance = Math.max(0, extra) * factor;
     return {
       stateVersion: 'hero-scroll-slot/v3',
@@ -4690,10 +4706,12 @@
         const ancestorIds = Array.isArray(n.ancestorIds) ? n.ancestorIds : [];
         for (const id of ancestorIds.map((raw) => String(__u(raw))).reverse()) pushBakedOwner(id);
         const listedSliceOwner = (id) => {
-          const rec = this._assetRec(id, __base);
-          if (!rec) return false;
           const owner = truthNodeById.get(String(id));
-          return !!(owner && owner.sliceExport);
+          if (!owner) return false;
+          if (owner.sliceExport && this._assetRec(id, __base)) return true;
+          /* Page INSTANCE of ind/ often has no sliceExport; the selected
+             COMPONENT root does. Inner unknown IMAGE still lives in that PNG. */
+          return this._isIndicatorOwner(owner) && !!this._assetRecForNode(owner, __base);
         };
         /* Only a清单 sliceExport owner may bake descendants. Unknown / unprefixed
            parents in #qa-assets must not lock img/ children that have their own contract. */
@@ -4738,11 +4756,15 @@
             || /^bg(?:\/|$)/i.test(ownerName)
             || /^img(?:\/|$)/i.test(ownerName);
         })();
+        const bakedIndicatorOwner = bakedOwnerId
+          ? this._isIndicatorOwner(truthNodeById.get(String(bakedOwnerId)))
+          : false;
         /* Whole-frame kv/bg/img already rasterizes IMAGE descendants. Painting
            those fills again (a masked 750×992 grandchild on top of 750×1334 kv)
-           crops the first screen a second time. Interaction / fragment / lang
-           still punch through. */
-        const ownImageFillPunchesBake = ownImageFill && !bakedWholeFrameOwner;
+           crops the first screen a second time. An ind/ INSTANCE PNG already
+           contains inner unknown art; punching that IMAGE again is a second
+           host. Interaction / fragment / lang still punch through. */
+        const ownImageFillPunchesBake = ownImageFill && !bakedWholeFrameOwner && !bakedIndicatorOwner;
         const componentIdEarly = String(__u(n.componentId) || '');
         const imgLangRelease = !!(componentIdEarly && imgLangSetsByMemberId.has(componentIdEarly));
         if ((parent && parent.assetLock || (bakedOwnerId && !bakedOwnerReleased))
@@ -6900,7 +6922,8 @@
           seq,
           el,
           box,
-          assetLock: !!n.sliceExport && !!assetRec && !bakeReleasedForLiveHscroll && evidenceAttrs?.['data-hscroll'] == null,
+          assetLock: (!!n.sliceExport || (this._isIndicatorOwner(n, pfx) && !!String(__u(n && n.componentId) || '')))
+            && !!assetRec && !bakeReleasedForLiveHscroll && evidenceAttrs?.['data-hscroll'] == null,
           nid: String(__u(nid)),
           layout: n.layout || null,
           hscrollSurface: el.getAttribute('data-hscroll-surface') === 'true'

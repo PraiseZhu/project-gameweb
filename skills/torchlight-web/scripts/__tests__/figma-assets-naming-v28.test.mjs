@@ -653,16 +653,16 @@ test('reuse-existing skips Figma fetch when the PNG is already on disk', () => {
   assert.match(src, /reusedPicks/);
   assert.match(src, /fetchPicks/);
   assert.match(src, /fetchPicks\.length \? readToken\(demoDir\) : null/);
-  assert.match(src, /reuseExisting && fetchPicks\.length/);
-  assert.match(src, /拒绝打 Figma/);
+  assert.match(src, /Newly painted owners that/);
   assert.match(src, /AbortController/);
   assert.match(src, /Figma API 超时/);
 });
 
-test('reuse-existing fail-closes when any listed PNG is missing', () => {
+test('reuse-existing still fetches listed PNGs that are not on disk', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
-  assert.match(src, /reuseExisting && fetchPicks\.length/);
-  assert.match(src, /--reuse-existing 缺 PNG，拒绝打 Figma/);
+  assert.match(src, /Newly painted owners that/);
+  assert.match(src, /still have no file must hit Figma/);
+  assert.doesNotMatch(src, /--reuse-existing 缺 PNG，拒绝打 Figma/);
 });
 
 test('reuse-existing does not treat zero-extent or previous noUrl as missing PNG', () => {

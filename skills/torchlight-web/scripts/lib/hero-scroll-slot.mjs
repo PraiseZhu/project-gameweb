@@ -35,6 +35,21 @@ export function resolveHeroContentRoot({
   return null;
 }
 
+/** Later CSS top is next.y + offset. Offset from the first following
+ *  section so later starts at the 100vh slot edge. No following section
+ *  (or a non-numeric y) keeps extra = viewport/k − first.h.
+ *  Do not Number() a missing next: Number(false/null) is 0. */
+export function laterYOf(followingSections = []) {
+  const raw = Array.isArray(followingSections) ? followingSections[0]?.y : undefined;
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : NaN;
+}
+
+export function laterLayoutOffsetDesign(designHeight, firstY, heroHeight, followingSections = []) {
+  const nextY = laterYOf(followingSections);
+  const laterStart = Number.isFinite(nextY) ? nextY : (firstY + heroHeight);
+  return designHeight - (laterStart - firstY);
+}
+
 export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, firstSection = {}, followingSections = [], contentRootId = null } = {}) {
   const viewport = Number(viewportHeight);
   const factor = Number(scale);
@@ -53,7 +68,7 @@ export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, fi
      SS13 abuts in CSS (gap:0); the renderer snaps later used-top to the hero
      used-bottom so zoom(k) cannot leave a hairline. */
   const extra = designHeight - heroHeight;
-  const layoutOffsetDesign = extra;
+  const layoutOffsetDesign = laterLayoutOffsetDesign(designHeight, firstY, heroHeight, followingSections);
   const releaseDistance = Math.max(0, extra) * factor;
   const startsAtPageOrigin = Math.abs(firstY - Number(pageOriginY || 0)) <= 0.5;
   if (!startsAtPageOrigin || contentRootId == null) return null;

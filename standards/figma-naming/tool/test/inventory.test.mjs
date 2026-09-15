@@ -306,8 +306,30 @@ test("内层竖排页面内容不按工作区吃空档", () => {
   const inv = buildInventory(page, { requestedNodeId: "content" });
   assert.equal(inv.ok, true);
   assert.deepEqual(inv.page.box, { x: 0, y: 0, w: 3840, h: 7415 });
+  assert.deepEqual(inv.page.pageBox, { x: 0, y: 0, w: 3840, h: 7415 });
   assert.deepEqual(inv.sections[0].pageBox, { x: 0, y: 0, w: 3840, h: 2143 });
   assert.deepEqual(inv.sections[1].pageBox, { x: 0, y: 2636, w: 3840, h: 2143 });
+});
+
+test("内层叠页的 page.pageBox 是页原点，不是画布绝对框", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const page = node("cn_pc", "FRAME", "cn_pc", [
+    node("bg", "FRAME", "bg/pc", [], { box: { x: -25794, y: 2150, width: 3840, height: 20000 } }),
+    node("s1", "FRAME", "sec/1", [], { box: { x: -25794, y: 2150, width: 3840, height: 2143 } }),
+  ], { box: { x: -25794, y: 2150, width: 3840, height: 20000 } });
+  const inv = buildInventory(page, { requestedNodeId: "cn_pc" });
+  assert.equal(inv.ok, true);
+  assert.deepEqual(inv.page.pageBox, { x: 0, y: 0, w: 3840, h: 20000 });
+  const root = inv.nodes.find((item) => item.id === "cn_pc");
+  assert.deepEqual(root.pageBox, { x: 0, y: 0, w: 3840, h: 20000 });
+  const bg = inv.nodes.find((item) => item.id === "bg");
+  assert.deepEqual(bg.pageBox, { x: 0, y: 0, w: 3840, h: 20000 });
+  const sec = inv.nodes.find((item) => item.id === "s1");
+  assert.deepEqual(sec.pageBox, { x: 0, y: 0, w: 3840, h: 2143 });
 });
 
 test("外层货架仍落到内层叠页，工作区画板不改这条路径", () => {

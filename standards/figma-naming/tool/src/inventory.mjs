@@ -1278,8 +1278,13 @@ export function buildInventory(document, {
   const shelf = parents.get(page.id) ?? null;
   const counts = { determined: 0, unknown: 0, skipped: 0 };
   const stacked = isWorkboardPage(page) ? stackedWorkboardLayout(page) : null;
-  const pageBox = stacked?.pageBox || boxOf(page);
-  const pageNodes = serializeTree(contentRootOf(page), "page", counts, pageBox, stacked?.stackedSecPageBox);
+  /* Node pageBox is relative to this page. The page record itself must sit at
+     (0,0) with the same w/h — never the canvas absoluteBoundingBox. Using the
+     canvas box as page.pageBox made consumers subtract −25794/2150 and park
+     every pageChrome/bg/kv owner off-screen. */
+  const canvasBox = boxOf(page);
+  const pageBox = stacked?.pageBox || (canvasBox ? { x: 0, y: 0, w: canvasBox.w, h: canvasBox.h } : null);
+  const pageNodes = serializeTree(contentRootOf(page), "page", counts, stacked?.pageBox || canvasBox, stacked?.stackedSecPageBox);
   const pageCounts = { ...counts };
 
   const modalRoots = modalsForPage(shelf, page);

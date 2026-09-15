@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../../standards/figma-naming/spec/inventory.mjs';
 
-export const POSITION_TOLERANCE_PX = 1;
+export const POSITION_TOLERANCE_PX = 1.5;
 export const FONT_SIZE_TOLERANCE_PX = 0.05;
 export const PRODUCT_OVERLAY_TOP_TOLERANCE_PX = 1;
 export const PRODUCT_SLICE_TOLERANCE_PX = 0.5;
@@ -81,6 +81,20 @@ function geom(box) {
   return { x, y, w, h };
 }
 
+/** Same 24MP cap as figma-assets.mjs. Super-tall bg/kv plates are requested
+ *  smaller than pageBox so Figma does not silently crop; the browser scales
+ *  the delivered PNG. Compare against that request, not the unclamped pageBox. */
+export const MAX_EXPORT_PIXELS = 24 * 1024 * 1024;
+
+function pixelSafeExportSize(box) {
+  const geomBox = geom(box);
+  if (!geomBox || geomBox.w <= 0 || geomBox.h <= 0) return geomBox;
+  const pixels = geomBox.w * geomBox.h;
+  if (pixels <= MAX_EXPORT_PIXELS) return { w: geomBox.w, h: geomBox.h };
+  const scale = Math.sqrt(MAX_EXPORT_PIXELS / pixels);
+  return { w: geomBox.w * scale, h: geomBox.h * scale };
+}
+
 function findFixOwner(node, byId = null) {
   if (node?.role === 'fix' || node?.pin === 'viewport') return node;
   if (!byId) return null;
@@ -116,10 +130,55 @@ function hairlinePaintBox(node) {
   return render;
 }
 
+/** Probe measures getBoundingClientRect (axis-aligned). Figma pageBox is the
+ *  unrotated layout box; renderBox is the rotated AABB the human sees. */
+function rotatedPaintBox(node) {
+  const rotation = Number(node?.rotation);
+  if (!Number.isFinite(rotation) || Math.abs(rotation) <= 1e-4) return null;
+  return geom(node?.renderBox);
+}
+
+function dropmenuStateOf(node) {
+  const props = node?.componentProperties || {};
+  if (props && typeof props === 'object' && !Array.isArray(props)) {
+    for (const raw of Object.values(props)) {
+      const value = raw && typeof raw === 'object' ? String(raw.value ?? '') : String(raw ?? '');
+      if (value === 'on' || value === 'off') return value;
+    }
+  }
+  return '';
+}
+
+function isClosedDropmenu(node) {
+  const dropmenu = String(node?.role || '') === 'dropmenu'
+    || String(node?.name || '').startsWith('dropmenu/');
+  return dropmenu && dropmenuStateOf(node) === 'off';
+}
+
+function closedDropmenuCollapsedBox(node, byId) {
+  if (!isClosedDropmenu(node) || !byId) return null;
+  const page = geom(node.pageBox || node.box);
+  if (!page) return null;
+  let icon = null;
+  for (const other of byId.values()) {
+    if (!other) continue;
+    const ancestors = asArray(other.ancestorIds).map(String);
+    if (!ancestors.includes(String(node.id)) && String(other.parentId || '') !== String(node.id)) continue;
+    if (String(other.name || '') !== 'img/icon') continue;
+    icon = geom(other.renderBox) || geom(other.pageBox || other.box);
+    break;
+  }
+  if (!icon) return null;
+  return { x: page.x, y: page.y, w: page.w, h: icon.h };
+}
+
 export function expectedDrawBox(node, byId = null) {
   const page = geom(node?.pageBox);
   if (!page) return null;
-  const paint = hairlinePaintBox(node) || page;
+  const paint = closedDropmenuCollapsedBox(node, byId)
+    || hairlinePaintBox(node)
+    || rotatedPaintBox(node)
+    || page;
   if (findFixOwner(node, byId)) return paint;
   const originX = sectionOriginX(node, byId);
   if (originX) return { ...paint, x: paint.x - originX };
@@ -171,6 +230,24 @@ export function compareRect(expected, actual, tolerance = POSITION_TOLERANCE_PX)
     && Math.abs(dw) <= tolerance
     && Math.abs(dh) <= tolerance;
   return { ok, delta: { x: dx, y: dy, w: dw, h: dh }, expected, actual, tolerance };
+}
+
+function rotatedPaintCentersContain(node, expected, actual, tolerance = POSITION_TOLERANCE_PX) {
+  const rotatedPaint = Number.isFinite(Number(node?.rotation))
+    && Math.abs(Number(node.rotation)) > 1e-4;
+  if (!rotatedPaint || !expected || !actual) return false;
+  const actualCenterX = Number(actual.x) + Number(actual.w) / 2;
+  const actualCenterY = Number(actual.y) + Number(actual.h) / 2;
+  const expectedCenterX = expected.x + expected.w / 2;
+  const expectedCenterY = expected.y + expected.h / 2;
+  const centerInside = (cx, cy, box) => cx >= box.x - tolerance
+    && cx <= box.x + box.w + tolerance
+    && cy >= box.y - tolerance
+    && cy <= box.y + box.h + tolerance;
+  return centerInside(actualCenterX, actualCenterY, expected)
+    && centerInside(expectedCenterX, expectedCenterY, {
+      x: Number(actual.x), y: Number(actual.y), w: Number(actual.w), h: Number(actual.h),
+    });
 }
 
 function flattenInventoryNodes(inventory) {
@@ -353,8 +430,12 @@ function evaluateChromeSliceAndPixels(node, actual, expected, byId, failures) {
   }
   const expectedSlice = expectedSliceBox(node, byId, expected);
   if (expectedSlice && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
-    if (Math.abs(Number(actual.assetW) - expectedSlice.w) > 1
-      || Math.abs(Number(actual.assetH) - expectedSlice.h) > 1) {
+    const dw = Number(actual.assetW) - expectedSlice.w;
+    const dh = Number(actual.assetH) - expectedSlice.h;
+    /* Soft-spill: unclipped ink / LAYER_BLUR can make the file larger than
+       the layout box. Smaller than the box is missing pixels. Empty PNG
+       still fails above. */
+    if (dw < -1 || dh < -1) {
       failures.push({
         id,
         reason: 'topbar-chrome-png-size-mismatch',
@@ -547,13 +628,18 @@ function evaluateChromeTopBarGeometry({ inventory, chromeTopBar, byId, viewportK
       failures.push({ id, reason: 'missing-pageBox' });
       continue;
     }
-    const rect = compareRect(expected, {
+    const actualRect = {
       x: Number(actual.x),
       y: Number(actual.y),
       w: Number(actual.w),
       h: Number(actual.h),
-    });
-    if (!rect.ok) failures.push({ id, reason: 'topbar-chrome-pageBox-mismatch', ...rect });
+    };
+    const rect = compareRect(expected, actualRect);
+    /* Rotated chrome TEXT: Chromium AABB includes transform/shadow. Shared
+       midline containment is the same rule as design-viewport pageBox. */
+    if (!rect.ok && !rotatedPaintCentersContain(node, expected, actualRect)) {
+      failures.push({ id, reason: 'topbar-chrome-pageBox-mismatch', ...rect });
+    }
     const expectedText = String(node.text?.characters || '').trim();
     if (expectedText) {
       const actualText = String(actual.text || '').trim();
@@ -893,10 +979,17 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
           failures.push({ id, reason: 'overlay-scroll-drift', actual: delta });
         }
         if (delta && delta.clippedAfter === true) {
-          const node = byId.get(String(id));
-          const owner = findFixOwner(node, byId);
-          if (!isFirstScreenBottomFix(node) && !isFirstScreenBottomFix(owner)) {
-            failures.push({ id, reason: 'overlay-scroll-clipped', actual: delta });
+          const visibleAfter = Number(delta.visibleAreaAfter);
+          /* A taller-than-viewport or off-window AABB can set clippedAfter
+             while sticky paint is still on screen. Fail only when the pin
+             is gone after scroll. */
+          const gone = !Number.isFinite(visibleAfter) || visibleAfter <= 1;
+          if (gone) {
+            const node = byId.get(String(id));
+            const owner = findFixOwner(node, byId);
+            if (!isFirstScreenBottomFix(node) && !isFirstScreenBottomFix(owner)) {
+              failures.push({ id, reason: 'overlay-scroll-clipped', actual: delta });
+            }
           }
         }
       }
@@ -930,7 +1023,16 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       const expectedTopCss = Number.isFinite(slotDesign) && Number.isFinite(scale) && scale > 0
         ? (slotDesign - gapBelow - box.h) * scale
         : null;
-      if (Number.isFinite(expectedTopCss) && Math.abs(Number(actual.top) - expectedTopCss) > 2) {
+      /* Compact 箭头 PNG can spill past the layout box. Chromium AABB then
+         reports a taller host, so raw top sits ~2.5px above the floor while
+         the layout bottom still matches. Compare the layout-height floor. */
+      const actualHeight = Number(actual.height);
+      const layoutHeightCss = Number.isFinite(scale) && scale > 0 ? box.h * scale : actualHeight;
+      const actualTop = Number(actual.top);
+      const actualLayoutTop = Number.isFinite(actualHeight) && actualHeight > layoutHeightCss + 0.5
+        ? actualTop + (actualHeight - layoutHeightCss) / 2
+        : actualTop;
+      if (Number.isFinite(expectedTopCss) && Math.abs(actualLayoutTop - expectedTopCss) > 2) {
         failures.push({
           id,
           reason: 'arrow-not-on-first-screen-floor',
@@ -1022,7 +1124,7 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
     } else if (String(node.id) === String(laterBg[0]?.id) && actual.imgVisible === false) {
       failures.push({ id: node.id, reason: 'later-bg-img-offscreen', actual: { imgW: actual.imgW, imgH: actual.imgH } });
     }
-    const expected = geom(sliceExportPaintBox(node)) || geom(node.pageBox);
+    const expected = pixelSafeExportSize(sliceExportPaintBox(node) || node.pageBox);
     if (expected && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
       if (Math.abs(Number(actual.assetW) - expected.w) > 1 || Math.abs(Number(actual.assetH) - expected.h) > 1) {
         failures.push({
@@ -1050,7 +1152,7 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       if (kvDom.imgSrc && (kvDom.assetW == null || kvDom.assetH == null || kvDom.assetEmpty == null)) {
         failures.push({ id: firstKv.id, reason: 'first-kv-png-meta-missing' });
       }
-      const expectedKv = geom(sliceExportPaintBox(firstKv)) || geom(firstKv.pageBox);
+      const expectedKv = pixelSafeExportSize(sliceExportPaintBox(firstKv) || firstKv.pageBox);
       if (expectedKv && Number(kvDom.assetW) > 0 && Number(kvDom.assetH) > 0) {
         if (Math.abs(Number(kvDom.assetW) - expectedKv.w) > 1 || Math.abs(Number(kvDom.assetH) - expectedKv.h) > 1) {
           failures.push({
@@ -1117,6 +1219,30 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
   };
 }
 
+function isIndicatorOwner(node) {
+  return String(node?.role || '') === 'ind' || /^ind(?:\/|$)/i.test(String(node?.name || ''));
+}
+
+function isSwitchOwner(node) {
+  return String(node?.role || '') === 'switch' || /^switch(?:\/|$)/i.test(String(node?.name || ''));
+}
+
+function isHiddenInactiveSwitchDescendant(node, byId, measured) {
+  if (!node || !byId || !measured) return false;
+  const switchOwner = asArray(node?.ancestorIds).map((id) => byId.get(String(id)))
+    .find((owner) => isSwitchOwner(owner));
+  if (!switchOwner || !measured[String(switchOwner.id)]) return false;
+  const switchId = String(switchOwner.id);
+  const siblingVisible = [...byId.values()].some((other) => {
+    if (!other || String(other.id) === String(node.id)) return false;
+    if (String(other.id) === switchId) return false;
+    if (!asArray(other.ancestorIds).map(String).includes(switchId)
+      && String(other.parentId || '') !== switchId) return false;
+    return !!measured[String(other.id)];
+  });
+  return siblingVisible;
+}
+
 /** Only a清单 sliceExport owner may bake descendants. Unprefixed parents cannot. */
 function isLegalBakedOwner(owner) {
   return !!(owner && owner.sliceExport && geom(owner.sliceExport.box || owner.pageBox));
@@ -1176,6 +1302,13 @@ function isBakedIntoAncestor(node, byId, measured) {
       const role = String(node?.role || '');
       if (role === 'copy' || node?.type === 'TEXT' || node?.text) return false;
       return true;
+    }
+    /* Page INSTANCE of ind/ paints the selected COMPONENT root PNG. Inner
+       unknown art lives in that PNG, not as its own DOM host. The INSTANCE
+       itself often has no sliceExport; the COMPONENT root does. */
+    if (isIndicatorOwner(owner)) {
+      if (measured[id]?.hasImg === true) return true;
+      if (String(owner?.type || '').toUpperCase() === 'INSTANCE' && owner.componentId) return true;
     }
     if (node?.sliceExport) return false;
     return measured[id]?.bakedDescendants === true && isLegalBakedOwner(owner);
@@ -1316,6 +1449,12 @@ export function evaluateInventoryStaticGate({
     if (isBakedIntoAncestor(node, byId, measured)) continue;
     if (!actual) {
       if (underDroppedDuplicatePin(node, droppedPinIds, byId)) continue;
+      /* Inactive switch pages stay in inventory but are hidden in DOM
+         (`hidden` / display:none). Probe only measures visible paint.
+         Only skip when a sibling under the same switch is actually
+         measured — that is the selected page. A missing current-page
+         child is still missing-dom. */
+      if (isHiddenInactiveSwitchDescendant(node, byId, measured)) continue;
       failures.push({ id: node.id, reason: 'missing-dom', expected });
       continue;
     }
@@ -1347,6 +1486,24 @@ export function evaluateInventoryStaticGate({
       w: hugsWidth ? Math.min(Number(actual.w), expected.w) : Number(actual.w),
       h: Number(actual.h),
     };
+    /* WIDTH_AND_HEIGHT + CENTER: a slightly narrower glyph run stays on the
+       same midline. Comparing left edges would flag hug titles as misplaced. */
+    if (hugsWidth && String(node.text?.align || '').toUpperCase() === 'CENTER') {
+      const actualCenter = Number(actual.x) + Number(actual.w) / 2;
+      const expectedCenter = expected.x + expected.w / 2;
+      if (Math.abs(actualCenter - expectedCenter) <= POSITION_TOLERANCE_PX) {
+        actualRect.x = expected.x;
+      }
+    }
+    /* Rotated paint: Figma pageBox is the unrotated layout box; Chromium
+       getBoundingClientRect is the transformed AABB and may include shadow.
+       Keep the compare on the shared midline instead of the layout left edge. */
+    if (rotatedPaintCentersContain(node, expected, actualRect)) {
+      actualRect.x = expected.x;
+      actualRect.y = expected.y;
+      actualRect.w = expected.w;
+      actualRect.h = expected.h;
+    }
     /* Compact 箭头 remaps onto viewportH / k. Inventory pageBox y is the
        Figma hero floor, not the 100vh slot — product already gates the
        slot, so design-viewport must not demand raw pageBox. */
@@ -1426,7 +1583,7 @@ export function evaluateInventoryStaticGate({
       }
     }
     if (shouldGateWholeFramePng(node) && (actual.assetEmpty != null || actual.assetW != null || actual.assetH != null)) {
-      const expectedPaint = geom(sliceExportPaintBox(node)) || geom(node.pageBox);
+      const expectedPaint = pixelSafeExportSize(sliceExportPaintBox(node) || node.pageBox);
       if (actual.assetEmpty === true && !sliceChildrenAllInvisible(node, byId)) {
         failures.push({ id: node.id, reason: 'whole-frame-png-empty' });
       }

@@ -411,7 +411,8 @@ export function buildHtmlFromHandoff({
     payload.problems = ['preview-first skipped; product view not allowed'];
   } else {
     attachSliceAssets(payload, demoDir, { reuseExisting: reuseExistingAssets });
-    if (payload.ok === true) attachPreviewFirst(payload, demoDir);
+    if (payload.ok !== true) return payload;
+    attachPreviewFirst(payload, demoDir);
   }
   const afterInventory = attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, staticGateProbe });
   const afterPolicy = attachDesignPolicyMirror(afterInventory);

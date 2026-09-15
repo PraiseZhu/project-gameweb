@@ -29,8 +29,9 @@
  *   非 ready 的 showcase 仍可按前缀 img/bg/kv、BOOLEAN 箭头、IMAGE fill 切。
  *   其余              →  不切（scroll/ 是容器；普通 btn/ 无 sliceExport 不切）
  *
- *   figma-indicator-* 备用图只在 ready truth 仍有 `ind/` owner 时安装。
- *   没有 `ind/` 的页（火炬阶段一）跳过，不得拿旧稿 397:35947/35949 卡死切图。
+ *   指示器素材按当前稿 `ind/` 实际用到的 componentId 校验。
+ *   旧稿 397:35947/35949 的 named fallback 只在这些根真被用到时才安装。
+ *   没有 `ind/` 的页跳过；有 `ind/` 但缺当前根素材时点名该 id，不拿旧稿图卡死切图。
  *
  * ═══ 用法 ═══
  *   node scripts/figma-assets.mjs --demo <dir>              # 按 truth.json 找出该切的节点并导出
@@ -45,7 +46,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { encodeWebpBatch } from './lib/encode-webp.mjs';
-import { deriveRole, pageUsesIndicatorRole } from './lib/figma-name-semantics.mjs';
+import { collectUsedIndicatorComponentIds, deriveRole, pageUsesIndicatorRole } from './lib/figma-name-semantics.mjs';
 import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../standards/figma-naming/spec/inventory.mjs';
 import { requireFigmaToken } from './lib/figma-token.mjs';
 import { matchesSchema } from './lib/torchlight-schema.mjs';
@@ -617,7 +618,7 @@ export function applyCollapsedWebpAlias(src, dest) {
   return dest;
 }
 
-const INDICATOR_FALLBACKS = Object.freeze([
+const LEGACY_INDICATOR_FALLBACKS = Object.freeze([
   { nodeId: '397:35947', dest: 'figma-indicator-active-alpha.webp' },
   { nodeId: '397:35949', dest: 'figma-indicator-normal-alpha.webp' },
 ]);
@@ -650,42 +651,45 @@ function indicatorSourceFile(assetsDir, manifest, nodeId) {
 }
 
 export function installIndicatorFallbacks(assetsDir, manifest, truth) {
-  if (truth !== undefined && !pageUsesIndicatorRole(truth)) {
+  if (truth === undefined) {
+    return { ok: true, skipped: true, reason: 'no-truth' };
+  }
+  if (!pageUsesIndicatorRole(truth)) {
     return { ok: true, skipped: true, reason: 'no-ind-role' };
   }
-  mkdirSync(assetsDir, { recursive: true });
-  const needed = INDICATOR_FALLBACKS.filter((item) => manifest && manifest[item.nodeId]);
-  /* 旧稿 ind/ 高亮/普通根是 397:35947 / 397:35949。本页没有这些节点时
-     不许拿旧 id 卡死整份 assets-manifest；有这些根却导不出图才红停。 */
-  if (!needed.length) {
-    if (truth !== undefined) {
-      throw new Error('missing figma-indicator fallback sources: page has ind/ but no fallback roots in manifest');
-    }
-    return { ok: true, skipped: true, missing: [] };
+  const usedComponentIds = collectUsedIndicatorComponentIds(truth);
+  if (!usedComponentIds.length) {
+    throw new Error('missing figma-indicator fallback sources: used indicator componentId');
   }
+  mkdirSync(assetsDir, { recursive: true });
   const missing = [];
-  for (const item of needed) {
-    const dest = join(assetsDir, item.dest);
-    if (isWebpFile(dest)) continue;
-    const src = indicatorSourceFile(assetsDir, manifest, item.nodeId);
+  const installLegacyNamedFallback = (nodeId, destName) => {
+    const dest = join(assetsDir, destName);
+    if (isWebpFile(dest)) return;
+    const src = indicatorSourceFile(assetsDir, manifest, nodeId);
     if (!src) {
-      missing.push(item.dest);
-      continue;
+      missing.push(`${nodeId} (${destName})`);
+      return;
     }
     if (/\.webp$/i.test(src) && isWebpFile(src)) {
       copyFileSync(src, dest);
-      continue;
+      return;
     }
     const encoded = encodeWebpBatch([{ src, dest, lossless: true }]);
-    if (!encoded.ok || !isWebpFile(dest)) {
-      missing.push(item.dest);
+    if (!encoded.ok || !isWebpFile(dest)) missing.push(`${nodeId} (${destName})`);
+  };
+  for (const nodeId of usedComponentIds) {
+    const legacy = LEGACY_INDICATOR_FALLBACKS.find((item) => item.nodeId === nodeId);
+    if (legacy) {
+      installLegacyNamedFallback(nodeId, legacy.dest);
       continue;
     }
+    if (!indicatorSourceFile(assetsDir, manifest, nodeId)) missing.push(nodeId);
   }
   if (missing.length) {
     throw new Error(`missing figma-indicator fallback sources: ${missing.join(', ')}`);
   }
-  return { ok: true, missing };
+  return { ok: true, missing, usedComponentIds };
 }
 
 function cropPng(buf, sx, sy, sw, sh) {
@@ -794,13 +798,9 @@ async function main() {
     name: p.name,
     why: isZeroExtentSlice(p) ? 'zero-extent' : 'previous-noUrl',
   }));
-  /* --reuse-existing means "do not hit Figma". Missing PNGs fail loud so a
-     hung images API cannot stall html-from-handoff after local extract.
-     Zero-extent slices and nodes already recorded as noUrl are listed, not
-     treated as a missing PNG. Real slices still fail closed. */
-  if (reuseExisting && fetchPicks.length) {
-    fail(`--reuse-existing 缺 PNG，拒绝打 Figma：${fetchPicks.map((p) => p.nodeId).join(',')}`);
-  }
+  /* --reuse-existing means reuse on-disk PNGs. Newly painted owners that
+     still have no file must hit Figma; empty assets/ always fetches.
+     Zero-extent slices and nodes already recorded as noUrl stay listed. */
   const token = fetchPicks.length ? readToken(demoDir) : null;
   const noUrl = skippedNoFetch.map((p) => ({
     nodeId: p.nodeId,

@@ -183,6 +183,7 @@ test('stop-1 Figma export uses section.id and product=1', () => {
   const src = readFileSync(SOURCE_PROBE, 'utf8');
   assert.match(src, /index\.html\?product=1/);
   assert.match(src, /sectionPaintExports/);
+  assert.match(src, /covering-plate/);
   assert.match(src, /analogueIds/);
   assert.match(src, /dropmenu-off-icon/);
   assert.match(src, /sectionLiveCopyMasks/);

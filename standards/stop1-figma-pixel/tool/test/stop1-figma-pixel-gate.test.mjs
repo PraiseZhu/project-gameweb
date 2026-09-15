@@ -224,6 +224,10 @@ test('stop-1 assembles node exports and product=1', () => {
   assert.match(src, /analogueOf/);
   assert.match(src, /fetchTimed/);
   assert.match(src, /assembled Figma snapshot/);
+  assert.match(src, /covering-plate/);
+  assert.match(src, /exportScale/);
+  assert.match(src, /siblingScaleCacheFiles/);
+  assert.match(src, /180000/);
   assert.match(src, /sectionLiveCopyMasks/);
   assert.match(src, /dropmenu-off-icon/);
   assert.match(src, /deviceScaleFactor:\s*dsf/);
@@ -481,6 +485,47 @@ test('section paint exports drop untagged later fix clones and descendants', () 
   const later = sectionPaintExports(inventory, { id: 'sec-2', pageBox: { x: 0, y: 1000, w: 750, h: 1000 } });
   assert.deepEqual(first.map((row) => row.frameId), ['fix-first']);
   assert.deepEqual(later.map((row) => row.frameId), ['hero-2']);
+});
+
+test('later section paints page-level covering bg before section children', () => {
+  const inventory = {
+    page: { id: 'page', pageBox: { x: 0, y: 0, w: 750, h: 3000 } },
+    backgrounds: [{ id: 'bg-pc', role: 'bg', pageBox: { x: 0, y: 0, w: 750, h: 3000 } }],
+    nodes: [
+      { id: 'bg-pc', name: 'bg/pc', role: 'bg', parentId: 'page', pageBox: { x: 0, y: 0, w: 750, h: 3000 } },
+      { id: 'hero-2', name: 'banner', parentId: 'sec-2', pageBox: { x: 0, y: 1200, w: 750, h: 500 } },
+    ],
+  };
+  const later = sectionPaintExports(inventory, { id: 'sec-2', pageBox: { x: 0, y: 1000, w: 750, h: 1000 } });
+  assert.equal(later[0].kind, 'covering-plate');
+  assert.equal(later[0].frameId, 'bg-pc');
+  assert.equal(later[0].exportScale, pickExportScale({ x: 0, y: 0, w: 750, h: 3000 }));
+  assert.deepEqual(later.map((row) => row.frameId), ['bg-pc', 'hero-2']);
+});
+
+test('first section paints page-level sticky fix overlay, later sections do not', () => {
+  const inventory = {
+    page: { id: 'page', pageBox: { x: 0, y: 0, w: 750, h: 3000 } },
+    overlays: [{ id: 'rail', role: 'fix', label: '侧边栏', pin: 'viewport' }],
+    nodes: [
+      { id: 'kv', name: 'kv', parentId: 'sec-1', pageBox: { x: 0, y: 0, w: 750, h: 1000 } },
+      { id: 'rail', name: 'fix/侧边栏', role: 'fix', parentId: 'page', pageBox: { x: 500, y: 40, w: 220, h: 800 } },
+      { id: 'lang', name: 'dropmenu/多语言', role: 'dropmenu', parentId: 'rail', pageBox: { x: 560, y: 50, w: 140, h: 370 }, componentProperties: { 'Property 1': { value: 'on', type: 'VARIANT' } } },
+      { id: 'hero-2', name: 'banner', parentId: 'sec-2', pageBox: { x: 0, y: 1200, w: 750, h: 500 } },
+    ],
+  };
+  const first = sectionPaintExports(inventory, { id: 'sec-1', pageBox: { x: 0, y: 0, w: 750, h: 1000 } });
+  const later = sectionPaintExports(inventory, { id: 'sec-2', pageBox: { x: 0, y: 1000, w: 750, h: 1000 } });
+  assert.ok(first.some((row) => row.frameId === 'rail'));
+  assert.equal(later.some((row) => row.frameId === 'rail'), false);
+  const masks = sectionLiveCopyMasks({
+    ...inventory,
+    nodes: [
+      ...inventory.nodes,
+      { id: 'copy', name: '官方充值', type: 'TEXT', role: 'copy', parentId: 'rail', pageBox: { x: 520, y: 80, w: 80, h: 20 }, text: { characters: '官方充值' } },
+    ],
+  }, { id: 'sec-1', pageBox: { x: 0, y: 0, w: 750, h: 1000 } });
+  assert.ok(masks.some((mask) => mask.x === 520 && mask.y === 80));
 });
 
 test('lang-axis overlay maps kr instance onto cn master', () => {

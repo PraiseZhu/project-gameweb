@@ -89,6 +89,143 @@ test('expectation is pageBox, never canvas box', () => {
   assert.notEqual(box.x, CANVAS_BOX.x);
 });
 
+test('rotated TEXT expects renderBox AABB, not the unrotated pageBox', () => {
+  const box = expectedDrawBox({
+    id: 'rotated-copy',
+    role: 'copy',
+    type: 'TEXT',
+    rotation: -0.7853981633974483,
+    pageBox: { x: 3447.75, y: 621.274499394031, w: 100.64683976021115, h: 100.64683976021252 },
+    renderBox: { x: 3459.029296875, y: 632.884765625, w: 76.697265625, h: 76.69775390625 },
+  });
+  assert.deepEqual(box, { x: 3459.029296875, y: 632.884765625, w: 76.697265625, h: 76.69775390625 });
+});
+
+test('rotated paint AABB that still contains the Figma center is not pageBox-mismatch', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'line',
+        status: 'determined',
+        role: 'img',
+        name: 'img/装饰线条',
+        rotation: 3.141592653589793,
+        pageBox: { x: 371, y: 7372.29296875, w: 8, h: 101 },
+        renderBox: { x: 371, y: 7372.29296875, w: 8, h: 113 },
+        sliceExport: { box: { x: 371, y: 7372.29296875, w: 8, h: 101 }, scale: 1, format: 'png', file: 'line.png', bounds: 'render' },
+      }],
+    },
+    measurements: {
+      nodes: {
+        line: {
+          x: 371, y: 7372.28125, w: 8, h: 101,
+          hasImg: true, imgBox: { x: 371, y: 7372.28125, w: 8, h: 101 },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('rotated copy on a shared midline is not pageBox-mismatch', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'rotated-copy',
+        status: 'determined',
+        role: 'copy',
+        type: 'TEXT',
+        rotation: -0.7853981633974483,
+        pageBox: { x: 3447.75, y: 621.274499394031, w: 100.64683976021115, h: 100.64683976021252 },
+        renderBox: { x: 3459.029296875, y: 632.884765625, w: 76.697265625, h: 76.69775390625 },
+        text: { characters: '传奇战斗', fontFamily: 'Source Han Sans', fontWeight: 400, fontSize: 16 },
+      }],
+    },
+    measurements: {
+      nodes: {
+        'rotated-copy': {
+          x: 3426.89111328125, y: 600.42236328125, w: 142.3271484375, h: 142.3271484375,
+          fontSize: 16, fontFamily: 'Source Han Sans', fontWeight: '400',
+          text: '传奇战斗',
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('closed dropmenu expects the img/icon box, not the 370-high instance', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    nodes: [
+      {
+        id: 'menu',
+        status: 'determined',
+        role: 'dropmenu',
+        name: 'dropmenu/多语言',
+        pageBox: { x: 506, y: 31, w: 230, h: 370 },
+        componentProperties: { 'Property 1': { value: 'off', type: 'VARIANT' } },
+      },
+      {
+        id: 'icon',
+        status: 'determined',
+        role: 'img',
+        name: 'img/icon',
+        parentId: 'menu',
+        ancestorIds: ['menu'],
+        pageBox: { x: 651, y: 31, w: 85, h: 85 },
+      },
+    ],
+  };
+  const byId = new Map(inventory.nodes.map((node) => [node.id, node]));
+  assert.deepEqual(expectedDrawBox(inventory.nodes[0], byId), { x: 506, y: 31, w: 230, h: 85 });
+  const green = evaluateInventoryStaticGate({
+    inventory,
+    measurements: {
+      nodes: {
+        menu: { x: 506, y: 31, w: 230, h: 85 },
+        icon: { x: 651, y: 31, w: 85, h: 85, hasImg: true, imgBox: { x: 651, y: 31, w: 85, h: 85 } },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('hug-width centered copy keeps the midline when the glyph run is slightly narrower', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'title',
+        status: 'determined',
+        role: 'copy',
+        type: 'TEXT',
+        pageBox: { x: 1738.521484375, y: 2388, w: 362, h: 86 },
+        text: {
+          characters: '火炬嘉年华',
+          fontFamily: 'Source Han Sans',
+          fontWeight: 600,
+          fontSize: 70,
+          autoResize: 'WIDTH_AND_HEIGHT',
+          align: 'CENTER',
+        },
+      }],
+    },
+    measurements: {
+      nodes: {
+        title: {
+          x: 1737.4140625, y: 2388, w: 364.21484375, h: 86,
+          fontSize: 70, fontFamily: 'Source Han Sans', fontWeight: '600',
+          text: '火炬嘉年华',
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
 test('hairline img/ expects same-space renderBox instead of 0-height pageBox', () => {
   const box = expectedDrawBox({
     id: '721:8399',
@@ -276,8 +413,10 @@ test('probe script is a shipped skill file, not an optional local extra', () => 
   assert.match(src, /nextRectAfter/);
   assert.match(src, /overlayBoxes/);
   assert.match(src, /data-hero-page-scale/);
-  assert.match(src, /seamY = sectionAbutAfter && Number\.isFinite\(Number\(sectionAbutAfter\.nextTop\)\)/);
-  assert.doesNotMatch(src, /const seamY = sectionAbut && Number\.isFinite\(Number\(sectionAbut\.nextTop\)\)/);
+  assert.match(src, /seamSampleLocked/);
+  assert.match(src, /Sample the join while both stages still share the first-screen seam/);
+  assert.match(src, /seamY = seamSampleLocked && Number\.isFinite\(Number\(seamSampleLocked\.y\)\)/);
+  assert.doesNotMatch(src, /const seamY = sectionAbutAfter && Number\.isFinite\(Number\(sectionAbutAfter\.nextTop\)\)/);
   assert.doesNotMatch(src, /Math\.min\(Number\(viewport\.h\) \|\| 720, 720\)/);
   assert.doesNotMatch(src, /Math\.min\(Math\.round\(firstH\), 1080\)/);
 });
@@ -329,6 +468,156 @@ test('full-bleed kv IMAGE child is baked, not missing-dom', () => {
     },
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('super-tall bg PNG is compared to the 24MP export request, not unclamped pageBox', () => {
+  const pageBox = { x: 0, y: 0, w: 3840, h: 20000 };
+  const scale = Math.sqrt((24 * 1024 * 1024) / (3840 * 20000));
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'bg-tall',
+        status: 'determined',
+        role: 'bg',
+        name: 'bg/pc',
+        pageBox,
+        sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'bg.png', bounds: 'render' },
+      }],
+    },
+    measurements: {
+      nodes: {
+        'bg-tall': {
+          x: 0, y: 0, w: 3840, h: 20000, hasImg: true, imgBox: pageBox,
+          assetEmpty: false, assetW: 3840 * scale, assetH: 20000 * scale,
+        },
+      },
+      productScroll: {
+        overlay: { position: 'sticky', transform: 'none', zoom: '1' },
+        overlayDeltas: {},
+        scrolled: 1,
+        scrollTop: 720,
+        backgrounds: {
+          'bg-tall': {
+            imgSrc: 'assets/bg.png',
+            imgVisible: true,
+            assetW: 3840 * scale,
+            assetH: 20000 * scale,
+            assetEmpty: false,
+          },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('indicator inner art baked into the INSTANCE PNG is not missing-dom', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: 'ind-1',
+          status: 'determined',
+          role: 'ind',
+          name: 'ind/轮播点',
+          type: 'INSTANCE',
+          pageBox: { x: 10, y: 20, w: 84, h: 84 },
+        },
+        {
+          id: 'Iind-1;2:2427',
+          status: 'unknown',
+          name: '轮播点',
+          type: 'RECTANGLE',
+          parentId: 'ind-1',
+          ancestorIds: ['ind-1'],
+          pageBox: { x: 30, y: 40, w: 44, h: 44 },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        'ind-1': { x: 10, y: 20, w: 84, h: 84, hasImg: true, imgBox: { x: 10, y: 20, w: 84, h: 84 } },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('hidden switch-page descendants are not missing-dom', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: 'switch-1',
+          status: 'determined',
+          role: 'switch',
+          name: 'switch/模块3',
+          pageBox: { x: 0, y: 4000, w: 3840, h: 1800 },
+        },
+        {
+          id: 'Iswitch-1;page-1',
+          status: 'determined',
+          role: 'img',
+          name: 'img/选中页',
+          parentId: 'switch-1',
+          ancestorIds: ['switch-1'],
+          pageBox: { x: 733, y: 4779, w: 2374, h: 1350 },
+        },
+        {
+          id: 'Iswitch-1;page-2',
+          status: 'determined',
+          role: 'img',
+          name: 'img/未选中页',
+          parentId: 'switch-1',
+          ancestorIds: ['switch-1'],
+          pageBox: { x: 733, y: 4779, w: 2374, h: 1350 },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        'switch-1': { x: 0, y: 4000, w: 3840, h: 1800 },
+        'Iswitch-1;page-1': { x: 733, y: 4779, w: 2374, h: 1350, hasImg: true },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('current switch-page child still missing-dom when no sibling is measured', () => {
+  const red = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: 'switch-1',
+          status: 'determined',
+          role: 'switch',
+          name: 'switch/模块3',
+          pageBox: { x: 0, y: 4000, w: 3840, h: 1800 },
+        },
+        {
+          id: 'Iswitch-1;page-1',
+          status: 'determined',
+          role: 'img',
+          name: 'img/选中页',
+          parentId: 'switch-1',
+          ancestorIds: ['switch-1'],
+          pageBox: { x: 733, y: 4779, w: 2374, h: 1350 },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        'switch-1': { x: 0, y: 4000, w: 3840, h: 1800 },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok((red.problems || []).some((line) => line.includes('Iswitch-1;page-1') && line.includes('missing-dom')));
 });
 
 test('product viewport rejects a gap between sec/1 and sec/2', () => {
@@ -1684,6 +1973,62 @@ test('QA chrome top-bar button move, missing slice, and copy change are red', ()
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
 });
 
+test('product chrome rotated TEXT AABB that still contains the Figma center is not pageBox-mismatch', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '侧边栏' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 3840, h: 2143 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/侧边栏', pageBox: { x: 2640, y: 70, w: 1200, h: 1790 } },
+      {
+        id: 'rotated-copy',
+        status: 'determined',
+        role: 'copy',
+        type: 'TEXT',
+        name: '传奇战斗',
+        ancestorIds: ['fix-1'],
+        parentId: 'fix-1',
+        rotation: -0.7853981633974483,
+        pageBox: { x: 3447.75, y: 621.274499394031, w: 100.64683976021115, h: 100.64683976021252 },
+        renderBox: { x: 3459.029296875, y: 632.884765625, w: 76.697265625, h: 76.69775390625 },
+        text: { characters: '传奇战斗', fontFamily: 'Source Han Sans', fontWeight: 400, fontSize: 16 },
+      },
+    ],
+  };
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      overlayBoxes: { 'fix-1': { top: 35, height: 895 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 1800, overflow: 'hidden' } },
+      slotDesignHeight: 1800,
+      scale: 0.5,
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 1790,
+        sourceHeight: 1790,
+        nodes: {
+          'fix-1': { x: 0, y: 0, w: 1200, h: 1790 },
+          'rotated-copy': {
+            x: 786.8912845205238, y: 530.4222282353336, w: 142.32717540792777, h: 142.32733129271486,
+            text: '传奇战斗', fontWeight: 400, fontSize: 16, color: 'rgb(255, 255, 255)',
+          },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+  assert.equal((green.problems || []).some((line) => line.includes('topbar-chrome-pageBox-mismatch')), false);
+});
+
 test('QA chrome stack, clip, color, weight, and portrait fix are red when they drift', () => {
   const inventory = {
     schema: 'inventory/v2',
@@ -2044,6 +2389,143 @@ test('product overlay that stays laid out but is clipped after scroll is red', (
   });
   assert.equal(red.ok, false);
   assert.ok(red.problems.some((line) => line.includes('overlay-scroll-clipped')), (red.problems || []).join('\n'));
+});
+
+test('product overlay AABB clipped after scroll but still visible is not overlay-scroll-clipped', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '右侧顶部信息' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/右侧顶部信息', pageBox: { x: 370, y: 27, w: 366, h: 1790 } },
+    ],
+  };
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0, clippedAfter: true, visibleAreaAfter: 12000 } },
+      overlayBoxes: { 'fix-1': { top: 14, height: 930 } },
+      scrolled: 1,
+      scrollTop: 500,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 1623, overflow: 'hidden' } },
+      slotDesignHeight: 1623,
+      scale: 0.52,
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 1790,
+        sourceHeight: 1790,
+        nodes: { 'fix-1': { x: 0, y: 0, w: 366, h: 1790 } },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+  assert.equal((green.problems || []).some((line) => line.includes('overlay-scroll-clipped')), false);
+});
+
+test('soft-spill chrome PNG larger than layout box is not topbar-chrome-png-size-mismatch', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '顶部固定内容' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/顶部固定内容', pageBox: { x: 0, y: 0, w: 736, h: 401 } },
+      {
+        id: 'fix-home',
+        status: 'determined',
+        role: 'img',
+        name: 'img/按钮',
+        ancestorIds: ['fix-1'],
+        parentId: 'fix-1',
+        pageBox: { x: 651, y: 98, w: 85, h: 85 },
+        sliceExport: { box: { x: 651, y: 98, w: 85, h: 85 }, file: 'home.png' },
+      },
+    ],
+  };
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 1334, overflow: 'visible' } },
+      backgrounds: {},
+      samples: [],
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 401,
+        sourceHeight: 401,
+        nodes: {
+          'fix-1': { x: 0, y: 0, w: 736, h: 401 },
+          'fix-home': {
+            x: 651, y: 98, w: 85, h: 85, hasImg: true, assetEmpty: false, assetW: 120, assetH: 120,
+            assetInkHash: 'aaa', assetInkEmpty: false,
+            assetSamples: [{ rgba: [10, 10, 10, 255] }],
+            screenSamples: [{ rgba: [10, 10, 10, 255] }],
+          },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+  assert.equal((green.problems || []).some((line) => line.includes('topbar-chrome-png-size-mismatch')), false);
+});
+
+test('product viewport treats unknown IMAGE under an ind INSTANCE as baked', () => {
+  const red = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+      nodes: [
+        {
+          id: 'ind-1',
+          status: 'determined',
+          role: 'ind',
+          name: 'ind/轮播点',
+          type: 'INSTANCE',
+          componentId: 'comp-root',
+          pageBox: { x: 100, y: 100, w: 24, h: 24 },
+        },
+        {
+          id: 'ind-art',
+          status: 'unknown',
+          name: '点',
+          type: 'RECTANGLE',
+          parentId: 'ind-1',
+          ancestorIds: ['ind-1'],
+          pageBox: { x: 100, y: 100, w: 24, h: 24 },
+          style: { fills: [{ type: 'IMAGE' }] },
+        },
+      ],
+    },
+    viewportKind: 'product',
+    measurements: {
+      nodes: {
+        'ind-1': { x: 100, y: 100, w: 24, h: 24, hasImg: true },
+        'ind-art': { x: 100, y: 100, w: 24, h: 24, hasImg: true },
+      },
+      productScroll: {
+        overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+        overlayDeltas: {},
+        scrolled: 1,
+        scrollTop: 1,
+        layers: { 'sec-1': { cropWindow: 'first-section-pagebox', height: 2143, overflow: 'hidden' } },
+        seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok(red.problems.some((line) => line.includes('full-bleed-child-repainted')), (red.problems || []).join('\n'));
 });
 
 test('portrait named 顶部信息 treated as a directory is red', () => {
@@ -2579,6 +3061,17 @@ test('product viewport rejects a first-screen arrow still at Figma pageBox y', (
     },
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
+
+  const spillTop = floorTop - 2.5;
+  const spillGreen = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      ...productScroll,
+      overlayBoxes: { 'fix-arrow': { top: spillTop, height: 70 * 0.5 + 5 } },
+    },
+  });
+  assert.equal(spillGreen.ok, true, (spillGreen.problems || []).join('\n'));
 
   const designViewport = evaluateProductScrollGate({
     inventory,

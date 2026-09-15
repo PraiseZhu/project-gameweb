@@ -481,7 +481,11 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
     } : null;
     const layerOf = (id) => {
       if (!id) return null;
-      const el = frame.querySelector(`.fx-root-layer[data-paint-root="${cssEscape(id)}"]`);
+      const paint = frame.querySelector(`.fx-root-layer[data-paint-root="${cssEscape(id)}"]`);
+      const stage = frame.querySelector(`[data-node-id="section-${cssEscape(id)}"]`);
+      /* Official 100vh crop lives on the section stage. A paint-root layer
+         without data-hero-crop-window is not the first-screen clip. */
+      const el = (paint && paint.getAttribute('data-hero-crop-window')) ? paint : (stage || paint);
       if (!el) return null;
       return {
         cropWindow: el.getAttribute('data-hero-crop-window'),
@@ -526,6 +530,15 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
         firstBottom: firstRect.top + firstRect.height,
         nextTop: nextRect.top,
         gap: nextRect.top - (firstRect.top + firstRect.height),
+      }
+      : null;
+    /* Sample the join while both stages still share the first-screen seam.
+       After scrolling to sec/2, nextTop is the viewport top and the shot
+       is later-section night sky, not the 100vh join. */
+    const seamSampleLocked = (firstRect && nextRect)
+      ? {
+        y: nextRect.top,
+        x: (frame.getBoundingClientRect().width || window.innerWidth || 0) * 0.5,
       }
       : null;
     const frameRect = frame.getBoundingClientRect();
@@ -589,9 +602,11 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       const sy = c.top + c.height * 0.38;
       sample = { sx, sy, hostTop: r.top, hostLeft: r.left, hostH: r.height, hostW: r.width, clipW: c.width, clipH: c.height };
     }
-    const seamY = sectionAbutAfter && Number.isFinite(Number(sectionAbutAfter.nextTop))
-      ? Number(sectionAbutAfter.nextTop)
-      : null;
+    const seamY = seamSampleLocked && Number.isFinite(Number(seamSampleLocked.y))
+      ? Number(seamSampleLocked.y)
+      : (sectionAbutAfter && Number.isFinite(Number(sectionAbutAfter.nextTop))
+        ? Number(sectionAbutAfter.nextTop)
+        : null);
     return {
       overlay: {
         position: overlayCs ? overlayCs.position : null,
@@ -610,7 +625,7 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       firstKv: firstKvDom,
       sample,
       seamSample: Number.isFinite(seamY)
-        ? { y: seamY, x: (frame.getBoundingClientRect().width || window.innerWidth || 0) * 0.5 }
+        ? { y: seamY, x: Number(seamSampleLocked && seamSampleLocked.x) || ((frame.getBoundingClientRect().width || window.innerWidth || 0) * 0.5) }
         : null,
       firstScreenFloorSample,
       slotDesignHeight: Number.isFinite(slotDesignHeight) ? slotDesignHeight : null,

@@ -1,6 +1,6 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { installIndicatorFallbacks } from '../figma-assets.mjs';
@@ -9,26 +9,14 @@ const renderer = readFileSync(new URL('../../templates/figma-render.js', import.
 const assetPipeline = readFileSync(new URL('../figma-assets.mjs', import.meta.url), 'utf8');
 const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.url), 'utf8');
 
-test('indicator fallbacks skip when this page has no 397:35947 / 397:35949', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-skip-'));
-  const assetsDir = join(dir, 'assets');
-  mkdirSync(assetsDir);
-  const skipped = installIndicatorFallbacks(assetsDir, {});
-  assert.equal(skipped.ok, true);
-  assert.equal(skipped.skipped, true);
-});
-
-test('missing figma-indicator fallback sources fail closed when those roots were sliced', () => {
+test('missing truth does not require legacy 397 indicator fallbacks', () => {
   const dir = mkdtempSync(join(tmpdir(), 'torch-ind-'));
   const assetsDir = join(dir, 'assets');
   mkdirSync(assetsDir);
-  assert.throws(
-    () => installIndicatorFallbacks(assetsDir, {
-      '397:35947': { file: 'assets/397-35947.png' },
-      '397:35949': { file: 'assets/397-35949.png' },
-    }),
-    /missing figma-indicator fallback sources/,
-  );
+  const result = installIndicatorFallbacks(assetsDir, {});
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, 'no-truth');
 });
 
 test('pages without ind/ skip figma-indicator fallback sources', () => {
@@ -55,13 +43,43 @@ test('pages with ind/ still fail closed without fallback sources', () => {
   );
 });
 
-test('indicator fallback checks only roots present in the manifest', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-one-root-'));
+function tinyWebp() {
+  const buf = Buffer.alloc(12);
+  buf.write('RIFF', 0);
+  buf.write('WEBP', 8);
+  return buf;
+}
+
+test('current-file indicator roots pass without legacy 397 fallbacks', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-current-'));
+  const assetsDir = join(dir, 'assets');
+  mkdirSync(assetsDir);
+  writeFileSync(join(assetsDir, '2-2424.webp'), tinyWebp());
+  writeFileSync(join(assetsDir, '2-2429.webp'), tinyWebp());
+  const result = installIndicatorFallbacks(assetsDir, {
+    '2:2424': { file: 'assets/2-2424.webp', webpFile: 'assets/2-2424.webp' },
+    '2:2429': { file: 'assets/2-2429.webp', webpFile: 'assets/2-2429.webp' },
+  }, {
+    sections: { 'sec:1': { nodes: [
+      { id: '1:2', type: 'INSTANCE', name: 'ind/轮播点', componentId: '2:2424' },
+      { id: '1:3', type: 'INSTANCE', name: 'ind/轮播点', componentId: '2:2429' },
+    ] } },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual([...(result.usedComponentIds || [])].sort(), ['2:2424', '2:2429']);
+});
+
+test('missing current-file indicator root names that componentId', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-missing-root-'));
   const assetsDir = join(dir, 'assets');
   mkdirSync(assetsDir);
   assert.throws(
-    () => installIndicatorFallbacks(assetsDir, { '397:35947': { file: 'assets/397-35947.png' } }),
-    (error) => /figma-indicator-active-alpha\.webp/.test(String(error?.message)) && !/figma-indicator-normal-alpha\.webp/.test(String(error?.message)),
+    () => installIndicatorFallbacks(assetsDir, {}, {
+      sections: { 'sec:1': { nodes: [
+        { id: '1:2', type: 'INSTANCE', name: 'ind/轮播点', componentId: '2:2424' },
+      ] } },
+    }),
+    /missing figma-indicator fallback sources: 2:2424/,
   );
 });
 
@@ -73,7 +91,10 @@ test('asset locking is based on ownerPath when DOM parent stack is incomplete', 
   assert.match(renderer, /parent && parent\.assetLock \|\| \(bakedOwnerId && !bakedOwnerReleased\)/);
   assert.match(renderer, /ownImageFillPunchesBake/);
   assert.match(renderer, /bakedWholeFrameOwner/);
+  assert.match(renderer, /bakedIndicatorOwner/);
+  assert.match(renderer, /ownImageFill && !bakedWholeFrameOwner && !bakedIndicatorOwner/);
   assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFillPunchesBake && !imgLangRelease\) continue/);
+  assert.match(renderer, /_isIndicatorOwner/);
 });
 
 test('heroUi stretch never moves pin=viewport fix descendants', () => {
@@ -130,7 +151,7 @@ test('only listed sliceExport owners bake descendants; canvas exportBox is not p
   assert.match(renderer, /maxDim \* 2/);
   assert.match(renderer, /Canvas renderBox \(x≈-14000\)/);
   assert.match(renderer, /n\.sliceExport && assetRec/);
-  assert.match(renderer, /assetLock: !!n\.sliceExport && !!assetRec/);
+  assert.match(renderer, /assetLock: \(\!\!n\.sliceExport \|\| \(this\._isIndicatorOwner\(n, pfx\)/);
 });
 
 test('platform-prefixed asset records keep bare-id exportBox geometry', () => {

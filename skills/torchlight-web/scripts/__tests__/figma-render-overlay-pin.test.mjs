@@ -59,6 +59,8 @@ test('inventory-static-gate keeps pageBox: no lock-1920 and no topbar window-rig
   assert.match(renderer, /_isInventoryStaticGateView\(\) \{[\s\S]*?inventory-static-gate'\) \|\| ''\) === '1'/);
   assert.match(renderer, /if \(this\._isInventoryStaticGateView\(\)\) \{[\s\S]*?reason: 'inventory-static-gate'/);
   assert.match(renderer, /if \(!this\._isInventoryStaticGateView\(\) && !ancestorAlreadyShifted && this\._isRightTopbarChrome/);
+  assert.match(renderer, /pfx === 'fix' \|\| \/\^fix\(\?:\\\/\|\$\)\/i\.test\(name\)/);
+  assert.match(renderer, /\/箭头\|下滑\|scroll\/\.test\(name\)/);
 });
 test('right chrome, logo and arrow retain their inventory viewport pins', () => {
   for (const pageBox of [{ x: 2764, y: 70 }, { x: 0, y: 0 }, { x: 1885, y: 2014 }]) {

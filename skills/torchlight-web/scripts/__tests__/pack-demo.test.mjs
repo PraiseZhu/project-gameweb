@@ -155,9 +155,21 @@ test('pages with ind/ still require figma-indicator fallback files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-has-ind-'));
   const html = "file: 'assets/figma-indicator-active-alpha.webp'";
   writeFileSync(join(dir, 'truth.json'), JSON.stringify({
-    sections: { 'sec:1': { nodes: [{ id: '2', type: 'INSTANCE', name: 'ind/进度条' }] } },
+    sections: { 'sec:1': { nodes: [{ id: '2', type: 'INSTANCE', name: 'ind/进度条', componentId: '397:35947' }] } },
   }));
   assert.deepEqual(missingFallbackFiles(dir, html), ['assets/figma-indicator-active-alpha.webp']);
+});
+
+test('current-file ind/ pages do not require legacy 397 fallback files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-current-ind-'));
+  const html = "file: 'assets/figma-indicator-active-alpha.webp'";
+  writeFileSync(join(dir, 'truth.json'), JSON.stringify({
+    sections: { 'sec:1': { nodes: [
+      { id: '1:2', type: 'INSTANCE', name: 'ind/轮播点', componentId: '2:2424' },
+    ] } },
+  }));
+  assert.deepEqual(missingFallbackFiles(dir, html), []);
+  assert.deepEqual(missingRuntimeReferences(dir, html), []);
 });
 
 test('invalid webp bytes on figma-indicator fallback fail closed', () => {
