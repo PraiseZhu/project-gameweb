@@ -37,7 +37,7 @@ localeFontScale:
     en: 1
     ja: 0.833
     ko: 1
-    zh-TW: 0.833
+    zh-TW: 1
   heading:
     zh-CN: 1
     en: 1
@@ -282,7 +282,7 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 | 档 | 判定 | 比例 |
 |---|---|---|
 | body | 字重 < 600 | en / ja / ko `0.8`，zh-TW `1.0` |
-| card-title | 字重 ≥ 600 且源字号 > 40px | ja / zh-TW `0.833`，en / ko `1.0` |
+| card-title | 字重 ≥ 600 且源字号 > 40px | ja `0.833`，zh-TW / en / ko `1.0` |
 | heading | 字重 ≥ 600 且源字号 ≤ 40px | 全语 `1.0` |
 | 按钮 / 顶栏折扣条 | 祖先名含 `btn/`（含下载/预约按钮）或 `折扣信息`，不进 body / card-title | 全语 `1.0`：清单源字号。书面 max 放得下就不预缩 |
 

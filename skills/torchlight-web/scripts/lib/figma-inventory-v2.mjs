@@ -125,6 +125,10 @@ function passthroughDrawFields(entry) {
     sliceExport: entry.sliceExport ?? null,
     text: entry.text ?? null,
     layout: entry.layout ?? null,
+    fillGeometry: entry.fillGeometry ?? null,
+    localSize: entry.localSize ?? null,
+    relativeTransform: entry.relativeTransform ?? null,
+    pointCount: entry.pointCount ?? null,
   };
 }
 

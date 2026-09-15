@@ -660,6 +660,15 @@ function evaluateChromeTopBarGeometry({ inventory, chromeTopBar, byId, viewportK
   return failures;
 }
 
+function firstFillPath(node) {
+  const rows = Array.isArray(node?.fillGeometry) ? node.fillGeometry : [];
+  for (const row of rows) {
+    const path = typeof row === 'string' ? row : row?.path;
+    if (typeof path === 'string' && path.trim()) return path.trim();
+  }
+  return null;
+}
+
 function playButtonContract(inventory, byId) {
   const play = asArray(inventory?.nodes).find((node) => {
     const name = String(node?.name || '');
@@ -678,10 +687,46 @@ function playButtonContract(inventory, byId) {
     playId: String(play.id),
     sliceId: String(sliceChild.id),
     fragmentId: fragment ? String(fragment.id) : null,
+    fragmentRotation: fragment && Number.isFinite(Number(fragment.rotation)) ? Number(fragment.rotation) : null,
+    fragmentPath: firstFillPath(fragment),
     owner,
     slice,
     offset: { x: slice.x - owner.x, y: slice.y - owner.y },
   };
+}
+
+function evaluatePlayTriangle(play, playDom, failures) {
+  if (play.fragmentId && playDom.fragmentPresent === false) {
+    failures.push({ id: play.fragmentId, reason: 'play-fragment-missing' });
+  }
+  const vertex = String(playDom.polygonVertex || '');
+  if (play.fragmentId && play.fragmentPath && vertex && vertex !== 'source-path') {
+    failures.push({ id: play.fragmentId, reason: 'play-triangle-not-source-path', actual: vertex });
+  }
+  if (play.fragmentId && play.fragmentPath) {
+    const paintedPath = typeof playDom.polygonPath === 'string' ? playDom.polygonPath.trim() : '';
+    if (paintedPath !== play.fragmentPath) {
+      failures.push({
+        id: play.fragmentId,
+        reason: 'play-triangle-path-mismatch',
+        expected: play.fragmentPath,
+        actual: paintedPath || null,
+      });
+    }
+  } else if (play.fragmentId && vertex && vertex !== 'source-rotation' && vertex !== 'right' && vertex !== 'source-path') {
+    failures.push({ id: play.fragmentId, reason: 'play-triangle-not-source-rotation', actual: vertex });
+  }
+  const sourceRotation = play.fragmentRotation;
+  const paintedRotation = Number(playDom.polygonRotation);
+  if (play.fragmentId && Number.isFinite(sourceRotation)
+    && (!Number.isFinite(paintedRotation) || Math.abs(paintedRotation - sourceRotation) > 1e-4)) {
+    failures.push({
+      id: play.fragmentId,
+      reason: 'play-triangle-rotation-mismatch',
+      expected: sourceRotation,
+      actual: playDom.polygonRotation ?? null,
+    });
+  }
 }
 
 function laterSectionBgNodes(inventory, firstId) {
@@ -1093,13 +1138,7 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
       if (String(playDom.objectFit || '') === 'fill') {
         failures.push({ id: play.sliceId, reason: 'play-slice-object-fit-fill', actual: playDom.objectFit || null });
       }
-      if (play.fragmentId && playDom.fragmentPresent === false) {
-        failures.push({ id: play.fragmentId, reason: 'play-fragment-missing' });
-      }
-      const vertex = String(playDom.polygonVertex || '');
-      if (play.fragmentId && vertex && vertex !== 'right') {
-        failures.push({ id: play.fragmentId, reason: 'play-triangle-not-right', actual: vertex });
-      }
+      evaluatePlayTriangle(play, playDom, failures);
     }
   }
 

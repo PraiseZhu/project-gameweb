@@ -54,6 +54,39 @@ test("全角斜杠升 determined，与半角同一身份", () => {
   assert.equal(validateInventory(inv, tree).ok, true);
 });
 
+test("REGULAR_POLYGON art-fragment keeps fillGeometry and localSize", () => {
+  const tree = {
+    id: "r", name: "pc", type: "FRAME",
+    absoluteBoundingBox: { x: 0, y: 0, width: 228, height: 228 },
+    children: [{
+      id: "btn", name: "btn/播放按钮", type: "FRAME",
+      absoluteBoundingBox: { x: 0, y: 0, width: 228, height: 228 },
+      children: [{
+        id: "tri", name: "Polygon 34", type: "REGULAR_POLYGON",
+        rotation: -0.5235987833701112,
+        size: { x: 49.785186767578125, y: 49.785186767578125 },
+        relativeTransform: [[0.8660253882408142, 0.5, 80], [-0.5, 0.8660253882408142, 105]],
+        fillGeometry: [{
+          path: "M23.0739 3.15C23.8822 1.75 25.903 1.75 26.7112 3.15L44.6316 34.1889Z",
+          windingRule: "NONZERO",
+        }],
+        fills: [{ type: "SOLID", visible: true, color: { r: 1, g: 1, b: 1, a: 1 } }],
+        cornerRadius: 2.1,
+        absoluteBoundingBox: { x: 80, y: 80, width: 68, height: 68 },
+        children: [],
+      }],
+    }],
+  };
+  const inv = buildInventory(tree, { requestedNodeId: "r" });
+  const tri = inv.nodes.find((n) => n.id === "tri");
+  assert.equal(tri.status, "skipped");
+  assert.equal(tri.why, "art-fragment");
+  assert.deepEqual(tri.localSize, { w: 49.785186767578125, h: 49.785186767578125 });
+  assert.equal(tri.fillGeometry[0].path, "M23.0739 3.15C23.8822 1.75 25.903 1.75 26.7112 3.15L44.6316 34.1889Z");
+  assert.deepEqual(tri.relativeTransform, [[0.8660253882408142, 0.5, 80], [-0.5, 0.8660253882408142, 105]]);
+  assert.equal(tri.style.radius, 2.1);
+});
+
 test("结构硬闸：@sec 没靶、空滑动、ind 无轮播会红；光 btn 和 unknown 不红", () => {
   const node = (id, type, name, children = [], extra = {}) => ({
     id, type, name, children,

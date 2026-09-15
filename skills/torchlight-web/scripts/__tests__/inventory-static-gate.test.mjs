@@ -2669,7 +2669,16 @@ test('play button 188 filling 228 is red', () => {
           pageBox: { x: 1858, y: 852, w: 124, h: 124 },
           sliceExport: { box: { x: 1826, y: 820, w: 188, h: 188 }, file: 'play-bg.png' },
         },
-        { id: 'play-tri', status: 'skipped', name: 'Polygon 34', parentId: 'play', paintAsFragment: true },
+        {
+          id: 'play-tri',
+          status: 'skipped',
+          name: 'Polygon 34',
+          parentId: 'play',
+          paintAsFragment: true,
+          rotation: -0.5235987833701112,
+          localSize: { w: 49.785186767578125, h: 49.785186767578125 },
+          fillGeometry: [{ path: 'M23.0739 3.15C23.8822 1.75 25.903 1.75 26.7112 3.15L44.6316 34.1889Z', windingRule: 'NONZERO' }],
+        },
       ],
     },
     productScroll: {
@@ -2689,6 +2698,8 @@ test('play button 188 filling 228 is red', () => {
         objectFit: 'fill',
         fragmentPresent: true,
         polygonVertex: 'up',
+        polygonRotation: null,
+        polygonPath: 'polygon(50% 0%, 0% 100%, 100% 100%)',
         clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)',
       },
     
@@ -2699,7 +2710,9 @@ test('play button 188 filling 228 is red', () => {
   assert.ok(red.problems.some((line) => line.includes('play-slice-owner-clipped')), (red.problems || []).join('\n'));
   assert.ok(red.problems.some((line) => line.includes('play-slice-placement-mismatch')), (red.problems || []).join('\n'));
   assert.ok(red.problems.some((line) => line.includes('play-slice-object-fit-fill')), (red.problems || []).join('\n'));
-  assert.ok(red.problems.some((line) => line.includes('play-triangle-not-right')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('play-triangle-not-source-path')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('play-triangle-path-mismatch')), (red.problems || []).join('\n'));
+  assert.ok(red.problems.some((line) => line.includes('play-triangle-rotation-mismatch')), (red.problems || []).join('\n'));
 });
 
 test('play slice listed as pageBox but painted larger keeps object-fit none', () => {

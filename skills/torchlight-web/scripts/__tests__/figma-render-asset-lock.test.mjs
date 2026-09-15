@@ -165,16 +165,34 @@ test('ind/ instances consume the selected componentId slice instead of inventing
   assert.match(renderer, /data-ind-variant-slice', 'componentId'/);
   assert.match(renderer, /ind-variant-slice-complete/);
   assert.match(renderer, /data-paint-as-fragment', 'art-fragment'/);
+  assert.match(renderer, /fitToBox: this\._isIndicatorOwner\(n, pfx\) && !!String\(__u\(n && n\.componentId\) \|\| ''\) && !this\._assetRec\(nid, __base\)/);
+  assert.match(renderer, /Keep the mapping narrow/);
+  assert.match(renderer, /it cannot promote arbitrary unknown\/skipped nodes to pixels/);
 });
 
-test('REGULAR_POLYGON play triangle uses non-rect shadow/clip mapping, not a CSS rectangle', () => {
+test('REGULAR_POLYGON play triangle uses source fillGeometry, not a guessed clip-path', () => {
   assert.match(renderer, /REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1/);
   assert.match(renderer, /polygon\(50% 14%, 12% 82%, 88% 82%\)/);
   assert.match(renderer, /data-shape-polygon-vertex/);
   assert.match(renderer, /skipRotationForLocalClip/);
+  assert.match(renderer, /_sourceFillPath/);
+  assert.match(renderer, /figma-fill-geometry/);
+  assert.match(renderer, /source-path-matrix/);
   assert.match(renderer, /drop-shadow/);
+  assert.doesNotMatch(renderer, /playTriangleClip/);
   assert.doesNotMatch(renderer, /rotate\(90deg\)/);
   assert.doesNotMatch(renderer, /polygon\(100% 50%, 0% 0%, 0% 100%\)/);
+});
+
+test('rotated parent with baked img/ child slice does not rotate twice', () => {
+  assert.match(renderer, /skipRotationForBakedChildSlice/);
+  assert.match(renderer, /child-slice-baked/);
+  assert.match(renderer, /!skipRotationForBakedChildSlice/);
+});
+
+test('GROUP maskChildren clip IMAGE siblings to the mask box', () => {
+  assert.match(renderer, /data-owner-mask-clip', 'source-mask-children'/);
+  assert.match(renderer, /n\.maskChildren/);
 });
 
 test('collapsed webp under 2KB falls back to pngFile', () => {
@@ -442,7 +460,7 @@ test('section stage clip is sourced from Figma clipsContent, not a global defaul
 test('baked image render spill exports and verifies the render canvas, never the layout box', () => {
   assert.match(assetPipeline, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
   assert.match(assetPipeline, /pageAlignedExportBox/);
-  assert.match(assetPipeline, /pageBoxExport = wholeFrameSlice && !softSpill/);
+  assert.match(assetPipeline, /pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour/);
   assert.match(assetPipeline, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner/);
   assert.match(coverageGate, /if \(rec\?\.exportBounds !== 'render'\) problems\.push/);
   assert.match(coverageGate, /exportBox!=renderBox/);

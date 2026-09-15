@@ -743,6 +743,9 @@ test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as pain
       parentId: "btn-play",
       box: { x: 80, y: 80, w: 68, h: 68 },
       rotation: -0.52,
+      localSize: { w: 49.785, h: 49.785 },
+      relativeTransform: [[0.866, 0.5, 80], [-0.5, 0.866, 105]],
+      fillGeometry: [{ path: "M23.07 3.15L44.63 34.19L6.97 34.19Z", windingRule: "NONZERO" }],
       style: { fills: [{ type: "SOLID", visible: true, color: { r: 1, g: 1, b: 1, a: 1 } }] },
     },
     {
@@ -758,6 +761,9 @@ test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as pain
   const triangle = restored.find((node) => node.id === "poly-34");
   assert.equal(triangle.paintAsFragment, true);
   assert.equal(triangle.status, "skipped");
+  assert.equal(triangle.fillGeometry[0].path, "M23.07 3.15L44.63 34.19L6.97 34.19Z");
+  assert.equal(triangle.localSize.w, 49.785);
+  assert.equal(triangle.relativeTransform[0][2], 80);
   assert.equal(restored.some((node) => node.id === "mask-group"), false);
 });
 

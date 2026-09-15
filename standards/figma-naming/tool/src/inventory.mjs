@@ -520,6 +520,40 @@ function mixImageLeaf(node) {
   return hasImageFill(node) && !(node.children || []).length;
 }
 
+function sourceContourOf(node) {
+  const type = String(node?.type || "").toUpperCase();
+  if (type !== "REGULAR_POLYGON" && type !== "STAR" && type !== "VECTOR"
+    && type !== "BOOLEAN_OPERATION" && type !== "ELLIPSE" && type !== "LINE") {
+    return null;
+  }
+  const out = {};
+  const w = Number(node.size?.x);
+  const h = Number(node.size?.y);
+  if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+    out.localSize = { w, h };
+  }
+  const paths = [];
+  for (const geom of Array.isArray(node.fillGeometry) ? node.fillGeometry : []) {
+    const path = typeof geom?.path === "string" ? geom.path.trim() : "";
+    if (path) paths.push({ path, windingRule: geom.windingRule || "NONZERO" });
+  }
+  if (paths.length) out.fillGeometry = paths;
+  const rt = node.relativeTransform;
+  if (Array.isArray(rt) && rt.length === 2
+    && Array.isArray(rt[0]) && rt[0].length === 3
+    && Array.isArray(rt[1]) && rt[1].length === 3
+    && rt[0].every((n) => Number.isFinite(Number(n)))
+    && rt[1].every((n) => Number.isFinite(Number(n)))) {
+    out.relativeTransform = [
+      [Number(rt[0][0]), Number(rt[0][1]), Number(rt[0][2])],
+      [Number(rt[1][0]), Number(rt[1][1]), Number(rt[1][2])],
+    ];
+  }
+  const pointCount = Number(node.pointCount ?? node.pointcount);
+  if (Number.isFinite(pointCount) && pointCount > 0) out.pointCount = pointCount;
+  return Object.keys(out).length ? out : null;
+}
+
 function styleOf(node) {
   const out = {};
   if (Array.isArray(node.fills) && node.fills.length) out.fills = node.fills;
@@ -808,6 +842,8 @@ function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = 
       }
     }
     entry.rotation = node.rotation ?? 0;
+    const sourceContour = sourceContourOf(node);
+    if (sourceContour) Object.assign(entry, sourceContour);
     if (node.clipsContent === true) entry.clipsContent = true;
     if (node.isMask !== undefined) entry.isMask = node.isMask;
     if (node.maskType !== undefined) entry.maskType = node.maskType;

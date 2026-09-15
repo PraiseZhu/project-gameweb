@@ -254,7 +254,7 @@ export function unifyGroupFitScales(members = []) {
    未提供的组合回退本表、再回退 1。 */
 /* 双真源 locale 缩放：zh-CN 恒 1（保 Figma 静态指标）。非 zh-CN 结构/owner/位置仍按 Figma，
    视觉字号/字重/行高按实测基线的通用语言规则。同一 fontWeight 的标题按【源字号档】
-   走不同缩放——卡片标题(源60档) ja/zh-TW 0.833、en/ko 1.0；角色技能标题(源25档)全语言 1.0。
+   走不同缩放——卡片标题(源60档) ja 0.833、zh-TW/en/ko 1.0；角色技能标题(源25档)全语言 1.0。
    故必须按 tier × language 二维查表，不能只用 fontWeight 分 title/body。
    证据 artifacts/official-tier-ratio-20260810.json（同组件跨语言视觉比，stage-invariant；私有）。
    值 = 线上该语言视觉字号 / 线上 zh-CN 视觉字号（本地 2× 高清稿，同比例作用于任意 Figma 源档）。
@@ -336,10 +336,10 @@ export function officialTargetDesignSize({ sourceFontSize, sourceLineHeight = nu
   const tier = classifySourceSizeTier({ fontWeight, sourceFontSize: src, role, ancestorNames, name });
   const ratio = localeFontScale({ role, language: lang, fontWeight, sourceFontSize: src, ancestorNames, name });
   const fontSize = src * ratio;
-  /* 行高：默认同比缩放保 leading；但官网对 ja/zh-TW 的卡片标题档把行高收紧到≈字号（1.0×），
-     与 zh 的 1.2× 不同。仅 card-title 档 ja/zh-TW 应用收紧，其余按源行高同比。 */
+  /* 行高：默认同比缩放保 leading；官网对 ja 的卡片标题档把行高收紧到≈字号（1.0×），
+     与 zh 的 1.2× 不同。仅 card-title 档 ja 应用收紧，zh-TW 与源同比。 */
   let lineHeight = Number.isFinite(Number(sourceLineHeight)) && Number(sourceLineHeight) > 0 ? Number(sourceLineHeight) * ratio : null;
-  if (tier === 'card-title' && (lang === 'ja' || lang === 'zh-TW')) lineHeight = fontSize;
+  if (tier === 'card-title' && lang === 'ja') lineHeight = fontSize;
   return { fontSize, lineHeight, ratio, tier, kind: tier === 'body' ? 'body' : 'title', role, language: lang };
 }
 export function assessLocaleVisualLevel({ role = 'unknown', language = 'zh-CN', fontWeight = 400, sourceFontSize = null, stageZoom = null, visualFontPx = null, tolerance = 1.5, copyStatus = null, fitScale = null, ancestorNames = [], name = '' } = {}) {

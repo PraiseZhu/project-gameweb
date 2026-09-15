@@ -218,7 +218,10 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /heroSlot && Number\(heroSlot\.designHeight\) > 0/);
   assert.match(render, /data-hero-bg-gap/);
   assert.match(render, /data-hero-bg-follow/);
-  assert.match(render, /backgroundHeroShift \? afterHeroBackgroundShift/);
+  assert.match(render, /backgroundHeroShift \|\| pageStageMode/);
+  assert.match(render, /data-hero-later-chrome-follow/);
+  assert.match(render, /after-hero-pagebox/);
+  assert.match(render, /ancestorFollowsHeroY/);
   assert.match(render, /data-later-cover-window', 'later-stage'/);
   assert.match(render, /data-later-layout-shift/);
   assert.doesNotMatch(render, /const laterShift = heroLayoutOffsetDesign > 0 \? heroLayoutOffsetDesign : 0/);

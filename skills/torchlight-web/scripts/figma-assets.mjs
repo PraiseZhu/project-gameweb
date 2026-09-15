@@ -403,7 +403,23 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
           (Number(rb.w) > Number(pageOrBox.w) + 0.5 && Number(rb.h) > Number(pageOrBox.h) + 0.5)
           || (hairlineOwner && (Number(rb.w) > Number(pageOrBox.w) + 0.5 || Number(rb.h) > Number(pageOrBox.h) + 0.5))
         );
-      const pageBoxExport = wholeFrameSlice && !softSpill;
+      /* Rotated `img/` (left/right slider arrow) keeps a squat pageBox AABB
+         while same-space renderBox still holds the long baked contour.
+         Export that render canvas; stretching the squat PNG into the tall
+         host is not a contour fix. Unrotated full-bleed plates stay pageBox.
+         Require a squat AABB (one axis less than half the other) so a slightly
+         larger title renderBox (240×340 around 200×300) is not stolen. */
+      const squatPageBox = Number(pageOrBox?.w) > 0 && Number(pageOrBox?.h) > 0
+        && (Number(pageOrBox.h) * 2 < Number(pageOrBox.w) || Number(pageOrBox.w) * 2 < Number(pageOrBox.h));
+      const rotatedLocalContour = pfx === 'img'
+        && sameSpaceInk
+        && squatPageBox
+        && Number(rb.w) > 0 && Number(rb.h) > 0
+        && (
+          (Number(rb.h) > Number(pageOrBox.h) + 0.5 && Number(rb.w) + 2 >= Number(pageOrBox.w))
+          || (Number(rb.w) > Number(pageOrBox.w) + 0.5 && Number(rb.h) + 2 >= Number(pageOrBox.h))
+        );
+      const pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour;
       const listedBounds = pageBoxExport ? 'box' : n.sliceExport?.bounds;
       const exportBounds = listedBounds
         || (softSpill ? 'render' : 'box');

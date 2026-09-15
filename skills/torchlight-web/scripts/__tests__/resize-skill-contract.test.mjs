@@ -702,7 +702,10 @@ test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stay
   assert.doesNotMatch(renderSrc, /const laterShift = heroLayoutOffsetDesign > 0 \? heroLayoutOffsetDesign : 0/);
   assert.doesNotMatch(renderSrc, /Number\(this\._viewportWidth\) > 1920/);
   assert.doesNotMatch(renderSrc, /Number\(this\._viewportWidth\) < Number\(this\._frameWidth\) - 0\.5/);
-  assert.match(renderSrc, /backgroundHeroShift \? afterHeroBackgroundShift/);
+  assert.match(renderSrc, /backgroundHeroShift \|\| pageStageMode/);
+  assert.match(renderSrc, /data-hero-later-chrome-follow/);
+  assert.match(renderSrc, /after-hero-pagebox/);
+  assert.match(renderSrc, /ancestorFollowsHeroY/);
   assert.doesNotMatch(renderSrc, /laterSlotHeight = !isHeroStage && !pageStageMode && heroSlot && Number\(heroSlot\.designHeight\) > 0\s*\n\s*\? Math\.max\(_snapH, Number\(heroSlot\.designHeight\)\)/);
   assert.match(renderSrc, /_abutHeroJoinCss/);
   assert.match(renderSrc, /data-hero-join-css', 'abut'/);

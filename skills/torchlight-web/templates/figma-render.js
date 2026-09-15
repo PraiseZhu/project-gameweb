@@ -689,6 +689,86 @@
     return null;
   },
 
+  /** Inventory fillGeometry path in the node's unrotated localSize. */
+  _sourceFillPath(n) {
+    const rows = Array.isArray(n && n.fillGeometry) ? n.fillGeometry : [];
+    for (const row of rows) {
+      const path = typeof row === 'string' ? row : (row && row.path);
+      if (typeof path === 'string' && path.trim()) return path.trim();
+    }
+    return '';
+  },
+
+  _dropShadowFilter(glow) {
+    if (!glow) return '';
+    const c = glow.color || {};
+    const a = c.a == null ? 1 : c.a;
+    const blur = Number(glow.radius) || 0;
+    return 'drop-shadow(0 0 ' + blur + 'px rgba('
+      + Math.round((c.r || 0) * 255) + ','
+      + Math.round((c.g || 0) * 255) + ','
+      + Math.round((c.b || 0) * 255) + ',' + a + '))';
+  },
+
+  /** Paint inventory fillGeometry in localSize, then place with relativeTransform. */
+  _paintSourceFillGeometry(el, n, fillCss, glowFilter) {
+    const sourcePath = this._sourceFillPath(n);
+    const localW = Number(n.localSize && n.localSize.w);
+    const localH = Number(n.localSize && n.localSize.h);
+    if (!(sourcePath && Number.isFinite(localW) && localW > 0 && Number.isFinite(localH) && localH > 0)) {
+      el.setAttribute('data-shape-polygon-missing', sourcePath ? 'local-size' : 'fill-geometry');
+      return false;
+    }
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + localW + ' ' + localH);
+    svg.setAttribute('overflow', 'visible');
+    svg.style.position = 'absolute';
+    svg.style.display = 'block';
+    svg.style.width = localW + 'px';
+    svg.style.height = localH + 'px';
+    const rt = Array.isArray(n.relativeTransform) ? n.relativeTransform : null;
+    const parentBox = n.parentBox || {};
+    const a = Number(rt && rt[0] && rt[0][0]);
+    const b = Number(rt && rt[0] && rt[0][1]);
+    const c = Number(rt && rt[1] && rt[1][0]);
+    const d = Number(rt && rt[1] && rt[1][1]);
+    const tx = Number(rt && rt[0] && rt[0][2]);
+    const ty = Number(rt && rt[1] && rt[1][2]);
+    const aabbLeft = Number(parentBox.x);
+    const aabbTop = Number(parentBox.y);
+    if (Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c)
+      && Number.isFinite(d) && Number.isFinite(tx) && Number.isFinite(ty)
+      && Number.isFinite(aabbLeft) && Number.isFinite(aabbTop)) {
+      svg.style.left = (tx - aabbLeft) + 'px';
+      svg.style.top = (ty - aabbTop) + 'px';
+      svg.style.transform = 'matrix(' + a + ', ' + c + ', ' + b + ', ' + d + ', 0, 0)';
+      svg.style.transformOrigin = '0 0';
+      svg.setAttribute('data-shape-fill-geometry', 'source-path-matrix');
+    } else {
+      svg.style.left = '50%';
+      svg.style.top = '50%';
+      svg.style.transform = 'translate(-50%, -50%)';
+      svg.setAttribute('data-shape-fill-geometry', 'source-path-centered');
+    }
+    const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    pathEl.setAttribute('d', sourcePath);
+    pathEl.setAttribute('fill', fillCss);
+    svg.appendChild(pathEl);
+    el.appendChild(svg);
+    el.style.background = 'transparent';
+    el.style.overflow = 'visible';
+    if (glowFilter) el.style.filter = glowFilter;
+    el.setAttribute('data-shape-polygon', 'triangle');
+    el.setAttribute('data-shape-polygon-vertex', 'source-path');
+    if (typeof n.rotation === 'number') {
+      el.setAttribute('data-shape-polygon-rotation', String(n.rotation));
+    }
+    el.setAttribute('data-shape-polygon-source', 'figma-fill-geometry');
+    el.setAttribute('data-shape-polygon-path', sourcePath);
+    el.removeAttribute('data-shape-approx');
+    return true;
+  },
+
   /** fills 里有没有渐变/图片（需要占位而不是纯色） */
   _fillKind(fills) {
     if (!Array.isArray(fills)) return 'none';
@@ -1246,7 +1326,7 @@
     _officialTargetDesignSize({ sourceFontSize, sourceLineHeight = null, role = 'unknown', language = 'zh-CN', fontWeight = 400, ancestorNames = [], name = '' } = {}) {
     /* 镜像 scripts/lib/translation/typography-policy.mjs#officialTargetDesignSize（tier-aware）。
        证据 artifacts/official-tier-ratio-20260810.json：同一 fw700 标题按【源字号档】分缩放——
-       卡片标题(源>40) ja/zh-TW 0.833、en/ko 1.0；技能/小节标题(源<=40)全语言 1.0；正文 fw<600
+       卡片标题(源>40) ja 0.833、zh-TW/en/ko 1.0；技能/小节标题(源<=40)全语言 1.0；正文 fw<600
        ja/en/ko 0.8、zh-TW 1.0。zh-CN 返回 null（不动、保 Figma）。en 标题字重压 400 是 font
        routing 的字体缺口，不在此处处理。btn/ 走 heading：清单源字号，只在书面 max 放不下时才收。 */
     const lang = String(language || 'zh-CN');
@@ -1269,9 +1349,9 @@
     const row = SCALE[tier] || {};
     const ratio = Number.isFinite(row[lang]) ? row[lang] : 1;
     const fontSize = src * ratio;
-    /* ja/zh-TW 卡片标题档官网把行高收紧到≈字号（1.0×），其余按源行高同比。 */
+    /* ja 卡片标题档官网把行高收紧到≈字号（1.0×），zh-TW 与源同比。 */
     let lineHeight = Number.isFinite(Number(sourceLineHeight)) && Number(sourceLineHeight) > 0 ? Number(sourceLineHeight) * ratio : null;
-    if (tier === 'card-title' && (lang === 'ja' || lang === 'zh-TW')) lineHeight = fontSize;
+    if (tier === 'card-title' && lang === 'ja') lineHeight = fontSize;
     return { fontSize, lineHeight, ratio, tier, kind: tier === 'body' ? 'body' : 'title', role, language: lang };
   },
 
@@ -2883,7 +2963,10 @@
        y, so the last painted bg slice ends early and the shifted tail looks like
        a short background / white card. Keep the first-screen KV at page origin;
        only nodes whose Figma y is below the first section bottom receive the
-       same layoutOffsetDesign. Do not translate the whole paint layer. */
+       same layoutOffsetDesign. Do not translate the whole paint layer.
+       Page-chrome siblings under 页面内容 (later btn/, not nested in a sec/)
+       share that same offset; nested section children already moved with the
+       stage and must not take it twice. */
     const heroSectionBottomY = heroSlot
       ? Number(heroSlot.firstSectionY != null ? heroSlot.firstSectionY : (sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && sections[heroSlot.sectionId].meta.y) || pageOriginY)
         + Number((sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && sections[heroSlot.sectionId].meta.height) || heroSlot.heroHeight || 0)
@@ -5370,14 +5453,26 @@
               area: Math.max(1, (box.w ?? 0) * sourceH),
             });
           }
-          /* Page-level long bg does not live in an after-hero stage, so it
-             must follow layoutOffsetDesign itself. Section-nested `bg/pc背景*`
+          /* Page-level later siblings do not live in an after-hero stage, so they
+             must follow layoutOffsetDesign themselves. Section-nested `bg/pc背景*`
              already moved with the stage — shifting again opens the freeze
-             join seam (extra>0) or pulls later art off its UI (extra<0). */
-          const afterHeroShift = backgroundHeroShift ? afterHeroBackgroundShift(n) : 0;
-          if (afterHeroShift !== 0 && (pfx === 'bg' || /^bg(?:\/|$)/i.test(String(n.name || '')))) {
+             join seam (extra>0) or pulls later art off its UI (extra<0).
+             After-hero pageChrome (a later btn/ under 页面内容, sibling of the
+             last sec/) shares the same offset as later sections; nested
+             children of an already-shifted owner must not take it twice. */
+          const ancestorFollowsHeroY = !!(parent && parent.el && parent.el.closest
+            && parent.el.closest('[data-hero-bg-follow-y]'));
+          const afterHeroShift = (backgroundHeroShift || pageStageMode) && !ancestorFollowsHeroY
+            ? afterHeroBackgroundShift(n)
+            : 0;
+          if (afterHeroShift !== 0) {
             heroUiTop += afterHeroShift;
             el.setAttribute('data-hero-bg-follow-y', String(afterHeroShift));
+            if (pfx === 'bg' || /^bg(?:\/|$)/i.test(String(n.name || ''))) {
+              el.setAttribute('data-hero-bg-follow', 'after-hero-slices');
+            } else {
+              el.setAttribute('data-hero-later-chrome-follow', 'after-hero-pagebox');
+            }
           }
           if (!parent && !pinViewport && !listedHeroArt && !fullBleedHeroArt
               && windowStageShiftX > 0.5
@@ -5664,6 +5759,15 @@
           } else {
             el.style.overflow = 'hidden';
           }
+        }
+        /* Figma GROUP masks clip siblings to the mask child's box. The mask
+           node itself is skipped (`isMask`), so the owner must keep that clip
+           or IMAGE children paint at their unclipped source size and spill
+           past the neighboring frame. */
+        if (n.maskChildren && (Array.isArray(n.maskChildren) ? n.maskChildren.length : true)
+          && n.clipsContent !== true && !hscrollTrackClipRelease) {
+          el.style.overflow = 'hidden';
+          el.setAttribute('data-owner-mask-clip', 'source-mask-children');
         }
         if ((evidenceAttrs && evidenceAttrs['data-hscroll'] === 'y')
           || (pfx === 'scroll' && n.clipsContent === true && !(evidenceAttrs && evidenceAttrs['data-hscroll'] === 'x'))) {
@@ -6622,13 +6726,26 @@
              盒子 —— 09「更多」右箭头(1:850 REGULAR_POLYGON rotation=90°)因此没有转向。
              box 是未旋转布局框、AABB(absoluteRenderBounds)已是旋转后外框，所以这里
              只对**未切图**的节点施加 rotate 变换（切图 PNG 已烘焙旋转，不可再转）。
+             父级 FRAME 自己没切图、但子级 `img/` 切图已经带方向时，也不能再转父级，
+             否则下滑箭头 / 右滑箭头会被转两次。
              Figma 弧度逆时针为正、CSS 顺时针，取负。
-             REGULAR_POLYGON 播放三角的朝向由 clip-path 顶点决定，不能再叠
-             rotate：clip-path 在元素本地坐标，旋转会把 ▶ 拧成 ▲。 */
+             源 fillGeometry 已经是未旋转局部轮廓；再叠 CSS rotate 会把路径拧第二次。
+             dropmenu 指示器仍用本地 clip-path，不能叠 rotate。 */
           const skipRotationForLocalClip = n.type === 'REGULAR_POLYGON';
-          if (!assetUrl && !skipRotationForLocalClip && typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4) {
+          const skipRotationForBakedChildSlice = !assetUrl
+            && typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4
+            && list.some((child) => {
+              if (!child || String(child.parentId) !== String(nid)) return false;
+              const childName = String(child.name || '');
+              if (!/^img\s*[\/／]/i.test(childName) && String(child.role || '') !== 'img') return false;
+              return !!this._assetRecForNode(child, __base);
+            });
+          if (!assetUrl && !skipRotationForLocalClip && !skipRotationForBakedChildSlice
+            && typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4) {
             el.style.transform = (el.style.transform ? el.style.transform + ' ' : '') + 'rotate(' + (-n.rotation) + 'rad)';
             el.setAttribute('data-rotated-shape', String(n.rotation));
+          } else if (skipRotationForBakedChildSlice) {
+            el.setAttribute('data-rotated-shape-skipped', 'child-slice-baked');
           }
           /* ═══ 「有图用图，没图用 CSS，只有 IMAGE 填充缺图才算缺」 ═══
              判据是**资产清单里有没有这个节点**，不是在这儿再判一遍"该不该切图"。
@@ -6681,37 +6798,27 @@
              探针会数。有资产（切了图）的走 <img>，轮廓在 PNG 里是准的，不标。 */
           const NONRECT_T = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1 };
           if (NONRECT_T[n.type] && !assetUrl) el.setAttribute('data-shape-approx', 'rect');
-          /* REGULAR_POLYGON(3 点=三角形)未切图时，用 clip-path 画出稿上的 ▶。
-             Figma 正三角形默认尖朝上；稿 rotation=-30°（-π/6）把它转到尖朝右并
-             略上扬。clip-path 在元素本地坐标，不能再叠 CSS rotate，否则 ▶ 拧成 ▲。
-             圆角/外发光吃 style.radius 与 DROP_SHADOW，禁止直角尖刀。 */
+          /* REGULAR_POLYGON(3 点=三角形)未切图时：dropmenu 指示器仍用上/下 clip-path；
+             播放三角必须吃清单 fillGeometry（局部未旋转轮廓 + 圆角已烘焙进路径）。
+             外接 AABB 不是源尺寸。源路径画在 localSize 上，再对齐到旋转后 AABB。
+             不能把源路径当 clip-path 套在 AABB 上，也不能给 AABB 设 border-radius。 */
           const _pc = Number(n.pointCount ?? n.pointcount ?? 3);
           if (n.type === 'REGULAR_POLYGON' && !assetUrl && (!Number.isFinite(_pc) || _pc === 3)) {
-             /* Polygon 37 is the authored dropmenu indicator. Its source
-                geometry points upward in the on variant (open menu); do not
-                replace it with a right-facing chevron. */
              const dropmenuState = el.closest && el.closest('[data-dropmenu-state]')?.getAttribute('data-dropmenu-state');
-             el.style.clipPath = dropmenuState === 'off'
-               ? 'polygon(50% 86%, 12% 18%, 88% 18%)'
-               : 'polygon(50% 14%, 12% 82%, 88% 82%)';
-             const radius = Number(st.radius);
-             if (Number.isFinite(radius) && radius > 0) {
-               el.style.borderRadius = radius + 'px';
-             }
              const glow = (st.effects || []).find((fx) => fx && fx.visible !== false && fx.type === 'DROP_SHADOW');
-             if (glow) {
-               const c = glow.color || {};
-               const a = c.a == null ? 1 : c.a;
-               const blur = Number(glow.radius) || 0;
-               el.style.filter = 'drop-shadow(0 0 ' + blur + 'px rgba('
-                 + Math.round((c.r || 0) * 255) + ','
-                 + Math.round((c.g || 0) * 255) + ','
-                 + Math.round((c.b || 0) * 255) + ',' + a + '))';
+             const glowFilter = this._dropShadowFilter(glow);
+             if (dropmenuState === 'off' || dropmenuState === 'on') {
+               el.style.clipPath = dropmenuState === 'off'
+                 ? 'polygon(50% 86%, 12% 18%, 88% 18%)'
+                 : 'polygon(50% 14%, 12% 82%, 88% 82%)';
+               el.setAttribute('data-shape-polygon', 'triangle');
+               el.setAttribute('data-shape-polygon-vertex', dropmenuState === 'off' ? 'down' : 'up');
+               el.setAttribute('data-shape-polygon-source', 'figma-regular-polygon');
+               if (glowFilter) el.style.filter = glowFilter;
+               el.removeAttribute('data-shape-approx');
+             } else {
+               this._paintSourceFillGeometry(el, n, this._solidFill(st.fills) || '#fff', glowFilter);
              }
-             el.setAttribute('data-shape-polygon', 'triangle');
-             el.setAttribute('data-shape-polygon-vertex', 'right');
-             el.setAttribute('data-shape-polygon-source', 'figma-regular-polygon');
-             el.removeAttribute('data-shape-approx');
            }
            /* BOOLEAN/VECTOR btn arrows are composite contours. Inventing CSS
               chevrons or diamonds is forbidden. A missing slice stays a
@@ -6838,8 +6945,9 @@
                  render-bound export geometry instead of a second 100% fill path. */
               const img = this._mountOwnerSliceImg(el, entry.url, box, exportBox, {
                 alt: n.name ?? '',
-                eager: !!__indComponentFallback,
+                eager: !!__indComponentFallback || this._isIndicatorOwner(n, pfx),
                 sliceBox: (n.sliceExport && n.sliceExport.box) || null,
+                fitToBox: this._isIndicatorOwner(n, pfx) && !!String(__u(n && n.componentId) || '') && !this._assetRec(nid, __base),
               });
               if (el.getAttribute('data-shadow-via') === 'asset-baked') img.setAttribute('data-shadow-source', 'asset');
               if (el.getAttribute('data-blur-via') === 'asset-baked') img.setAttribute('data-blur-source', 'asset');
@@ -6867,7 +6975,7 @@
               el.setAttribute('data-asset-pending', pfx || kind);
               el.title = String(n.name ?? '');
             }
-          } else if (kind === 'solid') {
+          } else if (kind === 'solid' && el.getAttribute('data-shape-polygon-source') !== 'figma-fill-geometry') {
             /* Modal roots are sheets that host overlay art. A solid white
                fill on that root paints over the page and reads as a blank
                phone sheet. Keep the fill off; the named overlay art is the

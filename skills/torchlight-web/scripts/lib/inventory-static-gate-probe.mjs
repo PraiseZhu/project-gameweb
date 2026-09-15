@@ -477,6 +477,8 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
       objectFit: img ? img.style.objectFit : null,
       fragmentPresent: playSpec.fragmentId ? !!find(playSpec.fragmentId) : null,
       polygonVertex: playSpec.fragmentId ? (find(playSpec.fragmentId)?.getAttribute('data-shape-polygon-vertex') || null) : null,
+      polygonRotation: playSpec.fragmentId ? (find(playSpec.fragmentId)?.getAttribute('data-shape-polygon-rotation') || null) : null,
+      polygonPath: playSpec.fragmentId ? (find(playSpec.fragmentId)?.getAttribute('data-shape-polygon-path') || null) : null,
       clipPath: playSpec.fragmentId ? (find(playSpec.fragmentId)?.style.clipPath || null) : null,
     } : null;
     const layerOf = (id) => {

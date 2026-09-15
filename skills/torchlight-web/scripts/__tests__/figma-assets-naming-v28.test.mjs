@@ -580,7 +580,7 @@ test('exportBox is page-aligned, never canvas renderBox', () => {
 
 test('whole-frame box export requests use_absolute_bounds=true', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
-  assert.match(src, /pageBoxExport = wholeFrameSlice && !softSpill/);
+  assert.match(src, /pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour/);
   assert.match(src, /if \(chunk\[0\]\.exportBounds !== 'render'\) q\.set\('use_absolute_bounds', 'true'\)/);
   const timeBg = pickSliceNodes({
     schema: 'torchlight-ready-platform-truth/v1',
@@ -608,6 +608,59 @@ test('whole-frame box export requests use_absolute_bounds=true', () => {
   }).find((pick) => pick.nodeId === 'img-hero');
   assert.equal(timeBg?.exportBounds, 'box');
   assert.deepEqual(timeBg?.exportBox, { x: 10, y: 20, w: 200, h: 300 });
+});
+
+test('rotated img/ arrow exports same-space render canvas, not squat pageBox AABB', () => {
+  const picks = pickSliceNodes({
+    schema: 'torchlight-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    platforms: {
+      pc: {
+        sections: {
+          'sec:carousel': {
+            nodes: [
+              {
+                id: 'btn-right',
+                type: 'FRAME',
+                name: 'btn/右滑动箭头',
+                status: 'determined',
+                role: 'btn',
+                pageBox: { x: 2995, y: 5396, w: 102, h: 120 },
+                box: { x: 2995, y: 5396, w: 102, h: 120 },
+                rotation: -Math.PI,
+              },
+              {
+                id: 'img-arrow',
+                type: 'FRAME',
+                name: 'img/箭头',
+                status: 'determined',
+                role: 'img',
+                parentId: 'btn-right',
+                pageBox: { x: 742.572, y: 5430.286, w: 103.063, h: 50.061 },
+                box: { x: 742.572, y: 5430.286, w: 103.063, h: 50.061 },
+                renderBox: { x: 743, y: 5403.785, w: 102, h: 103.063 },
+                inkBox: { x: 742.572, y: 5403.785, w: 103.063, h: 103.063 },
+                rotation: 0,
+                sliceExport: {
+                  bounds: 'render',
+                  scale: 1,
+                  format: 'png',
+                  file: 'img-arrow.png',
+                  box: { x: 742.572, y: 5430.286, w: 103.063, h: 50.061 },
+                },
+                style: { fills: [] },
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+  const arrow = picks.find((pick) => pick.nodeId === 'img-arrow');
+  assert.equal(arrow?.exportBounds, 'render');
+  assert.ok(arrow.exportBox.h > 90);
+  assert.ok(arrow.exportBox.h > arrow.box.h);
+  assert.equal(arrow.exportBox.y, 5403.785);
 });
 
 test('hairline img/ with LAYER_BLUR exports same-space renderBox, not 0-height pageBox', () => {
