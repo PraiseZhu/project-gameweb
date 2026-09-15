@@ -1,6 +1,7 @@
 /* name-semantics + owner-model 的单元测试。【通用 Skill 层，纯函数，无 IO】
  * 跑法：node scripts/__tests__/name-semantics.test.mjs */
-import { parseLayerName, deriveRole, assetPolicyHint, bgScopeHint, auditNames, pageUsesIndicatorRole, collectUsedIndicatorComponentIds, KNOWN_ROLES, LEGACY_COMPATIBILITY_ROLES } from '../lib/figma-name-semantics.mjs';
+import { parseLayerName, deriveRole, assetPolicyHint, bgScopeHint, auditNames, pageUsesIndicatorRole, KNOWN_ROLES, LEGACY_COMPATIBILITY_ROLES } from '../lib/figma-name-semantics.mjs';
+import { collectUsedIndicatorComponentIds } from '../lib/indicator-component-ids.mjs';
 import { STRUCT_CONTRACT, checkStructContract, isPassthroughContainer, classifyBgScope, auditStructure } from '../lib/figma-owner-model.mjs';
 
 let pass = 0, fail = 0;

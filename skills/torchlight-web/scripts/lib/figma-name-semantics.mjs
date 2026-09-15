@@ -150,31 +150,6 @@ export function pageUsesIndicatorRole(truth) {
   return visit(truth);
 }
 
-/**
- * Component roots actually used by `ind/` owners on this page.
- * Asset delivery must verify these ids — never a hard-coded previous-file pair.
- */
-export function collectUsedIndicatorComponentIds(truth) {
-  const ids = new Set();
-  const seen = new Set();
-  const visit = (value) => {
-    const node = unwrapProvenance(value);
-    if (!node || typeof node !== 'object' || seen.has(node)) return;
-    seen.add(node);
-    if (Array.isArray(node)) {
-      node.forEach(visit);
-      return;
-    }
-    if (deriveRole(node).role === 'ind') {
-      const componentId = unwrapProvenance(node.componentId);
-      if (componentId) ids.add(String(componentId));
-    }
-    Object.values(node).forEach(visit);
-  };
-  visit(truth);
-  return [...ids];
-}
-
 export function assetPolicyHint(node) {
   const derived = deriveRole(node);
   if (derived.role === 'img' || derived.role === 'bg' || derived.role === 'kv') return { wantAsset: true, via: 'role:' + derived.role };

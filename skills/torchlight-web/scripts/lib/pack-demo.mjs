@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, realpathSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
-import { collectUsedIndicatorComponentIds } from './figma-name-semantics.mjs';
+import { collectUsedIndicatorComponentIds } from './indicator-component-ids.mjs';
 
 export const DEFAULT_PACK_BUDGET_BYTES = 15 * 1024 * 1024;
 export const DEFAULT_PACK_WEBP_QUALITY = 70;
