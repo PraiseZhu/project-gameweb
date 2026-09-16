@@ -33,6 +33,7 @@ import { implementationSnapshotFromModules } from '../../../standards/design-pol
 import { requireOrchestratorTicket } from './lib/orchestrator-ticket.mjs';
 import * as resizePolicy from './lib/resize/index.mjs';
 import * as typographyPolicy from './lib/translation/typography-policy.mjs';
+import { embedContentPackageLoader, normalizeContentRegion, writeContentPackage } from './lib/replaceable-content-package.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CHILD_DIR = join(resolve(SKILL_ROOT, '../..'), '_tmp', 'html-from-handoff-child');
@@ -233,6 +234,32 @@ function attachHandoffCopy(demoDir, truth, spec, inventories = {}) {
   };
 }
 
+function attachReplaceableContentPackage(payload, demoDir, inventories = {}, pc = null, mobile = null) {
+  try {
+    const manifestPath = join(demoDir, 'assets-manifest.json');
+    const assetsManifest = existsSync(manifestPath)
+      ? JSON.parse(readFileSync(manifestPath, 'utf8'))
+      : null;
+    const languages = pageLangsFromTruth(pc, mobile);
+    const packed = writeContentPackage(demoDir, {
+      inventories,
+      assetsManifest: assetsManifest?.assets || assetsManifest,
+      region: normalizeContentRegion(payload.contentRegion || 'cn'),
+      languages: languages.length ? languages : ['zh-CN'],
+    });
+    const indexPath = join(demoDir, 'index.html');
+    if (existsSync(indexPath)) {
+      writeFileSync(indexPath, embedContentPackageLoader(readFileSync(indexPath, 'utf8')));
+    }
+    payload.contentPackage = { ok: true, dir: packed.dir };
+    return payload;
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    payload.contentPackage = { ok: false, error: message };
+    return blockProductView(payload, 'replaceable content package red', [message]);
+  }
+}
+
 function attachSliceAssets(payload, demoDir, { reuseExisting = false } = {}) {
   try {
     runNode(ASSETS, ['--demo', demoDir, ...(reuseExisting ? ['--reuse-existing'] : [])], { timeout: 3600000 });
@@ -368,6 +395,7 @@ export function buildHtmlFromHandoff({
   staticGateProbe = null,
   pixelGateProbe = null,
   reuseExistingAssets = false,
+  region = 'cn',
 }) {
   const loaded = consumeReadyPack(handoffDir);
   if (loaded.error) return loaded.error;
@@ -401,6 +429,7 @@ export function buildHtmlFromHandoff({
     fingerprint: consume.fingerprint,
     consume,
     htmlVolume,
+    contentRegion: normalizeContentRegion(region),
     note: 'unknown 只画不接线。skipped 不画。preview-first 与清单对账绿之前禁止给人打开产品视图，禁止开 Interaction / Resize。',
     completionStandard: 'eat ready pack → write demo/index.html → preview-first must be green → inventory static gate must be green → policy mirror must be green → product viewport gate must be green (390 / 1440 ?product=1, section abut, no full-bleed child repaint) → pixel gate must be green (per-section screenshot of the existing page vs cropped Figma spec; over-threshold blocks, diffs in artifacts/stop1-pixel/) → then show QA index.html (toolbar included). ?product=1 is machine/screenshot only. Stop at Main static.',
   };
@@ -413,6 +442,7 @@ export function buildHtmlFromHandoff({
     attachSliceAssets(payload, demoDir, { reuseExisting: reuseExistingAssets });
     if (payload.ok === true) attachPreviewFirst(payload, demoDir);
   }
+  attachReplaceableContentPackage(payload, demoDir, inventories, pc, mobile);
   const afterInventory = attachInventoryStaticGate(payload, { handoffDir, demoDir, skipPreview, staticGateProbe });
   const afterPolicy = attachDesignPolicyMirror(afterInventory);
   return attachStop1FigmaPixelGate(afterPolicy, { handoffDir, demoDir, skipPreview, pixelGateProbe });
@@ -667,6 +697,7 @@ function main(argv = process.argv.slice(2)) {
     handoffDir: resolve(handoff),
     demoDir: resolve(demo),
     reuseExistingAssets: argv.includes('--reuse-existing'),
+    region: argOf(argv, '--region') || 'cn',
   });
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
   process.exit(result.ok ? 0 : 1);

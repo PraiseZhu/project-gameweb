@@ -32,6 +32,7 @@ export function cleanTree() {
       R("kv/角色@parallax=0.3", IMG_FILL),
       G("标题", [
         R("img/标题底纹", IMG_FILL),
+        R("img/[replaceable]模块2玩法截图", IMG_FILL),
         T("index.title", "夏日活动"),   // §3：TEXT 不需要前缀
       ]),
     ]),
@@ -121,6 +122,16 @@ export function dirtyTree() {
       T("控件内固定文案", "控件内固定文案", FIXED),       // N-TEXT-FIXED-SIZE（祖先链隔一层）
     ])]),
     INST("卡片实例", [R("小钻石 1", IMG_FILL)]),          // 实例内的 N-IMG-FILL-NO-NAME → 带 instance 归因
+    R("img/[Replaceable]错写", IMG_FILL),                 // N-REPLACEABLE-MARK
+    R("img/[replaceable]", IMG_FILL),                     // N-REPLACEABLE-EMPTY
+    R("bg/[replaceable]底图", IMG_FILL),                   // N-REPLACEABLE-ROLE
+    G("img/[replaceable]外层整图", [                       // N-REPLACEABLE-NESTED
+      R("img/[replaceable]内层零件", IMG_FILL),
+    ], IMG_FILL),
+    G("重复容器", [
+      R("img/[replaceable]重复位置", IMG_FILL),
+      R("img/[replaceable]重复位置", IMG_FILL),            // N-REPLACEABLE-DUP
+    ]),
   ], {
     absoluteBoundingBox: BOX(1920, 3000),
     ...EXPORT,                                          // 根级 Export 仅是人工导出设置

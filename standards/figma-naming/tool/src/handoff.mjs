@@ -75,6 +75,8 @@ function consumeSlice(doc) {
       sliceExport: node.sliceExport ?? null,
       parentId: node.parentId ?? null,
       orderKey: node.orderKey ?? null,
+      replaceable: node.replaceable === true ? true : null,
+      assetKey: node.assetKey ?? null,
     };
     if (node.status === "determined") determined.push(row);
     else if (node.status === "unknown") unknown.push(row);
@@ -157,6 +159,8 @@ function consumeFingerprintOf(doc) {
     sliceExport: node.sliceExport ?? null,
     pin: node.pin ?? null,
     langs: Array.isArray(node.langs) && node.langs.length ? node.langs : null,
+    replaceable: node.replaceable === true ? true : null,
+    assetKey: node.assetKey ?? null,
     text: node.text ? {
       fontFamily: node.text.fontFamily ?? null,
       fontWeight: node.text.fontWeight ?? null,

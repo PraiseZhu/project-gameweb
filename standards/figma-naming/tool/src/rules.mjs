@@ -176,6 +176,41 @@ export const RULES = {
     why: "命名是资产身份的来源（A1）。同一父层下两个资产同名，下游按名字取用时无法确定拿到哪一个——切图会互相覆盖，引用会指向错误对象，而且不会报错。同一无前缀 `lang` 壳的不同变体内同名 `btn/` 父层不同，不算两颗资产（A10）。",
     fix: "给其中一个换个能区分它们的名字。加数字后缀通常不够：`img/头像-1` 与 `img/头像-2` 若来自两组不同列表，编号并没说明它们各自是什么。语言壳里各国各写各的 `btn/`，不要为了避重把下载改成 `btn/下载-en`。",
   },
+  "N-REPLACEABLE-MARK": {
+    severity: "P0", disposition: "must_fix", basis: "deterministic",
+    layer: "语法", spec: "§1 / A12", assumes: ["A12"],
+    title: "可替换标记写错",
+    why: "可替换只认 body 开头的半角小写 `[replaceable]`（A12）。大小写、全角括号、空格错写一律无效，这层不会进入可替换索引，下游换图对不上。",
+    fix: "改成 `img/[replaceable]用途名称`，标记必须是半角小写、紧贴用途名。",
+  },
+  "N-REPLACEABLE-EMPTY": {
+    severity: "P0", disposition: "must_fix", basis: "deterministic",
+    layer: "语法", spec: "§1 / A12", assumes: ["A12"],
+    title: "可替换用途名为空",
+    why: "`assetKey` 就是去掉标记后的用途名称（A12）。空名无法作为替换位置，索引和 HTML 绑定都会丢。",
+    fix: "在 `[replaceable]` 后面写非空用途名，例如 `img/[replaceable]模块2玩法截图`。",
+  },
+  "N-REPLACEABLE-ROLE": {
+    severity: "P0", disposition: "must_fix", basis: "deterministic",
+    layer: "语法", spec: "§1 / A12", assumes: ["A12"],
+    title: "可替换标记用在了不支持的前缀上",
+    why: "本轮只有 `img/` 的整图可替换（A12）。标在 `bg/`、`kv/` 或其他前缀上无效，切图角色不会变成可替换项。",
+    fix: "把标记挪到整体导出的 `img/` 最外层；不要把 `bg/`、`kv/` 改成 `img/` 来迁就。",
+  },
+  "N-REPLACEABLE-NESTED": {
+    severity: "P0", disposition: "must_fix", basis: "deterministic",
+    layer: "结构", spec: "§1 / A12", assumes: ["A12"],
+    title: "可替换标记标在了内部零件上",
+    why: "可替换只标整体导出的最外层（A12）。内部再标会拆出第二项，换一张图时零件和整图对不上。",
+    fix: "去掉内层的 `[replaceable]`，只留最外层那一个。",
+  },
+  "N-REPLACEABLE-DUP": {
+    severity: "P0", disposition: "must_fix", basis: "deterministic",
+    layer: "结构", spec: "§1 / A12", assumes: ["A12"],
+    title: "同一替换位置定义了两次",
+    why: "一个用途名称是一个替换位置（A12）。同一端别、同一语言槽出现两个冲突定义时，索引无法确定换哪一张。组件定义和页上实例的引用不算重复。",
+    fix: "给其中一个换用途名，或删掉多余的定义。PC/手机同一位置应同名但分端导出。",
+  },
 };
 
 export const SEVERITIES = ["P0", "P1", "P2"];

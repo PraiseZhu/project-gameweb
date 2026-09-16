@@ -101,7 +101,9 @@ function collectEncodableImages(demoDir) {
   const referenced = collectReferencedRuntimeFiles(demoDir, html);
   return collectImageFiles(demoDir).filter((file) => {
     const name = rel(demoDir, file).split('/').pop() || '';
+    const path = rel(demoDir, file);
     if (fallbackNames.has(resolve(file)) || PACK_FALLBACK_RE.test(name)) return false;
+    if (path.startsWith('content-package/')) return true;
     return referenced.has(file);
   });
 }
@@ -110,10 +112,13 @@ function groupImagesByHash(demoDir, images) {
   const groups = new Map();
   const hashes = new Map();
   for (const src of images) {
-    const hash = sha256File(src);
+    const path = rel(demoDir, src);
+    const hash = path.startsWith('content-package/')
+      ? `content-package:${path}`
+      : sha256File(src);
     hashes.set(src, hash);
     const existing = groups.get(hash);
-    if (!existing || rel(demoDir, src).length < rel(demoDir, existing).length) groups.set(hash, src);
+    if (!existing || path.length < rel(demoDir, existing).length) groups.set(hash, src);
   }
   return { groups, hashes, canonical: [...groups.values()] };
 }

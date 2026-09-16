@@ -995,7 +995,7 @@
     if (this._geomReady(sliceExportBox)) return sliceExportBox;
     return this._geomReady(ownerBox) ? ownerBox : null;
   },
-  _mountOwnerSliceImg(el, url, ownerBox, exportBox, { alt = '', eager = false, sliceBox = null } = {}) {
+  _mountOwnerSliceImg(el, url, ownerBox, exportBox, { alt = '', eager = false, sliceBox = null, assetKey = null, platform = null } = {}) {
     if (!el || !url) return null;
     const img = document.createElement('img');
     img.className = 'fx-img';
@@ -1066,6 +1066,11 @@
     img.addEventListener('load', applyPlacement);
     applyPlacement();
     img.setAttribute('data-asset-src', url);
+    if (assetKey) {
+      img.setAttribute('data-asset', assetKey);
+      img.setAttribute('data-asset-platform', platform === 'mobile' ? 'mobile' : 'pc');
+      img.setAttribute('data-asset-lang', lang);
+    }
     img.setAttribute('data-asset-state', eager ? 'eager' : 'deferred');
     if (eager) img.setAttribute('src', url);
     img.setAttribute('alt', alt);
@@ -6541,6 +6546,8 @@
                 alt: n.name ?? '',
                 eager: !!__indComponentFallback,
                 sliceBox: (n.sliceExport && n.sliceExport.box) || null,
+                assetKey: n.replaceable === true ? n.assetKey : null,
+                platform: __base,
               });
               if (el.getAttribute('data-shadow-via') === 'asset-baked') img.setAttribute('data-shadow-source', 'asset');
               if (el.getAttribute('data-blur-via') === 'asset-baked') img.setAttribute('data-blur-source', 'asset');
@@ -6991,6 +6998,10 @@
           stripOwnerPixels();
           this._mountOwnerSliceImg(owner.el, langSliceFile, mountBox, exportBox, {
             alt: String((root && root.name) || owner.el.getAttribute('data-name') || ''),
+            assetKey: (root && root.replaceable === true && root.assetKey)
+              || (owner.tree && owner.tree.replaceable === true && owner.tree.assetKey)
+              || null,
+            platform: __base,
           });
           owner.el.setAttribute('data-owner-asset-policy', 'slice');
           markImgLang('img-lang-variant-tree');
