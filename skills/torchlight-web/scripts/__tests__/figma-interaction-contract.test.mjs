@@ -270,16 +270,34 @@ test('accepts a complete component-set variant graph as immediate state replacem
   assert.equal(model.attributes.find((entry) => entry.id === 'tab-b').attrs['data-swpage'], undefined);
 });
 
-test('fails closed when disabled or incomplete controls cannot cover component-set variants', () => {
+test('keeps the component-set graph when indicator count is smaller than variants', () => {
+  const graph = {
+    componentSetId: 'set-1',
+    variants: [
+      { componentId: 'a', name: 'Property 1=1', interactions: [] },
+      { componentId: 'b', name: 'Property 1=2', interactions: [] },
+      { componentId: 'c', name: 'Property 1=3', interactions: [] },
+    ],
+  };
   const model = deriveInteractionModel([
     { id: 'section', type: 'FRAME', name: 'sec/one' },
-    { id: 'switch', type: 'INSTANCE', name: 'switch/example', parentId: 'section', componentVariantGraph: { componentSetId: 'set-1', variants: [{ componentId: 'a', interactions: [] }, { componentId: 'b', interactions: [] }, { componentId: 'c', interactions: [] }] } },
-    { id: 'tab-owner', type: 'FRAME', name: 'tab/example', parentId: 'section' },
-    { id: 'tab-a', type: 'INSTANCE', name: 'btn/example', parentId: 'tab-owner', ownerPath: ['section', 'tab-owner', 'tab-a'], componentProperties: { State: { value: 'highlight', type: 'VARIANT' } } },
-    { id: 'tab-b', type: 'INSTANCE', name: 'btn/example', parentId: 'tab-owner', ownerPath: ['section', 'tab-owner', 'tab-b'], componentProperties: { State: { value: 'disable', type: 'VARIANT' } } },
+    { id: 'switch', type: 'INSTANCE', name: 'switch/example', parentId: 'section', componentId: 'a', componentVariantGraph: graph },
+    { id: 'title', type: 'FRAME', name: '标题', parentId: 'switch' },
+    { id: 'copy', type: 'FRAME', name: '正文', parentId: 'switch' },
+    { id: 'slider', type: 'FRAME', name: 'slider', parentId: 'section' },
+    { id: 'ind-a', type: 'INSTANCE', name: 'ind/轮播点', parentId: 'slider', componentProperties: { 'Property 1': { value: 'Default' } } },
+    { id: 'ind-b', type: 'INSTANCE', name: 'ind/轮播点', parentId: 'slider', componentProperties: { 'Property 1': { value: 'Variant2' } } },
+    { id: 'prev', type: 'FRAME', name: 'btn/左滑动箭头', parentId: 'switch' },
+    { id: 'next', type: 'FRAME', name: 'btn/右滑动箭头', parentId: 'switch' },
   ]);
-  assert.ok(model.unresolved.some((entry) => /component-set variant graph has 3 variants/.test(entry.reason)));
-  assert.equal(model.stats.componentVariantControls, 0);
+  const sw = model.components.find((entry) => entry.id === 'switch');
+  assert.equal(sw.variantGraph.controlMapping, 'partial-source-order');
+  assert.equal(model.stats.switchDirectChildPages, 0);
+  assert.equal(model.stats.componentVariantControls, 2);
+  assert.equal(model.attributes.find((entry) => entry.id === 'title')?.attrs['data-switch-page'], undefined);
+  assert.equal(model.attributes.find((entry) => entry.id === 'ind-a').attrs['data-indicator'], 'true');
+  assert.equal(model.attributes.find((entry) => entry.id === 'next').attrs['data-switch-action'], 'next');
+  assert.ok(!model.unresolved.some((entry) => entry.id === 'switch'));
 });
 
 test('independent btn with normal and highlight is not a missing switch owner', () => {

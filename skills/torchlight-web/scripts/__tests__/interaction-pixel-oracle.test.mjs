@@ -13,7 +13,7 @@ import {
   pcModalCloseVerdict,
   pcModalSheetVerdict,
 } from '../lib/interaction-pixel-oracle.mjs';
-import { greenLaterAxesProbeFixture, laterAxesProbeEvidenceComplete, scoreOpenerCatalog } from '../lib/later-axes-probe.mjs';
+import { greenLaterAxesProbeFixture, languageButtonFillsFromTruth, laterAxesProbeEvidenceComplete, scoreOpenerCatalog } from '../lib/later-axes-probe.mjs';
 
 const LANG_BY_LABEL = { English: 'en', '繁體中文': 'zh-TW', '简体中文': 'zh-CN', '한국어': 'ko' };
 function option(text, state) {
@@ -60,6 +60,71 @@ test('language verdict requires authored fill pixels, not only state attrs', () 
     option('한국어', 'normal'),
   ];
   assert.equal(languageOptionVerdict(tw, 'zh-TW').ok, true);
+});
+
+test('language verdict accepts authored gradient fills when the page has no 选中背景 slice', () => {
+  const fills = {
+    highlight: { cssRgb: 'rgb(169, 177, 220)' },
+    normal: { cssRgb: 'rgb(127, 133, 162)' },
+  };
+  const rows = [
+    { text: 'English', lang: 'en', visibleCount: 1, state: 'highlight', fillSource: 'highlight', ownerBg: 'linear-gradient(0.00deg, rgb(169, 177, 220) 0%, rgb(81, 93, 127) 100%)', fills },
+    { text: '繁體中文', lang: 'zh-TW', visibleCount: 1, state: 'normal', fillSource: 'normal', ownerBg: 'linear-gradient(0.00deg, rgb(127, 133, 162) 0%, rgb(59, 68, 94) 100%)', fills },
+  ];
+  assert.equal(languageOptionVerdict(rows, 'en').ok, true);
+  const swapped = rows.map((row) => (
+    row.lang === 'en'
+      ? { ...row, ownerBg: 'linear-gradient(0.00deg, rgb(127, 133, 162) 0%, rgb(59, 68, 94) 100%)' }
+      : row
+  ));
+  const failed = languageOptionVerdict(swapped, 'en');
+  assert.equal(failed.ok, false);
+  assert.ok(failed.problems.some((item) => item.startsWith('fill-pixel:English')));
+});
+
+test('languageButtonFillsFromTruth reads COMPONENT root or same-box child paint', () => {
+  const truth = {
+    platforms: {
+      pc: {
+        componentVariantGraph: {
+          componentSets: [{
+            name: 'btn/切换语言',
+            variants: [
+              {
+                name: 'Property 1=normal',
+                nodes: [{
+                  id: 'n',
+                  type: 'COMPONENT',
+                  style: {
+                    fills: [{
+                      type: 'GRADIENT_LINEAR',
+                      gradientStops: [{ color: { r: 0.5, g: 0.52, b: 0.63, a: 1 }, position: 0 }],
+                    }],
+                  },
+                }],
+              },
+              {
+                name: 'Property 1=highlight',
+                nodes: [{
+                  id: 'h',
+                  type: 'COMPONENT',
+                  style: {
+                    fills: [{
+                      type: 'GRADIENT_LINEAR',
+                      gradientStops: [{ color: { r: 0.66, g: 0.69, b: 0.86, a: 1 }, position: 0 }],
+                    }],
+                  },
+                }],
+              },
+            ],
+          }],
+        },
+      },
+    },
+  };
+  const fills = languageButtonFillsFromTruth(truth);
+  assert.equal(fills.normal.cssRgb, 'rgb(128, 133, 161)');
+  assert.equal(fills.highlight.cssRgb, 'rgb(168, 176, 219)');
 });
 
 test('pc modal verdict centers the sheet', () => {
@@ -505,7 +570,8 @@ test('language remount contract checks every requested language against live men
   const render = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
   assert.match(src, /setPref\('lang', row\.lang\)/);
   assert.match(src, /await waitMs\(page, 200\)/);
-  assert.match(src, /collectLanguageOptions\(page\)/);
+  assert.match(src, /collectLanguageOptions\(page, authoredFills\)/);
+  assert.match(src, /languageButtonFillsFromTruth\(truth\)/);
   assert.match(src, /stalePrefs/);
   assert.match(render, /frame\.__fxRenderPrefs/);
   assert.match(src, /menu/);

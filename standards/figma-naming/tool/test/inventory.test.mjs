@@ -54,6 +54,31 @@ test("全角斜杠升 determined，与半角同一身份", () => {
   assert.equal(validateInventory(inv, tree).ok, true);
 });
 
+test("rotated TEXT keeps Figma size as localSize, not AABB", () => {
+  const tree = {
+    id: "r", name: "mobile", type: "FRAME",
+    absoluteBoundingBox: { x: 0, y: 0, width: 750, height: 1472 },
+    children: [{
+      id: "wrap", name: "Frame 1312316826", type: "FRAME",
+      layoutMode: "HORIZONTAL",
+      absoluteBoundingBox: { x: 73.5, y: 1293.66, width: 64, height: 56.57 },
+      children: [{
+        id: "copy", name: "传奇战斗", type: "TEXT",
+        rotation: -0.7853981633974483,
+        size: { x: 64, y: 16 },
+        characters: "传奇战斗",
+        absoluteBoundingBox: { x: 77.22, y: 1293.66, width: 56.57, height: 56.57 },
+        children: [],
+      }],
+    }],
+  };
+  const inv = buildInventory(tree, { requestedNodeId: "r" });
+  const copy = inv.nodes.find((n) => n.id === "copy");
+  assert.deepEqual(copy.localSize, { w: 64, h: 16 });
+  assert.notEqual(copy.localSize.w, copy.pageBox?.w);
+  assert.notEqual(copy.localSize.h, copy.pageBox?.h);
+});
+
 test("REGULAR_POLYGON art-fragment keeps fillGeometry and localSize", () => {
   const tree = {
     id: "r", name: "pc", type: "FRAME",

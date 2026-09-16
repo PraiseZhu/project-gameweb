@@ -422,7 +422,7 @@ test('authored multiline text keeps source metrics instead of height step-fit', 
 test('hero cover scale stays on the hero slot, not the released page stage', () => {
   assert.match(renderer, /const coverW = Number\.isFinite\(Number\(this\._viewportWidth\)\) && this\._viewportWidth > 0/);
   assert.match(renderer, /coverW \/ Number\(designWidth\)/);
-  assert.match(renderer, /slotH \/ Number\(first\.height\)/);
+  assert.match(renderer, /slotH \/ coverSourceH/);
   assert.match(renderer, /sourceW \* planeRatio/);
   assert.match(renderer, /transformOrigin = '0 0'/);
   assert.match(renderer, /heroVisualScale = coverScale/);
@@ -522,7 +522,8 @@ test('fx-img follows the owner box instead of intrinsic pixels', () => {
   assert.match(renderer, /owner-box-zh-cn/);
   assert.match(renderer, /img\.style\.objectFit = \(spillsOwner \|\| matchesOwner\) \? 'none' : 'fill'/);
   assert.match(renderer, /img\.style\.objectFit = 'none'/);
-  assert.match(renderer, /el\.style\.overflow = 'hidden'/);
+  assert.match(renderer, /Hit box stays the owner/);
+  assert.match(renderer, /if \(!sliceSpillsOwner && \(!el\.style\.overflow \|\| el\.style\.overflow === 'visible'\)\) el\.style\.overflow = 'hidden'/);
   assert.match(renderer, /el\.style\.position = 'relative'/);
 });
 
@@ -530,6 +531,8 @@ test('listed img/bg/kv owners keep pageBox clip when ink slice is shorter', () =
   assert.match(renderer, /Whole-frame img\/bg\/kv clip to pageBox/);
   assert.match(renderer, /Number\(sliceExportBox\.h\) <= Number\(ownerBox\.h\) \+ 0\.5/);
   assert.match(renderer, /if \(this\._geomReady\(sliceExportBox\) && this\._sameCoordinateSpace\(sliceExportBox, ownerBox\)\) return sliceExportBox/);
+  assert.match(renderer, /_boxSpillsOwner/);
+  assert.match(renderer, /Spilling render\/export wins/);
 });
 
 test('sticky overlay host uses overlay root height, not descendant pageBoxes', () => {

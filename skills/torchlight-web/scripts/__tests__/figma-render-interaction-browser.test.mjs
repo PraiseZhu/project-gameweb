@@ -199,7 +199,7 @@ browserTest('browser named close button and img/关闭按钮 close the host moda
             nodes: [
               node('modal-cal', 'modal/订阅赛季日程', null, 0, 0, 400, 300, { pageBox: { x: 0, y: 0, w: 400, h: 300 } }),
               node('close-btn', 'btn/关闭按钮', 'modal-cal', 360, 8, 24, 24, { pageBox: { x: 360, y: 8, w: 24, h: 24 } }),
-              node('close-img', 'img/关闭按钮', 'close-btn', 360, 8, 24, 24, { pageBox: { x: 360, y: 8, w: 24, h: 24 } }),
+              node('close-img', 'img/按钮', 'close-btn', 360, 8, 24, 24, { pageBox: { x: 360, y: 8, w: 24, h: 24 } }),
             ],
           }],
         },
@@ -230,7 +230,7 @@ browserTest('browser named close button and img/关闭按钮 close the host moda
         scrim: scrim && scrim.style.background.replace(/\s+/g, ''),
         scrollLock: frame && frame.getAttribute('data-modal-scroll-lock'),
         closeBtn: !!document.querySelector('[data-btn-name="关闭按钮"]'),
-        closeImg: !!document.querySelector('[data-name="img/关闭按钮"]'),
+        closeImg: !!document.querySelector('[data-name="img/按钮"]'),
       };
     });
     assert.equal(opened.open, 'true');
@@ -242,7 +242,8 @@ browserTest('browser named close button and img/关闭按钮 close the host moda
     assert.equal(opened.scrim, 'rgba(0,0,0,0.8)');
     assert.equal(opened.scrollLock, 'true');
     assert.equal(opened.closeBtn, true);
-    await page.evaluate(() => document.querySelector('[data-name="img/关闭按钮"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+    assert.equal(opened.closeImg, true);
+    await page.evaluate(() => document.querySelector('[data-name="img/按钮"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
     const closed = await page.evaluate(() => {
       const modal = document.querySelector('[data-modal-name="订阅赛季日程"]');
       const host = modal && modal.parentElement;
@@ -484,7 +485,7 @@ browserTest('browser render-bound slice keeps spill PNG larger than owner pageBo
     });
     assert.equal(geom.ownerW, '200px');
     assert.equal(geom.ownerH, '300px');
-    assert.equal(geom.overflow, 'hidden');
+    assert.notEqual(geom.overflow, 'hidden');
     assert.equal(geom.left, '-10px');
     assert.equal(geom.top, '-10px');
     assert.equal(geom.width, '220px');

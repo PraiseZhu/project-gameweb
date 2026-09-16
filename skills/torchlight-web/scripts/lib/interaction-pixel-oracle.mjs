@@ -1,7 +1,8 @@
 /**
  * Stop-2 pixel oracle. Completion is the authored fill / sheet pose, not
  * data-btn-variant-state. Language fills come from this page inventory:
- * btn/切换语言 highlight/normal, img/选中背景 and img/未选中背景.
+ * btn/切换语言 highlight/normal — COMPONENT root fill, a same-box child
+ * gradient/solid, or the visible img/选中背景 / img/未选中背景 VECTOR slice.
  * PC modal pose is centered; panel box comes from img/弹窗背景 on this page.
  */
 export function rgbTriples(css) {

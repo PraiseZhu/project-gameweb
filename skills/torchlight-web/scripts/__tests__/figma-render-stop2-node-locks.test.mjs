@@ -67,6 +67,30 @@ function compileMethod(src, needle) {
   return new Function(extracted.params, extracted.body);
 }
 
+function compileThisMethod(src, needle) {
+  const extracted = extractNamed(src, needle);
+  return new Function(`return function (${extracted.params}) {\n${extracted.body}\n}`);
+}
+
+function compileOwnerSliceHelpers() {
+  const geomReady = compileThisMethod(rendererSrc, '_geomReady(box)');
+  const sameSpace = compileThisMethod(rendererSrc, '_sameCoordinateSpace(a, b, limit = 8000)');
+  const sameGeom = compileThisMethod(rendererSrc, '_sameGeom(a, b, slop = 0.5)');
+  const pixelSize = compileThisMethod(rendererSrc, '_pixelSizeOf(assetRec)');
+  const pngMatches = compileThisMethod(rendererSrc, '_pngMatchesBox(assetRec, box)');
+  const spills = compileThisMethod(rendererSrc, '_boxSpillsOwner(ink, ownerBox)');
+  const ownerSlice = compileThisMethod(rendererSrc, '_ownerSliceBox(assetRec, ownerBox, renderBox, extraBox = null, sliceExportBox = null)');
+  const self = {};
+  self._geomReady = geomReady().bind(self);
+  self._sameCoordinateSpace = sameSpace().bind(self);
+  self._sameGeom = sameGeom().bind(self);
+  self._pixelSizeOf = pixelSize().bind(self);
+  self._pngMatchesBox = pngMatches().bind(self);
+  self._boxSpillsOwner = spills().bind(self);
+  self._ownerSliceBox = ownerSlice().bind(self);
+  return self;
+}
+
 function makeEl(attrs = {}) {
   const store = { ...attrs };
   const style = {};
@@ -91,7 +115,13 @@ function regionGraph() {
 }
 
 const isUniformInstanceScale = compileMethod(rendererSrc, '_isUniformInstanceScale(ownerBox, rootBox)');
-const sourceLineStroke = compileMethod(rendererSrc, '_sourceLineStroke(st)');
+const cssGradient = compileMethod(rendererSrc, '_cssGradient(fill)');
+const unrotatedTextLayout = compileMethod(rendererSrc, '_unrotatedTextLayout(n, aabbW, aabbH)');
+const sourceLineStroke = (() => {
+  const extracted = extractNamed(rendererSrc, '_sourceLineStroke(st)');
+  const body = extracted.body.replace(/this\._cssGradient/g, 'cssGradient');
+  return new Function('cssGradient', `return function (${extracted.params}) {\n${body}\n}`)(cssGradient);
+})();
 
 function btnMountDecision(ownerWidth, ownerHeight, rootBox, root, wantedId = '949:5746') {
   const start = rendererSrc.indexOf('const btnScale = this._isUniformInstanceScale(');
@@ -423,21 +453,24 @@ function resolveGoHit(namedModals, goHit) {
   return opened;
 }
 
-function applySourceLine(st) {
+function applySourceLine(st, extras = {}) {
   const start = rendererSrc.indexOf('const lineStroke = this._sourceLineStroke(st);');
   assert.ok(start >= 0, 'lineStroke');
-  const colorIf = rendererSrc.indexOf('if (lineStroke.color) {', start);
+  const colorIf = rendererSrc.indexOf('} else if (lineStroke.color) {', start);
   const colorBrace = extractBrace(rendererSrc, colorIf);
   const snippet = rendererSrc.slice(start, colorBrace.end + 1)
     .replace(/this\._sourceLineStroke/g, 'sourceLineStroke')
     .replace(/this\._rgba/g, 'rgba');
   const el = makeEl();
   const rgbaCalls = [];
-  const run = new Function('sourceLineStroke', 'st', 'el', 'rgba', snippet + '\nreturn el;');
+  const n = extras.n || { pageBox: { y: 0, h: 0 }, renderBox: extras.renderBox || { y: 0, h: 0 }, strokeAlign: extras.strokeAlign };
+  const box = extras.box || { y: 0 };
+  const originY = extras.originY || 0;
+  const run = new Function('sourceLineStroke', 'st', 'el', 'rgba', 'n', 'box', 'originY', snippet + '\nreturn el;');
   run(sourceLineStroke, st, el, (color) => {
     rgbaCalls.push(color);
     return 'INVENTED';
-  });
+  }, n, box, originY);
   return { el, rgbaCalls };
 }
 
@@ -720,4 +753,135 @@ test('F LINE 0.5px 缺 strokeColor 不得加粗/补白，缺 color 不写 backgr
   assert.equal(painted.el.style.background, undefined);
   assert.deepEqual(painted.rgbaCalls, []);
   assert.doesNotMatch(String(painted.el.style.background || ''), /#fff|#ffffff|rgb\(\s*255\s*,\s*255\s*,\s*255/i);
+});
+
+test('CENTER gradient VECTOR stroke keeps weight height, not renderBox slab', () => {
+  const painted = applySourceLine({
+    strokeWeight: 3.6,
+    strokeAlign: 'CENTER',
+    strokeColor: { type: 'GRADIENT_LINEAR', gradientStops: [{ color: { r: 1, g: 1, b: 1, a: 1 }, position: 0.5 }] },
+  }, {
+    n: { pageBox: { y: 1270, h: 0 }, renderBox: { y: 1268.85, h: 2.92 }, strokeAlign: 'CENTER' },
+    box: { y: 1270 },
+    originY: 0,
+  });
+  assert.equal(painted.el.style.height, '3.6px');
+  assert.equal(painted.el.getAttribute('data-source-line-align'), 'center');
+  assert.equal(painted.el.style.top, (1270 - 3.6 / 2) + 'px');
+  assert.notEqual(painted.el.style.height, '2.92px');
+  assert.match(rendererSrc, /data-rotated-shape-skipped', 'source-line-stroke'/);
+});
+
+test('CENTER source-line top follows already remapped hero y, not raw pageBox', () => {
+  const el = makeEl();
+  el.style.top = '980px';
+  const start = rendererSrc.indexOf('const lineStroke = this._sourceLineStroke(st);');
+  const colorIf = rendererSrc.indexOf('} else if (lineStroke.color) {', start);
+  const colorBrace = extractBrace(rendererSrc, colorIf);
+  const snippet = rendererSrc.slice(start, colorBrace.end + 1)
+    .replace(/this\._sourceLineStroke/g, 'sourceLineStroke')
+    .replace(/this\._rgba/g, 'rgba');
+  const run = new Function('sourceLineStroke', 'st', 'el', 'rgba', 'n', 'box', 'originY', snippet + '\nreturn el;');
+  const painted = run(sourceLineStroke, {
+    strokeWeight: 3.6,
+    strokeAlign: 'CENTER',
+    strokeColor: { type: 'GRADIENT_LINEAR', gradientStops: [{ color: { r: 1, g: 1, b: 1, a: 1 }, position: 0.5 }] },
+  }, el, () => 'INVENTED', {
+    pageBox: { y: 1270, h: 0 },
+    renderBox: { y: 1268.85, h: 2.92 },
+    strokeAlign: 'CENTER',
+  }, { y: 1270 }, 0);
+  assert.equal(painted.style.top, (980 - 3.6 / 2) + 'px');
+  assert.notEqual(painted.style.top, (1270 - 3.6 / 2) + 'px');
+  assert.equal(painted.style.height, '3.6px');
+});
+
+test('rotated TEXT box uses Figma size, not skipped Auto Layout maxWidth', () => {
+  const skippedMax = unrotatedTextLayout({
+    rotation: -0.7853981633974483,
+    layout: { maxWidth: 68, maxHeight: 68 },
+    fitOwnerFromSkipped: { maxWidth: 68, maxHeight: 68 },
+    text: { fontSize: 16, characters: '传奇战斗' },
+  }, 56.568541526794434, 56.568541526794434);
+  assert.ok(Math.abs(skippedMax.w - 64) < 0.6, JSON.stringify(skippedMax));
+  assert.equal(skippedMax.h, 16);
+  assert.notEqual(skippedMax.w, 68);
+  assert.notEqual(skippedMax.h, 68);
+  assert.match(skippedMax.from, /fontSize|aabb-from-height/);
+
+  const withSize = unrotatedTextLayout({
+    rotation: -0.7853981633974483,
+    localSize: { w: 64, h: 16 },
+    layout: { maxWidth: 68, maxHeight: 68 },
+    text: { fontSize: 16 },
+  }, 56.568541526794434, 56.568541526794434);
+  assert.equal(withSize.w, 64);
+  assert.equal(withSize.h, 16);
+  assert.equal(withSize.from, 'localSize+localSize');
+
+  const pc = unrotatedTextLayout({
+    rotation: -0.7853981633974483,
+    text: { fontSize: 22.3, characters: '传奇战斗' },
+    layout: { maxWidth: 100.65, maxHeight: 100.65 },
+  }, 100.64683976021115, 100.64683976021252);
+  assert.ok(Math.abs(pc.w - 120.34) < 0.8, JSON.stringify(pc));
+  assert.equal(pc.h, 22.3);
+});
+
+test('G2 carousel img/箭头 paint uses spilling renderBox, not clipped pageBox 50', () => {
+  const helpers = compileOwnerSliceHelpers();
+  const ownerBox = { x: 2994.365, y: 5430.286, w: 103.063, h: 50.061 };
+  const renderBox = { x: 2995.000, y: 5403.785, w: 102.000, h: 103.063 };
+  const sliceExportBox = { ...ownerBox };
+  const assetRec = { pixelSize: '104x104', exportBox: { x: 2994.365, y: 5403.785, w: 103.063, h: 103.063 } };
+  const paint = helpers._ownerSliceBox(assetRec, ownerBox, renderBox, null, sliceExportBox);
+  assert.equal(helpers._boxSpillsOwner(renderBox, ownerBox), true);
+  assert.ok(Math.abs(Number(paint.h) - 103.063) < 0.5, JSON.stringify(paint));
+  assert.ok(Number(paint.h) > Number(ownerBox.h) + 0.5, 'paint must not stay on the 50px layout window');
+  assert.notEqual(Math.abs(Number(paint.h) - Number(ownerBox.h)) < 0.5, true);
+
+  const wholeFrame = { x: 0, y: 0, w: 3840, h: 20000 };
+  const shortInk = { x: 0, y: 0, w: 3840, h: 18000 };
+  const bg = helpers._ownerSliceBox({ pixelSize: '3840x18000' }, wholeFrame, shortInk, null, shortInk);
+  assert.equal(bg, wholeFrame);
+});
+
+test('SC-5 page scroll follows last CTA, not bg/pc 20000', () => {
+  assert.match(rendererSrc, /A 20000 bg\/pc board past the last CTA/);
+  assert.match(rendererSrc, /chromePaintedBottom\(\)/);
+  assert.match(rendererSrc, /\/\^bg\(\?:\\\/\|\$\)\/i\.test\(String\(n\.name \|\| ''\)\) \|\| \/\^页面内容\$\//);
+  assert.match(rendererSrc, /chromePaintedBottom\(\) \+ \(Number\.isFinite\(heroLayoutOffsetDesign\)/);
+  assert.doesNotMatch(rendererSrc, /\.\.\.pageBgNodes\.map\(\(n\) => \{/);
+});
+
+test('SC-7 freeze-band classifies logo/age left and down-arrow window-center', () => {
+  const isCenter = compileMethod(rendererSrc, '_isWindowCenterTopbarChrome(node, pfx)');
+  const isTopbar = compileMethod(rendererSrc, '_isTopbarOverlayChrome(node, pfx, evidenceAttrs)');
+  const isLeft = compileMethod(rendererSrc, '_isLeftTopbarChrome(box, designW)');
+  const isPageLeft = compileMethod(rendererSrc, '_isPageLeftChrome(node, pfx)');
+  assert.equal(isCenter({ name: 'fix/下滑箭头示意' }, 'fix'), true);
+  assert.equal(isCenter({ name: 'btn/右滑动箭头' }, 'btn'), false);
+  assert.equal(isTopbar({ name: 'img/LOGO' }, 'img', null), true);
+  assert.equal(isTopbar({ name: 'btn/年龄@go=modal/pc适龄提示@lang=cn' }, 'btn', null), true);
+  assert.equal(isTopbar({ name: 'btn/年龄@go=modal/mobile适龄提示@lang=cn' }, 'btn', null), true);
+  assert.equal(isTopbar({ name: 'btn/按钮' }, 'btn', null), false);
+  assert.equal(isPageLeft({ name: 'img/logo' }, 'img'), true);
+  assert.equal(isPageLeft({ name: 'btn/年龄@go=modal/mobile适龄提示@lang=cn' }, 'btn'), true);
+  assert.equal(isPageLeft({ name: 'btn/播放按钮' }, 'btn'), false);
+  assert.equal(isLeft({ x: 0, w: 1020 }, 3840), true);
+  assert.equal(isLeft({ x: 158, w: 125 }, 3840), true);
+  assert.match(rendererSrc, /data-page-left-chrome-y', 'source'/);
+  assert.match(rendererSrc, /Upper-half logo \/ age keep Figma y/);
+  assert.match(rendererSrc, /data-later-cover-axis', 'x'/);
+  assert.match(rendererSrc, /isKv && Number\.isFinite\(nodeYForCover\)/);
+  assert.doesNotMatch(rendererSrc, /isPageBackgroundRoot && heroLayoutOffsetDesign > 0/);
+  const centerShift = extractNamed(rendererSrc, '_topbarWindowCenterShiftDesign(box)');
+  const runShift = new Function('box', `
+    const self = { _viewportWidth: 1440, scale() { return 0.5; } };
+    return (function (${centerShift.params}) { ${centerShift.body} }).call(self, box);
+  `);
+  const shift = runShift({ x: 1885, w: 70 });
+  const windowMid = (1440 / 0.5) / 2;
+  const sourceMid = 1885 + 70 / 2;
+  assert.ok(Math.abs(shift - (windowMid - sourceMid)) < 0.5, String(shift));
 });

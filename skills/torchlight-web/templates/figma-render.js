@@ -214,6 +214,57 @@
     if (!(Number.isFinite(x) && Number.isFinite(w) && w > 0 && pageW > 0)) return false;
     return (x + w / 2) > pageW * 0.5;
   },
+  _isLeftTopbarChrome(box, designW) {
+    const x = Number(box && box.x);
+    const w = Number(box && box.w);
+    const pageW = Number(designW);
+    if (!(Number.isFinite(x) && Number.isFinite(w) && w > 0 && pageW > 0)) return false;
+    return (x + w / 2) < pageW * 0.5;
+  },
+  _isPageLeftChrome(node, pfx) {
+    const name = String((node && node.name) || '');
+    if (/日历icon|日历按钮|首屏主按钮|播放按钮/.test(name)) return false;
+    if (pfx === 'img' && /logo/i.test(name) && !/标题/.test(name)) return true;
+    if ((/LOGO|logo/.test(name)) && !/标题/.test(name)) return true;
+    if (pfx === 'btn' && /年龄/.test(name)) return true;
+    return /年龄/.test(name);
+  },
+  _isCenterTopbarChrome(box, designW) {
+    const x = Number(box && box.x);
+    const w = Number(box && box.w);
+    const pageW = Number(designW);
+    if (!(Number.isFinite(x) && Number.isFinite(w) && w > 0 && pageW > 0)) return false;
+    const mid = x + w / 2;
+    return Math.abs(mid - pageW / 2) <= pageW * 0.08;
+  },
+  /* Authored down-arrow sits on the 3840 midpoint (the frozen 1920 column
+     center). Name is the identity; do not require the 8% band, and do not
+     treat carousel `btn/左|右滑动箭头` as window-center chrome. */
+  _isWindowCenterTopbarChrome(node, pfx) {
+    const name = String((node && node.name) || '');
+    if (/下滑/.test(name)) return true;
+    return (pfx === 'fix' || /^fix(?:\/|$)/i.test(name)) && /箭头|scroll/.test(name);
+  },
+  /* Overlay host is viewport-wide. Freeze-band page-stage crop is a
+     1920 column inside that window, so left chrome must keep its source
+     inset from the *window* left, not from the frozen column. */
+  _topbarViewportLeftShiftDesign(box) {
+    const vw = Number(this._viewportWidth);
+    const k = Number(this.scale && this.scale());
+    const sourceLeft = Number(box && (box.x ?? 0));
+    if (!(vw > 0) || !(k > 0) || !Number.isFinite(sourceLeft)) return 0;
+    return (0 - sourceLeft);
+  },
+  _topbarWindowCenterShiftDesign(box) {
+    const vw = Number(this._viewportWidth);
+    const k = Number(this.scale && this.scale());
+    const x = Number(box && box.x);
+    const w = Number(box && box.w);
+    if (!(vw > 0) || !(k > 0) || !Number.isFinite(x) || !Number.isFinite(w) || !(w > 0)) return 0;
+    const windowMid = (vw / k) / 2;
+    const sourceMid = x + w / 2;
+    return windowMid - sourceMid;
+  },
   _isIndicatorOwner(node, pfx) {
     return pfx === 'ind' || String((node && node.role) || '') === 'ind'
       || /^ind(?:\/|$)/i.test(String((node && node.name) || ''));
@@ -222,17 +273,21 @@
     if (!node) return false;
     const name = String(node.name || '');
     if (/日历icon|日历按钮|首屏主按钮|播放按钮/.test(name)) return false;
-    if (/箭头|下滑|scroll/.test(name)) return false;
     if (evidenceAttrs && evidenceAttrs['data-topbar-chrome'] === 'true') return true;
-    /* Landscape / named right `fix/` is the cluster owner. Shop / globe /
-       dropmenu may paint as overlay siblings; they must share this owner's
-       window-right shift instead of each moving on its own box. */
+    /* Landscape / named `fix/` is viewport chrome. Shop / globe / dropmenu
+       / logo / age / center down-arrow may paint as overlay siblings; they
+       share one window-plane shift instead of riding the frozen 1920 column.
+       Bare `btn/按钮` is the first-screen download CTA, not top-bar chrome. */
     if (pfx === 'fix' || /^fix(?:\/|$)/i.test(name)) return true;
     if (pfx === 'dropmenu') return true;
+    if (pfx === 'img' && /logo/i.test(name) && !/标题/.test(name)) return true;
     if (pfx === 'btn') {
-      return /官网|充值|地球|语言|按钮$/.test(name) && !/播放|日历/.test(name);
+      /* Age is window-left chrome (freeze crop cancel + authored inset).
+         Bare `btn/按钮` is the download CTA, not a top-bar control. */
+      return /官网|充值|地球|语言|年龄/.test(name) && !/播放|日历/.test(name);
     }
-    return name === '折扣信息' || name === '官方充值' || /进入官网|地球|语言/.test(name);
+    return name === '折扣信息' || name === '官方充值' || /进入官网|地球|语言/.test(name)
+      || ((/LOGO|logo/.test(name)) && !/标题/.test(name));
   },
   _scanTopbarClusterRight(nodes, designW) {
     let right = 0;
@@ -689,6 +744,32 @@
     return null;
   },
 
+  /* Independent btn/ highlight/normal paint. Prefer the COMPONENT root; if
+     inventory lifted a same-box child fill onto the root, that still counts.
+     Skip TEXT fills so a white label does not become the button background. */
+  _visiblePaintFills(node) {
+    const fills = Array.isArray(node && node.style && node.style.fills) ? node.style.fills : [];
+    return fills.filter((fill) => fill && fill.visible !== false && (
+      fill.type === 'SOLID' || String(fill.type || '').startsWith('GRADIENT')
+    ));
+  },
+  _variantPaintFills(root, treeNodes) {
+    const rootFills = this._visiblePaintFills(root).filter((fill) => {
+      if (fill.type !== 'SOLID') return true;
+      const c = fill.color || {};
+      return !(Number(c.r) === 1 && Number(c.g) === 1 && Number(c.b) === 1);
+    });
+    if (rootFills.length) return rootFills;
+    const rows = Array.isArray(treeNodes) ? treeNodes : [];
+    const rootId = String((root && root.id) || '');
+    const child = rows.find((node) => {
+      if (!node || String(node.id || '') === rootId) return false;
+      if (String(node.type || '') === 'TEXT') return false;
+      return this._visiblePaintFills(node).length > 0;
+    });
+    return child ? this._visiblePaintFills(child) : [];
+  },
+
   /** Inventory fillGeometry path in the node's unrotated localSize. */
   _sourceFillPath(n) {
     const rows = Array.isArray(n && n.fillGeometry) ? n.fillGeometry : [];
@@ -948,20 +1029,66 @@
     const nearOne = Math.abs(widthRatio - 1) <= 0.01 && Math.abs(heightRatio - 1) <= 0.01;
     return { ok: !nearOne, widthRatio, heightRatio };
   },
+  /* Rotated TEXT CSS box is Figma `size` / localSize, never skipped Auto
+     Layout maxWidth (that is a parent HUG ceiling, often a near-square AABB).
+     Current ready packs may omit localSize; recover width from AABB +
+     fontSize + REST rotation: AABB = |w cosθ| + |h sinθ|. */
+  _unrotatedTextLayout(n, aabbW, aabbH) {
+    const pick = (value, from) => {
+      const num = Number(value);
+      return Number.isFinite(num) && num > 0 ? { value: num, from } : null;
+    };
+    const height = pick(n && n.localSize && n.localSize.h, 'localSize')
+      || pick(n && n.size && (n.size.y ?? n.size.h), 'size')
+      || pick(n && n.text && n.text.size && (n.text.size.y ?? n.text.size.h), 'text.size')
+      || pick(n && n.text && n.text.fontSize, 'fontSize')
+      || (Number.isFinite(aabbH) && aabbH > 0 ? { value: aabbH / Math.SQRT2, from: 'aabb' } : null);
+    let width = pick(n && n.localSize && n.localSize.w, 'localSize')
+      || pick(n && n.size && (n.size.x ?? n.size.w), 'size')
+      || pick(n && n.text && n.text.size && (n.text.size.x ?? n.text.size.w), 'text.size');
+    if (!width && height && Number.isFinite(aabbW) && aabbW > 0) {
+      const rot = Number(n && n.rotation) || 0;
+      const c = Math.abs(Math.cos(rot));
+      const s = Math.abs(Math.sin(rot));
+      if (c > 1e-4) {
+        const recovered = (aabbW - height.value * s) / c;
+        if (Number.isFinite(recovered) && recovered > 0.5) {
+          width = { value: recovered, from: 'aabb-from-height' };
+        }
+      }
+    }
+    if (!width && Number.isFinite(aabbW) && aabbW > 0) {
+      width = { value: aabbW / Math.SQRT2, from: 'aabb' };
+    }
+    return {
+      w: width ? width.value : aabbW,
+      h: height ? height.value : aabbH,
+      from: [width && width.from, height && height.from].filter(Boolean).join('+') || 'aabb',
+    };
+  },
+
   /* Authored LINE stroke: never invent 1px or #fff. Missing fields stay
      undetermined instead of Math.max(1, weight) / white fill. */
   _sourceLineStroke(st) {
     const weight = Number(st && st.strokeWeight);
     const hasWeight = Number.isFinite(weight) && weight > 0;
     const rawColor = st && st.strokeColor;
-    const color = rawColor && typeof rawColor === 'object'
+    const color = rawColor && typeof rawColor === 'object' && !String(rawColor.type || '').startsWith('GRADIENT')
       ? (rawColor.color && typeof rawColor.color === 'object' ? rawColor.color : rawColor)
       : null;
     const hasColor = !!(color && (color.r != null || color.g != null || color.b != null));
+    const gradientCss = rawColor && String(rawColor.type || '').startsWith('GRADIENT')
+      ? this._cssGradient(rawColor)
+      : null;
     const undetermined = [];
     if (!hasWeight) undetermined.push('strokeWeight');
-    if (!hasColor) undetermined.push('strokeColor');
-    return { undetermined, heightPx: hasWeight ? weight : null, color: hasColor ? color : null };
+    if (!hasColor && !gradientCss) undetermined.push('strokeColor');
+    return {
+      undetermined,
+      heightPx: hasWeight ? weight : null,
+      color: hasColor ? color : null,
+      gradientCss: gradientCss || null,
+    };
   },
   _assetRecForNode(n, platform = null) {
     const rec = this._assetRec(n && n.id, platform);
@@ -1122,9 +1249,10 @@
   },
 
   /* Owner-slice geometry used by the main img paint path and by img/ lang remount.
-     Prefer a delivered page-relative sliceExport.box; unclipped inkBox only when
-     it is the same canvas the gate measures. Otherwise a converted render/export
-     canvas. Owner layout box stays the clip. */
+     Hit box stays the owner pageBox. Paint follows spilling render/export ink
+     (carousel img/箭头 103×50 layout vs 102×103 render). Whole-frame img/bg/kv
+     still clip to pageBox when ink is shorter. Canvas renderBox (x≈-14000) stays
+     out via _sameCoordinateSpace. */
   _geomReady(box) {
     return !!(box
       && [box.x, box.y, box.w, box.h].every((v) => Number.isFinite(Number(v)))
@@ -1165,10 +1293,27 @@
     const sy = px.h / bh;
     return sx > 0.05 && sy > 0.05 && Math.abs(sx - sy) <= 0.02;
   },
+  _boxSpillsOwner(ink, ownerBox) {
+    return this._geomReady(ink) && this._geomReady(ownerBox)
+      && this._sameCoordinateSpace(ink, ownerBox)
+      && (Number(ink.w) > Number(ownerBox.w) + 0.5
+        || Number(ink.h) > Number(ownerBox.h) + 0.5
+        || Number(ink.x) < Number(ownerBox.x) - 0.5
+        || Number(ink.y) < Number(ownerBox.y) - 0.5);
+  },
   _ownerSliceBox(assetRec, ownerBox, renderBox, extraBox = null, sliceExportBox = null) {
     /* Whole-frame img/bg/kv clip to pageBox. Canvas renderBox (x≈-14000) and
-       shorter ink must not become the PNG size. */
+       shorter ink must not become the PNG size. Spilling render/export wins
+       even when sliceExport.box copied the short pageBox (103×50 vs 102×103). */
     const ownerReady = this._geomReady(ownerBox);
+    const delivered = assetRec && assetRec.exportBox;
+    if (this._boxSpillsOwner(renderBox, ownerBox)
+      && (this._pngMatchesBox(assetRec, renderBox) || !this._pngMatchesBox(assetRec, ownerBox))) {
+      return renderBox;
+    }
+    if (this._boxSpillsOwner(delivered, ownerBox) && this._pngMatchesBox(assetRec, delivered)) return delivered;
+    if (this._boxSpillsOwner(renderBox, ownerBox)) return renderBox;
+    if (this._boxSpillsOwner(delivered, ownerBox)) return delivered;
     if (ownerReady && this._pngMatchesBox(assetRec, ownerBox)) return ownerBox;
     if (this._pngMatchesBox(assetRec, sliceExportBox) && this._sameCoordinateSpace(sliceExportBox, ownerBox)) {
       if (Number(sliceExportBox.w) <= Number(ownerBox.w) + 0.5
@@ -1181,7 +1326,6 @@
       return ownerBox;
     }
     if (this._geomReady(sliceExportBox) && this._sameCoordinateSpace(sliceExportBox, ownerBox)) return sliceExportBox;
-    const delivered = assetRec && assetRec.exportBox;
     if (ownerReady && this._geomReady(delivered) && this._sameCoordinateSpace(delivered, ownerBox)
       && Number(delivered.w) <= Number(ownerBox.w) + 0.5
       && Number(delivered.h) <= Number(ownerBox.h) + 0.5) {
@@ -1194,13 +1338,6 @@
       && this._sameCoordinateSpace(extraBox, ownerBox)
       && (!this._geomReady(sliceExportBox) || !this._sameGeom(extraBox, sliceExportBox))) {
       return extraBox;
-    }
-    if (this._geomReady(renderBox) && this._sameCoordinateSpace(renderBox, ownerBox)
-      && (Number(renderBox.w) > Number(ownerBox.w) + 0.5
-        || Number(renderBox.h) > Number(ownerBox.h) + 0.5
-        || Number(renderBox.x) < Number(ownerBox.x) - 0.5
-        || Number(renderBox.y) < Number(ownerBox.y) - 0.5)) {
-      return renderBox;
     }
     if (this._geomReady(sliceExportBox)) return sliceExportBox;
     return this._geomReady(ownerBox) ? ownerBox : null;
@@ -1293,7 +1430,8 @@
     img.setAttribute('alt', alt);
     img.setAttribute('loading', 'eager');
     img.setAttribute('decoding', 'async');
-    if (!el.style.overflow || el.style.overflow === 'visible') el.style.overflow = 'hidden';
+    /* Hit box stays the owner. Paint may spill (renderBox / export larger than
+       layout). Do not clip here; a later `sliceSpillsOwner` check decides clip. */
     if (!el.style.position) el.style.position = 'relative';
     el.appendChild(img);
     return img;
@@ -1447,11 +1585,17 @@
       .filter((el) => this._isNamedCloseControl(this._closeControlNameOf(el)));
   },
   _closeControlFromEvent(ev) {
-    const hit = ev && ev.target && ev.target.closest
+    let hit = ev && ev.target && ev.target.closest
       ? ev.target.closest('[data-btn-name], [data-node-name], [data-name]')
       : null;
-    if (!hit) return null;
-    return this._isNamedCloseControl(this._closeControlNameOf(hit)) ? hit : null;
+    while (hit) {
+      if (this._isNamedCloseControl(this._closeControlNameOf(hit))) return hit;
+      const parent = hit.parentElement;
+      hit = parent && parent.closest
+        ? parent.closest('[data-btn-name], [data-node-name], [data-name]')
+        : null;
+    }
+    return null;
   },
   _punchModalOverlayHits(layer) {
     if (!layer || !layer.querySelectorAll) return;
@@ -2806,22 +2950,36 @@
       }
     }
     const hasPageBg = pageBgNodes.length > 0;
-    /* Page frame height is a layout hint, not always the full painted extent. Figma can
-       contain a section or a background owner that extends beyond the frame by a few
-       pixels. The preview scroll surface must cover every captured visible extent;
-       otherwise the browser reveals a white tail even though the Figma paint exists. */
+    /* Page frame / bg/* sheet height is a layout hint, not the scroll lock.
+       A 20000 bg/pc board past the last CTA (19442) is empty artboard, not
+       content. Scroll follows painted sections + non-bg pageChrome. */
     const pageOriginY = Number((pageScope && pageScope.meta && pageScope.meta.y) || 0);
+    const paintedNodeBottom = (n) => {
+      if (!n) return 0;
+      if (/^bg(?:\/|$)/i.test(String(n.name || '')) || /^页面内容$/.test(String(n.name || ''))) return 0;
+      const b = n.pageBox || n.box;
+      if (!b) return 0;
+      return (Number(b.y || 0) + Number(b.h || 0)) - pageOriginY;
+    };
+    const chromePaintedBottom = () => {
+      const list = Array.isArray(__activeTruth.pageChrome && __activeTruth.pageChrome.nodes)
+        ? __activeTruth.pageChrome.nodes
+        : [];
+      let max = 0;
+      for (const n of list) {
+        const bottom = paintedNodeBottom(n);
+        if (bottom > max) max = bottom;
+      }
+      return max;
+    };
     const pageContentHeight = pageScope
       ? Math.max(
-        Number((pageScope.meta && pageScope.meta.height) || 0),
+        0,
         ...ids.map((id) => {
           const m = sections[id] && sections[id].meta;
           return (Number((m && m.y) || 0) + Number((m && m.height) || 0)) - pageOriginY;
         }),
-        ...pageBgNodes.map((n) => {
-          const b = n && n.box;
-          return (Number((b && b.y) || 0) + Number((b && b.h) || 0)) - pageOriginY;
-        }),
+        chromePaintedBottom(),
       )
       : 0;
     const pagePaintOrder = Array.isArray(__activeTruth.pagePaintOrder) ? __activeTruth.pagePaintOrder : null;
@@ -2901,11 +3059,21 @@
       const coverW = Number.isFinite(Number(this._viewportWidth)) && this._viewportWidth > 0
         ? Number(this._viewportWidth)
         : viewportW;
+      const firstNodes = Array.isArray(sections[sectionId] && sections[sectionId].nodes)
+        ? sections[sectionId].nodes : [];
+      const kvCoverNode = firstNodes.find((node) => {
+        const nm = String(node && node.name || '');
+        return (/^kv(?:\/|$)/i.test(nm) || String(node && node.role || '') === 'kv')
+          && Number(node && node.coverAnchor && node.coverAnchor.bottom) > 0;
+      });
+      const coverSourceH = kvCoverNode
+        ? Number(kvCoverNode.coverAnchor.bottom)
+        : Number(first.height);
       const coverScale = Math.max(
         (Number.isFinite(coverW) && coverW > 0 && Number(designWidth) > 0)
           ? coverW / Number(designWidth)
           : k,
-        slotH / Number(first.height),
+        slotH / coverSourceH,
       );
       if (Number.isFinite(coverScale) && coverScale > 0) {
         heroVisualScale = coverScale;
@@ -2957,6 +3125,7 @@
       ? Math.max(
         Number(heroSlot.designHeight) || 0,
         ...ids.map((id) => shiftedSectionBottom(id)),
+        chromePaintedBottom() + (Number.isFinite(heroLayoutOffsetDesign) ? heroLayoutOffsetDesign : 0),
       )
       : pageContentHeight;
     /* Hero slot only moves after-hero *sections*. pageBackground stays at Figma
@@ -3276,12 +3445,23 @@
           const setId = String(__u(set && (set.componentSetId || set.id)) || '');
           const variants = (Array.isArray(set && set.variants) ? set.variants : [])
             .filter((variant) => String(__u(variant && variant.componentId) || ''));
-          const trees = Array.isArray(treesBySet[setId]) ? treesBySet[setId] : [];
+          /* Ready inventory stores each COMPONENT tree on the variant itself
+             (`variants[].nodes`). `variantTrees[setId]` is the same array. A
+             lookup that only accepts a parallel map would drop every switch
+             on this page. */
+          const listedTrees = Array.isArray(treesBySet[setId]) ? treesBySet[setId] : [];
+          const trees = listedTrees.length === variants.length
+            ? listedTrees
+            : variants.filter((variant) => Array.isArray(variant && variant.nodes) && variant.nodes.length);
           if (!setId || variants.length < 2 || trees.length !== variants.length) continue;
           const aligned = variants.map((variant, index) => {
             const componentId = String(__u(variant && variant.componentId) || '');
-            const tree = trees.find((item) => String(__u(item && item.componentId) || '') === componentId) || trees[index];
-            if (String(__u(tree && tree.componentId) || '') !== componentId) return null;
+            const listed = listedTrees.find((item) => String(__u(item && item.componentId) || '') === componentId) || listedTrees[index];
+            const selfTree = Array.isArray(variant && variant.nodes) && variant.nodes.length ? variant : null;
+            const tree = (listed && Array.isArray(listed.nodes) && listed.nodes.length && String(__u(listed.componentId) || '') === componentId)
+              ? listed
+              : selfTree;
+            if (!tree || String(__u(tree && tree.componentId) || '') !== componentId) return null;
             if (!Array.isArray(tree && tree.nodes) || !tree.nodes.length) return null;
             return { variant, tree, componentId };
           });
@@ -3570,7 +3750,10 @@
           attachPlatformVariantGraph(n);
           const graph = n && n.componentVariantGraph;
           const variants = Array.isArray(graph && graph.variants) ? graph.variants : [];
-          const trees = Array.isArray(graph && graph.variantTrees) ? graph.variantTrees : [];
+          const listedTrees = Array.isArray(graph && graph.variantTrees) ? graph.variantTrees : [];
+          const trees = listedTrees.length === variants.length
+            ? listedTrees
+            : variants.filter((variant) => Array.isArray(variant && variant.nodes) && variant.nodes.length);
           /* An alternate state can be rendered only if this exact snapshot
              retained every direct component variant and every corresponding
              render tree. A control count alone is never a substitute. */
@@ -3684,13 +3867,11 @@
         };
         const componentVariantControlFamily = ({ n, p }) => {
           const state = indicatorVariant(n);
-          if (state !== 'active' && state !== 'normal') return null;
-          /* A component-set controller can have several visual affordance
-             families near the same owner.  Only one complete source-backed
-             family may map to component variants.  In particular, arrow
-             buttons are commands, never page entries; thumbnail buttons are
-             selectable only when their tab owner proves that lineage. */
+          if (state === 'disabled') return null;
+          /* ind/ Default vs Variant2 is a two-state visual. Sibling order
+             still maps onto the switch graph even without active/normal. */
           if (p.role === 'ind') return 'ind:' + parentId(n);
+          if (state !== 'active' && state !== 'normal') return null;
           if (p.role === 'tab') return 'tab:' + parentId(n);
           if (p.role === 'btn') {
             const tabOwner = ancestorRole(n, 'tab');
@@ -3815,20 +3996,35 @@
             if (!families.has(family)) families.set(family, []);
             families.get(family).push(entry);
           }
-          const completeFamilies = [...families.values()].filter((controls) => controls.length === graph.variants.length
-            && controls.filter(({ n }) => indicatorVariant(n) === 'active').length === 1);
-          /* More than one complete family is ambiguous (for example tabs and
-             indicators that have not been explicitly paired), so it remains
-             inert instead of borrowing positional order across families. */
-          if (completeFamilies.length !== 1) {
-            const ownerEntry = owner;
-            if (ownerEntry && ownerEntry.n) {
-              ownerEntry.n.__componentVariantGraphBlock = completeFamilies.length === 0
-                ? 'missing-complete-control-family' : 'ambiguous-complete-control-families';
+          const pageCount = graph.variants.length;
+          const completeFamilies = [...families.values()].filter((controls) => controls.length === pageCount);
+          /* Dots may be fewer than COMPONENT_SET pages (2 marks, 3 variants).
+             Arrows and swipe still own the full variant graph. Map each
+             remaining control onto its sibling order, never invent extra dots. */
+          const partialFamilies = completeFamilies.length === 1 ? [] : [...families.values()].filter((controls) => {
+            return controls.length >= 2 && controls.length <= pageCount;
+          });
+          const selectable = completeFamilies.length === 1
+            ? completeFamilies[0]
+            : (completeFamilies.length === 0 && partialFamilies.length === 1 ? partialFamilies[0] : null);
+          if (!selectable) {
+            if (owner && owner.n) {
+              owner.n.__componentVariantGraphBlock = completeFamilies.length > 1 || partialFamilies.length > 1
+                ? 'ambiguous-complete-control-families'
+                : 'missing-complete-control-family';
             }
+            /* Still expose the variant graph so prev/next/swipe can replace
+               states even when indicator count != variant count. */
+            const selectedComponentId = String(value(owner.n && owner.n.componentId) || '');
+            const selectedIndex = graph.variants.findIndex((variant) => String(value(variant && variant.componentId)) === selectedComponentId);
+            if (selectedIndex < 0) continue;
+            componentVariantSwitches.set(switchId, {
+              graph,
+              initialIndex: selectedIndex,
+              controls: new Map(),
+            });
             continue;
           }
-          const selectable = completeFamilies[0];
           const selectedComponentId = String(value(owner.n && owner.n.componentId) || '');
           const selectedIndex = graph.variants.findIndex((variant) => String(value(variant && variant.componentId)) === selectedComponentId);
           if (selectedIndex < 0) continue;
@@ -3871,7 +4067,8 @@
           if (switchId) attrs['data-switch'] = switchId;
           const componentVariant = switchId && componentVariantSwitches.get(switchId);
           const componentVariantIndex = componentVariant && componentVariant.controls.get(id(n));
-          const staticSelectable = (p.role === 'tab' || p.role === 'ind') && !componentVariant;
+          const staticSelectable = (p.role === 'tab' || p.role === 'ind')
+            && (!componentVariant || (componentVariantIndex == null && componentVariant.controls.size === 0));
           if (switchId && (p.role === 'swpage' || staticSelectable || componentVariantIndex != null)) {
             /* Commands are deliberately excluded: prev/next operate on the
                active index and are not extra pages in the switch graph. */
@@ -4426,6 +4623,8 @@
           nested 3840/1177px box and made alternate state geometry depend on
           component-set canvas coordinates. */
        const skipNodeIds = options.skipNodeIds instanceof Set ? options.skipNodeIds : new Set();
+       const activeComponentSets = asArr(__activeTruth && __activeTruth.componentVariantGraph
+         && __activeTruth.componentVariantGraph.componentSets);
        /* Hero UI vertical mapping bookkeeping: top-level blocks take the
           100vh-slot Y ratio; flat text leaves must ride their containing
           block's stretched top instead of being stretched themselves, or a
@@ -4433,19 +4632,38 @@
           the generic top/bottom-chrome split at half the Figma hero height. */
        const heroUiBlocks = isHeroStage ? [] : null;
        const heroUiHalf = heroUiBlocks && heroSlot ? Number(heroSlot.heroHeight || 0) / 2 : Infinity;
-       const heroClusterName = (name) => {
+       const welfareOwnerIds = (() => {
+         const ids = new Set();
+         for (const item of list) {
+           if (String(item && item.name || '') !== '赛季福利') continue;
+           const ancestorIds = Array.isArray(item.ancestorIds) ? item.ancestorIds.map(String) : [];
+           const ancestorNames = Array.isArray(item.ancestorNames) ? item.ancestorNames.map(String) : [];
+           ancestorIds.forEach((id, index) => {
+             const nm = String(ancestorNames[index] || '');
+             if (!id || /^sec(?:\/|$)/i.test(nm) || nm === '页面内容' || /_(?:mobile|pc)$/i.test(nm)) return;
+             ids.add(id);
+           });
+         }
+         return ids;
+       })();
+       const heroClusterName = (name, node) => {
          const raw = String(name || '');
+         const ancestorIds = Array.isArray(node && node.ancestorIds) ? node.ancestorIds.map(String) : [];
          if (/^slg(?:\/|$)/i.test(raw) || /^img\/标题slg(?:@|$)/i.test(raw)) return 'slg';
          if (/日历icon|日历按钮/i.test(raw)) return 'calendar';
          if (/播放按钮/.test(raw)) return 'play';
-         if (/^首屏主按钮/.test(raw) || /^标题(?:$|@)/.test(raw)) return raw.startsWith('首屏') ? 'cta' : 'title';
+         if (/^首屏主按钮/.test(raw) || this._isLock1920CtaNode(node, activeComponentSets)) return 'cta';
+         if (__normalizedPlat === 'mobile' && /^btn\/按钮(?:@|$)/.test(raw)) return 'cta';
+         if (/^标题(?:$|@)/.test(raw)) return 'title';
+         if (raw === '赛季福利' || ancestorIds.some((id) => welfareOwnerIds.has(id))) return 'welfare';
          return '';
        };
        const heroClusterBottomShift = (() => {
          if (!heroUiBlocks || !heroSlot) return 0;
          let bottom = null;
+         let top = null;
          for (const item of list) {
-           const kind = heroClusterName(item && item.name);
+           const kind = heroClusterName(item && item.name, item);
            if (!kind) continue;
            const itemBox = item.pageBox || item.box;
            const pageTop = Number(itemBox && itemBox.y) - Number(paintOriginY);
@@ -4455,13 +4673,19 @@
            if (kind === 'slg' && pageTop < heroUiHalf) continue;
            const b = pageTop + h;
            if (bottom == null || b > bottom) bottom = b;
+           if (top == null || pageTop < top) top = pageTop;
          }
          if (!(bottom > 0)) return 0;
          /* Shared shift is in PAGE coords. Nested title SLG lives in a
             local owner, so the paint path must convert before writing top.
-            uiY < 1 (tall hero cropped to 100vh) pulls the cluster up;
-            uiY > 1 pads it down. Do not skip the pull. */
-         return bottom * heroUiYRatio - bottom;
+            uiY < 1 (tall hero cropped to 100vh) pulls the cluster up.
+            Do not pad the cluster down when the slot is taller than the
+            Figma hero — that is the leftover first-screen drop. Clamp the
+            pull so the topmost clustered control stays in the window. */
+         let shift = bottom * heroUiYRatio - bottom;
+         if (shift > 0) shift = 0;
+         if (Number.isFinite(top) && top + shift < 0) shift = -top;
+         return shift;
        })();
        const heroClusterShiftValue = Number(heroClusterBottomShift) || 0;
        const heroUiOwnerBlock = (blocks, centerX, centerY) => {
@@ -4613,8 +4837,6 @@
        const componentInstanceTrees = new Map();
        const imgLangSetsByMemberId = new Map();
        const langShellSetsByMemberId = new Map();
-       const activeComponentSets = asArr(__activeTruth && __activeTruth.componentVariantGraph
-         && __activeTruth.componentVariantGraph.componentSets);
        for (const set of activeComponentSets) {
          const legalImgLang = this._isLegalImgLangAssetSet(set);
          const legalLangShell = this._isLegalLangShellSet(set);
@@ -4707,8 +4929,18 @@
           && renderPaintBox
           && (Number(renderPaintBox.h) > Number(pagePaintBox.h) + 0.5
             || Number(renderPaintBox.w) > Number(pagePaintBox.w) + 0.5));
-        const box = hairlinePage ? renderPaintBox : (pagePaintBox || n.box || {});
-        const st = n.style || {};
+        /* CENTER/INSIDE/OUTSIDE stroke ink is a source-line, not a filled
+           renderBox slab. Keep pageBox as the layout line so 100vh hero remap
+           and the later stroke-weight top shift share one y. */
+        const sourceLineLayout = String(n.type || '').toUpperCase() === 'VECTOR'
+          && Number((n.style && n.style.strokeWeight) ?? n.strokeWeight) > 0
+          && Number(pagePaintBox && pagePaintBox.h) < 0.5;
+        const box = (hairlinePage && !sourceLineLayout) ? renderPaintBox : (pagePaintBox || n.box || {});
+        const st = {
+          ...(n.style || {}),
+          strokeWeight: (n.style && n.style.strokeWeight) ?? n.strokeWeight,
+          strokeColor: (n.style && n.style.strokeColor) ?? n.strokeColor,
+        };
          const seq = seqOf(ni);
          while (stack.length && !isPrefix(stack[stack.length - 1].seq, seq)) stack.pop();
          /* 新 truth 优先消费 ownerPath：它保留纯容器穿透前的真实 Figma owner 链，
@@ -4915,10 +5147,23 @@
            not re-drawn UI or inferred carousel state.  Keep the mapping narrow:
            it cannot promote arbitrary unknown/skipped nodes to pixels. */
         const __componentId = String(__u(n && n.componentId) || '');
-        const __indComponentFallback = pfx === 'ind' && ({
-          '397:35947': { file: 'assets/figma-indicator-active-alpha.webp', state: 'highlight', sourceNodeId: '397:35946' },
-          '397:35949': { file: 'assets/figma-indicator-normal-alpha.webp', state: 'normal', sourceNodeId: '397:35949' },
-        })[__componentId] || null;
+        const __indVariantName = String((n && (n.componentProperties && (n.componentProperties['Property 1'] && (n.componentProperties['Property 1'].value || n.componentProperties['Property 1']))
+          || n.variantProps && (n.variantProps['Property 1'] || n.variantProps.state))) || n.name || '');
+        const __indVariantState = /highlight|active|选中/i.test(__indVariantName) ? 'highlight'
+          : /normal|idle|未选/i.test(__indVariantName) ? 'normal'
+          : null;
+        const __indComponentFallback = (pfx === 'ind' || String(n && n.role || '') === 'ind') && __componentId && !assetRec
+          ? {
+            file: this._usableAssetFile(this._assetRec(__componentId, __base))
+              || (this._assetRec(__componentId, __base) && (this._assetRec(__componentId, __base).file
+                || this._assetRec(__componentId, __base).url
+                || this._assetRec(__componentId, __base).src))
+              || null,
+            state: __indVariantState || 'normal',
+            sourceNodeId: String(__u(n && n.id) || __componentId),
+          }
+          : null;
+        const __indFallbackReady = !!(__indComponentFallback && __indComponentFallback.file);
         /* Baked-owner descendants punched through by the extractor (blend/structural
            walk) must not be re-painted when they are neutral decor already inside
            the baked PNG. Only a structural interaction (switch/tab/scroll/copy/nav)
@@ -4930,7 +5175,7 @@
            stroke instead of mounting its unusable 1px slice. */
         let assetUrl = (assetRec && !bakeReleasedForLiveHscroll)
           ? (assetRec.file || assetRec.url || assetRec.src || null)
-          : (__indComponentFallback && __indComponentFallback.file);
+          : (__indFallbackReady ? __indComponentFallback.file : null);
         const NONRECT_SHAPE = { VECTOR: 1, BOOLEAN_OPERATION: 1, STAR: 1, POLYGON: 1, REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1 };
 
         /* 这里**不再判断"是不是纯容器"**。
@@ -4957,16 +5202,19 @@
         const isSlgLayer = /^slg(?:\/|$)/i.test(String(n.name || ''))
           || /^img\/标题slg(?:@|$)/i.test(String(n.name || ''));
         const isHeroCta = this._isLock1920CtaNode(n, activeComponentSets)
-          || /^首屏主按钮/.test(String(n.name || ''));
+          || /^首屏主按钮/.test(String(n.name || ''))
+          || (__normalizedPlat === 'mobile' && /^btn\/按钮(?:@|$)/.test(String(n.name || '')));
         const isHeroCalendar = /^btn\/.*(日历icon|日历按钮)/i.test(String(n.name || ''));
         const isHeroTitleOwner = /^标题(?:$|@)/.test(String(n.name || ''));
         const isHeroPlay = /播放按钮/.test(String(n.name || ''));
+        const isHeroWelfare = String(n.name || '') === '赛季福利'
+          || (Array.isArray(n.ancestorIds) && n.ancestorIds.some((id) => welfareOwnerIds.has(String(id))));
         /* Overlay leftover `img/标题slg` at y=0 is top-bar art, not the
            first-screen cluster. Cluster skip for that leftover is applied
            after sourceTop is known. Title owner (手机 `标题` group) takes
            the shared page-Y shift so nested SLG does not get a page shift
            written as a local top. */
-        const heroClusterCandidate = isSlgLayer || isHeroCta || isHeroCalendar || isHeroTitleOwner || isHeroPlay;
+        const heroClusterCandidate = isSlgLayer || isHeroCta || isHeroCalendar || isHeroTitleOwner || isHeroPlay || isHeroWelfare;
         let heroClusterLayer = heroClusterCandidate;
         if (liveHscrollBakeRelease.has(nidKey)) el.setAttribute('data-asset-lock-released', 'live-hscroll-descendant');
         if (liveImgLangBakeRelease.has(nidKey)) el.setAttribute('data-asset-lock-released', 'live-img-lang-descendant');
@@ -5016,7 +5264,7 @@
            isMask/maskType 消费 extract 落的源叶子；maskChildren 是 owner 对直接
            mask 子级引用，用来定位并显式排除遮罩节点（不画出实心渐变）。 */
         el.setAttribute('data-owner-role', String(pfx || (n.type === 'TEXT' ? 'txt' : 'frame')));
-        if (__indComponentFallback) {
+        if (__indFallbackReady) {
           el.setAttribute('data-source-component-fallback', 'figma-component-context');
           el.setAttribute('data-source-component-id', __componentId);
           el.setAttribute('data-source-component-node', __indComponentFallback.sourceNodeId);
@@ -5351,6 +5599,9 @@
           const listedHeroArt = pfx === 'kv' || pfx === 'bg'
             || /^kv(?:\/|$)/i.test(String(n.name || ''))
             || /^bg(?:\/|$)/i.test(String(n.name || ''));
+          const pageLeftChrome = this._isPageLeftChrome(n, pfx);
+          const pageLeftUpperChrome = !!(pageLeftChrome && Number.isFinite(sourceTop)
+            && Number.isFinite(heroUiHalf) && (sourceTop + sourceH) <= heroUiHalf + 0.5);
           const parentNodeId = parent && parent.nid != null ? String(parent.nid) : '';
           const parentIsHeroSection = !!(heroSlot && parentNodeId && parentNodeId === String(heroSlot.sectionId));
           const parentAlreadyClustered = !!(parent && parent.el && parent.el.closest
@@ -5383,37 +5634,47 @@
           /* Official flex-end pins the right cluster as one row. Overlay
              shop / globe / dropmenu / 折扣信息 are siblings of the wide
              `fix/` group, so they share one window-right shift from the
-             rightmost overlay (dropmenu), not each box's own right edge. */
-          if (!this._isInventoryStaticGateView() && !ancestorAlreadyShifted && this._isRightTopbarChrome(box, designWidth)
+             rightmost overlay (dropmenu), not each box's own right edge.
+             Overlay host is already viewport-wide: left overlay chrome keeps
+             source x. Page-tree left chrome (logo / age) lives on the frozen
+             1920 column and must cancel page-stage crop so the source inset
+             is from the *window* left. Down-arrow follows the window midpoint
+             even when its Figma x is the 3840/1920 column center. */
+          const inOverlayHost = container === fixedStage
+            || !!(container && container.closest && container.closest('[data-node="__fixed__"]'));
+          if (!this._isInventoryStaticGateView() && !ancestorAlreadyShifted
             && this._isTopbarOverlayChrome(n, pfx, evidenceAttrs)
             && !rideOwner) {
-            const clusterRight = Number(this._topbarClusterRightDesign) > 0
-              ? Number(this._topbarClusterRightDesign)
-              : ((box.x ?? 0) + (box.w ?? 0));
-            const shift = this._topbarViewportShiftDesign({ x: 0, w: clusterRight });
-            if (Math.abs(shift) > 0.5) {
+            let shift = 0;
+            let plane = '';
+            if (this._isWindowCenterTopbarChrome(n, pfx)) {
+              shift = this._topbarWindowCenterShiftDesign(box);
+              plane = 'window-center';
+            } else if (this._isRightTopbarChrome(box, designWidth)) {
+              const clusterRight = Number(this._topbarClusterRightDesign) > 0
+                ? Number(this._topbarClusterRightDesign)
+                : ((box.x ?? 0) + (box.w ?? 0));
+              shift = this._topbarViewportShiftDesign({ x: 0, w: clusterRight });
+              plane = 'window-right';
+            } else if (this._isLeftTopbarChrome(box, designWidth)) {
+              const columnLeftDesign = Number(pageStageScale) > 0
+                ? this._columnLeftCss() / pageStageScale
+                : 0;
+              shift = inOverlayHost ? 0 : -columnLeftDesign;
+              plane = 'window-left';
+            }
+            if (plane && Math.abs(shift) > 0.5) {
               el.style.left = (sourceLeft + shift) + 'px';
               el.setAttribute('data-topbar-viewport-shift', String(shift));
+              el.setAttribute('data-topbar-viewport-plane', plane);
+            } else if (plane === 'window-left' && inOverlayHost) {
+              el.setAttribute('data-topbar-viewport-plane', plane);
             }
           }
           if (heroClusterLayer && heroUiBlocks && Number.isFinite(sourceTop) && !pinViewport) {
             /* Cluster shift is page-Y. Nested layers (title SLG inside `标题`)
                write local top, so convert: localTop + pageShift. */
             heroUiTop = sourceTop + heroClusterShiftValue;
-            if (__normalizedPlat === 'mobile'
-              && (isHeroTitleOwner || isHeroCta || isHeroCalendar)
-              && Number(this._viewportWidth) > 750 && Number(k) > 0) {
-              /* 751–1126: keep 750-authored size and Figma relative x
-                 (calendar 62 / CTA 133). Shift the whole cluster by the
-                 same leftover so CTA is not clipped at 750 while calendar
-                 stays left, and zh-CN / en / tw / kr share one x. */
-              const stageW = Number(this._viewportWidth) / Number(k);
-              const shiftX = (stageW - Number(designWidth)) / 2;
-              if (shiftX > 0.5) {
-                el.style.left = (sourceLeft + shiftX) + 'px';
-                el.setAttribute('data-hero-mobile-center', String(shiftX));
-              }
-            }
             /* Calendar + CTA stay on Figma pageBox (mobile 62/133 overlapping
                stack). Do not invent a side-by-side row — that walks both off
                the poster. Shared cluster shift still moves them together. */
@@ -5431,7 +5692,7 @@
             heroUiTop = rideOwner.stretchedTop + (sourceTop - rideOwner.y);
             heroUiAnchored = true;
           } else if (heroUiBlocks && (!parent || parentIsHeroSection) && Number.isFinite(sourceTop) && !pinViewport
-            && !(fullBleedHeroArt || listedHeroArt)) {
+            && !(fullBleedHeroArt || listedHeroArt || pageLeftUpperChrome)) {
             const sourceBottom = sourceTop + sourceH;
             /* Generic split, no node names: blocks whose Figma bottom sits in
                the upper half of the hero are top chrome and keep their top
@@ -5440,7 +5701,9 @@
                Figma distance above the first-screen bottom edge — pinned to
                the lower first screen at every viewport instead of drifting
                to the middle. slg / calendar / primary CTA already took the
-               shared cluster shift above. */
+               shared cluster shift above. Upper-half logo / age keep Figma y
+               (mobile age 179 under logo 0,0×173) — slot-ratio would flatten
+               that gap into the logo. */
             heroUiTop = sourceBottom > heroUiHalf
               ? sourceBottom * heroUiYRatio - sourceH
               : sourceTop * heroUiYRatio;
@@ -5452,6 +5715,9 @@
               stretchedTop: heroUiTop,
               area: Math.max(1, (box.w ?? 0) * sourceH),
             });
+          } else if (pageLeftUpperChrome) {
+            heroUiTop = sourceTop;
+            el.setAttribute('data-page-left-chrome-y', 'source');
           }
           /* Page-level later siblings do not live in an after-hero stage, so they
              must follow layoutOffsetDesign themselves. Section-nested `bg/pc背景*`
@@ -5474,14 +5740,23 @@
               el.setAttribute('data-hero-later-chrome-follow', 'after-hero-pagebox');
             }
           }
-          if (!parent && !pinViewport && !listedHeroArt && !fullBleedHeroArt
-              && windowStageShiftX > 0.5
-              && !el.getAttribute('data-hero-cluster')
-              && !el.getAttribute('data-hero-mobile-center')
-              && !el.getAttribute('data-topbar-viewport-shift')) {
-            const laterCenter = windowStageShiftX / 2;
-            el.style.left = (sourceLeft + laterCenter) + 'px';
-            el.setAttribute('data-later-mobile-center', String(laterCenter));
+          const inNamedModalPaint = !!(container && container.closest && container.closest('[data-modal-name], .fx-named-modal'));
+          const leftoverCandidate = !pageLeftChrome
+            && !listedHeroArt
+            && !fullBleedHeroArt
+            && !inNamedModalPaint
+            && !el.getAttribute('data-topbar-viewport-shift');
+          if (leftoverCandidate && Number(this._viewportWidth) > 750 && Number(this._viewportWidth) <= 1126
+              && Number(k) > 0 && windowStageShiftX > 0.5
+              && (isHeroStage ? (!parent || parentIsHeroSection) : !parent)) {
+            /* 751–1126 leftover is not only isHeroTitleOwner || isHeroCta || isHeroCalendar.
+               Title / calendar / CTA / play / 福利 / cards share one leftover so
+               they sit in the window. Logo / age stay at source x (window-left).
+               Nested children keep local x. */
+            const leftover = windowStageShiftX / 2;
+            el.style.left = (sourceLeft + leftover) + 'px';
+            if (isHeroStage) el.setAttribute('data-hero-mobile-center', String(leftover));
+            else el.setAttribute('data-later-mobile-center', String(leftover));
           }
           el.style.top = heroUiTop + 'px';
           if (heroUiTop !== sourceTop && !(pinViewport && pfx === 'fix')) {
@@ -5516,7 +5791,7 @@
           ? Number(heroSectionBottomY)
           : (Number(meta && meta.height) || 0);
         const isFirstScreenVisual = firstScreenKvInSection
-          || (Number.isFinite(nodeYForCover) && nodeYForCover < firstSectionBottomY - 0.5);
+          || (isKv && Number.isFinite(nodeYForCover) && nodeYForCover < firstSectionBottomY - 0.5);
         if ((heroVisualPlane || firstScreenKvInSection || (isKv && coverHeroSlot && String(sid) === String(coverHeroSlot.sectionId)))
           && coverHeroSlot && coverHeroVisualScale > 0 && coverPageStageScale > 0
           && Number.isFinite(Number(box.h)) && Number(box.h) > 0) {
@@ -5524,7 +5799,13 @@
              Cover-cropping it on the page chrome plane paints the wrong sheet
              under sec/2–3. Only the first-screen kv plane may scale. */
           if (isFirstScreenVisual && isKv) {
-            const origin = __normalizedPlat === 'mobile' ? 'center 0' : 'center center';
+            const sourceW = Number(box.w) || 0;
+            const sourceH = Number(box.h) || 0;
+            const coverAnchor = n.coverAnchor && Number(n.coverAnchor.bottom) > 0 ? n.coverAnchor : null;
+            const coverBottom = coverAnchor ? Number(coverAnchor.bottom) : sourceH;
+            const origin = coverAnchor
+              ? 'center bottom-anchor'
+              : (__normalizedPlat === 'mobile' ? 'center 0' : 'center center');
             const planeRatio = coverHeroVisualScale / coverPageStageScale;
             /* Frozen 1920 column sits at CSS left. KV fills the real viewport:
                scale from the unscaled page origin, then shift by
@@ -5532,8 +5813,6 @@
                1440×900, not a 1612×900 sheet sitting inside the 1920 column. */
             const columnLeftCss = this._columnLeftCss();
             const columnLeftDesign = coverPageStageScale > 0 ? columnLeftCss / coverPageStageScale : 0;
-            const sourceW = Number(box.w) || 0;
-            const sourceH = Number(box.h) || 0;
             const viewportWDesign = coverPageStageScale > 0
               ? Number(this._viewportWidth) / coverPageStageScale
               : sourceW;
@@ -5541,9 +5820,11 @@
               ? Number(ctx.viewport.h) / coverPageStageScale
               : (heroCropWindowDesign > 0 ? heroCropWindowDesign : sourceH);
             const coverLeftDesign = (viewportWDesign - sourceW * planeRatio) / 2 - columnLeftDesign;
-            const coverTopDesign = origin === 'center 0'
-              ? 0
-              : (viewportHDesign - sourceH * planeRatio) / 2;
+            const coverTopDesign = origin === 'center bottom-anchor'
+              ? (viewportHDesign - coverBottom * planeRatio)
+              : origin === 'center 0'
+                ? 0
+                : (viewportHDesign - sourceH * planeRatio) / 2;
             if (Math.abs(planeRatio - 1) > 0.001
               || Math.abs(coverLeftDesign) > 0.5
               || Math.abs(coverTopDesign) > 0.5) {
@@ -5564,35 +5845,36 @@
             el.setAttribute('data-hero-visual-plane', isBg ? 'bg' : 'kv');
             el.setAttribute('data-kv-cover-plane', 'cover-crop');
             el.setAttribute('data-kv-cover-origin', origin);
+            if (coverAnchor) el.setAttribute('data-kv-cover-bottom', String(coverBottom));
           }
         }
         /* SLG size is page k at every PC band. Freeze is already k=0.5 plus
            center-crop; above 1920 the column already equals the window.
            Extra viewport-width stretch (even uniform from the bottom)
            grows the title over the calendar / play cluster. */
-        if (isBg && !isFirstScreenVisual && !pageStageMode && !backgroundHeroShift && Number(k) > 0) {
-          /* Later bg fills the later stage box (Figma pageBox; freeze-band
-             only pads when CSS height is short of the window). Official later
-             `background-size:cover` is on that same box, not a second viewport
-             crop. Covering the window here would slide art off later UI.
-             Section zoom is 1; numbers are design px. */
+        if (isBg && !isFirstScreenVisual && Number(k) > 0
+          && ((pageStageMode && !parent) || (!pageStageMode && !backgroundHeroShift))) {
           const sourceW = Number(box.w) || 0;
           const sourceH = Number(box.h) || 0;
+          const pageBg = !!(pageStageMode && !parent);
           const boxW = Number(stageWidthDesign) || Number(designWidth) || sourceW;
-          const boxH = Number(laterSlotHeight) > 0 ? Number(laterSlotHeight) : sourceH;
-          if (sourceW > 0 && sourceH > 0 && boxW > 0 && boxH > 0) {
-            const cover = Math.max(boxW / sourceW, boxH / sourceH);
+          /* Page-root `bg/mobile` / `bg/pc` is one long sheet. Uniform X cover
+             fills 751–1126 leftover; keep source height so the scaled sheet
+             does not invent extra scroll (C4). Nested later-stage bg still
+             cover-crops into its own slot. */
+          if (sourceW > 0 && sourceH > 0 && boxW > 0) {
+            const cover = Math.max(boxW / sourceW, 1);
             const coverLeft = (boxW - sourceW * cover) / 2;
-            const coverTop = (boxH - sourceH * cover) / 2;
             const sourceTopNow = parseFloat(el.style.top);
             const baseTop = Number.isFinite(sourceTopNow) ? sourceTopNow : ((box.y ?? 0) - originY);
             if (Math.abs(cover - 1) > 1e-6 || Math.abs(coverLeft) > 0.5) {
               el.style.left = coverLeft + 'px';
-              el.style.top = (baseTop + coverTop) + 'px';
+              el.style.top = baseTop + 'px';
               el.style.transformOrigin = '0 0';
               if (Math.abs(cover - 1) > 1e-6) el.style.transform = 'scale(' + cover + ')';
               el.setAttribute('data-later-cover-plane', 'cover-crop');
-              el.setAttribute('data-later-cover-window', 'later-stage');
+              el.setAttribute('data-later-cover-window', pageBg ? 'page-window' : 'later-stage');
+              el.setAttribute('data-later-cover-axis', 'x');
             }
           }
         }
@@ -5752,10 +6034,27 @@
              KV unmoved; only release this clip when the layer is following. */
           const isPageBackgroundRoot = backgroundHeroShift && pageStageMode
             && /^bg\//i.test(String(n.name || ''));
-          if (isPageBackgroundRoot && heroLayoutOffsetDesign > 0) {
+          const childInkSpill = list.some((child) => {
+            if (!child || String(child.parentId) !== String(nid)) return false;
+            const childBox = child.pageBox || child.box;
+            const ink = child.renderBox || child.sliceExport && child.sliceExport.box;
+            if (!this._geomReady(childBox) || !this._geomReady(ink) || !this._geomReady(box)) return false;
+            return Number(ink.w) > Number(box.w) + 0.5
+              || Number(ink.h) > Number(box.h) + 0.5
+              || Number(ink.x) < Number(box.x) - 0.5
+              || Number(ink.y) < Number(box.y) - 0.5;
+          });
+          if (isPageBackgroundRoot) {
+            /* 751–1126 X-cover spills past the 750 authored box. Keep overflow
+               visible even when layoutOffset is 0, or the scaled sheet clips
+               back to a brown leftover strip. Height still follows page scroll
+               so a 20000 artboard does not invent a blank tail. */
             el.style.overflow = 'visible';
             el.style.height = (pageScrollHeight || box.h || 0) + 'px';
             el.setAttribute('data-hero-bg-clip', 'released-to-page-scroll-height');
+          } else if (childInkSpill && (pfx === 'fix' || pfx === 'btn' || /^img\s*[\/／]/i.test(String(n.name || '')))) {
+            el.style.overflow = 'visible';
+            el.setAttribute('data-owner-clip', 'released-child-renderbox');
           } else {
             el.style.overflow = 'hidden';
           }
@@ -6324,7 +6623,9 @@
           if (grad) {
             el.style.width = 'max-content';
             if (box.w != null) el.style.minWidth = box.w + 'px';
-            el.style.left = (((box.x ?? 0) - originX) + (box.w ?? 0) / 2) + 'px';
+            const layoutLeft = Number.parseFloat(el.style.left);
+            const sourceLeftNow = Number.isFinite(layoutLeft) ? layoutLeft : ((box.x ?? 0) - originX);
+            el.style.left = (sourceLeftNow + (box.w ?? 0) / 2) + 'px';
             tf.push('translateX(-50%)');
           }
           /* ═══ 半行距补偿：文字要往【下】挪半个行距 ═══
@@ -6372,11 +6673,34 @@
             ? 'source-renderbox-no-global-offset'
             : 'source-renderbox-unavailable');
 
-          /* 文本旋转：Figma 弧度逆时针为正、CSS 顺时针，取负。
-             通用（含非文本形状）的旋转在统一的 else 分支一次性应用，见该处的
-             data-rotated-shape —— 这里保留文本路径，行为不变。 */
+          /* 文本旋转：Figma REST `rotation` 已是 CSS 同号（顺时针为正的
+             屏幕坐标，稿 −0.785 = 逆时针 45°）。再取负会把「传奇战斗」拧到
+             对面。pageBox 是旋转后 AABB；CSS 必须转未旋转局部盒（Figma
+             `size` / localSize，不是 skipped AL maxWidth）。原点在 AABB
+             中心。形状路径仍走下面的 baked-slice 守卫，不在这里批量改号。 */
           if (typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4) {
-            tf.push('rotate(' + (-n.rotation) + 'rad)');
+            const aabbW = Number(box.w);
+            const aabbH = Number(box.h);
+            const unrotated = this._unrotatedTextLayout(n, aabbW, aabbH);
+            const unrotatedW = unrotated && unrotated.w;
+            const unrotatedH = unrotated && unrotated.h;
+            const layoutTop = Number.parseFloat(el.style.top);
+            const aabbTop = Number.isFinite(layoutTop) ? layoutTop : (((box.y ?? 0) - originY));
+            if (Number.isFinite(unrotatedW) && unrotatedW > 0 && Number.isFinite(aabbW) && aabbW > 0) {
+              el.style.left = (((box.x ?? 0) - originX) + (aabbW - unrotatedW) / 2) + 'px';
+              el.style.width = unrotatedW + 'px';
+              el.style.minWidth = unrotatedW + 'px';
+            }
+            if (Number.isFinite(unrotatedH) && unrotatedH > 0 && Number.isFinite(aabbH) && aabbH > 0) {
+              el.style.top = (aabbTop + (aabbH - unrotatedH) / 2) + 'px';
+              el.style.height = unrotatedH + 'px';
+              el.style.minHeight = unrotatedH + 'px';
+            }
+            el.style.transformOrigin = 'center center';
+            tf.push('rotate(' + n.rotation + 'rad)');
+            el.setAttribute('data-text-rotation-source', String(n.rotation));
+            el.setAttribute('data-text-rotation-box', 'unrotated-local');
+            if (unrotated && unrotated.from) el.setAttribute('data-text-rotation-size', unrotated.from);
           }
           if (tf.length) el.style.transform = tf.join(' ');
           /* 字色。稿里两种情况，必须分开处理：
@@ -6740,10 +7064,16 @@
               if (!/^img\s*[\/／]/i.test(childName) && String(child.role || '') !== 'img') return false;
               return !!this._assetRecForNode(child, __base);
             });
-          if (!assetUrl && !skipRotationForLocalClip && !skipRotationForBakedChildSlice
+          const skipRotationForSourceLine = n.type === 'VECTOR'
+            && Number(st.strokeWeight) > 0
+            && (Number((n.pageBox && n.pageBox.h) ?? (n.box && n.box.h) ?? box.h) < 0.5
+              || Number((n.renderBox && n.renderBox.h) || 0) > Number((n.pageBox && n.pageBox.h) ?? (n.box && n.box.h) ?? box.h) + 0.5);
+          if (!assetUrl && !skipRotationForLocalClip && !skipRotationForBakedChildSlice && !skipRotationForSourceLine
             && typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4) {
             el.style.transform = (el.style.transform ? el.style.transform + ' ' : '') + 'rotate(' + (-n.rotation) + 'rad)';
             el.setAttribute('data-rotated-shape', String(n.rotation));
+          } else if (skipRotationForSourceLine) {
+            el.setAttribute('data-rotated-shape-skipped', 'source-line-stroke');
           } else if (skipRotationForBakedChildSlice) {
             el.setAttribute('data-rotated-shape-skipped', 'child-slice-baked');
           }
@@ -6763,7 +7093,11 @@
              preserve their source stroke as a 1px CSS rule when Figma cannot
              export a zero-height PNG. This is a source stroke, not an invented
              arrow/check shape. */
-          const isSourceLine = (n.type === 'LINE' || (n.type === 'VECTOR' && /^line(?:\s|$)/i.test(String(n.name || ''))))
+          const layoutH = Number((n.pageBox && n.pageBox.h) ?? (n.box && n.box.h) ?? box.h);
+          const isSourceLine = (n.type === 'LINE'
+            || (n.type === 'VECTOR' && /^line(?:\s|$)/i.test(String(n.name || '')))
+            || (n.type === 'VECTOR' && Number(st.strokeWeight) > 0
+              && (layoutH < 0.5 || Number((n.renderBox && n.renderBox.h) || 0) > layoutH + 0.5)))
             && Number(st.strokeWeight) > 0;
           /* A near-zero-height authored separator cannot be exported honestly:
              Figma bakes a 0-height vector into a 1px PNG whose alpha is the
@@ -6772,17 +7106,46 @@
              strokeAlign), so draw the authored stroke and do not mount the
              degenerate export. Source geometry only — no invented opacity. */
           const degenerateSourceLine = isSourceLine
-            && (Number(box.h) < 0.5 || Number(assetRec?.exportBox?.h) < 0.5);
+            && (layoutH < 0.5 || Number(assetRec?.exportBox?.h) < 0.5);
           if (degenerateSourceLine || (isSourceLine && !assetUrl)) {
             const lineStroke = this._sourceLineStroke(st);
             if (lineStroke.undetermined.length) {
               el.setAttribute('data-source-line-undetermined', lineStroke.undetermined.join(','));
             }
             if (lineStroke.heightPx != null) {
-              el.style.height = lineStroke.heightPx + 'px';
+              const align = String((st && st.strokeAlign) || n.strokeAlign || '').toUpperCase();
+              const weight = lineStroke.heightPx;
+              const renderBox = n.renderBox || {};
+              const renderH = Number(renderBox.h);
+              const renderY = Number(renderBox.y);
+              const mappedTop = Number.parseFloat(el.style.top);
+              const layoutTop = Number.isFinite(mappedTop)
+                ? mappedTop
+                : (((box.y ?? 0) - originY));
+              /* CENTER stroke ink sits on the (already remapped) layout line.
+                 Do not size the CSS box to renderBox (that paints a filled slab)
+                 and do not write raw pageBox y back over the 100vh hero remap. */
+              el.style.height = weight + 'px';
+              el.style.minHeight = weight + 'px';
               el.setAttribute('data-source-line-stroke', String(st.strokeWeight));
+              if (align === 'CENTER') {
+                el.style.top = (layoutTop - weight / 2) + 'px';
+                el.setAttribute('data-source-line-align', 'center');
+              } else if (align === 'OUTSIDE') {
+                el.style.top = (layoutTop - weight) + 'px';
+                el.setAttribute('data-source-line-align', 'outside');
+              } else if (align === 'INSIDE') {
+                el.setAttribute('data-source-line-align', 'inside');
+              } else if (Number.isFinite(renderH) && renderH > 0 && Number.isFinite(renderY)) {
+                el.style.top = (renderY - originY + (renderH - weight) / 2) + 'px';
+                el.setAttribute('data-source-line-align', 'renderbox-center');
+              }
             }
-            if (lineStroke.color) {
+            if (lineStroke.gradientCss) {
+              el.style.backgroundImage = lineStroke.gradientCss;
+              el.style.background = lineStroke.gradientCss;
+              el.style.backgroundClip = 'border-box';
+            } else if (lineStroke.color) {
               el.style.background = this._rgba(lineStroke.color);
             }
             if (degenerateSourceLine) {
@@ -6945,7 +7308,7 @@
                  render-bound export geometry instead of a second 100% fill path. */
               const img = this._mountOwnerSliceImg(el, entry.url, box, exportBox, {
                 alt: n.name ?? '',
-                eager: !!__indComponentFallback || this._isIndicatorOwner(n, pfx),
+                eager: !!__indFallbackReady || this._isIndicatorOwner(n, pfx),
                 sliceBox: (n.sliceExport && n.sliceExport.box) || null,
                 fitToBox: this._isIndicatorOwner(n, pfx) && !!String(__u(n && n.componentId) || '') && !this._assetRec(nid, __base),
               });
@@ -7058,10 +7421,12 @@
           ? imgLangChoice.componentId
           : (langShellChoice.status === 'matched' ? langShellChoice.componentId : componentId);
         const componentTree = wantedComponentId ? componentInstanceTrees.get(wantedComponentId) : null;
-        if (!suppressInteractions && pfx !== 'switch'
-          && (componentTree
-            || imgLangChoice.status === 'missing' || imgLangChoice.status === 'matched'
-            || langShellChoice.status === 'missing' || langShellChoice.status === 'matched')) {
+        const langFollowOwner = imgLangChoice.status === 'missing' || imgLangChoice.status === 'matched'
+          || langShellChoice.status === 'missing' || langShellChoice.status === 'matched';
+        /* Alternate COMPONENT_SET pages paint with suppressInteractions so
+           inner artwork is not extra switch pages. Language img/+lang (and
+           lang shells) on those pages must still follow prefs.lang. */
+        if (pfx !== 'switch' && (langFollowOwner || (!suppressInteractions && componentTree))) {
           componentInstanceOwners.push({
             el,
             tree: componentTree,
@@ -7478,9 +7843,7 @@
           const rootBox = __plain(root && root.box || tree && tree.box || {});
           const variantName = String(__u(variants[index] && variants[index].name) || '').toLowerCase();
           const state = /highlight/.test(variantName) ? 'highlight' : (/disable/.test(variantName) ? 'disable' : 'normal');
-          const rootStyle = __plain(root && root.style) || {};
-          const rootFills = Array.isArray(rootStyle.fills) ? rootStyle.fills : [];
-          const visFills = rootFills.filter((fill) => fill && fill.visible !== false);
+          const visFills = this._variantPaintFills(root, treeNodes);
           const firstFill = visFills[0];
           let fillCss = firstFill && String(firstFill.type || '').startsWith('GRADIENT')
             ? this._cssGradient(firstFill)
@@ -7998,9 +8361,12 @@
             layer.style.overflow = 'hidden';
             layer.setAttribute('data-hero-crop-window', 'visual-root');
             layer.setAttribute('data-hero-crop-window-design', String(heroSlot.designHeight));
-          } else if (heroSlot && heroCropWindowDesign > 0 && /^bg(?:\/|$)/i.test(layerName)) {
-            layer.setAttribute('data-hero-crop-window', 'visual-root');
-            layer.setAttribute('data-hero-crop-window-design', String(heroCropWindowDesign));
+          } else if (/^bg(?:\/|$)/i.test(layerName)) {
+            /* Long `bg/mobile` / `bg/pc` X-cover is uniform. Clip this paint
+               root to pageScrollHeight so scaled height cannot invent extra
+               scroll (C4). Width already follows the window. */
+            layer.style.overflow = 'hidden';
+            layer.setAttribute('data-later-cover-clip', 'page-window');
           }
           stage.appendChild(layer);
           return layer;
@@ -8147,14 +8513,19 @@
         host.style.left = '0';
         host.style.top = '0';
         host.style.width = designWidth + 'px';
-        host.style.height = (pageScrollHeight || pageMeta.height || 0) + 'px';
+        /* Closed named-modal host must not occupy page scroll height.
+           Layers are `display:none`; a tall overflow:visible host still
+           expands `.frame` scrollHeight and leaves a blank tail. Open
+           overlays pin to the visible frame; unpin restores this rest. */
+        host.style.height = '0px';
         host.style.pointerEvents = 'none';
         host.style.zIndex = '40';
-        host.style.overflow = 'visible';
+        host.style.overflow = 'hidden';
         /* Pin-to-viewport drops host zoom so cover/contain does not multiply
            page k. Closed overlay still lives in the page stage; unpin restores
            the page-stage ruler. Mirror requires this `'1'` literal in source. */
         host.style.zoom = '1';
+        host.setAttribute('data-named-modal-rest-height', '0');
         const splitName = (name) => {
           const raw = String(name || '');
           const head = raw.split('@')[0];
@@ -8361,12 +8732,12 @@
           modalHost.style.left = '0';
           modalHost.style.top = '0';
           modalHost.style.width = rest.width || (designWidth + 'px');
-          modalHost.style.height = rest.height || ((pageScrollHeight || 0) + 'px');
+          modalHost.style.height = rest.height || '0px';
           modalHost.style.transform = '';
           modalHost.style.zoom = String(pageStageScale || k);
           modalHost.style.pointerEvents = 'none';
           modalHost.style.zIndex = '40';
-          modalHost.style.overflow = 'visible';
+          modalHost.style.overflow = 'hidden';
           modalHost.removeAttribute('data-modal-fill');
           ensureModalScrim(modalHost, 0);
         };
@@ -8398,7 +8769,7 @@
             if (!modalHost.__fxNamedModalRest) {
               modalHost.__fxNamedModalRest = {
                 width: modalHost.style.width || (designWidth + 'px'),
-                height: modalHost.style.height || ((pageScrollHeight || 0) + 'px'),
+                height: '0px',
               };
             }
             modalHost.style.position = 'absolute';
@@ -8713,8 +9084,8 @@
           }
           owner.setAttribute('data-btn-variant-state', next.state);
           owner.setAttribute('data-btn-variant-index', String(next.index));
-          /* Stop-2 completion for btn/切换语言 is the authored COMPONENT root
-             fill, not only data-btn-variant-state. Current lang = highlight variant. */
+          /* Stop-2 completion for btn/切换语言 is the authored COMPONENT fill
+             (root or same-box child), not only data-btn-variant-state. Current lang = highlight variant. */
           owner.setAttribute('data-btn-variant-fill-source', next.state);
           if (next.fillCss) owner.style.background = next.fillCss;
           if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
@@ -8947,23 +9318,40 @@
              that path used to copy a still-empty deferred img and blank every
              mark. */
           if (fallbackIndicators.length) {
-            const activeFile = 'assets/figma-indicator-active-alpha.webp';
-            const normalFile = 'assets/figma-indicator-normal-alpha.webp';
+            const fileForState = (state) => {
+              const sample = fallbackIndicators.find((el) => {
+                const host = el.hasAttribute('data-source-component-fallback')
+                  ? el
+                  : el.querySelector('[data-source-component-fallback]');
+                return host && host.getAttribute('data-source-component-state') === state;
+              });
+              const host = sample && (sample.hasAttribute('data-source-component-fallback')
+                ? sample
+                : sample.querySelector('[data-source-component-fallback]'));
+              const img = (host && host.querySelector('img.fx-img')) || (sample && sample.querySelector('img.fx-img'));
+              return {
+                file: img && (img.getAttribute('data-asset-src') || img.getAttribute('src')),
+                id: host && host.getAttribute('data-source-component-id'),
+                node: host && host.getAttribute('data-source-component-node'),
+              };
+            };
+            const highlight = fileForState('highlight');
+            const normal = fileForState('normal');
             for (const el of fallbackIndicators) {
               const active = Number(el.getAttribute('data-swpage')) === idx;
-              const file = active ? activeFile : normalFile;
+              const pick = active ? highlight : normal;
               const host = el.hasAttribute('data-source-component-fallback')
                 ? el
                 : el.querySelector('[data-source-component-fallback]');
               const img = (host && host.querySelector('img.fx-img')) || el.querySelector('img.fx-img');
               if (host) {
                 host.setAttribute('data-source-component-state', active ? 'highlight' : 'normal');
-                host.setAttribute('data-source-component-id', active ? '397:35947' : '397:35949');
-                host.setAttribute('data-source-component-node', active ? '397:35946' : '397:35949');
+                if (pick.id) host.setAttribute('data-source-component-id', pick.id);
+                if (pick.node) host.setAttribute('data-source-component-node', pick.node);
               }
-              if (img) {
-                img.setAttribute('data-asset-src', file);
-                if (img.getAttribute('src') !== file) img.setAttribute('src', file);
+              if (img && pick.file) {
+                img.setAttribute('data-asset-src', pick.file);
+                if (img.getAttribute('src') !== pick.file) img.setAttribute('src', pick.file);
               }
               el.setAttribute('data-indicator-visual', 'source-component-fallback');
               el.setAttribute('data-indicator-variant', active ? 'active' : 'normal');
@@ -9008,13 +9396,17 @@
           const all = [...frame.querySelectorAll('[data-switch]')].filter((el) => el.getAttribute('data-switch') === sid);
           const pages = all.filter((el) => el.hasAttribute('data-switch-page'));
           const controls = all.filter((el) => el.hasAttribute('data-swpage'));
-          if (!pages.length && !controls.length) return;
+          const ownerElEarly = all.find((el) => el.hasAttribute('data-switch-owner'));
+          const variantCountEarly = Number(ownerElEarly && ownerElEarly.getAttribute('data-switch-variant-count') || 0);
+          if (!pages.length && !controls.length && variantCountEarly < 2) return;
           /* When page truth exists it is the only legal range. Without it,
              controls may expose a source-backed selected state (for example
              a highlighted indicator variant), but this is explicitly not a
              fabricated carousel page graph. */
           const selectable = all.filter((el) => el.hasAttribute('data-tab') || el.hasAttribute('data-indicator'));
-          const max = Math.max(0, (pages.length || selectable.length) - 1);
+          const ownerEl = all.find((el) => el.hasAttribute('data-switch-owner'));
+          const variantCount = Number(ownerEl && ownerEl.getAttribute('data-switch-variant-count') || 0);
+          const max = Math.max(0, (pages.length || Math.max(selectable.length, variantCount)) - 1);
           const current = Number.isFinite(Number(requested)) ? Number(requested) : 0;
           const count = max + 1;
           const loop = all.some((el) => el.getAttribute('data-switch-loop') === 'true');
@@ -9039,12 +9431,16 @@
              has passed the owner-local mount contract.  A partial tree must
              fail closed as an inert control, never advertise a state whose
              content cannot be safely represented. */
-          if (variantOwners.some((owner) => {
+          const incompleteVariantOwners = variantOwners.filter((owner) => {
             const layers = owner.querySelectorAll(':scope > [data-switch-variant-content]');
             return owner.getAttribute('data-switch-variant-mount-status') !== 'owner-local-mutually-exclusive'
               || layers.length !== Number(owner.getAttribute('data-switch-variant-count') || 0)
               || ![...layers].some((layer) => Number(layer.getAttribute('data-switch-variant-index')) === idx);
-          })) return;
+          });
+          /* Incomplete component-set mounts stay fail-closed for *that* owner.
+             Direct-child pages, dots, prev/next, and swipe still share one
+             index so a 2-dot / 3-variant graph remains operable. */
+          if (incompleteVariantOwners.length && incompleteVariantOwners.length === variantOwners.length && !pages.length && !controls.length) return;
           for (const el of pages) {
             const active = Number(el.getAttribute('data-switch-page')) === idx;
             el.toggleAttribute('data-active', active);
@@ -9392,17 +9788,19 @@
         }
         const switchSwipeOwner = (target) => {
           if (!target || !target.closest) return null;
-          let owner = target.closest('[data-switch-owner][data-switch-page-source="component-set-variant"]');
+          let owner = target.closest('[data-switch-owner]');
           if (!owner) {
-            const host = target.closest('[data-switch-swipe-host],[data-switch-variant-external]');
+            const host = target.closest('[data-switch-swipe-host],[data-switch-variant-external],[data-switch][data-indicator],[data-switch][data-switch-action]');
             const sid = host && (host.getAttribute('data-switch-swipe-host') || host.getAttribute('data-switch'));
-            if (sid) {
-              owner = frame.querySelector(`[data-switch-owner][data-switch="${sid}"][data-switch-page-source="component-set-variant"]`);
-            }
+            if (sid) owner = frame.querySelector(`[data-switch-owner][data-switch="${sid}"]`);
           }
           if (!owner) return null;
-          if (owner.getAttribute('data-switch-variant-mount-status') !== 'owner-local-mutually-exclusive') return null;
-          if (Number(owner.getAttribute('data-switch-variant-count') || 0) < 2) return null;
+          const pages = [...frame.querySelectorAll('[data-switch][data-switch-page]')]
+            .filter((el) => el.getAttribute('data-switch') === owner.getAttribute('data-switch'));
+          const controls = [...frame.querySelectorAll('[data-switch][data-swpage], [data-switch][data-switch-action]')]
+            .filter((el) => el.getAttribute('data-switch') === owner.getAttribute('data-switch'));
+          const variantCount = Number(owner.getAttribute('data-switch-variant-count') || 0);
+          if (pages.length < 2 && controls.length < 2 && variantCount < 2) return null;
           return owner;
         };
         const hscrollSurfacesOf = (host) => {
@@ -9555,8 +9953,8 @@
             try { window.getSelection().removeAllRanges(); } catch { /* ignore */ }
           }
           drag = host
-            ? { kind: 'hscroll', host, surface, x: ev.clientX, left: hscrollOffsetOf(surface), moved: false }
-            : { kind: 'switch-swipe', owner: swipeOwner, x: ev.clientX, moved: false };
+            ? { kind: 'hscroll', host, surface, x: ev.clientX, y: ev.clientY, left: hscrollOffsetOf(surface), moved: false }
+            : { kind: 'switch-swipe', owner: swipeOwner, x: ev.clientX, y: ev.clientY, moved: false };
           const captureEl = host || swipeOwner;
           if (captureEl && captureEl.setPointerCapture) {
             try { captureEl.setPointerCapture(ev.pointerId); } catch { /* synthetic/unsupported pointer stream */ }
@@ -9565,7 +9963,12 @@
         frame.addEventListener('pointermove', (ev) => {
           if (!drag) return;
           const delta = ev.clientX - drag.x;
+          const dy = Number.isFinite(ev.clientY) && Number.isFinite(drag.y) ? ev.clientY - drag.y : 0;
           if (Math.abs(delta) > 5) {
+            if (drag.kind === 'switch-swipe' && Math.abs(dy) > Math.abs(delta) + 2) {
+              drag = null;
+              return;
+            }
             drag.moved = true;
             if (drag.kind === 'hscroll') drag.host.setAttribute('data-hscroll-dragging', 'true');
             ev.preventDefault();

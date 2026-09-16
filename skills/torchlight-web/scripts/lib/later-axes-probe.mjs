@@ -248,6 +248,59 @@ function loadTruth(demoDir) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
+function visiblePaintFills(node) {
+  return (Array.isArray(node?.style?.fills) ? node.style.fills : []).filter((fill) => (
+    fill && fill.visible !== false
+    && (fill.type === 'SOLID' || String(fill.type || '').startsWith('GRADIENT'))
+  ));
+}
+
+function cssRgbOfFill(fill) {
+  const stops = Array.isArray(fill?.gradientStops) ? fill.gradientStops : [];
+  const color = (stops[0] && stops[0].color) || fill?.color || null;
+  if (!color) return '';
+  return `rgb(${Math.round(Number(color.r || 0) * 255)}, ${Math.round(Number(color.g || 0) * 255)}, ${Math.round(Number(color.b || 0) * 255)})`;
+}
+
+function variantPaintFills(variant) {
+  const rows = Array.isArray(variant?.nodes) ? variant.nodes : [];
+  const root = rows.find((node) => String(node?.type || '') === 'COMPONENT') || rows[0] || variant;
+  const rootFills = visiblePaintFills(root).filter((fill) => {
+    if (fill.type !== 'SOLID') return true;
+    const c = fill.color || {};
+    return !(Number(c.r) === 1 && Number(c.g) === 1 && Number(c.b) === 1);
+  });
+  if (rootFills.length) return rootFills;
+  const child = rows.find((node) => (
+    node
+    && node !== root
+    && String(node.type || '') !== 'TEXT'
+    && visiblePaintFills(node).length
+  ));
+  return child ? visiblePaintFills(child) : [];
+}
+
+export function languageButtonFillsFromTruth(truth) {
+  const platforms = truth?.platforms && typeof truth.platforms === 'object' ? truth.platforms : {};
+  const fills = { highlight: null, normal: null };
+  for (const plat of Object.values(platforms)) {
+    const sets = plat?.componentVariantGraph?.componentSets;
+    if (!Array.isArray(sets)) continue;
+    const set = sets.find((row) => String(row?.name || '') === 'btn/切换语言');
+    if (!set || !Array.isArray(set.variants)) continue;
+    for (const variant of set.variants) {
+      const name = String(variant?.name || '').toLowerCase();
+      const state = /highlight/.test(name) ? 'highlight' : (/normal/.test(name) ? 'normal' : '');
+      if (!state || fills[state]) continue;
+      const paint = variantPaintFills(variant)[0];
+      const cssRgb = cssRgbOfFill(paint);
+      if (cssRgb) fills[state] = { cssRgb };
+    }
+    if (fills.highlight && fills.normal) break;
+  }
+  return (fills.highlight && fills.normal) ? fills : null;
+}
+
 async function measureProductKvWindow(page, base, { width, height }) {
   await page.setViewportSize({ width, height });
   await page.goto(`${base}/index.html?product=1&interaction=1`, {
@@ -400,8 +453,8 @@ async function waitQa(page) {
   await page.waitForFunction(() => window.__qa && typeof window.__qa.setPref === 'function', null, { timeout: 120000 });
 }
 
-async function collectLanguageOptions(page) {
-  return page.evaluate(() => {
+async function collectLanguageOptions(page, authoredFills = null) {
+  return page.evaluate((authoredFills) => {
     const owner = [...document.querySelectorAll('[data-dropmenu="true"]')]
       .find((el) => /多语言|语言|language/i.test(el.getAttribute('data-dropmenu-name') || el.getAttribute('data-name') || ''));
     if (!owner) return { missing: true, options: [] };
@@ -452,10 +505,11 @@ async function collectLanguageOptions(page) {
         state,
         fillSource: el.getAttribute('data-btn-variant-fill-source') || state,
         ownerBg: childFill || '',
+        fills: authoredFills || undefined,
       };
     });
     return { missing: false, options };
-  });
+  }, authoredFills);
 }
 
 async function measureVisibleOpenerCatalog(page, { plat }) {
@@ -471,8 +525,22 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       const box = el.getBoundingClientRect();
       return box.width >= 1 && box.height >= 1;
     };
+    const hitPointerClick = (el) => {
+      if (!el) return false;
+      const box = el.getBoundingClientRect();
+      if (!(box.width >= 1 && box.height >= 1)) return false;
+      const x = box.left + box.width / 2;
+      const y = box.top + box.height / 2;
+      const top = document.elementFromPoint(x, y);
+      if (!top) return false;
+      const named = top.closest ? top.closest('[data-btn-name], [data-node-name], [data-name]') : null;
+      if (!(top === el || el.contains(top) || (named && (el === named || el.contains(named) || named.contains(el))))) return false;
+      top.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window }));
+      return true;
+    };
     const realClick = (el) => {
       if (!el) return;
+      if (hitPointerClick(el)) return;
       if (typeof el.click === 'function') el.click();
       else el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     };
@@ -518,7 +586,8 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       if (!layer) return true;
       const close = [...layer.querySelectorAll('[data-btn-name], [data-name], [data-node-name]')]
         .find((el) => /关闭按钮/.test(`${el.getAttribute('data-btn-name') || ''} ${el.getAttribute('data-name') || ''} ${el.getAttribute('data-node-name') || ''}`));
-      if (close) realClick(close);
+      const closeHit = close && (close.querySelector('img, [data-name^="img/"]') || close);
+      if (closeHit && !hitPointerClick(closeHit)) return false;
       const still = document.querySelector('[data-modal-open="true"]');
       return !still || still.hidden || still.getAttribute('data-modal-open') !== 'true';
     };
@@ -817,7 +886,7 @@ export function scoreOpenerCatalog(raw, plat) {
   };
 }
 
-async function measureInteractionPixels(page, { base, width }) {
+async function measureInteractionPixels(page, { base, width, authoredFills = null }) {
   const problems = [];
   await page.setViewportSize({ width: Math.max(width, 1280), height: 1080 });
   await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&lang=zh-CN`, {
@@ -825,7 +894,7 @@ async function measureInteractionPixels(page, { base, width }) {
     timeout: 120000,
   });
   await waitQa(page);
-  const seed = await collectLanguageOptions(page);
+  const seed = await collectLanguageOptions(page, authoredFills);
   const langRows = (seed.options || [])
     .map((row) => ({ lang: row.lang || row.code || '', label: row.text || row.lang || '' }))
     .filter((row) => row.lang);
@@ -836,7 +905,7 @@ async function measureInteractionPixels(page, { base, width }) {
   for (const row of langRows) {
     await page.evaluate((lang) => window.__qa.setPref('lang', lang), row.lang);
     await waitMs(page, 200);
-    const opened = await collectLanguageOptions(page);
+    const opened = await collectLanguageOptions(page, authoredFills);
     const verdict = opened.missing
       ? { ok: false, measured: true, skipped: false, problems: ['language-dropmenu-missing'], currentLang: row.lang, label: row.label }
       : { ...languageOptionVerdict(opened.options, row.lang), measured: true, skipped: false };
@@ -859,7 +928,7 @@ async function measureInteractionPixels(page, { base, width }) {
   } else {
     await page.evaluate((lang) => window.__qa.setPref('lang', lang), otherLang.lang);
     await waitMs(page, 200);
-    const afterOther = await collectLanguageOptions(page);
+    const afterOther = await collectLanguageOptions(page, authoredFills);
     stalePrefs = afterOther.missing
       ? { ok: false, measured: false, skipped: false, problems: ['language-dropmenu-missing-after-switch'] }
       : { ...languageOptionVerdict(afterOther.options, otherLang.lang), measured: true, skipped: false };
@@ -890,7 +959,7 @@ async function measureInteractionPixels(page, { base, width }) {
     const layerRect = layer.getBoundingClientRect();
     const panelRect = panel ? panel.getBoundingClientRect() : null;
     const scroll = layer.querySelector('[data-hscroll="y"], [data-prefix="scroll"]');
-    const close = layer.querySelector('[data-btn-name="关闭按钮"], [data-name="img/关闭按钮"]');
+    const close = layer.querySelector('[data-btn-name="关闭按钮"], [data-name="img/关闭按钮"], [data-name="img/按钮"]');
     const scrollbarHidden = !scroll || getComputedStyle(scroll).scrollbarWidth === 'none'
       || getComputedStyle(scroll, '::-webkit-scrollbar').display === 'none';
     const pose = {
@@ -910,7 +979,13 @@ async function measureInteractionPixels(page, { base, width }) {
       hasNamedScroll: !!scroll,
       scrollbarHidden,
     };
-    if (close) close.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    if (close) {
+      const box = close.getBoundingClientRect();
+      const x = box.left + box.width / 2;
+      const y = box.top + box.height / 2;
+      const top = document.elementFromPoint(x, y) || close;
+      top.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window }));
+    }
     pose.closedAfterClose = !layer.isConnected || layer.hidden || layer.getAttribute('data-modal-open') !== 'true';
     return pose;
   });
@@ -992,7 +1067,13 @@ async function measureInteractionPixels(page, { base, width }) {
       hasNamedScroll: !!scroll,
       scrollbarHidden,
     };
-    if (close) close.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    if (close) {
+      const box = close.getBoundingClientRect();
+      const x = box.left + box.width / 2;
+      const y = box.top + box.height / 2;
+      const top = document.elementFromPoint(x, y) || close;
+      top.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window }));
+    }
     pose.closedAfterClose = !layer.isConnected || layer.hidden || layer.getAttribute('data-modal-open') !== 'true';
     return pose;
   });
@@ -1155,7 +1236,11 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
       }
       productKv.push(item);
     }
-    const pixel = await measureInteractionPixels(page, { base, width: 1920 });
+    const pixel = await measureInteractionPixels(page, {
+      base,
+      width: 1920,
+      authoredFills: languageButtonFillsFromTruth(truth),
+    });
     payloadPixel = pixel;
     for (const problem of pixel.problems || []) problems.push(problem);
   } catch (error) {

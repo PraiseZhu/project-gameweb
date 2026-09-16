@@ -121,7 +121,8 @@ test('language dropmenu matches one option label, not the whole menu tree', () =
   assert.match(renderer, /syncLanguageDropmenuHighlight\(owner, currentPageLang\(\)\)/);
   assert.match(renderer, /frame\.__fxRenderPrefs = ctx\.prefs \|\| \{\}/);
   assert.match(renderer, /data-btn-variant-fill-source/);
-  assert.match(renderer, /authored COMPONENT root/);
+  assert.match(renderer, /authored COMPONENT fill/);
+  assert.match(renderer, /_variantPaintFills/);
   assert.doesNotMatch(renderer, /dropmenuLangFromNode/);
 });
 
@@ -216,9 +217,68 @@ test('named modal pin drops host zoom so Figma sheet is not scaled twice', () =>
   assert.doesNotMatch(pin, /const visibleW = frameRect\.width;/);
   assert.match(unpin, /modalHost\.style\.zoom = String\(pageStageScale \|\| k\)/);
   assert.match(unpin, /modalHost\.__fxNamedModalRest/);
+  assert.match(unpin, /modalHost\.style\.height = rest\.height \|\| '0px'/);
   assert.doesNotMatch(unpin, /pageMeta\.height/);
   assert.match(renderer, /rgba\(0,0,0,' \+ opacity \+ '\)/);
   assert.match(renderer, /frame\.style\.overflowY = 'hidden'/);
+});
+
+test('closed named-modal host does not occupy page scroll height', () => {
+  const mountAt = renderer.indexOf("host.className = 'fx-stage fx-named-modals'");
+  const restAt = renderer.indexOf('const hideInPlace = (node, hidden) =>', mountAt);
+  assert.ok(mountAt > 0 && restAt > mountAt);
+  const mount = renderer.slice(mountAt, restAt);
+  assert.match(mount, /host\.style\.height = '0px'/);
+  assert.match(mount, /data-named-modal-rest-height/);
+  assert.doesNotMatch(mount, /host\.style\.height = \(pageScrollHeight \|\| pageMeta\.height \|\| 0\) \+ 'px'/);
+  assert.match(renderer, /height: '0px'/);
+  assert.match(renderer, /chromePaintedBottom\(\)/);
+  assert.match(renderer, /A 20000 bg\/pc board past the last CTA/);
+});
+
+test('TEXT rotation uses Figma REST sign, not a second CSS invert', () => {
+  const textAt = renderer.indexOf("tf.push('rotate(' + n.rotation + 'rad)')");
+  assert.ok(textAt > 0, 'TEXT path must rotate with the REST sign');
+  assert.match(renderer, /data-text-rotation-source/);
+  const around = renderer.slice(textAt, textAt + 180);
+  assert.doesNotMatch(around, /\(-n\.rotation\)/);
+  assert.match(renderer, /data-text-rotation-box/);
+  assert.match(renderer, /unrotated-local/);
+  assert.match(renderer, /el\.style\.transformOrigin = 'center center'/);
+  assert.match(renderer, /_unrotatedTextLayout/);
+  assert.match(renderer, /data-text-rotation-size/);
+  assert.doesNotMatch(renderer, /n\.fitOwnerFromSkipped && n\.fitOwnerFromSkipped\.maxWidth/);
+});
+
+test('alternate component-set layers still follow img/+lang', () => {
+  const marker = "data-switch-variant-mount-status', 'owner-local-mutually-exclusive'";
+  const mountAt = renderer.lastIndexOf(marker);
+  assert.ok(mountAt > 0, 'variant mount');
+  const paintAt = renderer.lastIndexOf('paint(treeNodes', mountAt);
+  const paintCall = renderer.slice(paintAt, mountAt);
+  assert.match(paintCall, /suppressInteractions:\s*true/);
+  assert.match(renderer, /Language img\/\+lang \(and/);
+  assert.match(renderer, /langFollowOwner \|\| \(!suppressInteractions && componentTree\)/);
+  assert.doesNotMatch(renderer, /if \(!suppressInteractions && pfx !== 'switch'/);
+});
+
+test('component-set switch stays wired when dots are fewer than variants', () => {
+  assert.match(renderer, /partial-source-order|variant-graph-without-complete-controls|controls\.length <= pageCount/);
+  assert.match(renderer, /Arrows and swipe still own the full variant graph/);
+  assert.match(renderer, /variants\[\]\.nodes/);
+  assert.match(renderer, /Math\.max\(selectable\.length, variantCount\)/);
+  assert.match(renderer, /!pages\.length && !controls\.length\) return/);
+});
+
+test('carousel swipe and dots share applySwitch even without a complete variant mount', () => {
+  assert.match(renderer, /const switchSwipeOwner = \(target\) =>/);
+  assert.match(renderer, /target\.closest\('\[data-switch-owner\]'\)/);
+  assert.doesNotMatch(renderer, /owner-local-mutually-exclusive'\) return null/);
+  assert.match(renderer, /incompleteVariantOwners\.length === variantOwners\.length && !pages\.length && !controls\.length\) return/);
+  assert.match(renderer, /fileForState/);
+  assert.doesNotMatch(renderer, /'397:35947'/);
+  assert.doesNotMatch(renderer, /assets\/figma-indicator-active-alpha\.webp/);
+  assert.match(renderer, /Math\.abs\(dy\) > Math\.abs\(delta\) \+ 2/);
 });
 
 test('full rebuild restores open named modals instead of closing them', () => {

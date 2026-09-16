@@ -89,15 +89,27 @@ function firstVisibleSolidFill(node) {
  * Keep the skipped status so from-handoff does not treat it as wired, and
  * stamp paintAsFragment so the truth tree can draw it without inventing a role.
  */
+function visibleStrokeOf(node) {
+  const stroke = node?.strokeColor || node?.style?.strokeColor || null;
+  if (!stroke || stroke.visible === false) return null;
+  return stroke;
+}
+
 function isCssPaintableArtFragment(node) {
   if (!isPlainObject(node) || !isSkipped(node)) return false;
   if (String(node.why || '') !== 'art-fragment') return false;
   if (node.isMask === true) return false;
   const type = String(node.type || '').toUpperCase();
+  const strokeWeight = Number(node.strokeWeight ?? node.style?.strokeWeight);
+  const hasStroke = Boolean(visibleStrokeOf(node) && strokeWeight > 0);
+  const renderH = Number(node.renderBox && node.renderBox.h);
+  const layoutH = Number(node.box && node.box.h);
+  const strokedVector = type === 'VECTOR' && hasStroke
+    && (Number.isFinite(renderH) && renderH > 0.5 || (Number.isFinite(layoutH) && layoutH < 0.5 && renderH > 0));
   const lineVector = type === 'VECTOR' && /^line(?:\s|$)/i.test(String(node.name || ''));
-  if (!CSS_PAINTABLE_FRAGMENT.has(type) && !lineVector) return false;
-  if (type === 'LINE' || lineVector) {
-    return Boolean((node.strokeColor || node.style?.strokeColor) && Number(node.strokeWeight ?? node.style?.strokeWeight) > 0);
+  if (!CSS_PAINTABLE_FRAGMENT.has(type) && !lineVector && !strokedVector) return false;
+  if (type === 'LINE' || lineVector || strokedVector) {
+    return hasStroke;
   }
   return Boolean(firstVisibleSolidFill(node) || firstGradientFill(node));
 }
@@ -129,6 +141,8 @@ function passthroughDrawFields(entry) {
     localSize: entry.localSize ?? null,
     relativeTransform: entry.relativeTransform ?? null,
     pointCount: entry.pointCount ?? null,
+    strokeWeight: entry.strokeWeight ?? entry.style?.strokeWeight ?? null,
+    strokeColor: entry.strokeColor ?? entry.style?.strokeColor ?? null,
   };
 }
 
@@ -136,6 +150,35 @@ function passthroughDrawFields(entry) {
  * Restore visual material that inventory skipped as art-fragment / slice-child
  * onto a legal owner. Never paint the skipped node itself.
  */
+function kvCoverAnchorFromSkipped(owner, skippedChildren) {
+  const name = String(owner && owner.name || '');
+  const role = String(owner && owner.role || '');
+  if (!/^kv(?:\/|$)/i.test(name) && role !== 'kv') return null;
+  const ownerBox = owner.pageBox || owner.box;
+  const ownerH = Number(ownerBox && ownerBox.h);
+  if (!(ownerH > 0)) return null;
+  let best = null;
+  for (const child of asArray(skippedChildren)) {
+    if (!isPlainObject(child)) continue;
+    if (String(child.type || '').toUpperCase() !== 'RECTANGLE') continue;
+    const box = child.pageBox || child.box;
+    const y = Number(box && box.y);
+    const h = Number(box && box.h);
+    if (!Number.isFinite(y) || !Number.isFinite(h) || !(h > ownerH * 0.2)) continue;
+    const bottom = y + h;
+    if (!(bottom > ownerH * 0.6)) continue;
+    if (!best || bottom > best.bottom) {
+      best = {
+        via: child.why || 'art-fragment',
+        sourceId: child.id || null,
+        bottom,
+        box: { x: Number(box.x) || 0, y, w: Number(box.w) || 0, h },
+      };
+    }
+  }
+  return best;
+}
+
 function liftOwnerComposite(owner, skippedChildren) {
   if (!isPlainObject(owner) || isSkipped(owner)) return owner;
   const next = { ...owner };
@@ -156,6 +199,8 @@ function liftOwnerComposite(owner, skippedChildren) {
       };
     }
   }
+  const coverAnchor = kvCoverAnchorFromSkipped(next, skippedChildren);
+  if (coverAnchor) next.coverAnchor = coverAnchor;
   if (Array.isArray(owner.nodes)) next.nodes = omitSkippedNodes(owner.nodes);
   return next;
 }

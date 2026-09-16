@@ -116,10 +116,11 @@ variant trees. TEXT/HUG nodes need `display:none` plus the saved original
 display. Flattened `I{owner};…` descendants must not be reparented.
 
 Stop-2 completion for `dropmenu/多语言` `btn/切换语言` is the authored
-COMPONENT root fill, not `data-btn-variant-state`. Current page language
+COMPONENT fill, not `data-btn-variant-state`. Current page language
 gets Property 1=highlight from this page inventory; every other
 option stays Property 1=normal. Labels
-stay visible. Fill pixels may be that CSS rgb or the visible
+stay visible. Fill pixels may be that CSS rgb/gradient (root or same-box
+child) or the visible
 `img/选中背景` / `img/未选中背景` VECTOR slice. After a language remount, open-menu highlight must read
 `frame.__fxRenderPrefs.lang` written at the start of every `renderApp`,
 never the first-paint `ctx.prefs` closure. Duplicate TEXT
@@ -196,7 +197,7 @@ scroll-gated visibility, not Resize stretch. Do not put `@from` on `btn/`.
 
 A play control that already lives inside the video modal is the in-modal
 player, not a second opener. The two mobile overlays are mutually exclusive.
-`btn/关闭按钮` closes the modal that contains it. Runtime only toggles
+`btn/关闭按钮` closes the modal that contains it. Hits on a nested `img/按钮` still belong to that close control; do not stop at the first named descendant. Runtime only toggles
 visibility of the extracted modal layer; it does not move modal nodes into
 the homepage tree. A `modal/` whose inventory `pageBox` is the artboard is
 pinned to the visible frame: YAML `modalViewportFill` is `cover` (fill the
@@ -221,7 +222,7 @@ drops the panel below the spec rest pose. Completion is sheet center =
 viewport center; panel top comes from this page img/弹窗背景. Mobile overflow
 `img/背景` still stays inside the phone sheet. `later-axes-probe` measures
 this on the QA page after switching back to `zh-CN`, not leftover `en`.
-Mobile `modal/` must stay inside the 390 host; `btn/关闭按钮` must close
+Mobile `modal/` must stay inside the 390 host and keep owner-local coordinates at 751–1126 (no page leftover on close / sheet children). `btn/关闭按钮` must close
 it; a named `scroll/` must keep `scrollbarWidth: none`. Skip, missing
 close, overflow, or a visible scrollbar cannot go green.
 Every visible homepage `@go` opener on PC and mobile must open then

@@ -159,9 +159,12 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /data-hero-ui-anchor/);
   assert.match(render, /owner-block/);
   assert.match(render, /data-hero-cluster', 'bottom'/);
+  assert.match(render, /isHeroWelfare/);
+  assert.match(render, /inNamedModalPaint/);
+  assert.match(render, /center bottom-anchor/);
   assert.match(render, /heroClusterBottomShift/);
   assert.match(render, /Calendar \+ CTA stay on Figma pageBox/);
-  assert.match(render, /isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
+  assert.match(render, /leftover is not only isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
   assert.match(render, /isHeroTitleOwner/);
   assert.match(render, /data-hero-mobile-center/);
   assert.match(render, /data-later-mobile-center/);
@@ -222,7 +225,7 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /data-hero-later-chrome-follow/);
   assert.match(render, /after-hero-pagebox/);
   assert.match(render, /ancestorFollowsHeroY/);
-  assert.match(render, /data-later-cover-window', 'later-stage'/);
+  assert.match(render, /data-later-cover-window/);
   assert.match(render, /data-later-layout-shift/);
   assert.doesNotMatch(render, /const laterShift = heroLayoutOffsetDesign > 0 \? heroLayoutOffsetDesign : 0/);
   assert.doesNotMatch(render, /display\s*:\s*none[^\n]*hero/i);

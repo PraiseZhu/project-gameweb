@@ -380,10 +380,25 @@ test('temporary lock-1920 names follow page k above 1920', () => {
   assert.match(renderSrc, /follow-page-k-above-freeze/);
   assert.match(renderSrc, /_topbarViewportShiftDesign/);
   assert.match(renderSrc, /_isRightTopbarChrome/);
+  assert.match(renderSrc, /_isLeftTopbarChrome/);
+  assert.match(renderSrc, /_topbarWindowCenterShiftDesign/);
+  assert.match(renderSrc, /_isWindowCenterTopbarChrome/);
   assert.match(renderSrc, /_isTopbarOverlayChrome/);
   assert.match(renderSrc, /data-topbar-viewport-shift/);
+  assert.match(renderSrc, /data-topbar-viewport-plane/);
+  assert.match(renderSrc, /window-left/);
+  assert.match(renderSrc, /window-center/);
+  assert.match(renderSrc, /inOverlayHost \? 0 : -columnLeftDesign/);
+  assert.match(renderSrc, /Authored down-arrow sits on the 3840 midpoint/);
   assert.match(renderSrc, /ancestorAlreadyShifted/);
   assert.match(renderSrc, /data-hero-cluster', 'bottom'/);
+  assert.match(renderSrc, /inNamedModalPaint/);
+  assert.match(renderSrc, /center bottom-anchor/);
+  assert.match(chromeSrc, /center bottom-anchor/);
+  assert.match(chromeSrc, /coverBottom/);
+  assert.match(renderSrc, /coverAnchor/);
+  assert.match(renderSrc, /isHeroWelfare/);
+  assert.match(renderSrc, /sourceLeftNow/);
   assert.match(renderSrc, /heroClusterBottomShift/);
   assert.match(renderSrc, /播放按钮/);
   assert.match(renderSrc, /_scanTopbarClusterRight/);
@@ -393,9 +408,10 @@ test('temporary lock-1920 names follow page k above 1920', () => {
   assert.match(renderSrc, /data-later-mobile-center/);
   assert.match(renderSrc, /_windowStageWidthDesign/);
   assert.match(renderSrc, /Calendar \+ CTA stay on Figma pageBox/);
-  assert.match(renderSrc, /isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
+  assert.match(renderSrc, /leftover is not only isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
   assert.match(renderSrc, /parentHeroClusterLayout/);
-  assert.match(renderSrc, /!el.getAttribute\('data-hero-cluster'\)/);
+  assert.match(renderSrc, /data-page-left-chrome-y', 'source'/);
+  assert.match(renderSrc, /pageLeftUpperChrome/);
   assert.doesNotMatch(renderSrc, /Park the calendar immediately left/);
   assert.doesNotMatch(renderSrc, /const gap = 24;/);
   assert.doesNotMatch(renderSrc, /const gap = 8;/);
@@ -685,7 +701,7 @@ test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () =
 
 test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stays on buttons', () => {
   assert.match(renderSrc, /data-later-cover-plane', 'cover-crop'/);
-  assert.match(renderSrc, /data-later-cover-window', 'later-stage'/);
+  assert.match(renderSrc, /data-later-cover-window/);
   assert.match(renderSrc, /boxW = Number\(stageWidthDesign\)/);
   assert.match(renderSrc, /layer\.style\.width = windowStageWidth/);
   assert.match(renderSrc, /if \(vw > 1920\) return dw;/);
@@ -695,7 +711,11 @@ test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stay
   assert.match(renderSrc, /SLG size is page k at every PC band/);
   assert.doesNotMatch(renderSrc, /data-hero-slg-stretch', 'viewport-width'/);
   assert.doesNotMatch(renderSrc, /scale\(' \+ stretch \+ ', 1\)/);
-  assert.match(renderSrc, /Later bg fills the later stage box/);
+  assert.match(renderSrc, /page-window/);
+  assert.match(renderSrc, /data-later-cover-axis', 'x'/);
+  assert.match(renderSrc, /Long `bg\/mobile` \/ `bg\/pc` X-cover is uniform/);
+  assert.match(chromeSrc, /构图 <b>/);
+  assert.match(chromeSrc, /compositionTree/);
   assert.match(renderSrc, /_laterStageHeight/);
   assert.match(renderSrc, /_columnLeftCss/);
   assert.match(renderSrc, /data-later-layout-shift/);

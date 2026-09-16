@@ -523,7 +523,8 @@ function mixImageLeaf(node) {
 function sourceContourOf(node) {
   const type = String(node?.type || "").toUpperCase();
   if (type !== "REGULAR_POLYGON" && type !== "STAR" && type !== "VECTOR"
-    && type !== "BOOLEAN_OPERATION" && type !== "ELLIPSE" && type !== "LINE") {
+    && type !== "BOOLEAN_OPERATION" && type !== "ELLIPSE" && type !== "LINE"
+    && type !== "TEXT") {
     return null;
   }
   const out = {};
@@ -531,6 +532,9 @@ function sourceContourOf(node) {
   const h = Number(node.size?.y);
   if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
     out.localSize = { w, h };
+  }
+  if (type === "TEXT") {
+    return Object.keys(out).length ? out : null;
   }
   const paths = [];
   for (const geom of Array.isArray(node.fillGeometry) ? node.fillGeometry : []) {

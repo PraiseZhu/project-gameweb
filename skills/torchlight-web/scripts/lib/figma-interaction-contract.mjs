@@ -221,8 +221,11 @@ function nearestAncestorId(node, role, byId) {
 }
 
 function variantControlFamily(node, entry, byId) {
-  if (!['active', 'normal'].includes(entry.controlState)) return null;
+  if (entry.controlState === 'disabled') return null;
+  /* ind/ Default vs Variant2 is a two-state visual, not always named
+     active/normal. Sibling order still maps onto the switch graph. */
   if (entry.role === 'ind') return `ind:${String(asId(node.parentId) ?? '')}`;
+  if (!['active', 'normal'].includes(entry.controlState)) return null;
   if (entry.role === 'tab') return `tab:${String(asId(node.parentId) ?? '')}`;
   if (entry.role === 'btn') {
     const tab = nearestAncestorId(node, 'tab', byId);
@@ -264,6 +267,12 @@ function sourceBackedSwitchPages(switchNode, members, list) {
   if (legacyPages.length > 0) {
     for (const member of legacyPages) member.entry.pageSource = 'legacy-swpage-prefix';
     return { pages: legacyPages, source: 'legacy-swpage-prefix', unresolved: null };
+  }
+  /* A switch INSTANCE expands one selected COMPONENT. Inner artwork, titles,
+     and arrows are that state's local tree, not sibling pages. Prefer the
+     COMPONENT_SET variant graph whenever it is complete. */
+  if (variantGraph(switchNode)) {
+    return { pages: [], source: 'component-set-variant', unresolved: null };
   }
   const children = directChildrenOf(switchNode, list);
   const candidates = children
@@ -512,7 +521,8 @@ export function deriveInteractionModel(nodes = []) {
     const inds = members.filter(({ entry }) => entry.role === 'ind');
     const graph = variantGraph(switchMember?.node);
     const controlPageMismatch = pages.length > 0 && pageResult.source === 'switch-direct-child' && !graph
-      && ((tabs.length > 0 && tabs.length !== pages.length) || (inds.length > 0 && inds.length !== pages.length));
+      && ((tabs.length > 0 && tabs.length !== pages.length)
+        || (inds.length > 0 && inds.length > pages.length));
     if (controlPageMismatch) {
       unresolved.push({
         id: switchId,
@@ -554,10 +564,15 @@ export function deriveInteractionModel(nodes = []) {
         if (!families.has(family)) families.set(family, []);
         families.get(family).push(member);
       }
-      const completeFamilies = [...families.values()].filter((controls) => controls.length === graph.variants.length
-        && controls.filter(({ entry }) => entry.controlState === 'active').length === 1);
-      if (completeFamilies.length === 1) {
-        const selectable = completeFamilies[0];
+      const pageCount = graph.variants.length;
+      const completeFamilies = [...families.values()].filter((controls) => controls.length === pageCount);
+      const partialFamilies = completeFamilies.length === 1 ? [] : [...families.values()].filter((controls) => {
+        return controls.length >= 2 && controls.length <= pageCount;
+      });
+      const selectable = completeFamilies.length === 1
+        ? completeFamilies[0]
+        : (completeFamilies.length === 0 && partialFamilies.length === 1 ? partialFamilies[0] : null);
+      if (selectable) {
         for (const [index, { entry }] of selectable.entries()) {
           entry.variantIndex = index;
           entry.pageSource = 'component-set-variant';
@@ -567,14 +582,17 @@ export function deriveInteractionModel(nodes = []) {
           ...switchMember.entry.variantGraph,
           selectableControls: selectable.length,
           disabledControls: members.filter(({ entry }) => entry.controlState === 'disabled').length,
-          controlMapping: 'complete-source-order',
+          controlMapping: selectable.length === pageCount ? 'complete-source-order' : 'partial-source-order',
         };
       } else {
-        unresolved.push({
-          id: switchId,
-          role: 'switch',
-          reason: `component-set variant graph has ${graph.variants.length} variants but lacks a complete explicit-state control mapping`,
-        });
+        /* Arrows / swipe still own the COMPONENT_SET graph. Dots that cannot
+           map 1:1 stay visual until a later explicit pairing. */
+        switchMember.entry.variantGraph = {
+          ...switchMember.entry.variantGraph,
+          selectableControls: 0,
+          disabledControls: members.filter(({ entry }) => entry.controlState === 'disabled').length,
+          controlMapping: 'variant-graph-without-complete-controls',
+        };
       }
     } else if (pages.length === 0 && (tabs.length || inds.length)) {
       unresolved.push({ id: switchId, role: 'switch', reason: pageResult.unresolved || 'switch has controls but no source-backed page candidates' });

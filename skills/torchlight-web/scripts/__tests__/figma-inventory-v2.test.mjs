@@ -767,6 +767,45 @@ test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as pain
   assert.equal(restored.some((node) => node.id === "mask-group"), false);
 });
 
+test("restoreOwnerComposites keeps a near-zero VECTOR stroke with nonzero renderBox", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "frame-line",
+      type: "FRAME",
+      name: "Frame 1312316824",
+      status: "skipped",
+      why: "art-fragment",
+      box: { x: 56, y: 1233, w: 638, h: 34 },
+    },
+    {
+      id: "vector-44",
+      type: "VECTOR",
+      name: "Vector 44",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "frame-line",
+      box: { x: 56, y: 1269, w: 254, h: 0.00002 },
+      renderBox: { x: 56, y: 1268.85, w: 254, h: 2.92 },
+      strokeWeight: 3.6,
+      style: {
+        strokeWeight: 3.6,
+        strokeColor: {
+          type: "GRADIENT_LINEAR",
+          visible: true,
+          gradientStops: [
+            { color: { r: 0.18, g: 0.21, b: 0.54, a: 1 }, position: 0 },
+            { color: { r: 0.82, g: 0.96, b: 1, a: 1 }, position: 0.5 },
+          ],
+        },
+      },
+    },
+  ]);
+  const line = restored.find((node) => node.id === "vector-44");
+  assert.equal(line.paintAsFragment, true);
+  assert.equal(line.status, "skipped");
+  assert.equal(line.strokeWeight, 3.6);
+});
+
 test("restoreOwnerComposites does not restore skipped IMAGE slice-children under bg/", () => {
   const restored = restoreOwnerComposites([
     {
@@ -974,4 +1013,28 @@ test("adaptInventoryToTruthShape keeps pageBox/parentBox/sliceExport/text/layout
   assert.deepEqual(component.pageBox, pageBox);
   assert.deepEqual(component.parentBox, parentBox);
 });
-
+test("restoreOwnerComposites stamps a kv coverAnchor from a skipped lower rectangle", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "kv-1",
+      type: "FRAME",
+      name: "kv",
+      role: "kv",
+      status: "unknown",
+      pageBox: { x: 0, y: 0, w: 750, h: 1472 },
+    },
+    {
+      id: "rect-bottom",
+      type: "RECTANGLE",
+      name: "Rectangle 2718",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "kv-1",
+      pageBox: { x: 0, y: 697, w: 751, h: 637 },
+    },
+  ]);
+  const kv = restored.find((node) => node.id === "kv-1");
+  assert.equal(restored.some((node) => node.id === "rect-bottom"), false);
+  assert.equal(kv?.coverAnchor?.sourceId, "rect-bottom");
+  assert.equal(kv?.coverAnchor?.bottom, 1334);
+});
