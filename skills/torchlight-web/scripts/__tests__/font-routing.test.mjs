@@ -23,6 +23,14 @@ test('Torch non-Chinese copy uses matching Source Han / Noto, not Bebas for CJK 
   assert.equal(routeFontFamily({ language: 'zh-TW', sourceFamily: YOUHEI, sourceWeight: 600 }).family, 'Noto Sans HK');
 });
 
+test('YouHei Regular 600 becomes Noto 400; zh-CN stays 600; Bold stays 900', () => {
+  assert.equal(routeFontFamily({ language: 'en', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
+  assert.equal(routeFontFamily({ language: 'ja', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
+  assert.equal(routeFontFamily({ language: 'ko', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
+  assert.equal(routeFontFamily({ language: 'zh-TW', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
+  assert.equal(routeFontFamily({ language: 'zh-CN', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 600);
+  assert.equal(routeFontFamily({ language: 'en', sourceFamily: YOUHEI, sourceWeight: 900 }).weight, 900);
+});
 test('Founder YouHei Regular pins wide wdth=3 instead of CSS condensed default', () => {
   assert.equal(
     youHeiVariationSettings({ sourceWeight: 600, postScriptName: 'FZVariable-YouHeiSWTWH-Regular' }),

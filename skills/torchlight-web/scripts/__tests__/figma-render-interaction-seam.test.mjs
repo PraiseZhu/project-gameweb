@@ -233,7 +233,7 @@ test('closed named-modal host does not occupy page scroll height', () => {
   assert.doesNotMatch(mount, /host\.style\.height = \(pageScrollHeight \|\| pageMeta\.height \|\| 0\) \+ 'px'/);
   assert.match(renderer, /height: '0px'/);
   assert.match(renderer, /chromePaintedBottom\(\)/);
-  assert.match(renderer, /A 20000 bg\/pc board past the last CTA/);
+  assert.match(renderer, /pageBgBoardBottom/);
 });
 
 test('TEXT rotation uses Figma REST sign, not a second CSS invert', () => {
@@ -247,6 +247,14 @@ test('TEXT rotation uses Figma REST sign, not a second CSS invert', () => {
   assert.match(renderer, /el\.style\.transformOrigin = 'center center'/);
   assert.match(renderer, /_unrotatedTextLayout/);
   assert.match(renderer, /data-text-rotation-size/);
+  assert.match(renderer, /rotated-single-line/);
+  assert.match(renderer, /data-text-rotation-nowrap/);
+  assert.match(renderer, /data-text-rotation-slot/);
+  assert.match(renderer, /data-text-rotation-align/);
+  assert.match(renderer, /visual-aabb-flex-center/);
+  assert.doesNotMatch(renderer, /glyphNudge/);
+  assert.doesNotMatch(renderer, /data-text-rotation-nudge/);
+  assert.match(renderer, /rotatedNowrap && rotatedFitW/);
   assert.doesNotMatch(renderer, /n\.fitOwnerFromSkipped && n\.fitOwnerFromSkipped\.maxWidth/);
 });
 
@@ -279,6 +287,23 @@ test('carousel swipe and dots share applySwitch even without a complete variant 
   assert.doesNotMatch(renderer, /'397:35947'/);
   assert.doesNotMatch(renderer, /assets\/figma-indicator-active-alpha\.webp/);
   assert.match(renderer, /Math\.abs\(dy\) > Math\.abs\(delta\) \+ 2/);
+});
+
+test('applySwitch commits content before index and indicators', () => {
+  const applyAt = renderer.indexOf('const applySwitch = (sid, requested, assetsPrepared = false) => {');
+  const nextAt = renderer.indexOf('const fixedNavigation', applyAt);
+  assert.ok(applyAt > 0 && nextAt > applyAt);
+  const body = renderer.slice(applyAt, nextAt);
+  const variantApply = body.indexOf('applyComponentVariantLayers(el, previousIndex, idx)');
+  const pages = body.indexOf('for (const el of pages)');
+  const ind = body.indexOf('applyIndicatorVariant(sid, idx)');
+  const indexCommit = body.indexOf("el.setAttribute('data-switch-index', String(idx))");
+  assert.ok(variantApply > 0 && variantApply < pages, 'content layers before pages');
+  assert.ok(pages > 0 && pages < ind, 'pages before indicators');
+  assert.ok(ind > 0 && ind < indexCommit, 'indicators before index commit');
+  assert.match(body, /if \(!applyComponentVariantLayers\(el, previousIndex, idx\)\)/);
+  assert.match(body, /if \(!pages\.length\) return;/);
+  assert.match(body, /if \(!appliedVariantOwners\.length && !pages\.length\) return;/);
 });
 
 test('full rebuild restores open named modals instead of closing them', () => {

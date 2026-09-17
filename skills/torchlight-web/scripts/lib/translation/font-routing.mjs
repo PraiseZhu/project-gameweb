@@ -87,12 +87,19 @@ export function fontRoleFor({ sourceFamily = null, role = null, semanticClass = 
 /* Resolve the source-truth fontFamily for a language + role.
    Returns { family, role, language, sourceAvailable } — family is always the truth
    name; sourceAvailable is left null here (file availability is figma-fonts' job). */
-export function routeFontWeight({ family = null, sourceWeight = null } = {}) {
+export function routeFontWeight({ family = null, sourceFamily = null, sourceWeight = null, fontStyle = null } = {}) {
   const requested = Number(sourceWeight);
   /* Invariant latin-display faces (YAML localeInvariantFamilies) only ship 400. */
-  if (isLocaleInvariantFamily(family)) return 400;
-  if (/Alimama/i.test(String(family || ''))) return 700;
-  if (/YouHei/i.test(String(family || '')) || /FZVariable/i.test(String(family || ''))) {
+  if (isLocaleInvariantFamily(family) || isLocaleInvariantFamily(sourceFamily)) return 400;
+  if (/Alimama/i.test(String(family || sourceFamily || ''))) return 700;
+  const target = String(family || '');
+  const source = String(sourceFamily || family || '');
+  const youHeiSource = /YouHei/i.test(source) || /FZVariable/i.test(source);
+  const youHeiTarget = /YouHei/i.test(target) || /FZVariable/i.test(target);
+  const regularYouHei = requested === 600 || (youHeiSource && /Regular/i.test(String(fontStyle || '')));
+  /* Noto Regular is 400. Do not carry YouHei named-Regular 600 across. */
+  if (!youHeiTarget && regularYouHei) return 400;
+  if (youHeiTarget) {
     return Number.isFinite(requested) ? requested : 600;
   }
   return Number.isFinite(requested) ? requested : 400;
@@ -123,14 +130,14 @@ export function youHeiVariationSettings({ sourceWeight = null, postScriptName = 
   return `"wght" ${wght}, "wdth" ${wdth}, "hght" ${hght}`;
 }
 
-export function routeFontFamily({ language = 'unknown', role = null, semanticClass = null, sourceFamily = null, sourceWeight = null } = {}) {
+export function routeFontFamily({ language = 'unknown', role = null, semanticClass = null, sourceFamily = null, sourceWeight = null, fontStyle = null } = {}) {
   const lang = normalizeLanguage(language);
   const fontRole = fontRoleFor({ sourceFamily, role, semanticClass });
   /* Locale-invariant families stay verbatim in every language: swapping them
      for a CJK display face is a weight/width regression, not a localization.
      Match the YAML list exactly — do not keep a second /Bebas/i roster. */
   if (isLocaleInvariantFamily(sourceFamily)) {
-    return { family: sourceFamily, weight: routeFontWeight({ family: sourceFamily, sourceWeight }), role: fontRole, language: lang, routed: false };
+    return { family: sourceFamily, weight: routeFontWeight({ family: sourceFamily, sourceFamily, sourceWeight, fontStyle }), role: fontRole, language: lang, routed: false };
   }
   const table = FONT_SOURCE_ROUTING[lang];
   if (!table) {
@@ -144,7 +151,7 @@ export function routeFontFamily({ language = 'unknown', role = null, semanticCla
   }
   return {
     family,
-    weight: routeFontWeight({ family, sourceWeight }),
+    weight: routeFontWeight({ family, sourceFamily, sourceWeight, fontStyle }),
     role: fontRole,
     language: lang,
     routed: family !== sourceFamily,

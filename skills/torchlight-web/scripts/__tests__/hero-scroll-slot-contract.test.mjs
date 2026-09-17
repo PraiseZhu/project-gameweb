@@ -160,6 +160,8 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /owner-block/);
   assert.match(render, /data-hero-cluster', 'bottom'/);
   assert.match(render, /isHeroWelfare/);
+  assert.match(render, /isWelfareBandNode/);
+  assert.match(render, /welfareBandTop/);
   assert.match(render, /inNamedModalPaint/);
   assert.match(render, /center bottom-anchor/);
   assert.match(render, /heroClusterBottomShift/);

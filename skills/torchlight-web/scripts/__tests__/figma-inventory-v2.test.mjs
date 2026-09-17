@@ -702,7 +702,7 @@ test("restoreOwnerComposites relinks skipped Auto Layout max onto live TEXT pare
       status: "skipped",
       why: "art-fragment",
       parentId: "clip",
-      layout: { layoutMode: "HORIZONTAL", maxWidth: 1954, maxHeight: 250 },
+      layout: { layoutMode: "HORIZONTAL", layoutSizingHorizontal: "FIXED", layoutSizingVertical: "HUG", maxWidth: 1954, maxHeight: 250 },
       pageBox: { x: 0, y: 40, w: 1954, h: 144 },
     },
     {
@@ -722,6 +722,55 @@ test("restoreOwnerComposites relinks skipped Auto Layout max onto live TEXT pare
   assert.equal(copy.layout.maxWidth, 1954);
   assert.equal(copy.layout.maxHeight, 250);
   assert.equal(copy.fitOwnerFromSkipped.sourceId, "wrap");
+  assert.equal(copy.layoutCapSelf.maxWidth, null);
+  assert.equal(copy.layoutCapSelf.maxHeight, null);
+  assert.equal(copy.fitOwnerFromSkipped.axisSource.maxWidth, "inherited");
+  assert.equal(copy.fitOwnerFromSkipped.axisSource.maxHeight, "inherited");
+  assert.equal(copy.fitOwnerFromSkipped.layoutMode, "HORIZONTAL");
+  assert.equal(copy.fitOwnerFromSkipped.layoutSizingHorizontal, "FIXED");
+  assert.equal(copy.fitOwnerFromSkipped.layoutSizingVertical, "HUG");
+  assert.deepEqual(copy.fitOwnerFromSkipped.box, { x: 0, y: 40, w: 1954, h: 144 });
+  assert.deepEqual(copy.parentBox, { x: 0, y: 40, w: 1954, h: 144 });
+});
+
+test("restoreOwnerComposites records per-axis self vs inherited caps before stamp", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "clip",
+      type: "FRAME",
+      name: "正文",
+      status: "unknown",
+      pageBox: { x: 0, y: 0, w: 400, h: 300 },
+    },
+    {
+      id: "wrap",
+      type: "FRAME",
+      name: "Frame skip",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "clip",
+      layout: { layoutMode: "HORIZONTAL", maxWidth: 200, maxHeight: 250 },
+      pageBox: { x: 0, y: 0, w: 200, h: 250 },
+    },
+    {
+      id: "copy",
+      type: "TEXT",
+      name: "txt/a",
+      status: "determined",
+      role: "copy",
+      parentId: "wrap",
+      layout: { maxWidth: 200 },
+      pageBox: { x: 0, y: 0, w: 180, h: 40 },
+      text: { characters: "Hi", fontSize: 24, letterSpacing: 0 },
+    },
+  ]);
+  const copy = restored.find((node) => node.id === "copy");
+  assert.equal(copy.layoutCapSelf.maxWidth, 200);
+  assert.equal(copy.layoutCapSelf.maxHeight, null);
+  assert.equal(copy.fitOwnerFromSkipped.axisSource.maxWidth, "self");
+  assert.equal(copy.fitOwnerFromSkipped.axisSource.maxHeight, "inherited");
+  assert.equal(copy.layout.maxWidth, 200);
+  assert.equal(copy.layout.maxHeight, 250);
 });
 
 test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as paintAsFragment", () => {

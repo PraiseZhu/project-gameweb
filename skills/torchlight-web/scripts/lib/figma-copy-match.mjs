@@ -99,19 +99,48 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
   }
   const parsedPhase = parsePhaseRows(declaredPhaseRows);
   const phaseRows = parsedPhase.rows;
-  const rows = Object.keys((larkSnap && larkSnap.rows) || {})
-    .filter((row) => phaseRows.has(String(row)))
+  const snapshotRowIds = Object.keys((larkSnap && larkSnap.rows) || {})
     .sort((a, b) => Number(a) - Number(b));
+  const rows = snapshotRowIds.filter((row) => phaseRows.has(String(row)));
   const table = []; // [{ row, rawZh, normZh }]
-  for (const row of rows) {
+  function pushRow(row) {
     const rawZh = at(larkSnap, `/rows/${row}/zh-CN`);
-    if (rawZh === null || rawZh === undefined) continue; // 简中空的行做不了 key
+    if (rawZh === null || rawZh === undefined) return null;
     const raw = String(rawZh);
     const localeRaw = {};
     for (const lang of langs) {
       try { localeRaw[lang] = at(larkSnap, `/rows/${row}/${lang}`); } catch { localeRaw[lang] = null; }
     }
-    table.push({ row, rawZh: raw, normZh: normalizeCopy(raw), raw: localeRaw });
+    const entry = { row, rawZh: raw, normZh: normalizeCopy(raw), raw: localeRaw };
+    table.push(entry);
+    return entry;
+  }
+  for (const row of rows) pushRow(row);
+  /* Shared chrome / calendar copy often lives before the current phase
+     block. Keep phaseRows as the collision set, then adopt leftover
+     snapshot rows whose zh-CN is not already in the phase block and
+     whose translations agree. Never guess when leftover twins differ. */
+  const leftoverRows = [];
+  if (parsedPhase.ok) {
+  const phaseNorm = new Set(table.map((t) => t.normZh));
+  const leftoverByNorm = new Map();
+  for (const row of snapshotRowIds) {
+    if (phaseRows.has(String(row))) continue;
+    let rawZh;
+    try { rawZh = at(larkSnap, `/rows/${row}/zh-CN`); } catch { continue; }
+    if (rawZh === null || rawZh === undefined) continue;
+    const normZh = normalizeCopy(String(rawZh));
+    if (!normZh || phaseNorm.has(normZh)) continue;
+    if (!leftoverByNorm.has(normZh)) leftoverByNorm.set(normZh, []);
+    leftoverByNorm.get(normZh).push(String(row));
+  }
+  for (const group of leftoverByNorm.values()) {
+    const fingerprints = group.map((row) => JSON.stringify(translationTuple(larkSnap, at, row, langs)));
+    if (new Set(fingerprints).size > 1) continue;
+    const adopted = pushRow(group[0]);
+    if (adopted) leftoverRows.push(String(adopted.row));
+  }
+
   }
 
   // ── 顺手统计（§6「地区差异」）：简中有值但某语言列为空的行。只统计，不定规则 ──
@@ -553,6 +582,13 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
   for (const [nodeId, entry] of Object.entries(byNode)) {
     if (!entry || entry.matchKind !== 'ambiguous') continue;
     const candidates = Array.isArray(entry.candidates) ? entry.candidates : [];
+    const splitShare = inferSplitShareRow({
+      nodeId,
+      candidateRows: candidates.map((item) => item.row),
+      texts,
+      byNode: firstPassBound,
+    });
+    if (!splitShare.unresolved) continue;
     const neighbor = inferRowFromNeighbors({
       nodeId,
       candidateRows: candidates.map((item) => item.row),
@@ -622,6 +658,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
     emptyLangCells,
     contextual: _contextual, // 同字段多场景解析留痕：resolved/via/contextKey/why（进报告不进 truth）
     review: _review,
+    leftoverRows,
     phaseRowsOk: parsedPhase.ok,
     phaseRowsProblem: parsedPhase.problem,
   };

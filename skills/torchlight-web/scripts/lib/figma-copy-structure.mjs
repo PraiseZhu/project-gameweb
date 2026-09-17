@@ -617,6 +617,22 @@ export function inferAdjacentBoundRow({ nodeId, candidateRows, texts, byNode }) 
  * candidate rows, the remaining layers of that parent share the row. Two
  * different bound rows among siblings stay unresolved.
  */
+function instanceRootOf(nodeId) {
+  const raw = String(nodeId || '');
+  if (!raw.startsWith('I')) return '';
+  const cut = raw.indexOf(';');
+  return cut > 0 ? raw.slice(0, cut) : '';
+}
+
+function sameSplitShareHost(a, b) {
+  if (!a || !b) return false;
+  const parent = String(a.parentId || '');
+  if (parent && parent === String(b.parentId || '')) return true;
+  const left = instanceRootOf(a.nodeId);
+  const right = instanceRootOf(b.nodeId);
+  return Boolean(left && left === right);
+}
+
 export function inferSplitShareRow({ nodeId, candidateRows, texts, byNode }) {
   const rows = candidateRowSet(candidateRows);
   if (rows.length < 2) return { unresolved: true, via: 'unresolved', why: 'candidate rows are not ambiguous' };
@@ -625,14 +641,14 @@ export function inferSplitShareRow({ nodeId, candidateRows, texts, byNode }) {
     return { unresolved: true, via: 'unresolved', why: 'node is missing from document order' };
   }
   const parent = self.parentId != null ? String(self.parentId) : '';
-  if (!parent) {
+  if (!parent && !instanceRootOf(self.nodeId)) {
     return { unresolved: true, via: 'unresolved', why: 'node has no parent to share a cell-split row' };
   }
   const shared = [];
   const groupIds = [];
   for (const node of sameTreeTexts(texts, self)) {
     if (String(node.nodeId) === String(nodeId)) continue;
-    if (String(node.parentId || '') !== parent) continue;
+    if (!sameSplitShareHost(self, node)) continue;
     const bound = boundRowOf(byNode[String(node.nodeId)]);
     if (bound != null && rows.includes(bound)) {
       shared.push(bound);

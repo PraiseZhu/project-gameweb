@@ -1277,3 +1277,83 @@ test('extractCopy: designated takeCount past the cell is unresolved', () => {
   assert.equal(out.byNode.t.matchKind, 'designated-split-unresolved');
   assert.equal(out.byNode.t.translations && out.byNode.t.translations.en, undefined);
 });
+
+test('extractCopy: leftover unique rows outside phaseRows still match', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' }, phaseRows: [61, 63] },
+    rows: {
+      3: { 'zh-CN': '\u5b98\u65b9\u5145\u503c', en: 'Shop', 'zh-TW': '\u5b98\u65b9\u5132\u503c', ko: 'Shop-ko' },
+      9: { 'zh-CN': '\u7acb\u5373\u4e0b\u8f7d', en: 'PRE-REGISTER NOW!', 'zh-TW': '\u7acb\u5373\u9810\u7d04', ko: 'pre-ko' },
+      51: { 'zh-CN': '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f', en: 'Which calendar do you want to add the schedule to?', 'zh-TW': 'tw-cal', ko: 'ko-cal' },
+      52: { 'zh-CN': '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f', en: 'Which calendar DIFFERENT', 'zh-TW': 'tw-cal', ko: 'ko-cal' },
+      61: { 'zh-CN': '\u8d5b\u5b63\u798f\u5229', en: 'Season Rewards' },
+      86: { 'zh-CN': '\u7acb\u5373\u4e0b\u8f7d', en: 'Install' },
+    },
+  };
+  const texts = [
+    { nodeId: 'cal', name: 'q', characters: '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f' },
+    { nodeId: 'shop', name: 'shop', characters: '\u5b98\u65b9\u5145\u503c' },
+    { nodeId: 'dl', name: 'dl', characters: '\u7acb\u5373\u4e0b\u8f7d' },
+    { nodeId: 'rw', name: 'rw', characters: '\u8d5b\u5b63\u798f\u5229' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.rw.matchKind, 'exact');
+  assert.equal(String(out.byNode.rw.row), '61');
+  assert.equal(out.byNode.shop.matchKind, 'exact');
+  assert.equal(String(out.byNode.shop.row), '3');
+  assert.equal(out.byNode.shop.translations.en.value, 'Shop');
+  assert.equal(out.byNode.cal.matchKind, 'none', 'leftover twins with different translations must not guess');
+  assert.equal(out.byNode.dl.matchKind, 'none', 'phase-colliding leftover 立即下载 must not override/guess');
+});
+
+test('extractCopy: leftover calendar row binds when translations agree', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [61] },
+    rows: {
+      49: { 'zh-CN': '\u8ba2\u9605\u8d5b\u5b63\u65e5\u7a0b', en: 'Subscribe to Season Schedule' },
+      51: { 'zh-CN': '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f', en: 'Which calendar do you want to add the schedule to?' },
+      61: { 'zh-CN': '\u8d5b\u5b63\u798f\u5229', en: 'Season Rewards' },
+    },
+  };
+  const texts = [
+    { nodeId: 'cal', name: 'q', characters: '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f' },
+    { nodeId: 'title', name: 't', characters: '\u8ba2\u9605\u8d5b\u5b63\u65e5\u7a0b' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.cal.matchKind, 'exact');
+  assert.equal(String(out.byNode.cal.row), '51');
+  assert.equal(out.byNode.cal.translations.en.value, 'Which calendar do you want to add the schedule to?');
+  assert.equal(out.byNode.title.matchKind, 'exact');
+  assert.equal(out.byNode.title.translations.en.value, 'Subscribe to Season Schedule');
+  assert.ok(Array.isArray(out.report.leftoverRows));
+  assert.ok(out.report.leftoverRows.includes('51'));
+});
+
+test('extractCopy: nested instance title shares the uniquely bound cell-split row', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [82, 83] },
+    rows: {
+      82: {
+        'zh-CN': '\u65b0\u4eba\u9650\u5b9a\u798f\u5229\n\u4f20\u5947\u81ea\u9009\u6389\u843d\u5951\u7075\u7b7e\u5230\u5373\u9886\uff01\n\n*\u6bcf\u4e2a\u8d26\u53f7\u9650\u9886\u53d6\u4e00\u6b21\uff0c\u5df2\u9886\u53d6\u8fc7\u5c06\u65e0\u6cd5\u518d\u6b21\u53c2\u4e0e\u3002',
+        en: 'New Player Exclusive \nLog in to claim a Legendary Drop Pactspirit Selection Pack! \n*One claim per account.',
+      },
+      83: {
+        'zh-CN': '\u65b0\u4eba\u9650\u5b9a\u798f\u5229\n\u5b8c\u6210\u76ee\u6807\u53ef\u83b7\u5f97\u4f20\u5947\u81ea\u9009\u6218\u6597\u5951\u7075\uff01\n\n*\u6bcf\u4e2a\u8d26\u53f7\u9650\u9886\u53d6\u4e00\u6b21\uff0c\u5df2\u9886\u53d6\u8fc7\u5c06\u65e0\u6cd5\u518d\u6b21\u53c2\u4e0e\u3002',
+        en: 'New Player Exclusive \nComplete goals to claim a Legendary Battle Pactspirit! \n*One claim per account.',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'I689:7408;689:7308;267:20351', name: 'title', characters: '\u65b0\u4eba\u9650\u5b9a\u798f\u5229', parentId: '689:7308', orderKey: '1', treeKey: 'pc' },
+    { nodeId: 'I689:7408;689:7341', name: 'body', characters: '\u4f20\u5947\u81ea\u9009\u6389\u843d\u5951\u7075\u7b7e\u5230\u5373\u9886\uff01', parentId: 'I689:7408', orderKey: '2', treeKey: 'pc' },
+    { nodeId: 'I689:7408;689:7342', name: 'note', characters: '*\u6bcf\u4e2a\u8d26\u53f7\u9650\u9886\u53d6\u4e00\u6b21\uff0c\u5df2\u9886\u53d6\u8fc7\u5c06\u65e0\u6cd5\u518d\u6b21\u53c2\u4e0e\u3002', parentId: 'I689:7408', orderKey: '3', treeKey: 'pc' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(String(out.byNode['I689:7408;689:7341'].row), '82');
+  assert.equal(String(out.byNode['I689:7408;689:7308;267:20351'].row), '82');
+  assert.match(String(out.byNode['I689:7408;689:7308;267:20351'].translations.en.value), /New Player Exclusive/);
+  assert.equal(String(out.byNode['I689:7408;689:7342'].row), '82');
+});

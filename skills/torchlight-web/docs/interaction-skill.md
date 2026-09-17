@@ -88,8 +88,9 @@ Hover brightness and press darkening are **not Figma states**. They are a
 global runtime feel for named interactive controls:
 
 ```text
-hover  → filter: brightness(1.12)   only under @media (hover: hover)
-press  → filter: brightness(0.88)   :active, no transition
+hover  → filter: brightness(1.1)    only under @media (hover: hover)
+press  → filter: brightness(0.9)    :active
+trans  → filter .2s ease-in-out
 ```
 
 Owned by `scripts/lib/figma-button-press-contract.mjs`. The renderer injects

@@ -589,6 +589,180 @@ browserTest('browser calendar today/return swaps on hscroll and restores on clic
     await browser.close();
   }
 });
+
+browserTest('mobile prize band keeps Figma gap when 100vh slot is taller than the hero', async () => {
+  const { browser, page } = await setup();
+  try {
+    await page.setViewportSize({ width: 360, height: 1080 });
+    const prizeTruth = {
+      platforms: {
+        mobile: {
+          pageChrome: { meta: { x: 0, y: 0, width: 750, height: 1472 }, nodes: [] },
+          pagePaintOrder: [{ id: 'section', sectionIds: ['section'] }],
+          sections: {
+            section: {
+              meta: { x: 0, y: 0, width: 750, height: 1472, y: 0, height: 1472 },
+              nodes: [
+                node('kv', 'kv', 'section', 0, 0, 750, 1472),
+                node('title', '标题', 'section', 0, 539, 750, 564),
+                node('cta', 'btn/按钮', 'section', 133, 1089, 483, 156),
+                node('welfare', '赛季福利', 'section', 319, 1253, 112, 34, { type: 'TEXT' }),
+                node('prize', '1', 'section', 56, 1283, 213, 172),
+              ],
+            },
+          },
+        },
+      },
+    };
+    await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
+      truth,
+      rawTruth: truth,
+      prefs: { plat: 'mobile', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 360, h: 1080, dpr: 1 },
+    }), prizeTruth);
+    const geom = await page.evaluate(() => {
+      const title = document.querySelector('[data-node="title"]');
+      const prize = document.querySelector('[data-node="prize"]');
+      return {
+        titleTop: title && parseFloat(title.style.top),
+        prizeTop: prize && parseFloat(prize.style.top),
+        prizeCluster: prize && prize.getAttribute('data-hero-cluster'),
+        titleCluster: title && title.getAttribute('data-hero-cluster'),
+      };
+    });
+    assert.equal(geom.titleCluster, 'bottom', JSON.stringify(geom));
+    assert.equal(geom.prizeCluster, 'bottom');
+    assert.ok(Number.isFinite(geom.titleTop) && Number.isFinite(geom.prizeTop), JSON.stringify(geom));
+    assert.ok(Math.abs((geom.prizeTop - geom.titleTop) - (1283 - 539)) < 2, JSON.stringify(geom));
+  } finally {
+    await browser.close();
+  }
+});
+
+browserTest('rotated badge keeps a single-line strip and nowrap', async () => {
+  const { browser, page } = await setup();
+  try {
+    const badge = node('badge', '传奇战斗', 'section', 77.215, 1293.663, 56.5685, 56.5685, {
+      type: 'TEXT',
+      rotation: -0.7853981633974483,
+      text: {
+        characters: '传奇战斗',
+        fontSize: 16,
+        fontFamily: 'FZVariable-YouHeiS WT W H',
+        lineTypes: ['NONE'],
+        autoResize: 'HEIGHT',
+        align: 'CENTER',
+        color: { r: 1, g: 1, b: 1, a: 1 },
+      },
+      layout: { maxWidth: 68, maxHeight: 68, layoutSizingHorizontal: 'FILL', layoutSizingVertical: 'HUG' },
+      fitOwnerFromSkipped: { sourceId: '272:24952', maxWidth: 68, maxHeight: 68, box: { x: 73.5, y: 1293.663, w: 64, h: 56.5685 } },
+    });
+    const truth = {
+      platforms: {
+        pc: {
+          pageChrome: { meta: { x: 0, y: 0, width: 400, height: 300 }, nodes: [] },
+          sections: { section: { meta: { x: 0, y: 0, width: 400, height: 300 }, nodes: [badge] } },
+        },
+      },
+    };
+    await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
+      truth,
+      rawTruth: truth,
+      prefs: { plat: 'pc', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 400, h: 300, dpr: 1 },
+    }), truth);
+    const geom = await page.evaluate(() => {
+      const el = document.querySelector('[data-node="badge"]');
+      return el && {
+        width: parseFloat(el.style.width),
+        height: parseFloat(el.style.height),
+        maxWidth: parseFloat(el.style.maxWidth),
+        whiteSpace: el.style.whiteSpace,
+        nowrap: el.getAttribute('data-text-rotation-nowrap'),
+        policy: el.getAttribute('data-text-layout-policy'),
+        slot: el.getAttribute('data-text-rotation-slot'),
+        top: parseFloat(el.style.top),
+        wrapCap: el.getAttribute('data-text-wrap-cap'),
+      };
+    });
+    assert.equal(geom && geom.nowrap, '1');
+    assert.equal(geom.whiteSpace, 'pre');
+    assert.equal(geom.policy, 'rotated-single-line');
+    assert.equal(geom.wrapCap, null);
+    assert.ok(Math.abs(geom.width - 64) < 0.8, JSON.stringify(geom));
+    assert.equal(geom.height, 16);
+    assert.ok(geom.slot === 'render-box' || geom.slot === 'layout-box', JSON.stringify(geom));
+    assert.ok(Math.abs(geom.top - 1313.947) < 1, JSON.stringify(geom));
+    assert.ok(Math.abs(geom.maxWidth - 64) < 0.8, JSON.stringify(geom));
+  } finally {
+    await browser.close();
+  }
+});
+
+browserTest('rotated badge translations shrink on one line', async () => {
+  const { browser, page } = await setup();
+  try {
+    const badge = node('badge', '传奇战斗', 'section', 77.215, 1293.663, 56.5685, 56.5685, {
+      type: 'TEXT',
+      rotation: -0.7853981633974483,
+      text: {
+        characters: '传奇战斗',
+        fontSize: 16,
+        fontFamily: 'FZVariable-YouHeiS WT W H',
+        lineTypes: ['NONE'],
+        autoResize: 'HEIGHT',
+        align: 'CENTER',
+        color: { r: 1, g: 1, b: 1, a: 1 },
+      },
+      layout: { maxWidth: 68, maxHeight: 68, layoutSizingHorizontal: 'FILL', layoutSizingVertical: 'HUG' },
+      fitOwnerFromSkipped: { sourceId: '272:24952', maxWidth: 68, maxHeight: 68, box: { x: 73.5, y: 1293.663, w: 64, h: 56.5685 } },
+    });
+    const truth = {
+      copy: { byNode: { badge: { characters: '传奇战斗', ko: '레전드 전투!' } } },
+      platforms: {
+        pc: {
+          pageChrome: { meta: { x: 0, y: 0, width: 400, height: 300 }, nodes: [] },
+          sections: { section: { meta: { x: 0, y: 0, width: 400, height: 300 }, nodes: [badge] } },
+        },
+      },
+    };
+    await page.evaluate((truth) => window.__figmaRender.renderApp({
+      enablePageInteraction: true,
+      truth,
+      rawTruth: truth,
+      prefs: { plat: 'pc', lang: 'ko' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 400, h: 300, dpr: 1 },
+    }), truth);
+    const geom = await page.evaluate(() => {
+      const el = document.querySelector('[data-node="badge"]');
+      const fs = parseFloat(el && el.style.fontSize);
+      return el && {
+        text: (el.textContent || '').trim(),
+        whiteSpace: el.style.whiteSpace,
+        nowrap: el.getAttribute('data-text-rotation-nowrap'),
+        fontSize: fs,
+        width: parseFloat(el.style.width),
+        maxWidth: parseFloat(el.style.maxWidth),
+        fitMax: el.getAttribute('data-fit-max-width'),
+      };
+    });
+    assert.equal(geom.nowrap, '1');
+    assert.equal(geom.whiteSpace, 'pre');
+    assert.match(geom.text, /레전드/);
+    assert.ok(geom.fontSize > 0 && geom.fontSize < 16, JSON.stringify(geom));
+    assert.ok(Math.abs(geom.width - 64) < 0.8, JSON.stringify(geom));
+  } finally {
+    await browser.close();
+  }
+});
 void node;
 void buildRendererInteractionPayload;
 void resolve;

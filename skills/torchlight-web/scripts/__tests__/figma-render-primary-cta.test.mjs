@@ -206,7 +206,7 @@ browserTest('DESIGN.md 6.2: English primary CTA paints hero type and forced uppe
     assert.ok(primary, `primary CTA missing: ${JSON.stringify(dump)}`);
     assert.equal(primary.text, 'View More');
     assert.match(String(primary.family), /Noto Sans/);
-    assert.equal(String(primary.weight), '600');
+    assert.equal(String(primary.weight), '400');
     assert.equal(primary.letterSpacing, '0px');
     assert.equal(primary.transform, 'uppercase');
     assert.equal(primary.ctaType, 'follow-hero-type');
@@ -220,7 +220,7 @@ browserTest('DESIGN.md 6.2: English primary CTA paints hero type and forced uppe
       assert.equal(hero.transform, 'uppercase');
       assert.equal(hero.uppercaseMark, 'en');
       assert.match(String(hero.family), /Noto Sans/);
-      assert.equal(String(hero.weight), '600');
+      assert.equal(String(hero.weight), '400');
     }
 
     assert.ok(secondary, `secondary CTA missing: ${JSON.stringify(dump)}`);
@@ -229,13 +229,13 @@ browserTest('DESIGN.md 6.2: English primary CTA paints hero type and forced uppe
     assert.equal(secondary.uppercaseMark, null);
     assert.notEqual(secondary.transform, 'uppercase');
     assert.notEqual(secondary.ctaType, 'follow-hero-type');
-    assert.equal(String(secondary.weight), '600');
+    assert.equal(String(secondary.weight), '400');
 
     const gate = assessPrimaryCtaType([
       {
         nodeId: 'primary-text',
         language: 'en',
-        primaryCta: { status: 'matched', fontFamily: 'Noto Sans', fontWeight: 600, letterSpacing: 0, uppercase: true },
+        primaryCta: { status: 'matched', fontFamily: 'Noto Sans', fontWeight: 400, letterSpacing: 0, uppercase: true },
         fontFamily: primary.family,
         fontWeight: Number(primary.weight),
         letterSpacing: primary.letterSpacing,

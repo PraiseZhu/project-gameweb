@@ -848,9 +848,7 @@
       enablePageInteraction: (function () {
         var interactionQ = '';
         try { interactionQ = new URLSearchParams(window.location.search).get('interaction') || ''; } catch (e) { interactionQ = ''; }
-        return PRODUCT_VIEW
-          ? !(interactionQ === '0' || interactionQ === 'false' || interactionQ === 'no')
-          : (interactionQ === '1' || interactionQ === 'true' || interactionQ === 'yes');
+        return !(interactionQ === '0' || interactionQ === 'false' || interactionQ === 'no');
       }()),
       setPref: applyPref });
   }

@@ -267,7 +267,7 @@ test('Founder YouHei live copy pins Regular width axis instead of CSS condensed 
 test('HEIGHT display titles are not sourceNoWrapTitle; only WIDTH hugs stay pre', () => {
   assert.match(renderer, /_isSourceNoWrapTitle/);
   assert.match(renderer, /const sourceNoWrapTitle = this\._isSourceNoWrapTitle\(\{/);
-  assert.match(renderer, /el\.style\.whiteSpace = \(inlineHugs \|\| sourceNoWrapTitle\) \? 'pre' : 'pre-wrap'/);
+  assert.match(renderer, /el\.style\.whiteSpace = \(inlineHugs \|\| sourceNoWrapTitle \|\| rotatedSingleLine \|\| axisPolicy\.nowrap\) \? 'pre' : 'pre-wrap'/);
 });
 
 test('FONT_SIZE_% lineHeightPercent becomes a px line-height', () => {
@@ -585,7 +585,7 @@ test('multiline HUG explanatory text keeps source width instead of max-content',
   assert.match(renderer, /const sourceMultilineText = authoredLineCount > 1[\s\S]*Number\(box\.h\) > Number\(tx\.lineHeight\) \* 1\.35/);
   assert.match(renderer, /const sourceWidthHugText = directOwnerHugFrame && !compactDirectOwnerHugLabel[\s\S]*\(arForOwner === 'HEIGHT' \|\| \(arForOwner === 'WIDTH_AND_HEIGHT' && sourceMultilineText\)\)/);
   assert.match(renderer, /const inlineHugs = hugs && !sourceWidthHugText/);
-  assert.match(renderer, /el\.style\.whiteSpace = \(inlineHugs \|\| sourceNoWrapTitle\) \? 'pre' : 'pre-wrap'/);
+  assert.match(renderer, /el\.style\.whiteSpace = \(inlineHugs \|\| sourceNoWrapTitle \|\| rotatedSingleLine \|\| axisPolicy\.nowrap\) \? 'pre' : 'pre-wrap'/);
   assert.match(renderer, /if \(sourceWidthHugText && box\.w != null\) \{[\s\S]*el\.style\.width = box\.w \+ 'px'[\s\S]*el\.setAttribute\('data-text-owner-width-policy', 'source-width-hug-text'\)/);
   assert.match(renderer, /if \(!sourceWidthHugText && ownerW > Number\(box\.w \?\? 0\) \+ 0\.5 && ar === 'WIDTH_AND_HEIGHT'\)/);
 });
@@ -603,7 +603,7 @@ test('compact HUG label behavior remains geometry-authorized only', () => {
   assert.match(renderer, /verticalSlack <= sourceH \* 0\.6 \+ 0\.5/);
   assert.match(renderer, /sourceW >= ownerW \* 0\.55/);
   assert.match(renderer, /const boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner && hasAlCaps/);
-  assert.match(renderer, /if \(boundedHugLabel(?: && !_copyUnbound && !_zhSourceExact)?\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*maxWidth: alOwner\.maxWidth/);
+  assert.match(renderer, /if \(boundedHugLabel && !_copyUnbound && !_zhSourceExact && axisFitPolicy\.shrink\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*maxWidth: axisFitPolicy\.fitMaxWidth/);
   assert.doesNotMatch(renderer, /hasAlCaps \|\| semanticBreak/);
   assert.doesNotMatch(renderer, /widthFit: _ownerW/);
 });

@@ -274,22 +274,49 @@ function relinkSkippedMaxOwners(nodes, byId) {
         const next = { ...node, parentId: parent.id };
         if (inherited) {
           const layout = isPlainObject(next.layout) ? { ...next.layout } : {};
+          const selfWidth = layoutCap(layout, 'maxWidth');
+          const selfHeight = layoutCap(layout, 'maxHeight');
           if (inherited.maxWidth != null && layoutCap(layout, 'maxWidth') == null) layout.maxWidth = inherited.maxWidth;
           if (inherited.maxHeight != null && layoutCap(layout, 'maxHeight') == null) layout.maxHeight = inherited.maxHeight;
           next.layout = layout;
+          next.layoutCapSelf = { maxWidth: selfWidth, maxHeight: selfHeight };
           next.fitOwnerFromSkipped = {
             sourceId: inherited.sourceId,
             maxWidth: inherited.maxWidth,
             maxHeight: inherited.maxHeight,
+            layoutMode: inherited.layoutMode,
+            layoutSizingHorizontal: inherited.layoutSizingHorizontal,
+            layoutSizingVertical: inherited.layoutSizingVertical,
+            box: inherited.box || null,
+            axisSource: {
+              maxWidth: selfWidth != null ? 'self' : (inherited.maxWidth != null ? 'inherited' : null),
+              maxHeight: selfHeight != null ? 'self' : (inherited.maxHeight != null ? 'inherited' : null),
+            },
           };
+          const ownerBox = parent.pageBox || parent.box;
+          const childBox = next.pageBox || next.box;
+          if (ownerBox && childBox && Number.isFinite(Number(ownerBox.x)) && Number.isFinite(Number(childBox.x))) {
+            next.parentBox = {
+              x: Number(childBox.x) - Number(ownerBox.x),
+              y: Number(childBox.y) - Number(ownerBox.y),
+              w: Number(childBox.w),
+              h: Number(childBox.h),
+            };
+          }
         }
         return next;
       }
       if (!inherited && isAutoLayoutMaxOwner(parent)) {
+        const sizingH = parent.layout && parent.layout.layoutSizingHorizontal;
+        const sizingV = parent.layout && parent.layout.layoutSizingVertical;
         inherited = {
           sourceId: parent.id,
           maxWidth: layoutCap(parent.layout, 'maxWidth'),
           maxHeight: layoutCap(parent.layout, 'maxHeight'),
+          layoutMode: parent.layout && parent.layout.layoutMode ? String(parent.layout.layoutMode) : undefined,
+          layoutSizingHorizontal: sizingH != null && sizingH !== '' ? String(sizingH) : undefined,
+          layoutSizingVertical: sizingV != null && sizingV !== '' ? String(sizingV) : undefined,
+          box: parent.pageBox || parent.box || null,
         };
       }
       parentId = parent.parentId;

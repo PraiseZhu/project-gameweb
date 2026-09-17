@@ -1191,16 +1191,22 @@
     return 'body';
   },
   /* Mirror scripts/lib/translation/font-routing.mjs#routeFontWeight. */
-  _routeFontWeight({ family = null, sourceWeight = null } = {}) {
+  _routeFontWeight({ family = null, sourceFamily = null, sourceWeight = null, fontStyle = null } = {}) {
     const requested = Number(sourceWeight);
-    if (this._isLocaleInvariantFamily(family)) return 400;
-    if (/Alimama/i.test(String(family || ''))) return 700;
-    if (/YouHei/i.test(String(family || '')) || /FZVariable/i.test(String(family || ''))) {
+    if (this._isLocaleInvariantFamily(family) || this._isLocaleInvariantFamily(sourceFamily)) return 400;
+    if (/Alimama/i.test(String(family || sourceFamily || ''))) return 700;
+    const target = String(family || '');
+    const source = String(sourceFamily || family || '');
+    const youHeiSource = /YouHei/i.test(source) || /FZVariable/i.test(source);
+    const youHeiTarget = /YouHei/i.test(target) || /FZVariable/i.test(target);
+    const regularYouHei = requested === 600 || (youHeiSource && /Regular/i.test(String(fontStyle || '')));
+    if (!youHeiTarget && regularYouHei) return 400;
+    if (youHeiTarget) {
       return Number.isFinite(requested) ? requested : 600;
     }
     return Number.isFinite(requested) ? requested : 400;
   },
-  _routeFontFamily({ language = 'unknown', role = '', semanticClass = '', sourceFamily = null, sourceWeight = 400 } = {}) {
+  _routeFontFamily({ language = 'unknown', role = '', semanticClass = '', sourceFamily = null, sourceWeight = 400, fontStyle = null } = {}) {
     const raw = String(language || '').replace('_', '-').toLowerCase();
     const lang = raw.startsWith('zh-tw') || raw.startsWith('zh-hk') ? 'zh-TW'
       : raw.startsWith('zh') ? 'zh-CN' : raw.startsWith('ja') ? 'ja'
@@ -1213,7 +1219,7 @@
     if (this._isLocaleInvariantFamily(sourceFamily)) {
       return {
         family: sourceFamily,
-        weight: this._routeFontWeight({ family: sourceFamily, sourceWeight }),
+        weight: this._routeFontWeight({ family: sourceFamily, sourceFamily, sourceWeight, fontStyle }),
         role: fontRole,
         language: lang,
         routed: false,
@@ -1231,7 +1237,7 @@
     }
     return {
       family,
-      weight: this._routeFontWeight({ family, sourceWeight }),
+      weight: this._routeFontWeight({ family, sourceFamily, sourceWeight, fontStyle }),
       role: fontRole,
       language: lang,
       routed: family !== sourceFamily,
@@ -1744,15 +1750,67 @@
     const openOff = openFlowNoShrink == null ? policy.openFlowNoShrink === true : openFlowNoShrink === true;
     const truncating = String(autoResize || 'FIXED').toUpperCase() === 'TRUNCATE' || truncation === 'ENDING';
     const cap = (n) => { const v = Number(n); return Number.isFinite(v) && v > 0; };
-    const hasAlMax = autoLayoutMax && (cap(autoLayoutMax.maxWidth) || cap(autoLayoutMax.maxHeight));
-    if (hasAlMax) return { authorized: true, reason: 'auto-layout-max' };
+    const widthCap = autoLayoutMax && cap(autoLayoutMax.maxWidth);
+    const heightCap = autoLayoutMax && cap(autoLayoutMax.maxHeight);
+    if (widthCap) return { authorized: true, reason: 'auto-layout-max' };
     if (openFlow && openOff) return { authorized: false, reason: 'open-flow-natural-growth' };
     if (explicitFit) return { authorized: true, reason: 'explicit-fit-grant' };
     if (truncating) return { authorized: true, reason: 'truncation' };
     if (clipsContent === true || isMask === true) return { authorized: true, reason: 'clip-or-mask' };
+    if (heightCap) return { authorized: false, reason: 'vertical-max-wrap' };
     if (hugOff && String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
     void boundedOwner;
     return { authorized: false, reason: 'preserve-source-metrics' };
+  },
+  _positiveLayoutCap(raw) {
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  },
+  _primaryCtaNowrapEligible({ language, status, hasAdoptedCopy } = {}) {
+    const raw = String(language || '').replace('_', '-').toLowerCase();
+    const lang = raw.startsWith('en') ? 'en' : raw;
+    return lang === 'en' && status === 'matched' && hasAdoptedCopy === true;
+  },
+  _axisConstraintPolicy({ maxWidth = null, maxHeight = null, language = '', primaryCtaNowrap = false, hasAdoptedCopy = false } = {}) {
+    const raw = String(language || '').replace('_', '-').toLowerCase();
+    const lang = raw.startsWith('zh-tw') || raw.startsWith('zh-hk') ? 'zh-TW'
+      : raw.startsWith('zh') ? 'zh-CN' : raw.startsWith('ja') ? 'ja'
+      : raw.startsWith('ko') ? 'ko' : raw.startsWith('en') ? 'en' : raw;
+    const widthCap = this._positiveLayoutCap(maxWidth);
+    const heightCap = this._positiveLayoutCap(maxHeight);
+    if (lang === 'zh-CN') {
+      return { wrap: true, nowrap: false, shrink: false, fitMaxWidth: null, fitMaxHeight: null, reason: 'zh-cn-figma-exact' };
+    }
+    if (hasAdoptedCopy !== true) {
+      return { wrap: true, nowrap: false, shrink: false, fitMaxWidth: null, fitMaxHeight: null, reason: 'unadopted-copy-keeps-source' };
+    }
+    if (widthCap != null && heightCap != null) {
+      return { wrap: true, nowrap: false, shrink: true, fitMaxWidth: widthCap, fitMaxHeight: heightCap, reason: 'dual-axis-wrap-then-shrink' };
+    }
+    if (primaryCtaNowrap === true) {
+      return { wrap: false, nowrap: true, shrink: true, fitMaxWidth: widthCap, fitMaxHeight: null, reason: 'primary-cta-single-line' };
+    }
+    if (widthCap != null && heightCap == null) {
+      return { wrap: false, nowrap: true, shrink: true, fitMaxWidth: widthCap, fitMaxHeight: null, reason: 'horizontal-max-shrink' };
+    }
+    if (widthCap == null && heightCap != null) {
+      return { wrap: true, nowrap: false, shrink: false, fitMaxWidth: null, fitMaxHeight: null, reason: 'vertical-max-wrap' };
+    }
+    return { wrap: true, nowrap: false, shrink: false, fitMaxWidth: null, fitMaxHeight: null, reason: 'no-auto-layout-max' };
+  },
+  _groupUnifyFontSize({ currentPx = null, localeBasePx = null, groupMinPx = null } = {}) {
+    const current = this._positiveLayoutCap(currentPx);
+    const groupMin = this._positiveLayoutCap(groupMinPx);
+    if (groupMin == null) return current || this._positiveLayoutCap(localeBasePx);
+    const next = current == null ? groupMin : Math.min(current, groupMin);
+    if (current != null && next > current) return current;
+    return next;
+  },
+  _isBtnSetLabel(node, nodesById, componentSets) {
+    const owner = this._findOwningInstance(node, nodesById);
+    const set = this._findComponentSetByMemberId(componentSets, owner && owner.componentId);
+    const setName = this._primaryCtaSetName(set) || String((owner && owner.name) || "");
+    return setName === "首屏主按钮" || setName.startsWith("btn/");
   },
   /* Mirror scripts/lib/figma-typography.mjs#isSourceNoWrapTitle. */
   _isSourceNoWrapTitle({ autoResize = 'FIXED', sourceSingleLine = false, displayTitle = false } = {}) {
@@ -2805,12 +2863,12 @@
         || motionAdapter && (motionAdapter.interactionPayload || motionAdapter.interaction && motionAdapter.interaction.rendererPayload);
       const css = payload && payload.buttonPress && payload.buttonPress.css
         || [
-          ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
+          ':root{--fx-hover-brightness:1.1;--fx-press-brightness:.9}',
           '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
-          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
+          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer;transition:filter .2s ease-in-out}',
           '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
           'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
-          '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
+          '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none;transition:none}',
           '[data-dropmenu="true"]:hover,[data-dropmenu="true"]:active{filter:none}',
           '[data-dropmenu-state="on"] [data-prefix="img"]{filter:none}',
           '[data-scroll-axis="y"]::-webkit-scrollbar{display:none;width:0;height:0}',
@@ -2950,10 +3008,24 @@
       }
     }
     const hasPageBg = pageBgNodes.length > 0;
-    /* Page frame / bg/* sheet height is a layout hint, not the scroll lock.
-       A 20000 bg/pc board past the last CTA (19442) is empty artboard, not
-       content. Scroll follows painted sections + non-bg pageChrome. */
+    /* Scroll lock is the bg/pc or bg/mobile board bottom. Last CTA used to clip
+       the board; other bg/* slices still do not set page height. */
     const pageOriginY = Number((pageScope && pageScope.meta && pageScope.meta.y) || 0);
+    const isPageBgBoard = (n) => /^bg\/(pc|mobile)$/i.test(String(n && n.name || ''));
+    const pageBgBoardBottom = () => {
+      const chromeList = Array.isArray(__activeTruth.pageChrome && __activeTruth.pageChrome.nodes)
+        ? __activeTruth.pageChrome.nodes
+        : [];
+      let max = 0;
+      for (const n of chromeList.concat(pageBgNodes)) {
+        if (!isPageBgBoard(n)) continue;
+        const b = n.pageBox || n.box;
+        if (!b) continue;
+        const bottom = (Number(b.y || 0) + Number(b.h || 0)) - pageOriginY;
+        if (bottom > max) max = bottom;
+      }
+      return max;
+    };
     const paintedNodeBottom = (n) => {
       if (!n) return 0;
       if (/^bg(?:\/|$)/i.test(String(n.name || '')) || /^页面内容$/.test(String(n.name || ''))) return 0;
@@ -2980,6 +3052,7 @@
           return (Number((m && m.y) || 0) + Number((m && m.height) || 0)) - pageOriginY;
         }),
         chromePaintedBottom(),
+        pageBgBoardBottom(),
       )
       : 0;
     const pagePaintOrder = Array.isArray(__activeTruth.pagePaintOrder) ? __activeTruth.pagePaintOrder : null;
@@ -3126,6 +3199,7 @@
         Number(heroSlot.designHeight) || 0,
         ...ids.map((id) => shiftedSectionBottom(id)),
         chromePaintedBottom() + (Number.isFinite(heroLayoutOffsetDesign) ? heroLayoutOffsetDesign : 0),
+        pageBgBoardBottom(),
       )
       : pageContentHeight;
     /* Hero slot only moves after-hero *sections*. pageBackground stays at Figma
@@ -4646,6 +4720,40 @@
          }
          return ids;
        })();
+       const heroSectionId = heroSlot && heroSlot.sectionId != null ? String(heroSlot.sectionId) : "";
+       const inHeroSection = (node) => {
+         if (!heroSectionId || !node) return false;
+         if (String(node.id) === heroSectionId) return false;
+         if (String(node.parentId) === heroSectionId) return true;
+         const ancestors = Array.isArray(node.ancestorIds) ? node.ancestorIds.map(String) : [];
+         return ancestors.includes(heroSectionId);
+       };
+       /* Flattened prize frames sit beside 赛季福利, not under it. Band them
+          onto the same cluster so 100vh leftover cannot open the Figma gap. */
+       const welfareBandTop = (() => {
+         let top = null;
+         for (const item of list) {
+           if (String(item && item.name || "") !== "赛季福利") continue;
+           if (!inHeroSection(item)) continue;
+           const box = item.pageBox || item.box;
+           const y = Number(box && box.y) - Number(paintOriginY);
+           if (!Number.isFinite(y)) continue;
+           if (top == null || y < top) top = y;
+         }
+         return top;
+       })();
+       const isWelfareBandNode = (node) => {
+         if (!inHeroSection(node) || !Number.isFinite(welfareBandTop)) return false;
+         const raw = String(node && node.name || "");
+         if (/^kv(?:\/|$)/i.test(raw) || /^bg(?:\/|$)/i.test(raw)) return false;
+         if (/^img\/logo/i.test(raw) || /^btn\/年龄/i.test(raw) || /^fix(?:\/|$)/i.test(raw)) return false;
+         if (/^标题(?:$|@)/.test(raw) || /播放按钮/.test(raw) || /日历icon|日历按钮/i.test(raw)) return false;
+         if (/^btn\/按钮(?:@|$)/.test(raw) || /^首屏主按钮/.test(raw)) return false;
+         const box = node.pageBox || node.box;
+         const y = Number(box && box.y) - Number(paintOriginY);
+         if (!Number.isFinite(y)) return false;
+         return y >= welfareBandTop - 32;
+       };
        const heroClusterName = (name, node) => {
          const raw = String(name || '');
          const ancestorIds = Array.isArray(node && node.ancestorIds) ? node.ancestorIds.map(String) : [];
@@ -4655,7 +4763,7 @@
          if (/^首屏主按钮/.test(raw) || this._isLock1920CtaNode(node, activeComponentSets)) return 'cta';
          if (__normalizedPlat === 'mobile' && /^btn\/按钮(?:@|$)/.test(raw)) return 'cta';
          if (/^标题(?:$|@)/.test(raw)) return 'title';
-         if (raw === '赛季福利' || ancestorIds.some((id) => welfareOwnerIds.has(id))) return 'welfare';
+         if (raw === '赛季福利' || ancestorIds.some((id) => welfareOwnerIds.has(id)) || isWelfareBandNode(node)) return 'welfare';
          return '';
        };
        const heroClusterBottomShift = (() => {
@@ -4732,7 +4840,38 @@
            const mode = String(__u(node && node.layout && node.layout.layoutMode) || '').toUpperCase();
            return mode === 'HORIZONTAL' || mode === 'VERTICAL';
          };
-         if (hasMax(textNode)) return { ownerId: textId, ...capsOf(textNode), reason: 'text-self-max' };
+         const skipped = textNode.fitOwnerFromSkipped;
+         const axisSource = skipped && skipped.axisSource && typeof skipped.axisSource === 'object' ? skipped.axisSource : null;
+         const storedSelf = textNode.layoutCapSelf && typeof textNode.layoutCapSelf === 'object' ? textNode.layoutCapSelf : null;
+         const selfWidth = storedSelf ? layoutCap(storedSelf, 'maxWidth') : null;
+         const selfHeight = storedSelf ? layoutCap(storedSelf, 'maxHeight') : null;
+         if (axisSource) {
+           const ownWidth = axisSource.maxWidth === 'self' ? selfWidth : null;
+           const ownHeight = axisSource.maxHeight === 'self' ? selfHeight : null;
+           if (ownWidth != null || ownHeight != null) {
+             return { ownerId: textId, maxWidth: ownWidth, maxHeight: ownHeight, reason: 'text-self-max', provenance: 'axis-source' };
+           }
+           const inheritedWidth = axisSource.maxWidth === 'inherited' ? layoutCap(skipped, 'maxWidth') : null;
+           const inheritedHeight = axisSource.maxHeight === 'inherited' ? layoutCap(skipped, 'maxHeight') : null;
+           if (inheritedWidth != null || inheritedHeight != null) {
+             return {
+               ownerId: String(skipped.sourceId || ''),
+               maxWidth: inheritedWidth,
+               maxHeight: inheritedHeight,
+               reason: 'skipped-auto-layout-max',
+               provenance: 'axis-source',
+               layoutMode: skipped.layoutMode ? String(skipped.layoutMode) : null,
+               layoutSizingHorizontal: skipped.layoutSizingHorizontal ? String(skipped.layoutSizingHorizontal) : null,
+               layoutSizingVertical: skipped.layoutSizingVertical ? String(skipped.layoutSizingVertical) : null,
+             };
+           }
+         } else if (storedSelf && (selfWidth != null || selfHeight != null)) {
+           return { ownerId: textId, maxWidth: selfWidth, maxHeight: selfHeight, reason: 'text-self-max', provenance: 'layout-cap-self' };
+         } else if (!skipped && hasMax(textNode)) {
+           return { ownerId: textId, ...capsOf(textNode), reason: 'text-self-max', provenance: 'text-layout' };
+         } else if (skipped && hasMax(textNode)) {
+           return { ownerId: textId, ...capsOf(textNode), reason: 'text-layout-unprovenanced', provenance: null };
+         }
          const seen = new Set([textId]);
          let current = textNode;
          while (current) {
@@ -4742,19 +4881,18 @@
            const parent = nodesById.get(parentId);
            if (!parent) break;
            if (isAl(parent) && hasMax(parent)) {
-             return { ownerId: parentId, ...capsOf(parent), reason: 'nearest-auto-layout-max' };
+             return { ownerId: parentId, ...capsOf(parent), reason: 'nearest-auto-layout-max', provenance: 'live-parent' };
            }
            current = parent;
          }
-          const skipped = textNode.fitOwnerFromSkipped;
           const skippedW = layoutCap(skipped, 'maxWidth');
           const skippedH = layoutCap(skipped, 'maxHeight');
-          if (skippedW != null || skippedH != null) {
+          if (!axisSource && (skippedW != null || skippedH != null)) {
             return {
               ownerId: String(skipped.sourceId || ''),
               maxWidth: skippedW,
               maxHeight: skippedH,
-              reason: 'skipped-auto-layout-max',
+              reason: 'skipped-auto-layout-max-unprovenanced',
             };
           }
          return none;
@@ -5208,7 +5346,8 @@
         const isHeroTitleOwner = /^标题(?:$|@)/.test(String(n.name || ''));
         const isHeroPlay = /播放按钮/.test(String(n.name || ''));
         const isHeroWelfare = String(n.name || '') === '赛季福利'
-          || (Array.isArray(n.ancestorIds) && n.ancestorIds.some((id) => welfareOwnerIds.has(String(id))));
+          || (Array.isArray(n.ancestorIds) && n.ancestorIds.some((id) => welfareOwnerIds.has(String(id))))
+          || isWelfareBandNode(n);
         /* Overlay leftover `img/标题slg` at y=0 is top-bar art, not the
            first-screen cluster. Cluster skip for that leftover is applied
            after sourceTop is known. Title owner (手机 `标题` group) takes
@@ -6289,7 +6428,7 @@
           });
           let fontRoute = { family: tx.fontFamily, weight: tx.fontWeight, role: null, language: ctx.prefs && ctx.prefs.lang, routed: false };
           if (primaryCta.status === 'matched') {
-            fontRoute = { family: primaryCta.fontFamily, weight: primaryCta.fontWeight, role: primaryCta.role, language: primaryCta.language, routed: true };
+            fontRoute = { family: primaryCta.fontFamily, weight: this._routeFontWeight({ family: primaryCta.fontFamily, sourceFamily: tx.fontFamily, sourceWeight: primaryCta.fontWeight != null ? primaryCta.fontWeight : tx.fontWeight, fontStyle: tx.fontStyle }), role: primaryCta.role, language: primaryCta.language, routed: true };
           } else if (_hasAdoptedCopy) {
             fontRoute = this._routeFontFamily({
               language: ctx.prefs && ctx.prefs.lang,
@@ -6297,6 +6436,7 @@
               semanticClass: semantic.role,
               sourceFamily: tx.fontFamily,
               sourceWeight: tx.fontWeight,
+              fontStyle: tx.fontStyle,
             });
           }
           if (!_hasAdoptedCopy && String(ctx.prefs.lang || '') !== 'zh-CN') {
@@ -6420,16 +6560,44 @@
             sourceSingleLine,
             displayTitle,
           });
-          el.style.whiteSpace = (inlineHugs || sourceNoWrapTitle) ? 'pre' : 'pre-wrap';
+          const rotatedSingleLine = sourceSingleLine
+            && typeof n.rotation === 'number'
+            && Math.abs(n.rotation) > 1e-4;
+          const ctaNowrap = this._primaryCtaNowrapEligible({
+            language: ctx.prefs && ctx.prefs.lang,
+            status: primaryCta && primaryCta.status,
+            hasAdoptedCopy: _hasAdoptedCopy,
+          });
+          const alOwnerEarly = findAlMaxOwner(n, truthNodeById);
+          const axisPolicy = this._axisConstraintPolicy({
+            maxWidth: alOwnerEarly.maxWidth,
+            maxHeight: alOwnerEarly.maxHeight,
+            language: ctx.prefs && ctx.prefs.lang,
+            primaryCtaNowrap: ctaNowrap,
+            hasAdoptedCopy: _hasAdoptedCopy,
+          });
+          el.style.whiteSpace = (inlineHugs || sourceNoWrapTitle || rotatedSingleLine || axisPolicy.nowrap) ? 'pre' : 'pre-wrap';
           if (sourceNoWrapTitle) el.setAttribute('data-text-layout-policy', 'source-single-line-display-title');
-          if (!constraint.openFlow && !inlineHugs) {
-            // zh-CN static gate measures the text leaf against pageBox.
-            // Owner width is for adopted languages; the source box is the
-            // design-viewport lock.
-            const writtenMax = Number(n.layout && n.layout.maxWidth);
-            const wrapCap = Number.isFinite(writtenMax) && writtenMax > 0
-              ? writtenMax
-              : (box.w ?? constraint.ownerWidth);
+          else if (rotatedSingleLine) el.setAttribute('data-text-layout-policy', 'rotated-single-line');
+          else if (axisPolicy.reason && axisPolicy.reason !== 'no-auto-layout-max' && axisPolicy.reason !== 'zh-cn-figma-exact') {
+            el.setAttribute('data-text-layout-policy', axisPolicy.reason);
+          }
+          if (alOwnerEarly.reason) el.setAttribute('data-fit-owner-reason', String(alOwnerEarly.reason));
+          if (alOwnerEarly.provenance) el.setAttribute('data-fit-owner-provenance', String(alOwnerEarly.provenance));
+          if (alOwnerEarly.layoutMode) el.setAttribute('data-fit-owner-layout-mode', String(alOwnerEarly.layoutMode));
+          if (!inlineHugs && axisPolicy.nowrap && axisPolicy.fitMaxWidth != null) {
+            const cap = axisPolicy.fitMaxWidth;
+            if (Number.isFinite(cap) && cap > 0) {
+              el.style.width = cap + 'px';
+              el.style.maxWidth = cap + 'px';
+              el.style.minWidth = '0px';
+              el.style.overflowWrap = 'normal';
+              el.style.wordBreak = 'keep-all';
+              el.setAttribute('data-text-wrap-cap', String(cap));
+            }
+          }
+          if (!constraint.openFlow && !inlineHugs && !rotatedSingleLine && !axisPolicy.nowrap && axisPolicy.fitMaxWidth != null) {
+            const wrapCap = axisPolicy.fitMaxWidth;
             el.style.width = wrapCap + 'px';
             el.style.maxWidth = wrapCap + 'px';
             el.style.minWidth = '0px';
@@ -6679,15 +6847,18 @@
              `size` / localSize，不是 skipped AL maxWidth）。原点在 AABB
              中心。形状路径仍走下面的 baked-slice 守卫，不在这里批量改号。 */
           if (typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4) {
-            const aabbW = Number(box.w);
-            const aabbH = Number(box.h);
+            const visualAabb = textRenderBoxReady && this._sameCoordinateSpace(_textRenderBox, box)
+              ? _textRenderBox
+              : box;
+            const aabbW = Number(visualAabb.w);
+            const aabbH = Number(visualAabb.h);
             const unrotated = this._unrotatedTextLayout(n, aabbW, aabbH);
             const unrotatedW = unrotated && unrotated.w;
             const unrotatedH = unrotated && unrotated.h;
-            const layoutTop = Number.parseFloat(el.style.top);
-            const aabbTop = Number.isFinite(layoutTop) ? layoutTop : (((box.y ?? 0) - originY));
+            const aabbLeft = (Number(visualAabb.x) - originX);
+            const aabbTop = (Number(visualAabb.y) - originY);
             if (Number.isFinite(unrotatedW) && unrotatedW > 0 && Number.isFinite(aabbW) && aabbW > 0) {
-              el.style.left = (((box.x ?? 0) - originX) + (aabbW - unrotatedW) / 2) + 'px';
+              el.style.left = (aabbLeft + (aabbW - unrotatedW) / 2) + 'px';
               el.style.width = unrotatedW + 'px';
               el.style.minWidth = unrotatedW + 'px';
             }
@@ -6696,11 +6867,26 @@
               el.style.height = unrotatedH + 'px';
               el.style.minHeight = unrotatedH + 'px';
             }
+            el.style.display = 'flex';
+            el.style.flexDirection = 'row';
+            el.style.alignItems = 'center';
+            el.style.justifyContent = 'center';
             el.style.transformOrigin = 'center center';
             tf.push('rotate(' + n.rotation + 'rad)');
             el.setAttribute('data-text-rotation-source', String(n.rotation));
             el.setAttribute('data-text-rotation-box', 'unrotated-local');
+            el.setAttribute('data-text-rotation-align', 'visual-aabb-flex-center');
+            el.setAttribute('data-text-rotation-slot', textRenderBoxReady && this._sameCoordinateSpace(_textRenderBox, box) ? 'render-box' : 'layout-box');
             if (unrotated && unrotated.from) el.setAttribute('data-text-rotation-size', unrotated.from);
+            if (Number.isFinite(unrotatedW) && unrotatedW > 0) {
+              el.style.maxWidth = unrotatedW + 'px';
+              el.style.overflowWrap = 'normal';
+              el.setAttribute('data-text-rotation-nowrap', '1');
+              el.setAttribute('data-text-unrotated-w', String(unrotatedW));
+            }
+            if (Number.isFinite(unrotatedH) && unrotatedH > 0) {
+              el.setAttribute('data-text-unrotated-h', String(unrotatedH));
+            }
           }
           if (tf.length) el.style.transform = tf.join(' ');
           /* 字色。稿里两种情况，必须分开处理：
@@ -6960,7 +7146,7 @@
                CSS line-height (fontSize × lineHeightPercent) can be taller than
                Figma's authored box (30×120%=36 vs pageBox.h=34.15). zh-CN keeps
                the source box; overflow stays visible so glyphs are not clipped. */
-            if (!inlineHugs && box.h != null) {
+            if (!inlineHugs && box.h != null && el.getAttribute('data-text-rotation-nowrap') !== '1') {
               el.style.height = box.h + 'px';
               el.style.overflow = el.style.overflow || 'visible';
             }
@@ -6974,7 +7160,17 @@
              a broad Auto Layout max; fitting browser glyphs here shrinks modal
              source bodies (e.g. KR rule dialog 2) below the authored size. */
           const _copyUnbound = val == null || val === '';
-          if (!_zhSourceExact && !_copyUnbound && !inlineHugs && !constraint.openFlow && hasAlCaps && !semanticBreak) {
+          const rotatedNowrap = el.getAttribute('data-text-rotation-nowrap') === '1';
+          const rotatedFitW = Number(el.getAttribute('data-text-unrotated-w'));
+          const rotatedFitH = Number(el.getAttribute('data-text-unrotated-h'));
+          const axisFitPolicy = this._axisConstraintPolicy({
+            maxWidth: alOwner.maxWidth,
+            maxHeight: alOwner.maxHeight,
+            language: ctx.prefs && ctx.prefs.lang,
+            primaryCtaNowrap: ctaNowrap,
+            hasAdoptedCopy: _hasAdoptedCopy,
+          });
+          if (!_zhSourceExact && !_copyUnbound && !inlineHugs && !constraint.openFlow && (axisFitPolicy.shrink || rotatedNowrap) && !semanticBreak) {
             el.setAttribute('data-fit-group', _fitGroupKey);
             if (_localizedSourceTitle && hasAlCaps) {
               el.setAttribute('data-fit-inline-policy', 'source-title-group-glyph-safe-width');
@@ -6983,13 +7179,16 @@
             if (alOwner.ownerId) el.setAttribute('data-fit-owner', String(alOwner.ownerId));
             if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
             if (alOwner.maxHeight != null) el.setAttribute('data-fit-max-height', String(alOwner.maxHeight));
+            if (rotatedNowrap && rotatedFitW > 0) el.setAttribute('data-fit-max-width', String(rotatedFitW));
+            if (rotatedNowrap && rotatedFitH > 0) el.setAttribute('data-fit-max-height', String(rotatedFitH));
             fitCandidates.push({
               el, tx, box, groupKey: _fitGroupKey,
               sourceTitleInlineSafe: !!(hasAlCaps && _localizedSourceTitle),
               sourceTitleText: (hasAlCaps && _localizedSourceTitle) ? String(fallback || '') : '',
               semanticBreak: !!semanticBreak,
-              maxWidth: alOwner.maxWidth,
-              maxHeight: alOwner.maxHeight,
+              maxWidth: (rotatedNowrap && rotatedFitW > 0) ? rotatedFitW : axisFitPolicy.fitMaxWidth,
+              maxHeight: (rotatedNowrap && rotatedFitH > 0) ? rotatedFitH : axisFitPolicy.fitMaxHeight,
+              axisReason: axisFitPolicy.reason,
             });
           }
           else if (!inlineHugs && !constraint.openFlow) {
@@ -7032,15 +7231,16 @@
           const _fillsOwner = _ownerW != null && _ownerH != null && _srcW > 0 && _srcH > 0
             && _srcH >= _ownerH * 0.6 && _srcW >= _ownerW * 0.55;
           const boundedHugLabel = inlineHugs && !constraint.openFlow && _centered && _fillsOwner && hasAlCaps;
-          if (boundedHugLabel && !_copyUnbound && !_zhSourceExact) {
+          if (boundedHugLabel && !_copyUnbound && !_zhSourceExact && axisFitPolicy.shrink) {
             el.setAttribute('data-fit-policy', 'bounded-hug-label');
             if (alOwner.ownerId) el.setAttribute('data-fit-owner', String(alOwner.ownerId));
             if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
             if (alOwner.maxHeight != null) el.setAttribute('data-fit-max-height', String(alOwner.maxHeight));
             fitCandidates.push({
               el, tx, box,
-              maxWidth: alOwner.maxWidth,
-              maxHeight: alOwner.maxHeight,
+              maxWidth: axisFitPolicy.fitMaxWidth,
+              maxHeight: axisFitPolicy.fitMaxHeight,
+              axisReason: axisFitPolicy.reason,
             });
           }
         } else {
@@ -9441,6 +9641,20 @@
              Direct-child pages, dots, prev/next, and swipe still share one
              index so a 2-dot / 3-variant graph remains operable. */
           if (incompleteVariantOwners.length && incompleteVariantOwners.length === variantOwners.length && !pages.length && !controls.length) return;
+          const appliedVariantOwners = [];
+          if (variantOwners.length) {
+            if (incompleteVariantOwners.length && !pages.length) return;
+            for (const el of variantOwners) {
+              if (incompleteVariantOwners.includes(el)) continue;
+              const previousIndex = Number(el.getAttribute('data-switch-index') || 0);
+              if (!applyComponentVariantLayers(el, previousIndex, idx)) {
+                if (!pages.length) return;
+                continue;
+              }
+              appliedVariantOwners.push(el);
+            }
+            if (!appliedVariantOwners.length && !pages.length) return;
+          }
           for (const el of pages) {
             const active = Number(el.getAttribute('data-switch-page')) === idx;
             el.toggleAttribute('data-active', active);
@@ -9453,12 +9667,7 @@
           }
           applyIndicatorVariant(sid, idx);
           applySelectableVariant(sid, idx);
-          for (const el of all.filter((x) => x.hasAttribute('data-switch-owner'))) {
-            const previousIndex = Number(el.getAttribute('data-switch-index') || 0);
-            if (el.getAttribute('data-switch-page-source') !== 'component-set-variant') continue;
-            if (applyComponentVariantLayers(el, previousIndex, idx)) el.setAttribute('data-switch-index', String(idx));
-            continue;
-          }
+          for (const el of appliedVariantOwners) el.setAttribute('data-switch-index', String(idx));
           for (const el of all.filter((x) => x.hasAttribute('data-switch-owner')
             && x.getAttribute('data-switch-page-source') !== 'component-set-variant')) {
             el.setAttribute('data-switch-index', String(idx));
@@ -10191,8 +10400,14 @@
             if (m.required === minScale) continue; // already at strictest
             const _gFs = Number(m.c.el.getAttribute('data-locale-base-fontsize'));
             const _gLh = Number(m.c.el.getAttribute('data-locale-base-lineheight'));
-            m.c.el.style.fontSize = ((Number.isFinite(_gFs) && _gFs > 0 ? _gFs : m.c.tx.fontSize) * minScale / 100) + 'px';
-            m.c.el.style.lineHeight = ((Number.isFinite(_gLh) && _gLh > 0 ? _gLh : m.c.tx.lineHeight) * minScale / 100) + 'px';
+            if (m.c.axisReason === 'vertical-max-wrap' || m.c.el.getAttribute('data-text-layout-policy') === 'vertical-max-wrap') continue;
+            const localeBase = Number.isFinite(_gFs) && _gFs > 0 ? _gFs : m.c.tx.fontSize;
+            const currentPx = Number(m.c.el.getAttribute('data-fit-px')) || Number.parseFloat(m.c.el.style.fontSize);
+            const groupMinPx = localeBase * minScale / 100;
+            const nextPx = this._groupUnifyFontSize({ currentPx, localeBasePx: localeBase, groupMinPx });
+            if (nextPx == null) continue;
+            m.c.el.style.fontSize = nextPx + 'px';
+            m.c.el.style.lineHeight = ((Number.isFinite(_gLh) && _gLh > 0 ? _gLh : m.c.tx.lineHeight) * (nextPx / localeBase)) + 'px';
             m.c.el.setAttribute('data-fit-scale', String(minScale));
             m.c.el.setAttribute('data-fit-group-unified', String(m.required) + '->' + String(minScale));
           }

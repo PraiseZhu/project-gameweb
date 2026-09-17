@@ -163,7 +163,7 @@ localeInvariantFamilies:
 7. **背景**：首屏 KV / 长 `bg/*` 按 cover 填**真实视口**（官方 1440 背景槽 = 1440×900，不是冻列 1920）。后屏 `bg/pc背景*` cover 填后屏 stage 盒子，不是第二扇视口窗。产品页用清单长 `bg/*`，不抄官方 PC/手机两张 URL。首屏 cover 公式是 `max(viewportW/designW, viewportH/heroH)`，UI 仍走该档 `k`。cover 不得把首屏 UI 裁出视口外当消失；放不下的 UI / 后屏随 pageBox 往下滚，overflow-y 保持 auto。
 8. **锁缩放**：`width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`。
 9. **固定叠层**：官方另有 `position:fixed` 的顶栏 `.i_14pfw1l3`（`top:0;width:100%;justify-content:flex-end`）、底 CTA `.i_cwyomnms`、粒子 `.i_h6wakwff`。产品页对应 Figma overlay，不跟它们的 `vh`/`bottom` 季节补丁。
-10. **临时 lock-1920 名单**（不是长久命名，也不是 `@fit=`）：`fix/` 前缀、组件集 `btn/主要按钮`、组件集 `首屏主按钮`。身份只认前缀 / 组件集名，不认页实例 `btn/按钮`。`viewportW > 1920` 时这些层跟页 `k = viewportW/3840` 一起变大，相对 KV / 海报的大小跟冻档一样，不要再冻 1920 尺寸、也不要按颗反缩放（那会把充值字挤出正中、把右上几颗间距拉开、让按钮相对画面变小）。横版 `fix/` 顶栏在 `1127–1920` 和 `>1920` 都贴当前窗口右上角（官网 `position:fixed; width:100%; justify-content:flex-end`），不要跟 1920 列一起被裁。充值 / 地球 / 多语言是宽 `fix/` 组的兄弟层，不是组内孩子。`1127–1920` 已经是 `k=0.5`。手机树不锁。KV cover 仍跟窗口。`1127–1920` 的 `slg` 就是冻档 `k=0.5` 整体缩放再居中裁；`>1920` 也只走页 `k`，不要再按窗口宽二次拉伸（那会把标题叠到日历/播放上）。`slg` / 日历 icon / 播放按钮 / 首屏主按钮 / 手机 `btn/按钮` / 拆平后的赛季福利组是同一竖向簇：三个档都按**页坐标**底边一起钉；套在 `标题` 组里的 `img/标题slg` 和播放按钮跟组走。`≤1126` 日历和首屏主按钮停在手机稿 pageBox（62 / 133 叠放），不要另排一行。`751–1126` 按钮/日历/播放保持 750 稿尺寸，整簇按同一 leftover 居中，间距跟稿；渐变字不得覆盖已写好的 leftover；弹窗内部不吃页面 leftover。不要只挪标题组、把主按钮裁在 750 右缘。简中和其它语言同一套稿坐标。再缩小才等比缩。`1127–1920` KV 仍铺真实视口，不要在 1920 列右边留空。后屏不要再垫成 100vh，页面底对齐 `bg/pc背景2`。后面赛季先沿用这几个名字，命名方法另议。
+10. **临时 lock-1920 名单**（不是长久命名，也不是 `@fit=`）：`fix/` 前缀、组件集 `btn/主要按钮`、组件集 `首屏主按钮`。身份只认前缀 / 组件集名，不认页实例 `btn/按钮`。`viewportW > 1920` 时这些层跟页 `k = viewportW/3840` 一起变大，相对 KV / 海报的大小跟冻档一样，不要再冻 1920 尺寸、也不要按颗反缩放（那会把充值字挤出正中、把右上几颗间距拉开、让按钮相对画面变小）。横版 `fix/` 顶栏在 `1127–1920` 和 `>1920` 都贴当前窗口右上角（官网 `position:fixed; width:100%; justify-content:flex-end`），不要跟 1920 列一起被裁。充值 / 地球 / 多语言是宽 `fix/` 组的兄弟层，不是组内孩子。`1127–1920` 已经是 `k=0.5`。手机树不锁。KV cover 仍跟窗口。`1127–1920` 的 `slg` 就是冻档 `k=0.5` 整体缩放再居中裁；`>1920` 也只走页 `k`，不要再按窗口宽二次拉伸（那会把标题叠到日历/播放上）。`slg` / 日历 icon / 播放按钮 / 首屏主按钮 / 手机 `btn/按钮` / 拆平后的赛季福利组是同一竖向簇；奖品框即使拆成首屏兄弟层也进同一簇，间距跟稿×k，100vh 余量不得插进标题和奖品之间：三个档都按**页坐标**底边一起钉；套在 `标题` 组里的 `img/标题slg` 和播放按钮跟组走。`≤1126` 日历和首屏主按钮停在手机稿 pageBox（62 / 133 叠放），不要另排一行。`751–1126` 按钮/日历/播放保持 750 稿尺寸，整簇按同一 leftover 居中，间距跟稿；渐变字不得覆盖已写好的 leftover；弹窗内部不吃页面 leftover。不要只挪标题组、把主按钮裁在 750 右缘。简中和其它语言同一套稿坐标。再缩小才等比缩。`1127–1920` KV 仍铺真实视口，不要在 1920 列右边留空。后屏不要再垫成 100vh。页面滚动锁到 bg/pc 或 bg/mobile 板底，不要用最后一颗 CTA 截短。后面赛季先沿用这几个名字，命名方法另议。
     `fix/` 钉视口。垂直 **Bottom**（稿上 Constraints）：底边钉视窗底，空隙 = 该层底到父画板底 × 当前档 `k`（槽高 = 视窗高 / `k`，不跟 cover 首屏裁切窗）。所相对画板 = 直接父 frame 的 `pageBox`。视窗变高空隙不拉长，滚走仍钉着。水平 **Center / Right / Left** 同样按父画板空隙 × `k`。顶栏仍按名字 `顶部信息|顶部固定` 当视口 chrome（含 `左侧/右侧顶部信息`；手机 366×374 仍是右侧栏，不要改写成画板原点 0,0）。紧凑 `fix/箭头`（`w ≤ h×4`）同样是视口 chrome，即使 Constraints 是 TOP 也不能打成目录轨。尺寸仍走该档 `k`，不跟 cover。里面的 `img/` 只负责切图。
 11. **弹窗跟窗口**：官方 named popup 是 `position:fixed` 铺当前窗，拉伸时不关。产品 named modal 轻拖要重新钉到当前 frame；松手全量重建前记下打开的 `data-modal-name`，重建后再 `__fxOpenNamedModal`。拖拽不是关闭。`≤1126` 切手机树时弹窗也不关：按同一主题换成手机稿弹窗（`pc_cn订阅赛季日程` → `mobile订阅赛季日程`），对不上才保持关。
 
@@ -226,7 +226,7 @@ localeInvariantFamilies:
 | # | 查询 | 文件 | 选择器数 / display | 现测 | 产品 |
 |---|---|---|---|---|---|
 | B1 | `(hover:hover)` `.m-tap:hover { opacity:.9 }` | 框架 col 374 | 1 / 0 | 桌面 tap 变淡 | 不跟季节视觉 |
-| B2 | `(hover:hover)` 两段：`.btn { cursor:pointer; transition:filter .2s }` 和 `.btn:hover { filter:brightness(1.1) }` | `#global-style` | 2 / 0 | 按钮提亮 | 不跟 |
+| B2 | `(hover:hover)` 两段：`.btn { cursor:pointer; transition:filter .2s }` 和 `.btn:hover { filter:brightness(1.1) }` | `#global-style` | 2 / 0 | 按钮提亮 | **跟通用反馈**：hover `brightness(1.1)`、press `0.9`、`filter .2s ease-in-out`；不跟季节 `.m-tap { opacity:.9 }` |
 | B3 | `(max-width: 812px)` `#auto-adaptive-package .qr-code { display:none }` | 框架 | 1 / 1 | 藏侧边 QR | 不跟 |
 | B4 | `screen and (max-width: 1126px)` | `#main-style` col 54145 | 245 / **5 条 display**：`none` 51 名、`flex` 23 名、`block` 24 名，另加 `.i_mr4nvo8bj2{display:flex}` 和 `{position:absolute;display:block}` 各 1 名 | **唯一切树档**。另有约 240 条 rem。1126 时 PC 列 `width:17.0515097691rem` = 1920 但已 `display:none` | **跟 display 切树**。列宽改走手机 `10vw`（§5.0），不抄这档里残留的 1920 rem |
 | B5 | `screen and (max-width: 1920px)` | `#main-style` | 211 / 0 | PC 列冻 `1920px`；下一节 `1043px/104px`；31 条 font 从 rem 改 `calc(18/23/25/30px * --moo-font-scale)` | **跟列宽冻结 + 字号冻 px**（§5.0 `1127–1920`）。不抄 211 条逐层 px，产品用 Figma 几何 × `k=0.5` |
@@ -286,9 +286,9 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 | heading | 字重 ≥ 600 且源字号 ≤ 40px | 全语 `1.0` |
 | 按钮 / 顶栏折扣条 | 祖先名含 `btn/`（含下载/预约按钮）或 `折扣信息`，不进 body / card-title | 全语 `1.0`：清单源字号。书面 max 放得下就不预缩 |
 
-外文框听稿上包着文案的那层 Auto Layout：`maxWidth` 是宽度硬限；写了 `maxHeight` 的，高度也是硬限。没写的那一轴不拿来当缩字理由，也不发明框。`autoResize=HEIGHT` 是定宽可长高：源中文刚好一行不是「永远不准折行」。只写了 maxWidth、没写 maxHeight 的，保持字号、按宽度换行、高度自然增长。英文放不进已写 `maxWidth` 时先换行，禁止当成单行标题 `pre` 锁死再缩字号。禁止把页面 translateY 或后来撤销的锁高缩字写进本政策。换语言后文案必须**完整**落在这些已写的上限里，禁止裁切、省略号、截断顶过关。
+外文框听稿上包着文案的那层 Auto Layout：`maxWidth` 是宽度硬限；写了 `maxHeight` 的，高度也是硬限。没写的那一轴不拿来当缩字理由，也不发明框。`TEXT.autoResize=HEIGHT` 是文字框可长高，不是 Frame 竖限。约束轴（用户 2026-09-17）：**横限制**（只写 `maxWidth`）已采用外文按书面 `maxWidth` 单行缩字，禁止用更宽父框 / `ownerWidth` / `box.w` 盖掉书面上限；**竖限制**（只写 `maxHeight`）换行，禁止走 `_fitText` 的 maxHeight 减字号，禁止发明宽 cap；**双轴**（同时有 `maxWidth` 与 `maxHeight`）用户待确认，维持现有「先按宽折行，超高再缩」。6.2 英文主 CTA 在已采用译文时仍单行缩字。禁止用「是不是 btn / 是不是英文」当通则。zh-CN 仍锁稿。禁止把页面 translateY 或后来撤销的锁高缩字写进本政策。换语言后文案必须**完整**落在这些已写的上限里，禁止裁切、省略号、截断顶过关。
 
-字重听清单：`fontWeight` / `fontStyle` / `fontPostScriptName`。可变优黑用元素上的 `font-variation-settings` 走 wght 轴。禁止 `@font-face` 写 `font-named-instance:"Regular"`：Regular 是 wght=600，稿上 Bold/900 会被钉死再假粗。
+字重听清单：`fontWeight` / `fontStyle` / `fontPostScriptName`。切到 Noto 时，优黑 Regular（稿上 600）映射为 Noto Regular 400；简中仍 600。Bold 900 不改。可变优黑用元素上的 `font-variation-settings` 走 wght 轴。禁止 `@font-face` 写 `font-named-instance:"Regular"`：Regular 是 wght=600，稿上 Bold/900 会被钉死再假粗。
 
 溢出就缩：先套档位比例，再按整数 px 减字号（行高同比），直到完整放下。不走 `100→92→85→78→75`，没有 75% 地板。组内兄弟共用同一整数字号，取最严的那档。没有 B 的 owner 就停，不缩。
 
@@ -327,7 +327,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 
 没有 B 的 owner 就停，不缩。有 owner 才量换语言后的完整墨水：宽对 `maxWidth`，高只对已写的 `maxHeight`。超了就把 `fontSize` 减 `1px`，`lineHeight` 同比，再量，直到完整放下。不要 `100→92→85→78→75`，不要 75% 地板，不要停在 `floor-exceeded` 当通过。
 
-HEIGHT + 垂直 HUG 的 TEXT 用已写 maxWidth 做 CSS max-width 折行（display:block）。禁止 flex 竖对齐把长英文撑出框。没有 maxHeight 时只锁宽、允许长高。
+横限制（只有 Frame `maxWidth`）：外文 `pre` + 整数 px 缩到书面上限。竖限制（只有 Frame `maxHeight`）：折行，不把 maxHeight 交给 `_fitText`。双轴用户待确认：维持先折行再缩。`HEIGHT` + 垂直 HUG **且没有 Frame 横限**时按定宽长高折行，不把 `autoResize=HEIGHT` 当成竖限。禁止 flex 竖对齐把长英文撑出框。
 
 同一 owner、同一档位的兄弟，共用缩完后最小的那个整数字号。省略号、`text-overflow`、clip 当放下 = 失败。
 
@@ -344,7 +344,9 @@ HEIGHT + 垂直 HUG 的 TEXT 用已写 maxWidth 做 CSS max-width 折行（displ
 `btn/主要按钮` 跟同端 `首屏主按钮` 该语言变体的 `fontFamily` / `fontWeight` / `letterSpacing`。身份只认组件集名与 owning INSTANCE 的 `componentId`，不认页实例名；类型跟随发生在已采用译文之后。
 
 - 缺变体为 `not-applicable` / `anchor-variant-absent`，不报红；变体在但没有活字为 `unverified-primary-cta-type`。
-- `en` 主 CTA / 首屏主按钮强制 `text-transform: uppercase`，即使 `textCase` 为空、文案为 `View More`；不改文案表。缺译保留源家族/字重但仍强制大写，不走类型跟随。
+- `en` 主 CTA / 首屏主按钮强制 `text-transform: uppercase`，即使 `textCase` 为空、文案为 `View More`；不改文案表。缺译保留源家族/字重但仍强制大写，不走类型跟随。 有采用译文时英文主 CTA 保持单行，按按钮框宽整数 px 缩字，不把空格后的 NOW 折到第二行。
+
+单行缩字只给 **en + status matched + 已采用译文**，且只在没有已写 `maxHeight` 时。主 CTA 若双轴都有书面上限，用户待确认，保持先折行再缩，不得丢掉高度。`zh-TW` / `ja` / `ko` 即使 matched 也不走这条。缺译、`uppercase` 本身、所有 `btn/` 标签，都不是 nowrap 授权。skipped AL 继承必须在转换时记下逐轴 `axisSource` / `layoutCapSelf`，禁止用数值相等猜测来源。
 
 ## 7. 不许改的
 
@@ -353,7 +355,9 @@ HEIGHT + 垂直 HUG 的 TEXT 用已写 maxWidth 做 CSS max-width 折行（displ
 - `kind=ready` 才吃；`unknown` 只画不接线。
 - Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=min(1, viewportW/750)`（751–1126 按钮冻 750，列跟窗口铺 KV 和后屏，750 内容居中）。首屏槽 = 当前窗口高，后屏从窗口底开始。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
-- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。`HEIGHT` + 只有 `maxWidth` 先折行，不发明单行锁。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。韩文覆盖听 `localeFontFamily.ko`，不把 Apple SD Gothic Neo 写成所有韩文的硬门。优黑字重听清单 900/Bold，禁止 named-instance 钉 Regular。
+- 页面滚动锁到 bg/pc（PC）或 bg/mobile（手机）板底，不要用最后一颗 CTA 截短；其它 bg/* 切片不撑页高。
+- 外文 Noto Regular = 400（优黑 Regular 稿上 600 映射过去）；简中优黑 Regular 仍 600。Bold 900 不改。字号档仍按源优黑字重分层，不因 CSS 变成 400 就掉进 body 0.8。
+- zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。横限制单行缩字，竖限制换行，双轴用户待确认维持先折行再缩。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。韩文覆盖听 `localeFontFamily.ko`，不把 Apple SD Gothic Neo 写成所有韩文的硬门。优黑字重听清单 900/Bold，禁止 named-instance 钉 Regular。
 - `btn/主要按钮` 的字体类型数据跟同端 `首屏主按钮` 该语言变体，不另开一套；`en` 主 CTA 页面强制大写，不听文案表大小写，也不听稿上有没有 `textCase=UPPER`；稿上没出该语言变体（如没有 `jp`）不算失败。
 - 不把 inventory JSON 焊进本文件。不改 naming spec、Interaction / Pack / 语义换行。`_fitText` 与 extract 的 max 字段只按第 6.1 节改；`_routeFontFamily` 只许改成读 YAML。
 

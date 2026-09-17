@@ -43,14 +43,18 @@ proportional line-height until the translated text fits those caps in full.
 There is no 75% floor and no `100→92→85→78→75` ladder. Sibling nodes in a
 group share the strictest integer size. Ellipsis or clipping is not a pass.
 
+Axis split (user 2026-09-17, see DESIGN.md 第 6 章): horizontal-only maxWidth
+nowrap-shrinks adopted copy to the written cap; vertical-only maxHeight wraps
+and must not shrink; dual-axis is 用户待确认 and keeps wrap-then-shrink.
+`TEXT.autoResize=HEIGHT` is not a Frame height cap.
+
 ### Auto Layout caps beat HUG growth
 
 Most copy in the current Torchlight file sits in a wrapping Auto Layout
-frame. That frame's `maxWidth` is a hard width cap; `maxHeight` is a hard
-height cap only when the file wrote one. After the locale ratio, translated
-copy must fit those written caps in full. Overflow shrinks font-size by whole
-CSS pixels. An axis with no written max is not a shrink reason and must not
-invent a box. Sibling nodes in a group still share one integer size.
+frame. Horizontal-only `maxWidth` nowrap-shrinks adopted copy to that written
+cap. Vertical-only `maxHeight` wraps and does not shrink. Dual-axis is 用户待确认
+and keeps wrap-then-shrink. An axis with no written max is not a shrink reason
+and must not invent a box. Sibling nodes in a group still share one integer size.
 
 ### Component-group typography fit (uniform size across a sibling group)
 
@@ -106,8 +110,8 @@ Import `scripts/lib/translation/index.mjs` for the reusable interface:
 - `buildFontFallbackPolicy`: preserves the requested family first and reports
   unavailable requested families for review; generic fallback candidates are
   evidence, not silent style replacement.
-- `buildFontWeightPolicy`: preserves the requested weight and reports missing
-  or synthetic weights per language; it never substitutes a different weight.
+- `routeFontWeight` / `buildFontWeightPolicy`: zh-CN YouHei keeps the inventory weight (Regular = 600). When routing YouHei Regular (600) to Noto, request Noto Regular 400. Bold 900 is unchanged. Locale size tiers still use the **source** YouHei weight, so mapping CSS to 400 does not drop Regular copy into the body 0.8 scale.
+- `buildFontWeightPolicy` still reports missing or synthetic weights per language after that mapping.
 - `classifyFontWeight` and `classifyTypographyRange`: classify requested
   weight/readiness and measured browser range without changing Figma style.
 - `classifyAutoResize`: records Figma `HEIGHT`, `WIDTH`,
@@ -385,14 +389,23 @@ who may wrap vs shrink, and what copy swap must not destroy.
 
 ### Width-lock, height-free (SC-09, SC-10)
 
-A written `maxWidth` without `maxHeight` is **not** a shrink reason. Keep the
-locale-base font size, wrap, and grow vertically. Measure after fonts are
-ready and the modal is displayable. Do not encode page-specific `translateY`
-or a later-retracted height lock as policy.
+Listen to DESIGN.md 第 6 章. User 2026-09-17 axis rules:
 
-A written `maxHeight` (or truncation / clip / explicit fit) still authorizes
-integer-px shrink until the full translation fits. Ellipsis and clip are not
-a pass.
+- Horizontal-only (`maxWidth` written, no `maxHeight`): adopted non-zh-CN
+  copy nowrap-shrinks to the written maxWidth. Do not replace that number
+  with a wider parent, `ownerWidth`, or `box.w`.
+- Vertical-only (`maxHeight` written, no `maxWidth`): wrap. Do not pass
+  maxHeight into `_fitText` / `integerPxFit`. Do not invent a width cap.
+  `TEXT.autoResize=HEIGHT` is not a Frame height cap.
+- Dual-axis (both written): 用户待确认. Keep wrap-then-shrink. Do not
+  treat this wording as a new shrink policy.
+- Truncation / clip / explicit fit still authorize integer-px shrink on
+  their own. Ellipsis and clip are not a pass.
+- DESIGN 6.2 English primary CTA nowrap-shrinks only when copy is adopted
+  (`en` + `matched`). zh-TW / ja / ko and missing copy do not.
+
+Measure after fonts are ready and the modal is displayable. Do not encode
+page-specific `translateY` or a later-retracted height lock as policy.
 
 ### Brand-invariant names (SC-11)
 

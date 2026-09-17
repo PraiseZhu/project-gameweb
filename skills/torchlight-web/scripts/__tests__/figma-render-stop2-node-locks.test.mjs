@@ -826,8 +826,22 @@ test('rotated TEXT box uses Figma size, not skipped Auto Layout maxWidth', () =>
   }, 100.64683976021115, 100.64683976021252);
   assert.ok(Math.abs(pc.w - 120.34) < 0.8, JSON.stringify(pc));
   assert.equal(pc.h, 22.3);
+  assert.match(rendererSrc, /rotated-single-line/);
+  assert.match(rendererSrc, /data-text-rotation-nowrap/);
 });
 
+test('rotated TEXT paints against renderBox, not skipped AL max or 0.55 nudge', () => {
+  const textRotAt = rendererSrc.indexOf('visual-aabb-flex-center');
+  assert.ok(textRotAt > 0);
+  const body = rendererSrc.slice(rendererSrc.lastIndexOf('if (typeof n.rotation', textRotAt), rendererSrc.indexOf('if (tf.length) el.style.transform', textRotAt));
+  assert.match(body, /_sameCoordinateSpace\(_textRenderBox, box\)/);
+  assert.match(body, /visual-aabb-flex-center/);
+  assert.match(body, /alignItems = 'center'/);
+  assert.match(body, /justifyContent = 'center'/);
+  assert.doesNotMatch(body, /fitOwnerFromSkipped && n\.fitOwnerFromSkipped\.box/);
+  assert.doesNotMatch(body, /glyphNudge/);
+  assert.doesNotMatch(body, /0\.55/);
+});
 test('G2 carousel img/箭头 paint uses spilling renderBox, not clipped pageBox 50', () => {
   const helpers = compileOwnerSliceHelpers();
   const ownerBox = { x: 2994.365, y: 5430.286, w: 103.063, h: 50.061 };
@@ -846,12 +860,11 @@ test('G2 carousel img/箭头 paint uses spilling renderBox, not clipped pageBox 
   assert.equal(bg, wholeFrame);
 });
 
-test('SC-5 page scroll follows last CTA, not bg/pc 20000', () => {
-  assert.match(rendererSrc, /A 20000 bg\/pc board past the last CTA/);
-  assert.match(rendererSrc, /chromePaintedBottom\(\)/);
-  assert.match(rendererSrc, /\/\^bg\(\?:\\\/\|\$\)\/i\.test\(String\(n\.name \|\| ''\)\) \|\| \/\^页面内容\$\//);
-  assert.match(rendererSrc, /chromePaintedBottom\(\) \+ \(Number\.isFinite\(heroLayoutOffsetDesign\)/);
-  assert.doesNotMatch(rendererSrc, /\.\.\.pageBgNodes\.map\(\(n\) => \{/);
+test('SC-5 page scroll follows bg/pc or bg/mobile board bottom', () => {
+  assert.match(rendererSrc, /isPageBgBoard/);
+  assert.match(rendererSrc, /pageBgBoardBottom/);
+  assert.match(rendererSrc, /pageBgBoardBottom\(\)/);
+  assert.doesNotMatch(rendererSrc, /A 20000 bg\/pc board past the last CTA/);
 });
 
 test('SC-7 freeze-band classifies logo/age left and down-arrow window-center', () => {

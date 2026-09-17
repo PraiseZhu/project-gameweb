@@ -80,9 +80,13 @@ function leafValue(raw) {
   return raw && typeof raw === 'object' && 'value' in raw ? raw.value : raw;
 }
 
+export function positiveLayoutCap(raw) {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 function positiveCap(raw) {
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return positiveLayoutCap(raw);
 }
 
 function layoutLeafNumber(layout, key) {
@@ -92,13 +96,14 @@ function layoutLeafNumber(layout, key) {
 
 export function fitAuthorization({ autoResize = 'FIXED', truncation = null, clipsContent = false, isMask = false, explicitFit = false, openFlow = false, boundedOwner = false, layoutSizingVertical = null, hugNoShrink, openFlowNoShrink, autoLayoutMax = null } = {}) {
   const truncating = String(autoResize || 'FIXED').toUpperCase() === 'TRUNCATE' || truncation === 'ENDING';
-  const hasAlMax = layoutLeafNumber(autoLayoutMax, 'maxWidth') != null
-    || layoutLeafNumber(autoLayoutMax, 'maxHeight') != null;
-  if (hasAlMax) return { authorized: true, reason: 'auto-layout-max' };
+  const widthCap = layoutLeafNumber(autoLayoutMax, 'maxWidth');
+  const heightCap = layoutLeafNumber(autoLayoutMax, 'maxHeight');
+  if (widthCap != null) return { authorized: true, reason: 'auto-layout-max' };
   if (openFlow && openFlowNoShrink !== false) return { authorized: false, reason: 'open-flow-natural-growth' };
   if (explicitFit) return { authorized: true, reason: 'explicit-fit-grant' };
   if (truncating) return { authorized: true, reason: 'truncation' };
   if (clipsContent === true || isMask === true) return { authorized: true, reason: 'clip-or-mask' };
+  if (heightCap != null) return { authorized: false, reason: 'vertical-max-wrap' };
   /* DESIGN.md 6.1 C: written Auto Layout max already returned above. Remaining
      HUG / open-flow keep source metrics unless YAML explicitly allows shrink. */
   if (hugNoShrink !== false && String(layoutSizingVertical || '').toUpperCase() === 'HUG') return { authorized: false, reason: 'hug-vertical-natural-growth' };
@@ -121,16 +126,97 @@ function isAutoLayoutFrame(node) {
 }
 
 export function findAutoLayoutMaxOwner({ textId, nodesById } = {}) {
-  const none = (reason) => ({ ownerId: null, maxWidth: null, maxHeight: null, reason });
+  const none = (reason, extra = {}) => ({
+    ownerId: null,
+    maxWidth: null,
+    maxHeight: null,
+    reason,
+    layoutMode: null,
+    layoutSizingHorizontal: null,
+    layoutSizingVertical: null,
+    provenance: extra.provenance || null,
+  });
   const byId = nodesById instanceof Map ? nodesById : new Map(Object.entries(nodesById || {}));
-  const start = byId.get(textId);
+  const start = byId.get(textId) || byId.get(String(textId));
   if (!start) return none('missing-text');
   const capsOf = (node) => ({
     maxWidth: layoutLeafNumber(node && node.layout, 'maxWidth'),
     maxHeight: layoutLeafNumber(node && node.layout, 'maxHeight'),
   });
-  if (nodeHasWrittenMax(start)) {
-    return { ownerId: textId, ...capsOf(start), reason: 'text-self-max' };
+  const ownerLayoutMeta = (node) => {
+    const layout = node && node.layout;
+    const mode = layoutModeOf(node);
+    const sizingHorizontal = leafValue(layout && layout.layoutSizingHorizontal);
+    const sizingVertical = leafValue(layout && layout.layoutSizingVertical);
+    return {
+      layoutMode: mode || null,
+      layoutSizingHorizontal: sizingHorizontal != null && sizingHorizontal !== '' ? String(sizingHorizontal) : null,
+      layoutSizingVertical: sizingVertical != null && sizingVertical !== '' ? String(sizingVertical) : null,
+    };
+  };
+  const storedSelf = start.layoutCapSelf && typeof start.layoutCapSelf === 'object' ? start.layoutCapSelf : null;
+  const axisSource = start.fitOwnerFromSkipped && start.fitOwnerFromSkipped.axisSource
+    && typeof start.fitOwnerFromSkipped.axisSource === 'object'
+    ? start.fitOwnerFromSkipped.axisSource
+    : null;
+  const selfWidth = storedSelf ? positiveLayoutCap(leafValue(storedSelf.maxWidth)) : null;
+  const selfHeight = storedSelf ? positiveLayoutCap(leafValue(storedSelf.maxHeight)) : null;
+  if (axisSource) {
+    const ownWidth = axisSource.maxWidth === 'self' ? selfWidth : null;
+    const ownHeight = axisSource.maxHeight === 'self' ? selfHeight : null;
+    if (ownWidth != null || ownHeight != null) {
+      return {
+        ownerId: String(textId),
+        maxWidth: ownWidth,
+        maxHeight: ownHeight,
+        reason: 'text-self-max',
+        provenance: 'axis-source',
+        ...ownerLayoutMeta(start),
+      };
+    }
+    const skipped = start.fitOwnerFromSkipped;
+    const inheritedWidth = axisSource.maxWidth === 'inherited' ? positiveLayoutCap(leafValue(skipped.maxWidth)) : null;
+    const inheritedHeight = axisSource.maxHeight === 'inherited' ? positiveLayoutCap(leafValue(skipped.maxHeight)) : null;
+    if (inheritedWidth != null || inheritedHeight != null) {
+      const skippedMode = leafValue(skipped.layoutMode);
+      const skippedSizingH = leafValue(skipped.layoutSizingHorizontal);
+      const skippedSizingV = leafValue(skipped.layoutSizingVertical);
+      return {
+        ownerId: String(leafValue(skipped.sourceId) || ''),
+        maxWidth: inheritedWidth,
+        maxHeight: inheritedHeight,
+        reason: 'skipped-auto-layout-max',
+        provenance: 'axis-source',
+        layoutMode: skippedMode ? String(skippedMode) : null,
+        layoutSizingHorizontal: skippedSizingH != null && skippedSizingH !== '' ? String(skippedSizingH) : null,
+        layoutSizingVertical: skippedSizingV != null && skippedSizingV !== '' ? String(skippedSizingV) : null,
+      };
+    }
+  } else if (storedSelf && (selfWidth != null || selfHeight != null)) {
+    return {
+      ownerId: String(textId),
+      maxWidth: selfWidth,
+      maxHeight: selfHeight,
+      reason: 'text-self-max',
+      provenance: 'layout-cap-self',
+      ...ownerLayoutMeta(start),
+    };
+  } else if (!start.fitOwnerFromSkipped && nodeHasWrittenMax(start)) {
+    return {
+      ownerId: String(textId),
+      ...capsOf(start),
+      reason: 'text-self-max',
+      provenance: 'text-layout',
+      ...ownerLayoutMeta(start),
+    };
+  } else if (start.fitOwnerFromSkipped && nodeHasWrittenMax(start)) {
+    return {
+      ownerId: String(textId),
+      ...capsOf(start),
+      reason: 'text-layout-unprovenanced',
+      provenance: null,
+      ...ownerLayoutMeta(start),
+    };
   }
   const seen = new Set([String(textId)]);
   let current = start;
@@ -141,11 +227,130 @@ export function findAutoLayoutMaxOwner({ textId, nodesById } = {}) {
     const parent = byId.get(parentId) || byId.get(String(parentId));
     if (!parent) break;
     if (isAutoLayoutFrame(parent) && nodeHasWrittenMax(parent)) {
-      return { ownerId: String(parentId), ...capsOf(parent), reason: 'nearest-auto-layout-max' };
+      return {
+        ownerId: String(parentId),
+        ...capsOf(parent),
+        reason: 'nearest-auto-layout-max',
+        provenance: 'live-parent',
+        ...ownerLayoutMeta(parent),
+      };
     }
     current = parent;
   }
+  const skippedFallback = start.fitOwnerFromSkipped;
+  if (skippedFallback && typeof skippedFallback === 'object' && !axisSource) {
+    const skippedWidth = positiveLayoutCap(leafValue(skippedFallback.maxWidth));
+    const skippedHeight = positiveLayoutCap(leafValue(skippedFallback.maxHeight));
+    if (skippedWidth != null || skippedHeight != null) {
+      return {
+        ownerId: String(leafValue(skippedFallback.sourceId) || ''),
+        maxWidth: skippedWidth,
+        maxHeight: skippedHeight,
+        reason: 'skipped-auto-layout-max-unprovenanced',
+        provenance: null,
+        layoutMode: skippedFallback.layoutMode ? String(skippedFallback.layoutMode) : null,
+        layoutSizingHorizontal: skippedFallback.layoutSizingHorizontal ? String(skippedFallback.layoutSizingHorizontal) : null,
+        layoutSizingVertical: skippedFallback.layoutSizingVertical ? String(skippedFallback.layoutSizingVertical) : null,
+      };
+    }
+  }
   return none('no-auto-layout-max');
+}
+
+export function primaryCtaNowrapEligible({ language, status, hasAdoptedCopy } = {}) {
+  return normalizeLanguage(language) === 'en'
+    && status === 'matched'
+    && hasAdoptedCopy === true;
+}
+
+export function axisConstraintPolicy({
+  maxWidth = null,
+  maxHeight = null,
+  language = '',
+  primaryCtaNowrap = false,
+  hasAdoptedCopy = false,
+} = {}) {
+  const lang = normalizeLanguage(language);
+  const widthCap = positiveLayoutCap(maxWidth);
+  const heightCap = positiveLayoutCap(maxHeight);
+  if (lang === 'zh-CN') {
+    return {
+      wrap: true,
+      nowrap: false,
+      shrink: false,
+      fitMaxWidth: null,
+      fitMaxHeight: null,
+      reason: 'zh-cn-figma-exact',
+    };
+  }
+  if (hasAdoptedCopy !== true) {
+    return {
+      wrap: true,
+      nowrap: false,
+      shrink: false,
+      fitMaxWidth: null,
+      fitMaxHeight: null,
+      reason: 'unadopted-copy-keeps-source',
+    };
+  }
+  if (widthCap != null && heightCap != null) {
+    return {
+      wrap: true,
+      nowrap: false,
+      shrink: true,
+      fitMaxWidth: widthCap,
+      fitMaxHeight: heightCap,
+      reason: 'dual-axis-wrap-then-shrink',
+    };
+  }
+  if (primaryCtaNowrap === true) {
+    return {
+      wrap: false,
+      nowrap: true,
+      shrink: true,
+      fitMaxWidth: widthCap,
+      fitMaxHeight: null,
+      reason: 'primary-cta-single-line',
+    };
+  }
+  if (widthCap != null && heightCap == null) {
+    return {
+      wrap: false,
+      nowrap: true,
+      shrink: true,
+      fitMaxWidth: widthCap,
+      fitMaxHeight: null,
+      reason: 'horizontal-max-shrink',
+    };
+  }
+  if (widthCap == null && heightCap != null) {
+    return {
+      wrap: true,
+      nowrap: false,
+      shrink: false,
+      fitMaxWidth: null,
+      fitMaxHeight: null,
+      reason: 'vertical-max-wrap',
+    };
+  }
+  return {
+    wrap: true,
+    nowrap: false,
+    shrink: false,
+    fitMaxWidth: null,
+    fitMaxHeight: null,
+    reason: 'no-auto-layout-max',
+  };
+}
+
+export function groupUnifyFontSize({ currentPx = null, localeBasePx = null, groupMinPx = null } = {}) {
+  const current = positiveLayoutCap(currentPx);
+  const base = positiveLayoutCap(localeBasePx);
+  const groupMin = positiveLayoutCap(groupMinPx);
+  if (groupMin == null) return current || base;
+  const next = current == null ? groupMin : Math.min(current, groupMin);
+  if (current != null && next > current) return current;
+  return next;
 }
 
 export function integerPxFit({

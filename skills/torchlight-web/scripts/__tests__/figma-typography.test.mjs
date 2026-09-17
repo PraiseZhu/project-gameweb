@@ -621,7 +621,7 @@ test('6.1 D data-fit-px 110 vs locale base 120 is step-fit, not percent', () => 
 test('renderer enqueue requires written Auto Layout max, not semanticBreak or ownerWidth', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
-  assert.match(src, /hasAlCaps && !semanticBreak/);
+  assert.match(src, /(hasAlCaps || rotatedNowrap) && !semanticBreak/);
   assert.doesNotMatch(src, /hasAlCaps \|\| semanticBreak/);
   assert.doesNotMatch(src, /widthFit: _ownerW/);
   assert.match(src, /boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner && hasAlCaps/);

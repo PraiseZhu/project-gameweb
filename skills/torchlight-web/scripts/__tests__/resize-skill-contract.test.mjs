@@ -398,6 +398,8 @@ test('temporary lock-1920 names follow page k above 1920', () => {
   assert.match(chromeSrc, /coverBottom/);
   assert.match(renderSrc, /coverAnchor/);
   assert.match(renderSrc, /isHeroWelfare/);
+  assert.match(renderSrc, /isWelfareBandNode/);
+  assert.match(renderSrc, /welfareBandTop/);
   assert.match(renderSrc, /sourceLeftNow/);
   assert.match(renderSrc, /heroClusterBottomShift/);
   assert.match(renderSrc, /播放按钮/);
