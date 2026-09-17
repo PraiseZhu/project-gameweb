@@ -11,7 +11,38 @@
  *      与某个总表前缀编辑距离够近时附带修正建议
  * 纯数字开头、带空格断开的名字（`04/10`、`Frame 12/copy`）连正则都不匹配，天然放过。
  */
-import { PREFIX_NAMES, NON_PREFIX_WORDS, PREFIX_SYNTAX } from "./spec.mjs";
+import { PREFIX_NAMES, NON_PREFIX_WORDS, PREFIX_SYNTAX, REPLACEABLE_TOKEN, REPLACEABLE_ROLES } from "./spec.mjs";
+
+const REPLACEABLE_EXACT_RE = /^\[replaceable\]([\s\S]*)$/;
+const REPLACEABLE_NEAR_RE = /^[\[［]\s*replaceable\s*[\]］]/i;
+const REPLACEABLE_OPEN_RE = /^[\[［]\s*replaceable/i;
+
+/**
+ * 从已解析的 body 认出可替换标记。解析层不判对错：
+ * exact 才算声明；大小写/全角/空格错写只标 malformed，交给 lint。
+ */
+export function parseReplaceableBody(body) {
+  const text = String(body ?? "");
+  const exact = REPLACEABLE_EXACT_RE.exec(text);
+  if (exact) {
+    const assetKey = exact[1].trim();
+    return {
+      token: REPLACEABLE_TOKEN,
+      marked: true,
+      malformed: false,
+      empty: assetKey.length === 0,
+      assetKey: assetKey || null,
+    };
+  }
+  if (REPLACEABLE_NEAR_RE.test(text) || REPLACEABLE_OPEN_RE.test(text)) {
+    return { token: REPLACEABLE_TOKEN, marked: false, malformed: true, empty: false, assetKey: null };
+  }
+  return { token: REPLACEABLE_TOKEN, marked: false, malformed: false, empty: false, assetKey: null };
+}
+
+export function replaceableRoles() {
+  return REPLACEABLE_ROLES;
+}
 
 /**
  * 判定参数全部来自 spec.mjs（其事实来源是规范 §4.1），本文件不写死数值。
@@ -32,6 +63,7 @@ const PREFIX_RE = new RegExp(`^([A-Za-z]{${PREFIX_SYNTAX.minWordLen},})([ \\t]*)
  *   slash: string|null, spaced: boolean, body: string|null,
  *   params: Array<{key:string, value:string|null, hasEq:boolean, raw:string}>,
  *   unknownPrefix: string|null, suggestion: string|null,
+ *   replaceable: { marked:boolean, malformed:boolean, empty:boolean, assetKey:string|null },
  * }}
  */
 export function parseName(raw) {
@@ -39,6 +71,7 @@ export function parseName(raw) {
   const out = {
     raw: name, prefix: null, prefixRaw: null, slash: null, spaced: false,
     body: null, params: [], unknownPrefix: null, suggestion: null,
+    replaceable: parseReplaceableBody(null),
   };
 
   // 半角 / 、全角 ／ 、反斜杠 \ 都当作「试图用前缀」；/ 与 ／ 合法，\ 仍报错。斜杠两侧允许误打的空格
@@ -62,6 +95,7 @@ export function parseName(raw) {
 
   const parts = rest.split("@");
   out.body = parts.shift().trim();
+  out.replaceable = parseReplaceableBody(out.body);
   for (const p of parts) {
     const i = p.indexOf("=");
     out.params.push(

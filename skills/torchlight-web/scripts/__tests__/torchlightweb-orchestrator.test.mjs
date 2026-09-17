@@ -65,6 +65,10 @@ test('empty demo assets do not pass --reuse-existing; existing PNGs may reuse', 
     htmlFromHandoffArgs({ handoffDir: '/handoff', demoDir: filled }),
     ['--handoff', '/handoff', '--demo', filled, '--reuse-existing'],
   );
+  assert.deepEqual(
+    htmlFromHandoffArgs({ handoffDir: '/handoff', demoDir: filled, region: 'global' }),
+    ['--handoff', '/handoff', '--demo', filled, '--reuse-existing', '--region', 'global'],
+  );
 });
 
 test('parseChildJson keeps the first complete object even when later braces are truncated', () => {

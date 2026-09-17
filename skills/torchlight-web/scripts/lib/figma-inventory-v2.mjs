@@ -99,6 +99,7 @@ function passthroughDrawFields(entry) {
     sliceExport: entry.sliceExport ?? null,
     text: entry.text ?? null,
     layout: entry.layout ?? null,
+    ...(entry.replaceable === true ? { replaceable: true, assetKey: entry.assetKey ?? null } : {}),
   };
 }
 

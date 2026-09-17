@@ -10,11 +10,12 @@
 import {
   PREFIXES, PARAMS, PARAM_NAMES, NON_PREFIX_WORDS, FIGMA_DEFAULT_COMPOUND_NAMES,
   FIGMA_DEFAULT_CN_NAMES, FIGMA_COPY_SUFFIX_RE, isSlicePrefix, parseLangCodes,
+  REPLACEABLE_ROLES, LANG_CODE_SET,
 } from "./spec.mjs";
 import { parseName, usesPrefixSyntax, nearestParam } from "./parse.mjs";
 import { RULES, severityOf, dispositionOf, basisOf, SEVERITIES } from "./rules.mjs";
 import { DISPOSITIONS } from "./spec.mjs";
-import { unprefixedLangShellSet } from "./lang-axis.mjs";
+import { hasLangVariantAxis, langValueOfVariant, unprefixedLangShellSet } from "./lang-axis.mjs";
 
 export function lint(root) {
   const findings = [];
@@ -26,6 +27,7 @@ export function lint(root) {
   // 跨节点检查的收集器
   const secNodes = [];  // 体检根子树内的全部 sec/（含嵌套项，后续按规则分流）
   const namedNodes = [];  // 全部带合法前缀的层，供 N-NAME-DUPLICATE 跨节点比对
+  const replaceableDefs = [];  // 可替换定义（不含实例引用），供 N-REPLACEABLE-DUP
   const parentSiblingCount = new Map();  // 父层 → 它下面有几个带前缀的子层
   const secRefs = [];   // @sec=N 引用
   const fromRefs = [];  // fix/@from=N 引用
@@ -116,6 +118,27 @@ export function lint(root) {
 
     /* ── @参数（仅在前缀已识别时校验，避免在自造前缀上叠加噪音）── */
     if (prefix) {
+      const rb = parsed.replaceable || {};
+      if (rb.malformed) {
+        add("N-REPLACEABLE-MARK", "可替换标记必须是半角小写 `[replaceable]`，紧贴用途名");
+      } else if (rb.marked && rb.empty) {
+        add("N-REPLACEABLE-EMPTY", "`[replaceable]` 后面的用途名称不能为空");
+      } else if ((rb.marked || rb.malformed) && !REPLACEABLE_ROLES.includes(prefix)) {
+        add("N-REPLACEABLE-ROLE",
+          `\`[replaceable]\` 只能用在 ${REPLACEABLE_ROLES.map((x) => `\`${x}/\``).join(" / ")} 上，当前是 \`${prefix}/\``);
+      }
+      if (rb.marked && ctx.replaceableAncestor) {
+        add("N-REPLACEABLE-NESTED",
+          `位于已声明可替换的 \`${ctx.replaceableAncestor.name}\` 内部；只标整体导出的最外层`);
+      }
+      if (rb.marked && rb.assetKey && n.type !== "INSTANCE") {
+        replaceableDefs.push({
+          node: n, path, instance: ctx.instance,
+          key: rb.assetKey,
+          parentId: ctx.parentId ?? "__root__",
+          ancestorNodes: ctx.ancestorNodes || [],
+        });
+      }
       const seenParams = new Set();
       for (const p of parsed.params) {
         if (!p.key) {
@@ -261,6 +284,9 @@ export function lint(root) {
       ? { id: n.id, name: n.name, prefix }
       : ctx.semanticAncestor;
     const childScopeRoot = prefix === "sec" ? n : ctx.scopeRoot;
+    const replaceableAncestor = (parsed.replaceable?.marked && REPLACEABLE_ROLES.includes(prefix))
+      ? { id: n.id, name: n.name }
+      : ctx.replaceableAncestor;
     children.forEach((c, index) => {
       const structuralPath = ctx.structuralPath
         ? `${ctx.structuralPath}/${n.type}@${index}`
@@ -270,7 +296,7 @@ export function lint(root) {
         isTopLevel: ctx.isRoot, // 体检根的直接子层
         namingExempt: childExempt,
         sliceAncestor, ancPrefixes, ancestorPrefixes, instance, semanticAncestor,
-        scopeRoot: childScopeRoot, structuralPath,
+        scopeRoot: childScopeRoot, structuralPath, replaceableAncestor,
         ancestorNodes: [...(ctx.ancestorNodes || []), n],
       });
     });
@@ -280,7 +306,7 @@ export function lint(root) {
     path: "", parentId: null, parentName: null, isRoot: true, isTopLevel: false, index: 0,
     namingExempt: false, sliceAncestor: null, ancPrefixes: new Set(), instance: null,
     ancestorPrefixes: [], semanticAncestor: null, scopeRoot: rootScope, structuralPath: "",
-    ancestorNodes: [],
+    ancestorNodes: [], replaceableAncestor: null,
   });
 
   /* ── 跨节点：分区编号 ── */
@@ -419,6 +445,31 @@ export function lint(root) {
     }
   }
 
+  /* ── 跨节点：同一替换位置定义了两次 ──
+     实例是引用，不算第二份定义。img+lang 组件集根与合法变体根是同一份定义
+     （A12：根上的标记传到变体），不算重复。 */
+  const byReplaceableKey = new Map();
+  for (const item of replaceableDefs) {
+    const list = byReplaceableKey.get(item.key) ?? [];
+    list.push(item);
+    byReplaceableKey.set(item.key, list);
+  }
+  for (const [key, group] of byReplaceableKey) {
+    const distinct = new Map();
+    for (const item of group) {
+      const k = item.instance
+        ? `${item.instance.componentId ?? "?"}::${item.instance.path ?? ""}`
+        : replaceableDefinitionKey(item);
+      if (!distinct.has(k)) distinct.set(k, item);
+    }
+    if (distinct.size < 2) continue;
+    for (const item of distinct.values()) {
+      push("N-REPLACEABLE-DUP", item.node, item.path,
+        `用途名「${key}」被 ${distinct.size} 个不同的层定义为可替换位置`,
+        undefined, item.instance);
+    }
+  }
+
   /* ── 跨节点：kv/ 单层 ── */
   for (const list of kvByParent.values()) {
     if (list.length === 1) {
@@ -521,6 +572,25 @@ export function isComponentDefinition(n) {
 /** A11：A10 语言壳变体内那颗 btn/hot 禁止再挂 @lang。判定与清单同一份。 */
 function langParamForbidden(ctx) {
   return (ctx?.ancestorNodes || []).some((item) => unprefixedLangShellSet(item));
+}
+
+/** A12：img+lang 组件集根与其合法变体根折叠成同一替换定义。 */
+function replaceableDefinitionKey(item) {
+  const node = item?.node;
+  if (imgLangSetParent(node)) return `img-lang-set:${node.id}`;
+  if (node?.type === "COMPONENT") {
+    const set = (item.ancestorNodes || []).find((ancestor) => ancestor?.type === "COMPONENT_SET");
+    if (imgLangSetParent(set) && LANG_CODE_SET.has(langValueOfVariant(node))) {
+      return `img-lang-set:${set.id}`;
+    }
+  }
+  return node?.id;
+}
+
+function imgLangSetParent(parent) {
+  return parent?.type === "COMPONENT_SET"
+    && parseName(parent.name).prefix === "img"
+    && hasLangVariantAxis(parent);
 }
 
 function countNodes(n) {

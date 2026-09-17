@@ -1578,9 +1578,14 @@
     resizeRange.value = Math.min(VIEWPORT_MAX_W, Math.max(VIEWPORT_MIN_W, vp.w));
   }
 
+  function notifyPrefChange() {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+    window.dispatchEvent(new CustomEvent('qa-pref-change', { detail: { prefs: S.prefs } }));
+  }
+
   function syncAll() {
     /* 产品视图：只渲染产品帧(默认 prefs + 初始状态),不建/不刷任何工具区、不写深链。 */
-    if (PRODUCT_VIEW) { render(); return; }
+    if (PRODUCT_VIEW) { render(); notifyPrefChange(); return; }
     /* prefs.plat 跟随视口断点（单一规则，两个方向不分叉）：手动点 plat seg 会连带
        切设备（syncDeviceToPlat），切设备/拉伸走到这里统一重算。仅当矩阵真有该选项才写。 */
     var platOpts = (((cfg.matrix || {}).plat || {}).options) || [];
@@ -1595,8 +1600,8 @@
     /* 拖拽轻路径：控制栏两行 DOM 与 viewport 宽度无关（只有读数/滑块值/设备名下拉文本变），
        拖拽中跳过 buildBar1/buildBar2 的全量 innerHTML 重建，只 syncToolbar 同步控件值/禁用态。
        松手后 endResizeDrag 已把 _resizeDragActive 清掉，这里走完整重建。 */
-    if (_resizeDragActive) { syncToolbar(true); render(); writeHash(); return; }
-    buildBar1(); buildBar2(); syncToolbar(); render(); writeHash();
+    if (_resizeDragActive) { syncToolbar(true); render(); writeHash(); notifyPrefChange(); return; }
+    buildBar1(); buildBar2(); syncToolbar(); render(); writeHash(); notifyPrefChange();
   }
 
   /* ── RAF 合并的 syncAll ──

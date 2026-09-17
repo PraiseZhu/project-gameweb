@@ -64,6 +64,47 @@ test("handoff：--allow-green-draft 在本仓直接拒", () => {
   assert.match(result.problems.join("\n"), /project-unnamed-inventory/);
 });
 
+test("handoff：replaceable/assetKey 进 consume 与 fingerprint", () => {
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  pc.nodes.push(stampReadyFields({
+    id: "1:replace",
+    type: "GROUP",
+    name: "img/[replaceable]模块2玩法截图",
+    status: "determined",
+    role: "img",
+    label: "模块2玩法截图",
+    behavior: "slice",
+    via: "prefix",
+    replaceable: true,
+    assetKey: "模块2玩法截图",
+    parentId: "1:1-sec",
+    box: { x: 0, y: 0, w: 80, h: 80 },
+  }));
+  rebuildInventoryIndexes(pc);
+  fixtureJudgment(pc);
+  const result = validateHandoffPair(pc, mobile);
+  assert.equal(result.ok, true, result.problems.join("\n"));
+  const dir = mkdtempSync(join(tmpdir(), "handoff-replaceable-"));
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mo.json");
+  writeFileSync(pcPath, JSON.stringify(pc));
+  writeFileSync(mobilePath, JSON.stringify(mobile));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc: pc, mobileDoc: mobile, kind: "ready", outDir: join(dir, "out"),
+  });
+  const consume = pack.manifest.consume.pc.determined.find((node) => node.id === "1:replace");
+  assert.equal(consume.replaceable, true);
+  assert.equal(consume.assetKey, "模块2玩法截图");
+  const withMark = fingerprintInventories(pc, mobile);
+  const clone = JSON.parse(JSON.stringify(pc));
+  clone.nodes.find((node) => node.id === "1:replace").assetKey = "别的名字";
+  rebuildInventoryIndexes(clone);
+  fixtureJudgment(clone);
+  const without = fingerprintInventories(clone, mobile);
+  assert.notEqual(withMark, without);
+});
+
 test("handoff：成对 ready 可打包", () => {
   const result = validateHandoffPair(sample("1:1"), sample("2:2"));
   assert.equal(result.ok, true, result.problems.join("\n"));

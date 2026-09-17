@@ -11,6 +11,62 @@ import { INVENTORY_SCHEMA } from "../../spec/inventory.mjs";
 
 const TOOL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+test("A12：cleanTree 精确标记写入 replaceable/assetKey，旧名不猜", () => {
+  const tree = cleanTree();
+  const inv = buildInventory(tree, { fileKey: "TESTKEY", requestedNodeId: tree.id });
+  const marked = inv.nodes.find((n) => n.name === "img/[replaceable]模块2玩法截图");
+  assert.equal(marked.status, "determined");
+  assert.equal(marked.role, "img");
+  assert.equal(marked.replaceable, true);
+  assert.equal(marked.assetKey, "模块2玩法截图");
+  assert.equal(marked.label, "模块2玩法截图");
+  const plain = inv.nodes.find((n) => n.name === "img/标题底纹");
+  assert.equal(plain.replaceable, undefined);
+  assert.equal(plain.assetKey, undefined);
+});
+
+test("A12：img+lang 组件集根标记传到合法变体根，零件不标", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 40, height: 40 },
+    ...extra,
+  });
+  const langSet = node("lang-set", "COMPONENT_SET", "img/[replaceable]模块2玩法截图", [
+    node("v-cn", "COMPONENT", "lang=cn", [
+      node("art-cn", "RECTANGLE", "图片", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+    node("v-tw", "COMPONENT", "lang=tw", [
+      node("art-tw", "RECTANGLE", "图片", [], { fills: [{ type: "IMAGE", visible: true }] }),
+    ]),
+  ], {
+    componentPropertyDefinitions: {
+      lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+    },
+  });
+  const page = node("page", "FRAME", "cn_pc", [
+    node("sec", "FRAME", "sec/1-首屏", [
+      node("hero", "INSTANCE", "img/[replaceable]模块2玩法截图", [], { componentId: "v-cn" }),
+    ]),
+  ]);
+  const shelf = node("shelf", "FRAME", "cn_pc", [page, langSet]);
+  const inv = buildInventory(shelf, { requestedNodeId: "page" });
+  const set = inv.attachments.componentSets.find((item) => item.id === "lang-set");
+  const cn = set.variants.find((item) => item.id === "v-cn");
+  const tw = set.variants.find((item) => item.id === "v-tw");
+  assert.equal(cn.replaceable, true);
+  assert.equal(cn.assetKey, "模块2玩法截图");
+  assert.equal(tw.replaceable, true);
+  assert.equal(tw.assetKey, "模块2玩法截图");
+  const byId = Object.fromEntries(set.nodes.map((item) => [item.id, item]));
+  assert.notEqual(byId["art-cn"].replaceable, true);
+  const inst = inv.nodes.find((item) => item.id === "hero");
+  assert.equal(inst.replaceable, true);
+  assert.equal(inst.assetKey, "模块2玩法截图");
+  const check = validateInventory(inv, shelf);
+  assert.equal(check.ok, true, check.problems.join("\n"));
+  assert.equal(auditDeclaredStructure(inv).ok, true, auditDeclaredStructure(inv).problems.join("\n"));
+});
+
 test("cleanTree：有前缀的进 determined，无前缀 TEXT 是 copy，ref 整棵 skipped", () => {
   const tree = cleanTree();
   const inv = buildInventory(tree, { fileKey: "TESTKEY", requestedNodeId: tree.id });

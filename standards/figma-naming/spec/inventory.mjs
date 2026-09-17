@@ -55,6 +55,9 @@ export const SLICE_EXPORT = Object.freeze({
   format: "png",
 });
 
+/** A12：img/ 整图可替换。标记决定可替换性，切图边界仍是 sliceExport。 */
+export const REPLACEABLE_FIELDS = Object.freeze(["replaceable", "assetKey"]);
+
 const WHOLE_FRAME_SLICE_NAME = /^(?:img|bg|kv)(?:\/|$)/i;
 
 /** 跨端同一模块：只认 determined 前缀 + 剥前缀后的名字，不认图层 id。 */
