@@ -865,6 +865,29 @@ test('SC-5 page scroll follows bg/pc or bg/mobile board bottom', () => {
   assert.match(rendererSrc, /pageBgBoardBottom/);
   assert.match(rendererSrc, /pageBgBoardBottom\(\)/);
   assert.doesNotMatch(rendererSrc, /A 20000 bg\/pc board past the last CTA/);
+  const lockStart = rendererSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0 } = {})');
+  const lockHeader = rendererSrc.indexOf(') {', lockStart);
+  const lockBrace = lockHeader + 2;
+  const lockEnd = closeBrace(rendererSrc, lockBrace);
+  const lock = new Function(
+    rendererSrc.slice(rendererSrc.indexOf('(', lockStart) + 1, lockHeader).trim(),
+    rendererSrc.slice(lockBrace + 1, lockEnd),
+  );
+  const short = lock({ boardBottom: 1000, contentBottom: 800 });
+  assert.equal(short.height, 1000);
+  assert.equal(short.overflowPx, 0);
+  assert.equal(short.reason, 'board-bottom');
+  const over = lock({ boardBottom: 1000, contentBottom: 1300 });
+  assert.equal(over.height, 1000);
+  assert.equal(over.overflowPx, 300);
+  assert.equal(over.contentBottom, 1300);
+  assert.equal(over.reason, 'content-past-board');
+  assert.notEqual(over.height, 1300);
+  const missing = lock({ boardBottom: 0, contentBottom: 1300 });
+  assert.equal(missing.height, 1300);
+  assert.equal(missing.reason, 'board-missing');
+  assert.match(rendererSrc, /data-page-scroll-overflow/);
+  assert.doesNotMatch(rendererSrc, /const pageScrollHeight = pageScope && heroSlot\s*\n\s*\? Math\.max/);
 });
 
 test('SC-7 freeze-band classifies logo/age left and down-arrow window-center', () => {

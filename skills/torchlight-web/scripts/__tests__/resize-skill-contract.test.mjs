@@ -22,6 +22,7 @@ import {
   matchNamedModalByTopic,
   heroViewportFill,
   pageOverflowPolicy,
+  pageScrollLock,
   resolveHeroContentRoot,
   resizeOwns,
   resizeDoesNotOwn,
@@ -278,6 +279,40 @@ test('hero fill uses YAML fillVh of the viewport so later sections leave the fir
     viewportH: 844, widthScaleK: 390 / 750, heroDesignHeight: 1334,
   });
   assert.ok(phone390.layoutOffsetDesign > 0, 'short k×hero must pad later to the viewport edge');
+});
+
+test('page scroll lock ends at the board; overflow past the board does not raise height', () => {
+  const short = pageScrollLock({ boardBottom: 1000, contentBottom: 800 });
+  assert.equal(short.height, 1000);
+  assert.equal(short.overflowPx, 0);
+  assert.equal(short.reason, 'board-bottom');
+  const over = pageScrollLock({ boardBottom: 1000, contentBottom: 1300 });
+  assert.equal(over.height, 1000);
+  assert.equal(over.overflowPx, 300);
+  assert.equal(over.reason, 'content-past-board');
+  assert.notEqual(over.height, 1300);
+  const missing = pageScrollLock({ boardBottom: 0, contentBottom: 1300 });
+  assert.equal(missing.height, 1300);
+  assert.equal(missing.reason, 'board-missing');
+  const lockFn = renderSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0 } = {})');
+  const headerEnd = renderSrc.indexOf(') {', lockFn);
+  const bodyStart = headerEnd + 2;
+  let depth = 0;
+  let end = bodyStart;
+  for (let i = bodyStart; i < renderSrc.length; i++) {
+    if (renderSrc[i] === '{') depth++;
+    else if (renderSrc[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  const inline = new Function(renderSrc.slice(renderSrc.indexOf('(', lockFn) + 1, headerEnd).trim(), renderSrc.slice(bodyStart + 1, end));
+  assert.deepEqual(inline({ boardBottom: 1000, contentBottom: 1300 }), over);
+  assert.doesNotMatch(renderSrc, /const pageScrollHeight = pageScope && heroSlot\s*\n\s*\? Math\.max/);
+  assert.match(renderSrc, /data-page-scroll-overflow/);
 });
 
 test('QA frame and product view both clip page X; viewport width still resizes', () => {

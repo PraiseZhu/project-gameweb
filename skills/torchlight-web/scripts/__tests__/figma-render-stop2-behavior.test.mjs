@@ -518,3 +518,107 @@ browserTest('LINE 0.5px 缺 strokeColor 不得加粗/补白，缺字段标未确
     await browser.close();
   }
 });
+
+function boardTruth({ boardH, contentH }) {
+  return {
+    platforms: {
+      pc: {
+        pageChrome: {
+          meta: { x: 0, y: 0, width: 800, height: boardH },
+          nodes: [{
+            id: 'bg-pc',
+            name: 'bg/pc',
+            type: 'RECTANGLE',
+            box: { x: 0, y: 0, w: 800, h: boardH },
+            pageBox: { x: 0, y: 0, w: 800, h: boardH },
+            style: { fills: [{ type: 'SOLID', color: { r: 0.09, g: 0.06, b: 0.01, a: 1 } }] },
+          }],
+        },
+        sections: {
+          later: {
+            meta: { x: 0, y: 0, width: 800, height: contentH },
+            nodes: [{
+              id: 'tail',
+              name: 'btn/按钮',
+              type: 'FRAME',
+              box: { x: 20, y: contentH - 100, w: 200, h: 100 },
+              pageBox: { x: 20, y: contentH - 100, w: 200, h: 100 },
+              style: { fills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0, a: 1 } }] },
+            }],
+          },
+        },
+      },
+    },
+  };
+}
+
+async function measureBoardPage(page, truth) {
+  await page.setContent('<!doctype html><body><div class="frame" style="position:relative;width:800px;overflow:auto"></div><script type="application/json" id="qa-assets">{}</script></body>');
+  await page.evaluate((policy) => { window.__designPolicy = policy; }, DESIGN_POLICY);
+  await page.addScriptTag({ path: rendererPath });
+  await page.evaluate((payload) => {
+    window.__figmaRender.__assetCache = null;
+    window.__figmaRender.renderApp({
+      enablePageInteraction: false,
+      truth: payload,
+      rawTruth: payload,
+      prefs: { plat: 'pc', lang: 'zh-CN' },
+      state: 'default',
+      frame: document.querySelector('.frame'),
+      viewport: { w: 800, h: 2000, dpr: 1 },
+    });
+  }, truth);
+  return page.evaluate(() => {
+    const frame = document.querySelector('.frame');
+    const stage = document.querySelector('[data-node-id="page-scope"]');
+    const tail = document.querySelector('[data-node="tail"]');
+    return {
+      lock: frame.getAttribute('data-page-scroll-lock'),
+      board: Number(frame.getAttribute('data-page-scroll-board')),
+      content: Number(frame.getAttribute('data-page-scroll-content')),
+      height: Number(frame.getAttribute('data-page-scroll-height')),
+      overflow: frame.getAttribute('data-page-scroll-overflow'),
+      stageH: stage ? parseFloat(stage.style.height) : null,
+      scrollHeight: frame.scrollHeight,
+      tailPresent: !!tail,
+    };
+  });
+}
+
+browserTest('page scroll ends at bg/pc board; content past the board fail-closes without raising height', async () => {
+  const { browser } = await launchChromium(root, { headless: true });
+  const page = await browser.newPage({ viewport: { width: 800, height: 2000 } });
+  try {
+    const measured = await measureBoardPage(page, boardTruth({ boardH: 1000, contentH: 1300 }));
+    assert.equal(measured.board, 1000);
+    assert.equal(measured.content, 1300);
+    assert.equal(measured.height, 1000);
+    assert.equal(measured.stageH, 1000);
+    assert.equal(measured.lock, 'content-past-board');
+    assert.equal(Number(measured.overflow), 300);
+    assert.ok(measured.scrollHeight < 1300, JSON.stringify(measured));
+    assert.ok(Math.abs(measured.scrollHeight - 1000) < 2 || measured.scrollHeight <= 1000 + 2, JSON.stringify(measured));
+    assert.equal(measured.tailPresent, true);
+  } finally {
+    await browser.close();
+  }
+});
+
+browserTest('page scroll keeps the bg/pc board when the last CTA is shorter', async () => {
+  const { browser } = await launchChromium(root, { headless: true });
+  const page = await browser.newPage({ viewport: { width: 800, height: 2000 } });
+  try {
+    const measured = await measureBoardPage(page, boardTruth({ boardH: 1000, contentH: 800 }));
+    assert.equal(measured.board, 1000);
+    assert.equal(measured.content, 800);
+    assert.equal(measured.height, 1000);
+    assert.equal(measured.stageH, 1000);
+    assert.equal(measured.lock, 'board-bottom');
+    assert.equal(measured.overflow, null);
+    assert.ok(measured.scrollHeight >= 1000 - 2, JSON.stringify(measured));
+    assert.ok(measured.scrollHeight < 1300, JSON.stringify(measured));
+    assert.equal(measured.tailPresent, true);
+  } finally {
+    await browser.close();
+  }
+});

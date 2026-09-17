@@ -355,7 +355,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 - `kind=ready` 才吃；`unknown` 只画不接线。
 - Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=min(1, viewportW/750)`（751–1126 按钮冻 750，列跟窗口铺 KV 和后屏，750 内容居中）。首屏槽 = 当前窗口高，后屏从窗口底开始。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
-- 页面滚动锁到 bg/pc（PC）或 bg/mobile（手机）板底，不要用最后一颗 CTA 截短；其它 bg/* 切片不撑页高。
+- 页面滚动锁到 bg/pc（PC）或 bg/mobile（手机）板底：终点是 `pageBgBoardBottom()`，不是 `Math.max` 把板上内容抬成最低高度，也不是用最后一颗 CTA 截短。板上内容越界 fail-closed 留 `data-page-scroll-overflow`，禁止 `Math.min` 静默裁掉可见内容当绿。其它 bg/* 切片不撑页高。
 - 外文 Noto Regular = 400 只在源优黑 Regular 切到 Noto 时成立；稿上已是 Noto 600 的主 CTA 语言变体不降。简中优黑 Regular 仍 600。Bold 900、缺译保源，都不改。字号档仍按源优黑字重分层，不因 CSS 变成 400 就掉进 body 0.8。
 - zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。横限制单行缩字，竖限制换行，双轴用户待确认维持先折行再缩。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。韩文覆盖听 `localeFontFamily.ko`，不把 Apple SD Gothic Neo 写成所有韩文的硬门。优黑字重听清单 900/Bold，禁止 named-instance 钉 Regular。
 - `btn/主要按钮` 的字体类型数据跟同端 `首屏主按钮` 该语言变体，不另开一套；`en` 主 CTA 页面强制大写，不听文案表大小写，也不听稿上有没有 `textCase=UPPER`；稿上没出该语言变体（如没有 `jp`）不算失败。

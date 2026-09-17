@@ -1776,6 +1776,30 @@
     const value = Number(raw);
     return Number.isFinite(value) && value > 0 ? value : null;
   },
+  /* Mirror scripts/lib/resize/index.mjs#pageScrollLock. */
+  _pageScrollLock({ boardBottom = 0, contentBottom = 0 } = {}) {
+    const board = Number(boardBottom);
+    const content = Number(contentBottom);
+    const boardH = Number.isFinite(board) && board > 0 ? board : 0;
+    const contentH = Number.isFinite(content) && content > 0 ? content : 0;
+    if (!(boardH > 0)) {
+      return {
+        height: contentH,
+        overflowPx: 0,
+        reason: 'board-missing',
+        boardBottom: boardH,
+        contentBottom: contentH,
+      };
+    }
+    const overflowPx = contentH > boardH + 0.5 ? contentH - boardH : 0;
+    return {
+      height: boardH,
+      overflowPx,
+      reason: overflowPx > 0 ? 'content-past-board' : 'board-bottom',
+      boardBottom: boardH,
+      contentBottom: contentH,
+    };
+  },
   _primaryCtaNowrapEligible({ language, status, hasAdoptedCopy } = {}) {
     const raw = String(language || '').replace('_', '-').toLowerCase();
     const lang = raw.startsWith('en') ? 'en' : raw;
@@ -3054,7 +3078,7 @@
       }
       return max;
     };
-    const pageContentHeight = pageScope
+    const pageContentExtent = pageScope
       ? Math.max(
         0,
         ...ids.map((id) => {
@@ -3062,9 +3086,13 @@
           return (Number((m && m.y) || 0) + Number((m && m.height) || 0)) - pageOriginY;
         }),
         chromePaintedBottom(),
-        pageBgBoardBottom(),
       )
       : 0;
+    const pageContentLock = this._pageScrollLock({
+      boardBottom: pageBgBoardBottom(),
+      contentBottom: pageContentExtent,
+    });
+    const pageContentHeight = pageContentLock.height;
     const pagePaintOrder = Array.isArray(__activeTruth.pagePaintOrder) ? __activeTruth.pagePaintOrder : null;
     const rawPagePaintOrder = Array.isArray(__rawRoot.pagePaintOrder) ? __rawRoot.pagePaintOrder : null;
     /* The continuous document plane always follows the declared platform
@@ -3204,14 +3232,25 @@
         : sectionH;
       return (Number(m.y || 0) + laterH + (afterHero ? heroLayoutOffsetDesign : 0)) - pageOriginY;
     };
-    const pageScrollHeight = pageScope && heroSlot
+    const pageScrollExtent = pageScope && heroSlot
       ? Math.max(
         Number(heroSlot.designHeight) || 0,
         ...ids.map((id) => shiftedSectionBottom(id)),
         chromePaintedBottom() + (Number.isFinite(heroLayoutOffsetDesign) ? heroLayoutOffsetDesign : 0),
-        pageBgBoardBottom(),
       )
-      : pageContentHeight;
+      : pageContentExtent;
+    const pageScrollLock = this._pageScrollLock({
+      boardBottom: pageBgBoardBottom(),
+      contentBottom: pageScrollExtent,
+    });
+    const pageScrollHeight = pageScrollLock.height;
+    frame.setAttribute('data-page-scroll-lock', pageScrollLock.reason);
+    frame.setAttribute('data-page-scroll-board', String(pageScrollLock.boardBottom));
+    frame.setAttribute('data-page-scroll-content', String(pageScrollLock.contentBottom));
+    frame.setAttribute('data-page-scroll-height', String(pageScrollLock.height));
+    if (pageScrollLock.overflowPx > 0) {
+      frame.setAttribute('data-page-scroll-overflow', String(pageScrollLock.overflowPx));
+    }
     /* Hero slot only moves after-hero *sections*. pageBackground stays at Figma
        y, so the last painted bg slice ends early and the shifted tail looks like
        a short background / white card. Keep the first-screen KV at page origin;
@@ -3306,6 +3345,10 @@
         stage.style.touchAction = 'pan-y';
         stage.style.overscrollBehaviorX = 'none';
         stage.setAttribute('data-overflow-x', 'clip');
+        if (pageScrollLock.boardBottom > 0) {
+          stage.style.overflowY = 'clip';
+          stage.setAttribute('data-page-scroll-clip', pageScrollLock.reason);
+        }
       }
       /* Page composition has one continuous content-root coordinate system.
          A Figma section root is a sibling component, not an implicit crop

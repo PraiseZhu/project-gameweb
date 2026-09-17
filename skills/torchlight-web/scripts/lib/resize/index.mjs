@@ -441,6 +441,33 @@ export function pageOverflowPolicy({ productView = false } = {}) {
   };
 }
 
+/* Page height ends at the bg/pc or bg/mobile board. Content past that board
+   is overflow, not a reason to Math.max the scroll height. Missing board
+   keeps the content extent so legacy fixtures still paint. */
+export function pageScrollLock({ boardBottom = 0, contentBottom = 0 } = {}) {
+  const board = Number(boardBottom);
+  const content = Number(contentBottom);
+  const boardH = Number.isFinite(board) && board > 0 ? board : 0;
+  const contentH = Number.isFinite(content) && content > 0 ? content : 0;
+  if (!(boardH > 0)) {
+    return {
+      height: contentH,
+      overflowPx: 0,
+      reason: 'board-missing',
+      boardBottom: boardH,
+      contentBottom: contentH,
+    };
+  }
+  const overflowPx = contentH > boardH + 0.5 ? contentH - boardH : 0;
+  return {
+    height: boardH,
+    overflowPx,
+    reason: overflowPx > 0 ? 'content-past-board' : 'board-bottom',
+    boardBottom: boardH,
+    contentBottom: contentH,
+  };
+}
+
 export function planeResizePolicies(layoutPlanes = null) {
   if (!layoutPlanes || layoutPlanes.status !== 'verified-two-plane' || !layoutPlanes.planes) {
     return {
