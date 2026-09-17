@@ -473,6 +473,21 @@ function imgLangSetParent(parent) {
     && hasLangVariantAxis(parent);
 }
 
+/** A12：组件集根上的 [replaceable] 传到合法 lang 变体根；零件不标。 */
+function inheritReplaceable(parsed, role, parent, node) {
+  if (role !== "img") return null;
+  if (parsed.replaceable?.marked && parsed.replaceable.assetKey) {
+    return { assetKey: parsed.replaceable.assetKey };
+  }
+  if (!parent || node?.type !== "COMPONENT") return null;
+  if (!imgLangSetParent(parent) || !LANG_CODE_SET.has(langValueOfVariant(node))) return null;
+  const parentParsed = parseName(parent.name);
+  if (parentParsed.replaceable?.marked && parentParsed.replaceable.assetKey) {
+    return { assetKey: parentParsed.replaceable.assetKey };
+  }
+  return null;
+}
+
 function clickNodesInVariant(nodes, variantId) {
   return (nodes || []).filter((node) => {
     if (node.status !== "determined") return false;
@@ -883,6 +898,12 @@ function serializeTree(root, scope, counts, pageBox = null, stackedSecPageBox = 
       if (langs) entry.langs = langs;
       entry.behavior = behaviorOf(role, params);
       entry.via = via;
+      const inherited = inheritReplaceable(parsed, role, parent, node);
+      if (inherited) {
+        entry.replaceable = true;
+        entry.assetKey = inherited.assetKey;
+        if (!parsed.body || parsed.replaceable?.marked) entry.label = inherited.assetKey;
+      }
       const sliceExport = sliceExportOf(node, role, pageRel, { wholeFrame: isWholeFrameSliceName(node.name) });
       if (sliceExport) entry.sliceExport = sliceExport;
       if (role === "fix") {
@@ -925,6 +946,7 @@ function componentSetRecord(set, nodes) {
       ...(classified?.role ? { role: classified.role } : {}),
       ...(classified?.behavior ? { behavior: classified.behavior } : {}),
       ...(classified?.via ? { via: classified.via } : {}),
+      ...(classified?.replaceable ? { replaceable: true, assetKey: classified.assetKey } : {}),
       ...(classified?.sliceExport ? { sliceExport: classified.sliceExport } : {}),
       componentProperties: variant.componentProperties ?? {},
       nodes: nodes.filter((node) => node.id === variant.id || node.ancestorIds?.includes(variant.id)),
@@ -1102,6 +1124,21 @@ export function allNodesOf(inv) {
   ];
 }
 
+/** A12：img+lang 组件集根与合法变体根是同一替换定义。 */
+function inventoryReplaceableDefinitionKey(node, byId) {
+  if (node?.type === "COMPONENT_SET" && parseName(node.name).prefix === "img") {
+    return `img-lang-set:${node.id}`;
+  }
+  if (node?.type === "COMPONENT") {
+    const setId = (node.ancestorIds || []).find((id) => byId.get(id)?.type === "COMPONENT_SET");
+    const set = setId ? byId.get(setId) : null;
+    if (set && parseName(set.name).prefix === "img" && LANG_CODE_SET.has(langValueOfVariant(node))) {
+      return `img-lang-set:${set.id}`;
+    }
+  }
+  return node?.id;
+}
+
 function ancestorsOf(node, byId) {
   if (Array.isArray(node.ancestorIds) && node.ancestorIds.length) {
     return node.ancestorIds.map((id) => byId.get(id)).filter(Boolean);
@@ -1176,6 +1213,29 @@ export function auditDeclaredStructure(inv) {
   const byId = new Map(nodes.map((node) => [node.id, node]));
 
   for (const node of nodes) problems.push(...paramProblemsOf(node));
+
+  const replaceableByKey = new Map();
+  for (const node of nodes) {
+    if (node.status !== "determined") continue;
+    if (node.replaceable === true) {
+      if (node.role !== "img") problems.push(`${node.id} replaceable 只能标在 img/`);
+      if (!node.assetKey) problems.push(`${node.id} replaceable 必须带 assetKey`);
+      else {
+        const list = replaceableByKey.get(node.assetKey) ?? [];
+        list.push(node);
+        replaceableByKey.set(node.assetKey, list);
+      }
+    } else if (node.assetKey) {
+      problems.push(`${node.id} 未声明可替换不得带 assetKey`);
+    }
+  }
+  for (const [key, group] of replaceableByKey) {
+    const defs = group.filter((node) => node.type !== "INSTANCE");
+    if (defs.length < 2) continue;
+    const unique = new Set(defs.map((node) => inventoryReplaceableDefinitionKey(node, byId)));
+    if (unique.size < 2) continue;
+    for (const node of defs) problems.push(`${node.id} 用途名「${key}」重复定义为可替换位置`);
+  }
 
   const secs = pageNodes.filter((node) => node.status === "determined" && node.role === "sec");
   const numbered = [];
@@ -1521,6 +1581,11 @@ export function validateInventory(inv, document) {
       if (node.role === "copy" && source.type !== "TEXT") problems.push(`${node.id} copy 只能是 TEXT`);
       if (node.behavior !== behaviorOf(node.role, node.params || {})) problems.push(`${node.id} behavior 与 role/params 推不出`);
       if (!VIA.includes(node.via)) problems.push(`${node.id} via 非法: ${node.via}`);
+      if (node.replaceable === true) {
+        if (node.role !== "img") problems.push(`${node.id} replaceable 只能标在 img/`);
+        if (!node.assetKey) problems.push(`${node.id} replaceable 必须带 assetKey`);
+      }
+      if (node.assetKey && node.replaceable !== true) problems.push(`${node.id} 未声明可替换不得带 assetKey`);
       problems.push(...determinedReadyFieldProblems(node, { source }));
     }
     if (node.status === "unknown" && (node.role != null || node.behavior !== "none")) problems.push(`${node.id} unknown 不得带 role 或 behavior`);

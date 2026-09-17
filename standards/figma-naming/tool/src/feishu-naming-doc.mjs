@@ -29,7 +29,7 @@ const PREFIX_TIPS = {
   sec: "必须带编号，如 sec/1-首屏。中间可隔无前缀容器，不要分区套分区",
   fix: "侧边导航、回顶。不参与分区流。可选 @from=N：滚到第 N 屏及以下才出现",
   ref: "整棵子树忽略，里面怎么命名都不检查",
-  img: "普通文字不要加这个。按语言换图 → 看「按语言换图」",
+  img: "普通文字不要加这个。整图可替换写 img/[replaceable]用途名。按语言换图 → 看「按语言换图」",
   bg: "—",
   kv: "可加 @parallax=0–1。同一父层只有一层时，改用 img/",
   btn: "@link=  @go=modal/名字  @sec=N  @lang=cn 都选填。开弹窗抄弹窗图层名，不要写 id。@lang 只在这些语言出现，不写则五语都在",
@@ -164,6 +164,13 @@ const RULE_TOPICS = [
   {
     heading: "弹窗 / 滑动 / 切图",
     codes: ["N-MODAL-INLINE", "N-SCROLL-NO-TRACK", "N-IMG-FILL-NO-NAME", "N-NAME-DUPLICATE"],
+  },
+  {
+    heading: "可替换整图",
+    codes: [
+      "N-REPLACEABLE-MARK", "N-REPLACEABLE-EMPTY", "N-REPLACEABLE-ROLE",
+      "N-REPLACEABLE-NESTED", "N-REPLACEABLE-DUP",
+    ],
   },
 ];
 
@@ -357,6 +364,12 @@ export function buildDesignerDoc() {
       fact: "param",
       rows: [["参数", "可挂前缀", "作用"], ...paramRows().map((r) => [r.param, r.on, r.desc])],
     },
+    { type: "divider" },
+    { type: "h2", text: "可替换整图" },
+    { type: "p", text: "整张图以后要换内容时，只在最外层 img/ 名称里声明一次。" },
+    { type: "bullet", text: "对：img/[replaceable]模块2玩法截图。用途名可中文，去掉标记后就是替换位置的名字。" },
+    { type: "bullet", text: "错：img/可替换素材（旧名不猜）；[Replaceable] / 全角括号；标在内部零件或 bg/、kv/ 上。" },
+    { type: "quote", text: "没标的图照常切，不进可替换索引。漏标不会报错。同一位置 PC/手机用同一个用途名。" },
     { type: "divider" },
     { type: "h2", text: "按语言换图" },
     { type: "p", text: "同一张装饰图要跟页面语言换时用。" },

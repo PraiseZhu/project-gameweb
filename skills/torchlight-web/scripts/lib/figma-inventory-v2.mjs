@@ -143,6 +143,7 @@ function passthroughDrawFields(entry) {
     pointCount: entry.pointCount ?? null,
     strokeWeight: entry.strokeWeight ?? entry.style?.strokeWeight ?? null,
     strokeColor: entry.strokeColor ?? entry.style?.strokeColor ?? null,
+    ...(entry.replaceable === true ? { replaceable: true, assetKey: entry.assetKey ?? null } : {}),
   };
 }
 

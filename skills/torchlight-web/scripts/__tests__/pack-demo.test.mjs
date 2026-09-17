@@ -580,6 +580,43 @@ test('unreferenced images are not encoded and are deleted after rewrite', () => 
   assert.equal(existsSync(join(dir, 'assets/orphan.webp')), false);
 });
 
+test('pack keeps content-package index and hidden-lang files, rewrites src after compress', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-content-'));
+  mkdirSync(join(dir, 'assets'));
+  mkdirSync(join(dir, 'content-package/assets'), { recursive: true });
+  writeFileSync(join(dir, 'index.html'), '<img src="assets/used.png" data-asset="模块2玩法截图">');
+  writeFileSync(join(dir, 'assets/used.png'), PNG);
+  writeFileSync(join(dir, 'content-package/assets/cn.png'), PNG);
+  writeFileSync(join(dir, 'content-package/assets/tw.png'), PNG);
+  writeFileSync(join(dir, 'content-package/assets.json'), JSON.stringify({
+    schemaVersion: 1,
+    region: 'cn',
+    assets: {
+      '模块2玩法截图': {
+        replaceable: true,
+        files: {
+          pc: {
+            'zh-CN': { src: 'content-package/assets/cn.png' },
+            'zh-TW': { src: 'content-package/assets/tw.png' },
+          },
+        },
+      },
+    },
+  }, null, 2));
+  writeFileSync(join(dir, 'content-package/manifest.json'), JSON.stringify({ region: 'cn', assets: 'assets.json' }));
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  const removed = removeUnreferencedPackedFiles(dir, html);
+  assert.equal(removed.removed.some((rel) => rel.startsWith('content-package/')), false);
+  assert.equal(existsSync(join(dir, 'content-package/assets.json')), true);
+  assert.equal(existsSync(join(dir, 'content-package/assets/tw.png')), true);
+  rewritePackedRefs(dir, [
+    { from: 'content-package/assets/cn.png', to: 'content-package/assets/cn.webp' },
+  ]);
+  const json = JSON.parse(readFileSync(join(dir, 'content-package/assets.json'), 'utf8'));
+  assert.equal(json.assets['模块2玩法截图'].files.pc['zh-CN'].src, 'content-package/assets/cn.webp');
+  assert.equal(json.assets['模块2玩法截图'].files.pc['zh-TW'].src, 'content-package/assets/tw.png');
+});
+
 test('unreferenced webp is removed while figma-indicator fallback stays', () => {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-unref-'));
   mkdirSync(join(dir, 'assets'));

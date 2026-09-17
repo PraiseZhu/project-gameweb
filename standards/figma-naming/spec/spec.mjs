@@ -7,12 +7,12 @@
  * 住在 spec/：人读正文和机器表同一层。tool/ 与 skills/ 都读这里，不必下到工具目录。
  * 本文件保持零 Node 依赖，以便 Figma 插件打包。
  */
-export const SPEC_VERSION = "v2.19 (2026-09-01)";
+export const SPEC_VERSION = "v2.20 (2026-09-16)";
 /** 相对 figma-naming/ 根的展示路径 */
 export const SPEC_DOC = "spec/naming-spec.md";
 
 /** 下游消费假定（判定后果的前提），见 spec/consumer-assumptions.md */
-export const ASSUMPTIONS_VERSION = "A-v1.17 (2026-09-01)";
+export const ASSUMPTIONS_VERSION = "A-v1.18 (2026-09-16)";
 export const ASSUMPTIONS_DOC = "spec/consumer-assumptions.md";
 
 /**
@@ -38,7 +38,7 @@ export const PREFIXES = {
     exemptSubtree: "ALL",
   },
   img: {
-    group: "视觉", desc: "静态装饰图、美术字标题；语言切图走组件集变体属性 lang，不挂 @ 参数", params: [], slice: true,
+    group: "视觉", desc: "静态装饰图、美术字标题；语言切图走组件集变体属性 lang，不挂 @ 参数。整图可替换在名称 body 开头标半角小写 [replaceable]", params: [], slice: true,
   },
   bg: {
     group: "视觉", desc: "大面积底图", params: [], slice: true,
@@ -211,7 +211,11 @@ export const DISPOSITIONS = ["must_fix", "must_answer", "confirm"];
 export const BASES = ["deterministic", "heuristic"];
 
 /** consumer-assumptions.md 里定义的假定编号 */
-export const ASSUMPTION_IDS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11"];
+export const ASSUMPTION_IDS = ["A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12"];
+
+/** A12：img/ 整图可替换标记。不是前缀、不是 @ 参数。 */
+export const REPLACEABLE_TOKEN = "[replaceable]";
+export const REPLACEABLE_ROLES = ["img"];
 
 export const PREFIX_NAMES = Object.keys(PREFIXES);
 export const PARAM_NAMES = Object.keys(PARAMS);

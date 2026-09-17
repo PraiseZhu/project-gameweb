@@ -1,8 +1,8 @@
 # 检查规则表
 
 > 本文件由 `npm run rules` 从 `src/rules.mjs` 生成，**不要手改**。
-> 依据规范：v2.19 (2026-09-01) — `spec/naming-spec.md`
-> 下游假定：A-v1.17 (2026-09-01) — `spec/consumer-assumptions.md`
+> 依据规范：v2.20 (2026-09-16) — `spec/naming-spec.md`
+> 下游假定：A-v1.18 (2026-09-16) — `spec/consumer-assumptions.md`
 
 ## 三个维度
 
@@ -50,8 +50,13 @@
 | `N-IMG-FILL-NO-NAME` | 有图像填充但未命名 | P1 | must_answer | heuristic | §0 / §1 | A1 |
 | `N-TEXT-FIXED-SIZE` | 文字是固定尺寸文本框 | P2 | confirm | heuristic | §3 | A6 |
 | `N-NAME-DUPLICATE` | 两个图层同名 | P1 | must_fix | deterministic | §6 | A1 A10 |
+| `N-REPLACEABLE-MARK` | 可替换标记写错 | P0 | must_fix | deterministic | §1 / A12 | A12 |
+| `N-REPLACEABLE-EMPTY` | 可替换用途名为空 | P0 | must_fix | deterministic | §1 / A12 | A12 |
+| `N-REPLACEABLE-ROLE` | 可替换标记用在了不支持的前缀上 | P0 | must_fix | deterministic | §1 / A12 | A12 |
+| `N-REPLACEABLE-NESTED` | 可替换标记标在了内部零件上 | P0 | must_fix | deterministic | §1 / A12 | A12 |
+| `N-REPLACEABLE-DUP` | 同一替换位置定义了两次 | P0 | must_fix | deterministic | §1 / A12 | A12 |
 
-## 必须改 · `must_fix`（17 条）
+## 必须改 · `must_fix`（22 条）
 
 ### `N-PREFIX-NOT-IN-TABLE` 前缀词不在总表内
 
@@ -122,6 +127,41 @@
 - **不改会怎样**：`fix/` 写了 `@from=N`，但体检根子树里没有编号为 N 的分区。下游按这个号决定从哪一屏开始钉视口（A2）；靶不存在时层会一直不出现，或被当成进页就钉。
 - **怎么改**：改成实际存在的分区编号，或补上缺失的那屏 `sec/`。不要把 `@from` 写在 `btn/` 上。
 - **规范依据**：`spec/naming-spec.md` §1 / §2 ｜ **依赖假定**：A2（见 `spec/consumer-assumptions.md`）
+
+### `N-REPLACEABLE-MARK` 可替换标记写错
+
+- **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
+- **不改会怎样**：可替换只认 body 开头的半角小写 `[replaceable]`（A12）。大小写、全角括号、空格错写一律无效，这层不会进入可替换索引，下游换图对不上。
+- **怎么改**：改成 `img/[replaceable]用途名称`，标记必须是半角小写、紧贴用途名。
+- **规范依据**：`spec/naming-spec.md` §1 / A12 ｜ **依赖假定**：A12（见 `spec/consumer-assumptions.md`）
+
+### `N-REPLACEABLE-EMPTY` 可替换用途名为空
+
+- **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
+- **不改会怎样**：`assetKey` 就是去掉标记后的用途名称（A12）。空名无法作为替换位置，索引和 HTML 绑定都会丢。
+- **怎么改**：在 `[replaceable]` 后面写非空用途名，例如 `img/[replaceable]模块2玩法截图`。
+- **规范依据**：`spec/naming-spec.md` §1 / A12 ｜ **依赖假定**：A12（见 `spec/consumer-assumptions.md`）
+
+### `N-REPLACEABLE-ROLE` 可替换标记用在了不支持的前缀上
+
+- **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：语法层
+- **不改会怎样**：本轮只有 `img/` 的整图可替换（A12）。标在 `bg/`、`kv/` 或其他前缀上无效，切图角色不会变成可替换项。
+- **怎么改**：把标记挪到整体导出的 `img/` 最外层；不要把 `bg/`、`kv/` 改成 `img/` 来迁就。
+- **规范依据**：`spec/naming-spec.md` §1 / A12 ｜ **依赖假定**：A12（见 `spec/consumer-assumptions.md`）
+
+### `N-REPLACEABLE-NESTED` 可替换标记标在了内部零件上
+
+- **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
+- **不改会怎样**：可替换只标整体导出的最外层（A12）。内部再标会拆出第二项，换一张图时零件和整图对不上。
+- **怎么改**：去掉内层的 `[replaceable]`，只留最外层那一个。
+- **规范依据**：`spec/naming-spec.md` §1 / A12 ｜ **依赖假定**：A12（见 `spec/consumer-assumptions.md`）
+
+### `N-REPLACEABLE-DUP` 同一替换位置定义了两次
+
+- **级别**：P0 阻断 ｜ **依据性质**：确定（语法/结构矛盾） ｜ **层面**：结构层
+- **不改会怎样**：一个用途名称是一个替换位置（A12）。同一端别、同一语言槽出现两个冲突定义时，索引无法确定换哪一张。组件定义和页上实例的引用不算重复。
+- **怎么改**：给其中一个换用途名，或删掉多余的定义。PC/手机同一位置应同名但分端导出。
+- **规范依据**：`spec/naming-spec.md` §1 / A12 ｜ **依赖假定**：A12（见 `spec/consumer-assumptions.md`）
 
 ### `N-PREFIX-SLASH` 分隔符不是斜杠
 
@@ -211,7 +251,7 @@
 | `sec/` | 结构 | 屏幕分区（section） | — | 结构语义 |
 | `fix/` | 结构 | 视口固定悬浮层 | `@from` | 结构语义 |
 | `ref/` | 结构 | 说明性参考稿（整个子树忽略） | — | 整个子树忽略 |
-| `img/` | 视觉 | 静态装饰图、美术字标题；语言切图走组件集变体属性 lang，不挂 @ 参数 | — | 命名即切图 |
+| `img/` | 视觉 | 静态装饰图、美术字标题；语言切图走组件集变体属性 lang，不挂 @ 参数。整图可替换在名称 body 开头标半角小写 [replaceable] | — | 命名即切图 |
 | `bg/` | 视觉 | 大面积底图 | — | 命名即切图 |
 | `kv/` | 视觉 | KV 视差分层 | `@parallax` | 命名即切图 |
 | `btn/` | 交互 | 可点击元素 | `@link` `@go` `@sec` `@lang` | 结构语义 |

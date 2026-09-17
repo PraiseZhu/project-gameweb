@@ -149,6 +149,86 @@ test('html-from-handoff writes demo index.html from a ready pack (issue #61)', (
   assert.match(html, /id="qa-design-policy"/);
   assert.match(html, /window\.__designPolicy/);
   assert.match(html, /window\.__qaDemo/);
+  assert.match(html, /id="qa-content-package-loader"/);
+  assert.equal(existsSync(join(demoDir, 'content-package/assets.json')), true);
+  assert.equal(JSON.parse(readFileSync(join(demoDir, 'content-package/assets.json'), 'utf8')).region, 'cn');
+});
+
+test('html-from-handoff stamps a global content package for overseas delivery', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-global-'));
+  const pack = packedReady(dir);
+  const demoDir = join(dir, 'demo-global');
+  seedEmptyCopyTable(demoDir);
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+    region: 'global',
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  assert.equal(result.contentRegion, 'global');
+  const json = JSON.parse(readFileSync(join(demoDir, 'content-package/assets.json'), 'utf8'));
+  assert.equal(json.region, 'global');
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  assert.match(html, /data-asset-lang/);
+  assert.match(html, /qa-pref-change/);
+});
+
+test('named replaceable mark survives inventory → html bind → pack keep', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-replaceable-chain-'));
+  const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920 });
+  pcDoc.nodes.push(stampReadyFields({
+    id: '1:shot',
+    type: 'GROUP',
+    name: 'img/[replaceable]模块2玩法截图',
+    status: 'determined',
+    role: 'img',
+    label: '模块2玩法截图',
+    behavior: 'slice',
+    via: 'prefix',
+    replaceable: true,
+    assetKey: '模块2玩法截图',
+    parentId: '1:1-sec',
+    box: { x: 0, y: 0, w: 80, h: 40 },
+  }));
+  rebuildInventoryIndexes(pcDoc);
+  fixtureJudgment(pcDoc);
+  const mobileDoc = sample('2:2', { roles: GOLD_MOBILE_PREFIX_CLASSES, pageWidth: 750 });
+  const pcPath = join(dir, 'pc.json');
+  const mobilePath = join(dir, 'mo.json');
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: 'ready', outDir: join(dir, 'out'),
+  });
+  const consume = pack.manifest.consume.pc.determined.find((node) => node.id === '1:shot');
+  assert.equal(consume.replaceable, true);
+  assert.equal(consume.assetKey, '模块2玩法截图');
+  const demoDir = join(dir, 'demo');
+  seedEmptyCopyTable(demoDir);
+  mkdirSync(join(demoDir, 'assets'), { recursive: true });
+  writeFileSync(join(demoDir, 'assets/1-shot.png'), Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ));
+  writeFileSync(join(demoDir, 'assets-manifest.json'), JSON.stringify({
+    '1:shot': { file: 'assets/1-shot.png', pixelSize: '1x1', webp: { alpha: true } },
+  }));
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+    reuseExistingAssets: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  assert.match(html, /id="qa-content-package-loader"/);
+  const json = JSON.parse(readFileSync(join(demoDir, 'content-package/assets.json'), 'utf8'));
+  assert.equal(json.region, 'cn');
+  assert.equal(json.assets['模块2玩法截图'].files.pc.common.src, 'content-package/assets/1-shot.png');
+  assert.equal(json.assets['模块2玩法截图'].files.pc.common.width, 1);
+  assert.equal(json.assets['模块2玩法截图'].files.pc.common.hasAlpha, true);
+  assert.equal(existsSync(join(demoDir, 'content-package/assets/1-shot.png')), true);
 });
 
 test('html-from-handoff writes a fresh shell when spec.json exists but index.html is missing', () => {

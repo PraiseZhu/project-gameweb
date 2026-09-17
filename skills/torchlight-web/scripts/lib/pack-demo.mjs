@@ -14,7 +14,7 @@ export const PACK_KEEP_ROOT = new Set([
   'index.html', 'truth.json', 'fonts-manifest.json',
   'calendar-figma-fallback-manifest.json', 'favicon.ico',
 ]);
-export const PACK_KEEP_DIRS = new Set(['assets', 'fixtures', 'fonts']);
+export const PACK_KEEP_DIRS = new Set(['assets', 'fixtures', 'fonts', 'content-package']);
 export const PACK_FALLBACK_RE = /figma-indicator[-.][\w.-]+\.(?:png|webp)/i;
 const LEGACY_INDICATOR_IDS = new Set(['397:35947', '397:35949']);
 const TEXT_EXTS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json']);
@@ -244,7 +244,7 @@ function localReferences(text = '') {
   for (const match of String(text).matchAll(/@import\s+(?:url\(\s*)?["']([^"']+)["']/gi)) add(match[1]);
   // JS/JSON quoted scrape: only served folders + indicator fallbacks.
   // Bare "399-42188.png" in inlined renderer comments is not a served path.
-  for (const match of String(text).matchAll(/["'`]((?:\.\/|\.\.\/|\/)?(?:assets|fonts)\/[^"'`]+|(?:\.\/|\.\.\/|\/)?figma-indicator[-.][\w.-]+\.(?:png|webp))["'`]/gi)) {
+  for (const match of String(text).matchAll(/["'`]((?:\.\/|\.\.\/|\/)?(?:assets|fonts|content-package)\/[^"'`]+|(?:\.\/|\.\.\/|\/)?figma-indicator[-.][\w.-]+\.(?:png|webp))["'`]/gi)) {
     if (/,/.test(match[1])) continue;
     add(match[1]);
   }
@@ -306,6 +306,7 @@ export function removeUnreferencedPackedFiles(demoDir, html = '') {
     const rel = relative(root, file).replace(/\\/g, '/');
     const name = rel.split('/').pop() || '';
     if (PACK_KEEP_ROOT.has(name) || isFallbackKeepPath(rel)) continue;
+    if (rel === 'content-package' || rel.startsWith('content-package/')) continue;
     if (!UNREFERENCED_IMAGE_RE.test(rel)) continue;
     if (referenced.has(file)) continue;
     assertSafePackPath(root, file);

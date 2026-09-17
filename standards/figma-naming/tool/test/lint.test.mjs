@@ -83,6 +83,43 @@ test("Figma 自动名与数字名带斜杠时不误判成前缀", () => {
   }
 });
 
+test("A12：精确 [replaceable] 才标记；错写只 malformed；旧名不猜", () => {
+  const exact = parseName("img/[replaceable]模块2玩法截图");
+  assert.equal(exact.prefix, "img");
+  assert.equal(exact.replaceable.marked, true);
+  assert.equal(exact.replaceable.malformed, false);
+  assert.equal(exact.replaceable.assetKey, "模块2玩法截图");
+  const spaced = parseName("IMG / [replaceable] 模块2玩法截图");
+  assert.equal(spaced.prefix, "img");
+  assert.equal(spaced.replaceable.marked, true);
+  assert.equal(spaced.replaceable.assetKey, "模块2玩法截图");
+  const badCase = parseName("img/[Replaceable]错写");
+  assert.equal(badCase.replaceable.marked, false);
+  assert.equal(badCase.replaceable.malformed, true);
+  const oldName = parseName("img/可替换素材");
+  assert.equal(oldName.replaceable.marked, false);
+  assert.equal(oldName.replaceable.malformed, false);
+  assert.equal(oldName.replaceable.assetKey, null);
+});
+
+test("A12：img+lang 组件集根与变体根同 key 不报 DUP", () => {
+  const r = lint(testRoot([
+    {
+      id: "set", name: "img/[replaceable]模块2玩法截图", type: "COMPONENT_SET",
+      absoluteBoundingBox: TEST_BOX,
+      componentPropertyDefinitions: {
+        lang: { type: "VARIANT", defaultValue: "cn", variantOptions: ["cn", "tw"] },
+      },
+      children: [
+        { id: "v-cn", name: "lang=cn", type: "COMPONENT", absoluteBoundingBox: TEST_BOX, children: [] },
+        { id: "v-tw", name: "lang=tw", type: "COMPONENT", absoluteBoundingBox: TEST_BOX, children: [] },
+      ],
+    },
+  ]));
+  assert.equal(byCode(r, "N-REPLACEABLE-DUP").length, 0);
+  assert.equal(byCode(r, "N-REPLACEABLE-NESTED").length, 0);
+});
+
 /* ── 每条规则都真的会触发 ─────────────────────────────── */
 
 test("dirty 稿覆盖全部已登记错误码", () => {
