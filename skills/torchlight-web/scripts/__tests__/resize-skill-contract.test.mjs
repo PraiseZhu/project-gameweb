@@ -22,6 +22,7 @@ import {
   matchNamedModalByTopic,
   heroViewportFill,
   pageOverflowPolicy,
+  pageScrollLock,
   resolveHeroContentRoot,
   resizeOwns,
   resizeDoesNotOwn,
@@ -280,6 +281,40 @@ test('hero fill uses YAML fillVh of the viewport so later sections leave the fir
   assert.ok(phone390.layoutOffsetDesign > 0, 'short k×hero must pad later to the viewport edge');
 });
 
+test('page scroll lock ends at the board; overflow past the board does not raise height', () => {
+  const short = pageScrollLock({ boardBottom: 1000, contentBottom: 800 });
+  assert.equal(short.height, 1000);
+  assert.equal(short.overflowPx, 0);
+  assert.equal(short.reason, 'board-bottom');
+  const over = pageScrollLock({ boardBottom: 1000, contentBottom: 1300 });
+  assert.equal(over.height, 1000);
+  assert.equal(over.overflowPx, 300);
+  assert.equal(over.reason, 'content-past-board');
+  assert.notEqual(over.height, 1300);
+  const missing = pageScrollLock({ boardBottom: 0, contentBottom: 1300 });
+  assert.equal(missing.height, 1300);
+  assert.equal(missing.reason, 'board-missing');
+  const lockFn = renderSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0 } = {})');
+  const headerEnd = renderSrc.indexOf(') {', lockFn);
+  const bodyStart = headerEnd + 2;
+  let depth = 0;
+  let end = bodyStart;
+  for (let i = bodyStart; i < renderSrc.length; i++) {
+    if (renderSrc[i] === '{') depth++;
+    else if (renderSrc[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  const inline = new Function(renderSrc.slice(renderSrc.indexOf('(', lockFn) + 1, headerEnd).trim(), renderSrc.slice(bodyStart + 1, end));
+  assert.deepEqual(inline({ boardBottom: 1000, contentBottom: 1300 }), over);
+  assert.doesNotMatch(renderSrc, /const pageScrollHeight = pageScope && heroSlot\s*\n\s*\? Math\.max/);
+  assert.match(renderSrc, /data-page-scroll-overflow/);
+});
+
 test('QA frame and product view both clip page X; viewport width still resizes', () => {
   assert.equal(pageOverflowPolicy({ productView: true }).overflowX, 'hidden');
   assert.equal(pageOverflowPolicy({ productView: false }).overflowX, 'hidden');
@@ -380,10 +415,27 @@ test('temporary lock-1920 names follow page k above 1920', () => {
   assert.match(renderSrc, /follow-page-k-above-freeze/);
   assert.match(renderSrc, /_topbarViewportShiftDesign/);
   assert.match(renderSrc, /_isRightTopbarChrome/);
+  assert.match(renderSrc, /_isLeftTopbarChrome/);
+  assert.match(renderSrc, /_topbarWindowCenterShiftDesign/);
+  assert.match(renderSrc, /_isWindowCenterTopbarChrome/);
   assert.match(renderSrc, /_isTopbarOverlayChrome/);
   assert.match(renderSrc, /data-topbar-viewport-shift/);
+  assert.match(renderSrc, /data-topbar-viewport-plane/);
+  assert.match(renderSrc, /window-left/);
+  assert.match(renderSrc, /window-center/);
+  assert.match(renderSrc, /inOverlayHost \? 0 : -columnLeftDesign/);
+  assert.match(renderSrc, /Authored down-arrow sits on the 3840 midpoint/);
   assert.match(renderSrc, /ancestorAlreadyShifted/);
   assert.match(renderSrc, /data-hero-cluster', 'bottom'/);
+  assert.match(renderSrc, /inNamedModalPaint/);
+  assert.match(renderSrc, /center bottom-anchor/);
+  assert.match(chromeSrc, /center bottom-anchor/);
+  assert.match(chromeSrc, /coverBottom/);
+  assert.match(renderSrc, /coverAnchor/);
+  assert.match(renderSrc, /isHeroWelfare/);
+  assert.match(renderSrc, /isWelfareBandNode/);
+  assert.match(renderSrc, /welfareBandTop/);
+  assert.match(renderSrc, /sourceLeftNow/);
   assert.match(renderSrc, /heroClusterBottomShift/);
   assert.match(renderSrc, /播放按钮/);
   assert.match(renderSrc, /_scanTopbarClusterRight/);
@@ -393,9 +445,10 @@ test('temporary lock-1920 names follow page k above 1920', () => {
   assert.match(renderSrc, /data-later-mobile-center/);
   assert.match(renderSrc, /_windowStageWidthDesign/);
   assert.match(renderSrc, /Calendar \+ CTA stay on Figma pageBox/);
-  assert.match(renderSrc, /isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
+  assert.match(renderSrc, /leftover is not only isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
   assert.match(renderSrc, /parentHeroClusterLayout/);
-  assert.match(renderSrc, /!el.getAttribute\('data-hero-cluster'\)/);
+  assert.match(renderSrc, /data-page-left-chrome-y', 'source'/);
+  assert.match(renderSrc, /pageLeftUpperChrome/);
   assert.doesNotMatch(renderSrc, /Park the calendar immediately left/);
   assert.doesNotMatch(renderSrc, /const gap = 24;/);
   assert.doesNotMatch(renderSrc, /const gap = 8;/);
@@ -415,7 +468,7 @@ test('temporary lock-1920 names follow page k above 1920', () => {
 
 test('named modal stays open across light-drag and pointerup rebuild', () => {
   assert.match(renderSrc, /restoreOpenModalNames = this\._openNamedModalNames\(frame\)/);
-  assert.match(renderSrc, /_restoreOpenNamedModals\(frame, restoreOpenModalNames\)/);
+  assert.match(renderSrc, /_restoreOpenNamedModals\(frame, restoreOpenModalNames/);
   assert.match(renderSrc, /_pinOpenNamedModals/);
   assert.match(renderSrc, /Official named popup stays mounted across window resize/);
   assert.match(chromeSrc, /_pinOpenNamedModals\(frame\)/);
@@ -441,7 +494,7 @@ test('tree switch restores the matching named modal by topic, not the raw PC lab
   assert.equal(matchNamedModalByTopic(mobileSheets, 'pc弹窗详细规则1'), null);
   assert.match(renderSrc, /_namedModalTopic/);
   assert.match(renderSrc, /_matchNamedModalByTopic/);
-  assert.match(renderSrc, /const entry = this\._matchNamedModalByTopic\(wired, name\)/);
+  assert.match(renderSrc, /const entry = this\._matchNamedModalByTopic\(wired, rec\.name/);
   assert.ok(resizeOwns().some((item) => /matching mobile\/PC sheet by topic/.test(item)));
 });
 
@@ -649,7 +702,9 @@ test('sc-product-view-only / sc-shared-freeze: shared ruler and centered viewpor
 
 test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () => {
   assert.match(renderSrc, /Cover 窗宽永远是真实 viewport/);
-  assert.match(renderSrc, /const coverScale = Math\.max\(coverW \/ designWidth, slotH \/ Number\(first\.height\)\)/);
+  assert.match(renderSrc, /const coverW = Number\.isFinite\(Number\(this\._viewportWidth\)\) && this\._viewportWidth > 0/);
+  assert.match(renderSrc, /coverW \/ Number\(designWidth\)/);
+  assert.match(renderSrc, /sourceW \* planeRatio/);
   assert.match(renderSrc, /heroVisualCropLeft = 0/);
   assert.doesNotMatch(renderSrc, /const coverScale = Math\.max\(k, slotH \/ Number\(first\.height\)\)/);
   assert.match(renderSrc, /this\._viewportWidth/);
@@ -683,7 +738,7 @@ test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () =
 
 test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stays on buttons', () => {
   assert.match(renderSrc, /data-later-cover-plane', 'cover-crop'/);
-  assert.match(renderSrc, /data-later-cover-window', 'later-stage'/);
+  assert.match(renderSrc, /data-later-cover-window/);
   assert.match(renderSrc, /boxW = Number\(stageWidthDesign\)/);
   assert.match(renderSrc, /layer\.style\.width = windowStageWidth/);
   assert.match(renderSrc, /if \(vw > 1920\) return dw;/);
@@ -693,14 +748,21 @@ test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stay
   assert.match(renderSrc, /SLG size is page k at every PC band/);
   assert.doesNotMatch(renderSrc, /data-hero-slg-stretch', 'viewport-width'/);
   assert.doesNotMatch(renderSrc, /scale\(' \+ stretch \+ ', 1\)/);
-  assert.match(renderSrc, /Later bg fills the later stage box/);
+  assert.match(renderSrc, /page-window/);
+  assert.match(renderSrc, /data-later-cover-axis', 'x'/);
+  assert.match(renderSrc, /Long `bg\/mobile` \/ `bg\/pc` X-cover is uniform/);
+  assert.match(chromeSrc, /构图 <b>/);
+  assert.match(chromeSrc, /compositionTree/);
   assert.match(renderSrc, /_laterStageHeight/);
   assert.match(renderSrc, /_columnLeftCss/);
   assert.match(renderSrc, /data-later-layout-shift/);
   assert.doesNotMatch(renderSrc, /const laterShift = heroLayoutOffsetDesign > 0 \? heroLayoutOffsetDesign : 0/);
   assert.doesNotMatch(renderSrc, /Number\(this\._viewportWidth\) > 1920/);
   assert.doesNotMatch(renderSrc, /Number\(this\._viewportWidth\) < Number\(this\._frameWidth\) - 0\.5/);
-  assert.match(renderSrc, /backgroundHeroShift \? afterHeroBackgroundShift/);
+  assert.match(renderSrc, /backgroundHeroShift \|\| pageStageMode/);
+  assert.match(renderSrc, /data-hero-later-chrome-follow/);
+  assert.match(renderSrc, /after-hero-pagebox/);
+  assert.match(renderSrc, /ancestorFollowsHeroY/);
   assert.doesNotMatch(renderSrc, /laterSlotHeight = !isHeroStage && !pageStageMode && heroSlot && Number\(heroSlot\.designHeight\) > 0\s*\n\s*\? Math\.max\(_snapH, Number\(heroSlot\.designHeight\)\)/);
   assert.match(renderSrc, /_abutHeroJoinCss/);
   assert.match(renderSrc, /data-hero-join-css', 'abut'/);
@@ -710,4 +772,14 @@ test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stay
   assert.equal(freeze.k, 0.5);
   assert.equal(freeze.columnWidth, 1920);
   assert.equal(freeze.columnLeft, (1268 - 1920) / 2);
+});
+
+test('ambiguous modal topic picks locale + composition when prefs are provided', () => {
+  const sheets = [
+    { name: 'mobile_twRESERVE' },
+    { name: 'mobile_krRESERVE' },
+  ];
+  assert.equal(matchNamedModalByTopic(sheets, 'pc_twRESERVE'), null);
+  assert.equal(matchNamedModalByTopic(sheets, 'pc_twRESERVE', { plat: 'mobile', lang: 'zh-TW' }).name, 'mobile_twRESERVE');
+  assert.equal(matchNamedModalByTopic(sheets, 'pc_krRESERVE', { plat: 'mobile', lang: 'ko' }).name, 'mobile_krRESERVE');
 });

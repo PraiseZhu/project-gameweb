@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DESIGN_POLICY } from '../lib/design-policy.generated.mjs';
-import { FONT_SOURCE_ROUTING, LOCALE_INVARIANT_FAMILIES, routeFontFamily, youHeiVariationSettings } from '../lib/translation/font-routing.mjs';
+import { FONT_SOURCE_ROUTING, LOCALE_INVARIANT_FAMILIES, routeFontFamily, routeFontWeight, youHeiVariationSettings } from '../lib/translation/font-routing.mjs';
 
 const YOUHEI = 'FZVariable-YouHeiS WT W H';
 
@@ -23,6 +23,50 @@ test('Torch non-Chinese copy uses matching Source Han / Noto, not Bebas for CJK 
   assert.equal(routeFontFamily({ language: 'zh-TW', sourceFamily: YOUHEI, sourceWeight: 600 }).family, 'Noto Sans HK');
 });
 
+test('YouHei Regular 600 becomes Noto 400; zh-CN stays 600; Bold stays 900', () => {
+  assert.equal(routeFontFamily({ language: 'en', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
+  assert.equal(routeFontFamily({ language: 'ja', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
+  assert.equal(routeFontFamily({ language: 'ko', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
+  assert.equal(routeFontFamily({ language: 'zh-TW', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
+  assert.equal(routeFontFamily({ language: 'zh-CN', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 600);
+  assert.equal(routeFontFamily({ language: 'en', sourceFamily: YOUHEI, sourceWeight: 900 }).weight, 900);
+});
+
+function rendererFontHelpers() {
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/figma-render.js'), 'utf8');
+  const start = src.indexOf("_isLocaleInvariantFamily(family = '')");
+  const end = src.indexOf('_geomReady(box)', start);
+  assert.ok(start > 0 && end > start, 'renderer font helpers missing');
+  const factory = new Function('DESIGN_POLICY', 'const designPolicy = () => DESIGN_POLICY; return ({' + src.slice(start, end) + '});');
+  return factory(DESIGN_POLICY);
+}
+
+const WEIGHT_CASES = Object.freeze([
+  { name: 'youhei-regular-to-noto', args: { family: 'Noto Sans', sourceFamily: YOUHEI, sourceWeight: 600, fontStyle: 'Regular' }, expected: 400 },
+  { name: 'youhei-regular-style-without-weight', args: { family: 'Noto Sans JP', sourceFamily: YOUHEI, sourceWeight: null, fontStyle: 'Regular' }, expected: 400 },
+  { name: 'zh-cn-youhei-regular-stays', args: { family: YOUHEI, sourceFamily: YOUHEI, sourceWeight: 600, fontStyle: 'Regular' }, expected: 600 },
+  { name: 'youhei-bold-to-noto-stays', args: { family: 'Noto Sans', sourceFamily: YOUHEI, sourceWeight: 900, fontStyle: 'Bold' }, expected: 900 },
+  { name: 'noto-600-regular-stays', args: { family: 'Noto Sans', sourceFamily: 'Noto Sans', sourceWeight: 600, fontStyle: 'Regular' }, expected: 600 },
+  { name: 'noto-jp-600-stays', args: { family: 'Noto Sans JP', sourceFamily: 'Noto Sans JP', sourceWeight: 600, fontStyle: 'Regular' }, expected: 600 },
+  { name: 'non-youhei-600-does-not-drop', args: { family: 'Noto Sans', sourceFamily: 'Source Han Sans', sourceWeight: 600, fontStyle: 'Regular' }, expected: 600 },
+  { name: 'youhei-bold-regular-style-keeps-900', args: { family: 'Noto Sans', sourceFamily: YOUHEI, sourceWeight: 900, fontStyle: 'Regular' }, expected: 900 },
+]);
+
+test('Noto 600 language variants keep 600; non-YouHei 600 does not drop', () => {
+  assert.equal(routeFontFamily({ language: 'en', sourceFamily: 'Noto Sans', sourceWeight: 600, fontStyle: 'Regular' }).weight, 600);
+  assert.equal(routeFontFamily({ language: 'ja', sourceFamily: 'Noto Sans JP', sourceWeight: 600, fontStyle: 'Regular' }).weight, 600);
+  for (const row of WEIGHT_CASES) {
+    assert.equal(routeFontWeight(row.args), row.expected, row.name);
+  }
+});
+
+test('lib and inline renderer routeFontWeight stay aligned on Regular/Noto boundaries', () => {
+  const helpers = rendererFontHelpers();
+  for (const row of WEIGHT_CASES) {
+    assert.equal(helpers._routeFontWeight(row.args), routeFontWeight(row.args), row.name);
+    assert.equal(helpers._routeFontWeight(row.args), row.expected, row.name + ':inline');
+  }
+});
 test('Founder YouHei Regular pins wide wdth=3 instead of CSS condensed default', () => {
   assert.equal(
     youHeiVariationSettings({ sourceWeight: 600, postScriptName: 'FZVariable-YouHeiSWTWH-Regular' }),

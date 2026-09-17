@@ -89,7 +89,8 @@ global runtime feel for named interactive controls:
 
 ```text
 hover  → filter: brightness(1.12)   only under @media (hover: hover)
-press  → filter: brightness(0.88)   :active, no transition
+press  → filter: brightness(0.88)   :active
+trans  → none
 ```
 
 Owned by `scripts/lib/figma-button-press-contract.mjs`. The renderer injects
@@ -116,10 +117,11 @@ variant trees. TEXT/HUG nodes need `display:none` plus the saved original
 display. Flattened `I{owner};…` descendants must not be reparented.
 
 Stop-2 completion for `dropmenu/多语言` `btn/切换语言` is the authored
-COMPONENT root fill, not `data-btn-variant-state`. Current page language
-gets Property 1=highlight (`949:5363`, `rgb(241, 200, 116)`); every other
-option stays Property 1=normal (`949:5360`, `rgb(189, 142, 92)`). Labels
-stay visible. Fill pixels may be that CSS rgb or the visible
+COMPONENT fill, not `data-btn-variant-state`. Current page language
+gets Property 1=highlight from this page inventory; every other
+option stays Property 1=normal. Labels
+stay visible. Fill pixels may be that CSS rgb/gradient (root or same-box
+child) or the visible
 `img/选中背景` / `img/未选中背景` VECTOR slice. After a language remount, open-menu highlight must read
 `frame.__fxRenderPrefs.lang` written at the start of every `renderApp`,
 never the first-paint `ctx.prefs` closure. Duplicate TEXT
@@ -147,7 +149,7 @@ highlight/normal assets in place. It is not an independent `btn/`.
 
 ### Named modal contracts
 
-PC age-gate modal geometry uses `3840×2160` basis and its panel y is `199`; on mobile, a modal must not appear as a full-screen `390px` layer.
+PC named modals pin the authored sheet in the current viewport; panel top comes from this page img/弹窗背景. On mobile, a modal must stay inside the phone sheet.
 
 `@go` copies the modal layer name, not a node id:
 
@@ -181,9 +183,9 @@ enough when the match is unique on that platform:
 - mobile `btn/导航按钮` → `modal/顶部导航-1624尺寸`
 - mobile `btn/多语言按钮` → `modal/多语言按钮弹窗`
 
-Phase-1 duplicate `查看更多` accepts only `nodeRow=26` with
+Duplicate later-section CTAs need a unique copy-designation row with
 `designCharacters/tableZhCN` reconciled; without that evidence, never guess
-row 81 from visual order.
+by visual order.
 
 Indicator fallback demand comes from the current page manifest; an absent
 indicator root does not trigger a fallback cutout.
@@ -196,7 +198,7 @@ scroll-gated visibility, not Resize stretch. Do not put `@from` on `btn/`.
 
 A play control that already lives inside the video modal is the in-modal
 player, not a second opener. The two mobile overlays are mutually exclusive.
-`btn/关闭按钮` closes the modal that contains it. Runtime only toggles
+`btn/关闭按钮` closes the modal that contains it. Hits on a nested `img/按钮` still belong to that close control; do not stop at the first named descendant. Runtime only toggles
 visibility of the extracted modal layer; it does not move modal nodes into
 the homepage tree. A `modal/` whose inventory `pageBox` is the artboard is
 pinned to the visible frame: YAML `modalViewportFill` is `cover` (fill the
@@ -218,10 +220,10 @@ frame vs the Figma `pageBox`. Incomplete graphs stay unresolved.
 PC named modals pin the authored 3840×2160 sheet in the current viewport.
 Do not geometrically center only `img/弹窗背景` (3840×1340 @ y=199); that
 drops the panel below the spec rest pose. Completion is sheet center =
-viewport center and panel top / sheet height = 199/2160. Mobile overflow
+viewport center; panel top comes from this page img/弹窗背景. Mobile overflow
 `img/背景` still stays inside the phone sheet. `later-axes-probe` measures
 this on the QA page after switching back to `zh-CN`, not leftover `en`.
-Mobile `modal/` must stay inside the 390 host; `btn/关闭按钮` must close
+Mobile `modal/` must stay inside the 390 host and keep owner-local coordinates at 751–1126 (no page leftover on close / sheet children). `btn/关闭按钮` must close
 it; a named `scroll/` must keep `scrollbarWidth: none`. Skip, missing
 close, overflow, or a visible scrollbar cannot go green.
 Every visible homepage `@go` opener on PC and mobile must open then
@@ -263,3 +265,50 @@ hover/press, named modal openers, and directory scrollspy are in
 `figma-interaction-contract.mjs`, `figma-button-press-contract.mjs`, and
 `templates/figma-render.js`. Renderer consumption is live for those
 families. Missing source structure stays unresolved, never guessed.
+
+## Named modal persistence, hit-testing, and return
+
+SS14 point-fix contracts live in `scripts/lib/page-behavior-contracts.mjs`.
+They are generic Interaction rules. Do not copy page node IDs, `-72px`, or
+season copy into this file.
+
+### Opener hit (SC-02)
+
+A named modal opens only when all of these are true:
+
+- the click node id is listed in that modal's `triggerFrom`;
+- the pointer is inside the opener's **painted** background box, not a
+  larger parent overlay or language-menu host;
+- nested `@go` / dropmenu children do not inherit the parent opener.
+
+Same-name buttons that were never determined stay inert. A secondary button
+must not open the language menu.
+
+### Dropmenu selection (SC-03, SC-04)
+
+`dropmenu/` uses exact lowercase `on/off`. Opening a reservation modal must
+start from `off`. Clicking the header opens it; choosing an option:
+
+- moves highlight / selected variant to that row;
+- writes only that row's value onto the closed header;
+- leaves sibling labels unchanged;
+- returns the menu to `off`.
+
+Do not clone the first option's TEXT onto later rows.
+
+### Return routing (SC-05)
+
+`btn/关闭按钮` closes the modal that contains it.
+
+- A completion modal (`预约完成`) closes to the current page. It must not
+  reopen the reservation modal.
+- A rules modal (`弹窗详细规则1` / `2`) that was opened from a reservation
+  modal returns to that same reservation modal and locale.
+- Explicit `returnTo` from source truth wins over name heuristics.
+
+### Composition persist (SC-06)
+
+Resize may switch the 1126/1127 tree. Interaction must keep the open modal
+by **topic + locale + composition**, not by a single raw name. If several
+`预约弹窗` layers exist, pick the matching `pc_` / `mobile_` plus current
+lang. Losing the modal or snapping to homepage is a fail.

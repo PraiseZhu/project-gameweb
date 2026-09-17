@@ -43,14 +43,18 @@ proportional line-height until the translated text fits those caps in full.
 There is no 75% floor and no `100→92→85→78→75` ladder. Sibling nodes in a
 group share the strictest integer size. Ellipsis or clipping is not a pass.
 
+Axis split (user 2026-09-17, see DESIGN.md 第 6 章): horizontal-only maxWidth
+nowrap-shrinks adopted copy to the written cap; vertical-only maxHeight wraps
+and must not shrink; dual-axis is 用户待确认 and keeps wrap-then-shrink.
+`TEXT.autoResize=HEIGHT` is not a Frame height cap.
+
 ### Auto Layout caps beat HUG growth
 
 Most copy in the current Torchlight file sits in a wrapping Auto Layout
-frame. That frame's `maxWidth` is a hard width cap; `maxHeight` is a hard
-height cap only when the file wrote one. After the locale ratio, translated
-copy must fit those written caps in full. Overflow shrinks font-size by whole
-CSS pixels. An axis with no written max is not a shrink reason and must not
-invent a box. Sibling nodes in a group still share one integer size.
+frame. Horizontal-only `maxWidth` nowrap-shrinks adopted copy to that written
+cap. Vertical-only `maxHeight` wraps and does not shrink. Dual-axis is 用户待确认
+and keeps wrap-then-shrink. An axis with no written max is not a shrink reason
+and must not invent a box. Sibling nodes in a group still share one integer size.
 
 ### Component-group typography fit (uniform size across a sibling group)
 
@@ -106,8 +110,8 @@ Import `scripts/lib/translation/index.mjs` for the reusable interface:
 - `buildFontFallbackPolicy`: preserves the requested family first and reports
   unavailable requested families for review; generic fallback candidates are
   evidence, not silent style replacement.
-- `buildFontWeightPolicy`: preserves the requested weight and reports missing
-  or synthetic weights per language; it never substitutes a different weight.
+- `routeFontWeight` / `buildFontWeightPolicy`: zh-CN YouHei keeps the inventory weight (Regular = 600). Map 600→400 only when the source is YouHei Regular and the target is a Noto family. Figma-specified Noto 600 language variants, any non-YouHei 600, Bold 900, and unadopted copy keep their source weight. `fontStyle` is passed through as Regular evidence and must not by itself reweight a Noto 600 face. Locale size tiers still use the **source** YouHei weight, so mapping CSS to 400 does not drop Regular copy into the body 0.8 scale.
+- `buildFontWeightPolicy` still reports missing or synthetic weights per language after that mapping.
 - `classifyFontWeight` and `classifyTypographyRange`: classify requested
   weight/readiness and measured browser range without changing Figma style.
 - `classifyAutoResize`: records Figma `HEIGHT`, `WIDTH`,
@@ -376,3 +380,43 @@ zh-CN 严格保 Figma 静态指标；非 zh-CN 在保留 Figma 结构/位置/own
 - en：标题 55.8（0.93×）、正文 24
 - zh-TW：标题 60、正文 30（与 zh 同级）
 - 组内长/短标题同字号，正文组同步，无裁切。截图 artifacts/03-ja-groupfit.png。
+
+## Width-lock vs height-lock, brand copy, and metric preserve
+
+SS14 point-fix contracts live in `scripts/lib/page-behavior-contracts.mjs`.
+Typography still listens to `DESIGN.md` 第 6 章. This section only records
+who may wrap vs shrink, and what copy swap must not destroy.
+
+### Width-lock, height-free (SC-09, SC-10)
+
+Listen to DESIGN.md 第 6 章. User 2026-09-17 axis rules:
+
+- Horizontal-only (`maxWidth` written, no `maxHeight`): adopted non-zh-CN
+  copy nowrap-shrinks to the written maxWidth. Do not replace that number
+  with a wider parent, `ownerWidth`, or `box.w`.
+- Vertical-only (`maxHeight` written, no `maxWidth`): wrap. Do not pass
+  maxHeight into `_fitText` / `integerPxFit`. Do not invent a width cap.
+  `TEXT.autoResize=HEIGHT` is not a Frame height cap.
+- Dual-axis (both written): 用户待确认. Keep wrap-then-shrink. Do not
+  treat this wording as a new shrink policy.
+- Truncation / clip / explicit fit still authorize integer-px shrink on
+  their own. Ellipsis and clip are not a pass.
+- DESIGN 6.2 English primary CTA nowrap-shrinks only when copy is adopted
+  (`en` + `matched`). zh-TW / ja / ko and missing copy do not.
+
+Measure after fonts are ready and the modal is displayable. Do not encode
+page-specific `translateY` or a later-retracted height lock as policy.
+
+### Brand-invariant names (SC-11)
+
+Calendar / vendor labels that are already the product name stay untranslated:
+`Outlook.com`, `Microsoft 365`, `Apple`, `Google`, and an `iCal文件` asset
+label. They are not copy-table rows.
+
+### Row binding and metrics (SC-12, SC-13)
+
+Copy mapping stays `explicit mapping > scene rule > length rule > neighbor
+inference > unresolved`. Empty target-language cells and ambiguous rows stay
+fail-closed. Swapping locale copy must keep `fontSize`, `lineHeight`,
+`letterSpacing`, and alignment from the source TEXT. Resetting tracking to 0
+is a translation fail, not a fit pass.

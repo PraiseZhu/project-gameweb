@@ -17,8 +17,8 @@
  * Cache: demo/artifacts/stop1-pixel/figma-cache/<fileKey>.<id>.s<scale>.<snapshot>.png
  * User: 「按照选项优化，优化完告诉我能提速多少」
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSafeStaticServer } from './safe-server.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
@@ -33,10 +33,13 @@ import {
   compareSectionPngs,
   cropPng,
   isStop1PixelSkippedSection,
+  scalePng,
   sectionLiveCopyMasks,
   sectionPaintExports,
   figmaCachePath,
+  cacheToken,
   handoffSnapshotToken,
+  safeSecId,
   loadHandoffConsume,
   loadHandoffInventory,
   loadPngApi,
@@ -84,7 +87,7 @@ export function parseStop1SkipJson(raw = process.env.STOP1_PIXEL_SKIP_JSON) {
   return Object.freeze(out);
 }
 
-async function fetchTimed(url, init = {}, timeoutMs = 30000) {
+async function fetchTimed(url, init = {}, timeoutMs = 120000) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
@@ -100,7 +103,7 @@ async function fetchTimed(url, init = {}, timeoutMs = 30000) {
 }
 
 async function figmaGet(url, token) {
-  const res = await fetchTimed(url, { headers: { 'X-Figma-Token': token } }, 30000);
+  const res = await fetchTimed(url, { headers: { 'X-Figma-Token': token } }, 180000);
   if (!res.ok) {
     throw new Error(`Figma API ${res.status}: ${url.replace(/key=[^&]+/g, 'key=***')}`);
   }
@@ -119,7 +122,7 @@ async function fetchFramePng({ fileKey, frameId, scale, token }) {
   const imgRes = await (await figmaGet(`${FIGMA_API}/images/${fileKey}?${q}`, token)).json();
   const imgUrl = imgRes.images?.[frameId];
   if (!imgUrl) throw new Error(`Figma images API returned no URL for ${frameId}`);
-  const img = await fetchTimed(imgUrl, {}, 60000);
+  const img = await fetchTimed(imgUrl, {}, 180000);
   if (!img.ok) throw new Error(`Figma PNG HTTP ${img.status} for ${frameId}`);
   return Buffer.from(await img.arrayBuffer());
 }
@@ -136,8 +139,7 @@ export function writeCachePng(cacheFile, buf) {
   }
 }
 
-export function tryReadCachePng({ demoDir, fileKey, frameId, scale, snapshotToken, PNG }) {
-  const cacheFile = figmaCachePath(demoDir, fileKey, frameId, scale, snapshotToken);
+function tryReadPngFile(cacheFile, PNG) {
   if (!existsSync(cacheFile)) return null;
   try {
     const buf = readFileSync(cacheFile);
@@ -145,6 +147,32 @@ export function tryReadCachePng({ demoDir, fileKey, frameId, scale, snapshotToke
   } catch {
     return null;
   }
+}
+
+function siblingScaleCacheFiles({ demoDir, fileKey, frameId, snapshotToken }) {
+  const dir = join(demoDir, STOP1_FIGMA_CACHE_DIR);
+  if (!existsSync(dir)) return [];
+  const key = String(fileKey || 'file').replace(/[^A-Za-z0-9._-]/g, '_');
+  const id = safeSecId(frameId);
+  const snap = cacheToken(snapshotToken) || 'nohash';
+  const prefix = `${key}.${id}.s`;
+  const suffix = `.${snap}.png`;
+  return readdirSync(dir)
+    .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
+    .map((name) => join(dir, name));
+}
+
+export function tryReadCachePng({ demoDir, fileKey, frameId, scale, snapshotToken, PNG, allowSiblingScale = false }) {
+  const cacheFile = figmaCachePath(demoDir, fileKey, frameId, scale, snapshotToken);
+  const exact = tryReadPngFile(cacheFile, PNG);
+  if (exact) return exact;
+  if (!allowSiblingScale) return null;
+  for (const sibling of siblingScaleCacheFiles({ demoDir, fileKey, frameId, snapshotToken })) {
+    if (basename(sibling) === basename(cacheFile)) continue;
+    const hit = tryReadPngFile(sibling, PNG);
+    if (hit) return { ...hit, analogueOf: null };
+  }
+  return null;
 }
 
 async function exportFramePngCached({
@@ -157,11 +185,20 @@ async function exportFramePngCached({
   snapshotToken,
   refresh = false,
   analogueIds = [],
+  allowSiblingScale = false,
 }) {
   mkdirSync(join(demoDir, STOP1_FIGMA_CACHE_DIR), { recursive: true });
   const cacheFile = figmaCachePath(demoDir, fileKey, frameId, scale, snapshotToken);
   if (!refresh) {
-    const hit = tryReadCachePng({ demoDir, fileKey, frameId, scale, snapshotToken, PNG });
+    const hit = tryReadCachePng({
+      demoDir,
+      fileKey,
+      frameId,
+      scale,
+      snapshotToken,
+      PNG,
+      allowSiblingScale,
+    });
     if (hit) return hit;
   }
   try {
@@ -218,14 +255,27 @@ function designSize(pageBox) {
   };
 }
 
+function boxOf(value) {
+  const x = Number(value?.x ?? 0);
+  const y = Number(value?.y ?? 0);
+  const w = Number(value?.w ?? value?.width);
+  const h = Number(value?.h ?? value?.height);
+  return [x, y, w, h].every(Number.isFinite) ? { x, y, w, h } : null;
+}
+
+function intersectSectionOnSource(sourceBox, sectionBox) {
+  const source = boxOf(sourceBox);
+  const section = boxOf(sectionBox);
+  if (!source || !section) return null;
+  const x = Math.max(source.x, section.x);
+  const y = Math.max(source.y, section.y);
+  const right = Math.min(source.x + source.w, section.x + section.w);
+  const bottom = Math.min(source.y + source.h, section.y + section.h);
+  if (!(right > x && bottom > y)) return null;
+  return { x, y, w: right - x, h: bottom - y };
+}
+
 export function productProbeViewport(platform, pageBox, sections = []) {
-  const boxOf = (value) => {
-    const x = Number(value?.x ?? 0);
-    const y = Number(value?.y ?? 0);
-    const w = Number(value?.w ?? value?.width);
-    const h = Number(value?.h ?? value?.height);
-    return [x, y, w, h].every(Number.isFinite) ? { x, y, w, h } : null;
-  };
   const shelf = boxOf(pageBox);
   const firstSection = asArray(sections).find((section) => boxOf(section?.pageBox || section?.box));
   const sectionBox = boxOf(firstSection?.pageBox || firstSection?.box);
@@ -234,7 +284,13 @@ export function productProbeViewport(platform, pageBox, sections = []) {
   if (!(width > 0) || (platform === 'mobile' && width > 1126) || (platform !== 'mobile' && width <= 1126)) {
     throw new Error(`${platform}: invalid product probe viewport width ${width}`);
   }
-  return { w: Math.round(width), h: Math.max(Math.round(shelf.h), Math.round(sectionBox.h)) };
+  /* Pixel compare is against the Figma section pageBox. Height must be the
+     full page so product=1 skips the 100vh crop (figma-render skips heroSlot
+     when viewportH >= pageContentHeight). First-section-only height
+     (PC 2143 on a 4286 page) still cover-crops and blacks the top. */
+  const height = Math.max(Math.round(shelf.h), Math.round(sectionBox.h));
+  if (!(height > 0)) throw new Error(`${platform}: invalid product probe viewport height ${height}`);
+  return { w: Math.round(width), h: height };
 }
 
 async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, scale }) {
@@ -254,7 +310,7 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
     /* Product view picks PC/mobile from innerWidth (≤1126 mobile). CSS layout
        stays at design pageBox; deviceScaleFactor must equal Figma export scale. */
     const page = await browser.newPage({
-      viewport: { width: viewport.w, height: Math.max(viewport.h, 1080) },
+      viewport: { width: viewport.w, height: viewport.h },
       deviceScaleFactor: dsf,
     });
     await page.goto(`${base}/index.html?product=1`, { waitUntil: 'load', timeout: 120000 });
@@ -322,15 +378,37 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
          descendants that live in later sections' viewport, so later
          screens compared a scrolled overlay against a Figma export that
          only has that section's own fix/顶部信息. */
-      const clip = await el.evaluate((node) => {
-        const r = node.getBoundingClientRect();
-        return {
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-        };
+      await el.evaluate((node) => {
+        const frame = node.closest('.frame') || document.querySelector('.frame');
+        if (!frame) return;
+        const top = node.getBoundingClientRect().top + (Number(frame.scrollTop) || 0);
+        frame.scrollTop = Math.max(0, top);
       });
+      await page.evaluate(() => new Promise((resolveWait) => requestAnimationFrame(() => resolveWait())));
+      const clip = await page.evaluate((id) => {
+        const cssEscape = (value) => (globalThis.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/(["\\])/g, '\\$1'));
+        const node = document.querySelector(`[data-node="${cssEscape(id)}"]`)
+          || document.querySelector(`[data-node-id="section-${cssEscape(id)}"]`);
+        if (!node) return null;
+        const r = node.getBoundingClientRect();
+        const vw = window.innerWidth || 0;
+        const vh = window.innerHeight || 0;
+        const x = Math.max(0, r.x);
+        const y = Math.max(0, r.y);
+        const right = Math.min(vw, r.x + r.width);
+        const bottom = Math.min(vh, r.y + r.height);
+        return {
+          x,
+          y,
+          width: Math.max(0, right - x),
+          height: Math.max(0, bottom - y),
+        };
+      }, secId);
+      if (!clip || !(clip.width > 0) || !(clip.height > 0)) {
+        shots[secId] = { error: `${platform} ${secId}: clipped area empty or outside viewport` };
+        await handle.dispose();
+        continue;
+      }
       const buf = Buffer.from(await page.screenshot({ type: 'png', clip, omitBackground: false }));
       await handle.dispose();
       shots[secId] = { buf, png: readPng(PNG, buf) };
@@ -394,18 +472,42 @@ export async function runLiveStop1FigmaPixelProbe({
         if (!paints.length) throw new Error(`${section.id}: no section paint exports`);
         let cacheHit = false;
         for (const paint of paints) {
+          const exportScale = Number(paint.exportScale) > 0 ? Number(paint.exportScale) : scale;
           const exported = await exportFramePngCached({
             demoDir: absDemo,
             fileKey,
             frameId: paint.frameId,
-            scale,
+            scale: exportScale,
             token,
             PNG,
             snapshotToken,
             refresh: refreshFigmaCache,
             analogueIds: paint.analogueIds || [],
+            allowSiblingScale: paint.kind === 'covering-plate',
           });
           cacheHit = cacheHit || exported.cacheHit;
+          if (paint.kind === 'covering-plate') {
+            const sourceBox = paint.sourceBox || paint.destBox;
+            const clip = intersectSectionOnSource(sourceBox, section.pageBox);
+            if (!clip) continue;
+            if (!(exported.png.width > 0) || !(exported.png.height > 0)) {
+              throw new Error(`${paint.frameId}: covering plate export empty`);
+            }
+            const cropX = (clip.x - sourceBox.x) / sourceBox.w * exported.png.width;
+            const cropY = (clip.y - sourceBox.y) / sourceBox.h * exported.png.height;
+            const cropW = clip.w / sourceBox.w * exported.png.width;
+            const cropH = clip.h / sourceBox.h * exported.png.height;
+            const cropped = cropPng(PNG, exported.png, { x: cropX, y: cropY, w: cropW, h: cropH });
+            const destW = Math.round(clip.w * scale);
+            const destH = Math.round(clip.h * scale);
+            const fitted = (cropped.width === destW && cropped.height === destH)
+              ? cropped
+              : scalePng(PNG, cropped, destW, destH);
+            const dx = (clip.x - section.pageBox.x) * scale;
+            const dy = (clip.y - section.pageBox.y) * scale;
+            blitPng(baselinePng, fitted, dx, dy);
+            continue;
+          }
           const frameBox = paint.kind === 'cn-master' ? paint.masterBox : paint.destBox;
           assertExportNotFlattened({ png: exported.png, frameBox, scale, allowOverflow: true });
           const destW = Math.round(paint.destBox.w * scale);

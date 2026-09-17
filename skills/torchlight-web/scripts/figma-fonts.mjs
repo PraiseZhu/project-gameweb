@@ -18,7 +18,12 @@
  *    @font-face 由脚本写进 index.html 的 #qa-fonts 块，**禁止手抄**（同 qa-truth/qa-assets）。
  * 2) 稿里出现、登记册里没有的字体 → 进 missing 清单，并写进 fonts-manifest.json。
  *    **绝不许拿别的字体顶上冒充做好了** —— 那正是老师防的那种「声明合格」。
- * 3) 每个字体文件记 sha256（同 assets 的做法：二进制没有 JSON locator，
+ * 3) cmap 查页面真正画字的那张脸，不查图层名。有稿文字对源/登记家族；
+ *    源家族盖不住的韩文走 DESIGN.md `localeFontFamily.ko`。只有稿上或规则
+ *    明确要求 Apple SD Gothic Neo 时才查本机 `local()`（不拷 TTC）。拉丁
+ *    SemiCondensed 走登记静态脸；落在拉丁子集上的中文走已登记悠黑/思源。
+ *    盖不住或缺 cmap 进 missing、exit 2。不许拿 KR-VF 冒充 SemiCondensed。
+ * 4) 每个字体文件记 sha256（同 assets 的做法：二进制没有 JSON locator，
  *    可校验的替代品是哈希 + 来源 + 许可）。
  *
  * ═══ 用法 ═══
@@ -29,6 +34,23 @@
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { FONT_SOURCE_ROUTING, LOCALE_INVARIANT_FAMILIES, routeFontFamily } from './lib/translation/font-routing.mjs';
+import { DESIGN_POLICY } from './lib/design-policy.generated.mjs';
+import {
+  APPLE_SD_GOTHIC_LOCAL_PATHS,
+  PAINTED_CJK_FAMILY_CANDIDATES,
+  PAINTED_HANGUL_FACE,
+  appleSdGothicLocalAvailable,
+  codepointsToCover,
+  formatUncovered,
+  hangulLocalFallbackStatus,
+  isHangulCodepoint,
+  isLocalHangulFace,
+  localeHangulFamily,
+  missingGlyphsInFont,
+  paintedCoveragePlan,
+  readFontNameIdentity,
+  semiCondensedIdentityOk,
+} from './lib/font-cmap-coverage.mjs';
 import { dirname, join, resolve } from 'node:path';
 
 function fail(msg) {
@@ -89,6 +111,50 @@ function textRecords(source) {
 }
 
 /** 从 truth 里收集稿里真正用到的 (family, weight)。用到才装，不按登记册全量塞。 */
+function leafText(value) {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  if (typeof value === 'object' && value.absent === true) return '';
+  if (typeof value === 'object' && 'value' in value) return leafText(value.value);
+  return '';
+}
+
+function hangulOnly(text) {
+  return [...String(text || '')].filter((ch) => {
+    return isHangulCodepoint(ch.codePointAt(0));
+  }).join('');
+}
+
+function hangulCopyNodes(truth) {
+  const byNode = truth?.copy?.byNode;
+  if (!byNode || typeof byNode !== 'object') return [];
+  const nodes = [];
+  for (const [nodeId, entry] of Object.entries(byNode)) {
+    const parts = [];
+    if (entry && typeof entry === 'object') {
+      const translations = entry.translations && typeof entry.translations === 'object' ? entry.translations : null;
+      if (translations) {
+        for (const leaf of Object.values(translations)) parts.push(leafText(leaf));
+      }
+      for (const [key, value] of Object.entries(entry)) {
+        if (key === 'translations' || key === 'provenance') continue;
+        if (typeof value === 'string') parts.push(value);
+      }
+    }
+    const characters = hangulOnly(parts.join(''));
+    if (!characters) continue;
+    nodes.push({
+      nodeId,
+      name: 'copy-ko',
+      chars: characters.slice(0, 18),
+      characters,
+      fontStyle: '',
+      fontPostScriptName: '',
+    });
+  }
+  return nodes;
+}
+
 function collectUsage(truth) {
   const use = new Map();   // family → { family, weights:Set, nodes:[] }
   const sources = [truth.sections || {}];
@@ -115,10 +181,143 @@ function collectUsage(truth) {
       const u = use.get(fam);
       const weight = unwrap(t?.fontWeight);
       if (weight != null) u.weights.add(Number(weight));
-      u.nodes.push({ nodeId: unwrap(n.id), name: unwrap(n.name), chars: String(unwrap(t?.characters) ?? '').slice(0, 18) });
+      const nodeId = unwrap(n.id);
+      const characters = String(unwrap(t?.characters) ?? '');
+      u.nodes.push({
+        nodeId,
+        name: unwrap(n.name),
+        chars: characters.slice(0, 18),
+        characters,
+        fontStyle: unwrap(t?.fontStyle) || '',
+        fontPostScriptName: unwrap(t?.fontPostScriptName) || '',
+      });
     }
   }
   return [...use.values()];
+}
+
+function unionCjkSrc(resolved) {
+  const byFamily = new Map(resolved.map((row) => [row.family, row]));
+  return PAINTED_CJK_FAMILY_CANDIDATES.map((name) => byFamily.get(name)?.src).filter(Boolean);
+}
+
+function paintedFaceSrc(family, byFamily, localeFontFamily = null) {
+  if (isLocalHangulFace(family, localeFontFamily)) {
+    return APPLE_SD_GOTHIC_LOCAL_PATHS.find((path) => existsSync(path)) || null;
+  }
+  return byFamily.get(family)?.src || null;
+}
+
+function missingOnPaintedFace(family, src, codepoints, cjkSrcs, localeFontFamily = null) {
+  if (!isLocalHangulFace(family, localeFontFamily) && PAINTED_CJK_FAMILY_CANDIDATES.includes(family) && cjkSrcs.length) {
+    return codepoints.filter((cp) => cjkSrcs.every((file) => missingGlyphsInFont(file, [cp]).length));
+  }
+  if (!src) {
+    const err = new Error(family === 'unconfirmed-hangul-locale'
+      ? 'localeFontFamily.ko 未确认，韩文覆盖不能当已验收'
+      : (isLocalHangulFace(family, localeFontFamily)
+        ? '稿上/规则要求 local() Apple SD Gothic Neo，本机不可用，不能当已验收'
+        : `页面实际用字 ${family} 没有可查的字体文件`));
+    err.code = 'painted-face-missing';
+    throw err;
+  }
+  return missingGlyphsInFont(src, codepoints);
+}
+
+function alreadyMissingFamily(missing, family) {
+  return missing.some((item) => item.family === family);
+}
+
+function hangulHowToFix(family, localeFontFamily = null) {
+  if (family === 'unconfirmed-hangul-locale') {
+    return '在 DESIGN.md localeFontFamily.ko 确认韩文绘制家族，并在 fonts/registry.json 登记可交付文件';
+  }
+  if (isLocalHangulFace(family, localeFontFamily)) {
+    return '稿上/规则要求 local() Apple SD Gothic Neo 时才查本机路径，不得拷 ttc 进 git，也不得用 KR-VF 冒充 SemiCondensed';
+  }
+  return '登记一份能读出 cmap 的合法字体文件；禁止拿系统字或另一家族冒充';
+}
+
+function sourceCoversFn(sourceFamily, byFamily) {
+  if (isLocalHangulFace(sourceFamily)) return null;
+  const src = byFamily.get(sourceFamily)?.src;
+  if (!src) return null;
+  return (cp) => {
+    try {
+      return missingGlyphsInFont(src, [cp]).length === 0;
+    } catch {
+      return false;
+    }
+  };
+}
+
+function cmapCoverageGaps(resolved, usage, registeredFamilies, localeFontFamily = null) {
+  const byFamily = new Map(resolved.map((row) => [row.family, row]));
+  const gaps = [];
+  const cmapFailed = new Set();
+  const uncoveredByFamily = new Map();
+  const cjkSrcs = unionCjkSrc(resolved);
+  const coversByFamily = new Map();
+  for (const used of usage) {
+    if (!coversByFamily.has(used.family)) {
+      coversByFamily.set(used.family, sourceCoversFn(used.family, byFamily));
+    }
+    const sourceCoversCp = coversByFamily.get(used.family);
+    for (const node of used.nodes || []) {
+      const plan = paintedCoveragePlan({
+        fontFamily: used.family,
+        fontStyle: node.fontStyle,
+        fontPostScriptName: node.fontPostScriptName,
+        characters: node.characters,
+      }, registeredFamilies, localeFontFamily, sourceCoversCp);
+      for (const part of plan) {
+        const family = part.family;
+        const rec = byFamily.get(family);
+        const src = paintedFaceSrc(family, byFamily, localeFontFamily);
+        let missingCps;
+        try {
+          missingCps = missingOnPaintedFace(family, src, part.codepoints, cjkSrcs, localeFontFamily);
+        } catch (error) {
+          if (cmapFailed.has(family)) continue;
+          cmapFailed.add(family);
+          gaps.push({
+            family,
+            weights: rec?.weights || [400],
+            affectedNodes: rec?.nodes?.length || 1,
+            examples: [{ nodeId: node.nodeId, name: node.name, chars: node.chars }],
+            why: error && error.message ? error.message : String(error),
+            howToFix: hangulHowToFix(family, localeFontFamily),
+          });
+          continue;
+        }
+        if (!missingCps.length) continue;
+        if (!uncoveredByFamily.has(family)) {
+          uncoveredByFamily.set(family, { rec, cps: new Set(), nodes: [] });
+        }
+        const bucket = uncoveredByFamily.get(family);
+        for (const cp of missingCps) bucket.cps.add(cp);
+        bucket.nodes.push({ nodeId: node.nodeId, name: node.name, chars: node.chars, family });
+      }
+    }
+  }
+  for (const [family, bucket] of uncoveredByFamily) {
+    const uncovered = formatUncovered(bucket.cps);
+    const extra = uncovered.extra ? ` 另有 ${uncovered.extra} 个` : '';
+    const fileHint = isLocalHangulFace(family, localeFontFamily)
+      ? '本机 Apple SD Gothic Neo'
+      : `登记文件 ${bucket.rec?.entry?.file || family}`;
+    gaps.push({
+      family,
+      weights: bucket.rec?.weights || [400],
+      affectedNodes: bucket.nodes.length,
+      examples: bucket.nodes.slice(0, 3),
+      uncovered: uncovered.shown,
+      uncoveredCount: uncovered.count,
+      why: `${fileHint} 的 cmap 盖不住页面实际用字：${uncovered.shown.join('、')}${extra}。浏览器会静默换成系统字，折行与稿不同`,
+      howToFix: hangulHowToFix(family, localeFontFamily),
+    });
+  }
+  return gaps;
 }
 
 function main() {
@@ -166,6 +365,55 @@ function main() {
         }
       }
     }
+    /* Figma may retain Noto Sans as family while selecting the
+       SemiCondensed PostScript face. Ensure the registered real face is
+       copied and emitted whenever that source style is present. */
+    const hasSemiCondensed = textRecords(truth).some((n) =>
+      String(unwrap(n?.text)?.fontStyle || '').toLowerCase().includes('semicondensed'));
+    if (hasSemiCondensed && reg['Noto Sans SemiCondensed'] && !byFamily.has('Noto Sans SemiCondensed')) {
+      usage.push({ family: 'Noto Sans SemiCondensed', weights: new Set([400]), nodes: [], routedFor: ['source/SemiCondensed'] });
+    }
+    /* CJK that lands on a latin subset is painted by the registered YouHei /
+       Noto CJK face. Include that face so cmap can read it even when no
+       source node lists it as fontFamily. */
+    const hasCjkOnLatinSubset = textRecords(truth).some((n) => {
+      const tx = unwrap(n?.text) || {};
+      const family = String(unwrap(tx.fontFamily) || '');
+      const chars = String(unwrap(tx.characters) || '');
+      const semi = String(unwrap(tx.fontStyle) || '').toLowerCase().includes('semicondensed')
+        || String(unwrap(tx.fontPostScriptName) || '').toLowerCase().includes('semicondensed');
+      if (!(semi || family === 'Noto Sans' || family === 'Noto Serif SC')) return false;
+      return codepointsToCover(chars).some((cp) => (
+        (cp >= 0x3000 && cp <= 0x303f)
+        || (cp >= 0x3400 && cp <= 0x9fff)
+        || (cp >= 0xff00 && cp <= 0xffef)
+      ));
+    });
+    if (hasCjkOnLatinSubset) {
+      for (const family of PAINTED_CJK_FAMILY_CANDIDATES) {
+        if (!reg[family] || byFamily.has(family)) continue;
+        const u = { family, weights: new Set([400]), nodes: [], routedFor: ['painted/cjk-coverage'] };
+        byFamily.set(family, u);
+        usage.push(u);
+        break;
+      }
+    }
+    const hangulLocale = localeHangulFamily(DESIGN_POLICY.localeFontFamily);
+    const copyHangul = hangulCopyNodes(truth);
+    const hasHangul = copyHangul.length > 0 || usage.some((used) => (used.nodes || []).some((node) =>
+      codepointsToCover(node.characters || '').some((cp) => isHangulCodepoint(cp))));
+    if (hasHangul && hangulLocale) {
+      if (!byFamily.has(hangulLocale)) {
+        const u = { family: hangulLocale, weights: new Set([400]), nodes: [], routedFor: ['painted/hangul-locale'] };
+        byFamily.set(hangulLocale, u);
+        usage.push(u);
+      }
+      if (copyHangul.length) {
+        const target = byFamily.get(hangulLocale);
+        target.nodes.push(...copyHangul);
+        target.routedFor = [...new Set([...(target.routedFor || []), 'copy/hangul'])];
+      }
+    }
   }
 
   const resolved = [];
@@ -173,6 +421,7 @@ function main() {
   for (const u of usage) {
     const entry = reg[u.family];
     if (!entry) {
+      if (isLocalHangulFace(u.family)) continue;
       missing.push({
         family: u.family,
         weights: [...u.weights],
@@ -189,14 +438,83 @@ function main() {
         howToFix: entry.missing || '把字体文件放进 skill 的 fonts/ 并在 registry.json 回填 file/source' });
       continue;
     }
+    if (/\.ttc$/i.test(String(entry.file || ''))) {
+      missing.push({
+        family: u.family,
+        weights: [...u.weights],
+        affectedNodes: u.nodes.length,
+        examples: (u.nodes || []).slice(0, 3),
+        why: `禁止把系统 ttc 拷进产物/git（${entry.file}）；Apple SD Gothic Neo 若被稿或规则要求，只许 local()`,
+        howToFix: '从 fonts/ 与 registry 去掉 ttc；只有稿上/规则要求 Apple SD Gothic Neo 时才走 local()',
+      });
+      continue;
+    }
     const src = join(fontRoot, entry.file);
     if (!existsSync(src)) {
       missing.push({ family: u.family, weights: [...u.weights], affectedNodes: u.nodes.length, why: `登记册指向 fonts/${entry.file}，但文件不在`, howToFix: '补上文件' });
       continue;
     }
+    if (/semi\s*condensed/i.test(u.family) || /semi\s*condensed/i.test(String(entry.postScriptName || ''))) {
+      try {
+        const identity = readFontNameIdentity(src);
+        if (!semiCondensedIdentityOk(identity)) {
+          missing.push({
+            family: u.family,
+            weights: [...u.weights],
+            affectedNodes: u.nodes.length,
+            examples: (u.nodes || []).slice(0, 3),
+            identity,
+            why: `登记文件 ${entry.file} 不是 SemiCondensed 身份（name/PS=${identity.postScriptName || identity.fullName || identity.family}），禁止用 KR-VF 或其他家族冒充`,
+            howToFix: '登记 NotoSans-SemiCondensed 真文件；禁止 NotoSansKR-VF 顶上 SemiCondensed',
+          });
+          continue;
+        }
+      } catch (error) {
+        missing.push({
+          family: u.family,
+          weights: [...u.weights],
+          affectedNodes: u.nodes.length,
+          why: error && error.message ? error.message : String(error),
+          howToFix: '登记一份能读出 name 表的 SemiCondensed 文件',
+        });
+        continue;
+      }
+    }
     // 稿内字重与字体文件字重不一致时不阻断，但要说出来（浏览器会做合成加粗，字宽会变）
     const weightMismatch = numericWeights(u.weights).filter((w) => !entryCoversWeight(entry, w));
     resolved.push({ ...u, weights: [...u.weights], entry, src, weightMismatch });
+  }
+
+  const localeFontFamily = DESIGN_POLICY.localeFontFamily;
+  const cmapGaps = cmapCoverageGaps(resolved, usage, new Set(Object.keys(reg)), localeFontFamily)
+    .filter((gap) => !alreadyMissingFamily(missing, gap.family));
+  missing.push(...cmapGaps);
+  {
+    const hangulNodes = [];
+    for (const used of usage) {
+      for (const node of used.nodes || []) {
+        if (codepointsToCover(node.characters || '').some((cp) => isHangulCodepoint(cp))) {
+          hangulNodes.push({ nodeId: node.nodeId, name: node.name, chars: node.chars, family: used.family });
+        }
+      }
+    }
+    const local = appleSdGothicLocalAvailable();
+    const hangul = hangulLocalFallbackStatus({
+      localAvailable: local,
+      nodes: hangulNodes,
+      localeFontFamily,
+    });
+    if (hangul.unverified && hangul.nodes.length) {
+      missing.push({
+        family: hangul.nodes[0]?.family || PAINTED_HANGUL_FACE,
+        weights: [400],
+        affectedNodes: hangul.nodes.length,
+        examples: hangul.nodes.slice(0, 3),
+        unverified: true,
+        why: hangul.why,
+        howToFix: hangulHowToFix(hangul.nodes[0]?.family || PAINTED_HANGUL_FACE, localeFontFamily),
+      });
+    }
   }
 
   const out = {
@@ -221,6 +539,14 @@ function main() {
   let bytes = 0;
   const faces = [];
   for (const r of resolved) {
+    if (/\.ttc$/i.test(String(r.entry.file || '')) || /\.ttc$/i.test(String(r.src || ''))) {
+      missing.push({
+        family: r.family,
+        why: `禁止把系统 ttc 拷进产物（${r.entry.file}）`,
+        howToFix: 'Apple SD Gothic Neo 若被稿或规则要求，只许 local()',
+      });
+      continue;
+    }
     const buf = readFileSync(r.src);
     copyFileSync(r.src, join(fontsDir, r.entry.file));
     bytes += buf.length;
@@ -240,13 +566,13 @@ function main() {
        2026-08-04 曾改成 data: URI 内联（担心 file:// 下字体 url 被跨域挡），当天即被
        CDP 实测推翻：file:// 下 document.fonts.status='loaded'，三个字体全部 loaded:true
        —— 「加载不上」不成立，内联只会让 index.html 从 1.5MB 涨到约 10MB，零收益。
-       结论已记自进化台账（by-design：字体保持独立文件）。 */
-    const variation = /YouHei|FZVariable/i.test(r.family)
-      ? 'font-named-instance:"Regular";'
-      : '';
+       结论已记自进化台账（by-design：字体保持独立文件）。
+       禁止 font-named-instance:"Regular"：Regular 是 wght=600，稿上 Bold/900
+       会被钉在 Regular 上再假粗，笔画糊死。wght/wdth/hght 由元素上的
+       font-variation-settings 按稿设置。 */
     faces.push(
       `@font-face{font-family:"${r.family}";src:url("assets/fonts/${r.entry.file}") format("${r.entry.format}");` +
-      `font-weight:${r.entry.weight};font-style:${r.entry.style || 'normal'};${variation}font-display:block}`
+      `font-weight:${r.entry.weight};font-style:${r.entry.style || 'normal'};font-display:block}`
     );
   }
 
@@ -274,7 +600,8 @@ function main() {
     const block = `<style id="qa-fonts">\n${faces.join('\n')}\n</style>`;
     const re = /<style id="qa-fonts">[\s\S]*?<\/style>/;
     if (re.test(html)) html = html.replace(re, block);
-    else html = html.replace('<script id="qa-assets"', `${block}\n<script id="qa-assets"`);
+    else if (html.includes('<script id="qa-assets"')) html = html.replace('<script id="qa-assets"', `${block}\n<script id="qa-assets"`);
+    else if (html.includes('<script id="qa-truth"')) html = html.replace('<script id="qa-truth"', `${block}\n<script id="qa-truth"`);
     writeFileSync(idxPath, html);
     out.embeddedInto = 'index.html#qa-fonts';
   }

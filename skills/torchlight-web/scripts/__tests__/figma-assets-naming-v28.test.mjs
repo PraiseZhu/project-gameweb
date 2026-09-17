@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { pickSliceNodes, pageAlignedExportBox, isReadyHandoffTruth } from '../figma-assets.mjs';
+import {
+  pickSliceNodes,
+  pageAlignedExportBox,
+  isReadyHandoffTruth,
+  isZeroExtentSlice,
+  reuseExistingMissingPicks,
+} from '../figma-assets.mjs';
 
 function truthWith(nodes) {
   return {
@@ -127,6 +133,87 @@ test('BOOLEAN btn arrows are sliced even when inventory left sliceExport unset',
   ]));
   assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['392:24682', '395:35371']);
   assert.match(picks.find((pick) => pick.nodeId === '392:24682').reason, /btn 箭头轮廓/);
+});
+
+test('ready-handoff VECTOR 详细按钮 and 勾选按钮 variant roots slice without sliceExport', () => {
+  const picks = pickSliceNodes({
+    schema: 'yise-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    sections: { 'sec:1': { nodes: [] } },
+    platforms: {
+      pc: {
+        sections: { 'sec:1': { nodes: [] } },
+        modals: [{
+          id: '949:5675',
+          name: 'modal/pc_kr预约弹窗',
+          nodes: [
+            {
+              id: '949:5740',
+              type: 'VECTOR',
+              name: 'btn/详细按钮@go=modal/pc弹窗详细规则2',
+              status: 'determined',
+              role: 'btn',
+              box: { x: 0, y: 0, w: 26.5, h: 26.5 },
+              style: { fills: [{ type: 'SOLID', visible: true }] },
+            },
+            {
+              id: '949:5457',
+              type: 'INSTANCE',
+              name: 'btn/勾选按钮',
+              status: 'determined',
+              role: 'btn',
+              componentId: '949:5746',
+              box: { x: 40, y: 0, w: 46.4, h: 38.7 },
+            },
+          ],
+        }],
+      },
+    },
+    componentVariantGraph: {
+      componentSets: [{
+        componentSetId: '949:5745',
+        name: 'btn/勾选按钮',
+        variants: [
+          {
+            id: '949:5746',
+            componentId: '949:5746',
+            name: 'Property 1=highlight',
+            type: 'COMPONENT',
+            status: 'unknown',
+            ancestorNames: ['btn/勾选按钮'],
+            box: { x: 0, y: 0, w: 46.4, h: 38.7 },
+            nodes: [{
+              id: '949:5747',
+              type: 'BOOLEAN_OPERATION',
+              name: 'Union',
+              status: 'skipped',
+              why: 'art-fragment',
+              box: { x: 0, y: 0, w: 46.4, h: 38.7 },
+              style: { fills: [{ type: 'SOLID', visible: true }] },
+            }],
+          },
+          {
+            id: '949:5750',
+            componentId: '949:5750',
+            name: 'Property 1=normal',
+            type: 'COMPONENT',
+            status: 'unknown',
+            ancestorNames: ['btn/勾选按钮'],
+            box: { x: 0, y: 40, w: 46.4, h: 38.7 },
+            nodes: [],
+          },
+        ],
+      }],
+      components: [],
+      variantTrees: {},
+    },
+  });
+  const ids = picks.map((pick) => pick.nodeId).sort();
+  assert.deepEqual(ids, ['949:5740', '949:5746', '949:5750']);
+  assert.match(picks.find((pick) => pick.nodeId === '949:5740').reason, /btn 箭头轮廓/);
+  assert.match(picks.find((pick) => pick.nodeId === '949:5746').reason, /勾选按钮变体根/);
+  assert.equal(picks.some((pick) => pick.nodeId === '949:5747'), false);
+  assert.equal(picks.some((pick) => pick.nodeId === '949:5457'), false);
 });
 
 test('ind variant roots with sliceExport are sliced from componentVariantGraph', () => {
@@ -493,7 +580,7 @@ test('exportBox is page-aligned, never canvas renderBox', () => {
 
 test('whole-frame box export requests use_absolute_bounds=true', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
-  assert.match(src, /pageBoxExport = wholeFrameSlice && !softSpill/);
+  assert.match(src, /pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour/);
   assert.match(src, /if \(chunk\[0\]\.exportBounds !== 'render'\) q\.set\('use_absolute_bounds', 'true'\)/);
   const timeBg = pickSliceNodes({
     schema: 'torchlight-ready-platform-truth/v1',
@@ -521,6 +608,59 @@ test('whole-frame box export requests use_absolute_bounds=true', () => {
   }).find((pick) => pick.nodeId === 'img-hero');
   assert.equal(timeBg?.exportBounds, 'box');
   assert.deepEqual(timeBg?.exportBox, { x: 10, y: 20, w: 200, h: 300 });
+});
+
+test('rotated img/ arrow exports same-space render canvas, not squat pageBox AABB', () => {
+  const picks = pickSliceNodes({
+    schema: 'torchlight-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    platforms: {
+      pc: {
+        sections: {
+          'sec:carousel': {
+            nodes: [
+              {
+                id: 'btn-right',
+                type: 'FRAME',
+                name: 'btn/右滑动箭头',
+                status: 'determined',
+                role: 'btn',
+                pageBox: { x: 2995, y: 5396, w: 102, h: 120 },
+                box: { x: 2995, y: 5396, w: 102, h: 120 },
+                rotation: -Math.PI,
+              },
+              {
+                id: 'img-arrow',
+                type: 'FRAME',
+                name: 'img/箭头',
+                status: 'determined',
+                role: 'img',
+                parentId: 'btn-right',
+                pageBox: { x: 742.572, y: 5430.286, w: 103.063, h: 50.061 },
+                box: { x: 742.572, y: 5430.286, w: 103.063, h: 50.061 },
+                renderBox: { x: 743, y: 5403.785, w: 102, h: 103.063 },
+                inkBox: { x: 742.572, y: 5403.785, w: 103.063, h: 103.063 },
+                rotation: 0,
+                sliceExport: {
+                  bounds: 'render',
+                  scale: 1,
+                  format: 'png',
+                  file: 'img-arrow.png',
+                  box: { x: 742.572, y: 5430.286, w: 103.063, h: 50.061 },
+                },
+                style: { fills: [] },
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+  const arrow = picks.find((pick) => pick.nodeId === 'img-arrow');
+  assert.equal(arrow?.exportBounds, 'render');
+  assert.ok(arrow.exportBox.h > 90);
+  assert.ok(arrow.exportBox.h > arrow.box.h);
+  assert.equal(arrow.exportBox.y, 5403.785);
 });
 
 test('hairline img/ with LAYER_BLUR exports same-space renderBox, not 0-height pageBox', () => {
@@ -566,16 +706,43 @@ test('reuse-existing skips Figma fetch when the PNG is already on disk', () => {
   assert.match(src, /reusedPicks/);
   assert.match(src, /fetchPicks/);
   assert.match(src, /fetchPicks\.length \? readToken\(demoDir\) : null/);
-  assert.match(src, /reuseExisting && fetchPicks\.length/);
-  assert.match(src, /拒绝打 Figma/);
+  assert.match(src, /Newly painted owners that/);
   assert.match(src, /AbortController/);
   assert.match(src, /Figma API 超时/);
 });
 
-test('reuse-existing fail-closes when any listed PNG is missing', () => {
+test('reuse-existing still fetches listed PNGs that are not on disk', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
-  assert.match(src, /reuseExisting && fetchPicks\.length/);
-  assert.match(src, /--reuse-existing 缺 PNG，拒绝打 Figma/);
+  assert.match(src, /Newly painted owners that/);
+  assert.match(src, /still have no file must hit Figma/);
+  assert.doesNotMatch(src, /--reuse-existing 缺 PNG，拒绝打 Figma/);
+});
+
+test('reuse-existing does not treat zero-extent or previous noUrl as missing PNG', () => {
+  assert.equal(isZeroExtentSlice({ w: 433, h: 0, nodeId: '949:6545' }), true);
+  assert.equal(isZeroExtentSlice({ w: 230, h: 370, nodeId: '949:6003' }), false);
+  const cached = new Map([['keep', '/tmp/keep.png']]);
+  const previous = { noUrl: [{ nodeId: '949:6545', why: 'Figma 未返回 URL' }] };
+  const missing = reuseExistingMissingPicks([
+    { nodeId: 'keep', w: 10, h: 10 },
+    { nodeId: '949:6545', w: 433, h: 0, name: 'Line 1' },
+    { nodeId: 'old-no-url', w: 20, h: 20 },
+    { nodeId: 'real-missing', w: 64, h: 64 },
+  ], cached, previous);
+  assert.deepEqual(missing.map((item) => item.nodeId), ['old-no-url', 'real-missing']);
+  const missingKnownNoUrl = reuseExistingMissingPicks([
+    { nodeId: 'keep', w: 10, h: 10 },
+    { nodeId: '949:6545', w: 433, h: 0, name: 'Line 1' },
+    { nodeId: 'old-no-url', w: 20, h: 20 },
+    { nodeId: 'real-missing', w: 64, h: 64 },
+  ], cached, { noUrl: [{ nodeId: '949:6545' }, { nodeId: 'old-no-url' }] });
+  assert.deepEqual(missingKnownNoUrl.map((item) => item.nodeId), ['real-missing']);
+});
+
+test('full fetch still retries previous noUrl and only skips zero-extent slices', () => {
+  const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
+  assert.match(src, /reuseExisting\s*\n\s*\? reuseExistingMissingPicks\(picks, cachedPaths, previous\)\s*\n\s*: picks\.filter\(\(p\) => !cachedPaths\.has\(p\.nodeId\) && !isZeroExtentSlice\(p\)\)/);
+  assert.match(src, /skippedNoFetchPicks\(picks, cachedPaths, reuseExisting \? previous : null\)/);
 });
 
 test('collapsed webp under 2KB keeps serving pngFile', () => {

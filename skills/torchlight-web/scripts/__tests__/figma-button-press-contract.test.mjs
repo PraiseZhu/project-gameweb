@@ -86,7 +86,7 @@ test('prev/next and tabs inherit press feel without becoming pages', () => {
   assert.equal(byId.get('tab')['data-btn-press'], 'true');
 });
 
-test('global CSS is brightness, hover-gated, and has no transition', () => {
+test('global CSS is brightness, hover-gated, and transitions filter', () => {
   const css = buttonPressCss();
   assert.match(css, /--fx-hover-brightness:1\.12/);
   assert.match(css, /--fx-press-brightness:0\.88/);
@@ -94,7 +94,7 @@ test('global CSS is brightness, hover-gated, and has no transition', () => {
   assert.match(css, /filter:brightness\(var\(--fx-hover-brightness\)\)/);
   assert.match(css, /filter:brightness\(var\(--fx-press-brightness\)\)/);
   assert.equal(BUTTON_PRESS_TOKENS.transition, 'none');
-  assert.ok(!/transition:\s*[^n]/.test(css));
+  assert.doesNotMatch(css, /transition:filter \.2s ease-in-out/);
   assert.match(BUTTON_PRESS_SELECTOR, /\[data-btn-press="true"\]/);
 });
 

@@ -57,7 +57,7 @@ function isCJK(cp) {
 export function normalizeCopy(x) {
   let s = x === null || x === undefined ? '' : String(x); // 1
   s = s.replace(/[\u200B\u200C\u200D\uFEFF\u2060]/g, ''); // 2 零宽字符 ZWSP/ZWNJ/ZWJ/BOM/WJ
-  s = s.replace(/[\r\n\t]/g, ' '); // 3 换行/制表 → 单空格
+  s = s.replace(/[\r\n\t\u2028\u2029]/g, ' '); // 3 换行/制表/LS/PS → 单空格
   s = s.replace(/\s+/g, ' '); // 4 连续空白 → 单空格
   s = s.replace(/\u3000/g, ' '); // 5 全角空格 U+3000 → 半角
   s = s.trim(); // 6

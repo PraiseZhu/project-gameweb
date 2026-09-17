@@ -35,8 +35,19 @@ test('named modal runtime only wires openers listed in triggerFrom', () => {
   assert.match(renderer, /authorizedFrom\.has\(nodeId\)/);
   assert.match(renderer, /entry\.openerEls\.includes\(goHit\)/);
   assert.match(renderer, /entry\.openerEls\.includes\(openerHit\)/);
+  assert.match(renderer, /Same-name @go is not an opener/);
+  assert.doesNotMatch(renderer, /name === wantedGo \|\| String\(entry && entry\.id/);
   assert.doesNotMatch(renderer, /entry\.name === wanted/);
   assert.doesNotMatch(renderer, /entry\.name === '视频弹窗' && name === '播放按钮'/);
+  const scanAt = renderer.indexOf('const goScan = [');
+  const appendAt = renderer.lastIndexOf('frame.appendChild(host);');
+  const wiredAt = renderer.indexOf('frame.__fxNamedModals = wired;', appendAt);
+  assert.ok(scanAt > appendAt && wiredAt > scanAt, 'goScan must run after modal layers are on the host');
+  const block = renderer.slice(appendAt, wiredAt);
+  assert.match(block, /host\.querySelectorAll\('\[data-go\]'\)/);
+  assert.match(block, /authorizedFrom\.has\(nodeId\)/);
+  assert.doesNotMatch(block, /layer\.contains\(el\)/);
+  assert.doesNotMatch(block, /name === wantedGo/);
 });
 
 test('Main static leaves page clicks inert until Interaction opts in', () => {
@@ -50,7 +61,7 @@ test('Main static leaves page clicks inert until Interaction opts in', () => {
   const renderIntoAt = chrome.indexOf('function renderInto(container, state)');
   const nextFnAt = chrome.indexOf('\n  function ', renderIntoAt + 1);
   const renderInto = chrome.slice(renderIntoAt, nextFnAt > renderIntoAt ? nextFnAt : chrome.length);
-  assert.match(renderInto, /enablePageInteraction: new URLSearchParams\(location\.search\)\.get\('interaction'\) === '1'/);
+  assert.match(renderInto, /enablePageInteraction: \(function \(\)/);
   assert.doesNotMatch(renderInto, /enablePageInteraction:\s*true/);
   assert.doesNotMatch(renderInto, /enablePageInteraction: !!PRODUCT_VIEW/);
   const laterAxes = readFileSync(new URL('../lib/later-axes-probe.mjs', import.meta.url), 'utf8');
@@ -76,9 +87,18 @@ test('only language dropmenus consume inner btn as setPref lang', () => {
   assert.match(renderer, /Keep the owner host visible/);
   assert.match(renderer, /Keep the COMPONENT root: Property 1=on carries the panel/);
   assert.match(renderer, /Hidden on-state trees keep data-asset-src without src/);
-  assert.match(renderer, /frame\.__fxAssetScheduler\.prime\(target\)/);
+  assert.match(renderer, /Resting Property 1=on paints options on the host/);
+  assert.match(renderer, /frame\.__fxAssetScheduler\.prime\(owner\)/);
   assert.match(renderer, /Open panel must sit above later sticky siblings/);
   assert.match(renderer, /owner\.style\.zIndex = '50'/);
+  assert.match(renderer, /__fxDropmenuFieldH/);
+  assert.match(renderer, /data-dropmenu-host-height/);
+  assert.match(renderer, /data-btn-variant-slice/);
+  assert.doesNotMatch(renderer, /if \(fromName === 'on'\) return 'off'/);
+  assert.doesNotMatch(renderer, /fromName === 'on'[\s\S]{0,80}return 'off'/);
+  assert.match(renderer, /do not force on→off in the renderer/);
+  assert.match(renderer, /Resting paint[\s\S]{0,40}follows that source token/);
+  assert.doesNotMatch(renderer, /node\.paintAsFragment !== true/);
   assert.match(renderer, /ctx\.setPref === 'function'/);
   assert.match(renderer, /qa && typeof qa\.setPref === 'function'/);
 });
@@ -101,13 +121,14 @@ test('language dropmenu matches one option label, not the whole menu tree', () =
   assert.match(renderer, /syncLanguageDropmenuHighlight\(owner, currentPageLang\(\)\)/);
   assert.match(renderer, /frame\.__fxRenderPrefs = ctx\.prefs \|\| \{\}/);
   assert.match(renderer, /data-btn-variant-fill-source/);
-  assert.match(renderer, /authored COMPONENT root/);
+  assert.match(renderer, /authored COMPONENT fill/);
+  assert.match(renderer, /_variantPaintFills/);
   assert.doesNotMatch(renderer, /dropmenuLangFromNode/);
 });
 
 test('named modal overlays close when either side is exclusive', () => {
   assert.match(renderer, /exclusive: !\/\^\(\?:pc\|移动端\)\?视频弹窗\$\/\.test\(parsed\.label\)/);
-  assert.match(renderer, /other\.layer && other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) closeNamedModal\(other\)/);
+  assert.match(renderer, /other\.layer && other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) \{ skipModalReturn = true; closeNamedModal\(other\); \}/);
   assert.doesNotMatch(renderer, /entry\.exclusive && other\.exclusive/);
 });
 
@@ -196,14 +217,98 @@ test('named modal pin drops host zoom so Figma sheet is not scaled twice', () =>
   assert.doesNotMatch(pin, /const visibleW = frameRect\.width;/);
   assert.match(unpin, /modalHost\.style\.zoom = String\(pageStageScale \|\| k\)/);
   assert.match(unpin, /modalHost\.__fxNamedModalRest/);
+  assert.match(unpin, /modalHost\.style\.height = rest\.height \|\| '0px'/);
   assert.doesNotMatch(unpin, /pageMeta\.height/);
   assert.match(renderer, /rgba\(0,0,0,' \+ opacity \+ '\)/);
   assert.match(renderer, /frame\.style\.overflowY = 'hidden'/);
 });
 
+test('closed named-modal host does not occupy page scroll height', () => {
+  const mountAt = renderer.indexOf("host.className = 'fx-stage fx-named-modals'");
+  const restAt = renderer.indexOf('const hideInPlace = (node, hidden) =>', mountAt);
+  assert.ok(mountAt > 0 && restAt > mountAt);
+  const mount = renderer.slice(mountAt, restAt);
+  assert.match(mount, /host\.style\.height = '0px'/);
+  assert.match(mount, /data-named-modal-rest-height/);
+  assert.doesNotMatch(mount, /host\.style\.height = \(pageScrollHeight \|\| pageMeta\.height \|\| 0\) \+ 'px'/);
+  assert.match(renderer, /height: '0px'/);
+  assert.match(renderer, /chromePaintedBottom\(\)/);
+  assert.match(renderer, /pageBgBoardBottom/);
+});
+
+test('TEXT rotation uses Figma REST sign, not a second CSS invert', () => {
+  const textAt = renderer.indexOf("tf.push('rotate(' + n.rotation + 'rad)')");
+  assert.ok(textAt > 0, 'TEXT path must rotate with the REST sign');
+  assert.match(renderer, /data-text-rotation-source/);
+  const around = renderer.slice(textAt, textAt + 180);
+  assert.doesNotMatch(around, /\(-n\.rotation\)/);
+  assert.match(renderer, /data-text-rotation-box/);
+  assert.match(renderer, /unrotated-local/);
+  assert.match(renderer, /el\.style\.transformOrigin = 'center center'/);
+  assert.match(renderer, /_unrotatedTextLayout/);
+  assert.match(renderer, /data-text-rotation-size/);
+  assert.match(renderer, /rotated-single-line/);
+  assert.match(renderer, /data-text-rotation-nowrap/);
+  assert.match(renderer, /data-text-rotation-slot/);
+  assert.match(renderer, /data-text-rotation-align/);
+  assert.match(renderer, /visual-aabb-flex-center/);
+  assert.doesNotMatch(renderer, /glyphNudge/);
+  assert.doesNotMatch(renderer, /data-text-rotation-nudge/);
+  assert.match(renderer, /rotatedNowrap && rotatedFitW/);
+  assert.doesNotMatch(renderer, /n\.fitOwnerFromSkipped && n\.fitOwnerFromSkipped\.maxWidth/);
+});
+
+test('alternate component-set layers still follow img/+lang', () => {
+  const marker = "data-switch-variant-mount-status', 'owner-local-mutually-exclusive'";
+  const mountAt = renderer.lastIndexOf(marker);
+  assert.ok(mountAt > 0, 'variant mount');
+  const paintAt = renderer.lastIndexOf('paint(treeNodes', mountAt);
+  const paintCall = renderer.slice(paintAt, mountAt);
+  assert.match(paintCall, /suppressInteractions:\s*true/);
+  assert.match(renderer, /Language img\/\+lang \(and/);
+  assert.match(renderer, /langFollowOwner \|\| \(!suppressInteractions && componentTree\)/);
+  assert.doesNotMatch(renderer, /if \(!suppressInteractions && pfx !== 'switch'/);
+});
+
+test('component-set switch stays wired when dots are fewer than variants', () => {
+  assert.match(renderer, /partial-source-order|variant-graph-without-complete-controls|controls\.length <= pageCount/);
+  assert.match(renderer, /Arrows and swipe still own the full variant graph/);
+  assert.match(renderer, /variants\[\]\.nodes/);
+  assert.match(renderer, /Math\.max\(selectable\.length, variantCount\)/);
+  assert.match(renderer, /!pages\.length && !controls\.length\) return/);
+});
+
+test('carousel swipe and dots share applySwitch even without a complete variant mount', () => {
+  assert.match(renderer, /const switchSwipeOwner = \(target\) =>/);
+  assert.match(renderer, /target\.closest\('\[data-switch-owner\]'\)/);
+  assert.doesNotMatch(renderer, /owner-local-mutually-exclusive'\) return null/);
+  assert.match(renderer, /incompleteVariantOwners\.length === variantOwners\.length && !pages\.length && !controls\.length\) return/);
+  assert.match(renderer, /fileForState/);
+  assert.doesNotMatch(renderer, /'397:35947'/);
+  assert.doesNotMatch(renderer, /assets\/figma-indicator-active-alpha\.webp/);
+  assert.match(renderer, /Math\.abs\(dy\) > Math\.abs\(delta\) \+ 2/);
+});
+
+test('applySwitch commits content before index and indicators', () => {
+  const applyAt = renderer.indexOf('const applySwitch = (sid, requested, assetsPrepared = false) => {');
+  const nextAt = renderer.indexOf('const fixedNavigation', applyAt);
+  assert.ok(applyAt > 0 && nextAt > applyAt);
+  const body = renderer.slice(applyAt, nextAt);
+  const variantApply = body.indexOf('applyComponentVariantLayers(el, previousIndex, idx)');
+  const pages = body.indexOf('for (const el of pages)');
+  const ind = body.indexOf('applyIndicatorVariant(sid, idx)');
+  const indexCommit = body.indexOf("el.setAttribute('data-switch-index', String(idx))");
+  assert.ok(variantApply > 0 && variantApply < pages, 'content layers before pages');
+  assert.ok(pages > 0 && pages < ind, 'pages before indicators');
+  assert.ok(ind > 0 && ind < indexCommit, 'indicators before index commit');
+  assert.match(body, /if \(!applyComponentVariantLayers\(el, previousIndex, idx\)\)/);
+  assert.match(body, /if \(!pages\.length\) return;/);
+  assert.match(body, /if \(!appliedVariantOwners\.length && !pages\.length\) return;/);
+});
+
 test('full rebuild restores open named modals instead of closing them', () => {
   assert.match(renderer, /restoreOpenModalNames = this\._openNamedModalNames\(frame\)/);
-  assert.match(renderer, /_restoreOpenNamedModals\(frame, restoreOpenModalNames\)/);
+  assert.match(renderer, /_restoreOpenNamedModals\(frame, restoreOpenModalNames/);
   assert.match(renderer, /data-modal-open="true"/);
   assert.match(renderer, /Official named popup stays mounted across window resize/);
   assert.match(renderer, /_matchNamedModalByTopic/);
@@ -218,7 +323,7 @@ test('opening a named modal closes every other open named modal first', () => {
   const assignAt = renderer.indexOf('frame.__fxOpenNamedModal = openNamedModal;', openAt);
   assert.ok(openAt > 0 && assignAt > openAt);
   const open = renderer.slice(openAt, assignAt);
-  assert.match(open, /other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) closeNamedModal\(other\)/);
+  assert.match(open, /other\.layer\.getAttribute\('data-modal-open'\) === 'true'\) \{ skipModalReturn = true; closeNamedModal\(other\); \}/);
   assert.doesNotMatch(open, /entry\.exclusive && other\.exclusive/);
   assert.doesNotMatch(renderer, /exclusive: parsed\.label !== '视频弹窗'/);
   assert.doesNotMatch(renderer, /exclusive: true/);
@@ -234,4 +339,61 @@ test('unresolved model does not emit a direct-child runtime bridge', () => {
   ]));
   assert.equal(unresolved.switches.length, 0);
   assert.ok(!unresolved.attributes.some((entry) => entry.attrs['data-switch-page'] != null));
+});
+
+/* ── 手机预约弹窗三 bug（2026-09-10 用户截图）──────────────────────────────
+   1) 移动端韩语/繁中勾选按钮缺失
+   2) 移动端 tw 地区菜单展开被裁
+   3) tw 选完地区应收起（state=off，高度回 fieldH）
+   三条都靠「页实例对 COMPONENT 做了统一缩放」这一事实，行为和 PC 同一套代码。 */
+test('手机勾选按钮：统一缩放的页实例仍走变体根切片，不再 blocked', () => {
+  /* 页实例 30×25 vs 母版 46.42×38.73 → 比例 ≈0.646，属统一缩放。 */
+  assert.match(renderer, /_isUniformInstanceScale/);
+  assert.match(renderer, /btnUniformScale/);
+  assert.match(renderer, /aspect-mismatch/);
+  assert.match(renderer, /Math\.abs\(Number\(rootBox\.h\) - ownerHeight\) > 0\.5/);
+  assert.match(renderer, /data-btn-variant-scale/);
+  /* 统一缩放时主图按实例框贴合，而不是按母版自然尺寸溢出。 */
+  assert.match(renderer, /fitToBox: btnUniformScale/);
+  assert.match(renderer, /instance-uniform-scale-fill/);
+  /* 仍然禁止用 CSS 画勾：勾必须来自变体根切片。 */
+  assert.doesNotMatch(renderer, /勾选按钮['"]\s*\)[\s\S]{0,200}clip-path/);
+});
+
+test('手机地区菜单：展开 clone 用母版根宽再缩一次，不被二次缩小裁掉', () => {
+  /* 曾经 layer.style.width='100%' 拿到的是已缩放的宿主宽，再叠 scale 就二次缩小，
+     面板右侧被 layer 的 overflow:hidden 裁掉（截图里只剩半截字）。 */
+  assert.match(renderer, /layer\.style\.width = \(uniformScale \? Number\(rootBox\.w\) : '100%'\)/);
+  assert.match(renderer, /展开被裁/);
+});
+
+test('地区菜单选完必须收起：innerBtn 命中 closeDropmenuOwners，且不再被 toggle 重开', () => {
+  assert.match(renderer, /const clickedOpenOption = Boolean\(innerBtn && dropmenuOwner && dropmenuOwner\.contains\(innerBtn\)/);
+  assert.match(renderer, /if \(clickedOpenOption\) \{[\s\S]{0,1200}?closeDropmenuOwners\(frame\);/);
+  /* toggle 只允许发生在「展开态里没有点选项」的情况下，否则会在 close 之后又打开。 */
+  assert.match(renderer, /&& !clickedOpenOption\) \{[\s\S]{0,120}?toggleDropmenu\(dropmenuOwner\)/);
+  /* 关态高度必须回到可见字段高，而不是留在 on 根高。 */
+  assert.match(renderer, /owner\.el\.setAttribute\('data-dropmenu-host-height', state === 'on' \? 'open-variant-root' : 'closed-field'\)/);
+});
+
+test('named modal persist scores locale, return routing, brand copy, and pack hashes', () => {
+  assert.match(renderer, /_persistNamedModal/);
+  assert.match(renderer, /_resolveModalReturn/);
+  assert.match(renderer, /_authorizeNamedModalOpen/);
+  assert.match(renderer, /complete-closes-to-page/);
+  assert.match(renderer, /rules-return-to-reservation/);
+  assert.match(renderer, /outside-painted-hit/);
+  assert.match(renderer, /data-modal-fit-k/);
+  assert.match(renderer, /_calendarBrandCopy/);
+  assert.match(renderer, /Outlook\\.com/);
+  const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
+  assert.match(chrome, /enablePageInteraction: \(function \(\)/);
+  assert.match(chrome, /PRODUCT_VIEW/);
+  const pack = readFileSync(new URL('../pack-demo.mjs', import.meta.url), 'utf8');
+  assert.match(pack, /out\.hashes/);
+  assert.match(pack, /indexHtml/);
+  assert.match(renderer, /returnTo: returnTo || null/);
+  assert.match(renderer, /data-modal-source-name/);
+  assert.match(renderer, /data-modal-return-to/);
+  assert.match(renderer, /sourceEntry = this\._matchNamedModalByTopic\(wired, rec\.sourceName, prefs\)/);
 });

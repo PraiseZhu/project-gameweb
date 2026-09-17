@@ -315,6 +315,28 @@ export function cropPng(PNG, src, { x = 0, y = 0, w, h } = {}) {
   return out;
 }
 
+export function scalePng(PNG, src, width, height) {
+  const destW = Math.round(Number(width));
+  const destH = Math.round(Number(height));
+  if (!src || !(src.width > 0) || !(src.height > 0)) throw new Error('scalePng source invalid');
+  if (!(destW > 0) || !(destH > 0)) throw new Error('scalePng size invalid');
+  if (src.width === destW && src.height === destH) return src;
+  const out = new PNG({ width: destW, height: destH });
+  for (let row = 0; row < destH; row += 1) {
+    const srcRow = Math.min(src.height - 1, Math.floor((row + 0.5) * src.height / destH));
+    for (let col = 0; col < destW; col += 1) {
+      const srcCol = Math.min(src.width - 1, Math.floor((col + 0.5) * src.width / destW));
+      const si = (srcRow * src.width + srcCol) * 4;
+      const di = (row * destW + col) * 4;
+      out.data[di] = src.data[si];
+      out.data[di + 1] = src.data[si + 1];
+      out.data[di + 2] = src.data[si + 2];
+      out.data[di + 3] = src.data[si + 3];
+    }
+  }
+  return out;
+}
+
 export function assertExportNotFlattened({ png, frameBox, scale, allowOverflow = false }) {
   const box = geom(frameBox);
   if (!box) throw new Error('frame pageBox missing for flatten check');
@@ -354,6 +376,68 @@ function boxesOverlap(a, b) {
     && left.x + left.w > right.x
     && left.y < right.y + right.h
     && left.y + left.h > right.y;
+}
+
+function pageBoxOfInventory(inventory) {
+  return geom(inventory?.page?.pageBox || inventory?.page?.box);
+}
+
+function isFirstSectionOfPage(inventory, section) {
+  const pageBox = pageBoxOfInventory(inventory);
+  const sectionBox = geom(section?.pageBox);
+  if (!pageBox || !sectionBox) return false;
+  return Number(sectionBox.y) <= Number(pageBox.y) + 1;
+}
+
+function isCoveringPlateNode(node, pageBox) {
+  const name = String(node?.name || '');
+  const role = String(node?.role || '');
+  const plate = role === 'bg' || role === 'kv' || name.startsWith('bg/') || name === 'kv' || name.startsWith('kv/');
+  if (!plate) return false;
+  const box = geom(node.pageBox || node.box);
+  if (!box || !pageBox) return false;
+  return Math.abs(box.x - pageBox.x) <= 1
+    && Math.abs(box.w - pageBox.w) <= 1
+    && box.h + 1 >= pageBox.h;
+}
+
+export function coveringPlateNodes(inventory) {
+  const pageBox = pageBoxOfInventory(inventory);
+  if (!pageBox) return [];
+  const pageId = String(inventory?.page?.id || '');
+  const nodes = asArray(inventory?.nodes);
+  const byId = new Map(nodes.filter((node) => node?.id).map((node) => [String(node.id), node]));
+  const out = [];
+  const seen = new Set();
+  const push = (node) => {
+    if (!node?.id || seen.has(String(node.id))) return;
+    seen.add(String(node.id));
+    out.push(node);
+  };
+  for (const node of nodes) {
+    if (pageId && String(node?.parentId || '') !== pageId) continue;
+    if (isCoveringPlateNode(node, pageBox)) push(node);
+  }
+  for (const entry of asArray(inventory?.backgrounds)) {
+    const node = byId.get(String(entry?.id || ''));
+    if (node) push(node);
+  }
+  return out;
+}
+
+export function pageStickyFixNodes(inventory) {
+  const pageId = String(inventory?.page?.id || '');
+  if (!pageId) return [];
+  const overlayIds = new Set(
+    asArray(inventory?.overlays)
+      .filter((entry) => entry && (entry.role === 'fix' || entry.pin === 'viewport'))
+      .map((entry) => String(entry.id)),
+  );
+  return asArray(inventory?.nodes).filter((node) => {
+    if (String(node?.parentId || '') !== pageId) return false;
+    const name = String(node?.name || '');
+    return name.startsWith('fix/') || overlayIds.has(String(node.id));
+  });
 }
 
 export function loadHandoffInventory(handoffDir, platform) {
@@ -490,6 +574,9 @@ export function sectionLiveCopyMasks(inventory, section) {
     });
   };
   for (const node of byParent.get(String(section.id || '')) || []) visit(node);
+  if (isFirstSectionOfPage(inventory, section)) {
+    for (const overlay of pageStickyFixNodes(inventory)) visit(overlay);
+  }
   return masks;
 }
 
@@ -585,9 +672,28 @@ export function sectionPaintExports(inventory, section) {
       analogueOf: analogues[0]?.id ? String(analogues[0].id) : null,
     });
   };
+  const coveringPaints = [];
+  for (const plate of coveringPlateNodes(inventory)) {
+    const box = geom(plate.pageBox || plate.box);
+    if (!box) throw new Error(`${plate.id}: covering plate pageBox missing`);
+    coveringPaints.push({
+      frameId: String(plate.id),
+      destBox: box,
+      sourceBox: box,
+      kind: 'covering-plate',
+      exportScale: pickExportScale(box),
+      orderKey: `0.${orderOf(plate)}`,
+      analogueIds: [],
+    });
+  }
   const roots = byParent.get(String(section.id || '')) || [];
   for (const node of roots) visit(node);
-  return out.sort((a, b) => a.orderKey.localeCompare(b.orderKey, undefined, { numeric: true }));
+  const sectionPaints = out.splice(0);
+  if (isFirstSectionOfPage(inventory, section)) {
+    for (const overlay of pageStickyFixNodes(inventory)) visit(overlay);
+  }
+  const byOrder = (a, b) => a.orderKey.localeCompare(b.orderKey, undefined, { numeric: true });
+  return [...coveringPaints.sort(byOrder), ...sectionPaints.sort(byOrder), ...out.sort(byOrder)];
 }
 
 export function sectionFixOverlays(inventory, section) {

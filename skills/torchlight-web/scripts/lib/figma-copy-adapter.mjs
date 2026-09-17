@@ -29,7 +29,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { extractCopy } from './figma-copy-match.mjs';
+import { parsePhaseRows, extractCopy } from './figma-copy-match.mjs';
 import { cellLines } from './figma-copy-structure.mjs';
 import { collectFigmaTexts, collectInventoryTexts, inventoryCopyNodes } from './figma-copy-coverage.mjs';
 import { buildAncestorMap, deriveContext } from './figma-copy-context.mjs';
@@ -296,6 +296,7 @@ function inventorySectionIds(inventory) {
 
 function contextsFromInventory(inventory, texts) {
   const nodes = inventoryCopyNodes(inventory);
+
   const byId = new Map(nodes.filter((node) => node && node.id).map((node) => [String(node.id), node]));
   const contexts = new Map();
   for (const text of texts) {
@@ -335,6 +336,19 @@ export function buildHandoffCopyEnvelope({ demoDir, spec = {}, pcInventory = nul
     return { byNode: {}, report: { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [] }, unread: [], sourceTexts: [], larkSnap: larkSnap || null };
   }
   const { at, larkLeaf } = larkTools(absDemo, larkSnap, spec);
+  let declaredPhaseRows;
+  try { declaredPhaseRows = at(larkSnap, '/_meta/phaseRows'); } catch { declaredPhaseRows = null; }
+  const phaseGate = parsePhaseRows(declaredPhaseRows);
+  if (!phaseGate.ok) {
+    return {
+      byNode: {},
+      report: { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [], phaseRowsProblem: phaseGate.problem },
+      unread: [{ matchKind: 'none', reason: phaseGate.problem }],
+      sourceTexts: [],
+      larkSnap,
+      problems: [phaseGate.problem],
+    };
+  }
   const designations = existsSync(join(absDemo, 'copy-designations.json')) ? readJson(join(absDemo, 'copy-designations.json')) : null;
   const overlay = designationsToOverlay(designations, larkSnap);
   const report = { plats: {}, totals: { texts: 0, bound: 0, unread: 0 }, contextual: [] };

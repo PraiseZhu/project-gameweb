@@ -1,6 +1,7 @@
 /* name-semantics + owner-model 的单元测试。【通用 Skill 层，纯函数，无 IO】
  * 跑法：node scripts/__tests__/name-semantics.test.mjs */
 import { parseLayerName, deriveRole, assetPolicyHint, bgScopeHint, auditNames, pageUsesIndicatorRole, KNOWN_ROLES, LEGACY_COMPATIBILITY_ROLES } from '../lib/figma-name-semantics.mjs';
+import { collectUsedIndicatorComponentIds } from '../lib/indicator-component-ids.mjs';
 import { STRUCT_CONTRACT, checkStructContract, isPassthroughContainer, classifyBgScope, auditStructure } from '../lib/figma-owner-model.mjs';
 
 let pass = 0, fail = 0;
@@ -41,6 +42,21 @@ F('有 ind/ owner 才算进度条页', pageUsesIndicatorRole({ sections: { 'sec:
 F('provenance 包一层也能认出 ind/', pageUsesIndicatorRole({ value: { id: '2', name: 'ind/进度条', type: 'INSTANCE' }, provenance: { src: 'figma' } }) === true);
 F('没有图层 id 的 name 不算进度条页', pageUsesIndicatorRole({ name: 'ind/进度条', type: 'INSTANCE' }) === false);
 F('空 truth 不算进度条页', pageUsesIndicatorRole(null) === false);
+F('收集当前稿 ind/ 实际用到的 componentId', (() => {
+  const ids = collectUsedIndicatorComponentIds({
+    sections: { 'sec:1': { nodes: [
+      { id: '1:2', type: 'INSTANCE', name: 'ind/轮播点', componentId: '2:2424' },
+      { id: '1:3', type: 'INSTANCE', name: 'ind/轮播点', componentId: '2:2429' },
+    ] } },
+  });
+  return ids.sort().join(',') === '2:2424,2:2429';
+})());
+F('没有 componentId 的 ind/ 不编造旧根', collectUsedIndicatorComponentIds({
+  sections: { 'sec:1': { nodes: [{ id: '1:2', type: 'INSTANCE', name: 'ind/进度条' }] } },
+}).length === 0);
+F('无 ind/ 不收集指示器 componentId', collectUsedIndicatorComponentIds({
+  sections: { 'sec:1': { nodes: [{ id: '1:1', type: 'FRAME', name: 'sec/1', componentId: '397:35947' }] } },
+}).length === 0);
 
 console.log('— assetPolicyHint —');
 F('bg/ → wantAsset', assetPolicyHint({ name: 'bg/pc', type: 'INSTANCE' }).wantAsset === true);

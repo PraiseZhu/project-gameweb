@@ -57,6 +57,27 @@ function visibleFillsOf(node) {
 
 const CSS_PAINTABLE_FRAGMENT = new Set(['REGULAR_POLYGON', 'ELLIPSE', 'STAR', 'LINE']);
 
+/* The region dropmenu's on-state sheet is an authored solid Rectangle inside
+   a skipped art-fragment group. Keep that fragment as paintable material so
+   omitSkippedNodes does not erase the panel behind the live option instances;
+   its status remains skipped and it never becomes an interaction owner. */
+function isDropmenuPanelFragment(node, byId) {
+  if (!isPlainObject(node) || !isSkipped(node)) return false;
+  if (String(node.why || '') !== 'art-fragment' || node.isMask === true) return false;
+  if (String(node.type || '').toUpperCase() !== 'RECTANGLE') return false;
+  if (!firstVisibleSolidFill(node) && !firstGradientFill(node)) return false;
+  const seen = new Set();
+  let parentId = node.parentId;
+  while (parentId && !seen.has(String(parentId))) {
+    seen.add(String(parentId));
+    const parent = byId?.get(String(parentId));
+    if (!parent) return false;
+    if (!isSkipped(parent)) return parent.status === 'determined' && parent.role === 'dropmenu';
+    parentId = parent.parentId;
+  }
+  return false;
+}
+
 function firstVisibleSolidFill(node) {
   return visibleFillsOf(node).find((fill) => String(fill.type || '') === 'SOLID') || null;
 }
@@ -68,11 +89,28 @@ function firstVisibleSolidFill(node) {
  * Keep the skipped status so from-handoff does not treat it as wired, and
  * stamp paintAsFragment so the truth tree can draw it without inventing a role.
  */
+function visibleStrokeOf(node) {
+  const stroke = node?.strokeColor || node?.style?.strokeColor || null;
+  if (!stroke || stroke.visible === false) return null;
+  return stroke;
+}
+
 function isCssPaintableArtFragment(node) {
   if (!isPlainObject(node) || !isSkipped(node)) return false;
   if (String(node.why || '') !== 'art-fragment') return false;
   if (node.isMask === true) return false;
-  if (!CSS_PAINTABLE_FRAGMENT.has(String(node.type || '').toUpperCase())) return false;
+  const type = String(node.type || '').toUpperCase();
+  const strokeWeight = Number(node.strokeWeight ?? node.style?.strokeWeight);
+  const hasStroke = Boolean(visibleStrokeOf(node) && strokeWeight > 0);
+  const renderH = Number(node.renderBox && node.renderBox.h);
+  const layoutH = Number(node.box && node.box.h);
+  const strokedVector = type === 'VECTOR' && hasStroke
+    && (Number.isFinite(renderH) && renderH > 0.5 || (Number.isFinite(layoutH) && layoutH < 0.5 && renderH > 0));
+  const lineVector = type === 'VECTOR' && /^line(?:\s|$)/i.test(String(node.name || ''));
+  if (!CSS_PAINTABLE_FRAGMENT.has(type) && !lineVector && !strokedVector) return false;
+  if (type === 'LINE' || lineVector || strokedVector) {
+    return hasStroke;
+  }
   return Boolean(firstVisibleSolidFill(node) || firstGradientFill(node));
 }
 
@@ -99,6 +137,12 @@ function passthroughDrawFields(entry) {
     sliceExport: entry.sliceExport ?? null,
     text: entry.text ?? null,
     layout: entry.layout ?? null,
+    fillGeometry: entry.fillGeometry ?? null,
+    localSize: entry.localSize ?? null,
+    relativeTransform: entry.relativeTransform ?? null,
+    pointCount: entry.pointCount ?? null,
+    strokeWeight: entry.strokeWeight ?? entry.style?.strokeWeight ?? null,
+    strokeColor: entry.strokeColor ?? entry.style?.strokeColor ?? null,
     ...(entry.replaceable === true ? { replaceable: true, assetKey: entry.assetKey ?? null } : {}),
   };
 }
@@ -107,6 +151,35 @@ function passthroughDrawFields(entry) {
  * Restore visual material that inventory skipped as art-fragment / slice-child
  * onto a legal owner. Never paint the skipped node itself.
  */
+function kvCoverAnchorFromSkipped(owner, skippedChildren) {
+  const name = String(owner && owner.name || '');
+  const role = String(owner && owner.role || '');
+  if (!/^kv(?:\/|$)/i.test(name) && role !== 'kv') return null;
+  const ownerBox = owner.pageBox || owner.box;
+  const ownerH = Number(ownerBox && ownerBox.h);
+  if (!(ownerH > 0)) return null;
+  let best = null;
+  for (const child of asArray(skippedChildren)) {
+    if (!isPlainObject(child)) continue;
+    if (String(child.type || '').toUpperCase() !== 'RECTANGLE') continue;
+    const box = child.pageBox || child.box;
+    const y = Number(box && box.y);
+    const h = Number(box && box.h);
+    if (!Number.isFinite(y) || !Number.isFinite(h) || !(h > ownerH * 0.2)) continue;
+    const bottom = y + h;
+    if (!(bottom > ownerH * 0.6)) continue;
+    if (!best || bottom > best.bottom) {
+      best = {
+        via: child.why || 'art-fragment',
+        sourceId: child.id || null,
+        bottom,
+        box: { x: Number(box.x) || 0, y, w: Number(box.w) || 0, h },
+      };
+    }
+  }
+  return best;
+}
+
 function liftOwnerComposite(owner, skippedChildren) {
   if (!isPlainObject(owner) || isSkipped(owner)) return owner;
   const next = { ...owner };
@@ -127,6 +200,8 @@ function liftOwnerComposite(owner, skippedChildren) {
       };
     }
   }
+  const coverAnchor = kvCoverAnchorFromSkipped(next, skippedChildren);
+  if (coverAnchor) next.coverAnchor = coverAnchor;
   if (Array.isArray(owner.nodes)) next.nodes = omitSkippedNodes(owner.nodes);
   return next;
 }
@@ -151,6 +226,7 @@ function coversOwnerPageBox(node, owner) {
 
 function keepSkippedPaintNode(node, byId = null) {
   if (isCssPaintableArtFragment(node)) return { ...node, paintAsFragment: true };
+  if (isDropmenuPanelFragment(node, byId)) return { ...node, paintAsFragment: true };
   /* bg/ is the whole listed export. Do not restore skipped slice-child KV sheets. */
   return null;
 }
@@ -187,7 +263,7 @@ function isAutoLayoutMaxOwner(node) {
  *  the same caps onto the live TEXT so the numbers stay locked. */
 function relinkSkippedMaxOwners(nodes, byId) {
   return asArray(nodes).map((node) => {
-    if (!isPlainObject(node) || isSkipped(node)) return node;
+    if (!isPlainObject(node) || (isSkipped(node) && !node.paintAsFragment)) return node;
     let parentId = node.parentId;
     const seen = new Set([String(node.id || '')]);
     let inherited = null;
@@ -199,22 +275,49 @@ function relinkSkippedMaxOwners(nodes, byId) {
         const next = { ...node, parentId: parent.id };
         if (inherited) {
           const layout = isPlainObject(next.layout) ? { ...next.layout } : {};
+          const selfWidth = layoutCap(layout, 'maxWidth');
+          const selfHeight = layoutCap(layout, 'maxHeight');
           if (inherited.maxWidth != null && layoutCap(layout, 'maxWidth') == null) layout.maxWidth = inherited.maxWidth;
           if (inherited.maxHeight != null && layoutCap(layout, 'maxHeight') == null) layout.maxHeight = inherited.maxHeight;
           next.layout = layout;
+          next.layoutCapSelf = { maxWidth: selfWidth, maxHeight: selfHeight };
           next.fitOwnerFromSkipped = {
             sourceId: inherited.sourceId,
             maxWidth: inherited.maxWidth,
             maxHeight: inherited.maxHeight,
+            layoutMode: inherited.layoutMode,
+            layoutSizingHorizontal: inherited.layoutSizingHorizontal,
+            layoutSizingVertical: inherited.layoutSizingVertical,
+            box: inherited.box || null,
+            axisSource: {
+              maxWidth: selfWidth != null ? 'self' : (inherited.maxWidth != null ? 'inherited' : null),
+              maxHeight: selfHeight != null ? 'self' : (inherited.maxHeight != null ? 'inherited' : null),
+            },
           };
+          const ownerBox = parent.pageBox || parent.box;
+          const childBox = next.pageBox || next.box;
+          if (ownerBox && childBox && Number.isFinite(Number(ownerBox.x)) && Number.isFinite(Number(childBox.x))) {
+            next.parentBox = {
+              x: Number(childBox.x) - Number(ownerBox.x),
+              y: Number(childBox.y) - Number(ownerBox.y),
+              w: Number(childBox.w),
+              h: Number(childBox.h),
+            };
+          }
         }
         return next;
       }
       if (!inherited && isAutoLayoutMaxOwner(parent)) {
+        const sizingH = parent.layout && parent.layout.layoutSizingHorizontal;
+        const sizingV = parent.layout && parent.layout.layoutSizingVertical;
         inherited = {
           sourceId: parent.id,
           maxWidth: layoutCap(parent.layout, 'maxWidth'),
           maxHeight: layoutCap(parent.layout, 'maxHeight'),
+          layoutMode: parent.layout && parent.layout.layoutMode ? String(parent.layout.layoutMode) : undefined,
+          layoutSizingHorizontal: sizingH != null && sizingH !== '' ? String(sizingH) : undefined,
+          layoutSizingVertical: sizingV != null && sizingV !== '' ? String(sizingV) : undefined,
+          box: parent.pageBox || parent.box || null,
         };
       }
       parentId = parent.parentId;
@@ -580,6 +683,9 @@ function isInsideModal(node, modalIds, byId) {
  *
  * Ambiguous matches (two video modals, no platform) stay unknown.
  * A play button that already lives under a modal tree must not reopen it.
+ * A determined `@go` inside a modal may still open a *different* uniquely
+ * named modal (KR `btn/详细按钮@go=modal/pc弹窗详细规则1`). Same-host `@go`
+ * stays skipped so a player does not reopen its own overlay.
  */
 const NAMING_MODAL_CONTRACTS = Object.freeze([
   { openerLabel: '播放按钮', modalLabel: '视频弹窗' },
@@ -598,6 +704,22 @@ function platformOf(value) {
   return null;
 }
 
+function enclosingModalId(node, modalIds, byId) {
+  if (!node) return null;
+  if (modalIds.has(node.id)) return node.id;
+  for (const id of asArray(node.ownerPath)) {
+    if (modalIds.has(String(id))) return String(id);
+  }
+  let current = node;
+  for (let guard = 0; guard < 16 && current; guard++) {
+    const parentId = current.parentId;
+    if (parentId == null) break;
+    if (modalIds.has(String(parentId))) return String(parentId);
+    current = byId.get(String(parentId));
+  }
+  return null;
+}
+
 function collectNamedGoOpeners(nodes, { byName, modalIds, byId, requirePlatform }) {
   const extra = [];
   const openers = [];
@@ -607,7 +729,6 @@ function collectNamedGoOpeners(nodes, { byName, modalIds, byId, requirePlatform 
   for (const node of openers) {
     const parsed = splitInventoryName(node.name);
     if (parsed.role !== 'btn' && parsed.role !== 'hot') continue;
-    if (isInsideModal(node, modalIds, byId)) continue;
     const go = goParamOf(node);
     if (go == null || go === true || go === '') continue;
     const named = modalsNamed(byName, go);
@@ -619,6 +740,8 @@ function collectNamedGoOpeners(nodes, { byName, modalIds, byId, requirePlatform 
       })
       : named;
     if (hits.length !== 1) continue;
+    const hostModalId = enclosingModalId(node, modalIds, byId);
+    if (hostModalId && hostModalId === hits[0].id) continue;
     extra.push({
       toId: hits[0].id,
       fromId: node.id,
@@ -645,6 +768,14 @@ function namedGoModalTriggers(inv) {
   const byName = groupModalsByName(modals);
   const extra = collectNamedGoOpeners(inv.nodes, { byName, modalIds, byId, requirePlatform: true });
   const seen = new Set(extra.map((entry) => `${entry.fromId}->${entry.toId}`));
+  const modalTrees = [];
+  for (const modal of modals) modalTrees.push(...asArray(modal.nodes));
+  for (const entry of collectNamedGoOpeners(modalTrees, { byName, modalIds, byId, requirePlatform: false })) {
+    const key = `${entry.fromId}->${entry.toId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    extra.push(entry);
+  }
   const variantTrees = [];
   for (const set of componentSets) {
     variantTrees.push(...asArray(set.nodes));

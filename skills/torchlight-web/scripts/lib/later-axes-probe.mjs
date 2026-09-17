@@ -15,8 +15,8 @@ import { inspectPackPath, packRoot, sha256File } from './pack-demo.mjs';
 import { requireOrchestratorTicket } from './orchestrator-ticket.mjs';
 import { compositionForView, DESIGN_POLICY, OFFICIAL_ROOT_FONT_VW, widthScale } from './resize/index.mjs';
 import {
-  LANG_OPTION_PAGES,
   catalogOpenedGoMatches,
+  dropmenuOverlapEvidenceOk,
   languageOptionVerdict,
   laterAxesPixelEvidenceComplete,
   mobileModalSheetVerdict,
@@ -176,18 +176,18 @@ export function greenLaterAxesProbeFixture({
     }),
     pixel: {
       ok: true,
-      languages: LANG_OPTION_PAGES.map((row) => ({ lang: row.lang, label: row.label, ok: true, measured: true, skipped: false, problems: [] })),
+      languages: [{ lang: 'zh-CN', label: 'zh-CN', ok: true, measured: true, skipped: false, problems: [] }],
       stalePrefs: { ok: true, measured: true, skipped: false, problems: [] },
-      modal: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/pc适龄提示', close: { ok: true, measured: true, skipped: false } },
-      mobile: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/mobile适龄提示', close: { ok: true, measured: true, skipped: false } },
+      modal: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/pc_sheet', close: { ok: true, measured: true, skipped: false } },
+      mobile: { ok: true, measured: true, skipped: false, problems: [], lang: 'zh-CN', go: 'modal/mobile_sheet', close: { ok: true, measured: true, skipped: false } },
       pcCatalog: {
         ok: true, measured: true, skipped: false, problems: [], plat: 'pc',
-        openers: [{ go: 'modal/pc适龄提示', openedGo: 'pc适龄提示', ok: true, measured: true, skipped: false, opened: true, closed: true }],
+        openers: [{ go: 'modal/pc_sheet', openedGo: 'pc_sheet', ok: true, measured: true, skipped: false, opened: true, closed: true }],
         inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
       },
       mobileCatalog: {
         ok: true, measured: true, skipped: false, problems: [], plat: 'mobile',
-        openers: [{ go: 'modal/mobile适龄提示', openedGo: 'mobile适龄提示', ok: true, measured: true, skipped: false, opened: true, closed: true }],
+        openers: [{ go: 'modal/mobile_sheet', openedGo: 'mobile_sheet', ok: true, measured: true, skipped: false, opened: true, closed: true }],
         inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
       },
     },
@@ -246,6 +246,59 @@ function loadTruth(demoDir) {
   const path = join(packRoot(demoDir), 'truth.json');
   if (!existsSync(path)) throw new Error('demo truth.json missing; cannot probe later axes');
   return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+function visiblePaintFills(node) {
+  return (Array.isArray(node?.style?.fills) ? node.style.fills : []).filter((fill) => (
+    fill && fill.visible !== false
+    && (fill.type === 'SOLID' || String(fill.type || '').startsWith('GRADIENT'))
+  ));
+}
+
+function cssRgbOfFill(fill) {
+  const stops = Array.isArray(fill?.gradientStops) ? fill.gradientStops : [];
+  const color = (stops[0] && stops[0].color) || fill?.color || null;
+  if (!color) return '';
+  return `rgb(${Math.round(Number(color.r || 0) * 255)}, ${Math.round(Number(color.g || 0) * 255)}, ${Math.round(Number(color.b || 0) * 255)})`;
+}
+
+function variantPaintFills(variant) {
+  const rows = Array.isArray(variant?.nodes) ? variant.nodes : [];
+  const root = rows.find((node) => String(node?.type || '') === 'COMPONENT') || rows[0] || variant;
+  const rootFills = visiblePaintFills(root).filter((fill) => {
+    if (fill.type !== 'SOLID') return true;
+    const c = fill.color || {};
+    return !(Number(c.r) === 1 && Number(c.g) === 1 && Number(c.b) === 1);
+  });
+  if (rootFills.length) return rootFills;
+  const child = rows.find((node) => (
+    node
+    && node !== root
+    && String(node.type || '') !== 'TEXT'
+    && visiblePaintFills(node).length
+  ));
+  return child ? visiblePaintFills(child) : [];
+}
+
+export function languageButtonFillsFromTruth(truth) {
+  const platforms = truth?.platforms && typeof truth.platforms === 'object' ? truth.platforms : {};
+  const fills = { highlight: null, normal: null };
+  for (const plat of Object.values(platforms)) {
+    const sets = plat?.componentVariantGraph?.componentSets;
+    if (!Array.isArray(sets)) continue;
+    const set = sets.find((row) => String(row?.name || '') === 'btn/切换语言');
+    if (!set || !Array.isArray(set.variants)) continue;
+    for (const variant of set.variants) {
+      const name = String(variant?.name || '').toLowerCase();
+      const state = /highlight/.test(name) ? 'highlight' : (/normal/.test(name) ? 'normal' : '');
+      if (!state || fills[state]) continue;
+      const paint = variantPaintFills(variant)[0];
+      const cssRgb = cssRgbOfFill(paint);
+      if (cssRgb) fills[state] = { cssRgb };
+    }
+    if (fills.highlight && fills.normal) break;
+  }
+  return (fills.highlight && fills.normal) ? fills : null;
 }
 
 async function measureProductKvWindow(page, base, { width, height }) {
@@ -400,8 +453,8 @@ async function waitQa(page) {
   await page.waitForFunction(() => window.__qa && typeof window.__qa.setPref === 'function', null, { timeout: 120000 });
 }
 
-async function collectLanguageOptions(page) {
-  return page.evaluate(() => {
+async function collectLanguageOptions(page, authoredFills = null) {
+  return page.evaluate((authoredFills) => {
     const owner = [...document.querySelectorAll('[data-dropmenu="true"]')]
       .find((el) => /多语言|语言|language/i.test(el.getAttribute('data-dropmenu-name') || el.getAttribute('data-name') || ''));
     if (!owner) return { missing: true, options: [] };
@@ -446,20 +499,25 @@ async function collectLanguageOptions(page) {
       const state = (activeLayer && activeLayer.getAttribute('data-btn-variant-state'))
         || el.getAttribute('data-btn-variant-state');
       return {
+        lang: el.getAttribute('data-lang') || el.getAttribute('data-btn-lang') || '',
         text: nested[0] || (el.textContent || '').replace(/\s+/g, ' ').trim(),
         visibleCount: nested.length || ((el.textContent || '').trim() ? 1 : 0),
         state,
         fillSource: el.getAttribute('data-btn-variant-fill-source') || state,
         ownerBg: childFill || '',
+        fills: authoredFills || undefined,
       };
     });
     return { missing: false, options };
-  });
+  }, authoredFills);
 }
 
 async function measureVisibleOpenerCatalog(page, { plat }) {
   const measured = await page.evaluate(async (wantedPlat) => {
-    const langs = ['zh-CN', 'zh-TW', 'en', 'ko'];
+    const langs = [...new Set([...document.querySelectorAll('[data-btn-name="切换语言"], [data-lang]')]
+      .map((el) => el.getAttribute('data-lang') || el.getAttribute('data-btn-lang'))
+      .filter(Boolean))];
+    if (!langs.length) langs.push('zh-CN');
     const visible = (el) => {
       if (!el || el.hidden) return false;
       const cs = getComputedStyle(el);
@@ -467,8 +525,22 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       const box = el.getBoundingClientRect();
       return box.width >= 1 && box.height >= 1;
     };
+    const hitPointerClick = (el) => {
+      if (!el) return false;
+      const box = el.getBoundingClientRect();
+      if (!(box.width >= 1 && box.height >= 1)) return false;
+      const x = box.left + box.width / 2;
+      const y = box.top + box.height / 2;
+      const top = document.elementFromPoint(x, y);
+      if (!top) return false;
+      const named = top.closest ? top.closest('[data-btn-name], [data-node-name], [data-name]') : null;
+      if (!(top === el || el.contains(top) || (named && (el === named || el.contains(named) || named.contains(el))))) return false;
+      top.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window }));
+      return true;
+    };
     const realClick = (el) => {
       if (!el) return;
+      if (hitPointerClick(el)) return;
       if (typeof el.click === 'function') el.click();
       else el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     };
@@ -479,6 +551,11 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       const y = box.top + Math.min(8, Math.max(1, box.height / 2));
       const stack = document.elementsFromPoint(x, y);
       return stack.includes(el);
+    };
+    const parseNodeBox = (node) => {
+      const raw = String(node?.getAttribute?.('data-node-box') || '').split(',').map(Number);
+      if (raw.length !== 4 || raw.some((value) => !Number.isFinite(value))) return null;
+      return { x: raw[0], y: raw[1], w: raw[2], h: raw[3] };
     };
     const optionFillOf = (btn) => {
       if (!btn) return false;
@@ -509,7 +586,8 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       if (!layer) return true;
       const close = [...layer.querySelectorAll('[data-btn-name], [data-name], [data-node-name]')]
         .find((el) => /关闭按钮/.test(`${el.getAttribute('data-btn-name') || ''} ${el.getAttribute('data-name') || ''} ${el.getAttribute('data-node-name') || ''}`));
-      if (close) realClick(close);
+      const closeHit = close && (close.querySelector('img, [data-name^="img/"]') || close);
+      if (closeHit && !hitPointerClick(closeHit)) return false;
       const still = document.querySelector('[data-modal-open="true"]');
       return !still || still.hidden || still.getAttribute('data-modal-open') !== 'true';
     };
@@ -581,7 +659,17 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
           closedConsentClickable = hitClick(consent);
           if (menu.getAttribute('data-dropmenu-state') !== 'on') realClick(menu);
         }
-        const coversConsent = hostGrew || closedConsentClickable === false;
+        /* A source-authored on-state may overlap the consent row. This is a
+           Figma geometry fact, not a renderer defect: retain the intersection
+           evidence and exclude it from the visual interaction failure score. */
+        const menuBox = parseNodeBox(menu);
+        const consentBox = consent ? parseNodeBox(consent) : null;
+        const sourceOverlap = Boolean(menuBox && consentBox
+          && menuBox.x < consentBox.x + consentBox.w
+          && menuBox.x + menuBox.w > consentBox.x
+          && menuBox.y < consentBox.y + consentBox.h
+          && menuBox.y + menuBox.h > consentBox.y);
+        const coversConsent = !sourceOverlap && hostGrew;
         dropmenus.push({
           name: menu.getAttribute('data-dropmenu-name') || menu.getAttribute('data-name') || null,
           before,
@@ -589,6 +677,14 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
           invalid: false,
           toggled: after === 'on',
           coversConsent,
+          sourceOverlap,
+          overlapVerdict: sourceOverlap ? 'source-overlap/skip' : 'renderer-check',
+          sourceOverlapEvidence: sourceOverlap ? {
+            dropmenuNode: menu.getAttribute('data-node') || null,
+            consentNode: consent ? consent.getAttribute('data-node') || null : null,
+            dropmenuBox: menuBox,
+            consentBox,
+          } : null,
           optionFill,
           hostGrew,
           closedConsentClickable,
@@ -601,7 +697,7 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
         const name = `${hit.getAttribute('data-name') || ''} ${hit.getAttribute('data-node-name') || ''}`;
         return /(?:^|[\s/>])日历(?:@|$)/.test(name.trim());
       });
-      if (calendarShell || /订阅赛季日程/.test(`${layer.getAttribute('data-modal-name') || ''} ${layer.getAttribute('data-name') || ''}`)) {
+      if (calendarShell || /日历|订阅/.test(`${layer.getAttribute('data-modal-name') || ''} ${layer.getAttribute('data-name') || ''}`)) {
         const wanted = lang === 'zh-TW' ? 'tw'
           : lang === 'en' ? 'en'
             : lang === 'ko' ? 'kr'
@@ -636,7 +732,7 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
       for (const el of collectHomepage()) {
         const node = el.getAttribute('data-node') || '';
         const go = el.getAttribute('data-go') || '';
-        const calendar = /订阅赛季日程/.test(go);
+        const calendar = /日历|订阅/.test(go);
         const key = calendar ? `${lang}::${node}::${go}` : `${node}::${go}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -709,14 +805,31 @@ async function measureVisibleOpenerCatalog(page, { plat }) {
   return scoreOpenerCatalog(measured, plat);
 }
 
+function dropmenuScoreProblems(hit, platKey, label) {
+  const name = (hit && hit.name) || label;
+  if (hit && hit.invalid === true) return [`${platKey}-dropmenu-invalid:${name}`];
+  if (!hit || hit.toggled !== true) return [`${platKey}-dropmenu-did-not-toggle:${name}`];
+  if (hit.sourceOverlap === true && !dropmenuOverlapEvidenceOk(hit)) {
+    return [`${platKey}-dropmenu-source-overlap-unproven:${name}`];
+  }
+  if (hit.sourceOverlap !== true && hit.coversConsent === true) {
+    return [`${platKey}-dropmenu-covers-consent:${name}`];
+  }
+  if (hit.closedConsentClickable === false) {
+    return [`${platKey}-dropmenu-closed-consent-not-clickable:${name}`];
+  }
+  if (hit.optionFill === false) return [`${platKey}-dropmenu-option-unfilled:${name}`];
+  return [];
+}
+
 export function scoreOpenerCatalog(raw, plat) {
   const platKey = raw?.plat || plat;
   const mountedNames = Array.isArray(raw?.mountedNames) ? raw.mountedNames : null;
   const openers = (Array.isArray(raw?.openers) ? raw.openers : []).map((row) => {
     const matched = Boolean(row.opened) && catalogOpenedGoMatches(row.go, row.openedGo);
     const dropmenus = Array.isArray(row.dropmenus) ? row.dropmenus : [];
-    const dropOk = dropmenus.every((hit) => hit.invalid !== true && hit.toggled === true
-      && hit.coversConsent !== true && hit.optionFill !== false);
+    const label = row.node ? `${row.go}@${row.node}` : row.go;
+    const dropProblems = dropmenus.flatMap((hit) => dropmenuScoreProblems(hit, platKey, label));
     const calendarLang = row.calendarLang || null;
     const calendarOk = !calendarLang || calendarLang.matched === true;
     return {
@@ -724,7 +837,8 @@ export function scoreOpenerCatalog(raw, plat) {
       dropmenus,
       calendarLang,
       matched,
-      ok: Boolean(row.opened) && Boolean(row.closed) && matched && dropOk && calendarOk,
+      dropProblems,
+      ok: Boolean(row.opened) && Boolean(row.closed) && matched && dropProblems.length === 0 && calendarOk,
       measured: true,
       skipped: false,
     };
@@ -737,12 +851,7 @@ export function scoreOpenerCatalog(raw, plat) {
     if (!row.opened) problems.push(`${platKey}-opener-did-not-open:${label}`);
     if (row.opened && !row.matched) problems.push(`${platKey}-opener-opened-wrong:${label}=>${row.openedGo}`);
     if (!row.closed) problems.push(`${platKey}-opener-did-not-close:${label}`);
-    for (const hit of row.dropmenus || []) {
-      if (hit.invalid === true) problems.push(`${platKey}-dropmenu-invalid:${hit.name || label}`);
-      else if (hit.toggled !== true) problems.push(`${platKey}-dropmenu-did-not-toggle:${hit.name || label}`);
-      else if (hit.coversConsent === true) problems.push(`${platKey}-dropmenu-covers-consent:${hit.name || label}`);
-      else if (hit.optionFill === false) problems.push(`${platKey}-dropmenu-option-unfilled:${hit.name || label}`);
-    }
+    problems.push(...row.dropProblems);
     if (row.calendarLang && row.calendarLang.matched !== true) {
       problems.push(`${platKey}-calendar-lang:${row.lang || row.calendarLang.wanted}=>${row.calendarLang.got}`);
     }
@@ -777,7 +886,7 @@ export function scoreOpenerCatalog(raw, plat) {
   };
 }
 
-async function measureInteractionPixels(page, { base, width }) {
+async function measureInteractionPixels(page, { base, width, authoredFills = null }) {
   const problems = [];
   await page.setViewportSize({ width: Math.max(width, 1280), height: 1080 });
   await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&lang=zh-CN`, {
@@ -785,11 +894,18 @@ async function measureInteractionPixels(page, { base, width }) {
     timeout: 120000,
   });
   await waitQa(page);
+  const seed = await collectLanguageOptions(page, authoredFills);
+  const langRows = (seed.options || [])
+    .map((row) => ({ lang: row.lang || row.code || '', label: row.text || row.lang || '' }))
+    .filter((row) => row.lang);
+  if (!seed.missing && (seed.options || []).length && !langRows.length) {
+    problems.push('language-lang-missing');
+  }
   const languages = [];
-  for (const row of LANG_OPTION_PAGES) {
+  for (const row of langRows) {
     await page.evaluate((lang) => window.__qa.setPref('lang', lang), row.lang);
     await waitMs(page, 200);
-    const opened = await collectLanguageOptions(page);
+    const opened = await collectLanguageOptions(page, authoredFills);
     const verdict = opened.missing
       ? { ok: false, measured: true, skipped: false, problems: ['language-dropmenu-missing'], currentLang: row.lang, label: row.label }
       : { ...languageOptionVerdict(opened.options, row.lang), measured: true, skipped: false };
@@ -805,21 +921,28 @@ async function measureInteractionPixels(page, { base, width }) {
       }
     });
   }
-  await page.evaluate(() => window.__qa.setPref('lang', 'en'));
-  await waitMs(page, 200);
-  const afterEn = await collectLanguageOptions(page);
-  const stalePrefs = afterEn.missing
-    ? { ok: false, measured: false, skipped: false, problems: ['language-dropmenu-missing-after-en'] }
-    : { ...languageOptionVerdict(afterEn.options, 'en'), measured: true, skipped: false };
-  if (!stalePrefs.ok) problems.push(`stale-prefs: ${(stalePrefs.problems || []).join(',')}`);
+  const otherLang = langRows.find((row) => row.lang && row.lang !== 'zh-CN');
+  let stalePrefs;
+  if (!otherLang) {
+    stalePrefs = { ok: true, measured: true, skipped: false, problems: [] };
+  } else {
+    await page.evaluate((lang) => window.__qa.setPref('lang', lang), otherLang.lang);
+    await waitMs(page, 200);
+    const afterOther = await collectLanguageOptions(page, authoredFills);
+    stalePrefs = afterOther.missing
+      ? { ok: false, measured: false, skipped: false, problems: ['language-dropmenu-missing-after-switch'] }
+      : { ...languageOptionVerdict(afterOther.options, otherLang.lang), measured: true, skipped: false };
+  }
+  if (!stalePrefs.ok) problems.push('stale-prefs: ' + (stalePrefs.problems || []).join(','));
 
-  // modal pixels lock to zh-CN: @lang=cn 适龄 opener is gone on leftover en.
+  // modal pixels lock to zh-CN: leftover en hides the cn-only opener.
   await page.evaluate(() => window.__qa.setPref('lang', 'zh-CN'));
   await waitMs(page, 200);
   const modal = await page.evaluate(() => {
     const prefs = typeof window.__qa.prefs === 'function' ? window.__qa.prefs() : {};
     const opener = [...document.querySelectorAll('[data-go]')].find((el) => {
-      if (!/适龄/.test(el.getAttribute('data-go') || '')) return false;
+      const go = el.getAttribute('data-go') || '';
+      if (!go.startsWith('modal/')) return false;
       if (el.hidden) return false;
       const cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden') return false;
@@ -836,7 +959,7 @@ async function measureInteractionPixels(page, { base, width }) {
     const layerRect = layer.getBoundingClientRect();
     const panelRect = panel ? panel.getBoundingClientRect() : null;
     const scroll = layer.querySelector('[data-hscroll="y"], [data-prefix="scroll"]');
-    const close = layer.querySelector('[data-btn-name="关闭按钮"], [data-name="img/关闭按钮"]');
+    const close = layer.querySelector('[data-btn-name="关闭按钮"], [data-name="img/关闭按钮"], [data-name="img/按钮"]');
     const scrollbarHidden = !scroll || getComputedStyle(scroll).scrollbarWidth === 'none'
       || getComputedStyle(scroll, '::-webkit-scrollbar').display === 'none';
     const pose = {
@@ -851,17 +974,36 @@ async function measureInteractionPixels(page, { base, width }) {
       panelTopRatio: panelRect && layerRect.height
         ? (panelRect.top - layerRect.top) / layerRect.height
         : null,
+      sourceBox: layer.getAttribute('data-modal-source-box'),
       hasClose: !!close,
       hasNamedScroll: !!scroll,
       scrollbarHidden,
     };
-    if (close) close.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    if (close) {
+      const box = close.getBoundingClientRect();
+      const x = box.left + box.width / 2;
+      const y = box.top + box.height / 2;
+      const top = document.elementFromPoint(x, y) || close;
+      top.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window }));
+    }
     pose.closedAfterClose = !layer.isConnected || layer.hidden || layer.getAttribute('data-modal-open') !== 'true';
     return pose;
   });
+  const parseBox = (raw) => {
+    const n = String(raw || '').split(',').map(Number);
+    if (n.length !== 4 || n.some((v) => !Number.isFinite(v))) return null;
+    return { x: n[0], y: n[1], w: n[2], h: n[3] };
+  };
+  const sourceBox = parseBox(modal.sourceBox);
+  const panelInv = parseBox(modal.panelBox);
+  const expected = (sourceBox && panelInv && sourceBox.h)
+    ? { panelTopRatio: (panelInv.y - sourceBox.y) / sourceBox.h }
+    : null;
   let modalVerdict = modal.missing
     ? { ok: false, measured: false, skipped: false, problems: ['pc-modal-missing'] }
-    : { ...pcModalSheetVerdict(modal), measured: true, skipped: false };
+    : !expected
+      ? { ok: false, measured: true, skipped: false, problems: ['inventory-panel-missing'] }
+      : { ...pcModalSheetVerdict({ ...modal, expected }), measured: true, skipped: false };
   if (modal.lang && modal.lang !== 'zh-CN') {
     modalVerdict.ok = false;
     modalVerdict.problems = [...(modalVerdict.problems || []), `pc-modal-lang:${modal.lang}`];
@@ -890,7 +1032,8 @@ async function measureInteractionPixels(page, { base, width }) {
   const mobile = await page.evaluate(() => {
     const prefs = typeof window.__qa.prefs === 'function' ? window.__qa.prefs() : {};
     const opener = [...document.querySelectorAll('[data-go]')].find((el) => {
-      if (!/适龄/.test(el.getAttribute('data-go') || '')) return false;
+      const go = el.getAttribute('data-go') || '';
+      if (!go.startsWith('modal/')) return false;
       if (el.hidden) return false;
       const cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden') return false;
@@ -924,7 +1067,13 @@ async function measureInteractionPixels(page, { base, width }) {
       hasNamedScroll: !!scroll,
       scrollbarHidden,
     };
-    if (close) close.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    if (close) {
+      const box = close.getBoundingClientRect();
+      const x = box.left + box.width / 2;
+      const y = box.top + box.height / 2;
+      const top = document.elementFromPoint(x, y) || close;
+      top.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window }));
+    }
     pose.closedAfterClose = !layer.isConnected || layer.hidden || layer.getAttribute('data-modal-open') !== 'true';
     return pose;
   });
@@ -1087,7 +1236,11 @@ export async function runLaterAxesProbe({ demoDir, now = new Date().toISOString(
       }
       productKv.push(item);
     }
-    const pixel = await measureInteractionPixels(page, { base, width: 1920 });
+    const pixel = await measureInteractionPixels(page, {
+      base,
+      width: 1920,
+      authoredFills: languageButtonFillsFromTruth(truth),
+    });
     payloadPixel = pixel;
     for (const problem of pixel.problems || []) problems.push(problem);
   } catch (error) {

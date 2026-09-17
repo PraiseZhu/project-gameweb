@@ -12,6 +12,8 @@ import {
   unifyGroupIntegerFontSizes,
   fitAuthorization,
   isIntegerPxShrinkEvidence,
+  isSourceNoWrapTitle,
+  integerPxWidthFitShouldWrap,
 } from '../lib/figma-typography.mjs';
 import { extractGeometry } from '../lib/figma-geo.mjs';
 
@@ -540,6 +542,30 @@ test('6.1 HUG with written maxWidth is authorized to shrink', () => {
   assert.equal(hug.reason, 'auto-layout-max');
 });
 
+test('HEIGHT display title with only maxWidth wraps instead of nowrap-then-shrink', () => {
+  const laterSectionLabel = {
+    autoResize: 'HEIGHT',
+    sourceSingleLine: true,
+    displayTitle: true,
+  };
+  assert.equal(isSourceNoWrapTitle(laterSectionLabel), false);
+  assert.equal(isSourceNoWrapTitle({
+    autoResize: 'WIDTH_AND_HEIGHT',
+    sourceSingleLine: true,
+    displayTitle: true,
+  }), true);
+  assert.equal(integerPxWidthFitShouldWrap({
+    autoResize: 'HEIGHT',
+    maxWidth: 400,
+    maxHeight: null,
+  }), true);
+  assert.equal(integerPxWidthFitShouldWrap({
+    autoResize: 'HEIGHT',
+    maxWidth: 400,
+    maxHeight: 80,
+  }), false);
+});
+
 test('6.1 C width overflow against ancestor maxWidth shrinks; height growth without maxHeight does not', () => {
   const byWidth = integerPxFit({
     baseFontSize: 24,
@@ -595,7 +621,7 @@ test('6.1 D data-fit-px 110 vs locale base 120 is step-fit, not percent', () => 
 test('renderer enqueue requires written Auto Layout max, not semanticBreak or ownerWidth', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
-  assert.match(src, /hasAlCaps && !semanticBreak/);
+  assert.match(src, /(hasAlCaps || rotatedNowrap) && !semanticBreak/);
   assert.doesNotMatch(src, /hasAlCaps \|\| semanticBreak/);
   assert.doesNotMatch(src, /widthFit: _ownerW/);
   assert.match(src, /boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner && hasAlCaps/);

@@ -39,6 +39,7 @@ import {
   STOP1_PIXEL_DIR,
 } from '../src/stop1-figma-pixel-gate.mjs';
 import { parseStop1SkipJson, productProbeViewport, tryReadCachePng, writeCachePng } from '../src/stop1-figma-pixel-probe.mjs';
+import { comparePngs } from '../src/png-compare.mjs';
 import { trustedSkillRoot } from '../src/resolve-playwright.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -223,11 +224,17 @@ test('stop-1 assembles node exports and product=1', () => {
   assert.match(src, /analogueOf/);
   assert.match(src, /fetchTimed/);
   assert.match(src, /assembled Figma snapshot/);
+  assert.match(src, /covering-plate/);
+  assert.match(src, /exportScale/);
+  assert.match(src, /siblingScaleCacheFiles/);
+  assert.match(src, /180000/);
   assert.match(src, /sectionLiveCopyMasks/);
   assert.match(src, /dropmenu-off-icon/);
   assert.match(src, /deviceScaleFactor:\s*dsf/);
   assert.match(src, /size mismatch/);
   assert.match(src, /page\.screenshot\(\{ type: 'png', clip/);
+  assert.match(src, /Math\.min\(vw, r\.x \+ r\.width\)/);
+  assert.match(src, /clipped area empty or outside viewport/);
   assert.match(src, /omitBackground: false/);
   assert.match(src, /allowOverflow: true/);
   assert.match(src, /cropPng/);
@@ -240,7 +247,7 @@ test('stop-1 assembles node exports and product=1', () => {
   assert.match(src, /data-stop1-pixel-chrome-hidden/);
   assert.match(src, /opacity', '0'/);
   assert.match(src, /Number\(section\.pageBox\?\.y\) > Number\(pageBox\.y\) \+ 1/);
-  assert.match(src, /width: r\.width/);
+  assert.match(src, /Math\.min\(vw, r\.x \+ r\.width\)/);
   assert.doesNotMatch(src, /r\.width \* s/);
   assert.doesNotMatch(src, /el\.screenshot/);
   assert.doesNotMatch(src, /inventory-static-gate=1/);
@@ -251,13 +258,20 @@ test('stop-1 assembles node exports and product=1', () => {
 test('product probe uses section column width instead of mobile shelf width', () => {
   const mobile = productProbeViewport('mobile', { w: 2430, h: 2668 }, [{ pageBox: { w: 750, h: 1334 } }]);
   assert.equal(mobile.w, 750);
+  assert.equal(mobile.h, 2668);
   assert.notEqual(mobile.w, 2430);
+  assert.notEqual(mobile.h, 1334);
   assert.throws(
     () => productProbeViewport('mobile', { w: 2430, h: 2668 }, [{ pageBox: { w: 2430, h: 1334 } }]),
     /invalid product probe viewport width/,
   );
   const pc = productProbeViewport('pc', { w: 2430, h: 2668 }, [{ pageBox: { w: 3840, h: 2143 } }]);
   assert.ok(pc.w > 1126);
+  assert.equal(pc.w, 3840);
+  assert.equal(pc.h, 2668);
+  const tallShelf = productProbeViewport('pc', { w: 3840, h: 4286 }, [{ pageBox: { w: 3840, h: 2143 } }]);
+  assert.equal(tallShelf.h, 4286);
+  assert.notEqual(tallShelf.h, 2143);
 });
 
 test('Figma cache key is fileKey + frameId + scale + snapshot hash', () => {
@@ -473,6 +487,47 @@ test('section paint exports drop untagged later fix clones and descendants', () 
   assert.deepEqual(later.map((row) => row.frameId), ['hero-2']);
 });
 
+test('later section paints page-level covering bg before section children', () => {
+  const inventory = {
+    page: { id: 'page', pageBox: { x: 0, y: 0, w: 750, h: 3000 } },
+    backgrounds: [{ id: 'bg-pc', role: 'bg', pageBox: { x: 0, y: 0, w: 750, h: 3000 } }],
+    nodes: [
+      { id: 'bg-pc', name: 'bg/pc', role: 'bg', parentId: 'page', pageBox: { x: 0, y: 0, w: 750, h: 3000 } },
+      { id: 'hero-2', name: 'banner', parentId: 'sec-2', pageBox: { x: 0, y: 1200, w: 750, h: 500 } },
+    ],
+  };
+  const later = sectionPaintExports(inventory, { id: 'sec-2', pageBox: { x: 0, y: 1000, w: 750, h: 1000 } });
+  assert.equal(later[0].kind, 'covering-plate');
+  assert.equal(later[0].frameId, 'bg-pc');
+  assert.equal(later[0].exportScale, pickExportScale({ x: 0, y: 0, w: 750, h: 3000 }));
+  assert.deepEqual(later.map((row) => row.frameId), ['bg-pc', 'hero-2']);
+});
+
+test('first section paints page-level sticky fix overlay, later sections do not', () => {
+  const inventory = {
+    page: { id: 'page', pageBox: { x: 0, y: 0, w: 750, h: 3000 } },
+    overlays: [{ id: 'rail', role: 'fix', label: '侧边栏', pin: 'viewport' }],
+    nodes: [
+      { id: 'kv', name: 'kv', parentId: 'sec-1', pageBox: { x: 0, y: 0, w: 750, h: 1000 } },
+      { id: 'rail', name: 'fix/侧边栏', role: 'fix', parentId: 'page', pageBox: { x: 500, y: 40, w: 220, h: 800 } },
+      { id: 'lang', name: 'dropmenu/多语言', role: 'dropmenu', parentId: 'rail', pageBox: { x: 560, y: 50, w: 140, h: 370 }, componentProperties: { 'Property 1': { value: 'on', type: 'VARIANT' } } },
+      { id: 'hero-2', name: 'banner', parentId: 'sec-2', pageBox: { x: 0, y: 1200, w: 750, h: 500 } },
+    ],
+  };
+  const first = sectionPaintExports(inventory, { id: 'sec-1', pageBox: { x: 0, y: 0, w: 750, h: 1000 } });
+  const later = sectionPaintExports(inventory, { id: 'sec-2', pageBox: { x: 0, y: 1000, w: 750, h: 1000 } });
+  assert.ok(first.some((row) => row.frameId === 'rail'));
+  assert.equal(later.some((row) => row.frameId === 'rail'), false);
+  const masks = sectionLiveCopyMasks({
+    ...inventory,
+    nodes: [
+      ...inventory.nodes,
+      { id: 'copy', name: '官方充值', type: 'TEXT', role: 'copy', parentId: 'rail', pageBox: { x: 520, y: 80, w: 80, h: 20 }, text: { characters: '官方充值' } },
+    ],
+  }, { id: 'sec-1', pageBox: { x: 0, y: 0, w: 750, h: 1000 } });
+  assert.ok(masks.some((mask) => mask.x === 520 && mask.y === 80));
+});
+
 test('lang-axis overlay maps kr instance onto cn master', () => {
   const inventory = {
     nodes: [{
@@ -653,4 +708,26 @@ test('probe-only CLI does not import torchlightweb machine', () => {
   const src = readFileSync(PROBE, 'utf8');
   assert.doesNotMatch(src, /torchlightweb-machine/);
   assert.doesNotMatch(src, /figma-html-from-handoff/);
+});
+
+test('over-mask above 40% is ERROR, not a green pixel pass', async () => {
+  const { PNG: PNGApi, pixelmatch } = await loadPngApi(ROOT);
+  const baseline = new PNGApi({ width: 20, height: 20 });
+  const actual = new PNGApi({ width: 20, height: 20 });
+  for (let i = 0; i < baseline.data.length; i += 4) {
+    baseline.data[i] = 10; baseline.data[i + 1] = 10; baseline.data[i + 2] = 10; baseline.data[i + 3] = 255;
+    actual.data[i] = 10; actual.data[i + 1] = 10; actual.data[i + 2] = 10; actual.data[i + 3] = 255;
+  }
+  const result = comparePngs({
+    PNG: PNGApi,
+    pixelmatch,
+    baseline,
+    actual,
+    cssSize: { width: 20, height: 20 },
+    masks: [[0, 0, 20, 12]],
+    threshold: 0.005,
+    maxMaskRatio: 0.40,
+  });
+  assert.equal(result.status, 'ERROR');
+  assert.match(String(result.detail || ''), /mask 面积/);
 });

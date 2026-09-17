@@ -176,7 +176,8 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   assert.match(skill, /measured\s+on `zh-CN`/);
   assert.match(skill, /modal.lang=zh-CN/);
   const interaction = read('docs/interaction-skill.md');
-  assert.match(interaction, /949:5363/);
+  assert.match(interaction, /from this page inventory/);
+  assert.doesNotMatch(interaction, /949:5363/);
   assert.match(interaction, /img\/选中背景/);
   assert.match(interaction, /written at the start of every `renderApp`/);
   const renderLive = read('templates/figma-render.js');
@@ -184,7 +185,8 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   assert.match(renderLive, /data-fx-base/);
   assert.match(renderLive, /Page instances may omit componentProperties/);
   assert.match(renderLive, /Do not __plain the map first/);
-  assert.match(interaction, /199\/2160/);
+  assert.match(interaction, /img\/弹窗背景/);
+  assert.doesNotMatch(interaction, /199\/2160/);
   assert.match(interaction, /scrollbarWidth: none/);
   assert.match(interaction, /Skip, missing\s+close, overflow, or a visible scrollbar cannot go green/s);
   const probe = read('scripts/lib/later-axes-probe.mjs');
@@ -197,8 +199,8 @@ test('sc-pack-after-resize: Pack is delivery after Resize, not a fourth Skill', 
   assert.match(probe, /setPref\('lang', 'zh-CN'\)/);
   assert.match(probe, /pc-modal-lang/);
   assert.match(probe, /mobile-close/);
-  assert.match(probe, /lang: 'zh-CN', go: 'modal\/pc适龄提示'/);
-  assert.match(probe, /lang: 'zh-CN', go: 'modal\/mobile适龄提示'/);
+  assert.match(probe, /lang: 'zh-CN', go: 'modal\/pc_sheet'/);
+  assert.match(probe, /lang: 'zh-CN', go: 'modal\/mobile_sheet'/);
   assert.match(probe, /measureVisibleOpenerCatalog/);
   assert.match(probe, /pcCatalog/);
   assert.match(probe, /mobileCatalog/);

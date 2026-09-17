@@ -16,11 +16,11 @@ This is the Torchlight public Skill identity. Local Torch demo output is a verif
 
 **完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 / 1440 `?product=1`，sec 无缝、满铺子层不重画）→ 像素门必须绿（每屏截已有页对规范稿分区图；超阈值拦，差异图在 `artifacts/stop1-pixel/`）→ 才给人 QA `index.html`（带工具栏）。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
-停 1 锁死：整框 PNG 必须有实际像素，不得仅凭尺寸 metadata 判绿；首屏无名 `kv` 使用独立 `coverScale=max(viewportW/designW, slotH/sourceH)`，UI 使用 `pageStageScale`，`cropLeft` 不得二次叠加；viewport `fix/` 根使用 `parentBox` 定位且高度不得乘 hero yScale，子层保持 owner-local。
+停 1 锁死：整框 PNG 必须有实际像素，不得仅凭尺寸 metadata 判绿；首屏无名 `kv` 使用独立 `coverScale=max(viewportW/designW, slotH/sourceH)`，UI 使用 `pageStageScale`，`cropLeft` 不得二次叠加；viewport `fix/` 根使用 `parentBox` 定位且高度不得乘 hero yScale，子层保持 owner-local。做页不得在清单字段和本包 `DESIGN.md` 之外发明规则：字重/字轴听清单 `fontWeight` + `fontPostScriptName`/`fontStyle`，禁止 `@font-face` `font-named-instance` 钉 Regular 再假粗；`autoResize=HEIGHT` 且只有 `maxWidth` 的 TEXT 必须折行长高，禁止因源中文一行就 `pre` 锁死再缩字号。
 
 | 情况 | 走哪条 |
 |---|---|
-| 人说 `torchlightweb` **且已有 ready 交接包** | 官方只跑 `npm run torchlightweb -- --handoff <dir> --demo <dir>`。状态机内部才调用 `figma:html-from-handoff`：吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`：设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景；整框 PNG 非空，满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh，PC `center center` / 手机 `center 0`，不得只跟列宽 `k`）→ 政策镜像必须绿 → 才给人 QA `index.html`（带工具栏）。然后停在 `wait-stop-1`，只写 presented。人说继续后 Lead 跑 `npm run torchlightweb -- accept --demo <dir>` 才签字；再 `continue` 才跑后轴探针。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
+| 人说 `torchlightweb` **且已有 ready 交接包** | 官方只跑 `npm run torchlightweb -- --handoff <dir> --demo <dir>`。状态机内部才调用 `figma:html-from-handoff`：吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件；韩文覆盖听 `localeFontFamily.ko`，不把 Apple SD Gothic Neo 写成所有韩文的硬门）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`：设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景；整框 PNG 非空，满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh，PC `center center` / 手机 `center 0`，不得只跟列宽 `k`）→ 政策镜像必须绿 → 才给人 QA `index.html`（带工具栏）。然后停在 `wait-stop-1`，只写 presented。人说继续后 Lead 跑 `npm run torchlightweb -- accept --demo <dir>` 才签字；再 `continue` 才跑后轴探针。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
 | 人说 `torchlightweb` **只有 Figma 链接、没有包** | **停下来要包**。禁止 `figma-showcase`、禁止直连 Figma 抽节点。用户说「先看稿、没有清单」也一样停。 |
 | `figma:from-handoff` 单独跑 | 只验包、打印消费计划，**不写 HTML**。触发词 `torchlightweb` 不能再暗示「说了就会出 HTML」，除非状态机已经跑过 `figma:html-from-handoff`。 |
 | 直连 `figma:html-from-handoff` / `pack:demo` | 无一次性票据时 CLI 锁死。`TORCHLIGHTWEB_ORCHESTRATOR=1` 不再放行。Agent 不得 import `buildHtmlFromHandoff` 当触发词入口。 |
@@ -98,9 +98,9 @@ There are two explicit workflow declarations:
    and stop. Tell the user this axis is done. Do not Pack until they
    say continue, then `accept`, then `continue`. Later-axes Chrome probe
    must be green first, including language-button fill pixels
-   (current lang = highlight `758:1713`, others = normal `758:1710`),
-   PC modal sheet pose (3840×2160 centered, panel y = 199/2160) measured
-   on `zh-CN` with `modal.lang=zh-CN` and a `pc`/`mobile` 适龄 `go`,
+   (current lang = inventory highlight variant, others = normal),
+   PC modal sheet pose (sheet centered; panel from this page img/弹窗背景) measured
+   on `zh-CN` with `modal.lang=zh-CN` and a visible homepage named modal `go`,
    mobile modal inside the 390 sheet, close, and named-scroll
    `scrollbarWidth` none. Every visible homepage `@go` opener must open
    then close; a homepage `btn/` without `@go` must not open a modal.

@@ -15,11 +15,11 @@ import {
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
-/* Draft copy on this later mobile section is wrong in Figma
- * (嘉年华直播目录 vs Lark 赛季前瞻直面会). User: skip this screen
- * this round; other screens stay at 0.50%. Torch-only. */
+/* Skip list is empty on purpose: section ids come from this page's inventory,
+ * never from a previous season's node ids. */
 export const STOP1_PIXEL_SKIP_SECTIONS = Object.freeze({
-  mobile: Object.freeze(['949:6041']),
+  pc: Object.freeze([]),
+  mobile: Object.freeze([]),
 });
 
 export function isStop1PixelSkippedSection(platform, secId) {

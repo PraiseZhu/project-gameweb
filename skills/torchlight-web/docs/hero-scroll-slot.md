@@ -40,7 +40,9 @@ opacity. Figma motion truth is still absent; do not fake it.
 只把后屏 used-top 吸到首屏 used-bottom（`data-hero-join-css="abut"`）。
 后屏 stage 已经带了这份偏移；坐在 sec/2、sec/3 里的 `bg/pc背景*` 不得再加一次
 `afterHeroBackgroundShift`（那会在冻档拉开交界、在 `>1920` 把图从 UI 上拽走）。
-这份二次偏移只留给整页长 `bg`（`backgroundHeroShift`）。后屏 `bg` cover 对着后屏
+这份二次偏移留给整页长 `bg`（`backgroundHeroShift`），以及 Figma y 落在首屏底
+之下、又不在后屏 stage 里的 pageChrome 兄弟（例如 `页面内容` 下与最后一节并列的
+`btn/`）。后屏 `bg` cover 对着后屏
 stage 盒子，不是第二扇视口窗。冻档后屏 CSS 短于窗口时才把盒子垫到槽高；`>1920`
 k 变大后稿高已经够高，不再垫。`extra<0` 时后屏 paint-root 层高也跟着缩短，滚动高度跟 `bg/pc背景2` 的底，不在 sec/3 下面留 `#180f02`。
 长 `bg/*` 被裁掉的尾巴以 `bg-tail` 续画在

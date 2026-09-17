@@ -54,7 +54,7 @@ export const DESIGN_POLICY = Object.freeze({
       "en": 1,
       "ja": 0.833,
       "ko": 1,
-      "zh-TW": 0.833
+      "zh-TW": 1
     },
     "heading": {
       "zh-CN": 1,

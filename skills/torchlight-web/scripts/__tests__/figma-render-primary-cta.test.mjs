@@ -229,7 +229,7 @@ browserTest('DESIGN.md 6.2: English primary CTA paints hero type and forced uppe
     assert.equal(secondary.uppercaseMark, null);
     assert.notEqual(secondary.transform, 'uppercase');
     assert.notEqual(secondary.ctaType, 'follow-hero-type');
-    assert.equal(String(secondary.weight), '600');
+    assert.equal(String(secondary.weight), '400');
 
     const gate = assessPrimaryCtaType([
       {
@@ -283,6 +283,11 @@ browserTest('DESIGN.md 6.2: English unadopted copy still forces uppercase and do
     assert.equal(primary.transform, 'uppercase');
     assert.equal(primary.uppercaseMark, 'en');
     assert.match(String(primary.family), /YouHei|FZVariable/);
+    assert.equal(String(primary.weight), '400');
+    const secondary = await snapshotOf(page, 'secondary-text');
+    assert.ok(secondary, 'secondary CTA missing');
+    assert.match(String(secondary.family), /YouHei|FZVariable/);
+    assert.equal(String(secondary.weight), '600');
   } finally {
     await browser.close();
   }

@@ -49,6 +49,30 @@ function pageBoxOf(entry) {
   return geomOf(entry?.pageBox);
 }
 
+/** Page-plane origin for chrome/bg paint. Prefer the live page node's
+ *  relative pageBox (0,0,w,h). inventory.page.pageBox may still carry the
+ *  canvas absoluteBoundingBox on older packs; subtracting that parks every
+ *  pageChrome owner off-screen. */
+function pagePlaneMeta(inventory) {
+  const pageId = String(inventory?.page?.id || '');
+  const livePage = pageId
+    ? asArray(inventory?.nodes).find((node) => String(node?.id || '') === pageId)
+    : null;
+  const livePageBox = geomOf(livePage?.pageBox);
+  if (livePage && Number(livePageBox.w) > 0 && Number(livePageBox.h) > 0) {
+    return drawMeta({ ...livePage, pageBox: livePageBox, box: livePage.box ?? inventory?.page?.box ?? null }, livePage);
+  }
+  const listed = geomOf(inventory?.page?.pageBox);
+  if (Number(listed.w) > 0 && Number(listed.h) > 0 && Math.abs(listed.x) < 1 && Math.abs(listed.y) < 1) {
+    return drawMeta(inventory.page);
+  }
+  const canvas = geomOf(inventory?.page?.box || inventory?.page);
+  return drawMeta({
+    ...inventory?.page,
+    pageBox: canvas.w > 0 && canvas.h > 0 ? { x: 0, y: 0, w: canvas.w, h: canvas.h } : listed,
+  });
+}
+
 function drawMeta(entry, liveRecord = null) {
   const pageBox = pageBoxOf(entry);
   const record = liveRecord && typeof liveRecord === 'object' ? liveRecord : entry;
@@ -259,7 +283,7 @@ export function platformTruthFromInventory(inventory, options = {}) {
     underFixedOwner(node, fixed) && !droppedClones.has(String(node?.id || ''))
   ))).map((node) => paintFixedNode(node, ownerOf(node), inventory));
 
-  const pageMeta = drawMeta(inventory.page);
+  const pageMeta = pagePlaneMeta(inventory);
   const chromeNodes = asArray(adapted.pageChrome?.nodes).map((node) => {
     const copy = paintWithPageBox({ ...node });
     const ancestorIds = asArray(copy.ancestorIds).map(String);
@@ -269,6 +293,35 @@ export function platformTruthFromInventory(inventory, options = {}) {
     if (root) copy.paintRootId = root;
     return copy;
   });
+
+  /* Nodes that sit on the page (or the unnamed 页面内容 wrapper) but are not
+     under any sec/ never enter a section tree. Footer CTAs after the last
+     section are the usual case — dropping them made determined btn/ missing-dom. */
+  const sectionIds = new Set(asArray(inventory.sections).map((entry) => String(entry?.id || '')).filter(Boolean));
+  const sectionAncestorIds = new Set();
+  for (const sectionId of sectionIds) {
+    sectionAncestorIds.add(sectionId);
+    for (const ancestorId of asArray(liveById.get(sectionId)?.ancestorIds)) {
+      sectionAncestorIds.add(String(ancestorId));
+    }
+  }
+  const claimed = new Set([
+    String(inventory?.page?.id || ''),
+    ...droppedClones,
+    ...chromeNodes.map((node) => String(node?.id || '')),
+    ...fixedNodes.map((node) => String(node?.id || '')),
+  ]);
+  for (const section of Object.values(sections)) {
+    for (const node of asArray(section?.nodes)) claimed.add(String(node?.id || ''));
+  }
+  const unsectioned = ordered(liveNodes.filter((node) => {
+    const id = String(node?.id || '');
+    if (!id || claimed.has(id) || node.status === 'skipped') return false;
+    if (sectionAncestorIds.has(id)) return false;
+    if (asArray(node?.ancestorIds).some((ancestor) => sectionIds.has(String(ancestor)))) return false;
+    return true;
+  })).map(paintWithPageBox);
+  chromeNodes.push(...unsectioned);
 
   return {
     ok: true,

@@ -622,14 +622,9 @@
        它们对本页是无视觉声明维：matrix 仅 any/default 单选项、renderApp 不消费——
        设一个永远停在同一档的可见分段控件是给人看的假 UI。自动化用 __qa.setPref 写。
        若将来某页 OS/主题真的改变渲染，须提供一个不污染人工栏的可测机制，不得放回可见 seg。 */
-    /* 区域与语言都是内容维度：区域保留 segmented，语言固定使用下拉。
-       可选项只读 cfg.matrix，绝不把 kit 中尚未接入的地区/语言伪造成可渲染内容。 */
-    var region = m.region;
-    if (region) {
-      row2.appendChild(grp(region.label || '区域', seg(region.options || [],
-        function (it) { return S.prefs.region === it.v; },
-        function (it) { S.prefs.region = it.v; persist(); syncAll(); }, 'region')));
-    }
+    /* Region stays in prefs / hash / __qa.setPref so old region=cn/global
+       links still open. Hide the visible segmented control until a page
+       actually paints a region axis. */
     var lang = m.lang;
     if (lang) {
       var langSel = document.createElement('select');
@@ -850,7 +845,11 @@
       viewport: { w: vp.w, h: vp.h, dpr: vp.dpr }, motionAdapter: MOTION,
       interactionPayload: cfg.interactionPayload || null,
       productView: !!PRODUCT_VIEW,
-      enablePageInteraction: new URLSearchParams(location.search).get('interaction') === '1',
+      enablePageInteraction: (function () {
+        var interactionQ = '';
+        try { interactionQ = new URLSearchParams(window.location.search).get('interaction') || ''; } catch (e) { interactionQ = ''; }
+        return !(interactionQ === '0' || interactionQ === 'false' || interactionQ === 'no');
+      }()),
       setPref: applyPref });
   }
 
@@ -1380,10 +1379,14 @@
     _lastRead = { vp: vp, scale: scale };   // 供 __fxOnFontsReady 复用，见上面的说明
     if (PRODUCT_VIEW) return;               // 产品视图没有 chip/elRead1,读数只留在 _lastRead
     var bp = bpOf(vp.w);
+    var composition = compositionBpOf(vp.w);
+    var compositionKey = composition && composition.key ? composition.key : '?';
+    var compositionTree = compositionKey === 'mobile' ? 'mobile-tree'
+      : (compositionKey === 'tablet' || compositionKey === 'pad' ? 'pad-tree' : 'pc-tree');
     var d = curDev();
     var devName = isFree() ? '自由状态' : (d && d.name) || '?';
     chip.innerHTML = '<b>' + vp.w + ' × ' + vp.h + '</b> px · ' + esc(devName) +
-      ' · 断点 <b>' + esc(bp.key) + '</b> · 视图缩放 ' + Math.round(scale * 100) + '%';
+      ' · 设备 <b>' + esc(bp.key) + '</b> · 构图 <b>' + esc(compositionTree) + '</b> · 视图缩放 ' + Math.round(scale * 100) + '%';
 
     // 现测：根 font-size（线上契约 1rem = 10vw；预览帧不是视口，故只报实测值不做期望断言）
     var rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 0;
@@ -1397,7 +1400,8 @@
     _lastReadHtml =
       '读数 <b>' + vp.w + '×' + vp.h + ' px</b>' +
       ' · DPR <b>' + vp.dpr + '</b>' +
-      ' · ' + esc(bp.label || bp.key) +
+      ' · 设备 <b>' + esc(bp.label || bp.key) + '</b>' +
+      ' · 构图 <b>' + esc(compositionTree) + '</b>' +
       ' · 视图缩放 <b class="' + (Math.abs(scale - 1) < 1e-6 ? 'ok' : 'err') + '">' + (scale * 100).toFixed(1) + '%</b>' +
       ' · 来源 <b>' + esc(vp.src) + '</b>';
     elRead1.innerHTML = _lastReadHtml;
@@ -2297,6 +2301,34 @@
     }
   }
 
+  function syncDragPageBackgroundCover(vp) {
+    var pageRoot = frame.querySelector('.fx-stage[data-node="__page__"]');
+    if (!pageRoot) return;
+    var rootZoom = parseZoomValue(pageRoot && pageRoot.style ? pageRoot.style.zoom : null);
+    if (!(rootZoom > 0)) return;
+    var nextW = Number(vp && vp.w) || 0;
+    if (!(nextW > 0)) return;
+    var bgs = pageRoot.querySelectorAll('[data-later-cover-window="page-window"], [data-node-name^="bg/"]');
+    for (var i = 0; i < bgs.length; i++) {
+      var bg = bgs[i];
+      if (bg.getAttribute("data-hero-visual-plane") === "kv") continue;
+      if (bg.closest && bg.closest('[data-hero-slot-role=\"hero\"]')) continue;
+      var sourceW = parseFloat(bg.getAttribute("data-node-box") ? String(bg.getAttribute("data-node-box")).split(",")[2] : bg.style.width);
+      if (!(sourceW > 0)) sourceW = parseFloat(bg.style.width);
+      if (!(sourceW > 0)) continue;
+      var viewportWDesign = nextW / rootZoom;
+      var cover = Math.max(viewportWDesign / sourceW, 1);
+      var coverLeft = (viewportWDesign - sourceW * cover) / 2;
+      bg.style.left = coverLeft + "px";
+      bg.style.transformOrigin = "0 0";
+      bg.style.transform = cover === 1 ? "" : ("scale(" + cover + ")");
+      bg.style.overflow = "visible";
+      bg.setAttribute("data-later-cover-plane", "cover-crop");
+      bg.setAttribute("data-later-cover-window", "page-window");
+      bg.setAttribute("data-later-cover-axis", "x");
+    }
+  }
+
   function syncDragHeroCover(vp) {
     var hero = frame.querySelector('[data-hero-slot-role="hero"]');
     if (!hero) return;
@@ -2311,16 +2343,20 @@
     var sourceW = parseFloat(kv.style.width);
     var sourceH = parseFloat(kv.style.height);
     if (!(sourceW > 0) || !(sourceH > 0)) return;
-    var cover = Math.max(nextW / sourceW, nextH / sourceH);
+    var origin = kv.getAttribute('data-kv-cover-origin') || 'center center';
+    var coverBottom = parseFloat(kv.getAttribute('data-kv-cover-bottom'));
+    if (!(coverBottom > 0)) coverBottom = sourceH;
+    var cover = Math.max(nextW / sourceW, nextH / coverBottom);
     var planeRatio = cover / rootZoom;
     var viewportWDesign = nextW / rootZoom;
     var viewportHDesign = nextH / rootZoom;
-    var origin = kv.getAttribute('data-kv-cover-origin') || 'center center';
     var columnW = productColumnWidth(nextW, compositionKeyForViewport(vp));
     var columnLeftCss = productColumnLeft(nextW, columnW);
     var columnLeftDesign = columnLeftCss / rootZoom;
     var coverLeftDesign = (viewportWDesign - sourceW * planeRatio) / 2 - columnLeftDesign;
-    var coverTopDesign = origin === 'center 0' ? 0 : (viewportHDesign - sourceH * planeRatio) / 2;
+    var coverTopDesign = origin === 'center bottom-anchor'
+      ? (viewportHDesign - coverBottom * planeRatio)
+      : origin === 'center 0' ? 0 : (viewportHDesign - sourceH * planeRatio) / 2;
     kv.style.left = coverLeftDesign + 'px';
     kv.style.top = coverTopDesign + 'px';
     kv.style.transformOrigin = '0 0';
@@ -2374,6 +2410,7 @@
       syncFixedOverlayViewport(vp);
       syncDragSectionLayout(vp, followScale);
       syncDragHeroCover(vp);
+      syncDragPageBackgroundCover(vp);
       syncStaticKvChrome(vp);
       /* Official popup stays mounted and re-sizes with the window. Light
          drag keeps DOM, so re-pin open named modals to the current frame. */

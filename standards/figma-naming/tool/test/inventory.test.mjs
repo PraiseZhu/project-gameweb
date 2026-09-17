@@ -110,6 +110,64 @@ test("全角斜杠升 determined，与半角同一身份", () => {
   assert.equal(validateInventory(inv, tree).ok, true);
 });
 
+test("rotated TEXT keeps Figma size as localSize, not AABB", () => {
+  const tree = {
+    id: "r", name: "mobile", type: "FRAME",
+    absoluteBoundingBox: { x: 0, y: 0, width: 750, height: 1472 },
+    children: [{
+      id: "wrap", name: "Frame 1312316826", type: "FRAME",
+      layoutMode: "HORIZONTAL",
+      absoluteBoundingBox: { x: 73.5, y: 1293.66, width: 64, height: 56.57 },
+      children: [{
+        id: "copy", name: "传奇战斗", type: "TEXT",
+        rotation: -0.7853981633974483,
+        size: { x: 64, y: 16 },
+        characters: "传奇战斗",
+        absoluteBoundingBox: { x: 77.22, y: 1293.66, width: 56.57, height: 56.57 },
+        children: [],
+      }],
+    }],
+  };
+  const inv = buildInventory(tree, { requestedNodeId: "r" });
+  const copy = inv.nodes.find((n) => n.id === "copy");
+  assert.deepEqual(copy.localSize, { w: 64, h: 16 });
+  assert.notEqual(copy.localSize.w, copy.pageBox?.w);
+  assert.notEqual(copy.localSize.h, copy.pageBox?.h);
+});
+
+test("REGULAR_POLYGON art-fragment keeps fillGeometry and localSize", () => {
+  const tree = {
+    id: "r", name: "pc", type: "FRAME",
+    absoluteBoundingBox: { x: 0, y: 0, width: 228, height: 228 },
+    children: [{
+      id: "btn", name: "btn/播放按钮", type: "FRAME",
+      absoluteBoundingBox: { x: 0, y: 0, width: 228, height: 228 },
+      children: [{
+        id: "tri", name: "Polygon 34", type: "REGULAR_POLYGON",
+        rotation: -0.5235987833701112,
+        size: { x: 49.785186767578125, y: 49.785186767578125 },
+        relativeTransform: [[0.8660253882408142, 0.5, 80], [-0.5, 0.8660253882408142, 105]],
+        fillGeometry: [{
+          path: "M23.0739 3.15C23.8822 1.75 25.903 1.75 26.7112 3.15L44.6316 34.1889Z",
+          windingRule: "NONZERO",
+        }],
+        fills: [{ type: "SOLID", visible: true, color: { r: 1, g: 1, b: 1, a: 1 } }],
+        cornerRadius: 2.1,
+        absoluteBoundingBox: { x: 80, y: 80, width: 68, height: 68 },
+        children: [],
+      }],
+    }],
+  };
+  const inv = buildInventory(tree, { requestedNodeId: "r" });
+  const tri = inv.nodes.find((n) => n.id === "tri");
+  assert.equal(tri.status, "skipped");
+  assert.equal(tri.why, "art-fragment");
+  assert.deepEqual(tri.localSize, { w: 49.785186767578125, h: 49.785186767578125 });
+  assert.equal(tri.fillGeometry[0].path, "M23.0739 3.15C23.8822 1.75 25.903 1.75 26.7112 3.15L44.6316 34.1889Z");
+  assert.deepEqual(tri.relativeTransform, [[0.8660253882408142, 0.5, 80], [-0.5, 0.8660253882408142, 105]]);
+  assert.equal(tri.style.radius, 2.1);
+});
+
 test("结构硬闸：@sec 没靶、空滑动、ind 无轮播会红；光 btn 和 unknown 不红", () => {
   const node = (id, type, name, children = [], extra = {}) => ({
     id, type, name, children,
@@ -362,8 +420,30 @@ test("内层竖排页面内容不按工作区吃空档", () => {
   const inv = buildInventory(page, { requestedNodeId: "content" });
   assert.equal(inv.ok, true);
   assert.deepEqual(inv.page.box, { x: 0, y: 0, w: 3840, h: 7415 });
+  assert.deepEqual(inv.page.pageBox, { x: 0, y: 0, w: 3840, h: 7415 });
   assert.deepEqual(inv.sections[0].pageBox, { x: 0, y: 0, w: 3840, h: 2143 });
   assert.deepEqual(inv.sections[1].pageBox, { x: 0, y: 2636, w: 3840, h: 2143 });
+});
+
+test("内层叠页的 page.pageBox 是页原点，不是画布绝对框", () => {
+  const node = (id, type, name, children = [], extra = {}) => ({
+    id, type, name, children,
+    absoluteBoundingBox: extra.box || { x: 0, y: 0, width: 100, height: 100 },
+    ...extra,
+  });
+  const page = node("cn_pc", "FRAME", "cn_pc", [
+    node("bg", "FRAME", "bg/pc", [], { box: { x: -25794, y: 2150, width: 3840, height: 20000 } }),
+    node("s1", "FRAME", "sec/1", [], { box: { x: -25794, y: 2150, width: 3840, height: 2143 } }),
+  ], { box: { x: -25794, y: 2150, width: 3840, height: 20000 } });
+  const inv = buildInventory(page, { requestedNodeId: "cn_pc" });
+  assert.equal(inv.ok, true);
+  assert.deepEqual(inv.page.pageBox, { x: 0, y: 0, w: 3840, h: 20000 });
+  const root = inv.nodes.find((item) => item.id === "cn_pc");
+  assert.deepEqual(root.pageBox, { x: 0, y: 0, w: 3840, h: 20000 });
+  const bg = inv.nodes.find((item) => item.id === "bg");
+  assert.deepEqual(bg.pageBox, { x: 0, y: 0, w: 3840, h: 20000 });
+  const sec = inv.nodes.find((item) => item.id === "s1");
+  assert.deepEqual(sec.pageBox, { x: 0, y: 0, w: 3840, h: 2143 });
 });
 
 test("外层货架仍落到内层叠页，工作区画板不改这条路径", () => {
