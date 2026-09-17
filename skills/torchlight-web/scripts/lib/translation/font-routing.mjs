@@ -84,21 +84,34 @@ export function fontRoleFor({ sourceFamily = null, role = null, semanticClass = 
   return 'body';
 }
 
-/* Resolve the source-truth fontFamily for a language + role.
-   Returns { family, role, language, sourceAvailable } — family is always the truth
-   name; sourceAvailable is left null here (file availability is figma-fonts' job). */
+function isYouHeiFamily(family = '') {
+  return /YouHei/i.test(String(family || '')) || /FZVariable/i.test(String(family || ''));
+}
+
+function isNotoFamily(family = '') {
+  return /Noto Sans/i.test(String(family || ''));
+}
+
+function numericFontWeight(raw) {
+  if (raw == null || raw === '') return Number.NaN;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : Number.NaN;
+}
+
 export function routeFontWeight({ family = null, sourceFamily = null, sourceWeight = null, fontStyle = null } = {}) {
-  const requested = Number(sourceWeight);
+  const requested = numericFontWeight(sourceWeight);
   /* Invariant latin-display faces (YAML localeInvariantFamilies) only ship 400. */
   if (isLocaleInvariantFamily(family) || isLocaleInvariantFamily(sourceFamily)) return 400;
   if (/Alimama/i.test(String(family || sourceFamily || ''))) return 700;
   const target = String(family || '');
   const source = String(sourceFamily || family || '');
-  const youHeiSource = /YouHei/i.test(source) || /FZVariable/i.test(source);
-  const youHeiTarget = /YouHei/i.test(target) || /FZVariable/i.test(target);
-  const regularYouHei = requested === 600 || (youHeiSource && /Regular/i.test(String(fontStyle || '')));
-  /* Noto Regular is 400. Do not carry YouHei named-Regular 600 across. */
-  if (!youHeiTarget && regularYouHei) return 400;
+  const youHeiSource = isYouHeiFamily(source);
+  const youHeiTarget = isYouHeiFamily(target);
+  const notoTarget = isNotoFamily(target);
+  const regularStyle = /Regular/i.test(String(fontStyle || ''));
+  const youHeiRegular = youHeiSource && (requested === 600 || (!Number.isFinite(requested) && regularStyle));
+  /* Only YouHei Regular → Noto Regular 400. Figma Noto 600 and any other 600 stay. */
+  if (youHeiSource && notoTarget && youHeiRegular) return 400;
   if (youHeiTarget) {
     return Number.isFinite(requested) ? requested : 600;
   }
@@ -130,6 +143,9 @@ export function youHeiVariationSettings({ sourceWeight = null, postScriptName = 
   return `"wght" ${wght}, "wdth" ${wdth}, "hght" ${hght}`;
 }
 
+/* Resolve the source-truth fontFamily for a language + role.
+   Returns { family, role, language, sourceAvailable } — family is always the truth
+   name; sourceAvailable is left null here (file availability is figma-fonts' job). */
 export function routeFontFamily({ language = 'unknown', role = null, semanticClass = null, sourceFamily = null, sourceWeight = null, fontStyle = null } = {}) {
   const lang = normalizeLanguage(language);
   const fontRole = fontRoleFor({ sourceFamily, role, semanticClass });

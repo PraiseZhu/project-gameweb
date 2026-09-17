@@ -110,7 +110,7 @@ Import `scripts/lib/translation/index.mjs` for the reusable interface:
 - `buildFontFallbackPolicy`: preserves the requested family first and reports
   unavailable requested families for review; generic fallback candidates are
   evidence, not silent style replacement.
-- `routeFontWeight` / `buildFontWeightPolicy`: zh-CN YouHei keeps the inventory weight (Regular = 600). When routing YouHei Regular (600) to Noto, request Noto Regular 400. Bold 900 is unchanged. Locale size tiers still use the **source** YouHei weight, so mapping CSS to 400 does not drop Regular copy into the body 0.8 scale.
+- `routeFontWeight` / `buildFontWeightPolicy`: zh-CN YouHei keeps the inventory weight (Regular = 600). Map 600→400 only when the source is YouHei Regular and the target is a Noto family. Figma-specified Noto 600 language variants, any non-YouHei 600, Bold 900, and unadopted copy keep their source weight. `fontStyle` is passed through as Regular evidence and must not by itself reweight a Noto 600 face. Locale size tiers still use the **source** YouHei weight, so mapping CSS to 400 does not drop Regular copy into the body 0.8 scale.
 - `buildFontWeightPolicy` still reports missing or synthetic weights per language after that mapping.
 - `classifyFontWeight` and `classifyTypographyRange`: classify requested
   weight/readiness and measured browser range without changing Figma style.

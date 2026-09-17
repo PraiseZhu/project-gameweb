@@ -1192,15 +1192,18 @@
   },
   /* Mirror scripts/lib/translation/font-routing.mjs#routeFontWeight. */
   _routeFontWeight({ family = null, sourceFamily = null, sourceWeight = null, fontStyle = null } = {}) {
-    const requested = Number(sourceWeight);
+    const parsed = (sourceWeight == null || sourceWeight === '') ? Number.NaN : Number(sourceWeight);
+    const requested = Number.isFinite(parsed) ? parsed : Number.NaN;
     if (this._isLocaleInvariantFamily(family) || this._isLocaleInvariantFamily(sourceFamily)) return 400;
     if (/Alimama/i.test(String(family || sourceFamily || ''))) return 700;
     const target = String(family || '');
     const source = String(sourceFamily || family || '');
     const youHeiSource = /YouHei/i.test(source) || /FZVariable/i.test(source);
     const youHeiTarget = /YouHei/i.test(target) || /FZVariable/i.test(target);
-    const regularYouHei = requested === 600 || (youHeiSource && /Regular/i.test(String(fontStyle || '')));
-    if (!youHeiTarget && regularYouHei) return 400;
+    const notoTarget = /Noto Sans/i.test(target);
+    const regularStyle = /Regular/i.test(String(fontStyle || ''));
+    const youHeiRegular = youHeiSource && (requested === 600 || (!Number.isFinite(requested) && regularStyle));
+    if (youHeiSource && notoTarget && youHeiRegular) return 400;
     if (youHeiTarget) {
       return Number.isFinite(requested) ? requested : 600;
     }
@@ -1725,6 +1728,7 @@
     const text = (this._firstTextOfRecord(match) || {}).text || null;
     const fontFamily = String((text && text.fontFamily) || '').trim();
     const fontWeight = Number(text && text.fontWeight);
+    const fontStyle = text && text.fontStyle != null ? String(text.fontStyle) : null;
     if (!text || !fontFamily || !Number.isFinite(fontWeight)) return unverified('anchor-text-missing');
     if (lang !== 'zh-CN' && hasAdoptedCopy === false) {
       return { status: 'not-applicable', language: lang, reason: 'unadopted-copy-keeps-source', uppercase: lang === 'en' };
@@ -1739,6 +1743,7 @@
       role: isPrimaryFollow ? 'follow' : 'anchor',
       fontFamily,
       fontWeight,
+      fontStyle,
       letterSpacing,
       uppercase: lang === 'en',
     };
@@ -6433,7 +6438,7 @@
           });
           let fontRoute = { family: tx.fontFamily, weight: tx.fontWeight, role: null, language: ctx.prefs && ctx.prefs.lang, routed: false };
           if (primaryCta.status === 'matched') {
-            fontRoute = { family: primaryCta.fontFamily, weight: this._routeFontWeight({ family: primaryCta.fontFamily, sourceFamily: tx.fontFamily, sourceWeight: primaryCta.fontWeight != null ? primaryCta.fontWeight : tx.fontWeight, fontStyle: tx.fontStyle }), role: primaryCta.role, language: primaryCta.language, routed: true };
+            fontRoute = { family: primaryCta.fontFamily, weight: this._routeFontWeight({ family: primaryCta.fontFamily, sourceFamily: primaryCta.fontFamily, sourceWeight: primaryCta.fontWeight != null ? primaryCta.fontWeight : tx.fontWeight, fontStyle: primaryCta.fontStyle != null ? primaryCta.fontStyle : tx.fontStyle }), role: primaryCta.role, language: primaryCta.language, routed: true };
           } else if (_hasAdoptedCopy) {
             fontRoute = this._routeFontFamily({
               language: ctx.prefs && ctx.prefs.lang,

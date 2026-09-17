@@ -288,7 +288,7 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 
 外文框听稿上包着文案的那层 Auto Layout：`maxWidth` 是宽度硬限；写了 `maxHeight` 的，高度也是硬限。没写的那一轴不拿来当缩字理由，也不发明框。`TEXT.autoResize=HEIGHT` 是文字框可长高，不是 Frame 竖限。约束轴（用户 2026-09-17）：**横限制**（只写 `maxWidth`）已采用外文按书面 `maxWidth` 单行缩字，禁止用更宽父框 / `ownerWidth` / `box.w` 盖掉书面上限；**竖限制**（只写 `maxHeight`）换行，禁止走 `_fitText` 的 maxHeight 减字号，禁止发明宽 cap；**双轴**（同时有 `maxWidth` 与 `maxHeight`）用户待确认，维持现有「先按宽折行，超高再缩」。6.2 英文主 CTA 在已采用译文时仍单行缩字。禁止用「是不是 btn / 是不是英文」当通则。zh-CN 仍锁稿。禁止把页面 translateY 或后来撤销的锁高缩字写进本政策。换语言后文案必须**完整**落在这些已写的上限里，禁止裁切、省略号、截断顶过关。
 
-字重听清单：`fontWeight` / `fontStyle` / `fontPostScriptName`。切到 Noto 时，优黑 Regular（稿上 600）映射为 Noto Regular 400；简中仍 600。Bold 900 不改。可变优黑用元素上的 `font-variation-settings` 走 wght 轴。禁止 `@font-face` 写 `font-named-instance:"Regular"`：Regular 是 wght=600，稿上 Bold/900 会被钉死再假粗。
+字重听清单：`fontWeight` / `fontStyle` / `fontPostScriptName`。仅当源是优黑 Regular（稿上 600 或 `fontStyle` Regular）且目标是 Noto 系列时，映射为 Noto Regular 400。稿上已是 Noto 600 的语言变体不降。任意非优黑 600 不降。简中优黑仍 600。Bold 900、缺译保源，都不改。可变优黑用元素上的 `font-variation-settings` 走 wght 轴。禁止 `@font-face` 写 `font-named-instance:"Regular"`：Regular 是 wght=600，稿上 Bold/900 会被钉死再假粗。
 
 溢出就缩：先套档位比例，再按整数 px 减字号（行高同比），直到完整放下。不走 `100→92→85→78→75`，没有 75% 地板。组内兄弟共用同一整数字号，取最严的那档。没有 B 的 owner 就停，不缩。
 
@@ -356,7 +356,7 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 - Figma 设计宽 750 / 3840。官方 rem 按 1920 写。拉伸按第 5.0 节：`>1920` 列随视口；`1127–1920` 列冻 1920（`k=0.5`）再裁；`≤1126` 换手机树 `k=min(1, viewportW/750)`（751–1126 按钮冻 750，列跟窗口铺 KV 和后屏，750 内容居中）。首屏槽 = 当前窗口高，后屏从窗口底开始。页面 `overflow-x: hidden`。
 - 火炬产品树 `0–1126` / `≥1127`；不发明 pad 树。
 - 页面滚动锁到 bg/pc（PC）或 bg/mobile（手机）板底，不要用最后一颗 CTA 截短；其它 bg/* 切片不撑页高。
-- 外文 Noto Regular = 400（优黑 Regular 稿上 600 映射过去）；简中优黑 Regular 仍 600。Bold 900 不改。字号档仍按源优黑字重分层，不因 CSS 变成 400 就掉进 body 0.8。
+- 外文 Noto Regular = 400 只在源优黑 Regular 切到 Noto 时成立；稿上已是 Noto 600 的主 CTA 语言变体不降。简中优黑 Regular 仍 600。Bold 900、缺译保源，都不改。字号档仍按源优黑字重分层，不因 CSS 变成 400 就掉进 body 0.8。
 - zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；外文听 Auto Layout `maxWidth` / 已写的 `maxHeight`；溢出按整数 px 缩到完整放下。横限制单行缩字，竖限制换行，双轴用户待确认维持先折行再缩。字距：简繁用稿上 `letterSpacing`，en / ja / ko 为 `0`。字体：简中优黑，en `Noto Sans`，ja `Noto Sans JP`，ko `Noto Sans KR`，zh-TW `Noto Sans HK`；`Bebas Neue` 全语言不换。韩文覆盖听 `localeFontFamily.ko`，不把 Apple SD Gothic Neo 写成所有韩文的硬门。优黑字重听清单 900/Bold，禁止 named-instance 钉 Regular。
 - `btn/主要按钮` 的字体类型数据跟同端 `首屏主按钮` 该语言变体，不另开一套；`en` 主 CTA 页面强制大写，不听文案表大小写，也不听稿上有没有 `textCase=UPPER`；稿上没出该语言变体（如没有 `jp`）不算失败。
 - 不把 inventory JSON 焊进本文件。不改 naming spec、Interaction / Pack / 语义换行。`_fitText` 与 extract 的 max 字段只按第 6.1 节改；`_routeFontFamily` 只许改成读 YAML。
