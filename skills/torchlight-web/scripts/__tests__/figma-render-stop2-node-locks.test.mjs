@@ -887,6 +887,7 @@ test('SC-5 page scroll follows bg/pc or bg/mobile board bottom', () => {
   assert.equal(missing.height, 1300);
   assert.equal(missing.reason, 'board-missing');
   assert.match(rendererSrc, /data-page-scroll-overflow/);
+  assert.match(rendererSrc, /removeAttribute\('data-page-scroll-overflow'\)/);
   assert.doesNotMatch(rendererSrc, /const pageScrollHeight = pageScope && heroSlot\s*\n\s*\? Math\.max/);
 });
 

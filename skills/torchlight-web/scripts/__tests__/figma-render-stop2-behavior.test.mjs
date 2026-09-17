@@ -552,10 +552,13 @@ function boardTruth({ boardH, contentH }) {
   };
 }
 
-async function measureBoardPage(page, truth) {
+async function mountBoardPage(page) {
   await page.setContent('<!doctype html><body><div class="frame" style="position:relative;width:800px;overflow:auto"></div><script type="application/json" id="qa-assets">{}</script></body>');
   await page.evaluate((policy) => { window.__designPolicy = policy; }, DESIGN_POLICY);
   await page.addScriptTag({ path: rendererPath });
+}
+
+async function renderBoardPage(page, truth) {
   await page.evaluate((payload) => {
     window.__figmaRender.__assetCache = null;
     window.__figmaRender.renderApp({
@@ -568,6 +571,9 @@ async function measureBoardPage(page, truth) {
       viewport: { w: 800, h: 2000, dpr: 1 },
     });
   }, truth);
+}
+
+async function snapshotBoardPage(page) {
   return page.evaluate(() => {
     const frame = document.querySelector('.frame');
     const stage = document.querySelector('[data-node-id="page-scope"]');
@@ -585,6 +591,12 @@ async function measureBoardPage(page, truth) {
   });
 }
 
+async function measureBoardPage(page, truth) {
+  await mountBoardPage(page);
+  await renderBoardPage(page, truth);
+  return snapshotBoardPage(page);
+}
+
 browserTest('page scroll ends at bg/pc board; content past the board fail-closes without raising height', async () => {
   const { browser } = await launchChromium(root, { headless: true });
   const page = await browser.newPage({ viewport: { width: 800, height: 2000 } });
@@ -599,6 +611,29 @@ browserTest('page scroll ends at bg/pc board; content past the board fail-closes
     assert.ok(measured.scrollHeight < 1300, JSON.stringify(measured));
     assert.ok(Math.abs(measured.scrollHeight - 1000) < 2 || measured.scrollHeight <= 1000 + 2, JSON.stringify(measured));
     assert.equal(measured.tailPresent, true);
+  } finally {
+    await browser.close();
+  }
+});
+
+browserTest('page scroll overflow mark clears when a later render fits the board', async () => {
+  const { browser } = await launchChromium(root, { headless: true });
+  const page = await browser.newPage({ viewport: { width: 800, height: 2000 } });
+  try {
+    await mountBoardPage(page);
+    await renderBoardPage(page, boardTruth({ boardH: 1000, contentH: 1300 }));
+    const over = await snapshotBoardPage(page);
+    assert.equal(over.lock, 'content-past-board');
+    assert.equal(Number(over.overflow), 300);
+    assert.equal(over.height, 1000);
+    await renderBoardPage(page, boardTruth({ boardH: 1000, contentH: 800 }));
+    const inside = await snapshotBoardPage(page);
+    assert.equal(inside.lock, 'board-bottom');
+    assert.equal(inside.overflow, null);
+    assert.equal(inside.height, 1000);
+    assert.equal(inside.content, 800);
+    assert.equal(inside.stageH, 1000);
+    assert.equal(inside.tailPresent, true);
   } finally {
     await browser.close();
   }

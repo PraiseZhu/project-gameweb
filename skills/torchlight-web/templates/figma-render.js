@@ -3250,6 +3250,8 @@
     frame.setAttribute('data-page-scroll-height', String(pageScrollLock.height));
     if (pageScrollLock.overflowPx > 0) {
       frame.setAttribute('data-page-scroll-overflow', String(pageScrollLock.overflowPx));
+    } else {
+      frame.removeAttribute('data-page-scroll-overflow');
     }
     /* Hero slot only moves after-hero *sections*. pageBackground stays at Figma
        y, so the last painted bg slice ends early and the shifted tail looks like
