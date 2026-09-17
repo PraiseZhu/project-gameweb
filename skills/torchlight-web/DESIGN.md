@@ -226,7 +226,7 @@ localeInvariantFamilies:
 | # | 查询 | 文件 | 选择器数 / display | 现测 | 产品 |
 |---|---|---|---|---|---|
 | B1 | `(hover:hover)` `.m-tap:hover { opacity:.9 }` | 框架 col 374 | 1 / 0 | 桌面 tap 变淡 | 不跟季节视觉 |
-| B2 | `(hover:hover)` 两段：`.btn { cursor:pointer; transition:filter .2s }` 和 `.btn:hover { filter:brightness(1.1) }` | `#global-style` | 2 / 0 | 按钮提亮 | **跟通用反馈**：hover `brightness(1.1)`、press `0.9`、`filter .2s ease-in-out`；不跟季节 `.m-tap { opacity:.9 }` |
+| B2 | `(hover:hover)` 两段：`.btn { cursor:pointer; transition:filter .2s }` 和 `.btn:hover { filter:brightness(1.1) }` | `#global-style` | 2 / 0 | 按钮提亮 | **跟通用反馈**：hover `brightness(1.12)`、press `0.88`；transition none；不跟季节 `.m-tap { opacity:.9 }` |
 | B3 | `(max-width: 812px)` `#auto-adaptive-package .qr-code { display:none }` | 框架 | 1 / 1 | 藏侧边 QR | 不跟 |
 | B4 | `screen and (max-width: 1126px)` | `#main-style` col 54145 | 245 / **5 条 display**：`none` 51 名、`flex` 23 名、`block` 24 名，另加 `.i_mr4nvo8bj2{display:flex}` 和 `{position:absolute;display:block}` 各 1 名 | **唯一切树档**。另有约 240 条 rem。1126 时 PC 列 `width:17.0515097691rem` = 1920 但已 `display:none` | **跟 display 切树**。列宽改走手机 `10vw`（§5.0），不抄这档里残留的 1920 rem |
 | B5 | `screen and (max-width: 1920px)` | `#main-style` | 211 / 0 | PC 列冻 `1920px`；下一节 `1043px/104px`；31 条 font 从 rem 改 `calc(18/23/25/30px * --moo-font-scale)` | **跟列宽冻结 + 字号冻 px**（§5.0 `1127–1920`）。不抄 211 条逐层 px，产品用 Figma 几何 × `k=0.5` |

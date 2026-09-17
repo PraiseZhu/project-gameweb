@@ -12,9 +12,9 @@
 export const BUTTON_PRESS_SCHEMA = 'figma-button-press-contract/v1';
 
 export const BUTTON_PRESS_TOKENS = Object.freeze({
-  hoverBrightness: 1.1,
-  pressBrightness: 0.9,
-  transition: 'filter .2s ease-in-out',
+  hoverBrightness: 1.12,
+  pressBrightness: 0.88,
+  transition: 'none',
 });
 
 export const BUTTON_PRESS_SELECTOR = [
@@ -59,10 +59,10 @@ export function buttonPressCss({
   return [
     `:root{--fx-hover-brightness:${hover};--fx-press-brightness:${press}}`,
     '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
-    `${sel},[data-hscroll-action],[data-calendar-now-state="return-today"]{cursor:pointer;transition:filter .2s ease-in-out}`,
+    `${sel},[data-hscroll-action],[data-calendar-now-state="return-today"]{cursor:pointer}`,
     `@media (hover: hover){${withPseudo(sel, ':hover')}{filter:brightness(var(--fx-hover-brightness))}}`,
     `${withPseudo(sel, ':active')}{filter:brightness(var(--fx-press-brightness))}`,
-    '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none;transition:none}',
+    '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
     '[data-dropmenu="true"]:hover,[data-dropmenu="true"]:active{filter:none}',
     '[data-dropmenu-state="on"] [data-prefix="img"]{filter:none}',
   ].join('');

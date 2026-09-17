@@ -2897,9 +2897,9 @@
         || motionAdapter && (motionAdapter.interactionPayload || motionAdapter.interaction && motionAdapter.interaction.rendererPayload);
       const css = payload && payload.buttonPress && payload.buttonPress.css
         || [
-          ':root{--fx-hover-brightness:1.1;--fx-press-brightness:.9}',
+          ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
           '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
-          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer;transition:filter .2s ease-in-out}',
+          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
           '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
           'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
           '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none;transition:none}',

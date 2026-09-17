@@ -88,13 +88,13 @@ test('prev/next and tabs inherit press feel without becoming pages', () => {
 
 test('global CSS is brightness, hover-gated, and transitions filter', () => {
   const css = buttonPressCss();
-  assert.match(css, /--fx-hover-brightness:1\.1/);
-  assert.match(css, /--fx-press-brightness:0\.9/);
+  assert.match(css, /--fx-hover-brightness:1\.12/);
+  assert.match(css, /--fx-press-brightness:0\.88/);
   assert.match(css, /@media \(hover: hover\)/);
   assert.match(css, /filter:brightness\(var\(--fx-hover-brightness\)\)/);
   assert.match(css, /filter:brightness\(var\(--fx-press-brightness\)\)/);
-  assert.equal(BUTTON_PRESS_TOKENS.transition, 'filter .2s ease-in-out');
-  assert.match(css, /transition:filter \.2s ease-in-out/);
+  assert.equal(BUTTON_PRESS_TOKENS.transition, 'none');
+  assert.doesNotMatch(css, /transition:filter \.2s ease-in-out/);
   assert.match(BUTTON_PRESS_SELECTOR, /\[data-btn-press="true"\]/);
 });
 
@@ -109,7 +109,7 @@ test('renderer payload carries the press stylesheet for offline demos', () => {
 
 test('renderer injects the press stylesheet and does not treat brightness as highlight', () => {
   assert.match(renderer, /data-fx-button-press/);
-  assert.match(renderer, /--fx-hover-brightness:1\.1/);
+  assert.match(renderer, /--fx-hover-brightness:1\.12/);
   assert.match(renderer, /data-btn-press/);
   assert.match(renderer, /data-btn-action/);
   assert.doesNotMatch(renderer, /filter:brightness\(1\.1[25]\).*highlight/);
