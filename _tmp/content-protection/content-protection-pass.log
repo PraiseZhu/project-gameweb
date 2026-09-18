@@ -1,5 +1,5 @@
-evidence_generated_at=2026-09-18T06:48:40.735Z
-base_commit=9678c3ccf8408ed1239dd7cc53f5818441a531d2
+evidence_generated_at=2026-09-18T08:05:00.751Z
+base_commit=1e2ecbcd4c35df9f170ae1e0f428d02dafccc49e
 source_sha256=e2ec0cfe4986d25fef1d761c78de333323c18d47267e782cc7df00090e3869c2 .github/scripts/content-protection-gate.mjs
 source_sha256=a102f6568f0ff15828f63718b93c8e63bb1ef7d5492af9faf5c9f1119addc12e .github/scripts/content-protection-artifact-gate.mjs
 source_sha256=08f4faf914dcce7dc4136c38aed57adb529eb1407d0ab73300526a322d6da11e .github/workflows/content-protection.yml
@@ -9,27 +9,27 @@ source_sha256=f3cedec9b828c198cd633faf65466e8af8cba331ff08e4fc571fb39db23ec880 s
 source_sha256=67b07c9fd6a691bfe1e36451d3de6f6f3064c841fbe2e0ade1fd3aa8f42ec8d9 skills/torchlight-web/scripts/__tests__/content-protection-contract.test.mjs
 source_sha256=410bd1520854cf084bdf9e5cf750def8b1e7b0b3752080503ba7b53da514e514 skills/torchlight-web/scripts/__tests__/content-protection-browser.test.mjs
 source_sha256=f3cedec9b828c198cd633faf65466e8af8cba331ff08e4fc571fb39db23ec880 skills/torchlight-web/scripts/__tests__/content-protection-boundaries.test.mjs
-source_sha256=d23eecc09c374d54f0ebb4652c8c62fffecb13fc7d69719dd39610786fe09901 skills/yise-web-ui/templates/figma-render.js
+source_sha256=6c861d72c1098854bbbcda034250c36b7420982e844feda2b71de7749516f9db skills/yise-web-ui/templates/figma-render.js
 source_sha256=0ec3a3f1370b5458d6e53f27103338d6a1b0e38fe294805962fce0b45f303f8d skills/yise-web-ui/templates/figma-chrome.js
 source_sha256=f47a13ea317fa85bc7d47d414c46ec898c7c0e93c51dd820f2dc2a2d761c6c65 skills/yise-web-ui/templates/qa-chrome.js
 source_sha256=b6f6bbc9248659b65982a81fa33f375016394751f7f9c9a136f96bdd0a0d961e skills/yise-web-ui/templates/qa-component-adapter.js
-source_sha256=e2a99971be1d66b9359b092ddc5f01baa871a47b22d099362f69ca307e03ed7b skills/yise-web-ui/templates/demo-shell.html
+source_sha256=820dd0a5e5b1ae72e981dd5053e31d55805184c2ca0c016718c67d86371040a9 skills/yise-web-ui/templates/demo-shell.html
 source_sha256=b633a04bbe5ae28d4a417b9a3bf8a8ffef91544ac9419326017e9efbfa8901b9 skills/yise-web-ui/templates/component-shell.html
-source_sha256=3c11c8f4b442748155b220c5aca4a2bfa9b5bdb005befc6b8dcbe05cd0897920 skills/torchlight-web/templates/figma-render.js
+source_sha256=4ae591903092fc52301d2d1126716ead3d1d1df5e96615be22e1b47e52f23414 skills/torchlight-web/templates/figma-render.js
 source_sha256=5b3fcc338417441a6a9676161c8af9166a0bb786a5021826672b2f0ae509d4e0 skills/torchlight-web/templates/figma-chrome.js
 source_sha256=447cb3ce4456736b80be2dc8d01e6f5ffef896623d0b22798727e0d715b71693 skills/torchlight-web/templates/qa-chrome.js
 source_sha256=b6f6bbc9248659b65982a81fa33f375016394751f7f9c9a136f96bdd0a0d961e skills/torchlight-web/templates/qa-component-adapter.js
-source_sha256=bfe9f9d4c33069806daf304529e2e260d9720ac711e03328cf84016aac88f853 skills/torchlight-web/templates/demo-shell.html
+source_sha256=d4d94f3c1dbcf287e61d9d710dd9886c7d00285ab7d1524c50b3d5b0a989cf29 skills/torchlight-web/templates/demo-shell.html
 source_sha256=b633a04bbe5ae28d4a417b9a3bf8a8ffef91544ac9419326017e9efbfa8901b9 skills/torchlight-web/templates/component-shell.html
-torchlight-web/index.html: 内容保护产物检查通过 sha256=74efd777f3262e576a06999966b0efce2bf666b9b3bcfe8d727f910ce518af10
-yise-web-ui/index.html: 内容保护产物检查通过 sha256=7a68d2834665423144373c54161abc7b36c04a723735fc2aac834a509ac19042
+torchlight-web/index.html: 内容保护产物检查通过 sha256=44195f4c562a36e2cd6285e23c64c125612d082ad4baf46f5e04fc8a30795a6f
+yise-web-ui/index.html: 内容保护产物检查通过 sha256=137b1aeaa8aef528fee30e98aae3393c4190be82c3f36b35f1774c654f357cd3
 内容保护产物闸门通过：2 个 HTML
 检查 skills/yise-web-ui/scripts/__tests__/content-protection-contract.test.mjs
 TAP version 13
 # Subtest: product and QA renderer installs content protection independently of interaction opt-in
 ok 1 - product and QA renderer installs content protection independently of interaction opt-in
   ---
-  duration_ms: 1.027208
+  duration_ms: 0.8655
   type: 'test'
   ...
 1..1
@@ -40,62 +40,62 @@ ok 1 - product and QA renderer installs content protection independently of inte
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 64.8445
+# duration_ms 56.129292
 检查 skills/yise-web-ui/scripts/__tests__/content-protection-browser.test.mjs
 TAP version 13
 # Subtest: real product and QA shells protect content, retain editing and survive remounts
     # Subtest: QA 390 interaction=false
     ok 1 - QA 390 interaction=false
       ---
-      duration_ms: 2215.457167
+      duration_ms: 2473.203584
       type: 'test'
       ...
     # Subtest: QA 390 interaction=true
     ok 2 - QA 390 interaction=true
       ---
-      duration_ms: 1659.811125
+      duration_ms: 2008.889375
       type: 'test'
       ...
     # Subtest: QA 1440 interaction=false
     ok 3 - QA 1440 interaction=false
       ---
-      duration_ms: 1714.01275
+      duration_ms: 1900.218167
       type: 'test'
       ...
     # Subtest: QA 1440 interaction=true
     ok 4 - QA 1440 interaction=true
       ---
-      duration_ms: 1764.151708
+      duration_ms: 1891.889042
       type: 'test'
       ...
     # Subtest: product 390 interaction=false
     ok 5 - product 390 interaction=false
       ---
-      duration_ms: 1584.662541
+      duration_ms: 1986.535167
       type: 'test'
       ...
     # Subtest: product 390 interaction=true
     ok 6 - product 390 interaction=true
       ---
-      duration_ms: 1498.404291
+      duration_ms: 1923.151125
       type: 'test'
       ...
     # Subtest: product 1440 interaction=false
     ok 7 - product 1440 interaction=false
       ---
-      duration_ms: 1703.506
+      duration_ms: 3297.207583
       type: 'test'
       ...
     # Subtest: product 1440 interaction=true
     ok 8 - product 1440 interaction=true
       ---
-      duration_ms: 1598.350375
+      duration_ms: 2980.459042
       type: 'test'
       ...
     1..8
 ok 1 - real product and QA shells protect content, retain editing and survive remounts
   ---
-  duration_ms: 15295.232042
+  duration_ms: 20703.12125
   type: 'test'
   ...
 1..1
@@ -106,7 +106,7 @@ ok 1 - real product and QA shells protect content, retain editing and survive re
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 15391.872125
+# duration_ms 20845.362209
 检查 skills/yise-web-ui/scripts/__tests__/content-protection-boundaries.test.mjs engine=chromium
 TAP version 13
 # browser_engine=chromium browser_version=151.0.7922.34
@@ -114,73 +114,73 @@ TAP version 13
     # Subtest: component-shell
     ok 1 - component-shell
       ---
-      duration_ms: 1175.735584
+      duration_ms: 2334.623
       type: 'test'
       ...
     # Subtest: open-shadow-dom
     ok 2 - open-shadow-dom
       ---
-      duration_ms: 512.652625
+      duration_ms: 392.400917
       type: 'test'
       ...
     # Subtest: same-origin-iframe-navigation
     ok 3 - same-origin-iframe-navigation
       ---
-      duration_ms: 1449.204584
+      duration_ms: 1419.515041
       type: 'test'
       ...
     # Subtest: opaque-iframe-explicitly-unverified
     ok 4 - opaque-iframe-explicitly-unverified
       ---
-      duration_ms: 579.144291
+      duration_ms: 790.454
       type: 'test'
       ...
     # Subtest: strict-csp-nonce
     ok 5 - strict-csp-nonce
       ---
-      duration_ms: 651.327584
+      duration_ms: 382.973583
       type: 'test'
       ...
     # Subtest: disabled-js-static-selection-only
     ok 6 - disabled-js-static-selection-only
       ---
-      duration_ms: 293.854667
+      duration_ms: 511.28325
       type: 'test'
       ...
     # Subtest: csp-blocked-runtime-is-not-protected
     ok 7 - csp-blocked-runtime-is-not-protected
       ---
-      duration_ms: 311.691042
+      duration_ms: 532.694209
       type: 'test'
       ...
     # Subtest: csp-style-blocked-runtime-is-partial
     ok 8 - csp-style-blocked-runtime-is-partial
       ---
-      duration_ms: 301.200375
+      duration_ms: 390.932041
       type: 'test'
       ...
     # Subtest: unprotected-native-action-control
     ok 9 - unprotected-native-action-control
       ---
-      duration_ms: 355.225292
+      duration_ms: 553.254875
       type: 'test'
       ...
     # Subtest: offline-file-url
     ok 10 - offline-file-url
       ---
-      duration_ms: 382.678583
+      duration_ms: 417.985583
       type: 'test'
       ...
     # Subtest: disabled-fieldset-and-live-body-replacement
     ok 11 - disabled-fieldset-and-live-body-replacement
       ---
-      duration_ms: 455.750666
+      duration_ms: 363.977916
       type: 'test'
       ...
     1..11
 ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
   ---
-  duration_ms: 7350.302334
+  duration_ms: 10387.966667
   type: 'test'
   ...
 1..1
@@ -191,7 +191,7 @@ ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 7448.03625
+# duration_ms 10577.060958
 检查 skills/yise-web-ui/scripts/__tests__/content-protection-boundaries.test.mjs engine=firefox
 TAP version 13
 # browser_engine=firefox browser_version=153.0
@@ -199,73 +199,73 @@ TAP version 13
     # Subtest: component-shell
     ok 1 - component-shell
       ---
-      duration_ms: 2461.726916
+      duration_ms: 2101.86775
       type: 'test'
       ...
     # Subtest: open-shadow-dom
     ok 2 - open-shadow-dom
       ---
-      duration_ms: 1066.247417
+      duration_ms: 605.713625
       type: 'test'
       ...
     # Subtest: same-origin-iframe-navigation
     ok 3 - same-origin-iframe-navigation
       ---
-      duration_ms: 1377.921083
+      duration_ms: 542.797792
       type: 'test'
       ...
     # Subtest: opaque-iframe-explicitly-unverified
     ok 4 - opaque-iframe-explicitly-unverified
       ---
-      duration_ms: 634.754416
+      duration_ms: 550.281375
       type: 'test'
       ...
     # Subtest: strict-csp-nonce
     ok 5 - strict-csp-nonce
       ---
-      duration_ms: 393.958625
+      duration_ms: 331.760625
       type: 'test'
       ...
     # Subtest: disabled-js-static-selection-only
     ok 6 - disabled-js-static-selection-only
       ---
-      duration_ms: 304.4885
+      duration_ms: 277.332208
       type: 'test'
       ...
     # Subtest: csp-blocked-runtime-is-not-protected
     ok 7 - csp-blocked-runtime-is-not-protected
       ---
-      duration_ms: 330.082125
+      duration_ms: 369.737708
       type: 'test'
       ...
     # Subtest: csp-style-blocked-runtime-is-partial
     ok 8 - csp-style-blocked-runtime-is-partial
       ---
-      duration_ms: 303.463625
+      duration_ms: 401.218458
       type: 'test'
       ...
     # Subtest: unprotected-native-action-control
     ok 9 - unprotected-native-action-control
       ---
-      duration_ms: 507.582667
+      duration_ms: 484.283583
       type: 'test'
       ...
     # Subtest: offline-file-url
     ok 10 - offline-file-url
       ---
-      duration_ms: 1908.159125
+      duration_ms: 1337.521208
       type: 'test'
       ...
     # Subtest: disabled-fieldset-and-live-body-replacement
     ok 11 - disabled-fieldset-and-live-body-replacement
       ---
-      duration_ms: 812.933166
+      duration_ms: 394.435709
       type: 'test'
       ...
     1..11
 ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
   ---
-  duration_ms: 11978.32625
+  duration_ms: 10217.811417
   type: 'test'
   ...
 1..1
@@ -276,7 +276,7 @@ ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 12082.252167
+# duration_ms 10297.537084
 检查 skills/yise-web-ui/scripts/__tests__/content-protection-boundaries.test.mjs engine=webkit
 TAP version 13
 # browser_engine=webkit browser_version=26.5
@@ -284,73 +284,73 @@ TAP version 13
     # Subtest: component-shell
     ok 1 - component-shell
       ---
-      duration_ms: 3285.764291
+      duration_ms: 1931.359125
       type: 'test'
       ...
     # Subtest: open-shadow-dom
     ok 2 - open-shadow-dom
       ---
-      duration_ms: 508.226709
+      duration_ms: 577.44925
       type: 'test'
       ...
     # Subtest: same-origin-iframe-navigation
     ok 3 - same-origin-iframe-navigation
       ---
-      duration_ms: 581.281458
+      duration_ms: 716.117042
       type: 'test'
       ...
     # Subtest: opaque-iframe-explicitly-unverified
     ok 4 - opaque-iframe-explicitly-unverified
       ---
-      duration_ms: 302.463458
+      duration_ms: 324.977708
       type: 'test'
       ...
     # Subtest: strict-csp-nonce
     ok 5 - strict-csp-nonce
       ---
-      duration_ms: 311.024541
+      duration_ms: 374.337792
       type: 'test'
       ...
     # Subtest: disabled-js-static-selection-only
     ok 6 - disabled-js-static-selection-only
       ---
-      duration_ms: 337.463375
+      duration_ms: 341.415542
       type: 'test'
       ...
     # Subtest: csp-blocked-runtime-is-not-protected
     ok 7 - csp-blocked-runtime-is-not-protected
       ---
-      duration_ms: 286.001583
+      duration_ms: 409.121334
       type: 'test'
       ...
     # Subtest: csp-style-blocked-runtime-is-partial
     ok 8 - csp-style-blocked-runtime-is-partial
       ---
-      duration_ms: 354.011375
+      duration_ms: 287.829208
       type: 'test'
       ...
     # Subtest: unprotected-native-action-control
     ok 9 - unprotected-native-action-control
       ---
-      duration_ms: 506.1375
+      duration_ms: 311.394791
       type: 'test'
       ...
     # Subtest: offline-file-url
     ok 10 - offline-file-url
       ---
-      duration_ms: 503.258084
+      duration_ms: 415.641417
       type: 'test'
       ...
     # Subtest: disabled-fieldset-and-live-body-replacement
     ok 11 - disabled-fieldset-and-live-body-replacement
       ---
-      duration_ms: 507.531958
+      duration_ms: 309.139833
       type: 'test'
       ...
     1..11
 ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
   ---
-  duration_ms: 8561.42475
+  duration_ms: 8270.243291
   type: 'test'
   ...
 1..1
@@ -361,13 +361,13 @@ ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 8649.535375
+# duration_ms 8358.19
 检查 skills/torchlight-web/scripts/__tests__/content-protection-contract.test.mjs
 TAP version 13
 # Subtest: product and QA renderer installs content protection independently of interaction opt-in
 ok 1 - product and QA renderer installs content protection independently of interaction opt-in
   ---
-  duration_ms: 1.29725
+  duration_ms: 3.322916
   type: 'test'
   ...
 1..1
@@ -378,62 +378,62 @@ ok 1 - product and QA renderer installs content protection independently of inte
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 68.420875
+# duration_ms 331.510917
 检查 skills/torchlight-web/scripts/__tests__/content-protection-browser.test.mjs
 TAP version 13
 # Subtest: real product and QA shells protect content, retain editing and survive remounts
     # Subtest: QA 390 interaction=false
     ok 1 - QA 390 interaction=false
       ---
-      duration_ms: 2168.212959
+      duration_ms: 3007.999
       type: 'test'
       ...
     # Subtest: QA 390 interaction=true
     ok 2 - QA 390 interaction=true
       ---
-      duration_ms: 1708.774083
+      duration_ms: 3317.787833
       type: 'test'
       ...
     # Subtest: QA 1440 interaction=false
     ok 3 - QA 1440 interaction=false
       ---
-      duration_ms: 2500.86325
+      duration_ms: 2137.367041
       type: 'test'
       ...
     # Subtest: QA 1440 interaction=true
     ok 4 - QA 1440 interaction=true
       ---
-      duration_ms: 2097.935833
+      duration_ms: 1768.104375
       type: 'test'
       ...
     # Subtest: product 390 interaction=false
     ok 5 - product 390 interaction=false
       ---
-      duration_ms: 1814.353792
+      duration_ms: 1735.013625
       type: 'test'
       ...
     # Subtest: product 390 interaction=true
     ok 6 - product 390 interaction=true
       ---
-      duration_ms: 1584.864583
+      duration_ms: 2209.249917
       type: 'test'
       ...
     # Subtest: product 1440 interaction=false
     ok 7 - product 1440 interaction=false
       ---
-      duration_ms: 1547.650333
+      duration_ms: 2624.081625
       type: 'test'
       ...
     # Subtest: product 1440 interaction=true
     ok 8 - product 1440 interaction=true
       ---
-      duration_ms: 1549.429167
+      duration_ms: 1977.788209
       type: 'test'
       ...
     1..8
 ok 1 - real product and QA shells protect content, retain editing and survive remounts
   ---
-  duration_ms: 16919.446
+  duration_ms: 21001.019
   type: 'test'
   ...
 1..1
@@ -444,7 +444,7 @@ ok 1 - real product and QA shells protect content, retain editing and survive re
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 17018.262417
+# duration_ms 21303.154291
 检查 skills/torchlight-web/scripts/__tests__/content-protection-boundaries.test.mjs engine=chromium
 TAP version 13
 # browser_engine=chromium browser_version=151.0.7922.34
@@ -452,73 +452,73 @@ TAP version 13
     # Subtest: component-shell
     ok 1 - component-shell
       ---
-      duration_ms: 967.610834
+      duration_ms: 1184.951291
       type: 'test'
       ...
     # Subtest: open-shadow-dom
     ok 2 - open-shadow-dom
       ---
-      duration_ms: 392.831
+      duration_ms: 364.686917
       type: 'test'
       ...
     # Subtest: same-origin-iframe-navigation
     ok 3 - same-origin-iframe-navigation
       ---
-      duration_ms: 573.965375
+      duration_ms: 557.080083
       type: 'test'
       ...
     # Subtest: opaque-iframe-explicitly-unverified
     ok 4 - opaque-iframe-explicitly-unverified
       ---
-      duration_ms: 287.02225
+      duration_ms: 385.738792
       type: 'test'
       ...
     # Subtest: strict-csp-nonce
     ok 5 - strict-csp-nonce
       ---
-      duration_ms: 423.351666
+      duration_ms: 308.046166
       type: 'test'
       ...
     # Subtest: disabled-js-static-selection-only
     ok 6 - disabled-js-static-selection-only
       ---
-      duration_ms: 287.563
+      duration_ms: 557.535375
       type: 'test'
       ...
     # Subtest: csp-blocked-runtime-is-not-protected
     ok 7 - csp-blocked-runtime-is-not-protected
       ---
-      duration_ms: 284.227708
+      duration_ms: 1325.050208
       type: 'test'
       ...
     # Subtest: csp-style-blocked-runtime-is-partial
     ok 8 - csp-style-blocked-runtime-is-partial
       ---
-      duration_ms: 312.764875
+      duration_ms: 622.881459
       type: 'test'
       ...
     # Subtest: unprotected-native-action-control
     ok 9 - unprotected-native-action-control
       ---
-      duration_ms: 347.162583
+      duration_ms: 341.502084
       type: 'test'
       ...
     # Subtest: offline-file-url
     ok 10 - offline-file-url
       ---
-      duration_ms: 330.338458
+      duration_ms: 349.885875
       type: 'test'
       ...
     # Subtest: disabled-fieldset-and-live-body-replacement
     ok 11 - disabled-fieldset-and-live-body-replacement
       ---
-      duration_ms: 352.996458
+      duration_ms: 330.934958
       type: 'test'
       ...
     1..11
 ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
   ---
-  duration_ms: 5284.576666
+  duration_ms: 7618.535541
   type: 'test'
   ...
 1..1
@@ -529,7 +529,7 @@ ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 5356.720417
+# duration_ms 7716.682458
 检查 skills/torchlight-web/scripts/__tests__/content-protection-boundaries.test.mjs engine=firefox
 TAP version 13
 # browser_engine=firefox browser_version=153.0
@@ -537,73 +537,73 @@ TAP version 13
     # Subtest: component-shell
     ok 1 - component-shell
       ---
-      duration_ms: 1848.178875
+      duration_ms: 2346.573417
       type: 'test'
       ...
     # Subtest: open-shadow-dom
     ok 2 - open-shadow-dom
       ---
-      duration_ms: 765.587666
+      duration_ms: 775.585333
       type: 'test'
       ...
     # Subtest: same-origin-iframe-navigation
     ok 3 - same-origin-iframe-navigation
       ---
-      duration_ms: 721.689833
+      duration_ms: 560.371833
       type: 'test'
       ...
     # Subtest: opaque-iframe-explicitly-unverified
     ok 4 - opaque-iframe-explicitly-unverified
       ---
-      duration_ms: 336.368333
+      duration_ms: 256.979458
       type: 'test'
       ...
     # Subtest: strict-csp-nonce
     ok 5 - strict-csp-nonce
       ---
-      duration_ms: 636.399375
+      duration_ms: 389.727625
       type: 'test'
       ...
     # Subtest: disabled-js-static-selection-only
     ok 6 - disabled-js-static-selection-only
       ---
-      duration_ms: 249.247833
+      duration_ms: 342.995542
       type: 'test'
       ...
     # Subtest: csp-blocked-runtime-is-not-protected
     ok 7 - csp-blocked-runtime-is-not-protected
       ---
-      duration_ms: 267.175792
+      duration_ms: 361.908708
       type: 'test'
       ...
     # Subtest: csp-style-blocked-runtime-is-partial
     ok 8 - csp-style-blocked-runtime-is-partial
       ---
-      duration_ms: 281.745792
+      duration_ms: 278.158541
       type: 'test'
       ...
     # Subtest: unprotected-native-action-control
     ok 9 - unprotected-native-action-control
       ---
-      duration_ms: 460.195125
+      duration_ms: 409.064458
       type: 'test'
       ...
     # Subtest: offline-file-url
     ok 10 - offline-file-url
       ---
-      duration_ms: 1749.85225
+      duration_ms: 979.405875
       type: 'test'
       ...
     # Subtest: disabled-fieldset-and-live-body-replacement
     ok 11 - disabled-fieldset-and-live-body-replacement
       ---
-      duration_ms: 644.990292
+      duration_ms: 331.249916
       type: 'test'
       ...
     1..11
 ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
   ---
-  duration_ms: 9378.438958
+  duration_ms: 9081.8995
   type: 'test'
   ...
 1..1
@@ -614,7 +614,7 @@ ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 9455.100417
+# duration_ms 9163.622542
 检查 skills/torchlight-web/scripts/__tests__/content-protection-boundaries.test.mjs engine=webkit
 TAP version 13
 # browser_engine=webkit browser_version=26.5
@@ -622,73 +622,73 @@ TAP version 13
     # Subtest: component-shell
     ok 1 - component-shell
       ---
-      duration_ms: 1151.047417
+      duration_ms: 1944.447458
       type: 'test'
       ...
     # Subtest: open-shadow-dom
     ok 2 - open-shadow-dom
       ---
-      duration_ms: 368.033333
+      duration_ms: 481.2635
       type: 'test'
       ...
     # Subtest: same-origin-iframe-navigation
     ok 3 - same-origin-iframe-navigation
       ---
-      duration_ms: 431.517375
+      duration_ms: 478.964667
       type: 'test'
       ...
     # Subtest: opaque-iframe-explicitly-unverified
     ok 4 - opaque-iframe-explicitly-unverified
       ---
-      duration_ms: 389.330083
+      duration_ms: 353.26975
       type: 'test'
       ...
     # Subtest: strict-csp-nonce
     ok 5 - strict-csp-nonce
       ---
-      duration_ms: 361.714
+      duration_ms: 312.770625
       type: 'test'
       ...
     # Subtest: disabled-js-static-selection-only
     ok 6 - disabled-js-static-selection-only
       ---
-      duration_ms: 308.9305
+      duration_ms: 266.961375
       type: 'test'
       ...
     # Subtest: csp-blocked-runtime-is-not-protected
     ok 7 - csp-blocked-runtime-is-not-protected
       ---
-      duration_ms: 308.282
+      duration_ms: 255.443208
       type: 'test'
       ...
     # Subtest: csp-style-blocked-runtime-is-partial
     ok 8 - csp-style-blocked-runtime-is-partial
       ---
-      duration_ms: 250.771959
+      duration_ms: 263.559416
       type: 'test'
       ...
     # Subtest: unprotected-native-action-control
     ok 9 - unprotected-native-action-control
       ---
-      duration_ms: 302.386083
+      duration_ms: 370.681167
       type: 'test'
       ...
     # Subtest: offline-file-url
     ok 10 - offline-file-url
       ---
-      duration_ms: 400.125
+      duration_ms: 360.612
       type: 'test'
       ...
     # Subtest: disabled-fieldset-and-live-body-replacement
     ok 11 - disabled-fieldset-and-live-body-replacement
       ---
-      duration_ms: 277.883958
+      duration_ms: 310.925375
       type: 'test'
       ...
     1..11
 ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
   ---
-  duration_ms: 5256.572417
+  duration_ms: 7061.329417
   type: 'test'
   ...
 1..1
@@ -699,6 +699,6 @@ ok 1 - component, nested documents, CSP, disabled JS and file URL boundaries
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 5329.50875
+# duration_ms 7157.859458
 gate_exit_code=0
 内容保护闸门通过：双项目 × 产品/QA × 390/1440 × 静态/交互，边界引擎=chromium,firefox,webkit；零跳过。
