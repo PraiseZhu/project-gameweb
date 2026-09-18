@@ -119,6 +119,7 @@
     bootWithTruth(parseEmbeddedTruth());
   }
   function continueChromeBoot() {
+  var comments = null;
 
   /* Motion adapter is an explicit demo opt-in generated from motion.config.json
      by figma-inline. Missing config intentionally means no official-motion claim. */
@@ -697,6 +698,7 @@
       } catch (e) { copyBtn.textContent = '复制失败，手动拷地址栏'; }
     };
     row2.appendChild(grp('分享', copyBtn));
+    if (comments) row2.appendChild(comments.toolbar);
 
   }
 
@@ -1604,8 +1606,8 @@
     /* 拖拽轻路径：控制栏两行 DOM 与 viewport 宽度无关（只有读数/滑块值/设备名下拉文本变），
        拖拽中跳过 buildBar1/buildBar2 的全量 innerHTML 重建，只 syncToolbar 同步控件值/禁用态。
        松手后 endResizeDrag 已把 _resizeDragActive 清掉，这里走完整重建。 */
-    if (_resizeDragActive) { syncToolbar(true); render(); writeHash(); notifyPrefChange(); return; }
-    buildBar1(); buildBar2(); syncToolbar(); render(); writeHash(); notifyPrefChange();
+    if (_resizeDragActive) { syncToolbar(true); render(); if (comments) comments.refresh(); writeHash(); notifyPrefChange(); return; }
+    buildBar1(); buildBar2(); syncToolbar(); render(); if (comments) comments.refresh(); writeHash(); notifyPrefChange();
   }
 
   /* ── RAF 合并的 syncAll ──
@@ -2571,6 +2573,33 @@
     },
   };
 
+  if (!PRODUCT_VIEW && !STATIC_GATE_VIEW) {
+    comments = createQaComments({
+      stage: stage,
+      // Stable across handoff hashes/rebuilds. Callers may supply a durable page key.
+      pageKey: cfg.commentPageId || location.pathname.replace(/index\.html$/, ''),
+      // Optional same-origin collaboration API. IndexedDB remains the offline
+      // cache; when this is present the API is the shared source for colleagues.
+      commentApi: cfg.commentApi || null,
+      context: function () {
+        return { lang: S.prefs.lang, region: S.prefs.region, state: S.state,
+          composition: compositionKeyForViewport(viewport()), grid: S.grid };
+      },
+      navigate: function (context, savedViewport) {
+        var matrix = cfg.matrix || {};
+        if (!['lang', 'region'].every(function (key) {
+          return !matrix[key] || matrix[key].options.some(function (option) { return option.v === context[key]; });
+        }) || !stateEntries().some(function (entry) { return entry.id === context.state; })) return false;
+        S.prefs.lang = context.lang; S.prefs.region = context.region; S.state = context.state;
+        S.grid = false;
+        if (compositionKeyForViewport(viewport()) !== context.composition) {
+          S.devIdx = -1; S.freeW = savedViewport.w; S.freeH = savedViewport.h;
+        }
+        persist(); syncAll(); return true;
+      },
+      viewport: viewport,
+    });
+  }
   if (!PRODUCT_VIEW) readHash();   // 深链(g=/d=/w=/h=/state=)是 QA 功能,产品视图不消费
   syncAll();
   /* 窗口 resize 与 slider 同理：RAF 合并，同帧多次 resize 只重渲染一次。 */
@@ -2585,3 +2614,662 @@
   });
   } // continueChromeBoot
 })();
+
+
+/* IndexedDB-backed QA comments. This runtime is intentionally outside the chrome
+ * closure so the generated QA shell can keep one small, independently testable
+ * collaboration surface. */
+function createQaComments(host) {
+  'use strict';
+  var doc = document;
+  function mk(tag, cls, text) {
+    var n = doc.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function btn(text, fn) {
+    var n = mk('button', 'qc-btn', text);
+    n.type = 'button'; n.onclick = fn; return n;
+  }
+  var style = mk('style');
+  style.textContent = '.qc-root{position:fixed;inset:0;z-index:100000;pointer-events:none;font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#e6eaf0}.qc-root [hidden]{display:none!important}.qc-toolbar{display:flex;gap:6px;align-items:center}.qc-btn{font:inherit;border:1px solid #39424f;border-radius:7px;padding:6px 10px;background:#1e232c;color:#e6eaf0;cursor:pointer}.qc-btn:hover{background:#2b3544}.qc-btn[aria-pressed=true],.qc-primary{background:#2563eb;color:#fff;border-color:#3b82f6}.qc-root textarea,.qc-root select{font:inherit;color:inherit;background:#101620;border:1px solid #39424f;border-radius:6px;padding:8px;max-width:100%}.qc-root textarea{display:block;width:100%;min-height:90px;resize:vertical;user-select:text}.qc-panel,.qc-pop{pointer-events:auto;background:#171b22;border:1px solid #39424f;border-radius:12px;box-shadow:0 14px 48px #0008;padding:14px}.qc-panel{position:absolute;right:12px;top:12px;bottom:12px;width:min(350px,calc(100vw - 24px));display:flex;flex-direction:column;gap:10px}.qc-pop{position:absolute;width:min(330px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto}.qc-head,.qc-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.qc-note{font-size:12px;color:#a3afbf;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0}.qc-warning{color:#fbbf24}.qc-list{overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:7px}.qc-item{display:block;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;width:100%}.qc-item small{display:block;color:#a3afbf;margin-bottom:4px}.qc-item[aria-current=true]{border-color:#60a5fa;background:#1c2b40}.qc-copy{white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;margin:10px 0}.qc-pin{position:absolute;pointer-events:auto;transform:translate(-50%,-50%);border:2px solid white;border-radius:50% 50% 50% 3px;background:#2563eb;color:white;min-width:25px;height:25px;font:600 11px/19px sans-serif;cursor:pointer;padding:0 4px;box-shadow:0 2px 8px #0008}.qc-outline{position:absolute;border:2px solid #60a5fa;background:#3b82f619;pointer-events:none;border-radius:3px}.qc-toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100vw - 28px);background:#17263b;border:1px solid #416286;padding:9px 16px;border-radius:8px;white-space:pre-wrap}.qc-selecting [data-node]{cursor:crosshair!important;pointer-events:auto!important}';
+
+  style.textContent += '.qc-root *{box-sizing:border-box}.qc-root button:focus-visible,.qc-toolbar button:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}.qc-btn:disabled{opacity:.45;cursor:not-allowed}.qc-toolbar .qc-btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.qc-toolbar svg{width:16px;height:16px}.qc-selecting{touch-action:none}.qc-panel{top:var(--qc-top,12px)}.qc-pop{z-index:2}.qc-outline{z-index:-1}.qc-pin[aria-expanded=true]{background:#f59e0b}.qc-root .qc-note{margin:4px 0}';
+  doc.head.appendChild(style);
+  var root = mk('div', 'qc-root');
+  var pins = mk('div'), outline = mk('div', 'qc-outline');
+  var pop = mk('section', 'qc-pop'), panel = mk('aside', 'qc-panel');
+  var toast = mk('div', 'qc-toast');
+  outline.hidden = pop.hidden = panel.hidden = toast.hidden = true;
+  pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', '评论详情');
+  panel.setAttribute('aria-label', '全部评论'); toast.setAttribute('role', 'status');
+  root.append(pins, outline, pop, panel, toast); doc.body.appendChild(root);
+
+  var mode = false, db = null, channel = null, rows = [], draft = null, active = null;
+  var drag = null, hover = null, writeBusy = false, disposed = false;
+  var dbKey = String(host.pageKey), index = new Map(), dirty = true, rafId = null;
+  var timer = null, contextKey = '', pinButtons = new Map(), lastListKey = '';
+  var submitButton = null, composerNote = null, detailNote = null, loadSequence = 0;
+  var api = host.commentApi || null, pollTimer = null, remoteBusy = false, remoteDurable = null;
+  var sending = false, remoteError = '';
+  var toolbar = mk('div', 'qc-toolbar');
+  var modeButton = btn('评论', function () { if (!writeBusy) { close(); setMode(!mode); } });
+  modeButton.setAttribute('aria-label', '评论：点选或框选内容');
+  modeButton.setAttribute('aria-pressed', 'false');
+  var icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
+  var iconPath = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+  iconPath.setAttribute('d', 'M20 11a8 8 0 0 1-8 8H4v-8a8 8 0 1 1 16 0ZM8 10h8M8 14h5');
+  iconPath.setAttribute('fill', 'none'); iconPath.setAttribute('stroke', 'currentColor');
+  iconPath.setAttribute('stroke-width', '1.7'); icon.appendChild(iconPath); modeButton.prepend(icon);
+  var allButton = btn('全部评论 · 0', function () {
+    if (writeBusy) return;
+    close(); setMode(false); panel.hidden = !panel.hidden; drawList(); schedule();
+  });
+  allButton.title = '查看此页面所有语言、地区、状态的评论';
+  toolbar.append(modeButton, allButton);
+  var panelHead = mk('div', 'qc-head');
+  panelHead.append(mk('strong', '', '全部评论'), btn('关闭列表', function () { panel.hidden = true; }));
+  var storage = mk('p', 'qc-note', '正在打开本地评论库…');
+  var scope = mk('select'), status = mk('select');
+  scope.setAttribute('aria-label', '评论范围'); status.setAttribute('aria-label', '解决状态');
+  [['all', '全部页面组合'], ['current', '当前语言／地区／状态']].forEach(function (x) {
+    var o = mk('option', '', x[1]); o.value = x[0]; scope.appendChild(o);
+  });
+  [['open', '未解决'], ['all', '全部（含已解决）'], ['resolved', '已解决'], ['pending', '待同步（含已解决）']].forEach(function (x) {
+    var o = mk('option', '', x[1]); o.value = x[0]; status.appendChild(o);
+  });
+  var list = mk('div', 'qc-list'); panel.append(panelHead, storage, scope, status, list);
+  scope.onchange = status.onchange = function () { drawList(); };
+
+  function ctx() {
+    var c = host.context();
+    return { lang: c.lang || '', region: c.region || '', state: c.state || '', composition: c.composition || '' };
+  }
+  function ckey(c) { return JSON.stringify([c.lang, c.region, c.state, c.composition]); }
+  function current(row) { return ckey(row.context) === ckey(ctx()); }
+  function tiled() { return !!host.context().grid; }
+  function say(text) {
+    toast.textContent = text; toast.hidden = false; clearTimeout(timer);
+    timer = setTimeout(function () { toast.hidden = true; }, 4200);
+  }
+  function storageReady() {
+    storage.classList.remove('qc-warning');
+    var pending = rows.filter(function (r) { return r._sync; });
+    if (api && pending.length) {
+      storage.classList.add('qc-warning');
+      storage.textContent = pending.length + ' 条评论待同步，已保存在此浏览器。' +
+        (pending.some(function (r) { return r._sync.blocked; }) ? '部分评论需要处理错误后点击重试。' : '页面打开时自动重试；刷新后仍会继续。');
+      return;
+    }
+    if (api && remoteError) {
+      storage.classList.add('qc-warning');
+      storage.textContent = '协作服务暂时不可用：' + remoteError + '；仍保留本地缓存。';
+      return;
+    }
+    storage.textContent = api
+      ? (remoteDurable === true ? '评论保存到共享 KV；IndexedDB 作为本地缓存。每秒检查更新，实际同步时间取决于共享服务响应。' : '正在连接共享评论服务；IndexedDB 保留本地缓存。')
+      : '仅保存在此浏览器；清除网站数据会删除评论。' +
+        (channel ? '同一网站、同一浏览器的标签页自动同步。' : '当前浏览器不支持标签页即时同步，切回页面时重新读取。') +
+        '其他同事或浏览器不会看到。';
+  }
+  function fail(error, message) {
+    var reason = error && error.message || String(error || '未知错误');
+    storage.textContent = (message || '评论存储失败') + '：' + reason;
+    storage.classList.add('qc-warning'); say((message || '评论未保存') + '，请重试');
+  }
+  function openDb() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('浏览器不支持 IndexedDB')); return; }
+      var q = indexedDB.open('gameweb-qa-comments', 1);
+      q.onupgradeneeded = function () { q.result.createObjectStore('comments', { keyPath: 'id' }); };
+      q.onerror = function () { reject(q.error); };
+      q.onblocked = function () { fail(new Error('请关闭此网站旧版本标签页再刷新'), '评论库被占用'); };
+      q.onsuccess = function () {
+        db = q.result;
+        db.onversionchange = function () {
+          db.close(); db = null; modeButton.disabled = true;
+          if (submitButton) submitButton.disabled = true;
+          fail(new Error('评论库版本改变，请刷新页面'), '评论库已关闭');
+        };
+        resolve();
+      };
+    });
+  }
+  function validRow(r) {
+    return r && r.pageKey === dbKey && typeof r.id === 'string' && typeof r.body === 'string' &&
+      r.context && r.anchor && Array.isArray(r.anchor.path) && r.anchor.path.length &&
+      Number.isFinite(r.anchor.u) && Number.isFinite(r.anchor.v) &&
+      r.anchor.u >= 0 && r.anchor.u <= 1 && r.anchor.v >= 0 && r.anchor.v <= 1;
+  }
+  function apiBase() {
+    if (!api) return '';
+    var value = typeof api === 'string' ? api : (api.url || api.baseUrl || '');
+    return String(value).replace(/\/$/, '');
+  }
+  function apiUrl(path, query) {
+    var base = apiBase();
+    if (!base) return '';
+    var url = path ? base + (path.charAt(0) === '/' ? path : '/' + path) : base;
+    var q = Object.assign({ pageKey: dbKey }, query || {});
+    return url + '?' + Object.keys(q).filter(function (key) { return q[key] != null; })
+      .map(function (key) { return encodeURIComponent(key) + '=' + encodeURIComponent(String(q[key])); }).join('&');
+  }
+  function remoteRequest(method, body) {
+    var query = body && body.id ? { id: body.id } : null;
+    if (method === 'GET') query = Object.assign({}, query || {}, { _ts: Date.now() });
+    var url = apiUrl('', query);
+    if (!url) return Promise.reject(new Error('未配置协作服务地址'));
+    var controller = new AbortController();
+    var timeout = setTimeout(function () { controller.abort(); }, 10000);
+    return fetch(url, { method: method, credentials: 'include', cache: 'no-store', signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: method === 'GET' ? undefined : JSON.stringify(body) }).then(function (res) {
+      if (!res.ok) { var error = new Error('协作服务 HTTP ' + res.status); error.status = res.status; throw error; }
+      return res.json();
+    }).finally(function () { clearTimeout(timeout); });
+  }
+  function mergeRemote(remoteRows) {
+    if (!db || !Array.isArray(remoteRows)) return;
+    try {
+      var tx = db.transaction('comments', 'readwrite'), store = tx.objectStore('comments');
+      remoteRows.filter(validRow).forEach(function (r) {
+        var q = store.get(r.id);
+        q.onsuccess = function () {
+          var previous = q.result;
+          // Read the current durable row, not the possibly stale UI snapshot.
+          // A poll must never erase queued work or restore its old resolved state.
+          if (!previous || (!previous._sync && (r.updatedAt || r.createdAt) >= (previous.updatedAt || previous.createdAt))) {
+            var clean = Object.assign({}, r); delete clean._sync; store.put(clean);
+          }
+        };
+      });
+      tx.oncomplete = reload;
+      tx.onerror = function () { fail(tx.error, '协作评论写入本地缓存失败'); };
+    } catch (e) { fail(e, '协作评论写入本地缓存失败'); }
+  }
+  function remoteReload() {
+    if (!api || remoteBusy || disposed) return;
+    remoteBusy = true;
+    remoteRequest('GET').then(function (result) {
+      if (!result || result.durable !== true || !Array.isArray(result.comments)) throw new Error('共享服务未确认持久化');
+      remoteBusy = false; remoteDurable = true; remoteError = ''; mergeRemote(result.comments);
+      storageReady();
+    }).catch(function (e) { remoteBusy = false; remoteError = e.message; storageReady(); });
+  }
+  function revision() { return Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-'); }
+  function pendingState(previous) {
+    return { revision: revision(), attempts: 0, nextAt: 0, error: '', blocked: false,
+      lease: previous && previous.lease || null };
+  }
+  // Claims and acknowledgements share the comment transaction. This both survives
+  // reload and prevents two tabs from concurrently draining the same queued row.
+  function updateStored(id, change) {
+    return new Promise(function (resolve, reject) {
+      if (!db || disposed) { resolve(null); return; }
+      var tx = db.transaction('comments', 'readwrite'), store = tx.objectStore('comments'), value = null;
+      var q = store.get(id);
+      q.onsuccess = function () {
+        if (!validRow(q.result)) return;
+        value = change(q.result); if (value) store.put(value);
+      };
+      tx.oncomplete = function () { reload(); resolve(value); };
+      tx.onabort = function () { reject(tx.error || new Error('评论缓存事务中止')); };
+      tx.onerror = function () {};
+    });
+  }
+  function queuedRows() {
+    return new Promise(function (resolve, reject) {
+      var q = db.transaction('comments', 'readonly').objectStore('comments').getAll();
+      q.onsuccess = function () { resolve(q.result.filter(function (r) { return validRow(r) && r._sync; })); };
+      q.onerror = function () { reject(q.error); };
+    });
+  }
+  function completePendingSend(sentRow, result, failure) {
+    var sent = sentRow._sync;
+    return updateStored(sentRow.id, function (row) {
+      var sync = row._sync;
+      if (!sync || !sync.lease || sync.lease.token !== sent.lease.token) return null;
+      sync.lease = null;
+      if (sync.revision !== sent.revision) return row; // A newer resolve/reopen remains queued.
+      if (!failure) {
+        var confirmed = Object.assign({}, result.comment); delete confirmed._sync;
+        remoteDurable = true; return confirmed;
+      }
+      sync.attempts++;
+      sync.blocked = failure.status >= 400 && failure.status < 500 && failure.status !== 408 && failure.status !== 429;
+      sync.error = failure.status === 401 || failure.status === 403
+        ? '登录或权限已失效，请重新登录后重试' : failure.message;
+      sync.nextAt = Date.now() + Math.min(30000, 1000 * Math.pow(2, Math.min(sync.attempts - 1, 5)));
+      return row;
+    });
+  }
+  async function flushPending() {
+    if (!api || !db || disposed || sending || navigator.onLine === false) return;
+    sending = true;
+    try {
+      var pending = await queuedRows();
+      for (var i = 0; i < pending.length && !disposed; i++) {
+        var row = await updateStored(pending[i].id, function (r) {
+          var s = r._sync, now = Date.now();
+          if (!s || s.blocked || s.nextAt > now || (s.lease && s.lease.until > now)) return null;
+          s.lease = { token: revision(), until: now + 30000 }; return r;
+        });
+        if (!row) continue;
+        var payload = Object.assign({}, row), result = null, failure = null;
+        delete payload._sync;
+        try {
+          result = await remoteRequest('POST', payload);
+          if (!result || result.durable !== true || !validRow(result.comment) || result.comment.id !== row.id) {
+            throw new Error('共享服务未确认评论持久化');
+          }
+        } catch (e) { failure = e; }
+        await completePendingSend(row, result, failure);
+        if (channel) { try { channel.postMessage({ pageKey: dbKey }); } catch (_) {} }
+      }
+    } catch (e) { fail(e, '待同步评论读取或保存失败'); }
+    finally { sending = false; }
+  }
+  function retry(row) {
+    updateStored(row.id, function (r) {
+      if (!r._sync) return null;
+      r._sync.blocked = false; r._sync.nextAt = 0; r._sync.error = ''; return r;
+    }).then(flushPending).catch(function (e) { fail(e, '重试状态保存失败'); });
+  }
+  function remoteTick() { remoteReload(); flushPending(); }
+  function authorTime(row, tag) {
+    var n = mk(tag || 'p', 'qc-note qc-author-time');
+    var author = row.author && typeof row.author.name === 'string' && row.author.name.trim();
+    n.appendChild(doc.createTextNode((author || (row._sync ? '待同步（作者待确认）' : '作者未记录')) + ' · '));
+    function appendTime(value, label) {
+      var date = new Date(value);
+      if (typeof value !== 'number' || !Number.isFinite(date.getTime())) { n.appendChild(doc.createTextNode(label + '时间未记录')); return; }
+      var time = mk('time', '', label + date.toLocaleString('zh-CN', { hour12: false }));
+      time.dateTime = date.toISOString(); time.title = '浏览器本地时区：' + time.textContent; n.appendChild(time);
+    }
+    appendTime(row.createdAt, '发布于 ');
+    if (row.updatedAt > row.createdAt) { n.appendChild(doc.createTextNode(' · ')); appendTime(row.updatedAt, '更新于 '); }
+    return n;
+  }
+  function syncLabel(row) {
+    if (row._sync) return (row._sync.blocked ? '同步暂停' : '待同步 · 自动重试') + (row._sync.error ? '：' + row._sync.error : '');
+    if (!api) return '仅此浏览器';
+    return row.author ? '已同步' : '本地记录（未确认同步）';
+  }
+  function startRemote() {
+    if (!api) return;
+    remoteTick();
+    pollTimer = setInterval(remoteTick, 1000);
+  }
+  function reload() {
+    if (!db) return;
+    var sequence = ++loadSequence, q;
+    try { q = db.transaction('comments', 'readonly').objectStore('comments').getAll(); }
+    catch (e) { fail(e, '评论读取失败'); return; }
+    q.onerror = function () { fail(q.error, '评论读取失败'); };
+    q.onsuccess = function () {
+      if (sequence !== loadSequence || disposed) return;
+      rows = q.result.filter(validRow).sort(function (a, b) { return a.createdAt - b.createdAt || a.id.localeCompare(b.id); });
+      storageReady();
+      // If another tab resolved an open detail, show the newly committed state.
+      if (active && !draft) {
+        var row = rows.find(function (r) { return r.id === active; });
+        if (row) renderDetail(row); else close();
+      }
+      syncPins(); drawList(); schedule();
+    };
+  }
+  function save(row, resolved) {
+    if (writeBusy) return;
+    if (!db) { fail(new Error('本地评论库尚未就绪')); return; }
+    writeBusy = true;
+    pop.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    var tx, missing = false;
+    function failed(error) {
+      writeBusy = false;
+      pop.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+      fail(error); schedule();
+    }
+    try {
+      tx = db.transaction('comments', 'readwrite');
+      var store = tx.objectStore('comments');
+      if (resolved === undefined) {
+        if (api) row._sync = pendingState();
+        store.add(row);
+      }
+      else {
+        var q = store.get(row.id);
+        q.onsuccess = function () {
+          if (!q.result) { missing = true; tx.abort(); return; }
+          q.result.resolved = resolved; q.result.updatedAt = Date.now();
+          if (api) q.result._sync = pendingState(q.result._sync);
+          store.put(q.result);
+        };
+      }
+      tx.onabort = function () { failed(missing ? new Error('评论已不存在') : tx.error); };
+      tx.onerror = function () {}; // onabort owns rollback feedback; no success before commit.
+      tx.oncomplete = function () {
+        writeBusy = false; close(); setMode(false);
+        storageReady(); reload();
+        if (channel) { try { channel.postMessage({ pageKey: dbKey }); } catch (e) { /* committed data remains readable on focus */ } }
+        say((resolved === undefined ? '评论已保存' : resolved ? '已解决' : '已恢复') + (api ? '，等待同步' : ''));
+        flushPending();
+      };
+    } catch (e) { if (tx) { try { tx.abort(); } catch (_) {} } failed(e); }
+  }
+
+  // The full data-node ancestry disambiguates repeated instances. No text,
+  // element index, absolute page coordinate, or fuzzy fallback is used as identity.
+  function path(n) {
+    var a = [];
+    for (var x = n; x && x !== host.stage; x = x.parentElement) {
+      if (x.hasAttribute('data-node')) a.unshift(x.getAttribute('data-node'));
+    }
+    return a;
+  }
+  function label(n) {
+    return (n.getAttribute('data-node-name') || n.getAttribute('data-name') ||
+      (n.textContent || '内容区域').trim().slice(0, 50) || '内容区域').slice(0, 100);
+  }
+  function chain(n) {
+    var a = [];
+    for (var x = n; x && x !== host.stage; x = x.parentElement) {
+      if (x.hasAttribute('data-node')) a.push(x);
+    }
+    return a;
+  }
+  function rebuild() {
+    index = new Map();
+    host.stage.querySelectorAll('[data-node]').forEach(function (n) {
+      var k = JSON.stringify(path(n));
+      if (!index.has(k)) index.set(k, []);
+      index.get(k).push(n);
+    });
+    dirty = false;
+  }
+  function find(row) {
+    if (dirty) rebuild();
+    var a = index.get(JSON.stringify(row.anchor.path)) || [];
+    if (a.length !== 1) return { reason: a.length ? '范围不唯一，请重新定位' : '原内容已删除或替换' };
+    var n = a[0];
+    if (row.anchor.tag && row.anchor.tag !== n.tagName) return { reason: '原内容类型已改变，请重新定位' };
+    return { node: n };
+  }
+  function geometry(n, anchor) {
+    var b = n.getBoundingClientRect();
+    if (!b.width || !b.height) return { node: n, reason: '内容当前不可见' };
+    var clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    for (var el = n; el; el = el.parentElement) {
+      var css = getComputedStyle(el);
+      if (el.hidden || el.getAttribute('aria-hidden') === 'true' || css.display === 'none' ||
+          css.visibility === 'hidden' || Number(css.opacity) === 0) return { node: n, reason: '内容当前不可见' };
+      if (el !== n) {
+        var r = el.getBoundingClientRect();
+        if (/(auto|scroll|hidden|clip)/.test(css.overflowX)) { clip.left = Math.max(clip.left, r.left); clip.right = Math.min(clip.right, r.right); }
+        if (/(auto|scroll|hidden|clip)/.test(css.overflowY)) { clip.top = Math.max(clip.top, r.top); clip.bottom = Math.min(clip.bottom, r.bottom); }
+      }
+    }
+    var x = b.left + anchor.u * b.width, y = b.top + anchor.v * b.height;
+    var box = { left: Math.max(b.left, clip.left), top: Math.max(b.top, clip.top),
+      right: Math.min(b.right, clip.right), bottom: Math.min(b.bottom, clip.bottom) };
+    box.width = Math.max(0, box.right - box.left); box.height = Math.max(0, box.bottom - box.top);
+    var visible = x >= clip.left && x <= clip.right && y >= clip.top && y <= clip.bottom && box.width > 0 && box.height > 0;
+    return { node: n, r: box, x: x, y: y, visible: visible, reason: visible ? '' : '评论位置在可视范围外，点击列表可滚动定位' };
+  }
+  function locate(row) {
+    if (tiled()) return { reason: '平铺视图，请从列表打开单个状态' };
+    if (!current(row)) return { reason: '其他语言／地区／状态／版式' };
+    var f = find(row);
+    return f.node ? geometry(f.node, row.anchor) : f;
+  }
+  function drawBox(p) {
+    if (!p || !p.r || !p.r.width || !p.r.height) { outline.hidden = true; return; }
+    outline.hidden = false;
+    Object.assign(outline.style, { left: p.r.left + 'px', top: p.r.top + 'px', width: p.r.width + 'px', height: p.r.height + 'px' });
+  }
+  function place(row) {
+    if (!row || pop.hidden) return;
+    var p = locate(row), x = p.visible ? p.x : innerWidth / 2, y = p.visible ? p.y : innerHeight / 2;
+    var w = pop.offsetWidth, h = pop.offsetHeight;
+    var left = x + 20 + w <= innerWidth - 10 ? x + 20 : x - w - 20;
+    pop.style.left = Math.max(10, Math.min(innerWidth - w - 10, left)) + 'px';
+    pop.style.top = Math.max(10, Math.min(innerHeight - h - 10, y - 10)) + 'px';
+  }
+  function close() {
+    if (writeBusy) return;
+    draft = null; active = null; submitButton = null; composerNote = null; detailNote = null;
+    pop.hidden = true; outline.hidden = true; schedule();
+  }
+  function setMode(on) {
+    if (on && !db) { say('本地评论库尚未就绪'); return; }
+    if (on && tiled()) { say('请先关闭「平铺全部状态」，再点选评论范围'); return; }
+    mode = on; modeButton.setAttribute('aria-pressed', String(on));
+    host.stage.classList.toggle('qc-selecting', on);
+    if (on) { panel.hidden = true; say('点击内容或拖动框选；蓝框确认范围，可扩大到整块内容。Esc 退出'); }
+    else { drag = null; hover = null; }
+    schedule();
+  }
+  function makeAnchor(node, x, y) {
+    var b = node.getBoundingClientRect();
+    return { path: path(node), tag: node.tagName, label: label(node),
+      u: Math.max(0, Math.min(1, (x - b.left) / b.width)), v: Math.max(0, Math.min(1, (y - b.top) / b.height)) };
+  }
+  function form(node, x, y) {
+    active = null;
+    draft = { pageKey: dbKey, context: ctx(), viewport: host.viewport(), anchor: makeAnchor(node, x, y) };
+    pop.replaceChildren(); pop.hidden = false; panel.hidden = true;
+    var h = mk('div', 'qc-head'); h.append(mk('strong', '', '新评论'), btn('取消', close));
+    var sel = mk('select'); sel.setAttribute('aria-label', '评论对象');
+    var candidates = chain(node);
+    candidates.forEach(function (n, i) {
+      var o = mk('option', '', (i ? '扩大至：' : '当前：') + label(n)); o.value = i; sel.appendChild(o);
+    });
+    composerNote = mk('p', 'qc-note', '蓝框就是评论范围，确认后发布。可选择父级扩大到整块内容。');
+    var input = mk('textarea'); input.placeholder = '描述需要修改的问题…'; input.setAttribute('aria-label', '评论内容'); input.maxLength = 4000;
+    submitButton = btn('发布评论', function () {
+      if (!draft || !input.value.trim() || writeBusy) return;
+      var p = locate(draft);
+      if (!p.visible || !db) { say('当前范围无法确认，请重新点选'); return; }
+      var now = Date.now();
+      var id = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() :
+        Array.from(crypto.getRandomValues(new Uint32Array(4))).map(function (v) { return v.toString(16); }).join('-');
+      save({ id: id, pageKey: dbKey, context: draft.context, viewport: draft.viewport,
+        anchor: draft.anchor, body: input.value.trim(), createdAt: now, updatedAt: now, resolved: false });
+    });
+    submitButton.classList.add('qc-primary'); submitButton.disabled = true;
+    input.oninput = function () { submitButton.disabled = !input.value.trim() || writeBusy || !db || !locate(draft).visible; };
+    input.onkeydown = function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitButton.click(); } };
+    sel.onchange = function () {
+      var n = candidates[Number(sel.value)], b = n.getBoundingClientRect();
+      draft.anchor = makeAnchor(n, Math.max(b.left, Math.min(b.right, x)), Math.max(b.top, Math.min(b.bottom, y)));
+      drawBox(locate(draft)); place(draft); schedule();
+    };
+    var actions = mk('div', 'qc-actions'); actions.append(btn('取消', close), submitButton);
+    pop.append(h, sel, composerNote, input, actions); drawBox(locate(draft)); place(draft); input.focus(); schedule();
+  }
+
+  function renderDetail(row) {
+    pop.replaceChildren(); pop.hidden = false; submitButton = null; composerNote = null;
+    var h = mk('div', 'qc-head');
+    h.append(mk('strong', '', row.resolved ? '已解决' : '评论'), btn('关闭评论', close));
+    var meta = mk('p', 'qc-note', [row.context.lang, row.context.region, row.context.state,
+      row.context.composition, row.anchor.label].join(' · '));
+    detailNote = mk('p', 'qc-note qc-warning', locate(row).reason || '');
+    var resolve = btn(row.resolved ? '↶ 恢复评论' : '✓ 标记已解决', function () { save(row, !row.resolved); });
+    resolve.disabled = !db || writeBusy;
+    pop.append(h, meta, authorTime(row), mk('p', 'qc-note qc-sync-state', syncLabel(row)), detailNote, mk('div', 'qc-copy', row.body), resolve);
+    if (api && row._sync) pop.appendChild(btn('立即重试同步', function () { retry(row); }));
+    place(row); schedule();
+  }
+  function show(row) {
+    if (!row || writeBusy) return;
+    close(); setMode(false); panel.hidden = true;
+    if (!current(row) || tiled()) {
+      if (typeof host.navigate !== 'function' || !host.navigate(row.context, row.viewport || {}) || !current(row) || tiled()) {
+        say('评论所在的页面组合已不可用；仍可在列表查看或标记解决');
+        active = row.id; renderDetail(row); return;
+      }
+    }
+    active = row.id;
+    var p = locate(row);
+    if (p.node) p.node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+    renderDetail(row); drawList();
+  }
+  function drawList() {
+    var open = rows.filter(function (r) { return !r.resolved; }).length;
+    allButton.textContent = '全部评论 · ' + open;
+    var filtered = rows.filter(function (r) {
+      return (scope.value === 'all' || current(r)) && (status.value === 'pending' ? !!r._sync :
+        status.value === 'all' || !!r.resolved === (status.value === 'resolved'));
+    }).slice().reverse();
+    // Only rebuild on data/context/target changes, not every scroll frame.
+    var descriptions = filtered.map(function (r) { return current(r) ? locate(r).reason || '' : ''; });
+    var key = JSON.stringify([active, scope.value, status.value, filtered, descriptions]);
+    if (key === lastListKey) return;
+    lastListKey = key; list.replaceChildren();
+    if (!filtered.length) list.appendChild(mk('p', 'qc-note', '此范围暂无评论'));
+    filtered.forEach(function (r, i) {
+      var b = btn('', function () { show(r); }); b.classList.add('qc-item');
+      b.setAttribute('aria-current', String(active === r.id)); b.dataset.commentId = r.id;
+      b.append(mk('small', '', (r.resolved ? '已解决' : '未解决') + ' · ' +
+        [r.context.lang, r.context.region, r.context.state, r.context.composition].join(' / ')), mk('span', '', r.body));
+      b.append(authorTime(r, 'small'), mk('small', 'qc-sync-state', syncLabel(r)));
+      if (descriptions[i]) b.appendChild(mk('small', 'qc-warning', descriptions[i]));
+      list.appendChild(b);
+    });
+  }
+  function syncPins() {
+    var keep = new Set();
+    rows.forEach(function (row, i) {
+      if (row.resolved || !current(row) || tiled()) return;
+      keep.add(row.id);
+      var b = pinButtons.get(row.id);
+      if (!b) {
+        b = btn('', function () { show(rows.find(function (r) { return r.id === row.id; })); });
+        b.className = 'qc-pin'; b.dataset.commentId = row.id;
+        pinButtons.set(row.id, b); pins.appendChild(b);
+      }
+      b.textContent = String(i + 1); b.title = row.body;
+      b.setAttribute('aria-label', '查看评论 ' + (i + 1) + '：' + row.anchor.label);
+    });
+    pinButtons.forEach(function (b, id) { if (!keep.has(id)) { b.remove(); pinButtons.delete(id); } });
+  }
+  function refresh() {
+    var key = ckey(ctx()) + ':' + tiled();
+    if (key !== contextKey) {
+      if (contextKey && (draft || active || mode)) { close(); setMode(false); }
+      contextKey = key; syncPins(); drawList();
+    }
+    schedule();
+  }
+  function schedule() {
+    if (disposed || rafId != null) return;
+    rafId = requestAnimationFrame(paint);
+  }
+  function paint() {
+    rafId = null;
+    if (disposed) return;
+    var key = ckey(ctx()) + ':' + tiled();
+    if (key !== contextKey) { refresh(); }
+    var bar = toolbar.closest('.bar');
+    root.style.setProperty('--qc-top', Math.min(innerHeight - 120, (bar ? bar.getBoundingClientRect().bottom : 0) + 12) + 'px');
+    var positions = new Map();
+    rows.forEach(function (row) {
+      var b = pinButtons.get(row.id);
+      if (!b) return;
+      var p = locate(row); positions.set(row.id, p); b.hidden = !p.visible;
+      if (p.visible) { b.style.left = p.x + 'px'; b.style.top = p.y + 'px'; }
+      b.setAttribute('aria-expanded', String(active === row.id));
+    });
+    var selected = draft || rows.find(function (r) { return r.id === active; });
+    if (selected) {
+      var p = positions.get(selected.id) || locate(selected);
+      drawBox(p);
+      if (draft && submitButton) {
+        var input = pop.querySelector('textarea');
+        submitButton.disabled = !db || writeBusy || !p.visible || !input || !input.value.trim();
+        composerNote.textContent = p.reason || '蓝框就是评论范围，确认后发布。可选择父级扩大到整块内容。';
+      } else if (detailNote) detailNote.textContent = p.reason || '';
+      place(selected);
+    } else if (!drag) { drawBox(mode && hover && hover.isConnected ? geometry(hover, { u: .5, v: .5 }) : null); }
+    if (!panel.hidden) drawList();
+    // CSS transitions can move anchors without DOM mutations or resize events.
+    // Measure only while comments/selection are present; never traverse the tree per frame.
+    if (!doc.hidden && (pinButtons.size || selected || mode)) schedule();
+  }
+  function targetAt(x, y) {
+    var elements = doc.elementsFromPoint(x, y);
+    for (var i = 0; i < elements.length; i++) {
+      if (root.contains(elements[i])) return null;
+      var n = elements[i].closest && elements[i].closest('[data-node]');
+      if (n && host.stage.contains(n) && geometry(n, { u: .5, v: .5 }).r) return n;
+    }
+    return null;
+  }
+  host.stage.addEventListener('pointermove', function (e) {
+    if (!mode || draft) return;
+    if (drag) {
+      drawBox({ r: { left: Math.min(e.clientX, drag.x), top: Math.min(e.clientY, drag.y),
+        width: Math.abs(e.clientX - drag.x), height: Math.abs(e.clientY - drag.y) } });
+    } else { hover = targetAt(e.clientX, e.clientY); schedule(); }
+  }, true);
+  host.stage.addEventListener('pointerdown', function (e) {
+    if (!mode || draft || e.button !== 0) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    var n = targetAt(e.clientX, e.clientY);
+    if (!n) { say('这里没有可绑定的内容，请点选有蓝框的范围'); return; }
+    drag = { x: e.clientX, y: e.clientY, node: n, pointerId: e.pointerId };
+    try { host.stage.setPointerCapture(e.pointerId); } catch (_) {}
+  }, true);
+  host.stage.addEventListener('pointerup', function (e) {
+    if (!drag) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    var d = drag; drag = null;
+    try { host.stage.releasePointerCapture(e.pointerId); } catch (_) {}
+    var end = targetAt(e.clientX, e.clientY);
+    if (!end) { say('请在同一内容块内完成框选'); schedule(); return; }
+    if (Math.abs(e.clientX - d.x) > 6 || Math.abs(e.clientY - d.y) > 6) {
+      var endChain = chain(end);
+      var common = chain(d.node).find(function (n) { return endChain.indexOf(n) >= 0; });
+      if (common) form(common, (e.clientX + d.x) / 2, (e.clientY + d.y) / 2);
+      else { say('这些内容没有共同范围，请分别评论'); schedule(); }
+    } else form(d.node, e.clientX, e.clientY);
+  }, true);
+  host.stage.addEventListener('pointercancel', function () { drag = null; hover = null; schedule(); }, true);
+  host.stage.addEventListener('pointerleave', function () { if (!drag) { hover = null; schedule(); } });
+  host.stage.addEventListener('click', function (e) { if (mode || draft) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  doc.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !writeBusy) { close(); setMode(false); panel.hidden = true; }
+  });
+  try {
+    channel = new BroadcastChannel('gameweb-qa-comments');
+    channel.onmessage = function (e) { if (e.data && e.data.pageKey === dbKey) reload(); };
+  } catch (_) { channel = null; }
+  var observer = new MutationObserver(function (records) {
+    // Animation/resize style changes do not change identities. Avoid rebuilding
+    // the entire Figma node index on each animation frame.
+    if (records.some(function (r) { return r.type === 'childList' || r.attributeName === 'data-node'; })) dirty = true;
+    schedule();
+  });
+  observer.observe(host.stage, { childList: true, subtree: true, attributes: true,
+    attributeFilter: ['data-node', 'hidden', 'aria-hidden', 'style', 'class'] });
+  window.addEventListener('focus', reload);
+  window.addEventListener('online', remoteTick);
+  window.addEventListener('resize', schedule);
+  window.addEventListener('qa-pref-change', refresh);
+  doc.addEventListener('scroll', schedule, true);
+  doc.addEventListener('visibilitychange', function () { if (!doc.hidden) { reload(); schedule(); } });
+  window.addEventListener('pagehide', function (e) {
+    if (e.persisted) return;
+    disposed = true; if (channel) channel.close(); if (pollTimer) clearInterval(pollTimer); if (db) db.close(); observer.disconnect();
+    if (rafId != null) cancelAnimationFrame(rafId); clearTimeout(timer);
+  });
+  modeButton.disabled = true;
+  openDb().then(function () { modeButton.disabled = false; storageReady(); reload(); startRemote(); }).catch(function (e) {
+    fail(e); panel.hidden = false;
+  });
+  contextKey = ckey(ctx()) + ':' + tiled();
+  schedule();
+  return { toolbar: toolbar, refresh: refresh };
+}
