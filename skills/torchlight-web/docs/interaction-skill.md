@@ -76,6 +76,11 @@ today. This is state switching, not `activity-calendar-reveal`. Do not
 invent a second return bitmap when inventory only has `dyn/今日日期`.
 Mobile drag uses pointer capture and disables native image drag / text
 selection so a swipe does not highlight a bitmap.
+Product-stage copy defaults to `user-select: none`; `input`, `textarea`,
+`contenteditable`, and `[data-copy-code]` stay selectable. Native image drag is
+blocked on the product stage, but `hscroll` / `switch-swipe` keep pointer drag.
+Check-state swapping must use explicit unchecked/checked assets, not filename
+substrings, so packed data URIs still toggle.
 
 Hidden variant bitmaps may stay deferred until the click. `prepareSwitch`
 may start those assets, but it must not leave prev/next inert waiting on
