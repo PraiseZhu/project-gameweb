@@ -6,6 +6,12 @@
 <title>{{NAME}} figma preview</title>
 <style>
   html, body { margin: 0; min-height: 100%; background: #080b10; color: #e5e7eb; }
+  .frame > .fx-stage { -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
+  .frame > .fx-stage img, .frame > .fx-stage a { -webkit-user-drag: none; }
+  .frame > .fx-stage input,
+  .frame > .fx-stage textarea,
+  .frame > .fx-stage [contenteditable]:not([contenteditable="false"]),
+  .frame > .fx-stage [data-copy-code] { -webkit-user-select: text; user-select: text; }
 </style>
 
 <!-- CONTENT_PROTECTION_BASELINE_BEGIN -->

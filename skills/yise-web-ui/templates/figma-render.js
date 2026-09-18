@@ -1442,7 +1442,8 @@
       const css = payload && payload.buttonPress && payload.buttonPress.css
         || [
           ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
-          '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
+          '.frame>.fx-stage,.frame>.fx-stage img,.frame>.fx-stage a,[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
+          '.frame>.fx-stage input,.frame>.fx-stage textarea,.frame>.fx-stage [contenteditable]:not([contenteditable="false"]),.frame>.fx-stage [data-copy-code]{-webkit-user-select:text;user-select:text}',
           'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
           '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
           'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
@@ -7092,6 +7093,16 @@
         };
         for (const host of frame.querySelectorAll('[data-hscroll],[data-switch-owner],[data-switch-swipe-host]')) {
           suppressNativeImageDrag(host);
+        }
+        if (!frame.__fxNativeDragGuard) {
+          frame.__fxNativeDragGuard = true;
+          frame.addEventListener('dragstart', (ev) => {
+            const t = ev.target && ev.target.nodeType === 3 ? ev.target.parentElement : ev.target;
+            if (!t || !t.closest) return;
+            if (t.closest('input, textarea, [contenteditable]:not([contenteditable="false"])')) return;
+            if (t.closest('[data-hscroll][data-hscroll-drag="true"], [data-switch-swipe-host], [data-switch-owner]')) return;
+            ev.preventDefault();
+          }, true);
         }
         for (const control of frame.querySelectorAll('[data-calendar-now="true"]')) {
           setCalendarNowState(control, 'today');

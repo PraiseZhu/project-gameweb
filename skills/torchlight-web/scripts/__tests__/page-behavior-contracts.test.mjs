@@ -14,6 +14,10 @@ import {
   lastSectionScrollMax,
   productInteractionEntry,
   packFreshness,
+  productSelectionPolicy,
+  nativeDragPolicy,
+  consentGroupPolicy,
+  checkStateAssetPolicy,
 } from '../lib/page-behavior-contracts.mjs';
 
 test('SC-07 nested children keep parent-local x and skip a second page offset', () => {
@@ -150,4 +154,40 @@ test('SC-17 stale zip cannot prove the current pack', () => {
   assert.equal(packFreshness({ packedHash: 'a', deployedHash: 'a' }).ok, true);
   assert.equal(packFreshness({ staleZip: true, packedHash: 'a', deployedHash: 'a' }).ok, false);
   assert.equal(packFreshness({ packedHash: 'a', deployedHash: 'b' }).reason, 'hash-mismatch');
+});
+
+test('SC-SEL-01 product stage blocks selection except editable or copy targets', () => {
+  assert.equal(productSelectionPolicy({ inProductStage: true }).userSelect, 'none');
+  assert.equal(productSelectionPolicy({ inProductStage: true, isEditable: true }).userSelect, 'text');
+  assert.equal(productSelectionPolicy({ inProductStage: true, allowCopy: true }).userSelect, 'text');
+  assert.equal(productSelectionPolicy({ inProductStage: false }).userSelect, 'auto');
+});
+
+test('SC-DRAG-01 native image drag is blocked; swipe hosts keep pointer drag', () => {
+  const image = nativeDragPolicy({ inProductStage: true });
+  assert.equal(image.preventNativeDrag, true);
+  assert.equal(image.allowSwipe, false);
+  const swipe = nativeDragPolicy({ inProductStage: true, isSwipeHost: true });
+  assert.equal(swipe.preventNativeDrag, true);
+  assert.equal(swipe.allowSwipe, true);
+  const edit = nativeDragPolicy({ inProductStage: true, isEditable: true });
+  assert.equal(edit.preventNativeDrag, false);
+});
+
+test('SC-CONSENT-01 all-select syncs items; any item off clears all', () => {
+  const allOn = consentGroupPolicy({ role: 'all', next: 'on', itemStates: ['off', 'off', 'off'] });
+  assert.deepEqual(allOn.items, ['on', 'on', 'on']);
+  assert.equal(allOn.all, 'on');
+  const itemOff = consentGroupPolicy({ role: 'item', next: 'off', itemStates: ['on', 'off', 'on'] });
+  assert.equal(itemOff.all, 'off');
+  const complete = consentGroupPolicy({ role: 'item', next: 'on', itemStates: ['on', 'on', 'on'] });
+  assert.equal(complete.all, 'on');
+});
+
+test('SC-STANDALONE-01 check-state assets do not depend on filenames', () => {
+  const unchecked = 'data:image/webp;base64,unchecked';
+  const checked = 'data:image/webp;base64,checked';
+  assert.equal(checkStateAssetPolicy({ uncheckedSrc: unchecked, checkedSrc: checked, next: 'off' }).src, unchecked);
+  assert.equal(checkStateAssetPolicy({ uncheckedSrc: unchecked, checkedSrc: checked, next: 'on' }).src, checked);
+  assert.equal(checkStateAssetPolicy({ uncheckedSrc: '', checkedSrc: checked, next: 'on' }).reason, 'missing-state-assets');
 });

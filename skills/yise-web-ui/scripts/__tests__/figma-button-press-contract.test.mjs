@@ -162,3 +162,14 @@ test('dropmenu off/on stay pressable and do not inherit btn disable', () => {
   assert.match(css, /\[data-dropmenu="true"\]:hover/);
   assert.match(css, /\[data-dropmenu-state="on"\] \[data-prefix="img"\]\{filter:none\}/);
 });
+
+test('editable hosts keep text selection for empty and plaintext-only contenteditable', () => {
+  const css = buttonPressCss();
+  const shell = readFileSync(new URL('../../templates/demo-shell.html', import.meta.url), 'utf8');
+  assert.match(css, /\[contenteditable\]:not\(\[contenteditable="false"\]\)/);
+  assert.doesNotMatch(css, /\[contenteditable="true"\]/);
+  assert.match(renderer, /\[contenteditable\]:not\(\[contenteditable="false"\]\)/);
+  assert.doesNotMatch(renderer, /\[contenteditable="true"\]/);
+  assert.match(shell, /\[contenteditable\]:not\(\[contenteditable="false"\]\)/);
+  assert.doesNotMatch(shell, /\[contenteditable="true"\]/);
+});
