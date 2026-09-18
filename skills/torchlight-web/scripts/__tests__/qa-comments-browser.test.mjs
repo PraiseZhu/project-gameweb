@@ -83,7 +83,10 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
   assert.notEqual(offset, -1, 'production comment controller must exist');
   const html = fixture(source.slice(offset));
   await mkdir(artifacts, { recursive: true });
-  const scratch = await mkdtemp(join(artifacts, 'chrome-'));
+  // Chrome's macOS/Linux singleton socket is nested below this directory.
+  // Keep the profile root short enough for hosted runners whose checkout path
+  // is already long; screenshots and HTML still stay under the workspace.
+  const scratch = await mkdtemp(join(repoRoot, '_tmp', 'qc-'));
   const cases = new Map(), values = new Map();
   const kv = {
     async get(key) { return structuredClone(values.get(key) || null); },

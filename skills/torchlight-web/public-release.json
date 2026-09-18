@@ -14,7 +14,8 @@
     "naming-contract.json",
     "scripts/",
     "templates/",
-    "docs/"
+    "docs/",
+    "deploy/"
   ],
   "private": [
     "demos/",
@@ -26,6 +27,7 @@
     "FIGMA-ADAPT.md",
     "audit-report-*.md",
     "*.png",
+    "*.log",
     "truth-run.out",
     ".env",
     "node_modules/",
@@ -79,6 +81,7 @@
     "FIGMA-ADAPT.md": "Historical adaptation notes with upstream/private context.",
     "audit-report-*.md": "Page-specific audit reports and node-level evidence.",
     "*.png": "Generated screenshots or source captures.",
+    "*.log": "Local test and health-check logs are generated evidence, not release content.",
     "truth-run.out": "Local command output.",
     ".env": "Credentials and machine-local configuration.",
     "node_modules/": "Installed dependencies are never release content.",

@@ -94,7 +94,8 @@ test('QA comments: complete figma shell integration across language, composition
   const examplePng = join(artifacts, 'qa-comments-shell-example.png');
   await writeFile(exampleHtml, html);
 
-  const scratch = await mkdtemp(join(artifacts, 'shell-chrome-'));
+  // Keep Chromium's profile/socket root short on hosted runners.
+  const scratch = await mkdtemp(join(repoRoot, '_tmp', 'qcs-'));
   const server = createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(html);
