@@ -13,7 +13,8 @@ jobs:
     timeout-minutes: 40
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/_tmp/content-protection/browsers
-      TMPDIR: ${{ github.workspace }}/_tmp/content-protection/tmp
+      TMPDIR: ${{ github.workspace }}/t
+      CONTENT_PROTECTION_TMPDIR: ${{ github.workspace }}/t
       CONTENT_PROTECTION_ENGINES: chromium,firefox,webkit
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +22,7 @@ jobs:
         with:
           node-version: 22
       - name: Prepare local evidence directory
-        run: mkdir -p _tmp/content-protection/tmp
+        run: mkdir -p t _tmp/content-protection/tmp
       - name: Install existing locked dependencies
         run: |
           npm ci --prefix skills/torchlight-web

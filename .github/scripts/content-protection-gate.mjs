@@ -40,10 +40,15 @@ export function main() {
   let failed = false;
   const suites = buildSuites(process.env.CONTENT_PROTECTION_ENGINES ?? 'chromium');
   const evidenceRoot = resolve(root, '_tmp/content-protection');
-  mkdirSync(resolve(evidenceRoot, 'tmp'), { recursive: true });
+  // Chromium's Linux SingletonSocket is limited to 108 bytes. Keep CI's
+  // temporary root configurable so a deep GitHub workspace path cannot make
+  // the browser abort before any test starts. Local runs retain the evidence
+  // directory default; CI sets a short workspace-local path.
+  const tempRoot = resolve(process.env.CONTENT_PROTECTION_TMPDIR || resolve(evidenceRoot, 'tmp'));
+  mkdirSync(tempRoot, { recursive: true });
   const generated = mkdtempSync(resolve(evidenceRoot, 'generated-'));
   const env = { ...process.env, CONTENT_PROTECTION_REQUIRED: '1',
-    CONTENT_PROTECTION_GENERATED_DIR: generated, TMPDIR: resolve(evidenceRoot, 'tmp') };
+    CONTENT_PROTECTION_GENERATED_DIR: generated, TMPDIR: tempRoot };
   console.log('evidence_generated_at=' + new Date().toISOString());
   const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
   console.log('base_commit=' + (head.stdout || '').trim());

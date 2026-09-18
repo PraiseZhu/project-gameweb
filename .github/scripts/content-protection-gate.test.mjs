@@ -37,6 +37,8 @@ test('both cloud entrypoints call the browser workflow without making it optiona
   assert.ok(gate.includes('content-protection-artifact-gate.mjs'));
   assert.ok(gate.includes('/scripts/init.mjs'));
   assert.ok(gate.includes('CONTENT_PROTECTION_GENERATED_DIR: generated'));
+  assert.ok(gate.includes('CONTENT_PROTECTION_TMPDIR'));
+  assert.ok(workflow.includes('CONTENT_PROTECTION_TMPDIR: ${{ github.workspace }}/t'));
   assert.ok(workflow.includes('_tmp/content-protection/failures/'));
   assert.match(workflow, /set -o pipefail/);
   assert.ok(workflow.includes('content-protection-pass.log'));
