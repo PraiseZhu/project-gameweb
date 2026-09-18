@@ -17,6 +17,15 @@
    在「帧 = 整窗」的真实 App 里两者等价;帧被缩小时它们跟着帧走(这正是 demo 想要的)。 */
 .qa-component-root { height: 100%; transform: translateZ(0); }
 </style>
+
+<!-- CONTENT_PROTECTION_BASELINE_BEGIN -->
+<style data-content-protection-baseline>
+body,body *{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
+img,svg,video,canvas{-webkit-user-drag:none!important}
+input:not([readonly]):not(:disabled),textarea:not([readonly]):not(:disabled),[data-content-protection-editable="true"]:read-write,[data-content-protection-editable="true"] :read-write{user-select:text!important;-webkit-user-select:text!important;-webkit-touch-callout:default!important}
+[contenteditable="false"],[contenteditable="false"] *,img,svg,video,canvas{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
+</style>
+<!-- CONTENT_PROTECTION_BASELINE_END -->
 </head>
 <body>
 <!-- 真值块:由 `node <skill>/scripts/truth.mjs --demo <dir> --embed` 写入,禁止手抄 -->

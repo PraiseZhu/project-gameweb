@@ -922,3 +922,4 @@ test("adaptInventoryToTruthShape keeps pageBox/parentBox/sliceExport/text/layout
   assert.deepEqual(component.parentBox, parentBox);
 });
 
+\n

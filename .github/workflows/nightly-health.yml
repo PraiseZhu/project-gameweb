@@ -13,8 +13,13 @@ permissions:
   actions: read
 
 jobs:
+  content-protection:
+    uses: ./.github/workflows/content-protection.yml
+
   health:
     name: health
+    needs: [content-protection]
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -135,3 +140,26 @@ jobs:
           include-hidden-files: true
           retention-days: 2
           if-no-files-found: ignore
+
+  nightly-gate:
+    name: nightly-gate
+    needs: [content-protection, health]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail closed when any nightly gate is not successful
+        run: |
+          protection="${{ needs.content-protection.result }}"
+          health="${{ needs.health.result }}"
+          echo "content-protection=$protection"
+          echo "health=$health"
+          if [ "$protection" != "success" ]; then
+            echo "页面内容保护未通过（result=$protection）。"
+            exit 1
+          fi
+          if [ "$health" != "success" ]; then
+            echo "夜间健康检查未通过（result=$health）。"
+            exit 1
+          fi
+          echo "夜间闸门通过。"

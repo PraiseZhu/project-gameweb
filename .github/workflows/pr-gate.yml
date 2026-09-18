@@ -1,18 +1,26 @@
 # PR 进仓检查：开 PR / 再 push 时跑同一把 nightly-health.mjs。
-# 失败写 Job Summary（错误 / 问题 / 导致），不设 required check，不拦合并。
+# 内容保护失败/跳过/取消必须传递到 pr-gate 红灯和 Job Summary。
+# pr-gate 是合并闸门：仓库 ruleset 必须把这个 job 设为 required，才能把红灯传成禁止合并。
+# 工作流本身只负责 fail-closed；它不会替仓库管理员修改 ruleset。
 # fork PR 也走 pull_request（不用 pull_request_target）。闸没跑 ≠ 通过。
 name: pr-gate
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
 
 permissions:
   contents: read
 
 jobs:
+  content-protection:
+    uses: ./.github/workflows/content-protection.yml
+
   pr-gate:
     name: pr-gate
+    needs: [content-protection]
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -87,19 +95,25 @@ jobs:
         run: |
           node .github/scripts/pr-gate-summary.mjs \
             --log health.log \
-            --exit-code "${{ steps.health.outputs.exit_code || 1 }}" \
+            --exit-code "${{ needs.content-protection.result == 'success' && steps.health.outputs.exit_code || 1 }}" \
             --summary "$GITHUB_STEP_SUMMARY"
+          echo "页面内容保护：${{ needs.content-protection.result }}。详见 content-protection/browser。" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Fail job when health or summary failed
         if: always()
         run: |
           health="${{ steps.health.outputs.exit_code }}"
           summary="${{ steps.summary.outcome }}"
+          protection="${{ needs.content-protection.result }}"
+          if [ "$protection" != "success" ]; then
+            echo "页面内容保护未通过（result=$protection），不能判 PR 通过。"
+            exit 1
+          fi
           if [ "$summary" != "success" ]; then
             echo "翻译层失败（outcome=${summary:-missing}）。闸不能假绿。"
             exit 1
           fi
           if [ -z "$health" ] || [ "$health" != "0" ]; then
-            echo "进仓检查未通过（exit ${health:-missing}）。Summary 已写，不锁 Merge。"
+            echo "进仓检查未通过（exit ${health:-missing}）。Summary 已写，检查不通过。"
             exit 1
           fi
