@@ -2652,6 +2652,7 @@ function createQaComments(host) {
   var timer = null, contextKey = '', pinButtons = new Map(), lastListKey = '';
   var submitButton = null, composerNote = null, detailNote = null, loadSequence = 0;
   var api = host.commentApi || null, pollTimer = null, remoteBusy = false, remoteDurable = null;
+  var sending = false, remoteError = '';
   var toolbar = mk('div', 'qc-toolbar');
   var modeButton = btn('评论', function () { if (!writeBusy) { close(); setMode(!mode); } });
   modeButton.setAttribute('aria-label', '评论：点选或框选内容');
@@ -2676,7 +2677,7 @@ function createQaComments(host) {
   [['all', '全部页面组合'], ['current', '当前语言／地区／状态']].forEach(function (x) {
     var o = mk('option', '', x[1]); o.value = x[0]; scope.appendChild(o);
   });
-  [['open', '未解决'], ['all', '全部（含已解决）'], ['resolved', '已解决']].forEach(function (x) {
+  [['open', '未解决'], ['all', '全部（含已解决）'], ['resolved', '已解决'], ['pending', '待同步（含已解决）']].forEach(function (x) {
     var o = mk('option', '', x[1]); o.value = x[0]; status.appendChild(o);
   });
   var list = mk('div', 'qc-list'); panel.append(panelHead, storage, scope, status, list);
@@ -2695,6 +2696,18 @@ function createQaComments(host) {
   }
   function storageReady() {
     storage.classList.remove('qc-warning');
+    var pending = rows.filter(function (r) { return r._sync; });
+    if (api && pending.length) {
+      storage.classList.add('qc-warning');
+      storage.textContent = pending.length + ' 条评论待同步，已保存在此浏览器。' +
+        (pending.some(function (r) { return r._sync.blocked; }) ? '部分评论需要处理错误后点击重试。' : '页面打开时自动重试；刷新后仍会继续。');
+      return;
+    }
+    if (api && remoteError) {
+      storage.classList.add('qc-warning');
+      storage.textContent = '协作服务暂时不可用：' + remoteError + '；仍保留本地缓存。';
+      return;
+    }
     storage.textContent = api
       ? (remoteDurable === true ? '评论保存到共享 KV；IndexedDB 作为本地缓存。每秒检查更新，实际同步时间取决于共享服务响应。' : '正在连接共享评论服务；IndexedDB 保留本地缓存。')
       : '仅保存在此浏览器；清除网站数据会删除评论。' +
@@ -2748,24 +2761,30 @@ function createQaComments(host) {
     if (method === 'GET') query = Object.assign({}, query || {}, { _ts: Date.now() });
     var url = apiUrl('', query);
     if (!url) return Promise.reject(new Error('未配置协作服务地址'));
-    return fetch(url, { method: method, credentials: 'include', cache: 'no-store',
+    var controller = new AbortController();
+    var timeout = setTimeout(function () { controller.abort(); }, 10000);
+    return fetch(url, { method: method, credentials: 'include', cache: 'no-store', signal: controller.signal,
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: method === 'GET' ? undefined : JSON.stringify(body) }).then(function (res) {
-      if (!res.ok) throw new Error('协作服务 HTTP ' + res.status);
+      if (!res.ok) { var error = new Error('协作服务 HTTP ' + res.status); error.status = res.status; throw error; }
       return res.json();
-    });
+    }).finally(function () { clearTimeout(timeout); });
   }
   function mergeRemote(remoteRows) {
     if (!db || !Array.isArray(remoteRows)) return;
-    var incoming = remoteRows.filter(validRow), byId = new Map(rows.map(function (r) { return [r.id, r]; }));
-    incoming.forEach(function (r) {
-      var previous = byId.get(r.id);
-      if (!previous || (r.updatedAt || r.createdAt) >= (previous.updatedAt || previous.createdAt)) byId.set(r.id, r);
-    });
-    var merged = Array.from(byId.values());
     try {
       var tx = db.transaction('comments', 'readwrite'), store = tx.objectStore('comments');
-      merged.forEach(function (r) { store.put(r); });
+      remoteRows.filter(validRow).forEach(function (r) {
+        var q = store.get(r.id);
+        q.onsuccess = function () {
+          var previous = q.result;
+          // Read the current durable row, not the possibly stale UI snapshot.
+          // A poll must never erase queued work or restore its old resolved state.
+          if (!previous || (!previous._sync && (r.updatedAt || r.createdAt) >= (previous.updatedAt || previous.createdAt))) {
+            var clean = Object.assign({}, r); delete clean._sync; store.put(clean);
+          }
+        };
+      });
       tx.oncomplete = reload;
       tx.onerror = function () { fail(tx.error, '协作评论写入本地缓存失败'); };
     } catch (e) { fail(e, '协作评论写入本地缓存失败'); }
@@ -2774,23 +2793,109 @@ function createQaComments(host) {
     if (!api || remoteBusy || disposed) return;
     remoteBusy = true;
     remoteRequest('GET').then(function (result) {
-      remoteBusy = false; remoteDurable = result && result.durable !== false; mergeRemote(result && result.comments);
+      if (!result || result.durable !== true || !Array.isArray(result.comments)) throw new Error('共享服务未确认持久化');
+      remoteBusy = false; remoteDurable = true; remoteError = ''; mergeRemote(result.comments);
       storageReady();
-    }).catch(function (e) { remoteBusy = false; storage.textContent = '协作服务暂时不可用：' + e.message + '；仍保留本地缓存。'; storage.classList.add('qc-warning'); });
+    }).catch(function (e) { remoteBusy = false; remoteError = e.message; storageReady(); });
   }
-  function remoteSave(row, resolved) {
-    if (!api) return Promise.resolve({ shared: false });
-    var payload = Object.assign({}, row, resolved === undefined ? {} : { resolved: resolved, updatedAt: Date.now() });
-    return remoteRequest('POST', payload).then(function (result) {
-      if (result) remoteDurable = result.durable !== false;
-      if (result && result.comment) mergeRemote([result.comment]);
-      return Object.assign({ shared: true }, result || {});
+  function revision() { return Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-'); }
+  function pendingState(previous) {
+    return { revision: revision(), attempts: 0, nextAt: 0, error: '', blocked: false,
+      lease: previous && previous.lease || null };
+  }
+  // Claims and acknowledgements share the comment transaction. This both survives
+  // reload and prevents two tabs from concurrently draining the same queued row.
+  function updateStored(id, change) {
+    return new Promise(function (resolve, reject) {
+      if (!db || disposed) { resolve(null); return; }
+      var tx = db.transaction('comments', 'readwrite'), store = tx.objectStore('comments'), value = null;
+      var q = store.get(id);
+      q.onsuccess = function () {
+        if (!validRow(q.result)) return;
+        value = change(q.result); if (value) store.put(value);
+      };
+      tx.oncomplete = function () { reload(); resolve(value); };
+      tx.onabort = function () { reject(tx.error || new Error('评论缓存事务中止')); };
+      tx.onerror = function () {};
     });
+  }
+  function queuedRows() {
+    return new Promise(function (resolve, reject) {
+      var q = db.transaction('comments', 'readonly').objectStore('comments').getAll();
+      q.onsuccess = function () { resolve(q.result.filter(function (r) { return validRow(r) && r._sync; })); };
+      q.onerror = function () { reject(q.error); };
+    });
+  }
+  async function flushPending() {
+    if (!api || !db || disposed || sending || navigator.onLine === false) return;
+    sending = true;
+    try {
+      var pending = await queuedRows();
+      for (var i = 0; i < pending.length && !disposed; i++) {
+        var row = await updateStored(pending[i].id, function (r) {
+          var s = r._sync, now = Date.now();
+          if (!s || s.blocked || s.nextAt > now || (s.lease && s.lease.until > now)) return null;
+          s.lease = { token: revision(), until: now + 30000 }; return r;
+        });
+        if (!row) continue;
+        var sent = row._sync, payload = Object.assign({}, row), result = null, failure = null;
+        delete payload._sync;
+        try {
+          result = await remoteRequest('POST', payload);
+          if (!result || result.durable !== true || !validRow(result.comment) || result.comment.id !== row.id) {
+            throw new Error('共享服务未确认评论持久化');
+          }
+        } catch (e) { failure = e; }
+        await updateStored(row.id, function (r) {
+          var s = r._sync;
+          if (!s || !s.lease || s.lease.token !== sent.lease.token) return null;
+          s.lease = null;
+          if (s.revision !== sent.revision) return r; // A newer resolve/reopen remains queued.
+          if (!failure) {
+            var confirmed = Object.assign({}, result.comment); delete confirmed._sync;
+            remoteDurable = true; return confirmed;
+          }
+          s.attempts++;
+          s.blocked = failure.status >= 400 && failure.status < 500 && failure.status !== 408 && failure.status !== 429;
+          s.error = failure.status === 401 || failure.status === 403
+            ? '登录或权限已失效，请重新登录后重试' : failure.message;
+          s.nextAt = Date.now() + Math.min(30000, 1000 * Math.pow(2, Math.min(s.attempts - 1, 5)));
+          return r;
+        });
+        if (channel) { try { channel.postMessage({ pageKey: dbKey }); } catch (_) {} }
+      }
+    } catch (e) { fail(e, '待同步评论读取或保存失败'); }
+    finally { sending = false; }
+  }
+  function retry(row) {
+    updateStored(row.id, function (r) {
+      if (!r._sync) return null;
+      r._sync.blocked = false; r._sync.nextAt = 0; r._sync.error = ''; return r;
+    }).then(flushPending).catch(function (e) { fail(e, '重试状态保存失败'); });
+  }
+  function remoteTick() { remoteReload(); flushPending(); }
+  function authorTime(row, tag) {
+    var n = mk(tag || 'p', 'qc-note qc-author-time');
+    var author = row.author && typeof row.author.name === 'string' && row.author.name.trim();
+    n.appendChild(doc.createTextNode((author || (row._sync ? '待同步（作者待确认）' : '作者未记录')) + ' · '));
+    function appendTime(value, label) {
+      var date = new Date(value);
+      if (typeof value !== 'number' || !Number.isFinite(date.getTime())) { n.appendChild(doc.createTextNode(label + '时间未记录')); return; }
+      var time = mk('time', '', label + date.toLocaleString('zh-CN', { hour12: false }));
+      time.dateTime = date.toISOString(); time.title = '浏览器本地时区：' + time.textContent; n.appendChild(time);
+    }
+    appendTime(row.createdAt, '发布于 ');
+    if (row.updatedAt > row.createdAt) { n.appendChild(doc.createTextNode(' · ')); appendTime(row.updatedAt, '更新于 '); }
+    return n;
+  }
+  function syncLabel(row) {
+    if (row._sync) return (row._sync.blocked ? '同步暂停' : '待同步 · 自动重试') + (row._sync.error ? '：' + row._sync.error : '');
+    return api ? (row.author ? '已同步' : '本地记录（未确认同步）') : '仅此浏览器';
   }
   function startRemote() {
     if (!api) return;
-    remoteReload();
-    pollTimer = setInterval(remoteReload, 1000);
+    remoteTick();
+    pollTimer = setInterval(remoteTick, 1000);
   }
   function reload() {
     if (!db) return;
@@ -2801,6 +2906,7 @@ function createQaComments(host) {
     q.onsuccess = function () {
       if (sequence !== loadSequence || disposed) return;
       rows = q.result.filter(validRow).sort(function (a, b) { return a.createdAt - b.createdAt || a.id.localeCompare(b.id); });
+      storageReady();
       // If another tab resolved an open detail, show the newly committed state.
       if (active && !draft) {
         var row = rows.find(function (r) { return r.id === active; });
@@ -2823,12 +2929,17 @@ function createQaComments(host) {
     try {
       tx = db.transaction('comments', 'readwrite');
       var store = tx.objectStore('comments');
-      if (resolved === undefined) store.add(row);
+      if (resolved === undefined) {
+        if (api) row._sync = pendingState();
+        store.add(row);
+      }
       else {
         var q = store.get(row.id);
         q.onsuccess = function () {
           if (!q.result) { missing = true; tx.abort(); return; }
-          q.result.resolved = resolved; q.result.updatedAt = Date.now(); store.put(q.result);
+          q.result.resolved = resolved; q.result.updatedAt = Date.now();
+          if (api) q.result._sync = pendingState(q.result._sync);
+          store.put(q.result);
         };
       }
       tx.onabort = function () { failed(missing ? new Error('评论已不存在') : tx.error); };
@@ -2837,13 +2948,8 @@ function createQaComments(host) {
         writeBusy = false; close(); setMode(false);
         storageReady(); reload();
         if (channel) { try { channel.postMessage({ pageKey: dbKey }); } catch (e) { /* committed data remains readable on focus */ } }
-        remoteSave(row, resolved).then(function (result) {
-          var suffix = result && result.shared ? '并同步' : '';
-          say(resolved === undefined ? '评论已保存' + suffix : resolved ? '已解决' + suffix : '已恢复' + suffix);
-        }).catch(function (e) {
-          storage.textContent = '本地已保存，但协作服务同步失败：' + e.message; storage.classList.add('qc-warning');
-          say('本地已保存，协作同步失败');
-        });
+        say((resolved === undefined ? '评论已保存' : resolved ? '已解决' : '已恢复') + (api ? '，等待同步' : ''));
+        flushPending();
       };
     } catch (e) { if (tx) { try { tx.abort(); } catch (_) {} } failed(e); }
   }
@@ -2987,7 +3093,8 @@ function createQaComments(host) {
     detailNote = mk('p', 'qc-note qc-warning', locate(row).reason || '');
     var resolve = btn(row.resolved ? '↶ 恢复评论' : '✓ 标记已解决', function () { save(row, !row.resolved); });
     resolve.disabled = !db || writeBusy;
-    pop.append(h, meta, detailNote, mk('div', 'qc-copy', row.body), resolve);
+    pop.append(h, meta, authorTime(row), mk('p', 'qc-note qc-sync-state', syncLabel(row)), detailNote, mk('div', 'qc-copy', row.body), resolve);
+    if (api && row._sync) pop.appendChild(btn('立即重试同步', function () { retry(row); }));
     place(row); schedule();
   }
   function show(row) {
@@ -3008,7 +3115,8 @@ function createQaComments(host) {
     var open = rows.filter(function (r) { return !r.resolved; }).length;
     allButton.textContent = '全部评论 · ' + open;
     var filtered = rows.filter(function (r) {
-      return (scope.value === 'all' || current(r)) && (status.value === 'all' || !!r.resolved === (status.value === 'resolved'));
+      return (scope.value === 'all' || current(r)) && (status.value === 'pending' ? !!r._sync :
+        status.value === 'all' || !!r.resolved === (status.value === 'resolved'));
     }).slice().reverse();
     // Only rebuild on data/context/target changes, not every scroll frame.
     var descriptions = filtered.map(function (r) { return current(r) ? locate(r).reason || '' : ''; });
@@ -3021,6 +3129,7 @@ function createQaComments(host) {
       b.setAttribute('aria-current', String(active === r.id)); b.dataset.commentId = r.id;
       b.append(mk('small', '', (r.resolved ? '已解决' : '未解决') + ' · ' +
         [r.context.lang, r.context.region, r.context.state, r.context.composition].join(' / ')), mk('span', '', r.body));
+      b.append(authorTime(r, 'small'), mk('small', 'qc-sync-state', syncLabel(r)));
       if (descriptions[i]) b.appendChild(mk('small', 'qc-warning', descriptions[i]));
       list.appendChild(b);
     });
@@ -3141,6 +3250,7 @@ function createQaComments(host) {
   observer.observe(host.stage, { childList: true, subtree: true, attributes: true,
     attributeFilter: ['data-node', 'hidden', 'aria-hidden', 'style', 'class'] });
   window.addEventListener('focus', reload);
+  window.addEventListener('online', remoteTick);
   window.addEventListener('resize', schedule);
   window.addEventListener('qa-pref-change', refresh);
   doc.addEventListener('scroll', schedule, true);

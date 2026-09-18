@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { readFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { launchChromium } from '../lib/resolve-playwright.mjs';
+import { handleComments } from '../../deploy/qa-comments-realtime/worker.js';
 
 const skillRoot = resolve(import.meta.dirname, '../..');
 const repoRoot = resolve(skillRoot, '../..');
@@ -38,7 +39,7 @@ function fixture(runtime) {
     "['lang','region','state'].forEach(function(k){document.getElementById(k).onchange=function(e){state[k]=e.target.value;render();};});",
     'document.querySelector("#rebuild").onclick=render;',
     'document.querySelector("#scale").onclick=function(){scale=.72;render();};render();',
-    'comments=createQaComments({stage:document.querySelector("#stage"),pageKey:new URL(location.href).searchParams.get("case")||"default",context:function(){return Object.assign({},state);},viewport:function(){return {w:1000,h:560};},navigate:function(c){Object.assign(state,c);["lang","region","state"].forEach(function(k){document.getElementById(k).value=state[k];});render();return true;}});',
+    'comments=createQaComments({stage:document.querySelector("#stage"),commentApi:new URL(location.href).searchParams.get("case").startsWith("remote-")?"/api/qa-comments":null,pageKey:new URL(location.href).searchParams.get("case")||"default",context:function(){return Object.assign({},state);},viewport:function(){return {w:1000,h:560};},navigate:function(c){Object.assign(state,c);["lang","region","state"].forEach(function(k){document.getElementById(k).value=state[k];});render();return true;}});',
     'document.querySelector("#comment-tools").appendChild(comments.toolbar);</script>',
   ].join('\n');
 }
@@ -83,7 +84,36 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
   const html = fixture(source.slice(offset));
   await mkdir(artifacts, { recursive: true });
   const scratch = await mkdtemp(join(artifacts, 'chrome-'));
-  const server = createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(html); });
+  const cases = new Map(), values = new Map();
+  const kv = {
+    async get(key) { return structuredClone(values.get(key) || null); },
+    async put(key, value) { values.set(key, structuredClone(value)); },
+    async list({ prefix }) { return { keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
+  };
+  function remoteCase(name, options = {}) {
+    const state = { posts: [], gets: 0, ...options }; cases.set(name, state); return state;
+  }
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname !== '/api/qa-comments') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(html); return;
+    }
+    try {
+      const state = cases.get(url.searchParams.get('pageKey'));
+      let body = ''; for await (const chunk of req) body += chunk;
+      if (req.method === 'POST') {
+        state.posts.push({ body: JSON.parse(body), at: Date.now() });
+        if (state.status) { res.writeHead(state.status); res.end('{}'); return; }
+      } else state.gets++;
+      const response = await handleComments(new Request(url, { method: req.method, ...(body ? { body } : {}) }), kv,
+        { id: 'fixture-user', name: state.author || '同步测试员' });
+      if (req.method === 'POST' && state.hold) {
+        const hold = state.hold; state.hold = null; await hold;
+      }
+      if (req.method === 'POST' && state.dropAck) { state.dropAck = false; res.destroy(); return; }
+      res.writeHead(response.status, Object.fromEntries(response.headers)); res.end(await response.text());
+    } catch (error) { res.writeHead(500); res.end(JSON.stringify({ error: error.message })); }
+  });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const base = 'http://127.0.0.1:' + server.address().port + '/';
   // Playwright creates profiles through Node os.tmpdir(). Both launch process
@@ -277,6 +307,145 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await panel(local);
       assert.match(await local.locator('.qc-panel').innerText(), /不支持标签页即时同步/);
       await noChannel.close();
+    });
+
+    await t.test('failed POST survives reload, retries automatically and shows server author/time in both browsers', async () => {
+      const state = remoteCase('remote-retry', { status: 503, author: '<img src=x onerror=alert(1)>测试员' });
+      const page = await pageFor('remote-retry');
+      await publish(page, 'Persistent retry');
+      await panel(page);
+      await page.waitForFunction(() => document.querySelector('.qc-item').textContent.includes('HTTP 503'));
+      assert.match(await page.locator('.qc-panel').innerText(), /1 条评论待同步/);
+      const id = state.posts[0].body.id;
+      await page.reload();
+      await count(page, '.qc-pin', 1);
+      await panel(page);
+      assert.match(await page.locator('.qc-item').innerText(), /待同步/);
+      state.status = 0;
+      await page.waitForFunction(() => document.querySelector('.qc-item .qc-sync-state').textContent === '已同步');
+      assert.ok(state.posts.length >= 2);
+      assert.ok(state.posts.every(p => p.body.id === id && !('_sync' in p.body)));
+      assert.ok((await page.locator('.qc-item .qc-author-time').innerText()).includes(state.author));
+      assert.equal(await page.locator('.qc-item img').count(), 0);
+      const publishedTime = await page.locator('.qc-item time').first().getAttribute('datetime');
+      assert.ok(Number.isFinite(Date.parse(publishedTime)));
+      await page.locator('.qc-item').click();
+      assert.equal(await page.locator('.qc-pop time').first().getAttribute('datetime'), publishedTime);
+      assert.match(await page.locator('.qc-pop .qc-author-time').innerText(), /测试员/);
+      const other = await browser.newContext({ viewport: { width: 1240, height: 820 } });
+      const receiver = await pageFor('remote-retry', other);
+      await count(receiver, '.qc-pin', 1);
+      await panel(receiver);
+      assert.equal(await receiver.locator('.qc-item time').first().getAttribute('datetime'), publishedTime);
+      assert.match(await receiver.locator('.qc-item .qc-author-time').innerText(), /测试员/);
+      await other.close(); await page.close();
+    });
+
+    await t.test('offline publication resumes when online; lost acknowledgement does not duplicate the comment', async () => {
+      const state = remoteCase('remote-offline', { dropAck: true });
+      const isolated = await browser.newContext({ viewport: { width: 1240, height: 820 } });
+      const page = await pageFor('remote-offline', isolated);
+      await isolated.setOffline(true);
+      await publish(page, 'Offline then retry a lost response');
+      await panel(page);
+      assert.equal(state.posts.length, 0);
+      assert.match(await page.locator('.qc-item').innerText(), /待同步/);
+      await isolated.setOffline(false);
+      await page.waitForFunction(() => document.querySelector('.qc-item .qc-sync-state').textContent === '已同步', null, { timeout: 10000 });
+      assert.equal(state.posts.length, 2);
+      assert.equal(new Set(state.posts.map(p => p.body.id)).size, 1);
+      const response = await handleComments(new Request(base + 'api/qa-comments?pageKey=remote-offline'), kv, {});
+      assert.equal((await response.json()).comments.length, 1);
+      await isolated.close();
+    });
+
+    await t.test('two tabs claim one pending write; a delayed acknowledgement cannot erase a newer resolve', async () => {
+      let release;
+      const state = remoteCase('remote-race', { hold: new Promise(resolve => { release = resolve; }) });
+      const page = await pageFor('remote-race');
+      await publish(page, 'Resolve while creation is sending');
+      await count(page, '.qc-pin', 1);
+      await page.waitForFunction(() => document.querySelector('.qc-item')?.textContent.includes('待同步'));
+      const second = await pageFor('remote-race');
+      await count(second, '.qc-pin', 1);
+      await second.locator('.qc-pin').click();
+      await second.getByRole('button', { name: '✓ 标记已解决', exact: true }).click();
+      await panel(second);
+      await second.getByRole('combobox', { name: '解决状态', exact: true }).selectOption('pending');
+      await count(second, '.qc-item', 1);
+      assert.match(await second.locator('.qc-item').innerText(), /已解决/);
+      assert.equal(state.posts.length, 1, 'the second tab must not overtake the active request');
+      release();
+      await second.getByRole('combobox', { name: '解决状态', exact: true }).selectOption('resolved');
+      await second.waitForFunction(() => document.querySelector('.qc-item .qc-sync-state').textContent === '已同步');
+      await count(page, '.qc-pin', 0);
+      assert.equal(state.posts.length, 2);
+      assert.deepEqual(state.posts.map(p => p.body.resolved), [false, true]);
+      const response = await handleComments(new Request(base + 'api/qa-comments?pageKey=remote-race'), kv, {});
+      const row = (await response.json()).comments[0];
+      assert.equal(row.resolved, true);
+      assert.equal(row.author.name, '同步测试员');
+      await second.locator('.qc-item').click();
+      assert.match(await second.locator('.qc-author-time').first().innerText(), /更新于/);
+      await second.close(); await page.close();
+    });
+
+    await t.test('permanent authentication errors pause retries visibly and allow an explicit retry', async () => {
+      const state = remoteCase('remote-auth', { status: 401 });
+      const page = await pageFor('remote-auth');
+      await publish(page, 'Authentication expired');
+      await panel(page);
+      await page.waitForFunction(() => document.querySelector('.qc-item').textContent.includes('同步暂停'));
+      assert.match(await page.locator('.qc-item').innerText(), /重新登录后重试/);
+      const gets = state.gets;
+      await page.waitForFunction(() => document.querySelector('.qc-panel').textContent.includes('部分评论需要处理错误'));
+      await page.reload(); await panel(page);
+      assert.ok(state.gets >= gets);
+      assert.equal(state.posts.length, 1, 'reload must preserve the paused state');
+      state.status = 0;
+      await page.locator('.qc-item').click();
+      await page.getByRole('button', { name: '立即重试同步', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.qc-pop .qc-sync-state').textContent === '已同步');
+      assert.equal(state.posts.length, 2);
+      await page.close();
+    });
+
+    await t.test('a stalled request times out and retries instead of blocking the queue forever', async () => {
+      let release;
+      const state = remoteCase('remote-timeout', { hold: new Promise(resolve => { release = resolve; }) });
+      const page = await pageFor('remote-timeout');
+      try {
+        await publish(page, 'Timeout must release the queue');
+        await panel(page);
+        await page.waitForFunction(() => document.querySelector('.qc-item .qc-sync-state').textContent === '已同步', null, { timeout: 16000 });
+        assert.equal(state.posts.length, 2);
+        assert.ok(state.posts[1].at - state.posts[0].at >= 10000);
+        assert.equal(state.posts[0].body.id, state.posts[1].body.id);
+      } finally { release(); await page.close(); }
+    });
+
+    await t.test('an aborted local transaction sends no remote request and retains the draft', async () => {
+      const state = remoteCase('remote-abort');
+      const page = await pageFor('remote-abort');
+      await enterDraft(page);
+      await page.locator('.qc-pop textarea').fill('Atomic local queue');
+      await page.evaluate(() => {
+        const add = IDBObjectStore.prototype.add;
+        IDBObjectStore.prototype.add = function (...args) {
+          IDBObjectStore.prototype.add = add;
+          const request = add.apply(this, args);
+          request.addEventListener('success', () => this.transaction.abort()); return request;
+        };
+      });
+      await page.getByRole('button', { name: '发布评论', exact: true }).click();
+      await page.waitForFunction(() => document.querySelector('.qc-toast').textContent.includes('未保存'));
+      assert.equal(state.posts.length, 0);
+      assert.equal(await page.locator('.qc-pop textarea').inputValue(), 'Atomic local queue');
+      await page.getByRole('button', { name: '发布评论', exact: true }).click();
+      await panel(page);
+      await page.waitForFunction(() => document.querySelector('.qc-item .qc-sync-state').textContent === '已同步');
+      assert.equal(state.posts.length, 1);
+      await page.close();
     });
 
     await t.test('same-origin tabs synchronize automatically; separate browser contexts do not share storage', async () => {
