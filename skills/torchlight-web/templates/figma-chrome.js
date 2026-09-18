@@ -850,7 +850,8 @@
       enablePageInteraction: (function () {
         var interactionQ = '';
         try { interactionQ = new URLSearchParams(window.location.search).get('interaction') || ''; } catch (e) { interactionQ = ''; }
-        return !(interactionQ === '0' || interactionQ === 'false' || interactionQ === 'no');
+        interactionQ = String(interactionQ).toLowerCase();
+        return interactionQ === '1' || interactionQ === 'true' || interactionQ === 'yes';
       }()),
       setPref: applyPref });
   }
