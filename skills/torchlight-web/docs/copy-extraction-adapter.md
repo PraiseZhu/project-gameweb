@@ -4,7 +4,7 @@
 
 ## 规则
 
-采用优先级固定为：`explicit mapping > scene rule > length rule > same-translation group default > unresolved`。人工行号指认（`copyOverlay.nodeRow` / `copy-designations.json`）属于 explicit mapping，先于一格对多层的自动选行。拆格指认必须落到**第几句**：`lineIndex`（0 起）+ 可选 `takeCount`（一层连续占几句，默认 1）。只写 `row`、不写句序时，机器按该层简中去表里那一格对句；对上了就只切那几句。对不上又不是整格 → **禁止整格灌入**（否则订阅弹窗英文会在每一层重复出现 intro + `1. Download iCalendar file;`）。自动拆格的 `lineIndex/takeCount` 只在拆格组已经唯一选中、且该行号与 designation 行严格相等时才沿用；拆格组还没选定行（cellGroup.row 空）时禁止拿旧句序去切新指定行。指定行后按该层简中对那一格重新推断句序；对不上就 designated-split-unresolved。不要信任 designation 自带的 lineCount，span 以目标格实际行数校验。无法唯一判断时保留 unresolved，不猜译；采用的值必须带 `fixtures/lark-*.json` 的 `/rows/N/<lang>` provenance。
+采用优先级固定为：`explicit mapping > scene rule > length rule > same-translation group default > unresolved`。人工行号指认（`copyOverlay.nodeRow` / `copy-designations.json`）属于 explicit mapping，先于一格对多层的自动选行。拆格指认必须落到**第几句**：`lineIndex`（0 起）+ 可选 `takeCount`（一层连续占几句，默认 1）。只写 `row`、不写句序时，机器按该层简中去表里那一格对句；对上了就只切那几句。对不上又不是整格 → **禁止整格灌入**（否则订阅弹窗英文会在每一层重复出现 intro + `1. Download iCalendar file;`）。自动拆格的 `lineIndex/takeCount` 只在拆格组已经唯一选中、且该行号与 designation 行严格相等时才沿用；拆格组还没选定行（cellGroup.row 空）时禁止拿旧句序去切新指定行。指定行后按该层简中对那一格重新推断句序；对不上就 designated-split-unresolved。不要信任 designation 自带的 lineCount，span 以目标格实际行数校验。无法唯一判断时保留 unresolved，不猜译；采用的值必须带 `fixtures/lark-*.json` 的 `/rows/N/<lang>` provenance。phaseRows 仍是冲突优先集，缺/空/畸形不得退成整表。快照里阶段外、简中不与阶段行撞车、且同文案译文一致的行可以匹配（顶栏/日历共用文案）；同文案译文不同的阶段外行不猜。
 
 context 由祖先链和 fixture 回查机械派生，支持 `contextKey`、`scene`、`nav`、`toggle`、`component`、`section`。mobile 只有 spec 声明真实 snapshot 时才处理。
 
@@ -39,3 +39,5 @@ node --test scripts/__tests__/copy-context.test.mjs
 ```
 
 coverage 通过只表示链路完整且缺口已登记，不表示 unresolved 已由人工完成语义裁决。
+
+8. **品牌名不译。** 图层名已是产品名的日历/厂商标签（`Outlook.com` / `Microsoft 365` / `Apple` / `Google` / `iCal文件`）不查飞书行、不套普通译文。缺目标语或一行对多节点且无法唯一时，输出 unresolved / ambiguous，禁止把第一项的字搬到其它项。

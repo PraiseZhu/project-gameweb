@@ -250,6 +250,7 @@
   ctl.className = 'qa-ctl';
   const segButtons = {};
   for (const key of PREF_KEYS) {
+    if (key === 'region') continue;
     const dim = cfg.matrix?.[key];
     if (!dim || !Array.isArray(dim.options) || dim.options.length === 0) continue;
     const seg = document.createElement('div');

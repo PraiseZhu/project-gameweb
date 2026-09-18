@@ -1,6 +1,6 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { installIndicatorFallbacks } from '../figma-assets.mjs';
@@ -9,26 +9,14 @@ const renderer = readFileSync(new URL('../../templates/figma-render.js', import.
 const assetPipeline = readFileSync(new URL('../figma-assets.mjs', import.meta.url), 'utf8');
 const coverageGate = readFileSync(new URL('../render-coverage.mjs', import.meta.url), 'utf8');
 
-test('indicator fallbacks skip when this page has no 397:35947 / 397:35949', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-skip-'));
-  const assetsDir = join(dir, 'assets');
-  mkdirSync(assetsDir);
-  const skipped = installIndicatorFallbacks(assetsDir, {});
-  assert.equal(skipped.ok, true);
-  assert.equal(skipped.skipped, true);
-});
-
-test('missing figma-indicator fallback sources fail closed when those roots were sliced', () => {
+test('missing truth does not require legacy 397 indicator fallbacks', () => {
   const dir = mkdtempSync(join(tmpdir(), 'torch-ind-'));
   const assetsDir = join(dir, 'assets');
   mkdirSync(assetsDir);
-  assert.throws(
-    () => installIndicatorFallbacks(assetsDir, {
-      '397:35947': { file: 'assets/397-35947.png' },
-      '397:35949': { file: 'assets/397-35949.png' },
-    }),
-    /missing figma-indicator fallback sources/,
-  );
+  const result = installIndicatorFallbacks(assetsDir, {});
+  assert.equal(result.ok, true);
+  assert.equal(result.skipped, true);
+  assert.equal(result.reason, 'no-truth');
 });
 
 test('pages without ind/ skip figma-indicator fallback sources', () => {
@@ -55,13 +43,43 @@ test('pages with ind/ still fail closed without fallback sources', () => {
   );
 });
 
-test('indicator fallback checks only roots present in the manifest', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-one-root-'));
+function tinyWebp() {
+  const buf = Buffer.alloc(12);
+  buf.write('RIFF', 0);
+  buf.write('WEBP', 8);
+  return buf;
+}
+
+test('current-file indicator roots pass without legacy 397 fallbacks', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-current-'));
+  const assetsDir = join(dir, 'assets');
+  mkdirSync(assetsDir);
+  writeFileSync(join(assetsDir, '2-2424.webp'), tinyWebp());
+  writeFileSync(join(assetsDir, '2-2429.webp'), tinyWebp());
+  const result = installIndicatorFallbacks(assetsDir, {
+    '2:2424': { file: 'assets/2-2424.webp', webpFile: 'assets/2-2424.webp' },
+    '2:2429': { file: 'assets/2-2429.webp', webpFile: 'assets/2-2429.webp' },
+  }, {
+    sections: { 'sec:1': { nodes: [
+      { id: '1:2', type: 'INSTANCE', name: 'ind/轮播点', componentId: '2:2424' },
+      { id: '1:3', type: 'INSTANCE', name: 'ind/轮播点', componentId: '2:2429' },
+    ] } },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual([...(result.usedComponentIds || [])].sort(), ['2:2424', '2:2429']);
+});
+
+test('missing current-file indicator root names that componentId', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'torch-ind-missing-root-'));
   const assetsDir = join(dir, 'assets');
   mkdirSync(assetsDir);
   assert.throws(
-    () => installIndicatorFallbacks(assetsDir, { '397:35947': { file: 'assets/397-35947.png' } }),
-    (error) => /figma-indicator-active-alpha\.webp/.test(String(error?.message)) && !/figma-indicator-normal-alpha\.webp/.test(String(error?.message)),
+    () => installIndicatorFallbacks(assetsDir, {}, {
+      sections: { 'sec:1': { nodes: [
+        { id: '1:2', type: 'INSTANCE', name: 'ind/轮播点', componentId: '2:2424' },
+      ] } },
+    }),
+    /missing figma-indicator fallback sources: 2:2424/,
   );
 });
 
@@ -73,7 +91,10 @@ test('asset locking is based on ownerPath when DOM parent stack is incomplete', 
   assert.match(renderer, /parent && parent\.assetLock \|\| \(bakedOwnerId && !bakedOwnerReleased\)/);
   assert.match(renderer, /ownImageFillPunchesBake/);
   assert.match(renderer, /bakedWholeFrameOwner/);
+  assert.match(renderer, /bakedIndicatorOwner/);
+  assert.match(renderer, /ownImageFill && !bakedWholeFrameOwner && !bakedIndicatorOwner/);
   assert.match(renderer, /!ownListedSlice && !paintAsFragment && !ownImageFillPunchesBake && !imgLangRelease\) continue/);
+  assert.match(renderer, /_isIndicatorOwner/);
 });
 
 test('heroUi stretch never moves pin=viewport fix descendants', () => {
@@ -130,7 +151,7 @@ test('only listed sliceExport owners bake descendants; canvas exportBox is not p
   assert.match(renderer, /maxDim \* 2/);
   assert.match(renderer, /Canvas renderBox \(x≈-14000\)/);
   assert.match(renderer, /n\.sliceExport && assetRec/);
-  assert.match(renderer, /assetLock: !!n\.sliceExport && !!assetRec/);
+  assert.match(renderer, /assetLock: \(\!\!n\.sliceExport \|\| \(this\._isIndicatorOwner\(n, pfx\)/);
 });
 
 test('platform-prefixed asset records keep bare-id exportBox geometry', () => {
@@ -144,16 +165,34 @@ test('ind/ instances consume the selected componentId slice instead of inventing
   assert.match(renderer, /data-ind-variant-slice', 'componentId'/);
   assert.match(renderer, /ind-variant-slice-complete/);
   assert.match(renderer, /data-paint-as-fragment', 'art-fragment'/);
+  assert.match(renderer, /fitToBox: this\._isIndicatorOwner\(n, pfx\) && !!String\(__u\(n && n\.componentId\) \|\| ''\) && !this\._assetRec\(nid, __base\)/);
+  assert.match(renderer, /Keep the mapping narrow/);
+  assert.match(renderer, /it cannot promote arbitrary unknown\/skipped nodes to pixels/);
 });
 
-test('REGULAR_POLYGON play triangle uses non-rect shadow/clip mapping, not a CSS rectangle', () => {
+test('REGULAR_POLYGON play triangle uses source fillGeometry, not a guessed clip-path', () => {
   assert.match(renderer, /REGULAR_POLYGON: 1, ELLIPSE: 1, LINE: 1/);
-  assert.match(renderer, /polygon\(86% 50%, 18% 12%, 18% 88%\)/);
-  assert.match(renderer, /data-shape-polygon-vertex', 'right'/);
+  assert.match(renderer, /polygon\(50% 14%, 12% 82%, 88% 82%\)/);
+  assert.match(renderer, /data-shape-polygon-vertex/);
   assert.match(renderer, /skipRotationForLocalClip/);
+  assert.match(renderer, /_sourceFillPath/);
+  assert.match(renderer, /figma-fill-geometry/);
+  assert.match(renderer, /source-path-matrix/);
   assert.match(renderer, /drop-shadow/);
+  assert.doesNotMatch(renderer, /playTriangleClip/);
   assert.doesNotMatch(renderer, /rotate\(90deg\)/);
   assert.doesNotMatch(renderer, /polygon\(100% 50%, 0% 0%, 0% 100%\)/);
+});
+
+test('rotated parent with baked img/ child slice does not rotate twice', () => {
+  assert.match(renderer, /skipRotationForBakedChildSlice/);
+  assert.match(renderer, /child-slice-baked/);
+  assert.match(renderer, /!skipRotationForBakedChildSlice/);
+});
+
+test('GROUP maskChildren clip IMAGE siblings to the mask box', () => {
+  assert.match(renderer, /data-owner-mask-clip', 'source-mask-children'/);
+  assert.match(renderer, /n\.maskChildren/);
 });
 
 test('collapsed webp under 2KB falls back to pngFile', () => {
@@ -222,6 +261,13 @@ test('Founder YouHei live copy pins Regular width axis instead of CSS condensed 
   assert.match(renderer, /Named Regular is wdth=3 \(wide\)/);
   assert.match(renderer, /"wdth" \$\{wdth\}, "hght"/);
   assert.match(renderer, /el\.style\.fontVariationSettings = this\._youHeiVariationSettings\(/);
+  assert.match(renderer, /el\.style\.fontSynthesis = 'none'/);
+});
+
+test('HEIGHT display titles are not sourceNoWrapTitle; only WIDTH hugs stay pre', () => {
+  assert.match(renderer, /_isSourceNoWrapTitle/);
+  assert.match(renderer, /const sourceNoWrapTitle = this\._isSourceNoWrapTitle\(\{/);
+  assert.match(renderer, /el\.style\.whiteSpace = \(inlineHugs \|\| sourceNoWrapTitle \|\| rotatedSingleLine \|\| axisPolicy\.nowrap\) \? 'pre' : 'pre-wrap'/);
 });
 
 test('FONT_SIZE_% lineHeightPercent becomes a px line-height', () => {
@@ -374,7 +420,11 @@ test('authored multiline text keeps source metrics instead of height step-fit', 
 });
 
 test('hero cover scale stays on the hero slot, not the released page stage', () => {
-  assert.match(renderer, /const coverScale = Math\.max\(coverW \/ designWidth, slotH \/ Number\(first\.height\)\)/);
+  assert.match(renderer, /const coverW = Number\.isFinite\(Number\(this\._viewportWidth\)\) && this\._viewportWidth > 0/);
+  assert.match(renderer, /coverW \/ Number\(designWidth\)/);
+  assert.match(renderer, /slotH \/ coverSourceH/);
+  assert.match(renderer, /sourceW \* planeRatio/);
+  assert.match(renderer, /transformOrigin = '0 0'/);
   assert.match(renderer, /heroVisualScale = coverScale/);
   assert.match(renderer, /scale: pageStageScale/);
   assert.match(renderer, /data-hero-visual-scale/);
@@ -388,6 +438,8 @@ test('hero cover scale stays on the hero slot, not the released page stage', () 
   assert.match(renderer, /heroVisualPlane \|\| firstScreenKvInSection/);
   assert.match(renderer, /coverHeroSlot/);
   assert.match(renderer, /coverHeroVisualScale/);
+  assert.match(renderer, /const coverHeroSlot = heroSlot;/);
+  assert.doesNotMatch(renderer, /coverHeroSlot = heroSlot \|\| \(isKv && ids\[0\]/);
 });
 
 test('page paint roots follow recorded pagePaintOrder locators on canvas-rooted snapshots', () => {
@@ -408,7 +460,7 @@ test('section stage clip is sourced from Figma clipsContent, not a global defaul
 test('baked image render spill exports and verifies the render canvas, never the layout box', () => {
   assert.match(assetPipeline, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
   assert.match(assetPipeline, /pageAlignedExportBox/);
-  assert.match(assetPipeline, /pageBoxExport = wholeFrameSlice && !softSpill/);
+  assert.match(assetPipeline, /pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour/);
   assert.match(assetPipeline, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner/);
   assert.match(coverageGate, /if \(rec\?\.exportBounds !== 'render'\) problems\.push/);
   assert.match(coverageGate, /exportBox!=renderBox/);
@@ -470,7 +522,8 @@ test('fx-img follows the owner box instead of intrinsic pixels', () => {
   assert.match(renderer, /owner-box-zh-cn/);
   assert.match(renderer, /img\.style\.objectFit = \(spillsOwner \|\| matchesOwner\) \? 'none' : 'fill'/);
   assert.match(renderer, /img\.style\.objectFit = 'none'/);
-  assert.match(renderer, /el\.style\.overflow = 'hidden'/);
+  assert.match(renderer, /Hit box stays the owner/);
+  assert.match(renderer, /if \(!sliceSpillsOwner && \(!el\.style\.overflow \|\| el\.style\.overflow === 'visible'\)\) el\.style\.overflow = 'hidden'/);
   assert.match(renderer, /el\.style\.position = 'relative'/);
 });
 
@@ -478,6 +531,8 @@ test('listed img/bg/kv owners keep pageBox clip when ink slice is shorter', () =
   assert.match(renderer, /Whole-frame img\/bg\/kv clip to pageBox/);
   assert.match(renderer, /Number\(sliceExportBox\.h\) <= Number\(ownerBox\.h\) \+ 0\.5/);
   assert.match(renderer, /if \(this\._geomReady\(sliceExportBox\) && this\._sameCoordinateSpace\(sliceExportBox, ownerBox\)\) return sliceExportBox/);
+  assert.match(renderer, /_boxSpillsOwner/);
+  assert.match(renderer, /Spilling render\/export wins/);
 });
 
 test('sticky overlay host uses overlay root height, not descendant pageBoxes', () => {
@@ -530,7 +585,7 @@ test('multiline HUG explanatory text keeps source width instead of max-content',
   assert.match(renderer, /const sourceMultilineText = authoredLineCount > 1[\s\S]*Number\(box\.h\) > Number\(tx\.lineHeight\) \* 1\.35/);
   assert.match(renderer, /const sourceWidthHugText = directOwnerHugFrame && !compactDirectOwnerHugLabel[\s\S]*\(arForOwner === 'HEIGHT' \|\| \(arForOwner === 'WIDTH_AND_HEIGHT' && sourceMultilineText\)\)/);
   assert.match(renderer, /const inlineHugs = hugs && !sourceWidthHugText/);
-  assert.match(renderer, /el\.style\.whiteSpace = \(inlineHugs \|\| sourceNoWrapTitle\) \? 'pre' : 'pre-wrap'/);
+  assert.match(renderer, /el\.style\.whiteSpace = \(inlineHugs \|\| sourceNoWrapTitle \|\| rotatedSingleLine \|\| axisPolicy\.nowrap\) \? 'pre' : 'pre-wrap'/);
   assert.match(renderer, /if \(sourceWidthHugText && box\.w != null\) \{[\s\S]*el\.style\.width = box\.w \+ 'px'[\s\S]*el\.setAttribute\('data-text-owner-width-policy', 'source-width-hug-text'\)/);
   assert.match(renderer, /if \(!sourceWidthHugText && ownerW > Number\(box\.w \?\? 0\) \+ 0\.5 && ar === 'WIDTH_AND_HEIGHT'\)/);
 });
@@ -548,7 +603,7 @@ test('compact HUG label behavior remains geometry-authorized only', () => {
   assert.match(renderer, /verticalSlack <= sourceH \* 0\.6 \+ 0\.5/);
   assert.match(renderer, /sourceW >= ownerW \* 0\.55/);
   assert.match(renderer, /const boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner && hasAlCaps/);
-  assert.match(renderer, /if \(boundedHugLabel\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*maxWidth: alOwner\.maxWidth/);
+  assert.match(renderer, /if \(boundedHugLabel && !_copyUnbound && !_zhSourceExact && axisFitPolicy\.shrink\) \{[\s\S]*data-fit-policy', 'bounded-hug-label'[\s\S]*maxWidth: axisFitPolicy\.fitMaxWidth/);
   assert.doesNotMatch(renderer, /hasAlCaps \|\| semanticBreak/);
   assert.doesNotMatch(renderer, /widthFit: _ownerW/);
 });

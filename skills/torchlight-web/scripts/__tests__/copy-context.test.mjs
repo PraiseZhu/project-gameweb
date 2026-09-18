@@ -2,12 +2,16 @@
 // 跑法：node --test scripts/__tests__/copy-context.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   deriveContext, buildAncestorMap, validateCopyOverlay, resolveContextualRow,
 } from '../lib/figma-copy-context.mjs';
-import { extractCopy } from '../lib/figma-copy-match.mjs';
-import { designationsToOverlay } from '../lib/figma-copy-adapter.mjs';
+import { assertPhaseOneRows, extractCopy, parsePhaseRows } from '../lib/figma-copy-match.mjs';
+const PHASE_ONE = Array.from({ length: 52 }, (_, i) => i + 3);
 import { assessCopyCoverage, collectInventoryTexts } from '../lib/figma-copy-coverage.mjs';
+import { buildHandoffCopyEnvelope, designationsToOverlay } from '../lib/figma-copy-adapter.mjs';
 
 /* ── deriveContext：场景信号机械派生，不手填 ─────────────────────────── */
 test('deriveContext: 目录/toggle 场景判 nav，正文判 content', () => {
@@ -108,6 +112,7 @@ test('validateCopyOverlay: 未知 match 键与不存在的行都被揪出', () =
 /* ── resolveContextualRow：优先级 explicit > scene > length > group-default ── */
 const at = (snap, p) => p.split('/').slice(1).reduce((c, s) => (c == null ? c : c[s]), snap);
 const larkSnap = {
+  _meta: { langCols: { D: 'zh-CN', J: 'ko' }, phaseRows: [13, 86] },
   rows: {
     13: { 'zh-CN': '体验优化', ko: '최적화', 'zh-TW': '體驗優化' },        // 目录短译
     86: { 'zh-CN': '体验优化', ko: 'UX 최적화', 'zh-TW': '體驗優化' },     // 内容长译(ko 不同)
@@ -256,7 +261,7 @@ test('copy coverage: 表叶子 + contextual 证据齐全才通过', () => {
 
 test('extractCopy: one table sentence can occupy adjacent time and title TEXT layers', () => {
   const splitSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' }, phaseRows: PHASE_ONE },
     rows: {
       26: {
         'zh-CN': '16:30 主创演讲\n16:50 现场提问&主创答疑',
@@ -293,7 +298,7 @@ test('extractCopy: one table sentence can occupy adjacent time and title TEXT la
 
 test('extractCopy: fewer locale sentences keep their own line count and mark extra layers absent', () => {
   const splitSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' }, phaseRows: PHASE_ONE },
     rows: {
       26: {
         'zh-CN': '16:30 主创演讲\n16:50 现场提问&主创答疑\n17:40 游园体验\n18:40 开场秀\n19:00 赛季前瞻',
@@ -331,7 +336,7 @@ test('extractCopy: fewer locale sentences keep their own line count and mark ext
 
 test('extractCopy: designated nodeRow to a different multiline cell does not keep old split index', () => {
   const splitSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       7: {
         'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
@@ -363,7 +368,7 @@ test('extractCopy: designated nodeRow to a different multiline cell does not kee
 
 test('extractCopy: designation to another multiline row re-infers lineIndex from the new cell', () => {
   const snap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       7: {
         'zh-CN': 'A\u53e5\nB\u53e5',
@@ -394,7 +399,7 @@ test('extractCopy: designation to another multiline row re-infers lineIndex from
 });
 test('extractCopy: one visible TEXT can bind one line of a newline cell', () => {
   const splitSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       7: {
         'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
@@ -412,9 +417,89 @@ test('extractCopy: one visible TEXT can bind one line of a newline cell', () => 
   assert.equal(out.byNode.T.translations.en.value, 'New Season Preview');
 });
 
+test('extractCopy: one TEXT can bind two adjacent table lines that Figma merged', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
+    rows: {
+      46: {
+        'zh-CN': '你还可以使用iCal文件导入其他常用的日历软件：\n1.下载iCalendar文件；\n2.打开文件，系统会自动获取日历。\n3.如Apple日历订阅失败，请将系统设置>蜂窝网络>日历的数据打开后重试。',
+        en: 'You can also import the iCal file:\n1. Download iCalendar file;\n2. Open the file.\n3. Retry after enabling Calendar data.',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'A', name: 'line1', characters: '你还可以使用iCal文件导入其他常用的日历软件：', parentId: 'p', orderKey: '1' },
+    { nodeId: 'B', name: 'line2', characters: '1.下载iCalendar文件；', parentId: 'p', orderKey: '2' },
+    { nodeId: 'C', name: 'line3', characters: '2.打开文件，系统会自动获取日历。\n3.如Apple日历订阅失败，请将系统设置>蜂窝网络>日历的数据打开后重试。', parentId: 'p', orderKey: '3' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.C.matchKind, 'cell-split');
+  assert.equal(String(out.byNode.C.row), '46');
+  assert.equal(out.byNode.C.cellSplit.lineIndex, 2);
+  assert.equal(out.byNode.C.cellSplit.lineSpan, 2);
+  assert.equal(out.byNode.C.translations.en.value, '2. Open the file.\n3. Retry after enabling Calendar data.');
+});
+
+test('extractCopy: btn-wrapped iCal step still cell-splits with merged following lines', () => {
+  const splitSnap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
+    rows: {
+      46: {
+        'zh-CN': '你还可以使用iCal文件导入其他常用的日历软件：\n1.下载iCalendar文件；\n2.打开文件，系统会自动获取日历。\n3.如Apple日历订阅失败，请将系统设置>蜂窝网络>日历的数据打开后重试。',
+        en: 'You can also import the iCal file:\n1. Download iCalendar file;\n2. Open the file.\n3. Retry after enabling Calendar data.',
+      },
+      50: {
+        'zh-CN': '你还可以使用iCal文件导入其他常用的日历软件：\n1.下载iCalendar文件；\n2.打开文件，系统会自动获取日历。\n3.如Apple日历订阅失败，请将系统设置>蜂窝网络>日历的数据打开后重试。',
+        en: 'You can also import the iCal file:\n1. Download iCalendar file;\n2. Open the file.\n3. Retry after enabling Calendar data.',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'A', name: 'line1', characters: '你还可以使用iCal文件导入其他常用的日历软件：', parentId: 'p', ancestorIds: ['modal', 'p'], orderKey: '1', treeKey: 'pc' },
+    { nodeId: 'B', name: 'line2', characters: '1.下载iCalendar文件；', parentId: 'btn', ancestorIds: ['modal', 'p', 'btn'], orderKey: '2', treeKey: 'pc' },
+    { nodeId: 'C', name: 'line3', characters: '2.打开文件，系统会自动获取日历。\n3.如Apple日历订阅失败，请将系统设置>蜂窝网络>日历的数据打开后重试。', parentId: 'p', ancestorIds: ['modal', 'p'], orderKey: '3', treeKey: 'pc' },
+  ];
+  const leaf = (p) => ({ value: at(splitSnap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: splitSnap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.A.matchKind, 'cell-split');
+  assert.equal(out.byNode.B.matchKind, 'cell-split');
+  assert.equal(out.byNode.C.matchKind, 'cell-split');
+  assert.equal(String(out.byNode.C.row), '46');
+  assert.equal(out.byNode.C.cellSplit.lineSpan, 2);
+  assert.equal(out.byNode.C.translations.en.value, '2. Open the file.\n3. Retry after enabling Calendar data.');
+});
+
+test('extractCopy: _meta.phaseRows drops later-phase colliding rows from matching', () => {
+  const snap = {
+    _meta: {
+      langCols: { D: 'zh-CN', F: 'en' },
+      phaseRows: [9, 26],
+    },
+    rows: {
+      9: { 'zh-CN': '立即下载', en: 'Download Now' },
+      26: { 'zh-CN': '查看更多', en: 'View More' },
+      81: { 'zh-CN': '查看更多', en: 'More' },
+      86: { 'zh-CN': '立即下载', en: 'Install' },
+    },
+  };
+  const texts = [
+    { nodeId: 'more', name: '查看更多', characters: '查看更多', parentId: 'later', orderKey: '1' },
+    { nodeId: 'dl', name: '立即下载', characters: '立即下载', parentId: 'cta', orderKey: '2' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.more.matchKind, 'exact');
+  assert.equal(String(out.byNode.more.row), '26');
+  assert.equal(out.byNode.more.translations.en.value, 'View More');
+  assert.equal(out.byNode.dl.matchKind, 'exact');
+  assert.equal(String(out.byNode.dl.row), '9');
+  assert.equal(out.byNode.dl.translations.en.value, 'Download Now');
+});
+
 test('extractCopy: leftover siblings after a cell-split group do not block the match', () => {
   const splitSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       8: {
         'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
@@ -436,7 +521,7 @@ test('extractCopy: leftover siblings after a cell-split group do not block the m
 
 test('extractCopy: table cell newlines bind consecutive sibling TEXT layers', () => {
   const splitSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en', J: 'ko' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en', J: 'ko' }, phaseRows: PHASE_ONE },
     rows: {
       8: {
         'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
@@ -463,7 +548,7 @@ test('extractCopy: table cell newlines bind consecutive sibling TEXT layers', ()
 
 test('extractCopy: duplicate newline cells stay ambiguous until unique neighbors pick one', () => {
   const splitSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' }, phaseRows: [7, 8, 23, 25, 28, 56] },
     rows: {
       7: { 'zh-CN': '赛季前瞻直面会', en: 'Afterlight', 'zh-TW': '賽季前瞻發佈會' },
       8: {
@@ -507,7 +592,7 @@ test('extractCopy: duplicate newline cells stay ambiguous until unique neighbors
 
 test('extractCopy: unique already-bound neighbors pick one ambiguous row', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en', J: 'ko' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en', J: 'ko' }, phaseRows: PHASE_ONE },
     rows: {
       28: { 'zh-CN': '赛季开启时间：7月17日 10:00', en: 'SEASON LAUNCH', ko: '시즌 오픈' },
       29: { 'zh-CN': '查看更多', en: 'View More', ko: '더 보기' },
@@ -531,7 +616,7 @@ test('extractCopy: unique already-bound neighbors pick one ambiguous row', () =>
 
 test('extractCopy: a later neighbor alone does not pick among two earlier rows', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       24: { 'zh-CN': '查看更多', en: 'Learn More' },
       29: { 'zh-CN': '查看更多', en: 'View More' },
@@ -549,7 +634,7 @@ test('extractCopy: a later neighbor alone does not pick among two earlier rows',
 
 test('extractCopy: neighbor inference stays inside one page tree', () => {
   const splitSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW' }, phaseRows: PHASE_ONE },
     rows: {
       7: { 'zh-CN': '赛季前瞻直面会', en: 'Afterlight', 'zh-TW': '賽季前瞻發佈會' },
       8: {
@@ -587,7 +672,7 @@ test('extractCopy: neighbor inference stays inside one page tree', () => {
 
 test('extractCopy: leftover unique row in the same tree binds after neighbor pass', () => {
   const splitSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       5: { 'zh-CN': '首充双倍', en: 'Double' },
       8: {
@@ -597,7 +682,7 @@ test('extractCopy: leftover unique row in the same tree binds after neighbor pas
       25: { 'zh-CN': '嘉年华直播目录', en: 'Rundown' },
       28: {
         'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
-        en: 'WATCH THE PREVIEW\nSEASON LAUNCH',
+        en: 'WATCH THE PREVIEW: July 11\nSEASON LAUNCH: July 16',
       },
       56: { 'zh-CN': '订阅赛季日程', en: 'Subscribe' },
     },
@@ -622,7 +707,7 @@ test('extractCopy: leftover unique row in the same tree binds after neighbor pas
 
 test('extractCopy: two 查看更多 in one tree bind different rows from unique sandwiches', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       23: { 'zh-CN': '火炬嘉年华正文', en: 'Carnival body' },
       24: { 'zh-CN': '查看更多', en: 'Learn More' },
@@ -648,7 +733,7 @@ test('extractCopy: two 查看更多 in one tree bind different rows from unique 
 
 test('extractCopy: adjacent bound table row uniquely picks among duplicate zh rows', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [8, 9, 91] },
     rows: {
       8: {
         'zh-CN': '嘉年华直播时间：7月11日 16:30\n赛季开启时间：7月17日 10:00',
@@ -672,7 +757,7 @@ test('extractCopy: adjacent bound table row uniquely picks among duplicate zh ro
 
 test('extractCopy: a layer earlier than a bound cluster still keeps the unique cluster-edge row', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [7, 8, 9, 91] },
     rows: {
       7: {
         'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
@@ -706,7 +791,7 @@ test('extractCopy: a layer earlier than a bound cluster still keeps the unique c
 
 test('extractCopy: remaining sibling of an adjacent-bound cell-split shares that row', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       7: {
         'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
@@ -737,7 +822,7 @@ test('extractCopy: remaining sibling of an adjacent-bound cell-split shares that
 
 test('extractCopy: two cluster-edge candidates stay ambiguous', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       5: { 'zh-CN': '首充双倍', en: 'Double' },
       6: { 'zh-CN': '立即下载', en: 'Before' },
@@ -757,7 +842,7 @@ test('extractCopy: two cluster-edge candidates stay ambiguous', () => {
 
 test('extractCopy: two remaining parents on the same cluster edge stay ambiguous', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [7, 8, 9, 91] },
     rows: {
       7: {
         'zh-CN': '赛季前瞻直面会\nSS13 守夜人',
@@ -785,7 +870,7 @@ test('extractCopy: two remaining parents on the same cluster edge stay ambiguous
 
 test('extractCopy: leftover does not zip two remaining parents by appearance order', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
     rows: {
       24: { 'zh-CN': '查看更多', en: 'Learn More' },
       29: { 'zh-CN': '查看更多', en: 'View More' },
@@ -804,7 +889,7 @@ test('extractCopy: leftover does not zip two remaining parents by appearance ord
 
 test('extractCopy: two remaining neighbor rows stay ambiguous', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [1, 2, 3] },
     rows: {
       1: { 'zh-CN': '查看更多', en: 'Learn More' },
       2: { 'zh-CN': '查看更多', en: 'View More' },
@@ -822,7 +907,7 @@ test('extractCopy: two remaining neighbor rows stay ambiguous', () => {
 
 test('extractCopy: phase-1 designation binds later-section 查看更多 to row 26, not 81', () => {
   const moreSnap = {
-    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' } },
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' }, phaseRows: PHASE_ONE },
     rows: {
       26: { 'zh-CN': '查看更多', en: 'View More', 'zh-TW': '查看更多', ko: '더 보기' },
       81: { 'zh-CN': '查看更多', en: 'More', 'zh-TW': '查看更多', ko: '더 보기' },
@@ -848,17 +933,169 @@ test('extractCopy: phase-1 designation binds later-section 查看更多 to row 2
   assert.equal(String(out.byNode['I949:6080;949:6214'].row), '26');
   assert.equal(out.byNode['I949:6080;949:6214'].translations.en.value, 'View More');
   const unbound = extractCopy({ figSnap: {}, larkSnap: moreSnap, at, larkLeaf: leaf, texts });
-  assert.equal(unbound.byNode['I949:5195;949:5333'].matchKind, 'ambiguous');
-  assert.equal(unbound.byNode['I949:6080;949:6214'].matchKind, 'ambiguous');
+  assert.equal(unbound.byNode['I949:5195;949:5333'].matchKind, 'exact');
+  assert.equal(String(unbound.byNode['I949:5195;949:5333'].row), '26');
+  assert.equal(unbound.byNode['I949:6080;949:6214'].matchKind, 'exact');
+  assert.equal(String(unbound.byNode['I949:6080;949:6214'].row), '26');
 });
 
-test('extractCopy: phase-1 duplicate 查看更多 without designation stays unresolved', () => {
-  const snap = { _meta: { langCols: { D: 'zh-CN', F: 'en' } }, rows: { 26: { 'zh-CN': '查看更多', en: 'View More' }, 81: { 'zh-CN': '查看更多', en: 'More' } } };
+test('extractCopy: phase-1 3–54 drops row 81 same-copy so 查看更多 binds 26', () => {
+  const snap = { _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE }, rows: { 26: { 'zh-CN': '查看更多', en: 'View More' }, 81: { 'zh-CN': '查看更多', en: 'More' } } };
   const texts = [{ nodeId: 'later-more', name: '立即下载', characters: '查看更多', parentId: 'later-sec', orderKey: '1', treeKey: 'mobile' }];
   const leaf = (path) => ({ value: at(snap, path), provenance: { locator: path } });
   const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
-  assert.ok(['ambiguous', 'unresolved'].includes(out.byNode['later-more'].matchKind));
-  assert.equal(out.byNode['later-more'].translations?.en, undefined);
+  assert.equal(out.byNode['later-more'].matchKind, 'exact');
+  assert.equal(String(out.byNode['later-more'].row), '26');
+  assert.equal(out.byNode['later-more'].translations.en.value, 'View More');
+});
+
+test('collectInventoryTexts includes determined TEXT under attachments.modals', () => {
+  const texts = collectInventoryTexts({
+    nodes: [{ id: 'page-copy', type: 'TEXT', role: 'copy', status: 'determined', name: '立即下载', text: { characters: '立即下载' }, parentId: 'sec1', orderKey: '1' }],
+    attachments: {
+      modals: [{
+        id: 'modal-cal',
+        name: 'modal/pc_cn订阅赛季日程',
+        nodes: [
+          { id: '949:5256', type: 'TEXT', role: 'copy', status: 'determined', name: '你想将日程添加至哪个日历？', text: { characters: '你想将日程添加至哪个日历？' }, parentId: '949:5254', orderKey: '2' },
+          { id: 'skip-copy', type: 'TEXT', role: 'copy', status: 'skipped', name: '跳过', text: { characters: '跳过' }, parentId: '949:5254', orderKey: '3' },
+        ],
+      }],
+    },
+  }, { treeKey: 'pc' });
+  assert.deepEqual(texts.map((row) => row.nodeId).sort(), ['949:5256', 'page-copy']);
+  assert.equal(texts.find((row) => row.nodeId === '949:5256').treeKey, 'pc');
+});
+
+test('buildHandoffCopyEnvelope binds calendar TEXT that only lives in attachments.modals', () => {
+  const demoDir = mkdtempSync(join(tmpdir(), 'handoff-copy-modal-'));
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' }, langs: ['zh-CN', 'en', 'zh-TW', 'ko'], phaseRows: PHASE_ONE },
+    rows: {
+      49: {
+        'zh-CN': '你想将日程添加至哪个日历？',
+        en: 'Which calendar do you want to add the schedule to?',
+        'zh-TW': '你想將行程加入哪個行事曆？',
+        ko: '일정은 헌터님의 어느 캘린더로 추가하실 예정일까요?',
+      },
+    },
+  }));
+  const pcInventory = {
+    nodes: [],
+    attachments: {
+      modals: [{
+        id: '949:5215',
+        name: 'modal/pc_cn订阅赛季日程',
+        nodes: [{
+          id: '949:5256',
+          type: 'TEXT',
+          role: 'copy',
+          status: 'determined',
+          name: '你想将日程添加至哪个日历？',
+          text: { characters: '你想将日程添加至哪个日历？' },
+          parentId: '949:5254',
+          orderKey: '1',
+        }],
+      }],
+    },
+  };
+  const out = buildHandoffCopyEnvelope({ demoDir, pcInventory });
+  assert.equal(out.byNode['949:5256']?.matchKind, 'exact');
+  assert.equal(out.byNode['949:5256']?.translations?.en?.value, 'Which calendar do you want to add the schedule to?');
+  assert.equal(out.sourceTexts.some((row) => row.nodeId === '949:5256'), true);
+});
+
+test('parsePhaseRows: 缺失/空/畸形不得退成整表', () => {
+  assert.equal(parsePhaseRows(null).ok, false);
+  assert.equal(parsePhaseRows(undefined).ok, false);
+  assert.equal(parsePhaseRows([]).ok, false);
+  assert.equal(parsePhaseRows('all').ok, false);
+  assert.equal(parsePhaseRows({}).ok, false);
+  assert.equal(parsePhaseRows([0, 9]).ok, false);
+  assert.equal(parsePhaseRows([9, 'x']).ok, false);
+  assert.equal(parsePhaseRows(null).rows.size, 0);
+  const ok = parsePhaseRows([9, 26]);
+  assert.equal(ok.ok, true);
+  assert.deepEqual([...ok.rows].sort(), ['26', '9']);
+});
+
+test('extractCopy: missing/empty/malformed phaseRows match nothing, not the whole table', () => {
+  const rows = {
+    9: { 'zh-CN': '立即下载', en: 'Download Now' },
+    86: { 'zh-CN': '立即下载', en: 'Install' },
+  };
+  const texts = [{ nodeId: 'dl', name: '立即下载', characters: '立即下载' }];
+  const trySnap = (phaseRows) => {
+    const snap = { _meta: { langCols: { D: 'zh-CN', F: 'en' }, ...(phaseRows !== undefined ? { phaseRows } : {}) }, rows };
+    const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+    return extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  };
+  for (const declared of [undefined, [], 'all', [0], [null]]) {
+    const out = trySnap(declared);
+    assert.equal(out.byNode.dl.matchKind, 'none', `phaseRows=${JSON.stringify(declared)} 不得整表命中`);
+    assert.equal(out.report.phaseRowsOk, false);
+    assert.equal(out.byNode.dl.row, undefined);
+  }
+});
+
+test('extractCopy: phase 3–54 后同文案负例不得匹配', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
+    rows: {
+      9: { 'zh-CN': '立即下载', en: 'Download Now' },
+      86: { 'zh-CN': '立即下载', en: 'Install' },
+    },
+  };
+  const texts = [{ nodeId: 'dl', name: '立即下载', characters: '立即下载' }];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.dl.matchKind, 'exact');
+  assert.equal(String(out.byNode.dl.row), '9');
+  assert.equal(out.byNode.dl.translations.en.value, 'Download Now');
+});
+
+
+test('buildHandoffCopyEnvelope: 入口硬验 phaseRows，缺不得匹配；不限阶段一行号', () => {
+  const demoDir = mkdtempSync(join(tmpdir(), 'handoff-phase-'));
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  const pcInventory = {
+    nodes: [{ id: 'cta', type: 'TEXT', role: 'copy', status: 'determined', name: '立即下载', text: { characters: '立即下载' } }],
+  };
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en' } },
+    rows: { 9: { 'zh-CN': '立即下载', en: 'Download Now' }, 86: { 'zh-CN': '立即下载', en: 'Install' } },
+  }));
+  const missing = buildHandoffCopyEnvelope({ demoDir, pcInventory });
+  assert.match(String(missing.problems && missing.problems[0] || missing.unread[0]?.reason || ''), /phaseRows/);
+  assert.equal(missing.byNode.cta, undefined);
+
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [61, 63] },
+    rows: {
+      61: { 'zh-CN': '赛季福利', en: 'Season Rewards' },
+      63: { 'zh-CN': '查看更多', en: 'More' },
+    },
+  }));
+  const phaseTwoInv = {
+    nodes: [{ id: 'reward', type: 'TEXT', role: 'copy', status: 'determined', name: '赛季福利', text: { characters: '赛季福利' } }],
+  };
+  const phaseTwo = buildHandoffCopyEnvelope({ demoDir, pcInventory: phaseTwoInv });
+  assert.ok(!phaseTwo.problems || phaseTwo.problems.length === 0);
+  assert.equal(phaseTwo.byNode.reward?.matchKind, 'exact');
+  assert.equal(String(phaseTwo.byNode.reward.row), '61');
+  assert.equal(phaseTwo.byNode.reward.translations.en.value, 'Season Rewards');
+
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: PHASE_ONE },
+    rows: { 9: { 'zh-CN': '立即下载', en: 'Download Now' }, 86: { 'zh-CN': '立即下载', en: 'Install' } },
+  }));
+  const ok = buildHandoffCopyEnvelope({ demoDir, pcInventory });
+  assert.equal(ok.byNode.cta?.matchKind, 'exact');
+  assert.equal(String(ok.byNode.cta.row), '9');
+  assert.equal(ok.byNode.cta.translations.en.value, 'Download Now');
+  assert.equal(assertPhaseOneRows(PHASE_ONE).ok, true);
+  assert.equal(assertPhaseOneRows([61, 86]).ok, true);
 });
 
 
@@ -1039,4 +1276,84 @@ test('extractCopy: designated takeCount past the cell is unresolved', () => {
   const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
   assert.equal(out.byNode.t.matchKind, 'designated-split-unresolved');
   assert.equal(out.byNode.t.translations && out.byNode.t.translations.en, undefined);
+});
+
+test('extractCopy: leftover unique rows outside phaseRows still match', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' }, phaseRows: [61, 63] },
+    rows: {
+      3: { 'zh-CN': '\u5b98\u65b9\u5145\u503c', en: 'Shop', 'zh-TW': '\u5b98\u65b9\u5132\u503c', ko: 'Shop-ko' },
+      9: { 'zh-CN': '\u7acb\u5373\u4e0b\u8f7d', en: 'PRE-REGISTER NOW!', 'zh-TW': '\u7acb\u5373\u9810\u7d04', ko: 'pre-ko' },
+      51: { 'zh-CN': '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f', en: 'Which calendar do you want to add the schedule to?', 'zh-TW': 'tw-cal', ko: 'ko-cal' },
+      52: { 'zh-CN': '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f', en: 'Which calendar DIFFERENT', 'zh-TW': 'tw-cal', ko: 'ko-cal' },
+      61: { 'zh-CN': '\u8d5b\u5b63\u798f\u5229', en: 'Season Rewards' },
+      86: { 'zh-CN': '\u7acb\u5373\u4e0b\u8f7d', en: 'Install' },
+    },
+  };
+  const texts = [
+    { nodeId: 'cal', name: 'q', characters: '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f' },
+    { nodeId: 'shop', name: 'shop', characters: '\u5b98\u65b9\u5145\u503c' },
+    { nodeId: 'dl', name: 'dl', characters: '\u7acb\u5373\u4e0b\u8f7d' },
+    { nodeId: 'rw', name: 'rw', characters: '\u8d5b\u5b63\u798f\u5229' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.rw.matchKind, 'exact');
+  assert.equal(String(out.byNode.rw.row), '61');
+  assert.equal(out.byNode.shop.matchKind, 'exact');
+  assert.equal(String(out.byNode.shop.row), '3');
+  assert.equal(out.byNode.shop.translations.en.value, 'Shop');
+  assert.equal(out.byNode.cal.matchKind, 'none', 'leftover twins with different translations must not guess');
+  assert.equal(out.byNode.dl.matchKind, 'none', 'phase-colliding leftover 立即下载 must not override/guess');
+});
+
+test('extractCopy: leftover calendar row binds when translations agree', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [61] },
+    rows: {
+      49: { 'zh-CN': '\u8ba2\u9605\u8d5b\u5b63\u65e5\u7a0b', en: 'Subscribe to Season Schedule' },
+      51: { 'zh-CN': '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f', en: 'Which calendar do you want to add the schedule to?' },
+      61: { 'zh-CN': '\u8d5b\u5b63\u798f\u5229', en: 'Season Rewards' },
+    },
+  };
+  const texts = [
+    { nodeId: 'cal', name: 'q', characters: '\u4f60\u60f3\u5c06\u65e5\u7a0b\u6dfb\u52a0\u81f3\u54ea\u4e2a\u65e5\u5386\uff1f' },
+    { nodeId: 'title', name: 't', characters: '\u8ba2\u9605\u8d5b\u5b63\u65e5\u7a0b' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.cal.matchKind, 'exact');
+  assert.equal(String(out.byNode.cal.row), '51');
+  assert.equal(out.byNode.cal.translations.en.value, 'Which calendar do you want to add the schedule to?');
+  assert.equal(out.byNode.title.matchKind, 'exact');
+  assert.equal(out.byNode.title.translations.en.value, 'Subscribe to Season Schedule');
+  assert.ok(Array.isArray(out.report.leftoverRows));
+  assert.ok(out.report.leftoverRows.includes('51'));
+});
+
+test('extractCopy: nested instance title shares the uniquely bound cell-split row', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [82, 83] },
+    rows: {
+      82: {
+        'zh-CN': '\u65b0\u4eba\u9650\u5b9a\u798f\u5229\n\u4f20\u5947\u81ea\u9009\u6389\u843d\u5951\u7075\u7b7e\u5230\u5373\u9886\uff01\n\n*\u6bcf\u4e2a\u8d26\u53f7\u9650\u9886\u53d6\u4e00\u6b21\uff0c\u5df2\u9886\u53d6\u8fc7\u5c06\u65e0\u6cd5\u518d\u6b21\u53c2\u4e0e\u3002',
+        en: 'New Player Exclusive \nLog in to claim a Legendary Drop Pactspirit Selection Pack! \n*One claim per account.',
+      },
+      83: {
+        'zh-CN': '\u65b0\u4eba\u9650\u5b9a\u798f\u5229\n\u5b8c\u6210\u76ee\u6807\u53ef\u83b7\u5f97\u4f20\u5947\u81ea\u9009\u6218\u6597\u5951\u7075\uff01\n\n*\u6bcf\u4e2a\u8d26\u53f7\u9650\u9886\u53d6\u4e00\u6b21\uff0c\u5df2\u9886\u53d6\u8fc7\u5c06\u65e0\u6cd5\u518d\u6b21\u53c2\u4e0e\u3002',
+        en: 'New Player Exclusive \nComplete goals to claim a Legendary Battle Pactspirit! \n*One claim per account.',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'I689:7408;689:7308;267:20351', name: 'title', characters: '\u65b0\u4eba\u9650\u5b9a\u798f\u5229', parentId: '689:7308', orderKey: '1', treeKey: 'pc' },
+    { nodeId: 'I689:7408;689:7341', name: 'body', characters: '\u4f20\u5947\u81ea\u9009\u6389\u843d\u5951\u7075\u7b7e\u5230\u5373\u9886\uff01', parentId: 'I689:7408', orderKey: '2', treeKey: 'pc' },
+    { nodeId: 'I689:7408;689:7342', name: 'note', characters: '*\u6bcf\u4e2a\u8d26\u53f7\u9650\u9886\u53d6\u4e00\u6b21\uff0c\u5df2\u9886\u53d6\u8fc7\u5c06\u65e0\u6cd5\u518d\u6b21\u53c2\u4e0e\u3002', parentId: 'I689:7408', orderKey: '3', treeKey: 'pc' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(String(out.byNode['I689:7408;689:7341'].row), '82');
+  assert.equal(String(out.byNode['I689:7408;689:7308;267:20351'].row), '82');
+  assert.match(String(out.byNode['I689:7408;689:7308;267:20351'].translations.en.value), /New Player Exclusive/);
+  assert.equal(String(out.byNode['I689:7408;689:7342'].row), '82');
 });

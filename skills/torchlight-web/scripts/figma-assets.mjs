@@ -29,8 +29,9 @@
  *   非 ready 的 showcase 仍可按前缀 img/bg/kv、BOOLEAN 箭头、IMAGE fill 切。
  *   其余              →  不切（scroll/ 是容器；普通 btn/ 无 sliceExport 不切）
  *
- *   figma-indicator-* 备用图只在 ready truth 仍有 `ind/` owner 时安装。
- *   没有 `ind/` 的页（火炬阶段一）跳过，不得拿旧稿 397:35947/35949 卡死切图。
+ *   指示器素材按当前稿 `ind/` 实际用到的 componentId 校验。
+ *   旧稿 397:35947/35949 的 named fallback 只在这些根真被用到时才安装。
+ *   没有 `ind/` 的页跳过；有 `ind/` 但缺当前根素材时点名该 id，不拿旧稿图卡死切图。
  *
  * ═══ 用法 ═══
  *   node scripts/figma-assets.mjs --demo <dir>              # 按 truth.json 找出该切的节点并导出
@@ -41,11 +42,12 @@
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-// Importers: html-volume.test.mjs (planWebpDelivery), figma-render-asset-lock.test.mjs (installIndicatorFallbacks), figma-html-from-handoff.mjs (CLI). API: cachedPngReusable / safeRelativeAssetPath / planWebpDelivery.
+// Importers: html-volume.test.mjs (planWebpDelivery, applyCollapsedWebpAlias), figma-render-asset-lock.test.mjs (installIndicatorFallbacks), figma-html-from-handoff.mjs (CLI). API: cachedPngReusable / safeRelativeAssetPath / planWebpDelivery / applyCollapsedWebpAlias.
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 import { encodeWebpBatch } from './lib/encode-webp.mjs';
 import { deriveRole, pageUsesIndicatorRole } from './lib/figma-name-semantics.mjs';
+import { collectUsedIndicatorComponentIds } from './lib/indicator-component-ids.mjs';
 import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../standards/figma-naming/spec/inventory.mjs';
 import { requireFigmaToken } from './lib/figma-token.mjs';
 import { matchesSchema } from './lib/torchlight-schema.mjs';
@@ -59,6 +61,8 @@ import {
 const API = 'https://api.figma.com/v1';
 const SLICE_PREFIXES = new Set(['img', 'bg', 'kv']);
 const BTN_ARROW_NAME = /(?:左|右)(?:划动|滑动)?(?:按钮|箭头)|(?:prev|next)/i;
+const BTN_DETAIL_NAME = /详细按钮/;
+const BTN_CHECK_NAME = /勾选按钮/;
 const BATCH = 40;               // Figma images 接口一次给太多 id 会超时，分批
 const FIGMA_GET_TIMEOUT_MS = 120000;
 
@@ -176,11 +180,24 @@ function withChildNodes(item) {
 }
 
 /** Adapted componentVariantGraph plus captured variantTrees. Dedup happens in pickSliceNodes. */
+function inheritConsentSetName(node, setName) {
+  if (!node || typeof node !== 'object') return node;
+  const ancestorNames = [
+    ...nodesOf(node.ancestorNames).map((name) => String(name)),
+    String(setName || ''),
+  ].filter(Boolean);
+  return ancestorNames.length ? { ...node, ancestorNames } : node;
+}
+
 function collectVariantSliceNodes(graph) {
-  const fromSets = nodesOf(graph?.componentSets).flatMap((set) => [
-    ...nodesOf(set?.nodes),
-    ...nodesOf(set?.variants).flatMap(withChildNodes),
-  ]);
+  const fromSets = nodesOf(graph?.componentSets).flatMap((set) => {
+    const setName = set?.name;
+    return [
+      ...nodesOf(set?.nodes).map((node) => inheritConsentSetName(node, setName)),
+      ...nodesOf(set?.variants).flatMap((variant) =>
+        withChildNodes(inheritConsentSetName(variant, setName))),
+    ];
+  });
   const fromComponents = nodesOf(graph?.components).flatMap(withChildNodes);
   const fromTrees = Object.values(graph?.variantTrees || {}).flatMap((trees) =>
     nodesOf(trees).flatMap(withChildNodes));
@@ -269,13 +286,36 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
          Mask group under kv) still bake into the owner. */
       const bakedIntoWholeFrame = !listedSlice && list.some((owner) =>
         owner && isWholeFrameSliceNode(owner) && nodeAncestors.includes(String(owner.id)));
+      /* BOOLEAN/VECTOR directional btn/ arrows and KR rule-detail vectors are
+         composite contours. CSS chevrons are forbidden. Consent COMPONENT
+         roots (btn/勾选按钮 highlight/normal) bake Union+Vector art that
+         inventory skipped as art-fragment — slice the variant root, never
+         promote those fragments. */
+      const booleanBtnArrow = NONRECT.has(n.type) && derived.role === 'btn'
+        && (BTN_ARROW_NAME.test(String(n.name || '')) || BTN_DETAIL_NAME.test(String(n.name || '')));
+      const consentLabel = [
+        n.name,
+        n.role,
+        ...nodesOf(n.ancestorNames),
+      ].map((value) => String(value || '')).join(' ');
+      const consentVariantRoot = n.type === 'COMPONENT'
+        && BTN_CHECK_NAME.test(consentLabel)
+        && /Property 1=(highlight|normal)/i.test(String(n.name || ''));
+      const dropmenuOptionVariantRoot = n.type === 'COMPONENT'
+        && /(?:dropmenu[\/／]|号码地区选择)/i.test(consentLabel)
+        && /Property 1=(highlight|normal)/i.test(String(n.name || ''));
+      const fragmentLine = (n.type === 'LINE'
+        || (n.type === 'VECTOR' && /^line(?:\s|$)/i.test(String(n.name || ''))))
+        && n.status === 'skipped'
+        && String(n.why || '') === 'art-fragment';
       if (listedOnly) {
         /* Ready handoff: listed sliceExport owners, plus unnamed kv/bg/img
            even when an older pack omitted sliceExport. IMAGE descendants under a
-           whole-frame owner stay inside that PNG. */
-        if (n.status === 'skipped') continue;
+           whole-frame owner stay inside that PNG. Contour btn/ and consent
+           variant roots still slice when inventory left sliceExport unset. */
+        if (n.status === 'skipped' && !fragmentLine) continue;
         if (bakedIntoWholeFrame) continue;
-        if (!listedSlice && !hasImageFill) continue;
+        if (!listedSlice && !hasImageFill && !booleanBtnArrow && !consentVariantRoot && !dropmenuOptionVariantRoot && !fragmentLine) continue;
       }
       if (n.type === 'TEXT' && !pfx) continue;               // unprefixed TEXT is editable copy; visual names can override type
       /* Lead decision (2026-08-10): the page-background owner root (bg/*) is no
@@ -311,12 +351,6 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
        * 非矩形的轮廓 CSS 画不出 —— 实测漏过 2128×290 的 Union（OVERLAY 渐变），
        * 它就是"轮廓比渐变精确性更要紧"的反例。 */
       const bigNonRect = NONRECT.has(n.type) && Math.max(w, h) >= minDim;
-      /* BOOLEAN/VECTOR directional btn/ arrows are composite contours. CSS
-         chevrons/diamonds are forbidden; a missing slice must stay missing,
-         not become a white rectangle. Slice even when the inventory left
-         sliceExport unset — the name+type is the source identity. */
-      const booleanBtnArrow = NONRECT.has(n.type) && derived.role === 'btn'
-        && BTN_ARROW_NAME.test(String(n.name || ''));
       /* 多层填充且含位图（IMAGE）→ 整节点切图。Figma 叠层按各自 blendMode 混合
          （SOLID/NORMAL + IMAGE/SOFT_LIGHT 这类），CSS background-blend-mode 只能给
          一个元素里的多层背景统一一套模式，没法逐层指定 —— 硬画必错。整节点 PNG 把
@@ -331,10 +365,10 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
          alpha 与原始绘制顺序，拆成 CSS 节点会让局部纹理/背景跨出真实可见区。 */
       const hasMaskOwner = Array.isArray(n.maskChildren) && n.maskChildren.length > 0;
       const onlyGradient = fills.length === 1 && String(fills[0].type).startsWith('GRADIENT');
-      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !booleanBtnArrow && !hasMaskOwner) continue;
+      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !booleanBtnArrow && !fragmentLine && !hasMaskOwner) continue;
 
       const unnamedKvOwner = isWholeFrameSliceNode(n) && !listedSlice;
-      if (!(listedSlice || unnamedKvOwner || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
+      if (!(listedSlice || unnamedKvOwner || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || consentVariantRoot || dropmenuOptionVariantRoot || fragmentLine || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
       const effects = ((n.style || {}).effects || []).filter((e) => e && e.visible !== false);
       const descendantEffects = ((n.style || {}).descendantEffects || []).filter((e) => e && e.effectType);
       const allEffectTypes = [
@@ -369,7 +403,23 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
           (Number(rb.w) > Number(pageOrBox.w) + 0.5 && Number(rb.h) > Number(pageOrBox.h) + 0.5)
           || (hairlineOwner && (Number(rb.w) > Number(pageOrBox.w) + 0.5 || Number(rb.h) > Number(pageOrBox.h) + 0.5))
         );
-      const pageBoxExport = wholeFrameSlice && !softSpill;
+      /* Rotated `img/` (left/right slider arrow) keeps a squat pageBox AABB
+         while same-space renderBox still holds the long baked contour.
+         Export that render canvas; stretching the squat PNG into the tall
+         host is not a contour fix. Unrotated full-bleed plates stay pageBox.
+         Require a squat AABB (one axis less than half the other) so a slightly
+         larger title renderBox (240×340 around 200×300) is not stolen. */
+      const squatPageBox = Number(pageOrBox?.w) > 0 && Number(pageOrBox?.h) > 0
+        && (Number(pageOrBox.h) * 2 < Number(pageOrBox.w) || Number(pageOrBox.w) * 2 < Number(pageOrBox.h));
+      const rotatedLocalContour = pfx === 'img'
+        && sameSpaceInk
+        && squatPageBox
+        && Number(rb.w) > 0 && Number(rb.h) > 0
+        && (
+          (Number(rb.h) > Number(pageOrBox.h) + 0.5 && Number(rb.w) + 2 >= Number(pageOrBox.w))
+          || (Number(rb.w) > Number(pageOrBox.w) + 0.5 && Number(rb.h) + 2 >= Number(pageOrBox.h))
+        );
+      const pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour;
       const listedBounds = pageBoxExport ? 'box' : n.sliceExport?.bounds;
       const exportBounds = listedBounds
         || (softSpill ? 'render' : 'box');
@@ -389,7 +439,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
         .map((f) => String(f.imageRef)))];
       out.push({
         sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
-        reason: n.sliceExport ? '清单 sliceExport' : isWholeFrameSliceNode(n) ? '整框 pageBox' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
+        reason: n.sliceExport ? '清单 sliceExport' : isWholeFrameSliceNode(n) ? '整框 pageBox' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : consentVariantRoot ? 'btn/勾选按钮变体根' : dropmenuOptionVariantRoot ? 'dropmenu option variant root' : fragmentLine ? 'skipped art-fragment LINE' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
         w: outW, h: outH, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
         cropToVisibleBox: !pageBoxExport && exportBounds === 'box' && clippedVisible,
         imageRefs: imageRefs.length ? imageRefs : undefined,
@@ -471,6 +521,33 @@ function expectedExportPx(pick) {
   };
 }
 
+export function isZeroExtentSlice(pick = {}) {
+  const box = pick?.exportBounds === 'render' && pick.exportBox ? pick.exportBox : pick;
+  return Math.round(box?.w ?? pick?.w ?? 0) <= 0 || Math.round(box?.h ?? pick?.h ?? 0) <= 0;
+}
+
+export function previousNoUrlNodeIds(previous = null) {
+  return new Set((previous?.noUrl || []).map((item) => String(item?.nodeId || '')).filter(Boolean));
+}
+
+export function reuseExistingMissingPicks(picks = [], cachedPaths = new Map(), previous = null) {
+  const knownNoUrl = previousNoUrlNodeIds(previous);
+  return (picks || []).filter((pick) => {
+    if (cachedPaths.has(pick.nodeId)) return false;
+    if (isZeroExtentSlice(pick)) return false;
+    if (knownNoUrl.has(String(pick.nodeId))) return false;
+    return true;
+  });
+}
+
+function skippedNoFetchPicks(picks = [], cachedPaths = new Map(), previous = null) {
+  const knownNoUrl = previousNoUrlNodeIds(previous);
+  return (picks || []).filter((pick) => (
+    !cachedPaths.has(pick.nodeId)
+    && (isZeroExtentSlice(pick) || knownNoUrl.has(String(pick.nodeId)))
+  ));
+}
+
 /**
  * Reuse a previous PNG only when this demo's designVersion, export params,
  * geometry, file containment, PNG magic/size, and sha256 all still match.
@@ -534,7 +611,31 @@ export function planWebpDelivery(manifest, { assetsDir, demoDir }) {
   return { jobs, aliases };
 }
 
-const INDICATOR_FALLBACKS = Object.freeze([
+/** Collapsed WebP aliases must not silently borrow another node's PNG.
+ *  each dest node has its own PNG; missing dest.pngFile stays missing. */
+export function applyCollapsedWebpAlias(src, dest) {
+  if (!src || !dest || !src.webpFile) return dest;
+  const srcServesPng = !!src.webpCollapsed && !!src.pngFile;
+  if (srcServesPng) {
+    if (dest.pngFile) {
+      dest.file = dest.pngFile;
+      dest.sha256 = dest.pngSha256 || dest.sha256;
+      dest.webpCollapsed = true;
+    } else {
+      dest.aliasPngMissing = true;
+      dest.webpCollapsed = true;
+    }
+  } else {
+    dest.file = src.webpFile;
+    dest.sha256 = src.sha256;
+  }
+  dest.webpFile = src.webpFile;
+  dest.bytes = src.bytes;
+  dest.webp = src.webp;
+  return dest;
+}
+
+const LEGACY_INDICATOR_FALLBACKS = Object.freeze([
   { nodeId: '397:35947', dest: 'figma-indicator-active-alpha.webp' },
   { nodeId: '397:35949', dest: 'figma-indicator-normal-alpha.webp' },
 ]);
@@ -567,42 +668,45 @@ function indicatorSourceFile(assetsDir, manifest, nodeId) {
 }
 
 export function installIndicatorFallbacks(assetsDir, manifest, truth) {
-  if (truth !== undefined && !pageUsesIndicatorRole(truth)) {
+  if (truth === undefined) {
+    return { ok: true, skipped: true, reason: 'no-truth' };
+  }
+  if (!pageUsesIndicatorRole(truth)) {
     return { ok: true, skipped: true, reason: 'no-ind-role' };
   }
-  mkdirSync(assetsDir, { recursive: true });
-  const needed = INDICATOR_FALLBACKS.filter((item) => manifest && manifest[item.nodeId]);
-  /* 旧稿 ind/ 高亮/普通根是 397:35947 / 397:35949。本页没有这些节点时
-     不许拿旧 id 卡死整份 assets-manifest；有这些根却导不出图才红停。 */
-  if (!needed.length) {
-    if (truth !== undefined) {
-      throw new Error('missing figma-indicator fallback sources: page has ind/ but no fallback roots in manifest');
-    }
-    return { ok: true, skipped: true, missing: [] };
+  const usedComponentIds = collectUsedIndicatorComponentIds(truth);
+  if (!usedComponentIds.length) {
+    throw new Error('missing figma-indicator fallback sources: used indicator componentId');
   }
+  mkdirSync(assetsDir, { recursive: true });
   const missing = [];
-  for (const item of needed) {
-    const dest = join(assetsDir, item.dest);
-    if (isWebpFile(dest)) continue;
-    const src = indicatorSourceFile(assetsDir, manifest, item.nodeId);
+  const installLegacyNamedFallback = (nodeId, destName) => {
+    const dest = join(assetsDir, destName);
+    if (isWebpFile(dest)) return;
+    const src = indicatorSourceFile(assetsDir, manifest, nodeId);
     if (!src) {
-      missing.push(item.dest);
-      continue;
+      missing.push(`${nodeId} (${destName})`);
+      return;
     }
     if (/\.webp$/i.test(src) && isWebpFile(src)) {
       copyFileSync(src, dest);
-      continue;
+      return;
     }
     const encoded = encodeWebpBatch([{ src, dest, lossless: true }]);
-    if (!encoded.ok || !isWebpFile(dest)) {
-      missing.push(item.dest);
+    if (!encoded.ok || !isWebpFile(dest)) missing.push(`${nodeId} (${destName})`);
+  };
+  for (const nodeId of usedComponentIds) {
+    const legacy = LEGACY_INDICATOR_FALLBACKS.find((item) => item.nodeId === nodeId);
+    if (legacy) {
+      installLegacyNamedFallback(nodeId, legacy.dest);
       continue;
     }
+    if (!indicatorSourceFile(assetsDir, manifest, nodeId)) missing.push(nodeId);
   }
   if (missing.length) {
     throw new Error(`missing figma-indicator fallback sources: ${missing.join(', ')}`);
   }
-  return { ok: true, missing };
+  return { ok: true, missing, usedComponentIds };
 }
 
 function cropPng(buf, sx, sy, sw, sh) {
@@ -701,18 +805,31 @@ async function main() {
     if (hit) cachedPaths.set(p.nodeId, hit);
   }
   const reusedPicks = picks.filter((p) => cachedPaths.has(p.nodeId));
-  const fetchPicks = picks.filter((p) => !cachedPaths.has(p.nodeId));
+  const skippedNoFetch = skippedNoFetchPicks(picks, cachedPaths, reuseExisting ? previous : null);
+  const fetchPicks = reuseExisting
+    ? reuseExistingMissingPicks(picks, cachedPaths, previous)
+    : picks.filter((p) => !cachedPaths.has(p.nodeId) && !isZeroExtentSlice(p));
   out.reused = reusedPicks.length;
-  /* --reuse-existing means "do not hit Figma". Missing PNGs fail loud so a
-     hung images API cannot stall html-from-handoff after local extract. */
-  if (reuseExisting && fetchPicks.length) {
-    fail(`--reuse-existing 缺 PNG，拒绝打 Figma：${fetchPicks.map((p) => p.nodeId).join(',')}`);
-  }
+  out.skippedNoFetch = skippedNoFetch.map((p) => ({
+    nodeId: p.nodeId,
+    name: p.name,
+    why: isZeroExtentSlice(p) ? 'zero-extent' : 'previous-noUrl',
+  }));
+  /* --reuse-existing means reuse on-disk PNGs. Newly painted owners that
+     still have no file must hit Figma; empty assets/ always fetches.
+     Zero-extent slices and nodes already recorded as noUrl stay listed. */
   const token = fetchPicks.length ? readToken(demoDir) : null;
+  const noUrl = skippedNoFetch.map((p) => ({
+    nodeId: p.nodeId,
+    name: p.name,
+    why: isZeroExtentSlice(p)
+      ? 'zero-extent：宽或高为 0，Figma 导不出，不算缺 PNG'
+      : (previous?.noUrl || []).find((item) => String(item?.nodeId) === String(p.nodeId))?.why
+        || 'Figma 未返回 URL（该图层可能异常，如带图像填充的 TEXT）',
+  }));
 
   // 1) 分批向 Figma 要图片 URL（按倍率分组，一批只能用一个 scale）
   const urlMap = {};
-  const noUrl = [];
   const groups = [];
   for (const key of [...new Set(fetchPicks.map((p) => `${p.scale}|${p.exportBounds}`))]) {
     const [scText, bounds] = key.split('|');
@@ -957,11 +1074,11 @@ async function main() {
       const src = recById(alias.duplicateOf);
       const dest = recById(alias.nodeId);
       if (!src || !dest || !src.webpFile) continue;
-      dest.file = src.webpFile;
-      dest.webpFile = src.webpFile;
-      dest.sha256 = src.sha256;
-      dest.bytes = src.bytes;
-      dest.webp = src.webp;
+      /* A collapsed WebP (< 2048 bytes) is a solid plate; the encoder path above
+         already fell back to PNG for its own record. Duplicate ids must make the
+         same choice, otherwise an alias keeps a blank WebP while its source
+         serves the real PNG (a sibling btn must not inherit another node's tiny webp). */
+      applyCollapsedWebpAlias(src, dest);
       dest.duplicateOf = alias.duplicateOf;
     }
     bytes = Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0);

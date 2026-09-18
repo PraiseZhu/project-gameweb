@@ -59,6 +59,7 @@ test("fetchNode：抓取并写缓存，lastModified 未变时第二次不打 nod
   assert.equal(a.document.name, "pc");
   assert.ok(existsSync(cache));
   assert.equal(calls.filter((u) => u.includes("/nodes?")).length, 1);
+  assert.match(calls.find((u) => u.includes("/nodes?")), /geometry=paths/);
 
   const b = await fetchNode("KEY", "1:180", cache);
   assert.equal(b.fromCache, true);

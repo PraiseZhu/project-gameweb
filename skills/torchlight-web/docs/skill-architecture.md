@@ -234,3 +234,7 @@ Fixtures, generated demos, screenshots, and local evidence remain private as
 declared by `public-release.json`. `npm run release:audit` checks the release
 boundary; it does not run the optional Prototype Truth Audit and does not
 rebuild `index.html`.
+
+## Cross-axis page behavior contracts
+
+Generic Interaction / Resize / Translation / Pack contracts live in scripts/lib/page-behavior-contracts.mjs. They own no page node IDs, no season copy, and no one-off pixel values. Unit evidence: scripts/__tests__/page-behavior-contracts.test.mjs.

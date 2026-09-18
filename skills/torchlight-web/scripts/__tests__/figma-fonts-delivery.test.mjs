@@ -542,3 +542,35 @@ test('Apple source family still fail-closes when local() is missing', () => {
   }
 });
 
+test('Apple source does not suppress locale KR routing for translated Hangul', () => {
+  const krPath = join(ROOT, 'fonts/NotoSansKR-VF.ttf');
+  assert.ok(existsSync(krPath), 'bundled KR font is required for this regression');
+  const root = mkdtempSync(join(tmpdir(), 'figma-fonts-apple-copy-ko-'));
+  writeFileSync(join(root, 'registry.json'), JSON.stringify({
+    families: {
+      'Noto Sans': { file: 'latin.woff2', weight: '100 900', format: 'woff2', source: 'fixture', license: 'OFL' },
+      'Noto Sans KR': { file: 'NotoSansKR-VF.ttf', weight: '100 900', format: 'truetype', source: 'fixture', license: 'OFL' },
+    },
+  }));
+  writeFileSync(join(root, 'latin.woff2'), latinBytes());
+  copyFileSync(krPath, join(root, 'NotoSansKR-VF.ttf'));
+  const demo = mkdtempSync(join(tmpdir(), 'figma-fonts-apple-copy-ko-demo-'));
+  writeFileSync(join(demo, 'truth.json'), JSON.stringify({
+    design: { fileVersion: 'fixture-apple-copy-ko' },
+    copy: { byNode: { 'apple-ko': { ko: '한국어' } } },
+    sections: {
+      one: { nodes: [{
+        id: 'apple-ko',
+        name: 'apple source hangul',
+        text: { fontFamily: 'Apple SD Gothic Neo', fontWeight: 400, characters: '한' },
+      }] },
+    },
+  }));
+  writeFileSync(join(demo, 'index.html'), '<html><head></head><body><script id="qa-assets" type="application/json">{}</script></body></html>');
+  const result = run(demo, root);
+  const manifest = JSON.parse(readFileSync(join(demo, 'fonts-manifest.json'), 'utf8'));
+  assert.ok(manifest.fonts['Noto Sans KR'], JSON.stringify(manifest, null, 2));
+  assert.equal((manifest.missing || []).some((item) => item.family === 'Noto Sans KR'), false, JSON.stringify(manifest.missing, null, 2));
+  if (appleSdGothicLocalAvailable()) assert.equal(result.status, 0, result.stdout + result.stderr);
+  else assert.equal(result.status, 2, result.stdout + result.stderr);
+});

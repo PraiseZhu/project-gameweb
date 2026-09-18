@@ -6,7 +6,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, realpathSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve } from 'node:path';
-import { pageUsesIndicatorRole } from './figma-name-semantics.mjs';
+import { collectUsedIndicatorComponentIds } from './indicator-component-ids.mjs';
 
 export const DEFAULT_PACK_BUDGET_BYTES = 15 * 1024 * 1024;
 export const DEFAULT_PACK_WEBP_QUALITY = 70;
@@ -16,6 +16,7 @@ export const PACK_KEEP_ROOT = new Set([
 ]);
 export const PACK_KEEP_DIRS = new Set(['assets', 'fixtures', 'fonts', 'content-package']);
 export const PACK_FALLBACK_RE = /figma-indicator[-.][\w.-]+\.(?:png|webp)/i;
+const LEGACY_INDICATOR_IDS = new Set(['397:35947', '397:35949']);
 const TEXT_EXTS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json']);
 const RUNTIME_EXTS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json', '.woff', '.woff2', '.webp', '.png', '.jpg', '.jpeg', '.svg', '.ico']);
 
@@ -135,11 +136,12 @@ export function isWebpFile(path) {
   }
 }
 
-function packedPageUsesIndicator(demoDir, html) {
+function packedPageUsesLegacyIndicatorFallback(demoDir, html) {
   const truthPath = join(demoDir, 'truth.json');
   if (existsSync(truthPath)) {
     try {
-      return pageUsesIndicatorRole(JSON.parse(readFileSync(truthPath, 'utf8')));
+      const truth = JSON.parse(readFileSync(truthPath, 'utf8'));
+      return collectUsedIndicatorComponentIds(truth).some((id) => LEGACY_INDICATOR_IDS.has(id));
     } catch {
       /* unreadable truth keeps the old HTML-ref fail-closed */
     }
@@ -148,7 +150,7 @@ function packedPageUsesIndicator(demoDir, html) {
 }
 
 export function missingFallbackFiles(demoDir, html) {
-  if (!packedPageUsesIndicator(demoDir, html)) return [];
+  if (!packedPageUsesLegacyIndicatorFallback(demoDir, html)) return [];
   const missing = [];
   for (const rel of collectFallbackRefs(html)) {
     const direct = join(demoDir, rel);
@@ -251,7 +253,7 @@ function localReferences(text = '') {
 
 function collectRuntimeReferenceState(demoDir, html = '') {
   const root = packRoot(demoDir);
-  const requireIndicatorFallback = packedPageUsesIndicator(demoDir, html);
+  const requireIndicatorFallback = packedPageUsesLegacyIndicatorFallback(demoDir, html);
   const queue = [{ base: root, text: String(html) }];
   const seenFiles = new Set();
   const present = new Set();

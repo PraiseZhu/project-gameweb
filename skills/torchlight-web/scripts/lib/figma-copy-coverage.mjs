@@ -51,11 +51,13 @@ export function collectInventoryTexts(inventory, { treeKey = 'default' } = {}) {
     const id = node.id != null ? String(node.id) : '';
     if (!id || seen.has(id)) continue;
     seen.add(id);
+    const ancestorIds = Array.isArray(node.ancestorIds) ? node.ancestorIds.map(String) : [];
     texts.push({
       nodeId: id,
       name: String(node.name ?? ''),
       characters: String(characters ?? ''),
       parentId: node.parentId != null ? String(node.parentId) : '',
+      ancestorIds,
       orderKey: String(node.orderKey || ''),
       treeKey: String(treeKey || 'default'),
     });

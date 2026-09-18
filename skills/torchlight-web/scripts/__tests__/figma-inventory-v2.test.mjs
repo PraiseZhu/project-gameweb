@@ -287,6 +287,53 @@ test("lang-shell multi-btn @go in variant trees becomes determined openers", () 
   assert.ok(!byId.get("m-apple").triggerFrom.includes("cal"), "page lang-shell instance stays unlifted");
 });
 
+test("in-modal @go to a different unique modal name becomes a determined trigger", () => {
+  const inv = fixture();
+  inv.attachments.modals = [
+    {
+      id: "100:90",
+      name: "modal/pc_kr预约弹窗",
+      platform: "pc",
+      box: { x: 0, y: 0, w: 3840, h: 2160 },
+      nodes: [
+        { id: "100:90", name: "modal/pc_kr预约弹窗", parentId: null },
+        {
+          id: "100:91",
+          name: "btn/详细按钮@go=modal/pc弹窗详细规则1",
+          type: "VECTOR",
+          parentId: "100:90",
+          status: "determined",
+          role: "btn",
+          params: { go: "modal/pc弹窗详细规则1" },
+          platform: "pc",
+        },
+        {
+          id: "100:92",
+          name: "btn/播放按钮",
+          parentId: "100:90",
+          status: "determined",
+          role: "btn",
+          platform: "pc",
+        },
+      ],
+    },
+    { id: "100:93", name: "modal/pc弹窗详细规则1", platform: "pc", box: { x: 0, y: 0, w: 3840, h: 2160 }, nodes: [{ id: "100:93", name: "modal/pc弹窗详细规则1" }] },
+    { id: "100:20", name: "modal/视频弹窗", platform: "pc", box: { x: 0, y: 0, w: 100, h: 100 }, nodes: [{ id: "100:20", name: "modal/视频弹窗" }] },
+  ];
+  inv.relations = [
+    { kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link", from: null, to: { id: "100:93", scope: "modal:100:93" } },
+    { kind: "modal-trigger", status: "unknown", evidence: "no-prototype-or-name-link", from: null, to: { id: "100:20", scope: "modal:100:20" } },
+  ];
+  const triggers = classifyModalTriggers(inv);
+  assert.deepEqual((triggers.get("100:93") || []).filter((t) => t.status === "determined").map((t) => t.fromId), ["100:91"]);
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const byId = new Map(adapted.modals.map((modal) => [modal.id, modal]));
+  assert.equal(byId.get("100:93").triggerStatus, "determined");
+  assert.deepEqual(byId.get("100:93").triggerFrom, ["100:91"]);
+  assert.equal(byId.get("100:93").triggerEvidence[0].kind, "name-param:@go");
+  assert.ok(!byId.get("100:20").triggerFrom.includes("100:92"), "in-modal play stays a player, not a second opener");
+});
+
 test("same-label viewport fix overlays keep one pin", () => {
   const inv = fixture();
   inv.nodes.push(
@@ -655,7 +702,7 @@ test("restoreOwnerComposites relinks skipped Auto Layout max onto live TEXT pare
       status: "skipped",
       why: "art-fragment",
       parentId: "clip",
-      layout: { layoutMode: "HORIZONTAL", maxWidth: 1954, maxHeight: 250 },
+      layout: { layoutMode: "HORIZONTAL", layoutSizingHorizontal: "FIXED", layoutSizingVertical: "HUG", maxWidth: 1954, maxHeight: 250 },
       pageBox: { x: 0, y: 40, w: 1954, h: 144 },
     },
     {
@@ -675,6 +722,55 @@ test("restoreOwnerComposites relinks skipped Auto Layout max onto live TEXT pare
   assert.equal(copy.layout.maxWidth, 1954);
   assert.equal(copy.layout.maxHeight, 250);
   assert.equal(copy.fitOwnerFromSkipped.sourceId, "wrap");
+  assert.equal(copy.layoutCapSelf.maxWidth, null);
+  assert.equal(copy.layoutCapSelf.maxHeight, null);
+  assert.equal(copy.fitOwnerFromSkipped.axisSource.maxWidth, "inherited");
+  assert.equal(copy.fitOwnerFromSkipped.axisSource.maxHeight, "inherited");
+  assert.equal(copy.fitOwnerFromSkipped.layoutMode, "HORIZONTAL");
+  assert.equal(copy.fitOwnerFromSkipped.layoutSizingHorizontal, "FIXED");
+  assert.equal(copy.fitOwnerFromSkipped.layoutSizingVertical, "HUG");
+  assert.deepEqual(copy.fitOwnerFromSkipped.box, { x: 0, y: 40, w: 1954, h: 144 });
+  assert.deepEqual(copy.parentBox, { x: 0, y: 40, w: 1954, h: 144 });
+});
+
+test("restoreOwnerComposites records per-axis self vs inherited caps before stamp", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "clip",
+      type: "FRAME",
+      name: "正文",
+      status: "unknown",
+      pageBox: { x: 0, y: 0, w: 400, h: 300 },
+    },
+    {
+      id: "wrap",
+      type: "FRAME",
+      name: "Frame skip",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "clip",
+      layout: { layoutMode: "HORIZONTAL", maxWidth: 200, maxHeight: 250 },
+      pageBox: { x: 0, y: 0, w: 200, h: 250 },
+    },
+    {
+      id: "copy",
+      type: "TEXT",
+      name: "txt/a",
+      status: "determined",
+      role: "copy",
+      parentId: "wrap",
+      layout: { maxWidth: 200 },
+      pageBox: { x: 0, y: 0, w: 180, h: 40 },
+      text: { characters: "Hi", fontSize: 24, letterSpacing: 0 },
+    },
+  ]);
+  const copy = restored.find((node) => node.id === "copy");
+  assert.equal(copy.layoutCapSelf.maxWidth, 200);
+  assert.equal(copy.layoutCapSelf.maxHeight, null);
+  assert.equal(copy.fitOwnerFromSkipped.axisSource.maxWidth, "self");
+  assert.equal(copy.fitOwnerFromSkipped.axisSource.maxHeight, "inherited");
+  assert.equal(copy.layout.maxWidth, 200);
+  assert.equal(copy.layout.maxHeight, 250);
 });
 
 test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as paintAsFragment", () => {
@@ -696,6 +792,9 @@ test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as pain
       parentId: "btn-play",
       box: { x: 80, y: 80, w: 68, h: 68 },
       rotation: -0.52,
+      localSize: { w: 49.785, h: 49.785 },
+      relativeTransform: [[0.866, 0.5, 80], [-0.5, 0.866, 105]],
+      fillGeometry: [{ path: "M23.07 3.15L44.63 34.19L6.97 34.19Z", windingRule: "NONZERO" }],
       style: { fills: [{ type: "SOLID", visible: true, color: { r: 1, g: 1, b: 1, a: 1 } }] },
     },
     {
@@ -711,7 +810,49 @@ test("restoreOwnerComposites keeps a CSS-paintable Polygon 34 under btn/ as pain
   const triangle = restored.find((node) => node.id === "poly-34");
   assert.equal(triangle.paintAsFragment, true);
   assert.equal(triangle.status, "skipped");
+  assert.equal(triangle.fillGeometry[0].path, "M23.07 3.15L44.63 34.19L6.97 34.19Z");
+  assert.equal(triangle.localSize.w, 49.785);
+  assert.equal(triangle.relativeTransform[0][2], 80);
   assert.equal(restored.some((node) => node.id === "mask-group"), false);
+});
+
+test("restoreOwnerComposites keeps a near-zero VECTOR stroke with nonzero renderBox", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "frame-line",
+      type: "FRAME",
+      name: "Frame 1312316824",
+      status: "skipped",
+      why: "art-fragment",
+      box: { x: 56, y: 1233, w: 638, h: 34 },
+    },
+    {
+      id: "vector-44",
+      type: "VECTOR",
+      name: "Vector 44",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "frame-line",
+      box: { x: 56, y: 1269, w: 254, h: 0.00002 },
+      renderBox: { x: 56, y: 1268.85, w: 254, h: 2.92 },
+      strokeWeight: 3.6,
+      style: {
+        strokeWeight: 3.6,
+        strokeColor: {
+          type: "GRADIENT_LINEAR",
+          visible: true,
+          gradientStops: [
+            { color: { r: 0.18, g: 0.21, b: 0.54, a: 1 }, position: 0 },
+            { color: { r: 0.82, g: 0.96, b: 1, a: 1 }, position: 0.5 },
+          ],
+        },
+      },
+    },
+  ]);
+  const line = restored.find((node) => node.id === "vector-44");
+  assert.equal(line.paintAsFragment, true);
+  assert.equal(line.status, "skipped");
+  assert.equal(line.strokeWeight, 3.6);
 });
 
 test("restoreOwnerComposites does not restore skipped IMAGE slice-children under bg/", () => {
@@ -921,5 +1062,28 @@ test("adaptInventoryToTruthShape keeps pageBox/parentBox/sliceExport/text/layout
   assert.deepEqual(component.pageBox, pageBox);
   assert.deepEqual(component.parentBox, parentBox);
 });
-
-\n
+test("restoreOwnerComposites stamps a kv coverAnchor from a skipped lower rectangle", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "kv-1",
+      type: "FRAME",
+      name: "kv",
+      role: "kv",
+      status: "unknown",
+      pageBox: { x: 0, y: 0, w: 750, h: 1472 },
+    },
+    {
+      id: "rect-bottom",
+      type: "RECTANGLE",
+      name: "Rectangle 2718",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "kv-1",
+      pageBox: { x: 0, y: 697, w: 751, h: 637 },
+    },
+  ]);
+  const kv = restored.find((node) => node.id === "kv-1");
+  assert.equal(restored.some((node) => node.id === "rect-bottom"), false);
+  assert.equal(kv?.coverAnchor?.sourceId, "rect-bottom");
+  assert.equal(kv?.coverAnchor?.bottom, 1334);
+});

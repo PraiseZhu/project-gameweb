@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildHeroScrollSlot, assertHeroScrollSlotState, resolveHeroContentRoot } from '../lib/hero-scroll-slot.mjs';
+import { buildHeroScrollSlot, laterLayoutOffsetDesign, laterYOf, assertHeroScrollSlotState, resolveHeroContentRoot } from '../lib/hero-scroll-slot.mjs';
 
 const renderSource = () => readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
 
@@ -65,6 +65,53 @@ test('tall Figma hero crops so later starts at the 100vh edge', () => {
   assert.equal(slot.releaseDistance, 0);
 });
 
+test('Figma gap between first.bottom and next.top does not survive the 100vh crop', () => {
+  const slot = buildHeroScrollSlot({
+    viewportHeight: 900,
+    scale: 0.5,
+    pageOriginY: 0,
+    firstSection: { id: 'synthetic-hero', y: 0, height: 2143 },
+    followingSections: [{ id: 'synthetic-next', y: 2275 }],
+    contentRootId: 'synthetic-root',
+  });
+  assert.equal(slot.designHeight, 1800);
+  assert.equal(slot.extra, 1800 - 2143);
+  assert.equal(slot.layoutOffsetDesign, 1800 - 2275);
+  assert.equal(slot.layoutOffsetDesign, slot.extra - 132);
+  assert.equal(slot.releaseDistance, 0);
+});
+
+test('missing following section keeps extra, not y=0 from Number(false)', () => {
+  const slot = buildHeroScrollSlot({
+    viewportHeight: 900,
+    scale: 0.5,
+    pageOriginY: 0,
+    firstSection: { id: 'synthetic-hero', y: 0, height: 2143 },
+    followingSections: [],
+    contentRootId: 'synthetic-root',
+  });
+  assert.equal(slot.extra, 1800 - 2143);
+  assert.equal(slot.layoutOffsetDesign, slot.extra);
+});
+
+test('null or false next.y is missing, not y=0', () => {
+  assert.equal(Number.isFinite(laterYOf([{ y: null }])), false);
+  assert.equal(Number.isFinite(laterYOf([{ y: false }])), false);
+  assert.equal(Number.isFinite(laterYOf([{}])), false);
+  const extra = 1800 - 2143;
+  assert.equal(laterLayoutOffsetDesign(1800, 0, 2143, [{ y: null }]), extra);
+  assert.equal(laterLayoutOffsetDesign(1800, 0, 2143, [{ y: false }]), extra);
+  const slot = buildHeroScrollSlot({
+    viewportHeight: 900,
+    scale: 0.5,
+    pageOriginY: 0,
+    firstSection: { id: 'synthetic-hero', y: 0, height: 2143 },
+    followingSections: [{ id: 'synthetic-next', y: null }],
+    contentRootId: 'synthetic-root',
+  });
+  assert.equal(slot.layoutOffsetDesign, extra);
+});
+
 test('insufficient page structure does not guess a hero', () => {
   assert.equal(buildHeroScrollSlot({
     viewportHeight: 900,
@@ -112,9 +159,14 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /data-hero-ui-anchor/);
   assert.match(render, /owner-block/);
   assert.match(render, /data-hero-cluster', 'bottom'/);
+  assert.match(render, /isHeroWelfare/);
+  assert.match(render, /isWelfareBandNode/);
+  assert.match(render, /welfareBandTop/);
+  assert.match(render, /inNamedModalPaint/);
+  assert.match(render, /center bottom-anchor/);
   assert.match(render, /heroClusterBottomShift/);
   assert.match(render, /Calendar \+ CTA stay on Figma pageBox/);
-  assert.match(render, /isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
+  assert.match(render, /leftover is not only isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
   assert.match(render, /isHeroTitleOwner/);
   assert.match(render, /data-hero-mobile-center/);
   assert.match(render, /data-later-mobile-center/);
@@ -127,6 +179,8 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.doesNotMatch(render, /coverHeroSlot = heroSlot \|\| \(isKv && ids\[0\]/);
   assert.match(render, /scale: pageStageScale/);
   assert.match(render, /const extra = designHeight - heroHeight/);
+  assert.match(render, /Number\(false\/null\) is 0/);
+  assert.match(render, /typeof rawNextY === 'number' && Number\.isFinite\(rawNextY\)/);
   assert.match(render, /String\(heroSlot\.layoutOffsetDesign\)/);
   assert.doesNotMatch(render, /Math\.max\(0, designHeight - heroHeight\)/);
   assert.doesNotMatch(render, /layoutOffsetDesign \|\| 0/);
@@ -169,8 +223,11 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /heroSlot && Number\(heroSlot\.designHeight\) > 0/);
   assert.match(render, /data-hero-bg-gap/);
   assert.match(render, /data-hero-bg-follow/);
-  assert.match(render, /backgroundHeroShift \? afterHeroBackgroundShift/);
-  assert.match(render, /data-later-cover-window', 'later-stage'/);
+  assert.match(render, /backgroundHeroShift \|\| pageStageMode/);
+  assert.match(render, /data-hero-later-chrome-follow/);
+  assert.match(render, /after-hero-pagebox/);
+  assert.match(render, /ancestorFollowsHeroY/);
+  assert.match(render, /data-later-cover-window/);
   assert.match(render, /data-later-layout-shift/);
   assert.doesNotMatch(render, /const laterShift = heroLayoutOffsetDesign > 0 \? heroLayoutOffsetDesign : 0/);
   assert.doesNotMatch(render, /display\s*:\s*none[^\n]*hero/i);

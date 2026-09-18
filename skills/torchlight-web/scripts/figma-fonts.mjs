@@ -400,13 +400,15 @@ function main() {
     }
     const hangulLocale = localeHangulFamily(DESIGN_POLICY.localeFontFamily);
     const copyHangul = hangulCopyNodes(truth);
-    const hasHangul = copyHangul.length > 0 || usage.some((used) => (used.nodes || []).some((node) =>
-      codepointsToCover(node.characters || '').some((cp) => isHangulCodepoint(cp))));
-    const appleHangulOnSource = usage.some((used) => (used.nodes || []).some((node) =>
-      isLocalHangulFace(used.family, DESIGN_POLICY.localeFontFamily)
-      && codepointsToCover(node.characters || '').some((cp) => isHangulCodepoint(cp))));
-    const useLocaleHangulFallback = !appleHangulOnSource || !appleSdGothicLocalAvailable();
-    if (hasHangul && hangulLocale && useLocaleHangulFallback) {
+    // Apple SD Gothic Neo is a confirmed local-only source face.  It must not
+    // suppress locale routing for any other Hangul node in the same document.
+    // Route the locale face when copied text or a non-local source needs it;
+    // the later local() availability check handles Apple-only documents.
+    const needsLocaleHangul = copyHangul.length > 0 || usage.some((used) =>
+      !isLocalHangulFace(used.family, DESIGN_POLICY.localeFontFamily)
+      && (used.nodes || []).some((node) =>
+        codepointsToCover(node.characters || '').some((cp) => isHangulCodepoint(cp))));
+    if (needsLocaleHangul && hangulLocale) {
       if (!byFamily.has(hangulLocale)) {
         const u = { family: hangulLocale, weights: new Set([400]), nodes: [], routedFor: ['painted/hangul-locale'] };
         byFamily.set(hangulLocale, u);

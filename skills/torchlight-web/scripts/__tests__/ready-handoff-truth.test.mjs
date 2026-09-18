@@ -248,6 +248,68 @@ test('adapter source must not fall back to box ?? pageBox', () => {
   assert.equal(/entry\?\.pageBox/.test(src), true);
 });
 
+test('determined nodes after the last sec/ still paint on pageChrome', () => {
+  const inv = fixture();
+  inv.nodes.push(
+    {
+      id: 'content',
+      scope: 'page',
+      type: 'FRAME',
+      name: '页面内容',
+      parentId: PAGE_ID,
+      ancestorIds: [PAGE_ID],
+      orderKey: '0.3',
+      status: 'unknown',
+      pageBox: { x: 0, y: 0, w: 1920, h: 2000 },
+    },
+    {
+      id: 'footer-btn',
+      scope: 'page',
+      type: 'INSTANCE',
+      name: 'btn/按钮',
+      parentId: 'content',
+      ancestorIds: [PAGE_ID, 'content'],
+      orderKey: '0.3.0',
+      status: 'determined',
+      role: 'btn',
+      pageBox: { x: 700, y: 1900, w: 500, h: 80 },
+    },
+    {
+      id: 'footer-copy',
+      scope: 'page',
+      type: 'TEXT',
+      name: '立即下载',
+      parentId: 'footer-btn',
+      ancestorIds: [PAGE_ID, 'content', 'footer-btn'],
+      orderKey: '0.3.0.0',
+      status: 'determined',
+      role: 'copy',
+      pageBox: { x: 740, y: 1920, w: 420, h: 40 },
+      text: { ...TEXT, characters: '立即下载' },
+    },
+  );
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  assert.equal(truth.pageChrome.nodes.some((node) => node.id === 'footer-btn'), true);
+  assert.equal(truth.pageChrome.nodes.some((node) => node.id === 'footer-copy'), true);
+  assert.equal(Object.values(truth.sections).some((section) => (
+    Array.isArray(section?.nodes) && section.nodes.some((node) => node.id === 'footer-btn')
+  )), false);
+});
+
+test('page chrome origin prefers the live page node when page.pageBox is still canvas', () => {
+  const inv = fixture();
+  inv.page.pageBox = { ...CANVAS_BOX };
+  inv.page.box = { ...CANVAS_BOX };
+  const truth = platformTruthFromInventory(inv);
+  assert.equal(truth.ok, true, (truth.problems || []).join('\n'));
+  assert.deepEqual(truth.pageChrome.meta.pageBox, PAGE_BOX);
+  assert.equal(truth.pageChrome.meta.x, 0);
+  assert.equal(truth.pageChrome.meta.y, 0);
+  assert.notEqual(truth.pageChrome.meta.x, CANVAS_BOX.x);
+  assert.deepEqual(truth.pageBackground.meta.pageBox, PAGE_BOX);
+});
+
 test('readyPlatformTruth stamps design.fileVersion from source lastModified', () => {
   const src = readFileSync(fileURLToPath(new URL('../lib/ready-handoff-truth.mjs', import.meta.url)), 'utf8');
   assert.match(src, /source\?\.lastModified \|\| source\?\.snapshotHash \|\| fingerprint/);

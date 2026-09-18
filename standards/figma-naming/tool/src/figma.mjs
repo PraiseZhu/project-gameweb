@@ -52,20 +52,26 @@ async function get(path) {
  */
 export async function fetchNode(fileKey, nodeId, cachePath) {
   const meta = await get(`/v1/files/${fileKey}?depth=1`);
+  const geometry = "paths";
   if (cachePath && existsSync(cachePath)) {
     try {
       const cached = JSON.parse(readFileSync(cachePath, "utf8"));
-      if (cached.__lastModified === meta.lastModified && cached.__id === nodeId) {
+      if (cached.__lastModified === meta.lastModified && cached.__id === nodeId && cached.__geometry === geometry) {
         return { document: cached.document, lastModified: meta.lastModified, fromCache: true };
       }
     } catch { /* 缓存坏了就重抓 */ }
   }
-  const data = await get(`/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}`);
+  const data = await get(`/v1/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&geometry=${geometry}`);
   const document = data.nodes?.[nodeId]?.document;
   if (!document) throw new Error(`响应中没有节点 ${nodeId}（确认 node-id 属于该文件且是 frame）`);
   if (cachePath) {
     mkdirSync(dirname(cachePath), { recursive: true });
-    writeFileSync(cachePath, JSON.stringify({ __lastModified: meta.lastModified, __id: nodeId, document }));
+    writeFileSync(cachePath, JSON.stringify({
+      __lastModified: meta.lastModified,
+      __id: nodeId,
+      __geometry: geometry,
+      document,
+    }));
   }
   return { document, lastModified: meta.lastModified, fromCache: false };
 }

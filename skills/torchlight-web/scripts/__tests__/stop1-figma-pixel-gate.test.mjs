@@ -153,16 +153,17 @@ test('stop-1 default threshold is 6%', () => {
   assert.equal(DEFAULT_STOP1_PIXEL_THRESHOLD, 0.06);
 });
 
-test('mobile later-section 949:6041 is skipped; other screens stay locked', () => {
-  assert.equal(isStop1PixelSkippedSection('mobile', '949:6041'), true);
-  assert.equal(isStop1PixelSkippedSection('mobile', '949:5968'), false);
-  assert.equal(isStop1PixelSkippedSection('pc', '949:5151'), false);
+test('stop-1 skip list is empty: inventory owns section ids', () => {
+  assert.deepEqual(STOP1_PIXEL_SKIP_SECTIONS.mobile, []);
+  assert.deepEqual(STOP1_PIXEL_SKIP_SECTIONS.pc, []);
+  assert.equal(isStop1PixelSkippedSection('mobile', 'sec-a'), false);
+  assert.equal(isStop1PixelSkippedSection('pc', 'sec-b'), false);
 });
 
 test('torch skip env always overwrites an attacker-supplied skip JSON', () => {
   const previousSkip = process.env.STOP1_PIXEL_SKIP_JSON;
   const previousRoot = process.env.PLAYWRIGHT_MODULE_ROOT;
-  process.env.STOP1_PIXEL_SKIP_JSON = '{"mobile":"949:6041"}';
+  process.env.STOP1_PIXEL_SKIP_JSON = '{"mobile":["injected-id"]}';
   process.env.PLAYWRIGHT_MODULE_ROOT = '/tmp/not-torch';
   try {
     injectTorchStop1SkipEnv();
@@ -182,6 +183,7 @@ test('stop-1 Figma export uses section.id and product=1', () => {
   const src = readFileSync(SOURCE_PROBE, 'utf8');
   assert.match(src, /index\.html\?product=1/);
   assert.match(src, /sectionPaintExports/);
+  assert.match(src, /covering-plate/);
   assert.match(src, /analogueIds/);
   assert.match(src, /dropmenu-off-icon/);
   assert.match(src, /sectionLiveCopyMasks/);
@@ -189,6 +191,8 @@ test('stop-1 Figma export uses section.id and product=1', () => {
   assert.match(src, /figma-cache/);
   assert.match(src, /deviceScaleFactor:\s*dsf/);
   assert.match(src, /size mismatch/);
+  assert.match(src, /Math\.min\(vw, r\.x \+ r\.width\)/);
+  assert.match(src, /clipped area empty or outside viewport/);
   assert.match(src, /use_absolute_bounds/);
   assert.match(src, /fx-fixed-overlays/);
   assert.doesNotMatch(src, /deviceScaleFactor:\s*1/);

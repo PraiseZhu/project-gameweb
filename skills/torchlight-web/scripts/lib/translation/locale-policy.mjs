@@ -264,7 +264,11 @@ function liveTypeOf(text) {
   const fontFamily = String(text.fontFamily ?? '').trim();
   const fontWeight = Number(text.fontWeight);
   if (!fontFamily || !Number.isFinite(fontWeight)) return null;
-  return { fontFamily, fontWeight };
+  return {
+    fontFamily,
+    fontWeight,
+    fontStyle: text.fontStyle != null ? String(text.fontStyle) : null,
+  };
 }
 
 function letterSpacingOf(text = {}, language = 'zh-CN') {
@@ -279,6 +283,7 @@ function typeFromText(text = {}, language = 'zh-CN') {
   return {
     fontFamily: text?.fontFamily ?? null,
     fontWeight: text?.fontWeight ?? null,
+    fontStyle: text?.fontStyle ?? null,
     letterSpacing: letterSpacingOf(text, lang),
     uppercase: lang === 'en',
   };

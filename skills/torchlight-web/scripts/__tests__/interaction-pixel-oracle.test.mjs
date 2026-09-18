@@ -2,11 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  LANG_BTN_FILL,
-  LANG_OPTION_PAGES,
   backgroundMatchesFill,
   catalogEvidenceOk,
   catalogGoMatchesPlat,
+  dropmenuOverlapEvidenceOk,
   catalogOpenedGoMatches,
   languageOptionVerdict,
   laterAxesPixelEvidenceComplete,
@@ -14,28 +13,27 @@ import {
   pcModalCloseVerdict,
   pcModalSheetVerdict,
 } from '../lib/interaction-pixel-oracle.mjs';
-import { greenLaterAxesProbeFixture, laterAxesProbeEvidenceComplete, scoreOpenerCatalog } from '../lib/later-axes-probe.mjs';
+import { greenLaterAxesProbeFixture, languageButtonFillsFromTruth, laterAxesProbeEvidenceComplete, scoreOpenerCatalog } from '../lib/later-axes-probe.mjs';
 
+const LANG_BY_LABEL = { English: 'en', '繁體中文': 'zh-TW', '简体中文': 'zh-CN', '한국어': 'ko' };
 function option(text, state) {
-  const fill = LANG_BTN_FILL[state];
   return {
     text,
+    lang: LANG_BY_LABEL[text] || '',
     visibleCount: 1,
     state,
     fillSource: state,
-    ownerBg: `linear-gradient(0deg, ${fill.cssRgb} 0%, ${fill.cssRgbEnd} 100%)`,
+    ownerBg: state === 'highlight' ? 'img/选中背景' : 'img/未选中背景',
   };
 }
 
-test('backgroundMatchesFill reads rgb triples, not a single cssRgb substring', () => {
-  const highlight = `linear-gradient(180deg, ${LANG_BTN_FILL.highlight.cssRgb} 0%, ${LANG_BTN_FILL.highlight.cssRgbEnd} 100%)`;
-  assert.equal(backgroundMatchesFill(highlight, 'highlight'), true);
-  assert.equal(backgroundMatchesFill(highlight, 'normal'), false);
-  const mixed = `linear-gradient(180deg, ${LANG_BTN_FILL.highlight.cssRgb} 0%, ${LANG_BTN_FILL.normal.cssRgb} 100%)`;
-  assert.equal(backgroundMatchesFill(mixed, 'highlight'), false);
+test('backgroundMatchesFill reads inventory slice names, optional rgb fills', () => {
   assert.equal(backgroundMatchesFill('img/选中背景', 'highlight'), true);
   assert.equal(backgroundMatchesFill('img/选中背景', 'normal'), false);
   assert.equal(backgroundMatchesFill('img/未选中背景', 'normal'), true);
+  const fills = { highlight: { cssRgb: 'rgb(241, 200, 116)' }, normal: { cssRgb: 'rgb(189, 142, 92)' } };
+  assert.equal(backgroundMatchesFill('linear-gradient(180deg, rgb(241, 200, 116) 0%, rgb(166, 99, 57) 100%)', 'highlight', fills), true);
+  assert.equal(backgroundMatchesFill('linear-gradient(180deg, rgb(241, 200, 116) 0%, rgb(189, 142, 92) 100%)', 'highlight', fills), false);
 });
 
 test('language verdict requires authored fill pixels, not only state attrs', () => {
@@ -48,7 +46,7 @@ test('language verdict requires authored fill pixels, not only state attrs', () 
   assert.equal(languageOptionVerdict(rows, 'en').ok, true);
   const fakeAttr = rows.map((row) => (
     row.text === 'English'
-      ? { ...row, ownerBg: `linear-gradient(0deg, ${LANG_BTN_FILL.normal.cssRgb} 0%, ${LANG_BTN_FILL.normal.cssRgbEnd} 100%)` }
+      ? { ...row, ownerBg: 'img/未选中背景' }
       : row
   ));
   const failed = languageOptionVerdict(fakeAttr, 'en');
@@ -64,14 +62,79 @@ test('language verdict requires authored fill pixels, not only state attrs', () 
   assert.equal(languageOptionVerdict(tw, 'zh-TW').ok, true);
 });
 
-test('pc modal verdict centers the 3840x2160 sheet and keeps panel y=199', () => {
+test('language verdict accepts authored gradient fills when the page has no 选中背景 slice', () => {
+  const fills = {
+    highlight: { cssRgb: 'rgb(169, 177, 220)' },
+    normal: { cssRgb: 'rgb(127, 133, 162)' },
+  };
+  const rows = [
+    { text: 'English', lang: 'en', visibleCount: 1, state: 'highlight', fillSource: 'highlight', ownerBg: 'linear-gradient(0.00deg, rgb(169, 177, 220) 0%, rgb(81, 93, 127) 100%)', fills },
+    { text: '繁體中文', lang: 'zh-TW', visibleCount: 1, state: 'normal', fillSource: 'normal', ownerBg: 'linear-gradient(0.00deg, rgb(127, 133, 162) 0%, rgb(59, 68, 94) 100%)', fills },
+  ];
+  assert.equal(languageOptionVerdict(rows, 'en').ok, true);
+  const swapped = rows.map((row) => (
+    row.lang === 'en'
+      ? { ...row, ownerBg: 'linear-gradient(0.00deg, rgb(127, 133, 162) 0%, rgb(59, 68, 94) 100%)' }
+      : row
+  ));
+  const failed = languageOptionVerdict(swapped, 'en');
+  assert.equal(failed.ok, false);
+  assert.ok(failed.problems.some((item) => item.startsWith('fill-pixel:English')));
+});
+
+test('languageButtonFillsFromTruth reads COMPONENT root or same-box child paint', () => {
+  const truth = {
+    platforms: {
+      pc: {
+        componentVariantGraph: {
+          componentSets: [{
+            name: 'btn/切换语言',
+            variants: [
+              {
+                name: 'Property 1=normal',
+                nodes: [{
+                  id: 'n',
+                  type: 'COMPONENT',
+                  style: {
+                    fills: [{
+                      type: 'GRADIENT_LINEAR',
+                      gradientStops: [{ color: { r: 0.5, g: 0.52, b: 0.63, a: 1 }, position: 0 }],
+                    }],
+                  },
+                }],
+              },
+              {
+                name: 'Property 1=highlight',
+                nodes: [{
+                  id: 'h',
+                  type: 'COMPONENT',
+                  style: {
+                    fills: [{
+                      type: 'GRADIENT_LINEAR',
+                      gradientStops: [{ color: { r: 0.66, g: 0.69, b: 0.86, a: 1 }, position: 0 }],
+                    }],
+                  },
+                }],
+              },
+            ],
+          }],
+        },
+      },
+    },
+  };
+  const fills = languageButtonFillsFromTruth(truth);
+  assert.equal(fills.normal.cssRgb, 'rgb(128, 133, 161)');
+  assert.equal(fills.highlight.cssRgb, 'rgb(168, 176, 219)');
+});
+
+test('pc modal verdict centers the sheet', () => {
   const ok = pcModalSheetVerdict({
     sheetCx: 100,
     sheetCy: 100,
     viewCx: 100,
     viewCy: 100,
-    panelTopRatio: 199 / 2160,
-    panelBox: '0,199,3840,1340',
+    panelTopRatio: 0.1,
+    panelBox: '0,200,3840,1340',
   });
   assert.equal(ok.ok, true);
   const innerCentered = pcModalSheetVerdict({
@@ -90,7 +153,7 @@ test('later-axes green fixture now carries pixel evidence', () => {
   const fixture = greenLaterAxesProbeFixture();
   assert.equal(laterAxesPixelEvidenceComplete(fixture), true);
   assert.equal(laterAxesProbeEvidenceComplete(fixture), true);
-  assert.equal(fixture.pixel.languages.length, LANG_OPTION_PAGES.length);
+  assert.ok(fixture.pixel.languages.length >= 1);
   const noPixel = { ...fixture, pixel: undefined };
   assert.equal(laterAxesProbeEvidenceComplete(noPixel), false);
   const omittedSkip = {
@@ -353,6 +416,20 @@ test('open dropmenu without option fill and missing calendar copy fail closed', 
     inert: { openedModal: false, clicked: 1, visible: 1 },
   }, 'mobile');
   assert.equal(noRegionOptions.ok, true);
+  const unboundCarnival = scoreOpenerCatalog({
+    plat: 'pc',
+    openers: [{
+      go: 'modal/pc_cn订阅赛季日程',
+      lang: 'en',
+      opened: true,
+      closed: true,
+      openedGo: 'pc_cn订阅赛季日程',
+      calendarLang: { wanted: 'en', got: 'en', matched: true, copyMissing: 0 },
+      calendarCopy: [],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'pc');
+  assert.equal(unboundCarnival.ok, true);
   const calendarNoShell = scoreOpenerCatalog({
     plat: 'pc',
     openers: [{
@@ -367,6 +444,106 @@ test('open dropmenu without option fill and missing calendar copy fail closed', 
   }, 'pc');
   assert.equal(calendarNoShell.ok, false);
   assert.ok(calendarNoShell.problems.some((item) => item.includes('calendar-lang')));
+});
+
+test('sourceOverlap skip needs evidence; catalog ok follows dropProblems', () => {
+  const region = {
+    go: 'modal/mobile订阅赛季日程',
+    opened: true,
+    closed: true,
+    openedGo: 'mobile订阅赛季日程',
+  };
+  const skipped = scoreOpenerCatalog({
+    plat: 'mobile',
+    openers: [{
+      ...region,
+      dropmenus: [{
+        name: '切换地区',
+        invalid: false,
+        toggled: true,
+        coversConsent: false,
+        hostGrew: true,
+        sourceOverlap: true,
+        sourceOverlapEvidence: { dropmenuNode: '949:6505', consentNode: '949:6494' },
+        optionFill: null,
+      }],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'mobile');
+  assert.equal(skipped.ok, true, JSON.stringify(skipped.problems));
+  assert.equal(skipped.openers[0].ok, true);
+  assert.equal(skipped.problems.length, 0);
+
+  const unproven = scoreOpenerCatalog({
+    plat: 'mobile',
+    openers: [{
+      ...region,
+      dropmenus: [{
+        name: '切换地区',
+        invalid: false,
+        toggled: true,
+        coversConsent: false,
+        hostGrew: true,
+        sourceOverlap: true,
+        optionFill: null,
+      }],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'mobile');
+  assert.equal(unproven.ok, false);
+  assert.equal(unproven.openers[0].ok, false);
+  assert.ok(unproven.problems.some((item) => item.includes('dropmenu-source-overlap-unproven')));
+
+  const rendererCover = scoreOpenerCatalog({
+    plat: 'mobile',
+    openers: [{
+      ...region,
+      dropmenus: [{
+        name: '切换地区',
+        invalid: false,
+        toggled: true,
+        coversConsent: true,
+        sourceOverlap: false,
+        optionFill: null,
+      }],
+    }],
+    inert: { openedModal: false, clicked: 1, visible: 1 },
+  }, 'mobile');
+  assert.equal(rendererCover.ok, false);
+  assert.equal(rendererCover.openers[0].ok, false);
+  assert.ok(rendererCover.problems.some((item) => item.includes('dropmenu-covers-consent')));
+
+  const catalogBase = {
+    ok: true, measured: true, skipped: false, plat: 'mobile',
+    inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
+  };
+  const openerBase = {
+    go: 'modal/mobile订阅赛季日程',
+    openedGo: 'mobile订阅赛季日程',
+    ok: true, measured: true, skipped: false, opened: true, closed: true,
+  };
+  assert.equal(dropmenuOverlapEvidenceOk({ sourceOverlapEvidence: { dropmenuNode: '949:6505', consentNode: '949:6494' } }), true);
+  assert.equal(dropmenuOverlapEvidenceOk({ sourceOverlapEvidence: { dropmenuNode: '949:6505' } }), false);
+  assert.equal(catalogEvidenceOk({
+    ...catalogBase,
+    openers: [{
+      ...openerBase,
+      dropmenus: [{
+        invalid: false, toggled: true, coversConsent: false, sourceOverlap: true,
+        sourceOverlapEvidence: { dropmenuNode: '949:6505', consentNode: '949:6494' },
+        optionFill: null,
+      }],
+    }],
+  }, { plat: 'mobile' }), true);
+  assert.equal(catalogEvidenceOk({
+    ...catalogBase,
+    openers: [{
+      ...openerBase,
+      dropmenus: [{
+        invalid: false, toggled: true, coversConsent: false, sourceOverlap: true, optionFill: null,
+      }],
+    }],
+  }, { plat: 'mobile' }), false, 'sourceOverlap 无证据不得抬绿');
 });
 
 test('later-axes opens an already-on region dropmenu before sampling option fill', () => {
@@ -393,17 +570,17 @@ test('language remount contract checks every requested language against live men
   const render = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
   assert.match(src, /setPref\('lang', row\.lang\)/);
   assert.match(src, /await waitMs\(page, 200\)/);
-  assert.match(src, /collectLanguageOptions\(page\)/);
+  assert.match(src, /collectLanguageOptions\(page, authoredFills\)/);
+  assert.match(src, /languageButtonFillsFromTruth\(truth\)/);
   assert.match(src, /stalePrefs/);
   assert.match(render, /frame\.__fxRenderPrefs/);
   assert.match(src, /menu/);
-  assert.deepEqual(LANG_OPTION_PAGES.map((row) => row.lang), ['en', 'zh-TW', 'zh-CN', 'ko']);
 });
 
-test('modal verdict locks PC 3840x2160 center and panel y=199, mobile 390 bounds', () => {
-  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 199 / 2160, panelBox: '0,199,3840,1340' }).ok, true);
-  assert.equal(pcModalSheetVerdict({ sheetCx: 1910, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 199 / 2160, panelBox: '0,199,3840,1340' }).ok, false);
-  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 230 / 2160, panelBox: '0,230,3840,1340' }).ok, false);
+test('modal verdict locks PC center and mobile 390 bounds', () => {
+  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 0.1, panelBox: '0,200,3840,1340' }).ok, true);
+  assert.equal(pcModalSheetVerdict({ sheetCx: 1910, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 0.1, panelBox: '0,200,3840,1340' }).ok, false);
+  assert.equal(pcModalSheetVerdict({ sheetCx: 1920, sheetCy: 1080, viewCx: 1920, viewCy: 1080, panelTopRatio: 0.1, panelBox: '0,200,3840,1340', expected: { panelTopRatio: 0.25 } }).ok, false);
   const base = { hostW: 390, hostH: 844, hostLeft: 0, hostTop: 0, modalH: 844, modalTop: 0, hasClose: true, closedAfterClose: true, hasNamedScroll: false, scrollbarHidden: true };
   for (const bad of [{ modalW: 392, modalLeft: 0 }, { modalW: 390, modalLeft: -2 }, { modalW: 390, modalLeft: 3 }]) assert.equal(mobileModalSheetVerdict({ ...base, ...bad }).ok, false);
 });
