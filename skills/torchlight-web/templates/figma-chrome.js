@@ -2826,6 +2826,25 @@ function createQaComments(host) {
       q.onerror = function () { reject(q.error); };
     });
   }
+  function completePendingSend(sentRow, result, failure) {
+    var sent = sentRow._sync;
+    return updateStored(sentRow.id, function (row) {
+      var sync = row._sync;
+      if (!sync || !sync.lease || sync.lease.token !== sent.lease.token) return null;
+      sync.lease = null;
+      if (sync.revision !== sent.revision) return row; // A newer resolve/reopen remains queued.
+      if (!failure) {
+        var confirmed = Object.assign({}, result.comment); delete confirmed._sync;
+        remoteDurable = true; return confirmed;
+      }
+      sync.attempts++;
+      sync.blocked = failure.status >= 400 && failure.status < 500 && failure.status !== 408 && failure.status !== 429;
+      sync.error = failure.status === 401 || failure.status === 403
+        ? '登录或权限已失效，请重新登录后重试' : failure.message;
+      sync.nextAt = Date.now() + Math.min(30000, 1000 * Math.pow(2, Math.min(sync.attempts - 1, 5)));
+      return row;
+    });
+  }
   async function flushPending() {
     if (!api || !db || disposed || sending || navigator.onLine === false) return;
     sending = true;
@@ -2838,7 +2857,7 @@ function createQaComments(host) {
           s.lease = { token: revision(), until: now + 30000 }; return r;
         });
         if (!row) continue;
-        var sent = row._sync, payload = Object.assign({}, row), result = null, failure = null;
+        var payload = Object.assign({}, row), result = null, failure = null;
         delete payload._sync;
         try {
           result = await remoteRequest('POST', payload);
@@ -2846,22 +2865,7 @@ function createQaComments(host) {
             throw new Error('共享服务未确认评论持久化');
           }
         } catch (e) { failure = e; }
-        await updateStored(row.id, function (r) {
-          var s = r._sync;
-          if (!s || !s.lease || s.lease.token !== sent.lease.token) return null;
-          s.lease = null;
-          if (s.revision !== sent.revision) return r; // A newer resolve/reopen remains queued.
-          if (!failure) {
-            var confirmed = Object.assign({}, result.comment); delete confirmed._sync;
-            remoteDurable = true; return confirmed;
-          }
-          s.attempts++;
-          s.blocked = failure.status >= 400 && failure.status < 500 && failure.status !== 408 && failure.status !== 429;
-          s.error = failure.status === 401 || failure.status === 403
-            ? '登录或权限已失效，请重新登录后重试' : failure.message;
-          s.nextAt = Date.now() + Math.min(30000, 1000 * Math.pow(2, Math.min(s.attempts - 1, 5)));
-          return r;
-        });
+        await completePendingSend(row, result, failure);
         if (channel) { try { channel.postMessage({ pageKey: dbKey }); } catch (_) {} }
       }
     } catch (e) { fail(e, '待同步评论读取或保存失败'); }
@@ -2890,7 +2894,8 @@ function createQaComments(host) {
   }
   function syncLabel(row) {
     if (row._sync) return (row._sync.blocked ? '同步暂停' : '待同步 · 自动重试') + (row._sync.error ? '：' + row._sync.error : '');
-    return api ? (row.author ? '已同步' : '本地记录（未确认同步）') : '仅此浏览器';
+    if (!api) return '仅此浏览器';
+    return row.author ? '已同步' : '本地记录（未确认同步）';
   }
   function startRemote() {
     if (!api) return;
