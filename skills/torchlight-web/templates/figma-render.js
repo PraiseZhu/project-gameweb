@@ -21,6 +21,116 @@
  */
 (function () {
   'use strict';
+  /* CONTENT_PROTECTION_BEGIN */
+  (function installContentProtection(initialDoc) {
+    if (!initialDoc?.documentElement || !initialDoc.head) return;
+    const installed = new WeakSet();
+    const mediaSelector = 'img,svg,video,canvas';
+    const css = '*{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}'
+      + 'img,svg,video,canvas{-webkit-user-drag:none!important}'
+      + 'input:not([readonly]):not(:disabled),textarea:not([readonly]):not(:disabled),[data-content-protection-editable="true"]:read-write,[data-content-protection-editable="true"] :read-write{user-select:text!important;-webkit-user-select:text!important;-webkit-touch-callout:default!important}'
+      + '[contenteditable="false"],[contenteditable="false"] *,img,svg,video,canvas{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}';
+    function install(doc) {
+      if (!doc?.documentElement || !doc.head || installed.has(doc)) return;
+      if (doc.documentElement.getAttribute('data-content-protection') === 'v1'
+        && doc.querySelector('style[data-content-protection-style]')) return;
+      installed.add(doc);
+      const win = doc.defaultView;
+      const nonce = doc.currentScript?.nonce || '';
+      const roots = new WeakSet();
+      const frames = new WeakSet();
+      let styleAvailable = true;
+      const stop = (event) => {
+        const target = event.composedPath?.()[0] || event.target;
+        const element = target?.nodeType === 3 ? target.parentElement : target;
+        const media = element?.closest?.(mediaSelector);
+        const control = element?.closest?.('input,textarea');
+        const editable = control
+          ? !control.readOnly && !control.matches(':disabled') && /^(textarea|text|search|email|url|tel|password|number)$/.test(control.type)
+          : element?.isContentEditable && element.closest('[data-content-protection-editable="true"]');
+        if (editable && !media) {
+          if (control) return;
+          const host = element.closest('[data-content-protection-editable="true"]');
+          const scope = element.getRootNode();
+          const selection = scope.getSelection?.() || doc.getSelection?.();
+          let safe = true;
+          if (['copy', 'cut', 'dragstart'].includes(event.type) && selection) {
+            for (let i = 0; i < selection.rangeCount; i++) {
+              const range = selection.getRangeAt(i);
+              if (!host.contains(range.startContainer) || !host.contains(range.endContainer)
+                || range.cloneContents().querySelector?.('img,svg,video,canvas,[contenteditable="false"]')) safe = false;
+            }
+          }
+          if (safe) return;
+        }
+        event.preventDefault();
+      };
+      function visit(node) {
+        if (!node?.querySelectorAll) return;
+        const items = node.nodeType === 1 ? [node] : [];
+        for (const el of [...items, ...node.querySelectorAll('*')]) {
+          if (el.localName === 'img' && el.getAttribute('draggable') !== 'false') el.setAttribute('draggable', 'false');
+          if (el.shadowRoot) protectRoot(el.shadowRoot);
+          if (el.localName === 'iframe' && !frames.has(el)) {
+            frames.add(el);
+            const protectFrame = () => {
+              try {
+                const child = el.contentDocument;
+                if (!child?.documentElement) throw new Error('opaque origin');
+                install(child);
+                el.setAttribute('data-content-protection-frame', child.documentElement.getAttribute('data-content-protection') === 'v1' ? 'same-origin' : 'unverified');
+              } catch {
+                // Cross-origin/sandboxed documents require their own policy.
+                el.setAttribute('data-content-protection-frame', 'unverified');
+              }
+            };
+            el.addEventListener('load', protectFrame);
+            protectFrame();
+          }
+        }
+      }
+      function protectRoot(root) {
+        if (roots.has(root)) return;
+        roots.add(root);
+        const style = doc.createElement('style');
+        style.setAttribute('data-content-protection-style', 'figma-content-protection/v1');
+        if (nonce) style.nonce = nonce;
+        style.textContent = css;
+        (root.nodeType === 9 ? doc.head : root).appendChild(style);
+        if (!style.sheet) {
+          styleAvailable = false;
+          doc.documentElement.setAttribute('data-content-protection', 'partial');
+        }
+        root.addEventListener('selectstart', stop, true);
+        root.addEventListener('copy', stop, true);
+        root.addEventListener('cut', stop, true);
+        root.addEventListener('dragstart', stop, true);
+        root.addEventListener('contextmenu', stop, true);
+        const observer = new win.MutationObserver(records => {
+          for (const record of records) {
+            if (record.type === 'attributes') {
+              if (record.target.localName === 'img' && record.target.getAttribute('draggable') !== 'false') record.target.setAttribute('draggable', 'false');
+            } else record.addedNodes.forEach(visit);
+          }
+        });
+        observer.observe(root.nodeType === 9 ? doc.documentElement : root, {
+          childList: true, subtree: true, attributes: true, attributeFilter: ['draggable'],
+        });
+        visit(root);
+      }
+      protectRoot(doc);
+      // Late open shadow roots on already connected hosts are not observable
+      // as childList changes. Discover them before the first user gesture.
+      const discover = event => { for (const el of event.composedPath?.() || []) if (el?.shadowRoot) protectRoot(el.shadowRoot); };
+      doc.addEventListener('pointerdown', discover, true);
+      doc.addEventListener('focusin', discover, true);
+      doc.documentElement.setAttribute('data-content-protection', styleAvailable ? 'v1' : 'partial');
+      doc.documentElement.setAttribute('data-content-protection-policy', 'editable-controls/v1');
+    }
+    install(initialDoc);
+  }(typeof document !== 'undefined' ? document : null));
+  /* CONTENT_PROTECTION_END */
+
   function designPolicy() {
     var policy = (typeof window !== 'undefined' && window.__designPolicy) || null;
     if (!policy || typeof policy !== 'object') {
@@ -2887,6 +2997,12 @@
        explicitly opts in (`ctx.enablePageInteraction === true`). */
     const enablePageInteraction = ctx.enablePageInteraction === true;
     frame.setAttribute('data-page-interaction', enablePageInteraction ? 'live' : 'inert');
+    /* Content protection applies to both the clean product view and the QA
+       shell. It is deliberately installed outside the interaction opt-in:
+       inspection/QA controls must never re-enable text selection or native
+       image dragging. This only blocks browser affordances; it cannot prevent
+       screenshots, DevTools, network access, or other ways of obtaining pixels. */
+
     /* Programmatic hover/press is Interaction Skill owned. It is not a Figma
        variant and must not replace source-backed highlight COMPONENT_SET trees. */
     (function installButtonPressFeel() {
@@ -2898,7 +3014,8 @@
       const css = payload && payload.buttonPress && payload.buttonPress.css
         || [
           ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
-          '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
+          '.frame>.fx-stage,.frame>.fx-stage img,.frame>.fx-stage a,[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
+          '.frame>.fx-stage input,.frame>.fx-stage textarea,.frame>.fx-stage [contenteditable]:not([contenteditable="false"]),.frame>.fx-stage [data-copy-code]{-webkit-user-select:text;user-select:text}',
           'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
           '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
           'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
@@ -10204,6 +10321,16 @@
         };
         for (const host of frame.querySelectorAll('[data-hscroll],[data-switch-owner],[data-switch-swipe-host]')) {
           suppressNativeImageDrag(host);
+        }
+        if (!frame.__fxNativeDragGuard) {
+          frame.__fxNativeDragGuard = true;
+          frame.addEventListener('dragstart', (ev) => {
+            const t = ev.target && ev.target.nodeType === 3 ? ev.target.parentElement : ev.target;
+            if (!t || !t.closest) return;
+            if (t.closest('input, textarea, [contenteditable]:not([contenteditable="false"])')) return;
+            if (t.closest('[data-hscroll][data-hscroll-drag="true"], [data-switch-swipe-host], [data-switch-owner]')) return;
+            ev.preventDefault();
+          }, true);
         }
         for (const control of frame.querySelectorAll('[data-calendar-now="true"]')) {
           setCalendarNowState(control, 'today');

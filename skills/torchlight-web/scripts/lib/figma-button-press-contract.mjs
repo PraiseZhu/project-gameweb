@@ -58,7 +58,8 @@ export function buttonPressCss({
   const sel = BUTTON_PRESS_SELECTOR;
   return [
     `:root{--fx-hover-brightness:${hover};--fx-press-brightness:${press}}`,
-    '[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
+    '.frame>.fx-stage,.frame>.fx-stage img,.frame>.fx-stage a,[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
+    '.frame>.fx-stage input,.frame>.fx-stage textarea,.frame>.fx-stage [contenteditable]:not([contenteditable="false"]),.frame>.fx-stage [data-copy-code]{-webkit-user-select:text;user-select:text}',
     `${sel},[data-hscroll-action],[data-calendar-now-state="return-today"]{cursor:pointer}`,
     `@media (hover: hover){${withPseudo(sel, ':hover')}{filter:brightness(var(--fx-hover-brightness))}}`,
     `${withPseudo(sel, ':active')}{filter:brightness(var(--fx-press-brightness))}`,

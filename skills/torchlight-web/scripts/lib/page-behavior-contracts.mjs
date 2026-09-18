@@ -191,3 +191,38 @@ export function packFreshness({ packedHash, deployedHash, staleZip = false } = {
   if (packedHash !== deployedHash) return { ok: false, reason: 'hash-mismatch' };
   return { ok: true, reason: 'packed-matches-deployed' };
 }
+export function productSelectionPolicy({ inProductStage = false, isEditable = false, allowCopy = false } = {}) {
+  if (!inProductStage) return { userSelect: 'auto', reason: 'outside-product-stage' };
+  if (isEditable || allowCopy) return { userSelect: 'text', reason: 'editable-or-copy-exception' };
+  return { userSelect: 'none', reason: 'product-stage-default' };
+}
+
+export function nativeDragPolicy({ inProductStage = false, isEditable = false, isSwipeHost = false } = {}) {
+  if (!inProductStage) return { preventNativeDrag: false, allowSwipe: false, reason: 'outside-product-stage' };
+  if (isEditable) return { preventNativeDrag: false, allowSwipe: false, reason: 'editable-exception' };
+  if (isSwipeHost) return { preventNativeDrag: true, allowSwipe: true, reason: 'swipe-keeps-pointer-drag' };
+  return { preventNativeDrag: true, allowSwipe: false, reason: 'block-native-image-drag' };
+}
+
+export function consentGroupPolicy({ role = 'item', next = 'off', itemStates = [] } = {}) {
+  const items = Array.isArray(itemStates) ? itemStates.map((state) => (state === 'on' ? 'on' : 'off')) : [];
+  if (role === 'all') {
+    return {
+      all: next === 'on' ? 'on' : 'off',
+      items: items.map(() => (next === 'on' ? 'on' : 'off')),
+      reason: 'all-syncs-items',
+    };
+  }
+  const allOn = items.length > 0 && items.every((state) => state === 'on');
+  return {
+    all: allOn ? 'on' : 'off',
+    items,
+    reason: allOn ? 'items-complete' : 'any-item-off-clears-all',
+  };
+}
+
+export function checkStateAssetPolicy({ uncheckedSrc = '', checkedSrc = '', next = 'off' } = {}) {
+  if (!uncheckedSrc || !checkedSrc) return { src: null, reason: 'missing-state-assets' };
+  if (next === 'on') return { src: String(checkedSrc), reason: 'use-checked-asset' };
+  return { src: String(uncheckedSrc), reason: 'use-unchecked-asset' };
+}

@@ -1,0 +1,50 @@
+name: content-protection
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/_tmp/content-protection/browsers
+      TMPDIR: ${{ github.workspace }}/t
+      CONTENT_PROTECTION_TMPDIR: ${{ github.workspace }}/t
+      CONTENT_PROTECTION_ENGINES: chromium,firefox,webkit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare local evidence directory
+        run: mkdir -p t _tmp/content-protection/tmp
+      - name: Install existing locked dependencies
+        run: |
+          npm ci --prefix skills/torchlight-web
+          npm ci --prefix skills/yise-web-ui
+      - name: Install matching browser engines
+        run: node skills/torchlight-web/node_modules/playwright-core/cli.js install --with-deps chromium firefox webkit
+      - name: Test gate failure handling
+        run: node --test .github/scripts/content-protection-gate.test.mjs
+      - name: Test generated artifact contract
+        run: node --test .github/scripts/content-protection-artifact-gate.test.mjs
+      - name: Verify product and QA content protection
+        run: |
+          set -o pipefail
+          node .github/scripts/content-protection-gate.mjs 2>&1 | tee _tmp/content-protection/content-protection-pass.log
+      - name: Keep browser gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-protection-evidence
+          path: |
+            _tmp/content-protection/content-protection-pass.log
+            _tmp/content-protection/failures/
+            _tmp/content-protection/boundaries/
+          if-no-files-found: warn
+          retention-days: 7
