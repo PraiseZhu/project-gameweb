@@ -337,7 +337,17 @@
     if (pfx === 'img' && /logo/i.test(name) && !/标题/.test(name)) return true;
     if ((/LOGO|logo/.test(name)) && !/标题/.test(name)) return true;
     if (pfx === 'btn' && /年龄/.test(name)) return true;
-    return /年龄/.test(name);
+    if (/年龄/.test(name)) return true;
+    /* Mobile leftover `img/标题slg` at page y=0 is top-bar art, not the
+       in-section title SLG. Keep source top-left so 100vh crop does not
+       remap or hide it. */
+    const box = (node && (node.pageBox || node.box)) || null;
+    const pageTop = Number(box && box.y);
+    if (/^img\/标题slg(?:@|$)/i.test(name)
+      && Number.isFinite(pageTop) && pageTop <= 0.5) {
+      return true;
+    }
+    return false;
   },
   _isCenterTopbarChrome(box, designW) {
     const x = Number(box && box.x);
@@ -1420,6 +1430,26 @@
         || Number(ink.x) < Number(ownerBox.x) - 0.5
         || Number(ink.y) < Number(ownerBox.y) - 0.5);
   },
+  /* Render/exportBox already names the spill plate. Recenter by natural
+     size lifts 立绘 (3593 around 1630) by ~(natH-ownerH)/2 vs render y.
+     24MP export may set p.scale < 1; a same-aspect downscale is still
+     that plate — do not require nat ≈ placed at 1:1. */
+  _sourceBackedSpill(placed, ownerBox, natW = 0, natH = 0) {
+    const pw = Number(placed && placed.w);
+    const ph = Number(placed && placed.h);
+    const ow = Number(ownerBox && ownerBox.w);
+    const oh = Number(ownerBox && ownerBox.h);
+    if (!Number.isFinite(Number(placed && placed.x))
+      || !Number.isFinite(Number(placed && placed.y))
+      || !Number.isFinite(pw) || !Number.isFinite(ph)
+      || !Number.isFinite(ow) || !Number.isFinite(oh)) return false;
+    if (!(pw > ow + 1.5 || ph > oh + 1.5)) return false;
+    if (!(natW > 0 && natH > 0)) return true;
+    if (Math.abs(natW - pw) <= 2 && Math.abs(natH - ph) <= 2) return true;
+    const sx = natW / pw;
+    const sy = natH / ph;
+    return sx > 0.05 && sy > 0.05 && sx <= 1.02 && sy <= 1.02 && Math.abs(sx - sy) <= 0.02;
+  },
   _ownerSliceBox(assetRec, ownerBox, renderBox, extraBox = null, sliceExportBox = null) {
     /* Whole-frame img/bg/kv clip to pageBox. Canvas renderBox (x≈-14000) and
        shorter ink must not become the PNG size. Spilling render/export wins
@@ -1500,7 +1530,8 @@
         exportH = Number(box.h);
         policy = 'owner-png-matches-clip';
       }
-      if (natW > 0 && natH > 0 && Number(box.w) > 0 && Number(box.h) > 0
+      const sourceBackedSpill = this._sourceBackedSpill(placed, box, natW, natH);
+      if (!sourceBackedSpill && natW > 0 && natH > 0 && Number(box.w) > 0 && Number(box.h) > 0
         && (natW > Number(box.w) + 1.5 || natH > Number(box.h) + 1.5)) {
         exportX = ownerX - (natW - Number(box.w)) / 2;
         exportY = ownerY - (natH - Number(box.h)) / 2;
@@ -1512,14 +1543,18 @@
       img.style.top = (exportY - ownerY) + 'px';
       img.style.width = exportW + 'px';
       img.style.height = exportH + 'px';
-      /* Downscaled Figma PNG must fill the design box. A larger spill PNG
+      /* Downscaled Figma PNG must fill the design box. A 1:1 spill PNG
          (188 around 124) keeps intrinsic pixels with object-fit:none.
-         Play-slice gate also rejects fill when the PNG already matches the
-         owner box — none and fill look the same, fill still fails the gate. */
+         24MP p.scale < 1 still fills the placed plate. Play-slice gate
+         also rejects fill when the PNG already matches the owner box. */
+      const matchesPlaced = natW > 0 && natH > 0
+        && Math.abs(natW - exportW) <= 2 && Math.abs(natH - exportH) <= 2;
       const spillsOwner = natW > Number(box.w) + 1.5 || natH > Number(box.h) + 1.5;
       const matchesOwner = natW > 0 && Number(box.w) > 0 && Number(box.h) > 0
         && Math.abs(natW - Number(box.w)) <= 1.5 && Math.abs(natH - Number(box.h)) <= 1.5;
-      img.style.objectFit = (spillsOwner || matchesOwner) ? 'none' : 'fill';
+      img.style.objectFit = sourceBackedSpill
+        ? (matchesPlaced ? 'none' : 'fill')
+        : ((spillsOwner || matchesOwner) ? 'none' : 'fill');
       el.setAttribute('data-asset-bounds-resolved', policy);
     };
     const applyPlacement = () => {
@@ -1887,27 +1922,38 @@
     return Number.isFinite(value) && value > 0 ? value : null;
   },
   /* Mirror scripts/lib/resize/index.mjs#pageScrollLock. */
-  _pageScrollLock({ boardBottom = 0, contentBottom = 0 } = {}) {
+  _pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0 } = {}) {
     const board = Number(boardBottom);
     const content = Number(contentBottom);
+    const frame = Number(pageFrameBottom);
     const boardH = Number.isFinite(board) && board > 0 ? board : 0;
     const contentH = Number.isFinite(content) && content > 0 ? content : 0;
+    const frameH = Number.isFinite(frame) && frame > 0 ? frame : 0;
     if (!(boardH > 0)) {
+      const height = frameH > 0 && contentH > 0 ? Math.min(frameH, contentH)
+        : (frameH > 0 ? frameH : contentH);
       return {
-        height: contentH,
+        height,
         overflowPx: 0,
         reason: 'board-missing',
         boardBottom: boardH,
         contentBottom: contentH,
+        pageFrameBottom: frameH,
       };
     }
-    const overflowPx = contentH > boardH + 0.5 ? contentH - boardH : 0;
+    /* bg/pc may be a 20000 artboard past the page frame (18360) and last
+       section. Lock at the visual page end so the empty board tail is not
+       extra scroll. Content past that lock still fail-closes. */
+    const visualEnd = frameH > 0 ? Math.min(boardH, frameH) : boardH;
+    const overflowPx = contentH > visualEnd + 0.5 ? contentH - visualEnd : 0;
     return {
-      height: boardH,
+      height: visualEnd,
       overflowPx,
-      reason: overflowPx > 0 ? 'content-past-board' : 'board-bottom',
+      reason: overflowPx > 0 ? 'content-past-board'
+        : (frameH > 0 && boardH > frameH + 0.5 ? 'page-frame' : 'board-bottom'),
       boardBottom: boardH,
       contentBottom: contentH,
+      pageFrameBottom: frameH,
     };
   },
   _primaryCtaNowrapEligible({ language, status, hasAdoptedCopy } = {}) {
@@ -3205,9 +3251,15 @@
         chromePaintedBottom(),
       )
       : 0;
+    const pageFrameBottom = (() => {
+      const meta = pageScope && pageScope.meta;
+      const h = Number((meta && (meta.height ?? meta.h)) || 0);
+      return Number.isFinite(h) && h > 0 ? h : 0;
+    })();
     const pageContentLock = this._pageScrollLock({
       boardBottom: pageBgBoardBottom(),
       contentBottom: pageContentExtent,
+      pageFrameBottom,
     });
     const pageContentHeight = pageContentLock.height;
     const pagePaintOrder = Array.isArray(__activeTruth.pagePaintOrder) ? __activeTruth.pagePaintOrder : null;
@@ -3254,11 +3306,15 @@
       const viewportH = Number(ctx.viewport && ctx.viewport.h);
       if (!first || !Number.isFinite(Number(first.y)) || !Number.isFinite(Number(first.height)) || Number(first.height) <= 0
         || !Number.isFinite(viewportH) || viewportH <= 0) return null;
-      /* Design-viewport static lock resizes to the full Figma page box.
-         100vh then equals the whole page. Skip only that full-page case;
-         a viewport as tall as sec/1 (750×1334) still needs the slot. */
-      if (Number.isFinite(pageContentHeight) && pageContentHeight > 0
-        && viewportH + 1 >= pageContentHeight) return null;
+      /* Design-viewport / pixel-probe lock resizes to the full Figma page
+         box. 100vh then equals the whole page and would make sec/1
+         page-tall. Skip only that full-page case; a viewport as tall as
+         sec/1 (750×1334) still needs the slot. Prefer the page frame
+         height: pageContentHeight can be 0 when the board is missing. */
+      const pageDesignH = Number((pageScope && pageScope.meta && pageScope.meta.height)
+        || pageContentHeight);
+      if (Number.isFinite(pageDesignH) && pageDesignH > 0
+        && viewportH + 1 >= pageDesignH) return null;
       const startsAtPageOrigin = Math.abs(Number(first.y) - pageOriginY) <= 0.5;
       const listedRoot = pagePaintOrder.find((entry) => {
         const sectionIds = Array.isArray(entry && entry.sectionIds) ? entry.sectionIds : [];
@@ -3359,6 +3415,7 @@
     const pageScrollLock = this._pageScrollLock({
       boardBottom: pageBgBoardBottom(),
       contentBottom: pageScrollExtent,
+      pageFrameBottom,
     });
     const pageScrollHeight = pageScrollLock.height;
     frame.setAttribute('data-page-scroll-lock', pageScrollLock.reason);
@@ -5216,10 +5273,19 @@
       for (let ni = 0; ni < list.length; ni++) {
         const n = list[ni];
         if (skipNodeIds.has(String(__u(n && n.id)))) continue;
-        /* 遮罩节点（Figma 不画本体，isMask:true）：防御性跳过。它们本不进 nodes
-           （figma-assets 把 mask owner 整体烘焙成 PNG），但老 truth/手工 truth 可能带入，
-           显式跳过确保渐变实心块不会糊住兄弟。 */
-        if (n.notPainted === true || n.isMask === true) continue;
+        /* 遮罩节点（Figma 不画本体，isMask:true）：不要当图形填实心。
+           清单仍把 unknown IMAGE 遮罩当独立节点（CONSUMER：unknown 只画），
+           闸门按 inventory id 量 DOM。只跳过无图的几何遮罩；带 IMAGE 的
+           遮罩必须落可量宿主，再用 mask-image 当兄弟裁切，不要糊住后面。 */
+        if (n.notPainted === true) continue;
+        const maskImageFills = n.isMask === true
+          ? ((n.style && Array.isArray(n.style.fills) ? n.style.fills : []).filter((fill) => {
+            const f = __u(fill) || fill;
+            return f && f.visible !== false && String(f.type || '') === 'IMAGE';
+          }))
+          : [];
+        const paintMaskHost = n.isMask === true && maskImageFills.length > 0;
+        if (n.isMask === true && !paintMaskHost) continue;
         const nid = n.id;
         const prefLangCode = (() => {
           const raw = String((ctx.prefs && ctx.prefs.lang) || 'zh-CN').replace('_', '-').toLowerCase();
@@ -5601,6 +5667,10 @@
           : (pfx === 'bg' && !directParentId ? 'section-bg-root'
             : (pfx === 'bg' ? 'bg' : (directParentId ? 'section-local' : 'section-root'))));
         if (n.isMask !== undefined) el.setAttribute('data-owner-is-mask', String(__u(n.isMask)));
+        if (paintMaskHost) {
+          el.setAttribute('data-mask-host', 'image');
+          el.style.pointerEvents = 'none';
+        }
         if (n.maskType != null) el.setAttribute('data-owner-mask-type', String(__u(n.maskType)));
         if (n.maskChildren && (Array.isArray(n.maskChildren) ? n.maskChildren.length : true)) {
           const __mc = Array.isArray(n.maskChildren) ? n.maskChildren : [];
@@ -5955,7 +6025,7 @@
              page shift a second time as a local top. */
           const pageTop = Number(box.y ?? 0) - Number(paintOriginY);
           heroClusterLayer = heroClusterCandidate
-            && !(pinViewport && isSlgLayer && pageTop < heroUiHalf)
+            && !(isSlgLayer && pageTop < heroUiHalf)
             && !parentAlreadyClustered;
           const ancestorAlreadyShifted = !!(parent && parent.el && parent.el.closest
             && parent.el.closest('[data-topbar-viewport-shift]'));
@@ -6387,10 +6457,9 @@
             el.style.overflow = 'hidden';
           }
         }
-        /* Figma GROUP masks clip siblings to the mask child's box. The mask
-           node itself is skipped (`isMask`), so the owner must keep that clip
-           or IMAGE children paint at their unclipped source size and spill
-           past the neighboring frame. */
+        /* Figma GROUP masks clip siblings to the mask child's box. Geometry
+           masks stay skipped; IMAGE masks paint as hosts, so the owner still
+           clips siblings to that box. */
         if (n.maskChildren && (Array.isArray(n.maskChildren) ? n.maskChildren.length : true)
           && n.clipsContent !== true && !hscrollTrackClipRelease) {
           el.style.overflow = 'hidden';
@@ -7032,13 +7101,13 @@
 
           /* 文本旋转：Figma REST `rotation` 已是 CSS 同号（顺时针为正的
              屏幕坐标，稿 −0.785 = 逆时针 45°）。再取负会把「传奇战斗」拧到
-             对面。pageBox 是旋转后 AABB；CSS 必须转未旋转局部盒（Figma
-             `size` / localSize，不是 skipped AL maxWidth）。原点在 AABB
-             中心。形状路径仍走下面的 baked-slice 守卫，不在这里批量改号。 */
+             对面。pageBox 是旋转后 layout AABB；renderBox 是更小的 glyph
+             AABB。CSS 必须转未旋转局部盒（Figma `size` / localSize，不是
+             skipped AL maxWidth），槽用 layout AABB，否则 120×22 字被塞进
+             76.7 菱形会错位。原点在 AABB 中心。形状路径仍走下面的
+             baked-slice 守卫，不在这里批量改号。 */
           if (typeof n.rotation === 'number' && Math.abs(n.rotation) > 1e-4) {
-            const visualAabb = textRenderBoxReady && this._sameCoordinateSpace(_textRenderBox, box)
-              ? _textRenderBox
-              : box;
+            const visualAabb = box;
             const aabbW = Number(visualAabb.w);
             const aabbH = Number(visualAabb.h);
             const unrotated = this._unrotatedTextLayout(n, aabbW, aabbH);
@@ -7065,7 +7134,7 @@
             el.setAttribute('data-text-rotation-source', String(n.rotation));
             el.setAttribute('data-text-rotation-box', 'unrotated-local');
             el.setAttribute('data-text-rotation-align', 'visual-aabb-flex-center');
-            el.setAttribute('data-text-rotation-slot', textRenderBoxReady && this._sameCoordinateSpace(_textRenderBox, box) ? 'render-box' : 'layout-box');
+            el.setAttribute('data-text-rotation-slot', 'layout-box');
             if (unrotated && unrotated.from) el.setAttribute('data-text-rotation-size', unrotated.from);
             if (Number.isFinite(unrotatedW) && unrotatedW > 0) {
               el.style.maxWidth = unrotatedW + 'px';
@@ -7488,15 +7557,22 @@
             || (n.type === 'VECTOR' && Number(st.strokeWeight) > 0
               && (layoutH < 0.5 || Number((n.renderBox && n.renderBox.h) || 0) > layoutH + 0.5)))
             && Number(st.strokeWeight) > 0;
+          /* Brush / variable-width VECTOR (Vector 44/45) bakes into a PNG.
+             CSS stroke is a uniform slab and cannot replay the width profile.
+             A real slice wins; only BASIC hairlines without an asset stay CSS. */
+          const bakedBrushStroke = !!(assetUrl && n.type === 'VECTOR'
+            && Number(st.strokeWeight) > 0
+            && (layoutH < 0.5 || Number((n.renderBox && n.renderBox.h) || 0) > layoutH + 0.5)
+            && !/^line(?:\s|$)/i.test(String(n.name || '')));
           /* A near-zero-height authored separator cannot be exported honestly:
              Figma bakes a 0-height vector into a 1px PNG whose alpha is the
              coverage of the stroke, so mounting that PNG under-draws the rule.
              The source itself carries the truth (strokeColor + strokeWeight +
              strokeAlign), so draw the authored stroke and do not mount the
              degenerate export. Source geometry only — no invented opacity. */
-          const degenerateSourceLine = isSourceLine
+          const degenerateSourceLine = !bakedBrushStroke && isSourceLine
             && (layoutH < 0.5 || Number(assetRec?.exportBox?.h) < 0.5);
-          if (degenerateSourceLine || (isSourceLine && !assetUrl)) {
+          if (!bakedBrushStroke && (degenerateSourceLine || (isSourceLine && !assetUrl))) {
             const lineStroke = this._sourceLineStroke(st);
             if (lineStroke.undetermined.length) {
               el.setAttribute('data-source-line-undetermined', lineStroke.undetermined.join(','));
@@ -7739,7 +7815,7 @@
                 el.style.webkitClipPath = 'inset(' + inset + ')';
                 el.setAttribute('data-owner-clip', 'ancestor-visible-renderbox');
               } else if (descendantPlateOverflow) {
-                /* Same-width render-bounds plate (PC ?? 3593 vs 1630): the PNG
+                /* Same-width render-bounds plate (PC portrait 3593 vs 1630): the PNG
                    IS the unclipped ink. Clipping to pageBox crops the head/glow.
                    Keep overflow visible. Non-plate 2x img/ (rotated arrows) still
                    clip to the owner AABB. */

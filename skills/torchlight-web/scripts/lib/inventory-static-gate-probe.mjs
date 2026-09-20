@@ -690,13 +690,25 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
     : null;
   let seamPixels = null;
   if (measured?.seamSample && Number.isFinite(Number(measured.seamSample.y))) {
+    /* Join y is captured at scrollTop=0. Screenshot after the sec/2 scroll
+       would sample the later section's viewport floor, not the 100vh join. */
+    await page.evaluate(() => {
+      const frame = document.querySelector('.frame');
+      if (frame) frame.scrollTop = 0;
+    });
+    await page.evaluate(() => new Promise((resolveWait) => setTimeout(resolveWait, 120)));
     const shot = await page.screenshot({ type: 'png' });
     const png = PNG.sync.read(shot);
     const x = Math.max(0, Math.min(png.width - 1, Math.round(Number(measured.seamSample.x) || png.width / 2)));
     const y0 = Math.round(Number(measured.seamSample.y));
     const rows = [];
-    for (let dy = -6; dy <= 6; dy += 2) {
-      const y = Math.max(0, Math.min(png.height - 1, y0 + dy));
+    /* A 100vh join sits on the last screenshot row. +dy would clamp onto
+       that same KV pixel and fake a solid --stage band. Only walk pixels
+       that actually exist around the join. */
+    const dyMin = Math.max(-6, -y0);
+    const dyMax = Math.min(6, (png.height - 1) - y0);
+    for (let dy = dyMin; dy <= dyMax; dy += 2) {
+      const y = y0 + dy;
       const i = (png.width * y + x) * 4;
       const rgba = [png.data[i], png.data[i + 1], png.data[i + 2], png.data[i + 3]];
       const lum = 0.2126 * rgba[0] + 0.7152 * rgba[1] + 0.0722 * rgba[2];

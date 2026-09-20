@@ -191,7 +191,7 @@ test('stop-1 Figma export uses section.id and product=1', () => {
   assert.match(src, /figma-cache/);
   assert.match(src, /deviceScaleFactor:\s*dsf/);
   assert.match(src, /size mismatch/);
-  assert.match(src, /Math\.min\(vw, r\.x \+ r\.width\)/);
+  assert.match(src, /Math\.min\(vw, r\.x \+ liveW\)/);
   assert.match(src, /clipped area empty or outside viewport/);
   assert.match(src, /use_absolute_bounds/);
   assert.match(src, /fx-fixed-overlays/);

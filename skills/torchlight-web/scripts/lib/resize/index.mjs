@@ -441,30 +441,40 @@ export function pageOverflowPolicy({ productView = false } = {}) {
   };
 }
 
-/* Page height ends at the bg/pc or bg/mobile board. Content past that board
-   is overflow, not a reason to Math.max the scroll height. Missing board
-   keeps the content extent so legacy fixtures still paint. */
-export function pageScrollLock({ boardBottom = 0, contentBottom = 0 } = {}) {
+/* Page height ends at the visual page: min(bg/pc|bg/mobile board, page
+   frame). A 20000 artboard past the 18360 page frame is empty tail, not
+   extra scroll. Content past that lock is overflow, not a reason to
+   Math.max the scroll height. Missing board keeps the content extent
+   (capped by the page frame when present) so legacy fixtures still paint. */
+export function pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0 } = {}) {
   const board = Number(boardBottom);
   const content = Number(contentBottom);
+  const frame = Number(pageFrameBottom);
   const boardH = Number.isFinite(board) && board > 0 ? board : 0;
   const contentH = Number.isFinite(content) && content > 0 ? content : 0;
+  const frameH = Number.isFinite(frame) && frame > 0 ? frame : 0;
   if (!(boardH > 0)) {
+    const height = frameH > 0 && contentH > 0 ? Math.min(frameH, contentH)
+      : (frameH > 0 ? frameH : contentH);
     return {
-      height: contentH,
+      height,
       overflowPx: 0,
       reason: 'board-missing',
       boardBottom: boardH,
       contentBottom: contentH,
+      pageFrameBottom: frameH,
     };
   }
-  const overflowPx = contentH > boardH + 0.5 ? contentH - boardH : 0;
+  const visualEnd = frameH > 0 ? Math.min(boardH, frameH) : boardH;
+  const overflowPx = contentH > visualEnd + 0.5 ? contentH - visualEnd : 0;
   return {
-    height: boardH,
+    height: visualEnd,
     overflowPx,
-    reason: overflowPx > 0 ? 'content-past-board' : 'board-bottom',
+    reason: overflowPx > 0 ? 'content-past-board'
+      : (frameH > 0 && boardH > frameH + 0.5 ? 'page-frame' : 'board-bottom'),
     boardBottom: boardH,
     contentBottom: contentH,
+    pageFrameBottom: frameH,
   };
 }
 

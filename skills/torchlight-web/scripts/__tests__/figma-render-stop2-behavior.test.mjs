@@ -657,3 +657,21 @@ browserTest('page scroll keeps the bg/pc board when the last CTA is shorter', as
     await browser.close();
   }
 });
+
+browserTest('page scroll locks at the page frame when bg/pc artboard is taller', async () => {
+  const { browser } = await launchChromium(root, { headless: true });
+  const page = await browser.newPage({ viewport: { width: 800, height: 2000 } });
+  try {
+    const truth = boardTruth({ boardH: 20000, contentH: 17911 });
+    truth.platforms.pc.pageChrome.meta.height = 18360;
+    truth.platforms.pc.pageChrome.meta.h = 18360;
+    const measured = await measureBoardPage(page, truth);
+    assert.equal(measured.board, 20000);
+    assert.equal(measured.height, 18360);
+    assert.equal(measured.lock, 'page-frame');
+    assert.equal(measured.overflow, null);
+    assert.ok(measured.scrollHeight < 19000, JSON.stringify(measured));
+  } finally {
+    await browser.close();
+  }
+});

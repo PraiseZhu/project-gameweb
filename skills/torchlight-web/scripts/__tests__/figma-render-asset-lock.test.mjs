@@ -195,6 +195,13 @@ test('GROUP maskChildren clip IMAGE siblings to the mask box', () => {
   assert.match(renderer, /n\.maskChildren/);
 });
 
+test('IMAGE mask hosts stay measurable instead of being skipped', () => {
+  assert.match(renderer, /const paintMaskHost = n\.isMask === true && maskImageFills\.length > 0/);
+  assert.match(renderer, /if \(n\.isMask === true && !paintMaskHost\) continue/);
+  assert.match(renderer, /data-mask-host', 'image'/);
+  assert.doesNotMatch(renderer, /n\.notPainted === true \|\| n\.isMask === true\) continue/);
+});
+
 test('collapsed webp under 2KB falls back to pngFile', () => {
   assert.match(renderer, /_usableAssetFile\(rec\)/);
   assert.match(renderer, /bytes < 2048 && png && png !== file/);
@@ -473,7 +480,7 @@ test('mask fields are emitted as truth leaves and consumed, not forged', () => {
   assert.match(geo, /if \(node\.isMask !== undefined\) entry\.isMask = fig/);
   assert.match(geo, /if \(node\.maskType !== undefined\) entry\.maskType = fig/);
   assert.match(geo, /maskChildren/);
-  assert.match(renderer, /n\.notPainted === true \|\| n\.isMask === true\) continue/);
+  assert.match(renderer, /if \(n\.isMask === true && !paintMaskHost\) continue/);
   assert.match(renderer, /data-owner-mask-type/);
 });
 
@@ -513,14 +520,13 @@ test('hscroll gutter expands host box and survives the generic box.h height over
 });
 
 test('fx-img follows the owner box instead of intrinsic pixels', () => {
-  /* 有 exportBox/sliceExport：按导出框像素摆。缩小导出的 PNG 必须 fill 铺满
-     设计框，禁止 object-fit:none 把 intrinsic 像素钉死。简中无导出框：按
-     owner box 像素，禁止 100%+fill。简中有导出框时也保持 none，播放钮闸门
-     拒绝 fill。 */
+  /* 有 exportBox/sliceExport：按导出框像素摆。1:1 spill PNG 用 none；
+     24MP 等比缩小 fill 铺满 placed。简中无导出框：按 owner box 像素，
+     禁止 100%+fill。播放钮闸门在 PNG 已贴合 owner 时仍拒绝 fill。 */
   assert.match(renderer, /img\.style\.position = 'absolute'/);
   assert.match(renderer, /const placedBox = exportBox \|\| sliceBox/);
   assert.match(renderer, /owner-box-zh-cn/);
-  assert.match(renderer, /img\.style\.objectFit = \(spillsOwner \|\| matchesOwner\) \? 'none' : 'fill'/);
+  assert.match(renderer, /sourceBackedSpill\s*\n\s*\? \(matchesPlaced \? 'none' : 'fill'\)/);
   assert.match(renderer, /img\.style\.objectFit = 'none'/);
   assert.match(renderer, /Hit box stays the owner/);
   assert.match(renderer, /if \(!sliceSpillsOwner && \(!el\.style\.overflow \|\| el\.style\.overflow === 'visible'\)\) el\.style\.overflow = 'hidden'/);
@@ -568,8 +574,9 @@ test('zh-CN static images must not stretch with object-fit fill', () => {
 });
 
 test('zh-CN listed play-slice exportBox also keeps object-fit none', () => {
-  assert.match(renderer, /img\.style\.objectFit = \(spillsOwner \|\| matchesOwner\) \? 'none' : 'fill'/);
-  assert.match(renderer, /Play-slice gate also rejects fill when the PNG already matches/);
+  assert.match(renderer, /sourceBackedSpill\s*\n\s*\? \(matchesPlaced \? 'none' : 'fill'\)/);
+  assert.match(renderer, /Play-slice gate[\s\S]*rejects fill when the PNG already matches/);
+  assert.match(renderer, /\(\(spillsOwner \|\| matchesOwner\) \? 'none' : 'fill'\)/);
 });
 
 test('auto-layout axis alignment fields flow from fixture into truth and feed the renderer flex model', () => {

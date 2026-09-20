@@ -143,6 +143,8 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /CONTENT_RELEASED/);
   assert.match(render, /data-hero-slot-role=\"hero\"/);
   assert.match(render, /Official first screen is a 100vh crop window/);
+  assert.match(render, /viewportH \+ 1 >= pageDesignH/);
+  assert.match(render, /pageScope && pageScope.meta && pageScope.meta.height/);
   assert.match(render, /data-hero-crop-window/);
   assert.match(render, /heroVisualPlane/);
   assert.match(render, /firstScreenKvInSection/);

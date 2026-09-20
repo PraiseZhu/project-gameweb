@@ -751,6 +751,70 @@ test('collapsed webp under 2KB keeps serving pngFile', () => {
   assert.match(src, /hit\.bytes\) < 2048 && rec\.pngFile/);
 });
 
+test('ready-handoff skipped VECTOR brush stroke slices renderBox, not CSS hairline', () => {
+  const picks = pickSliceNodes({
+    schema: 'torchlight-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    platforms: {
+      mobile: {
+        sections: {
+          'sec:1': {
+            nodes: [
+              {
+                id: '1119:4122',
+                type: 'VECTOR',
+                name: 'Vector 44',
+                status: 'skipped',
+                why: 'art-fragment',
+                pageBox: { x: 56, y: 1270, w: 254, h: 0.00002 },
+                box: { x: 56, y: 1270, w: 254, h: 0.00002 },
+                renderBox: { x: 56, y: 1268.85, w: 254, h: 2.92 },
+                style: {
+                  strokeWeight: 3.5986649990081787,
+                  strokeAlign: 'CENTER',
+                  strokeColor: { type: 'GRADIENT_LINEAR' },
+                  fills: [],
+                },
+              },
+              {
+                id: '1119:4125',
+                type: 'VECTOR',
+                name: 'Vector 45',
+                status: 'skipped',
+                why: 'art-fragment',
+                pageBox: { x: 440, y: 1270, w: 254, h: 0.00002 },
+                box: { x: 440, y: 1270, w: 254, h: 0.00002 },
+                renderBox: { x: 440, y: 1268.85, w: 254, h: 2.92 },
+                style: {
+                  strokeWeight: 3.5986649990081787,
+                  strokeAlign: 'CENTER',
+                  strokeColor: { type: 'GRADIENT_LINEAR' },
+                  fills: [],
+                },
+              },
+              {
+                id: 'plain-vector',
+                type: 'VECTOR',
+                name: 'Vector 1',
+                status: 'skipped',
+                why: 'art-fragment',
+                pageBox: { x: 0, y: 0, w: 12, h: 12 },
+                box: { x: 0, y: 0, w: 12, h: 12 },
+                style: { fills: [{ type: 'SOLID', visible: true }] },
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+  assert.deepEqual(picks.map((pick) => pick.nodeId).sort(), ['1119:4122', '1119:4125']);
+  assert.equal(picks[0].exportBounds, 'render');
+  assert.ok(picks[0].exportBox.h > 2);
+  assert.match(picks[0].reason, /VECTOR brush stroke/);
+  assert.equal(isZeroExtentSlice(picks[0]), false);
+});
+
 test('ready-handoff truth lastModified is a designVersion fallback', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
   assert.match(src, /truth\.design\?\.fileVersion/);
