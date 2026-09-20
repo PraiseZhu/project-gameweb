@@ -4861,6 +4861,9 @@
        const backgroundHeroShift = options.backgroundHeroShift === true;
        const heroVisualPlane = options.heroVisualPlane === true;
        const suppressInteractions = options.suppressInteractions === true;
+       const switchCommandOwnerId = options.switchCommandOwnerId != null && String(options.switchCommandOwnerId) !== ''
+         ? String(options.switchCommandOwnerId)
+         : '';
        /* A component-set tree includes its canvas COMPONENT root.  When that
           tree is mounted inside an already-rendered INSTANCE, the root is a
           coordinate-system declaration, not a second piece of content.  The
@@ -5641,6 +5644,20 @@
             if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
           } else if (evidenceAttrs['data-btn-press'] === 'inert') {
             el.setAttribute('aria-disabled', 'true');
+          }
+        }
+        if (suppressInteractions && switchCommandOwnerId && (pfx === 'btn' || /^btn\s*[\/／]/i.test(String(n.name || '')))) {
+          const commandLabel = String(n.name || '').toLowerCase();
+          const commandAction = /\bprev(?:ious)?\b|\bleft\b|上一|左划|左滑|左滑动/.test(commandLabel)
+            ? 'prev'
+            : (/\bnext\b|\bright\b|下一|右划|右滑|右滑动/.test(commandLabel) ? 'next' : '');
+          if (commandAction) {
+            el.setAttribute('data-switch', switchCommandOwnerId);
+            el.setAttribute('data-switch-action', commandAction);
+            el.setAttribute('data-switch-command', 'true');
+            el.style.cursor = 'pointer';
+            el.style.zIndex = '30';
+            el.style.pointerEvents = 'auto';
           }
         }
         const motionRec = motionRoleMap.get(String(nid));
@@ -7702,6 +7719,29 @@
                   || Number(exportBox.h) > Number(box.h) + 0.5
                   || Number(exportBox.x) < Number(box.x) - 0.5
                   || Number(exportBox.y) < Number(box.y) - 0.5));
+              const descendantPlateOverflow = !!(sliceSpillsOwner && pfx === 'img'
+                && Number(exportBox.h) >= Number(box.h) * 2 - 0.5);
+              const visibleRender = n.renderBox || {};
+              const ancestorVisiblePlate = !!(sliceSpillsOwner && pfx === 'img'
+                && this._geomReady(visibleRender) && this._geomReady(box)
+                && this._sameCoordinateSpace(visibleRender, box)
+                && Number(visibleRender.h) > Number(box.h) + 0.5
+                && Number(visibleRender.h) < Number(box.h) * 2 - 0.5
+                && Math.abs(Number(visibleRender.w) - Number(box.w)) <= 2);
+              if (ancestorVisiblePlate) {
+                el.style.overflow = 'visible';
+                const clipTop = Number(visibleRender.y) - Number(box.y);
+                const clipLeft = Number(visibleRender.x) - Number(box.x);
+                const clipRight = (Number(box.x) + Number(box.w)) - (Number(visibleRender.x) + Number(visibleRender.w));
+                const clipBottom = (Number(box.y) + Number(box.h)) - (Number(visibleRender.y) + Number(visibleRender.h));
+                const inset = clipTop + 'px ' + clipRight + 'px ' + clipBottom + 'px ' + clipLeft + 'px';
+                el.style.clipPath = 'inset(' + inset + ')';
+                el.style.webkitClipPath = 'inset(' + inset + ')';
+                el.setAttribute('data-owner-clip', 'ancestor-visible-renderbox');
+              } else if (descendantPlateOverflow) {
+                el.style.overflow = 'hidden';
+                el.setAttribute('data-owner-clip', 'pagebox-descendant-overflow');
+              }
               if (!sliceSpillsOwner && (!el.style.overflow || el.style.overflow === 'visible')) el.style.overflow = 'hidden';
               if (!el.style.position) el.style.position = 'relative';
               if (mountedImageCount > 1) el.setAttribute('data-multifill-images', String(mountedImageCount));
@@ -7966,11 +8006,36 @@
             originY: Number(rootBox.y) || 0,
             skipNodeIds: new Set([String(__u(root.id))]),
             suppressInteractions: true,
+            switchCommandOwnerId: String(owner.switchId),
           });
         }
         if (!mountBlocked && owner.el.querySelectorAll(':scope > [data-switch-variant-content]').length
           === Number(owner.el.getAttribute('data-switch-variant-count') || 0)) {
           owner.el.setAttribute('data-switch-variant-mount-status', 'owner-local-mutually-exclusive');
+          const baseTexts = [...owner.el.querySelectorAll('.fx-t, [data-figma-type="TEXT"]')]
+            .filter((node) => !node.closest('[data-switch-variant-layer="true"]'));
+          const textByName = new Map();
+          for (const node of baseTexts) {
+            const textName = node.getAttribute('data-name') || '';
+            if (textName && !textByName.has(textName)) textByName.set(textName, node);
+          }
+          for (const textEl of owner.el.querySelectorAll('[data-switch-variant-layer="true"] .fx-t, [data-switch-variant-layer="true"] [data-figma-type="TEXT"]')) {
+            textEl.style.fontSynthesis = 'none';
+            const sample = textByName.get(textEl.getAttribute('data-name') || '');
+            if ((!textEl.style.fontWeight || textEl.style.fontWeight === '') && sample && sample.style.fontWeight) {
+              textEl.style.fontWeight = sample.style.fontWeight;
+            }
+            const family = String(textEl.style.fontFamily || (sample && sample.style.fontFamily) || '');
+            if (/YouHei/i.test(family) || /FZVariable/i.test(family)) {
+              const variation = this._youHeiVariationSettings({
+                sourceWeight: textEl.style.fontWeight || (sample && sample.style.fontWeight) || '',
+                postScriptName: textEl.getAttribute('data-font-postscript') || '',
+                fontStyle: textEl.getAttribute('data-font-style') || '',
+              });
+              textEl.style.fontVariationSettings = variation;
+              textEl.setAttribute('data-font-variation', variation);
+            }
+          }
           /* The selected INSTANCE is the visible base layer. Owner index must
              match that layer, not a later tab/indicator remap that would make
              prev/next no-ops or hide the resting Figma state. */
@@ -9428,7 +9493,8 @@
         };
         const copyIndicatorChildren = (from, to) => {
           if (!from || !to) return;
-          to.replaceChildren(...[...from.children].map((child) => stripIdentity(child.cloneNode(true))));
+          const source = Array.isArray(from) ? from : [...(from.children || [])];
+          to.replaceChildren(...source.map((child) => stripIdentity(child.cloneNode(true))));
         };
         const hideBtnLayer = (node, hidden) => {
           if (!node || node.nodeType !== 1) return;
@@ -9742,15 +9808,24 @@
              that narrow case the selected dot can be redrawn from those exact
              source subtrees. If either variant is absent, leave the pixels
              alone: state attributes remain auditable but no visual is guessed. */
-          if (!activeSource || !normalSource) return;
           for (const el of indicators) {
             if (!indicatorRenderCache.has(el)) {
-              indicatorRenderCache.set(el, [...el.children].map((child) => child.cloneNode(true)));
+              indicatorRenderCache.set(el, {
+                variant: el.getAttribute('data-indicator-variant') || '',
+                children: [...el.children].map((child) => child.cloneNode(true)),
+              });
             }
+          }
+          const cachedActive = indicators.map((el) => indicatorRenderCache.get(el)).find((entry) => entry && entry.variant === 'active');
+          const cachedNormal = indicators.map((el) => indicatorRenderCache.get(el)).find((entry) => entry && entry.variant === 'normal');
+          if (!cachedActive || !cachedNormal) return;
+          for (const el of indicators) {
             const assetOwner = el.closest('[data-asset-descendants="baked"]');
             const baked = assetOwner && assetOwner.querySelector(':scope > img.fx-img');
             if (baked) baked.style.visibility = 'hidden';
-            copyIndicatorChildren(Number(el.getAttribute('data-swpage')) === idx ? activeSource : normalSource, el);
+            const active = Number(el.getAttribute('data-swpage')) === idx;
+            copyIndicatorChildren(active ? cachedActive.children : cachedNormal.children, el);
+            el.setAttribute('data-indicator-variant', active ? 'active' : 'normal');
           }
         };
         const applySelectableVariant = (sid, idx) => {
@@ -10337,6 +10412,19 @@
         }
         frame.addEventListener('pointerdown', (ev) => {
           const host = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll][data-hscroll-drag="true"]') : null;
+          const commandHit = (() => {
+            const t = ev.target;
+            if (t && t.closest) {
+              const close = t.closest('[data-switch-action],[data-indicator]');
+              if (close) return close;
+            }
+            if (!(Number.isFinite(ev.clientX) && Number.isFinite(ev.clientY))) return null;
+            if (typeof document.elementsFromPoint !== 'function') return null;
+            return document.elementsFromPoint(ev.clientX, ev.clientY)
+              .find((el) => el && el.getAttribute && (el.getAttribute('data-switch-action') || el.hasAttribute('data-indicator')))
+              || null;
+          })();
+          if (commandHit && !host) return;
           const swipeOwner = !host ? switchSwipeOwner(ev.target) : null;
           if (!host && !swipeOwner) return;
           /* Synthetic Playwright PointerEvents omit isPrimary. Treat an

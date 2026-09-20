@@ -68,6 +68,30 @@ test('Main static leaves page clicks inert until Interaction opts in', () => {
   assert.match(laterAxes, /index\.html\?interaction=1#g=/);
   assert.match(laterAxes, /index\.html\?inventory-static-gate=1/);
   assert.doesNotMatch(laterAxes, /index\.html\?inventory-static-gate=1&interaction=1/);
+  assert.match(renderInto, /interactionQ === '1' || interactionQ === 'true' || interactionQ === 'yes'/);
+  assert.doesNotMatch(renderInto, /return !\(interactionQ === '0'/);
+});
+
+test('indicator variants copy from cached first-paint subtrees', () => {
+  const applyAt = renderer.indexOf('const applyIndicatorVariant = (sid, idx) => {');
+  const nextAt = renderer.indexOf('const applySelectableVariant', applyAt);
+  assert.ok(applyAt > 0 && nextAt > applyAt);
+  const body = renderer.slice(applyAt, nextAt);
+  assert.match(body, /indicatorRenderCache.set\(el, {/);
+  assert.match(body, /cachedActive.children/);
+  assert.match(body, /cachedNormal.children/);
+  assert.match(body, /data-indicator-variant', active \? 'active' : 'normal'/);
+});
+
+test('variant layers keep direction commands clickable without starting swipe', () => {
+  assert.match(renderer, /switchCommandOwnerId: String\(owner.switchId\)/);
+  assert.match(renderer, /data-switch-command', 'true'/);
+  assert.match(renderer, /commandHit && !host/);
+  const paintAt = renderer.indexOf("layer.setAttribute('data-switch-variant-layer', 'true');");
+  const paintEnd = renderer.indexOf('if (!mountBlocked && owner.el.querySelectorAll', paintAt);
+  const paintCall = renderer.slice(paintAt, paintEnd);
+  assert.match(paintCall, /suppressInteractions:\s*true/);
+  assert.match(paintCall, /switchCommandOwnerId: String\(owner.switchId\)/);
 });
 
 test('selected component tree keeps inner btn @go live', () => {

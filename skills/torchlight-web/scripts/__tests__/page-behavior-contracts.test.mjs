@@ -140,14 +140,18 @@ test('SC-14 last section clamps scroll to authored content bottom', () => {
   assert.equal(clamp.maxScroll, 1300);
 });
 
-test('SC-16 QA keeps chrome; product default can enable interaction', () => {
+test('SC-16 QA keeps chrome; interaction stays off until ?interaction=1', () => {
   const qa = productInteractionEntry({ productQuery: null, interactionQuery: '1' });
   assert.equal(qa.qaChrome, true);
   assert.equal(qa.enablePageInteraction, true);
   const product = productInteractionEntry({ defaultProduct: true });
   assert.equal(product.productView, true);
   assert.equal(product.qaChrome, false);
-  assert.equal(product.enablePageInteraction, true);
+  assert.equal(product.enablePageInteraction, false);
+  const productLive = productInteractionEntry({ defaultProduct: true, interactionQuery: '1' });
+  assert.equal(productLive.enablePageInteraction, true);
+  const qaOff = productInteractionEntry({ productQuery: null });
+  assert.equal(qaOff.enablePageInteraction, false);
 });
 
 test('SC-17 stale zip cannot prove the current pack', () => {

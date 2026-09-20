@@ -175,9 +175,8 @@ export function productInteractionEntry({ productQuery = null, interactionQuery 
   const productOn = defaultProduct
     ? !(productQuery === '0' || productQuery === 'false' || productQuery === 'no')
     : productQuery === '1' || productQuery === 'true' || productQuery === 'yes';
-  const interactionOn = defaultProduct
-    ? !(interactionQuery === '0' || interactionQuery === 'false' || interactionQuery === 'no')
-    : interactionQuery === '1';
+  const q = String(interactionQuery == null ? '' : interactionQuery).toLowerCase();
+  const interactionOn = q === '1' || q === 'true' || q === 'yes';
   return {
     productView: productOn,
     qaChrome: !productOn,
