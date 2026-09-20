@@ -43,6 +43,156 @@ test('XD Sites comment worker stores, updates and isolates page keys', async () 
   assert.equal(updated.comment.body, row.body);
 });
 
+test('XD Sites comment worker appends replies without overwriting the original body', async () => {
+  const pageKey = 'thread-page';
+  const id = 'thread-root-comment';
+  await run(new Request(base + '/api/qa-comments?pageKey=' + pageKey, {
+    method: 'POST', body: JSON.stringify({ ...row, id, pageKey, body: '原始评论' }),
+  }));
+  const first = await run(new Request(base + '/api/qa-comments?pageKey=' + pageKey, {
+    method: 'POST', body: JSON.stringify({
+      ...row, id, pageKey, body: '不能覆盖原文', resolved: false,
+      replies: [{ id: 'thread-reply-one', body: '第一条补充', createdAt: 100 }],
+    }),
+  }));
+  const once = await first.json();
+  assert.equal(once.comment.body, '原始评论');
+  assert.equal(once.comment.replies.length, 1);
+  assert.equal(once.comment.replies[0].body, '第一条补充');
+  assert.equal(once.comment.replies[0].author.name, '测试员');
+  const second = await run(new Request(base + '/api/qa-comments?pageKey=' + pageKey, {
+    method: 'POST', body: JSON.stringify({
+      ...row, id, pageKey, body: '仍然不能覆盖', resolved: true,
+      replies: [
+        { id: 'thread-reply-one', body: '篡改已有补充', createdAt: 100 },
+        { id: 'thread-reply-two', body: '第二条补充', createdAt: 200 },
+      ],
+    }),
+  }));
+  const twice = await second.json();
+  assert.equal(twice.comment.body, '原始评论');
+  assert.equal(twice.comment.resolved, true);
+  assert.deepEqual(twice.comment.replies.map((item) => item.body), ['第一条补充', '第二条补充']);
+});
+
+test('XD Sites comment worker rejects a 31st reply and keeps the comment visible', async () => {
+  const pageKey = 'reply-cap-page';
+  const id = 'reply-cap-comment';
+  const replies = Array.from({ length: 30 }, (_, i) => ({
+    id: 'cap-reply-' + String(i).padStart(2, '0'),
+    body: '补充 ' + i,
+    createdAt: i + 1,
+  }));
+  await run(new Request(base + '/api/qa-comments?pageKey=' + pageKey, {
+    method: 'POST', body: JSON.stringify({ ...row, id, pageKey, body: '上限评论', replies }),
+  }));
+  const overflow = await run(new Request(base + '/api/qa-comments?pageKey=' + pageKey, {
+    method: 'POST', body: JSON.stringify({
+      ...row, id, pageKey, body: '上限评论', resolved: false,
+      replies: [{ id: 'cap-reply-30', body: '第 31 条', createdAt: 99 }],
+    }),
+  }));
+  assert.equal(overflow.status, 422);
+  const listed = await (await run(new Request(base + '/api/qa-comments?pageKey=' + pageKey))).json();
+  assert.equal(listed.comments.length, 1);
+  assert.equal(listed.comments[0].replies.length, 30);
+  assert.equal(listed.comments[0].body, '上限评论');
+  assert.equal([...values.keys()].some((name) => String(name).includes('cap-reply-30')), false);
+});
+
+test('GET still returns a comment whose stored replies array is invalid', async () => {
+  const pageKey = 'corrupt-replies-page';
+  const id = 'corrupt-replies-comment';
+  await run(new Request(base + '/api/qa-comments?pageKey=' + pageKey, {
+    method: 'POST', body: JSON.stringify({
+      ...row, id, pageKey, body: '坏 replies 父评论',
+      replies: [{ id: 'kept-reply-aa', body: '独立补充', createdAt: 1 }],
+    }),
+  }));
+  for (const [name, value] of values) {
+    if (value && value.id === id && !String(name).includes('/r/')) {
+      values.set(name, { ...value, replies: 'broken' });
+    }
+  }
+  const listed = await (await run(new Request(base + '/api/qa-comments?pageKey=' + pageKey))).json();
+  assert.equal(listed.comments.length, 1);
+  assert.equal(listed.comments[0].body, '坏 replies 父评论');
+  assert.deepEqual(listed.comments[0].replies.map((item) => item.id), ['kept-reply-aa']);
+});
+
+test('GET paginates independent /r/ keys in the same page scan and keeps the oldest 30', async () => {
+  const pageKey = 'paged-replies-page';
+  const id = 'paged-reply-parent';
+  const hash = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pageKey))).toString('hex');
+  const prefix = 'qa-comments/v3/' + hash + '/';
+  const data = new Map([[prefix + id, { ...row, id, pageKey, body: '分页补充父评论', replies: 'broken' }]]);
+  for (let i = 0; i < 250; i += 1) {
+    const replyId = 'late-reply-' + String(i).padStart(3, '0');
+    data.set(prefix + id + '/r/' + replyId, {
+      id: replyId, parentId: id, pageKey, body: '补充 ' + i, createdAt: 250 - i, author: { id: 'writer' },
+    });
+  }
+  const calls = [];
+  const storage = {
+    async get(key) { return structuredClone(data.get(key) || null); },
+    async put(key, value) { data.set(key, structuredClone(value)); },
+    async list({ prefix, limit, cursor }) {
+      calls.push({ prefix, limit, cursor });
+      const keys = [...data.keys()].filter((name) => name.startsWith(prefix)).sort();
+      const offset = Number(cursor || 0), end = offset + limit;
+      return {
+        keys: keys.slice(offset, end).map((name) => ({ name })),
+        list_complete: end >= keys.length,
+        cursor: end < keys.length ? String(end) : undefined,
+      };
+    },
+  };
+  const listed = await (await handleComments(new Request(base + '/api/qa-comments?pageKey=' + pageKey), storage, { id: 'reader' })).json();
+  assert.equal(listed.comments.length, 1);
+  assert.equal(listed.comments[0].body, '分页补充父评论');
+  assert.equal(listed.comments[0].replies.length, 30);
+  assert.deepEqual(listed.comments[0].replies.map((item) => item.id), Array.from({ length: 30 }, (_, i) => 'late-reply-' + String(249 - i).padStart(3, '0')));
+  const pages = calls.filter((call) => call.prefix === prefix);
+  assert.ok(pages.length > 1);
+  assert.equal(new Set(pages.map((call) => call.limit)).size, 1);
+});
+
+test('concurrent independent replies both survive last-write-wins parent updates', async () => {
+  const pageKey = 'concurrent-reply-page';
+  const id = 'concurrent-reply-comment';
+  const data = new Map();
+  const racingKv = {
+    async get(key) { return structuredClone(data.get(key) || null); },
+    async put(key, value) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      data.set(key, structuredClone(value));
+    },
+    async list({ prefix }) {
+      return { keys: [...data.keys()].filter((name) => name.startsWith(prefix)).map((name) => ({ name })), list_complete: true };
+    },
+  };
+  await handleComments(new Request(base + '/api/qa-comments?pageKey=' + pageKey, {
+    method: 'POST', body: JSON.stringify({ ...row, id, pageKey, body: '并发根评论' }),
+  }), racingKv, { id: 'root-user', name: '发起人' });
+  const responses = await Promise.all([
+    handleComments(new Request(base + '/api/qa-comments?pageKey=' + pageKey, {
+      method: 'POST', body: JSON.stringify({
+        ...row, id, pageKey, body: '并发根评论', resolved: false,
+        replies: [{ id: 'concurrent-reply-a', body: '同事甲补充', createdAt: 10 }],
+      }),
+    }), racingKv, { id: 'user-a', name: '同事甲' }),
+    handleComments(new Request(base + '/api/qa-comments?pageKey=' + pageKey, {
+      method: 'POST', body: JSON.stringify({
+        ...row, id, pageKey, body: '并发根评论', resolved: false,
+        replies: [{ id: 'concurrent-reply-b', body: '同事乙补充', createdAt: 11 }],
+      }),
+    }), racingKv, { id: 'user-b', name: '同事乙' }),
+  ]);
+  assert.ok(responses.every((response) => response.status === 200));
+  const listed = await (await handleComments(new Request(base + '/api/qa-comments?pageKey=' + pageKey), racingKv, { id: 'reader' })).json();
+  assert.deepEqual(listed.comments[0].replies.map((item) => item.id).sort(), ['concurrent-reply-a', 'concurrent-reply-b']);
+});
+
 test('XD Sites comment worker rejects malformed rows', async () => {
   const response = await run(new Request(base + '/api/qa-comments?pageKey=worker-test-page', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'bad' }),

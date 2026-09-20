@@ -2633,10 +2633,23 @@ function createQaComments(host) {
     var n = mk('button', 'qc-btn', text);
     n.type = 'button'; n.onclick = fn; return n;
   }
+  function svgIcon(d) {
+    var icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
+    var p = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d); p.setAttribute('fill', 'none'); p.setAttribute('stroke', 'currentColor');
+    p.setAttribute('stroke-width', '1.8'); p.setAttribute('stroke-linecap', 'round');
+    p.setAttribute('stroke-linejoin', 'round'); icon.appendChild(p); return icon;
+  }
+  function closeBtn(label, fn) {
+    var n = btn('', fn); n.classList.add('qc-icon-btn');
+    n.appendChild(svgIcon('M6 6l12 12M18 6L6 18'));
+    n.setAttribute('aria-label', label); n.title = label; return n;
+  }
   var style = mk('style');
-  style.textContent = '.qc-root{position:fixed;inset:0;z-index:100000;pointer-events:none;font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#e6eaf0}.qc-root [hidden]{display:none!important}.qc-toolbar{display:flex;gap:6px;align-items:center}.qc-btn{font:inherit;border:1px solid #39424f;border-radius:7px;padding:6px 10px;background:#1e232c;color:#e6eaf0;cursor:pointer}.qc-btn:hover{background:#2b3544}.qc-btn[aria-pressed=true],.qc-primary{background:#2563eb;color:#fff;border-color:#3b82f6}.qc-root textarea,.qc-root select{font:inherit;color:inherit;background:#101620;border:1px solid #39424f;border-radius:6px;padding:8px;max-width:100%}.qc-root textarea{display:block;width:100%;min-height:90px;resize:vertical;user-select:text}.qc-panel,.qc-pop{pointer-events:auto;background:#171b22;border:1px solid #39424f;border-radius:12px;box-shadow:0 14px 48px #0008;padding:14px}.qc-panel{position:absolute;right:12px;top:12px;bottom:12px;width:min(350px,calc(100vw - 24px));display:flex;flex-direction:column;gap:10px}.qc-pop{position:absolute;width:min(330px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto}.qc-head,.qc-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.qc-note{font-size:12px;color:#a3afbf;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0}.qc-warning{color:#fbbf24}.qc-list{overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:7px}.qc-item{display:block;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;width:100%}.qc-item small{display:block;color:#a3afbf;margin-bottom:4px}.qc-item[aria-current=true]{border-color:#60a5fa;background:#1c2b40}.qc-copy{white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;margin:10px 0}.qc-pin{position:absolute;pointer-events:auto;transform:translate(-50%,-50%);border:2px solid white;border-radius:50% 50% 50% 3px;background:#2563eb;color:white;min-width:25px;height:25px;font:600 11px/19px sans-serif;cursor:pointer;padding:0 4px;box-shadow:0 2px 8px #0008}.qc-outline{position:absolute;border:2px solid #60a5fa;background:#3b82f619;pointer-events:none;border-radius:3px}.qc-toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100vw - 28px);background:#17263b;border:1px solid #416286;padding:9px 16px;border-radius:8px;white-space:pre-wrap}.qc-selecting [data-node]{cursor:crosshair!important;pointer-events:auto!important}';
+  style.textContent = '.qc-root{position:fixed;inset:0;z-index:100000;pointer-events:none;font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#e6eaf0}.qc-root [hidden]{display:none!important}.qc-toolbar{display:flex;gap:6px;align-items:center}.qc-btn{font:inherit;border:1px solid #39424f;border-radius:7px;padding:6px 10px;background:#1e232c;color:#e6eaf0;cursor:pointer}.qc-btn:hover{background:#2b3544}.qc-btn[aria-pressed=true],.qc-primary{background:#2563eb;color:#fff;border-color:#3b82f6}.qc-root textarea,.qc-root select{font:inherit;color:inherit;background:#101620;border:1px solid #39424f;border-radius:6px;padding:8px;max-width:100%}.qc-root textarea{display:block;width:100%;min-height:90px;resize:vertical;user-select:text}.qc-panel,.qc-pop{pointer-events:auto;background:#171b22;border:1px solid #39424f;border-radius:12px;box-shadow:0 14px 48px #0008;padding:14px}.qc-panel{position:absolute;right:12px;top:12px;bottom:12px;width:min(360px,calc(100vw - 24px));display:flex;flex-direction:column;gap:10px}.qc-pop{position:absolute;width:min(340px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto}.qc-head,.qc-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.qc-note{font-size:12px;color:#a3afbf;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0}.qc-warning{color:#fbbf24}.qc-list{overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}.qc-item{display:block;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;width:100%;padding:10px 12px;background:#12171f}.qc-item small{display:block;color:#a3afbf;margin-bottom:4px}.qc-item[aria-current=true]{border-color:#60a5fa;background:#1c2b40}.qc-copy{white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;margin:10px 0;padding:10px 12px;background:#101620;border:1px solid #2b3544;border-radius:8px;font-size:14px;line-height:1.6}.qc-pin{position:absolute;pointer-events:auto;transform:translate(-50%,-50%);border:2px solid white;border-radius:50% 50% 50% 3px;background:#2563eb;color:white;min-width:25px;height:25px;font:600 11px/19px sans-serif;cursor:pointer;padding:0 4px;box-shadow:0 2px 8px #0008}.qc-outline{position:absolute;border:2px solid #60a5fa;background:#3b82f619;pointer-events:none;border-radius:3px}.qc-toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100vw - 28px);background:#17263b;border:1px solid #416286;padding:9px 16px;border-radius:8px;white-space:pre-wrap}.qc-selecting [data-node]{cursor:crosshair!important;pointer-events:auto!important}';
 
-  style.textContent += '.qc-root *{box-sizing:border-box}.qc-root button:focus-visible,.qc-toolbar button:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}.qc-btn:disabled{opacity:.45;cursor:not-allowed}.qc-toolbar .qc-btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.qc-toolbar svg{width:16px;height:16px}.qc-selecting{touch-action:none}.qc-panel{top:var(--qc-top,12px)}.qc-pop{z-index:2}.qc-outline{z-index:-1}.qc-pin[aria-expanded=true]{background:#f59e0b}.qc-root .qc-note{margin:4px 0}';
+  style.textContent += '.qc-root *{box-sizing:border-box}.qc-root button:focus-visible,.qc-toolbar button:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}.qc-btn:disabled{opacity:.45;cursor:not-allowed}.qc-toolbar .qc-btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.qc-toolbar svg,.qc-icon-btn svg,.qc-btn svg{width:16px;height:16px}.qc-selecting{touch-action:none}.qc-panel{top:var(--qc-top,12px)}.qc-pop{z-index:2}.qc-outline{z-index:-1}.qc-pin[aria-expanded=true]{background:#f59e0b}.qc-root .qc-note{margin:4px 0}.qc-icon-btn{width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-color:transparent;background:transparent}.qc-icon-btn:hover{background:#2b3544}.qc-count{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#2563eb;color:#fff;font:600 11px/18px sans-serif;text-align:center}.qc-head strong{font-size:14px}.qc-filters{display:flex;flex-direction:column;gap:8px}.qc-filter{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#a3afbf}.qc-filter select{width:100%}.qc-status{display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;margin-right:6px}.qc-status-open{background:#1e3a8a;color:#bfdbfe}.qc-status-done{background:#14532d;color:#bbf7d0}.qc-ok{background:#15803d;border-color:#22c55e;color:#fff}.qc-ok:hover{background:#16a34a}.qc-actions{justify-content:flex-end}.qc-thread{display:flex;flex-direction:column;gap:8px;margin:8px 0}.qc-reply{padding:8px 10px 8px 12px;border-left:2px solid #3b82f6;background:#12171f;border-radius:0 8px 8px 0}.qc-reply .qc-note{margin:0 0 4px}.qc-pop textarea[aria-label="补充评论"]{min-height:64px}';
   doc.head.appendChild(style);
   var root = mk('div', 'qc-root');
   var pins = mk('div'), outline = mk('div', 'qc-outline');
@@ -2653,25 +2666,24 @@ function createQaComments(host) {
   var timer = null, contextKey = '', pinButtons = new Map(), lastListKey = '';
   var submitButton = null, composerNote = null, detailNote = null, loadSequence = 0;
   var api = host.commentApi || null, pollTimer = null, remoteBusy = false, remoteDurable = null;
-  var sending = false, remoteError = '';
+  var sending = false, remoteError = '', lastDetailKey = '', swallowClick = null;
   var toolbar = mk('div', 'qc-toolbar');
-  var modeButton = btn('评论', function () { if (!writeBusy) { close(); setMode(!mode); } });
+  var modeButton = btn('', function () { if (!writeBusy) { close(); setMode(!mode); } });
+  modeButton.append(svgIcon('M20 11a8 8 0 0 1-8 8H4v-8a8 8 0 1 1 16 0ZM8 10h8M8 14h5'), mk('span', '', '添加评论'));
   modeButton.setAttribute('aria-label', '评论：点选或框选内容');
   modeButton.setAttribute('aria-pressed', 'false');
-  var icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('aria-hidden', 'true');
-  var iconPath = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
-  iconPath.setAttribute('d', 'M20 11a8 8 0 0 1-8 8H4v-8a8 8 0 1 1 16 0ZM8 10h8M8 14h5');
-  iconPath.setAttribute('fill', 'none'); iconPath.setAttribute('stroke', 'currentColor');
-  iconPath.setAttribute('stroke-width', '1.7'); icon.appendChild(iconPath); modeButton.prepend(icon);
-  var allButton = btn('全部评论 · 0', function () {
+  modeButton.title = '点选或框选页面内容，写一条评论';
+  var allCount = mk('span', 'qc-count', '0');
+  var allButton = btn('', function () {
     if (writeBusy) return;
     close(); setMode(false); panel.hidden = !panel.hidden; drawList(); schedule();
   });
+  allButton.append(svgIcon('M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01'), mk('span', '', '全部评论 · '), allCount);
+  allButton.setAttribute('aria-label', '全部评论 · 0');
   allButton.title = '查看此页面所有语言、地区、状态的评论';
   toolbar.append(modeButton, allButton);
   var panelHead = mk('div', 'qc-head');
-  panelHead.append(mk('strong', '', '全部评论'), btn('关闭列表', function () { panel.hidden = true; }));
+  panelHead.append(mk('strong', '', '全部评论'), closeBtn('关闭列表', function () { panel.hidden = true; }));
   var storage = mk('p', 'qc-note', '正在打开本地评论库…');
   var scope = mk('select'), status = mk('select');
   scope.setAttribute('aria-label', '评论范围'); status.setAttribute('aria-label', '解决状态');
@@ -2681,7 +2693,11 @@ function createQaComments(host) {
   [['open', '未解决'], ['all', '全部（含已解决）'], ['resolved', '已解决'], ['pending', '待同步（含已解决）']].forEach(function (x) {
     var o = mk('option', '', x[1]); o.value = x[0]; status.appendChild(o);
   });
-  var list = mk('div', 'qc-list'); panel.append(panelHead, storage, scope, status, list);
+  var filters = mk('div', 'qc-filters');
+  var scopeWrap = mk('label', 'qc-filter'); scopeWrap.append(doc.createTextNode('显示范围'), scope);
+  var statusWrap = mk('label', 'qc-filter'); statusWrap.append(doc.createTextNode('状态'), status);
+  filters.append(scopeWrap, statusWrap);
+  var list = mk('div', 'qc-list'); panel.append(panelHead, storage, filters, list);
   scope.onchange = status.onchange = function () { drawList(); };
 
   function ctx() {
@@ -2743,6 +2759,16 @@ function createQaComments(host) {
       r.context && r.anchor && Array.isArray(r.anchor.path) && r.anchor.path.length &&
       Number.isFinite(r.anchor.u) && Number.isFinite(r.anchor.v) &&
       r.anchor.u >= 0 && r.anchor.u <= 1 && r.anchor.v >= 0 && r.anchor.v <= 1;
+  }
+  function repliesOf(row) {
+    return Array.isArray(row && row.replies) ? row.replies.filter(function (item) {
+      return item && typeof item.id === 'string' && typeof item.body === 'string' && item.body.trim() &&
+        Number.isFinite(item.createdAt);
+    }) : [];
+  }
+  function newId() {
+    return typeof crypto.randomUUID === 'function' ? crypto.randomUUID() :
+      Array.from(crypto.getRandomValues(new Uint32Array(4))).map(function (v) { return v.toString(16); }).join('-');
   }
   function apiBase() {
     if (!api) return '';
@@ -2903,8 +2929,9 @@ function createQaComments(host) {
     remoteTick();
     pollTimer = setInterval(remoteTick, 1000);
   }
-  function reload() {
+  function reload(options) {
     if (!db) return;
+    options = options || {};
     var sequence = ++loadSequence, q;
     try { q = db.transaction('comments', 'readonly').objectStore('comments').getAll(); }
     catch (e) { fail(e, '评论读取失败'); return; }
@@ -2914,19 +2941,20 @@ function createQaComments(host) {
       rows = q.result.filter(validRow).sort(function (a, b) { return a.createdAt - b.createdAt || a.id.localeCompare(b.id); });
       storageReady();
       // If another tab resolved an open detail, show the newly committed state.
+      // Do not rebuild a composer/detail that the user is still typing into.
       if (active && !draft) {
         var row = rows.find(function (r) { return r.id === active; });
-        if (row) renderDetail(row); else close();
+        if (row) renderDetail(row, { keepReplyDraft: options.keepReplyDraft !== false }); else close();
       }
       syncPins(); drawList(); schedule();
     };
   }
-  function save(row, resolved) {
+  function save(row, resolved, reply) {
     if (writeBusy) return;
     if (!db) { fail(new Error('本地评论库尚未就绪')); return; }
     writeBusy = true;
     pop.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
-    var tx, missing = false;
+    var tx, missing = false, failReason = null;
     function failed(error) {
       writeBusy = false;
       pop.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
@@ -2935,7 +2963,8 @@ function createQaComments(host) {
     try {
       tx = db.transaction('comments', 'readwrite');
       var store = tx.objectStore('comments');
-      if (resolved === undefined) {
+      if (resolved === undefined && !reply) {
+        if (!Array.isArray(row.replies)) row.replies = [];
         if (api) row._sync = pendingState();
         store.add(row);
       }
@@ -2943,18 +2972,34 @@ function createQaComments(host) {
         var q = store.get(row.id);
         q.onsuccess = function () {
           if (!q.result) { missing = true; tx.abort(); return; }
-          q.result.resolved = resolved; q.result.updatedAt = Date.now();
+          if (resolved !== undefined) q.result.resolved = resolved;
+          if (reply) {
+            if (!Array.isArray(q.result.replies)) q.result.replies = [];
+            if (q.result.replies.length >= 30) { failReason = new Error('补充已达上限'); tx.abort(); return; }
+            if (q.result.replies.some(function (item) { return item && item.id === reply.id; })) return;
+            q.result.replies.push(reply);
+          }
+          q.result.updatedAt = Date.now();
           if (api) q.result._sync = pendingState(q.result._sync);
           store.put(q.result);
         };
       }
-      tx.onabort = function () { failed(missing ? new Error('评论已不存在') : tx.error); };
+      tx.onabort = function () { failed(failReason || (missing ? new Error('评论已不存在') : tx.error)); };
       tx.onerror = function () {}; // onabort owns rollback feedback; no success before commit.
       tx.oncomplete = function () {
-        writeBusy = false; close(); setMode(false);
-        storageReady(); reload();
+        writeBusy = false;
+        draft = null;
+        active = row.id;
+        setMode(false);
+        if (resolved === undefined && !reply) lastDetailKey = '';
+        if (reply) {
+          lastDetailKey = '';
+          var input = pop.querySelector('textarea[aria-label="补充评论"]');
+          if (input) input.value = '';
+        }
+        storageReady(); reload({ keepReplyDraft: !reply });
         if (channel) { try { channel.postMessage({ pageKey: dbKey }); } catch (e) { /* committed data remains readable on focus */ } }
-        say((resolved === undefined ? '评论已保存' : resolved ? '已解决' : '已恢复') + (api ? '，等待同步' : ''));
+        say((reply ? '补充已保存' : resolved === undefined ? '评论已保存' : resolved ? '已解决' : '已恢复') + (api ? '，等待同步' : ''));
         flushPending();
       };
     } catch (e) { if (tx) { try { tx.abort(); } catch (_) {} } failed(e); }
@@ -3037,9 +3082,14 @@ function createQaComments(host) {
     pop.style.left = Math.max(10, Math.min(innerWidth - w - 10, left)) + 'px';
     pop.style.top = Math.max(10, Math.min(innerHeight - h - 10, y - 10)) + 'px';
   }
+  function replyDraftValue() {
+    var input = pop.querySelector('textarea[aria-label="补充评论"]');
+    return input && !pop.hidden ? input.value : '';
+  }
   function close() {
     if (writeBusy) return;
     draft = null; active = null; submitButton = null; composerNote = null; detailNote = null;
+    lastDetailKey = '';
     pop.hidden = true; outline.hidden = true; schedule();
   }
   function setMode(on) {
@@ -3047,7 +3097,11 @@ function createQaComments(host) {
     if (on && tiled()) { say('请先关闭「平铺全部状态」，再点选评论范围'); return; }
     mode = on; modeButton.setAttribute('aria-pressed', String(on));
     host.stage.classList.toggle('qc-selecting', on);
-    if (on) { panel.hidden = true; say('点击内容或拖动框选；蓝框确认范围，可扩大到整块内容。Esc 退出'); }
+    if (on) {
+      if (draft || active) close();
+      panel.hidden = true;
+      say('点击内容或拖动框选；蓝框确认范围，可扩大到整块内容。Esc 退出');
+    }
     else { drag = null; hover = null; }
     schedule();
   }
@@ -3060,7 +3114,8 @@ function createQaComments(host) {
     active = null;
     draft = { pageKey: dbKey, context: ctx(), viewport: host.viewport(), anchor: makeAnchor(node, x, y) };
     pop.replaceChildren(); pop.hidden = false; panel.hidden = true;
-    var h = mk('div', 'qc-head'); h.append(mk('strong', '', '新评论'), btn('取消', close));
+    var h = mk('div', 'qc-head'); h.append(mk('strong', '', '新评论'), closeBtn('取消', close));
+    pop.setAttribute('aria-label', '写新评论');
     var sel = mk('select'); sel.setAttribute('aria-label', '评论对象');
     var candidates = chain(node);
     candidates.forEach(function (n, i) {
@@ -3073,10 +3128,8 @@ function createQaComments(host) {
       var p = locate(draft);
       if (!p.visible || !db) { say('当前范围无法确认，请重新点选'); return; }
       var now = Date.now();
-      var id = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() :
-        Array.from(crypto.getRandomValues(new Uint32Array(4))).map(function (v) { return v.toString(16); }).join('-');
-      save({ id: id, pageKey: dbKey, context: draft.context, viewport: draft.viewport,
-        anchor: draft.anchor, body: input.value.trim(), createdAt: now, updatedAt: now, resolved: false });
+      save({ id: newId(), pageKey: dbKey, context: draft.context, viewport: draft.viewport,
+        anchor: draft.anchor, body: input.value.trim(), createdAt: now, updatedAt: now, resolved: false, replies: [] });
     });
     submitButton.classList.add('qc-primary'); submitButton.disabled = true;
     input.oninput = function () { submitButton.disabled = !input.value.trim() || writeBusy || !db || !locate(draft).visible; };
@@ -3087,20 +3140,61 @@ function createQaComments(host) {
       drawBox(locate(draft)); place(draft); schedule();
     };
     var actions = mk('div', 'qc-actions'); actions.append(btn('取消', close), submitButton);
-    pop.append(h, sel, composerNote, input, actions); drawBox(locate(draft)); place(draft); input.focus(); schedule();
+    pop.append(h, sel, composerNote, input, actions); drawBox(locate(draft)); place(draft); input.focus();
+    swallowClick = { x: x, y: y, at: Date.now() };
+    pop.style.pointerEvents = 'none';
+    setTimeout(function () { pop.style.pointerEvents = ''; }, 0);
+    schedule();
   }
 
-  function renderDetail(row) {
+  function renderDetail(row, options) {
+    options = options || {};
+    var draftText = options.keepReplyDraft ? replyDraftValue() : '';
+    var key = JSON.stringify([row.id, row.resolved, row.updatedAt, repliesOf(row).map(function (item) { return item.id; })]);
+    if (options.keepReplyDraft && key === lastDetailKey) return;
+    lastDetailKey = key;
     pop.replaceChildren(); pop.hidden = false; submitButton = null; composerNote = null;
     var h = mk('div', 'qc-head');
-    h.append(mk('strong', '', row.resolved ? '已解决' : '评论'), btn('关闭评论', close));
+    h.append(mk('strong', '', row.resolved ? '已解决' : '评论'), closeBtn('关闭窗口', close));
+    pop.setAttribute('aria-label', row.resolved ? '已解决评论' : '评论详情');
     var meta = mk('p', 'qc-note', [row.context.lang, row.context.region, row.context.state,
       row.context.composition, row.anchor.label].join(' · '));
     detailNote = mk('p', 'qc-note qc-warning', locate(row).reason || '');
-    var resolve = btn(row.resolved ? '↶ 恢复评论' : '✓ 标记已解决', function () { save(row, !row.resolved); });
+    var resolve = btn(row.resolved ? '恢复为未解决' : '标记已解决', function () { save(row, !row.resolved); });
+    resolve.prepend(svgIcon(row.resolved ? 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5' : 'M5 12.5l4 4 10-10'));
+    resolve.setAttribute('aria-label', row.resolved ? '↶ 恢复评论' : '✓ 标记已解决');
+    resolve.title = row.resolved ? '恢复后，图钉会再出现在页面上' : '解决后，图钉从当前页面隐藏；列表里仍可找回';
+    if (row.resolved) resolve.classList.add('qc-ok'); else resolve.classList.add('qc-primary');
     resolve.disabled = !db || writeBusy;
-    pop.append(h, meta, authorTime(row), mk('p', 'qc-note qc-sync-state', syncLabel(row)), detailNote, mk('div', 'qc-copy', row.body), resolve);
+    var thread = mk('div', 'qc-thread');
+    repliesOf(row).forEach(function (item) {
+      var reply = mk('div', 'qc-reply');
+      reply.append(authorTime(item, 'p'), mk('div', '', item.body));
+      thread.appendChild(reply);
+    });
+    var replyInput = mk('textarea');
+    replyInput.placeholder = '补充这条评论…';
+    replyInput.setAttribute('aria-label', '补充评论');
+    replyInput.maxLength = 4000;
+    replyInput.disabled = !db || writeBusy || repliesOf(row).length >= 30;
+    var replyButton = btn('发布补充', function () {
+      if (!replyInput.value.trim() || writeBusy || !db) return;
+      var now = Date.now();
+      save(row, undefined, { id: newId(), body: replyInput.value.trim(), createdAt: now });
+    });
+    replyButton.classList.add('qc-primary');
+    replyButton.disabled = !replyInput.value.trim() || replyInput.disabled;
+    replyInput.oninput = function () { replyButton.disabled = !replyInput.value.trim() || writeBusy || !db || repliesOf(row).length >= 30; };
+    replyInput.onkeydown = function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); replyButton.click(); } };
+    var replyActions = mk('div', 'qc-actions'); replyActions.append(replyButton);
+    var replyNote = mk('p', 'qc-note', repliesOf(row).length >= 30 ? '这条评论已满 30 条补充。' : '可继续补充，不会新增图钉。');
+    pop.append(h, meta, authorTime(row), mk('p', 'qc-note qc-sync-state', syncLabel(row)), detailNote, mk('div', 'qc-copy', row.body), thread, replyNote, replyInput, replyActions, resolve);
     if (api && row._sync) pop.appendChild(btn('立即重试同步', function () { retry(row); }));
+    if (draftText) {
+      replyInput.value = draftText;
+      replyButton.disabled = !draftText.trim() || replyInput.disabled;
+    }
+    if (!options.keepReplyDraft) replyInput.focus();
     place(row); schedule();
   }
   function show(row) {
@@ -3119,7 +3213,8 @@ function createQaComments(host) {
   }
   function drawList() {
     var open = rows.filter(function (r) { return !r.resolved; }).length;
-    allButton.textContent = '全部评论 · ' + open;
+    allCount.textContent = String(open);
+    allButton.setAttribute('aria-label', '全部评论 · ' + open);
     var filtered = rows.filter(function (r) {
       return (scope.value === 'all' || current(r)) && (status.value === 'pending' ? !!r._sync :
         status.value === 'all' || !!r.resolved === (status.value === 'resolved'));
@@ -3133,8 +3228,12 @@ function createQaComments(host) {
     filtered.forEach(function (r, i) {
       var b = btn('', function () { show(r); }); b.classList.add('qc-item');
       b.setAttribute('aria-current', String(active === r.id)); b.dataset.commentId = r.id;
-      b.append(mk('small', '', (r.resolved ? '已解决' : '未解决') + ' · ' +
-        [r.context.lang, r.context.region, r.context.state, r.context.composition].join(' / ')), mk('span', '', r.body));
+      var statusMark = mk('span', 'qc-status ' + (r.resolved ? 'qc-status-done' : 'qc-status-open'), r.resolved ? '已解决' : '未解决');
+      var metaLine = mk('small', '');
+      metaLine.append(statusMark, doc.createTextNode([r.context.lang, r.context.region, r.context.state, r.context.composition].join(' / ')));
+      var extra = repliesOf(r).length;
+      b.append(metaLine, mk('span', '', r.body));
+      if (extra) b.appendChild(mk('small', '', extra + ' 条补充'));
       b.append(authorTime(r, 'small'), mk('small', 'qc-sync-state', syncLabel(r)));
       if (descriptions[i]) b.appendChild(mk('small', 'qc-warning', descriptions[i]));
       list.appendChild(b);
@@ -3142,17 +3241,19 @@ function createQaComments(host) {
   }
   function syncPins() {
     var keep = new Set();
-    rows.forEach(function (row, i) {
+    var n = 0;
+    rows.forEach(function (row) {
       if (row.resolved || !current(row) || tiled()) return;
       keep.add(row.id);
+      n += 1;
       var b = pinButtons.get(row.id);
       if (!b) {
         b = btn('', function () { show(rows.find(function (r) { return r.id === row.id; })); });
         b.className = 'qc-pin'; b.dataset.commentId = row.id;
         pinButtons.set(row.id, b); pins.appendChild(b);
       }
-      b.textContent = String(i + 1); b.title = row.body;
-      b.setAttribute('aria-label', '查看评论 ' + (i + 1) + '：' + row.anchor.label);
+      b.textContent = String(n); b.title = row.body;
+      b.setAttribute('aria-label', '查看评论 ' + n + '：' + row.anchor.label);
     });
     pinButtons.forEach(function (b, id) { if (!keep.has(id)) { b.remove(); pinButtons.delete(id); } });
   }
@@ -3240,6 +3341,19 @@ function createQaComments(host) {
   host.stage.addEventListener('pointercancel', function () { drag = null; hover = null; schedule(); }, true);
   host.stage.addEventListener('pointerleave', function () { if (!drag) { hover = null; schedule(); } });
   host.stage.addEventListener('click', function (e) { if (mode || draft) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  doc.addEventListener('click', function (e) {
+    if (!swallowClick) return;
+    if (pop.contains(e.target) || panel.contains(e.target) || toolbar.contains(e.target)) {
+      swallowClick = null;
+      return;
+    }
+    var recent = Date.now() - swallowClick.at < 600;
+    var near = Math.abs(e.clientX - swallowClick.x) < 28 && Math.abs(e.clientY - swallowClick.y) < 28;
+    if (recent && near) {
+      e.preventDefault(); e.stopImmediatePropagation();
+    }
+    swallowClick = null;
+  }, true);
   doc.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && !writeBusy) { close(); setMode(false); panel.hidden = true; }
   });

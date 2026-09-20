@@ -59,9 +59,9 @@ async function enterDraft(page, target = '[data-node="text-1"]', point = { u: .3
 }
 async function publish(page, text, target, point) {
   await enterDraft(page, target, point);
-  await page.locator('.qc-pop textarea').fill(text);
+  await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill(text);
   await page.getByRole('button', { name: '发布评论', exact: true }).click();
-  await page.locator('.qc-pop textarea').waitFor({ state: 'hidden', timeout: 6000 });
+  await page.locator('.qc-pop textarea[aria-label="补充评论"]').waitFor({ state: 'visible', timeout: 6000 });
 }
 async function panel(page) {
   if (!await page.locator('.qc-panel').isVisible()) await page.getByRole('button', { name: /^全部评论 ·/ }).click();
@@ -77,7 +77,7 @@ async function assertPinTracks(page, target, u, v) {
   }, { target, u, v }, { timeout: 6000 });
 }
 
-test('QA comments: real storage, content selection, navigation and tab synchronization', { timeout: 180000 }, async (t) => {
+test('QA comments: real storage, content selection, navigation and tab synchronization', { timeout: 240000 }, async (t) => {
   const source = await readFile(join(skillRoot, 'templates/figma-chrome.js'), 'utf8');
   const offset = source.indexOf('function createQaComments(host)');
   assert.notEqual(offset, -1, 'production comment controller must exist');
@@ -141,7 +141,7 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       const page = await pageFor('persist');
       await enterDraft(page);
       await visible(page, '.qc-outline');
-      await page.locator('.qc-pop textarea').fill('标题内容需要修正');
+      await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill('标题内容需要修正');
       await page.getByRole('button', { name: '发布评论', exact: true }).click();
       await count(page, '.qc-pin', 1);
       await assertPinTracks(page, '[data-node="text-1"]', .35, .3);
@@ -155,6 +155,21 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await page.close();
     });
 
+    await t.test('opening a composer survives the leftover click and later remote refresh', async () => {
+      const page = await pageFor('keep-composer');
+      await page.getByRole('button', { name: '评论：点选或框选内容', exact: true }).click();
+      const box = await page.locator('[data-node="text-1"]').boundingBox();
+      await page.mouse.click(box.x + box.width * 0.35, box.y + box.height * 0.3);
+      await visible(page, '.qc-pop textarea[aria-label="评论内容"]');
+      await page.mouse.click(box.x + box.width * 0.35, box.y + box.height * 0.3);
+      await visible(page, '.qc-pop textarea[aria-label="评论内容"]');
+      await page.locator('.qc-pop textarea[aria-label="评论内容"]').click();
+      await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill('Keep this unfinished note');
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="评论内容"]').inputValue(), 'Keep this unfinished note');
+      await page.close();
+    });
+
     await t.test('the user explicitly enlarges selection to a parent content card', async () => {
       const page = await pageFor('parent');
       await enterDraft(page);
@@ -163,7 +178,7 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
         const a = document.querySelector('.qc-outline').getBoundingClientRect(), b = document.querySelector('[data-node="card-1"]').getBoundingClientRect();
         return Math.abs(a.x-b.x)<2 && Math.abs(a.y-b.y)<2 && Math.abs(a.width-b.width)<2 && Math.abs(a.height-b.height)<2;
       }, null, { timeout: 6000 });
-      await page.locator('.qc-pop textarea').fill('整张奖励卡片的间距需要修改');
+      await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill('整张奖励卡片的间距需要修改');
       await page.getByRole('button', { name: '发布评论', exact: true }).click();
       await count(page, '.qc-pin', 1);
       await page.locator('.qc-pin').click();
@@ -196,11 +211,30 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await page.close();
     });
 
+    await t.test('pin numbers follow current unresolved comments, not historical indexes', async () => {
+      const page = await pageFor('pin-numbers');
+      await publish(page, 'First open comment', '[data-node="text-1"]', { u: .2, v: .25 });
+      await publish(page, 'Second open comment', '[data-node="text-1"]', { u: .8, v: .75 });
+      await page.waitForFunction(() => [...document.querySelectorAll('.qc-pin:not([hidden])')].map((n) => n.textContent).join(',') === '1,2');
+      await page.locator('.qc-pin').filter({ hasText: /^1$/ }).click();
+      await page.getByRole('button', { name: '✓ 标记已解决', exact: true }).click();
+      await page.waitForFunction(() => [...document.querySelectorAll('.qc-pin:not([hidden])')].map((n) => n.textContent).join(',') === '1');
+      await page.selectOption('#lang', 'ja');
+      await count(page, '.qc-pin', 0);
+      await publish(page, 'Japanese only comment');
+      await page.waitForFunction(() => [...document.querySelectorAll('.qc-pin:not([hidden])')].map((n) => n.textContent).join(',') === '1');
+      await page.selectOption('#lang', 'en');
+      await page.waitForFunction(() => [...document.querySelectorAll('.qc-pin:not([hidden])')].map((n) => n.textContent).join(',') === '1');
+      await page.close();
+    });
+
     await t.test('resolve hides the pin; restoring from the resolved list brings it back', async () => {
       const page = await pageFor('resolve');
       await publish(page, 'Resolve after fix');
       await count(page, '.qc-pin', 1);
       await page.locator('.qc-pin').click();
+      assert.equal(await page.getByRole('button', { name: '关闭窗口', exact: true }).count(), 1);
+      assert.equal(await page.getByRole('button', { name: '关闭评论', exact: true }).count(), 0);
       await page.getByRole('button', { name: '✓ 标记已解决', exact: true }).click();
       await count(page, '.qc-pin:not([hidden])', 0);
       await panel(page);
@@ -210,6 +244,27 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await page.locator('.qc-item').click();
       await page.getByRole('button', { name: /恢复评论/ }).click();
       await count(page, '.qc-pin', 1);
+      await page.close();
+    });
+
+    await t.test('published comments stay open so colleagues can add a reply in the same thread', async () => {
+      const page = await pageFor('thread-reply');
+      await publish(page, 'First note on this card');
+      await count(page, '.qc-pin', 1);
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="补充评论"]').inputValue(), '');
+      await page.locator('.qc-pop textarea[aria-label="补充评论"]').fill('Follow-up in the same pin');
+      await page.getByRole('button', { name: '发布补充', exact: true }).click();
+      await page.waitForFunction(() => {
+        const reply = document.querySelector('.qc-reply');
+        const input = document.querySelector('.qc-pop textarea[aria-label="补充评论"]');
+        return reply && reply.textContent.includes('Follow-up in the same pin') && input && input.value === '';
+      });
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="补充评论"]').inputValue(), '');
+      await count(page, '.qc-pin', 1);
+      await page.reload();
+      await page.locator('.qc-pin').click();
+      assert.match(await page.locator('.qc-copy').innerText(), /First note on this card/);
+      assert.match(await page.locator('.qc-reply').innerText(), /Follow-up in the same pin/);
       await page.close();
     });
 
@@ -275,7 +330,7 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
     await t.test('an aborted write retains the draft, reports failure and allows a real retry', async () => {
       const page = await pageFor('abort');
       await enterDraft(page);
-      await page.locator('.qc-pop textarea').fill('Do not lose this failed draft');
+      await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill('Do not lose this failed draft');
       await page.evaluate(() => {
         const add = IDBObjectStore.prototype.add;
         IDBObjectStore.prototype.add = function (...args) {
@@ -287,7 +342,7 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       });
       await page.getByRole('button', { name: '发布评论', exact: true }).click();
       await page.waitForFunction(() => document.querySelector('.qc-toast').textContent.includes('未保存'));
-      assert.equal(await page.locator('.qc-pop textarea').inputValue(), 'Do not lose this failed draft');
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="评论内容"]').inputValue(), 'Do not lose this failed draft');
       await count(page, '.qc-pin:not([hidden])', 0);
       await page.getByRole('button', { name: '发布评论', exact: true }).click();
       await count(page, '.qc-pin:not([hidden])', 1);
@@ -431,7 +486,7 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       const state = remoteCase('remote-abort');
       const page = await pageFor('remote-abort');
       await enterDraft(page);
-      await page.locator('.qc-pop textarea').fill('Atomic local queue');
+      await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill('Atomic local queue');
       await page.evaluate(() => {
         const add = IDBObjectStore.prototype.add;
         IDBObjectStore.prototype.add = function (...args) {
@@ -443,7 +498,7 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await page.getByRole('button', { name: '发布评论', exact: true }).click();
       await page.waitForFunction(() => document.querySelector('.qc-toast').textContent.includes('未保存'));
       assert.equal(state.posts.length, 0);
-      assert.equal(await page.locator('.qc-pop textarea').inputValue(), 'Atomic local queue');
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="评论内容"]').inputValue(), 'Atomic local queue');
       await page.getByRole('button', { name: '发布评论', exact: true }).click();
       await panel(page);
       await page.waitForFunction(() => document.querySelector('.qc-item .qc-sync-state').textContent === '已同步');
@@ -456,7 +511,7 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       const receiver = await pageFor('tabs');
       await sender.evaluate(() => {
         document.addEventListener('click', e => {
-          if (e.target.closest('button')?.textContent === '发布评论') window.lastPublishClick = Date.now();
+          if (e.target.closest('button')?.textContent.includes('发布评论')) window.lastPublishClick = Date.now();
         }, true);
       });
       const latencies = [];

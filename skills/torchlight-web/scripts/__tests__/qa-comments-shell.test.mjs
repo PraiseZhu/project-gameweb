@@ -71,10 +71,10 @@ async function publish(page, text = '壳评论集成检查') {
   const box = await target.boundingBox();
   assert.ok(box, 'PC data-node should be visible before publishing');
   await page.mouse.click(box.x + box.width * 0.4, box.y + box.height * 0.35);
-  await page.locator('.qc-pop textarea').waitFor({ state: 'visible', timeout: 6000 });
-  await page.locator('.qc-pop textarea').fill(text);
+  await page.locator('.qc-pop textarea[aria-label="评论内容"]').waitFor({ state: 'visible', timeout: 6000 });
+  await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill(text);
   await page.getByRole('button', { name: '发布评论', exact: true }).click();
-  await page.locator('.qc-pop textarea').waitFor({ state: 'hidden', timeout: 6000 });
+  await page.locator('.qc-pop textarea[aria-label="补充评论"]').waitFor({ state: 'visible', timeout: 6000 });
 }
 
 async function openList(page) {
@@ -123,6 +123,8 @@ test('QA comments: complete figma shell integration across language, composition
     await page.waitForFunction(() => window.__qa.inspect().viewport.w === 1440 && window.__qa.inspect().viewport.h === 900);
     await publish(page, 'PC 壳评论：请检查桌面文案');
     await visiblePins(page, 1);
+    await page.keyboard.press('Escape');
+    await page.locator('.qc-pop').waitFor({ state: 'hidden', timeout: 6000 });
 
     await page.evaluate(() => window.__qa.setPref('lang', 'ja'));
     await visiblePins(page, 0);
@@ -143,9 +145,10 @@ test('QA comments: complete figma shell integration across language, composition
     const tile = page.locator('[data-qa-state-tile]');
     await tile.check();
     await page.waitForFunction(() => document.querySelector('.stage').classList.contains('tiled'));
+    await page.locator('.qc-pop').waitFor({ state: 'hidden', timeout: 6000 }).catch(() => {});
     await page.getByRole('button', { name: '评论：点选或框选内容', exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.qc-toast')?.textContent.includes('请先关闭'));
-    assert.equal(await page.locator('.qc-pop textarea').count(), 0, '平铺模式必须明确阻止创建评论');
+    assert.equal(await page.locator('.qc-pop textarea[aria-label="评论内容"]').count(), 0, '平铺模式必须明确阻止创建评论');
 
     await openList(page);
     await page.locator('.qc-item').filter({ hasText: 'PC 壳评论' }).click();
