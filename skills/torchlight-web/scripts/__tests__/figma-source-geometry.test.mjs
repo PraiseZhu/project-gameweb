@@ -78,7 +78,8 @@ test('zh-CN image paint uses sliceExport/box pixels, not fill stretch', () => {
   assert.ok(zh);
   assert.match(zh[0], /objectFit = 'none'/);
   assert.doesNotMatch(zh[0], /objectFit = 'fill'/);
-  assert.match(src, /img\.style\.objectFit = \(spillsOwner \|\| matchesOwner\) \? 'none' : 'fill'/);
+  assert.match(src, /sourceBackedSpill\s*\n\s*\? \(matchesPlaced \? 'none' : 'fill'\)/);
+  assert.match(src, /\(\(spillsOwner \|\| matchesOwner\) \? 'none' : 'fill'\)/);
 });
 
 test('static geometry gate freezes decorative entry animations before measuring', () => {
