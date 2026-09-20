@@ -281,7 +281,7 @@ test('hero fill uses YAML fillVh of the viewport so later sections leave the fir
   assert.ok(phone390.layoutOffsetDesign > 0, 'short k×hero must pad later to the viewport edge');
 });
 
-test('page scroll lock ends at the board; overflow past the board does not raise height', () => {
+test('page scroll lock ends at min(board, page frame); overflow past the lock does not raise height', () => {
   const short = pageScrollLock({ boardBottom: 1000, contentBottom: 800 });
   assert.equal(short.height, 1000);
   assert.equal(short.overflowPx, 0);
@@ -294,7 +294,10 @@ test('page scroll lock ends at the board; overflow past the board does not raise
   const missing = pageScrollLock({ boardBottom: 0, contentBottom: 1300 });
   assert.equal(missing.height, 1300);
   assert.equal(missing.reason, 'board-missing');
-  const lockFn = renderSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0 } = {})');
+  const artboardPastFrame = pageScrollLock({ boardBottom: 20000, contentBottom: 17911, pageFrameBottom: 18360 });
+  assert.equal(artboardPastFrame.height, 18360);
+  assert.equal(artboardPastFrame.reason, 'page-frame');
+  const lockFn = renderSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0 } = {})');
   const headerEnd = renderSrc.indexOf(') {', lockFn);
   const bodyStart = headerEnd + 2;
   let depth = 0;

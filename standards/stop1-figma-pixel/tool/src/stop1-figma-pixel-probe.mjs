@@ -284,10 +284,11 @@ export function productProbeViewport(platform, pageBox, sections = []) {
   if (!(width > 0) || (platform === 'mobile' && width > 1126) || (platform !== 'mobile' && width <= 1126)) {
     throw new Error(`${platform}: invalid product probe viewport width ${width}`);
   }
-  /* Pixel compare is against the Figma section pageBox. Height must be the
+  /* Pixel compare is against each Figma section pageBox. Height must be the
      full page so product=1 skips the 100vh crop (figma-render skips heroSlot
      when viewportH >= pageContentHeight). First-section-only height
-     (PC 2143 on a 4286 page) still cover-crops and blacks the top. */
+     (PC 2143 on a 4286 page) still cover-crops and blacks the top. Clip each
+     shot to the authored section pageBox, never the live page-tall stage. */
   const height = Math.max(Math.round(shelf.h), Math.round(sectionBox.h));
   if (!(height > 0)) throw new Error(`${platform}: invalid product probe viewport height ${height}`);
   return { w: Math.round(width), h: height };
@@ -385,7 +386,7 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
         frame.scrollTop = Math.max(0, top);
       });
       await page.evaluate(() => new Promise((resolveWait) => requestAnimationFrame(() => resolveWait())));
-      const clip = await page.evaluate((id) => {
+      const clip = await page.evaluate((id, expected) => {
         const cssEscape = (value) => (globalThis.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/(["\\])/g, '\\$1'));
         const node = document.querySelector(`[data-node="${cssEscape(id)}"]`)
           || document.querySelector(`[data-node-id="section-${cssEscape(id)}"]`);
@@ -393,17 +394,21 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
         const r = node.getBoundingClientRect();
         const vw = window.innerWidth || 0;
         const vh = window.innerHeight || 0;
+        const wantW = Number(expected && expected.w);
+        const wantH = Number(expected && expected.h);
+        const liveW = Number.isFinite(wantW) && wantW > 0 ? Math.min(r.width, wantW) : r.width;
+        const liveH = Number.isFinite(wantH) && wantH > 0 ? Math.min(r.height, wantH) : r.height;
         const x = Math.max(0, r.x);
         const y = Math.max(0, r.y);
-        const right = Math.min(vw, r.x + r.width);
-        const bottom = Math.min(vh, r.y + r.height);
+        const right = Math.min(vw, r.x + liveW);
+        const bottom = Math.min(vh, r.y + liveH);
         return {
           x,
           y,
           width: Math.max(0, right - x),
           height: Math.max(0, bottom - y),
         };
-      }, secId);
+      }, secId, designSize(section.pageBox));
       if (!clip || !(clip.width > 0) || !(clip.height > 0)) {
         shots[secId] = { error: `${platform} ${secId}: clipped area empty or outside viewport` };
         await handle.dispose();

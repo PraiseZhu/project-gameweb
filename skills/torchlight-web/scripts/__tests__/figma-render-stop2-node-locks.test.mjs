@@ -79,6 +79,7 @@ function compileOwnerSliceHelpers() {
   const pixelSize = compileThisMethod(rendererSrc, '_pixelSizeOf(assetRec)');
   const pngMatches = compileThisMethod(rendererSrc, '_pngMatchesBox(assetRec, box)');
   const spills = compileThisMethod(rendererSrc, '_boxSpillsOwner(ink, ownerBox)');
+  const sourceBacked = compileThisMethod(rendererSrc, '_sourceBackedSpill(placed, ownerBox, natW = 0, natH = 0)');
   const ownerSlice = compileThisMethod(rendererSrc, '_ownerSliceBox(assetRec, ownerBox, renderBox, extraBox = null, sliceExportBox = null)');
   const self = {};
   self._geomReady = geomReady().bind(self);
@@ -87,6 +88,7 @@ function compileOwnerSliceHelpers() {
   self._pixelSizeOf = pixelSize().bind(self);
   self._pngMatchesBox = pngMatches().bind(self);
   self._boxSpillsOwner = spills().bind(self);
+  self._sourceBackedSpill = sourceBacked().bind(self);
   self._ownerSliceBox = ownerSlice().bind(self);
   return self;
 }
@@ -830,18 +832,26 @@ test('rotated TEXT box uses Figma size, not skipped Auto Layout maxWidth', () =>
   assert.match(rendererSrc, /data-text-rotation-nowrap/);
 });
 
-test('rotated TEXT paints against renderBox, not skipped AL max or 0.55 nudge', () => {
+test('rotated TEXT paints against layout pageBox, not glyph renderBox or 0.55 nudge', () => {
   const textRotAt = rendererSrc.indexOf('visual-aabb-flex-center');
   assert.ok(textRotAt > 0);
   const body = rendererSrc.slice(rendererSrc.lastIndexOf('if (typeof n.rotation', textRotAt), rendererSrc.indexOf('if (tf.length) el.style.transform', textRotAt));
-  assert.match(body, /_sameCoordinateSpace\(_textRenderBox, box\)/);
+  assert.match(body, /visualAabb = box/);
+  assert.match(body, /data-text-rotation-slot', 'layout-box'/);
   assert.match(body, /visual-aabb-flex-center/);
   assert.match(body, /alignItems = 'center'/);
   assert.match(body, /justifyContent = 'center'/);
   assert.doesNotMatch(body, /fitOwnerFromSkipped && n\.fitOwnerFromSkipped\.box/);
   assert.doesNotMatch(body, /glyphNudge/);
   assert.doesNotMatch(body, /0\.55/);
+  assert.doesNotMatch(body, /textRenderBoxReady && this\._sameCoordinateSpace\(_textRenderBox, box\)\s*\n\s*\? _textRenderBox/);
 });
+
+test('VECTOR brush stroke with a slice does not fall back to CSS hairline', () => {
+  assert.match(rendererSrc, /bakedBrushStroke/);
+  assert.match(rendererSrc, /!bakedBrushStroke && \(degenerateSourceLine \|\| \(isSourceLine && !assetUrl\)\)/);
+});
+
 test('G2 carousel img/箭头 paint uses spilling renderBox, not clipped pageBox 50', () => {
   const helpers = compileOwnerSliceHelpers();
   const ownerBox = { x: 2994.365, y: 5430.286, w: 103.063, h: 50.061 };
@@ -860,12 +870,42 @@ test('G2 carousel img/箭头 paint uses spilling renderBox, not clipped pageBox 
   assert.equal(bg, wholeFrame);
 });
 
-test('SC-5 page scroll follows bg/pc or bg/mobile board bottom', () => {
+test('img/立绘 spilling renderBox PNG is not vertically recentered', () => {
+  const helpers = compileOwnerSliceHelpers();
+  const ownerBox = { x: 0, y: 4928, w: 3840, h: 1630 };
+  const renderBox = { x: 0, y: 4132, w: 3840, h: 3593 };
+  const sliceExportBox = { ...ownerBox };
+  const assetRec = { pixelSize: '3841x3593', exportBox: renderBox };
+  const paint = helpers._ownerSliceBox(assetRec, ownerBox, renderBox, null, sliceExportBox);
+  assert.ok(Math.abs(Number(paint.y) - 4132) < 0.5, JSON.stringify(paint));
+  assert.ok(Math.abs(Number(paint.h) - 3593) < 0.5, JSON.stringify(paint));
+  assert.equal(helpers._sourceBackedSpill(renderBox, ownerBox, 3840, 3593), true);
+  assert.match(rendererSrc, /_sourceBackedSpill\(placed, box, natW, natH\)/);
+  assert.match(rendererSrc, /24MP export may set p\.scale < 1/);
+});
+
+test('24MP p.scale < 1 spill PNG still keeps the placed plate, not natural recenter', () => {
+  const helpers = compileOwnerSliceHelpers();
+  const ownerBox = { x: 0, y: 4928, w: 3840, h: 1630 };
+  const renderBox = { x: 0, y: 4132, w: 3840, h: 3593 };
+  assert.equal(helpers._sourceBackedSpill(renderBox, ownerBox, 1920, 1796.5), true);
+  assert.equal(helpers._sourceBackedSpill(renderBox, ownerBox, 3840, 3593), true);
+  assert.equal(helpers._sourceBackedSpill(renderBox, ownerBox, 0, 0), true);
+  assert.equal(helpers._sourceBackedSpill(ownerBox, ownerBox, 3840, 3593), false);
+  assert.equal(helpers._sourceBackedSpill(renderBox, ownerBox, 800, 400), false);
+  const start = rendererSrc.indexOf('const sourceBackedSpill = this._sourceBackedSpill');
+  assert.ok(start > 0);
+  const body = rendererSrc.slice(start, rendererSrc.indexOf("el.setAttribute('data-asset-bounds-resolved', policy)", start));
+  assert.doesNotMatch(body, /Math\.abs\(natW - Number\(placed\.w\)\) <= 2/);
+  assert.match(body, /sourceBackedSpill\s*\n\s*\? \(matchesPlaced \? 'none' : 'fill'\)/);
+});
+
+test('SC-5 page scroll follows min(board, page frame), not a 20000 artboard tail', () => {
   assert.match(rendererSrc, /isPageBgBoard/);
   assert.match(rendererSrc, /pageBgBoardBottom/);
   assert.match(rendererSrc, /pageBgBoardBottom\(\)/);
   assert.doesNotMatch(rendererSrc, /A 20000 bg\/pc board past the last CTA/);
-  const lockStart = rendererSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0 } = {})');
+  const lockStart = rendererSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0 } = {})');
   const lockHeader = rendererSrc.indexOf(') {', lockStart);
   const lockBrace = lockHeader + 2;
   const lockEnd = closeBrace(rendererSrc, lockBrace);
@@ -886,6 +926,10 @@ test('SC-5 page scroll follows bg/pc or bg/mobile board bottom', () => {
   const missing = lock({ boardBottom: 0, contentBottom: 1300 });
   assert.equal(missing.height, 1300);
   assert.equal(missing.reason, 'board-missing');
+  const artboardPastFrame = lock({ boardBottom: 20000, contentBottom: 17911, pageFrameBottom: 18360 });
+  assert.equal(artboardPastFrame.height, 18360);
+  assert.equal(artboardPastFrame.reason, 'page-frame');
+  assert.equal(artboardPastFrame.overflowPx, 0);
   assert.match(rendererSrc, /data-page-scroll-overflow/);
   assert.match(rendererSrc, /removeAttribute\('data-page-scroll-overflow'\)/);
   assert.doesNotMatch(rendererSrc, /const pageScrollHeight = pageScope && heroSlot\s*\n\s*\? Math\.max/);
@@ -905,6 +949,10 @@ test('SC-7 freeze-band classifies logo/age left and down-arrow window-center', (
   assert.equal(isPageLeft({ name: 'img/logo' }, 'img'), true);
   assert.equal(isPageLeft({ name: 'btn/年龄@go=modal/mobile适龄提示@lang=cn' }, 'btn'), true);
   assert.equal(isPageLeft({ name: 'btn/播放按钮' }, 'btn'), false);
+  assert.equal(isPageLeft({ name: 'img/标题slg', pageBox: { x: 0, y: 0, w: 364, h: 173 } }, 'img'), true);
+  assert.equal(isPageLeft({ name: 'img/标题slg', pageBox: { x: 0, y: 776, w: 750, h: 239 } }, 'img'), false);
+  assert.match(rendererSrc, /isSlgLayer && pageTop < heroUiHalf/);
+  assert.doesNotMatch(rendererSrc, /pinViewport && isSlgLayer && pageTop < heroUiHalf/);
   assert.equal(isLeft({ x: 0, w: 1020 }, 3840), true);
   assert.equal(isLeft({ x: 158, w: 125 }, 3840), true);
   assert.match(rendererSrc, /data-page-left-chrome-y', 'source'/);

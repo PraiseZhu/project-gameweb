@@ -135,6 +135,9 @@ function hairlinePaintBox(node) {
 function rotatedPaintBox(node) {
   const rotation = Number(node?.rotation);
   if (!Number.isFinite(rotation) || Math.abs(rotation) <= 1e-4) return null;
+  /* Rotated TEXT CSS box is unrotated localSize centered in pageBox, then
+     rotate(). The layout AABB is pageBox; glyph renderBox is smaller ink. */
+  if (String(node?.type || '') === 'TEXT' || String(node?.role || '') === 'copy') return null;
   return geom(node?.renderBox);
 }
 
@@ -964,18 +967,6 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
         nextId,
       });
     }
-    const seam = productScroll.seamPixels;
-    if (!seam || !Array.isArray(seam.rows) || !seam.rows.length) {
-      failures.push({ reason: 'section-seam-pixels-missing' });
-    } else if (isStageFillBand(seam)) {
-      failures.push({
-        reason: 'section-seam-black',
-        expected: 'scenic join, not --stage fill',
-        actual: { minLum: seam.minLum, variance: seam.variance, mean: seam.mean },
-        firstId,
-        nextId,
-      });
-    }
     const viewportH = Number(productScroll.viewport && productScroll.viewport.h);
     const kvHostH = Number(productScroll.firstKv && productScroll.firstKv.hostH);
     if (Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(kvHostH)
@@ -989,6 +980,21 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
     }
     const kvCoversViewport = Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(kvHostH)
       && kvHostH + POSITION_TOLERANCE_PX >= viewportH;
+    const seam = productScroll.seamPixels;
+    if (!seam || !Array.isArray(seam.rows) || !seam.rows.length) {
+      failures.push({ reason: 'section-seam-pixels-missing' });
+    } else if (isStageFillBand(seam) && !kvCoversViewport) {
+      /* Official 100vh join sits on the last KV row. A dark cathedral floor
+         is still KV ink; first-screen-floor already skips that case. A real
+         --stage gap is KV shorter than the window (first-kv-shorter / floor). */
+      failures.push({
+        reason: 'section-seam-black',
+        expected: 'scenic join, not --stage fill',
+        actual: { minLum: seam.minLum, variance: seam.variance, mean: seam.mean },
+        firstId,
+        nextId,
+      });
+    }
     const floor = productScroll.firstScreenFloor;
     if (!kvCoversViewport) {
       if (!floor || !Array.isArray(floor.rows) || !floor.rows.length) {

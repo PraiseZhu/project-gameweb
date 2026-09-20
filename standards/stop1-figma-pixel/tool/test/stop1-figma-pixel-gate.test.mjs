@@ -233,7 +233,7 @@ test('stop-1 assembles node exports and product=1', () => {
   assert.match(src, /deviceScaleFactor:\s*dsf/);
   assert.match(src, /size mismatch/);
   assert.match(src, /page\.screenshot\(\{ type: 'png', clip/);
-  assert.match(src, /Math\.min\(vw, r\.x \+ r\.width\)/);
+  assert.match(src, /Math\.min\(vw, r\.x \+ liveW\)/);
   assert.match(src, /clipped area empty or outside viewport/);
   assert.match(src, /omitBackground: false/);
   assert.match(src, /allowOverflow: true/);
@@ -247,7 +247,7 @@ test('stop-1 assembles node exports and product=1', () => {
   assert.match(src, /data-stop1-pixel-chrome-hidden/);
   assert.match(src, /opacity', '0'/);
   assert.match(src, /Number\(section\.pageBox\?\.y\) > Number\(pageBox\.y\) \+ 1/);
-  assert.match(src, /Math\.min\(vw, r\.x \+ r\.width\)/);
+  assert.match(src, /Math\.min\(vh, r\.y \+ liveH\)/);
   assert.doesNotMatch(src, /r\.width \* s/);
   assert.doesNotMatch(src, /el\.screenshot/);
   assert.doesNotMatch(src, /inventory-static-gate=1/);
@@ -272,6 +272,16 @@ test('product probe uses section column width instead of mobile shelf width', ()
   const tallShelf = productProbeViewport('pc', { w: 3840, h: 4286 }, [{ pageBox: { w: 3840, h: 2143 } }]);
   assert.equal(tallShelf.h, 4286);
   assert.notEqual(tallShelf.h, 2143);
+});
+
+test('section screenshots clip to authored pageBox, not the live page-tall stage', () => {
+  const src = readFileSync(PROBE, 'utf8');
+  assert.match(src, /designSize\(section\.pageBox\)/);
+  assert.match(src, /Math\.min\(r\.height, wantH\)/);
+  assert.match(src, /Math\.min\(r\.width, wantW\)/);
+  assert.match(src, /Clip each/);
+  assert.match(src, /authored section pageBox/);
+  assert.match(src, /never the live page-tall stage/);
 });
 
 test('Figma cache key is fileKey + frameId + scale + snapshot hash', () => {

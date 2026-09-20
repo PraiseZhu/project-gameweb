@@ -89,16 +89,17 @@ test('expectation is pageBox, never canvas box', () => {
   assert.notEqual(box.x, CANVAS_BOX.x);
 });
 
-test('rotated TEXT expects renderBox AABB, not the unrotated pageBox', () => {
+test('rotated TEXT expects layout pageBox AABB, not the smaller glyph renderBox', () => {
+  const pageBox = { x: 3447.75, y: 621.274499394031, w: 100.64683976021115, h: 100.64683976021252 };
   const box = expectedDrawBox({
     id: 'rotated-copy',
     role: 'copy',
     type: 'TEXT',
     rotation: -0.7853981633974483,
-    pageBox: { x: 3447.75, y: 621.274499394031, w: 100.64683976021115, h: 100.64683976021252 },
+    pageBox,
     renderBox: { x: 3459.029296875, y: 632.884765625, w: 76.697265625, h: 76.69775390625 },
   });
-  assert.deepEqual(box, { x: 3459.029296875, y: 632.884765625, w: 76.697265625, h: 76.69775390625 });
+  assert.deepEqual(box, pageBox);
 });
 
 test('rotated paint AABB that still contains the Figma center is not pageBox-mismatch', () => {
@@ -720,6 +721,34 @@ test('product viewport rejects a gap between sec/1 and sec/2', () => {
   });
   assert.equal(scenicNightSky.ok, true, (scenicNightSky.problems || []).join('\n'));
 
+  const coveringKvDarkSeam = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: {
+        'sec-1': { cropWindow: '100vh', height: 1800, overflow: 'hidden' },
+        'sec-2': { height: 2207, overflow: 'visible' },
+      },
+      sectionAbut: { gap: 0 },
+      seamPixels: {
+        minLum: 6.28,
+        variance: 0.78,
+        mean: [8, 7, 7.71],
+        assetMean: [29, 26, 31],
+        rows: [{ lum: 6.28, rgba: [8, 7, 8, 255] }],
+      },
+      slotDesignHeight: 1800,
+      viewport: { w: 1440, h: 900 },
+      firstKv: { hostH: 900, imgSrc: 'assets/kv.webp', assetW: 3840, assetH: 2143, assetEmpty: false },
+      firstScreenFloor: { minLum: 3.2, mean: [5.4, 4, 4], variance: 3.04, rows: [{ lum: 3.2, rgba: [5, 4, 4, 255] }] },
+    },
+  });
+  assert.equal(coveringKvDarkSeam.ok, true, (coveringKvDarkSeam.problems || []).join('\n'));
+
   const shortKv = evaluateProductScrollGate({
     inventory,
     viewportKind: 'product',
@@ -1255,6 +1284,80 @@ test('sliceExport without box is red, never skipped-ok', () => {
   });
   assert.equal(red.ok, false);
   assert.ok(red.problems.some((line) => line.includes('missing-sliceExport-box')));
+});
+
+test('IMAGE mask host is missing-dom until it has a measurable box', () => {
+  const red = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: 'hot-video',
+          status: 'determined',
+          role: 'hot',
+          name: 'hot/视频播放区域',
+          pageBox: { x: 733, y: 10455, w: 2374, h: 1350 },
+          maskChildren: [{ id: 'mask-shot', maskType: 'ALPHA' }],
+        },
+        {
+          id: 'mask-shot',
+          status: 'unknown',
+          type: 'RECTANGLE',
+          name: 'Screenshot',
+          parentId: 'hot-video',
+          ancestorIds: ['hot-video'],
+          isMask: true,
+          maskType: 'ALPHA',
+          pageBox: { x: 733, y: 10455, w: 2374, h: 1350 },
+          style: { fills: [{ type: 'IMAGE', visible: true }] },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        'hot-video': { x: 733, y: 10455, w: 2374, h: 1350 },
+      },
+    },
+  });
+  assert.equal(red.ok, false);
+  assert.ok((red.problems || []).some((line) => line.includes('mask-shot') && line.includes('missing-dom')), (red.problems || []).join('\n'));
+});
+
+test('IMAGE mask host with a painted box is not missing-dom', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: 'hot-video',
+          status: 'determined',
+          role: 'hot',
+          name: 'hot/视频播放区域',
+          pageBox: { x: 733, y: 10455, w: 2374, h: 1350 },
+          maskChildren: [{ id: 'mask-shot', maskType: 'ALPHA' }],
+        },
+        {
+          id: 'mask-shot',
+          status: 'unknown',
+          type: 'RECTANGLE',
+          name: 'Screenshot',
+          parentId: 'hot-video',
+          ancestorIds: ['hot-video'],
+          isMask: true,
+          maskType: 'ALPHA',
+          pageBox: { x: 733, y: 10455, w: 2374, h: 1350 },
+          style: { fills: [{ type: 'IMAGE', visible: true }] },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        'hot-video': { x: 733, y: 10455, w: 2374, h: 1350 },
+        'mask-shot': { x: 733, y: 10455, w: 2374, h: 1350, hasImg: true, imgBox: { x: 733, y: 10455, w: 2374, h: 1350 } },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
 });
 
 test('IMAGE fill without a real img is missing-dom-img, even if the empty box matches pageBox', () => {

@@ -308,14 +308,26 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
         || (n.type === 'VECTOR' && /^line(?:\s|$)/i.test(String(n.name || ''))))
         && n.status === 'skipped'
         && String(n.why || '') === 'art-fragment';
+      /* Hairline VECTOR with a real stroke (Vector 44/45 Brush + width
+         profile) is skipped as art-fragment. CSS cannot replay variable
+         width; Figma bakes that contour into PNG. */
+      const strokeWeight = Number((n.style || {}).strokeWeight);
+      const layoutH = Number((n.pageBox && n.pageBox.h) ?? (n.box && n.box.h) ?? 0);
+      const renderH = Number((n.renderBox && n.renderBox.h) || 0);
+      const fragmentBrushStroke = n.type === 'VECTOR'
+        && n.status === 'skipped'
+        && String(n.why || '') === 'art-fragment'
+        && Number.isFinite(strokeWeight) && strokeWeight > 0
+        && (layoutH < 0.5 || renderH > layoutH + 0.5);
+      const fragmentStroke = fragmentLine || fragmentBrushStroke;
       if (listedOnly) {
         /* Ready handoff: listed sliceExport owners, plus unnamed kv/bg/img
            even when an older pack omitted sliceExport. IMAGE descendants under a
            whole-frame owner stay inside that PNG. Contour btn/ and consent
            variant roots still slice when inventory left sliceExport unset. */
-        if (n.status === 'skipped' && !fragmentLine) continue;
+        if (n.status === 'skipped' && !fragmentStroke) continue;
         if (bakedIntoWholeFrame) continue;
-        if (!listedSlice && !hasImageFill && !booleanBtnArrow && !consentVariantRoot && !dropmenuOptionVariantRoot && !fragmentLine) continue;
+        if (!listedSlice && !hasImageFill && !booleanBtnArrow && !consentVariantRoot && !dropmenuOptionVariantRoot && !fragmentStroke) continue;
       }
       if (n.type === 'TEXT' && !pfx) continue;               // unprefixed TEXT is editable copy; visual names can override type
       /* Lead decision (2026-08-10): the page-background owner root (bg/*) is no
@@ -365,10 +377,10 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
          alpha 与原始绘制顺序，拆成 CSS 节点会让局部纹理/背景跨出真实可见区。 */
       const hasMaskOwner = Array.isArray(n.maskChildren) && n.maskChildren.length > 0;
       const onlyGradient = fills.length === 1 && String(fills[0].type).startsWith('GRADIENT');
-      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !booleanBtnArrow && !fragmentLine && !hasMaskOwner) continue;
+      if (onlyGradient && !SLICE_PREFIXES.has(pfx) && !listedSlice && !bigNonRect && !booleanBtnArrow && !fragmentStroke && !hasMaskOwner) continue;
 
       const unnamedKvOwner = isWholeFrameSliceNode(n) && !listedSlice;
-      if (!(listedSlice || unnamedKvOwner || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || consentVariantRoot || dropmenuOptionVariantRoot || fragmentLine || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
+      if (!(listedSlice || unnamedKvOwner || SLICE_PREFIXES.has(pfx) || kind === 'gradient' || kind === 'image' || hasImageFill || bigNonRect || booleanBtnArrow || consentVariantRoot || dropmenuOptionVariantRoot || fragmentStroke || multiFillImage || hasExportIntent || hasMaskOwner)) continue;
       const effects = ((n.style || {}).effects || []).filter((e) => e && e.visible !== false);
       const descendantEffects = ((n.style || {}).descendantEffects || []).filter((e) => e && e.effectType);
       const allEffectTypes = [
@@ -419,10 +431,11 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
           (Number(rb.h) > Number(pageOrBox.h) + 0.5 && Number(rb.w) + 2 >= Number(pageOrBox.w))
           || (Number(rb.w) > Number(pageOrBox.w) + 0.5 && Number(rb.h) + 2 >= Number(pageOrBox.h))
         );
-      const pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour;
+      const pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour && !fragmentStroke;
       const listedBounds = pageBoxExport ? 'box' : n.sliceExport?.bounds;
-      const exportBounds = listedBounds
-        || (softSpill ? 'render' : 'box');
+      const exportBounds = fragmentStroke
+        ? 'render'
+        : (listedBounds || (softSpill ? 'render' : 'box'));
       const clippedVisible = !pageBoxExport && rb && b && Number(rb.w) > 0 && Number(rb.h) > 0
         && (Number(rb.w) + 0.5 < Number(b.w) || Number(rb.h) + 0.5 < Number(b.h));
       const exportBox = pageBoxExport
@@ -439,7 +452,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
         .map((f) => String(f.imageRef)))];
       out.push({
         sectionId: sid, nodeId: nid, name: n.name ?? '', type: n.type,
-        reason: n.sliceExport ? '清单 sliceExport' : isWholeFrameSliceNode(n) ? '整框 pageBox' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : consentVariantRoot ? 'btn/勾选按钮变体根' : dropmenuOptionVariantRoot ? 'dropmenu option variant root' : fragmentLine ? 'skipped art-fragment LINE' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
+        reason: n.sliceExport ? '清单 sliceExport' : isWholeFrameSliceNode(n) ? '整框 pageBox' : hasMaskOwner ? 'Figma mask owner 合成' : hasExportIntent ? '设计师导出预设' : SLICE_PREFIXES.has(pfx) ? `前缀 ${pfx}/` : multiFillImage ? '多层填充含位图' : booleanBtnArrow ? 'BOOLEAN/VECTOR btn 箭头轮廓' : consentVariantRoot ? 'btn/勾选按钮变体根' : dropmenuOptionVariantRoot ? 'dropmenu option variant root' : fragmentBrushStroke ? 'skipped art-fragment VECTOR brush stroke' : fragmentLine ? 'skipped art-fragment LINE' : bigNonRect ? `非矩形轮廓 ≥${minDim}px` : `填充 ${kind}`,
         w: outW, h: outH, box: roundBox(b), renderBox: roundBox(rb), exportBounds, exportBox,
         cropToVisibleBox: !pageBoxExport && exportBounds === 'box' && clippedVisible,
         imageRefs: imageRefs.length ? imageRefs : undefined,
