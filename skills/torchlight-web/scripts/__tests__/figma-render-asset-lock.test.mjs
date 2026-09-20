@@ -527,6 +527,7 @@ test('fx-img follows the owner box instead of intrinsic pixels', () => {
   assert.match(renderer, /el\.style\.position = 'relative'/);
   assert.match(renderer, /ancestor-visible-renderbox/);
   assert.match(renderer, /pagebox-descendant-overflow/);
+  assert.match(renderer, /render-ink-visible/);
 });
 
 test('listed img/bg/kv owners keep pageBox clip when ink slice is shorter', () => {

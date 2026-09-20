@@ -7739,8 +7739,18 @@
                 el.style.webkitClipPath = 'inset(' + inset + ')';
                 el.setAttribute('data-owner-clip', 'ancestor-visible-renderbox');
               } else if (descendantPlateOverflow) {
-                el.style.overflow = 'hidden';
-                el.setAttribute('data-owner-clip', 'pagebox-descendant-overflow');
+                /* Same-width render-bounds plate (PC ?? 3593 vs 1630): the PNG
+                   IS the unclipped ink. Clipping to pageBox crops the head/glow.
+                   Keep overflow visible. Non-plate 2x img/ (rotated arrows) still
+                   clip to the owner AABB. */
+                const sameWidthPlate = Math.abs(Number(exportBox.w) - Number(box.w)) <= 2;
+                if (sameWidthPlate) {
+                  el.style.overflow = 'visible';
+                  el.setAttribute('data-owner-clip', 'render-ink-visible');
+                } else {
+                  el.style.overflow = 'hidden';
+                  el.setAttribute('data-owner-clip', 'pagebox-descendant-overflow');
+                }
               }
               if (!sliceSpillsOwner && (!el.style.overflow || el.style.overflow === 'visible')) el.style.overflow = 'hidden';
               if (!el.style.position) el.style.position = 'relative';
