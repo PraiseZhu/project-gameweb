@@ -74,7 +74,7 @@ async function publish(page, text = '壳评论集成检查') {
   await page.locator('.qc-pop textarea[aria-label="评论内容"]').waitFor({ state: 'visible', timeout: 6000 });
   await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill(text);
   await page.getByRole('button', { name: '发布评论', exact: true }).click();
-  await page.locator('.qc-pop textarea[aria-label="补充评论"]').waitFor({ state: 'visible', timeout: 6000 });
+  await page.getByRole('button', { name: '回复这条评论', exact: true }).waitFor({ state: 'visible', timeout: 6000 });
 }
 
 async function openList(page) {
@@ -141,6 +141,7 @@ test('QA comments: complete figma shell integration across language, composition
     await page.waitForFunction(() => window.__qa.inspect().viewport.w === 1440 && window.__qa.inspect().viewport.h === 900);
     await page.waitForSelector('[data-node="pc-copy"]');
     await visiblePins(page, 1);
+    await page.locator('.qc-panel').waitFor({ state: 'visible', timeout: 6000 });
 
     const tile = page.locator('[data-qa-state-tile]');
     await tile.check();
