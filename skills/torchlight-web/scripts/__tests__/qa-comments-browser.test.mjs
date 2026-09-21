@@ -36,7 +36,10 @@ function fixture(runtime) {
     'function render(){',
     "var overlay=new URL(location.href).searchParams.get('case')==='overlay-hit'?'<div data-node=\"__fixed__\" data-node-id=\"page-fixed-overlays\" style=\"position:absolute;inset:0;z-index:20;pointer-events:none\"></div><div data-node=\"cover-1\" data-node-name=\"页面内容\" data-figma-type=\"FRAME\" style=\"position:absolute;inset:0;z-index:5;pointer-events:auto\"></div><div data-node=\"kv-1\" data-node-name=\"kv\" data-prefix=\"kv\" style=\"position:absolute;inset:0;z-index:0;pointer-events:none\"></div>':'';",
     "var mask=new URL(location.href).searchParams.get('case')==='overlay-mask'?'<div data-node=\"mask-1\" data-prefix=\"img\" data-node-name=\"img/遮罩\" data-figma-type=\"RECTANGLE\" style=\"position:absolute;left:32px;top:32px;width:400px;height:70px;z-index:8;background:#991b1b\"></div>':'';",
-    'document.querySelector("#stage").innerHTML=\'<div class="canvas" style="transform:scale(\'+scale+\')">\'+overlay+\'<section data-node="section-1" data-node-name="活动内容区" data-figma-type="FRAME" style="position:relative;z-index:1"><article data-node="card-1" data-node-name="奖励卡片" data-figma-type="FRAME">\'+mask+\'<p data-node="text-1" data-node-name="活动标题" data-figma-type="TEXT">Season rewards \'+state.lang+\' \'+state.region+\'</p><button data-node="button-1" data-node-name="领取奖励" data-figma-type="INSTANCE" onclick="clicked++">领取奖励</button></article></section><div class="spacer"></div><div data-node="footer-1" data-node-name="页尾内容" data-figma-type="FRAME">页面底部的另一块内容</div></div>\';',
+    "var inert=new URL(location.href).searchParams.get('case')==='inert-hit'||new URL(location.href).searchParams.get('case')==='hidden-hit'?'<div data-node=\"kv-inert\" data-node-name=\"kv\" data-prefix=\"kv\" style=\"position:absolute;inset:0;z-index:0;pointer-events:none\"></div>':'';",
+    "var inertPe=new URL(location.href).searchParams.get('case')==='inert-hit'||new URL(location.href).searchParams.get('case')==='hidden-hit'?'pointer-events:none;':'';",
+    "var hiddenLang=new URL(location.href).searchParams.get('case')==='hidden-hit'?'<p data-node=\"text-hidden\" data-node-name=\"隐藏文案\" data-figma-type=\"TEXT\" hidden style=\"position:absolute;left:40px;top:64px;width:400px;min-height:70px;pointer-events:none\">Hidden language copy</p>':'';",
+    'document.querySelector("#stage").innerHTML=\'<div class="canvas" style="transform:scale(\'+scale+\')">\'+overlay+inert+\'<section data-node="section-1" data-node-name="活动内容区" data-figma-type="FRAME" style="position:relative;z-index:1;\'+inertPe+\'"><article data-node="card-1" data-node-name="奖励卡片" data-figma-type="FRAME" style="\'+inertPe+\'">\'+mask+hiddenLang+\'<p data-node="text-1" data-node-name="活动标题" data-figma-type="TEXT" style="\'+inertPe+\'">Season rewards \'+state.lang+\' \'+state.region+\'</p><button data-node="button-1" data-node-name="领取奖励" data-figma-type="INSTANCE" style="\'+inertPe+\'" onclick="clicked++">领取奖励</button></article></section><div class="spacer"></div><div data-node="footer-1" data-node-name="页尾内容" data-figma-type="FRAME">页面底部的另一块内容</div></div>\';',
     'if(comments)comments.refresh();}',
     "['lang','region','state'].forEach(function(k){document.getElementById(k).onchange=function(e){state[k]=e.target.value;render();};});",
     'document.querySelector("#rebuild").onclick=render;',
@@ -373,6 +376,22 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       const page = await pageFor('overlay-mask');
       await enterDraft(page, '[data-node="text-1"]');
       assert.match(await page.locator('.qc-pop select option:checked').innerText(), /当前：img\/遮罩/);
+      await page.close();
+    });
+
+    await t.test('inert text and title stay selectable over a full-bleed kv', async () => {
+      const page = await pageFor('inert-hit');
+      await enterDraft(page, '[data-node="text-1"]');
+      assert.match(await page.locator('.qc-pop select option:checked').innerText(), /当前：活动标题/);
+      await page.close();
+    });
+
+    await t.test('hidden language copy is not selected over visible inert text', async () => {
+      const page = await pageFor('hidden-hit');
+      await enterDraft(page, '[data-node="text-1"]');
+      const current = await page.locator('.qc-pop select option:checked').innerText();
+      assert.match(current, /当前：活动标题/);
+      assert.equal(/隐藏文案/.test(current), false);
       await page.close();
     });
 

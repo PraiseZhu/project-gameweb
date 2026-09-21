@@ -2662,7 +2662,7 @@ function createQaComments(host) {
 
   var mode = false, db = null, channel = null, rows = [], draft = null, active = null;
   var drag = null, hover = null, writeBusy = false, disposed = false;
-  var dbKey = String(host.pageKey), index = new Map(), fallbackNodes = [], dirty = true, rafId = null;
+  var dbKey = String(host.pageKey), index = new Map(), contentNodes = [], fallbackNodes = [], dirty = true, rafId = null;
   var timer = null, contextKey = '', pinButtons = new Map(), lastListKey = '';
   var submitButton = null, composerNote = null, detailNote = null, loadSequence = 0;
   var api = host.commentApi || null, pollTimer = null, remoteBusy = false, remoteDurable = null;
@@ -3074,7 +3074,11 @@ function createQaComments(host) {
   }
   function rebuild() {
     index = new Map();
+    contentNodes = [];
     fallbackNodes = [];
+    var frame = host.stage.querySelector('.frame') || host.stage;
+    var b = frame.getBoundingClientRect();
+    var frameArea = b.width * b.height;
     host.stage.querySelectorAll('[data-node]').forEach(function (n) {
       var k = JSON.stringify(path(n));
       if (!index.has(k)) index.set(k, []);
@@ -3085,7 +3089,13 @@ function createQaComments(host) {
       var name = nodeName(n);
       if (prefix === 'bg' || /^bg(?:\/|$)/i.test(name) || prefix === 'kv' || /^kv(?:\/|$)/i.test(name) || name === 'kv') {
         fallbackNodes.push(n);
+        return;
       }
+      var r = n.getBoundingClientRect();
+      var covers = frameArea > 0 && r.width * r.height >= frameArea * 0.5;
+      if (covers && !String(n.textContent || '').trim() && !n.querySelector('[data-node]')) return;
+      if (covers && commentKind(n) >= 3) return;
+      contentNodes.push(n);
     });
     dirty = false;
   }
@@ -3097,7 +3107,7 @@ function createQaComments(host) {
     if (row.anchor.tag && row.anchor.tag !== n.tagName) return { reason: '原内容类型已改变，请重新定位' };
     return { node: n };
   }
-  function geometry(n, anchor) {
+  function visibility(n) {
     var b = n.getBoundingClientRect();
     if (!b.width || !b.height) return { node: n, reason: '内容当前不可见' };
     var clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
@@ -3111,12 +3121,17 @@ function createQaComments(host) {
         if (/(auto|scroll|hidden|clip)/.test(css.overflowY)) { clip.top = Math.max(clip.top, r.top); clip.bottom = Math.min(clip.bottom, r.bottom); }
       }
     }
-    var x = b.left + anchor.u * b.width, y = b.top + anchor.v * b.height;
     var box = { left: Math.max(b.left, clip.left), top: Math.max(b.top, clip.top),
       right: Math.min(b.right, clip.right), bottom: Math.min(b.bottom, clip.bottom) };
     box.width = Math.max(0, box.right - box.left); box.height = Math.max(0, box.bottom - box.top);
-    var visible = x >= clip.left && x <= clip.right && y >= clip.top && y <= clip.bottom && box.width > 0 && box.height > 0;
-    return { node: n, r: box, x: x, y: y, visible: visible, reason: visible ? '' : '评论位置在可视范围外，点击列表可滚动定位' };
+    return { node: n, b: b, r: box, clip: clip };
+  }
+  function geometry(n, anchor) {
+    var v = visibility(n);
+    if (!v.b) return v;
+    var x = v.b.left + anchor.u * v.b.width, y = v.b.top + anchor.v * v.b.height;
+    var visible = x >= v.clip.left && x <= v.clip.right && y >= v.clip.top && y <= v.clip.bottom && v.r.width > 0 && v.r.height > 0;
+    return { node: n, r: v.r, x: x, y: y, visible: visible, reason: visible ? '' : '评论位置在可视范围外，点击列表可滚动定位' };
   }
   function locate(row) {
     if (tiled()) return { reason: '平铺视图，请从列表打开单个状态' };
@@ -3385,6 +3400,17 @@ function createQaComments(host) {
     // Measure only while comments/selection are present; never traverse the tree per frame.
     if (!doc.hidden && (pinButtons.size || selected || mode)) schedule();
   }
+  function nodeAtPoint(list, x, y) {
+    var best = null, bestArea = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i];
+      var v = visibility(n);
+      if (!v.b || !v.r || x < v.r.left || x > v.r.right || y < v.r.top || y > v.r.bottom) continue;
+      var area = v.r.width * v.r.height;
+      if (area < bestArea) { best = n; bestArea = area; }
+    }
+    return best;
+  }
   function targetAt(x, y) {
     var top = doc.elementFromPoint(x, y);
     if (top && root.contains(top)) return null;
@@ -3400,15 +3426,7 @@ function createQaComments(host) {
       return n;
     }
     if (dirty) rebuild();
-    var fallback = null, bestArea = Infinity;
-    for (var j = 0; j < fallbackNodes.length; j++) {
-      var fb = fallbackNodes[j];
-      var r = fb.getBoundingClientRect();
-      if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
-      var area = r.width * r.height;
-      if (area < bestArea) { fallback = fb; bestArea = area; }
-    }
-    return fallback;
+    return nodeAtPoint(contentNodes, x, y) || nodeAtPoint(fallbackNodes, x, y);
   }
   host.stage.addEventListener('pointermove', function (e) {
     if (!mode || draft) return;
