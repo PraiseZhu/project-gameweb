@@ -371,8 +371,8 @@ TEXT 自己写了 max 也算数；外层 Auto Layout 写了算外层。两处都
 ## 9. 怎么验收
 
 1. 有 ready 包：`cd skills/torchlight-web && npm run figma:from-handoff -- <handoff-dir>` 必须绿。
-2. 出页：`npm run torchlightweb -- --handoff <dir> --demo <dir>` 写出 demo/`index.html`。直连 `figma:html-from-handoff` 锁死。
-3. `preview:first` 必须绿，才给人 QA `index.html`（带工具栏）。`?product=1` 只给机器闸和截图。
+2. 出页：`npm run torchlightweb -- --handoff <dir> --demo <dir>` 写出 demo/`index.html`。直连 `figma:html-from-handoff` / `freeze-demo` 锁死。Main 绿后冻 `demo/frozen/`，停 1 给人 `frozen/index.html`（main QA 壳，画布是冻页）。
+3. `preview:first` 必须绿，才给人 QA `index.html`（带工具栏）。`?product=1` 只给机器闸和截图。机器闸仍打实时渲染页。
 4. 拉伸主张要带视口 `w×h`、树（≤1126 手机 / ≥1127 PC）、列宽（`>1920` 随视口 / `1127–1920` 冻 1920 / 手机列 = 视口）、实际 `k`、两层 hero 是否都等于 `innerHeight`、`html` 字号是否等于 `10vw`。不得用 UA `is-pc` / `is-mobile` 当切树证据。`1127–1920` 若仍用 `k = viewportW/3840`（随视口变）即失败。`≤1126` 若仍用 `k = viewportW/750` 且 `k>1`，或再裁一列 750 露出两边底色（含后屏 TorchCon 贴左、Shop 浮在褐底上），即失败。
 5. 外文主张要带档位 × 语言比例、实际字体家族名、B 找到的 owner id、用到的 `maxWidth`（有则加 `maxHeight`）、缩完的整数 px。超出已写上限、用裁切 / 省略号顶过关、或仍用 `data-fit-scale` / `floor-exceeded` 当通过，即失败。详见第 6.1 节 D。
 6. `btn/主要按钮` 主张要带同端 `首屏主按钮` 该语言变体的 `fontFamily` / `fontWeight` / `letterSpacing`。`en` 主 CTA（锚和跟随）页面必须 uppercase；本地化不是大写也要强制大写。跟随节点仍用自己的源字族、源字重、源字距，或英文仍显示 `View More` 即失败。稿上没出该语言变体（如没有 `jp`）不算失败。变体在但没有活字才打 `unverified-primary-cta-type`。详见第 6.2 节。

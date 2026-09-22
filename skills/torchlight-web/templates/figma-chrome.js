@@ -1,4 +1,4 @@
-﻿/* figma-chrome.js — 验收壳运行时（深灰黑主题）。【本 Skill 替换老师 qa-chrome 的 UI 层】
+/* figma-chrome.js — 验收壳运行时（深灰黑主题）。【本 Skill 替换老师 qa-chrome 的 UI 层】
  *
  * ═══ 为什么替换而不是沿用老师的 qa-chrome ═══
  *
@@ -190,6 +190,13 @@
     var stored = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (stored) for (var sk in stored) if (sk in S.prefs) S.prefs[sk] = stored[sk];
   } catch (e) { /* 存不了就用默认，不阻断 */ }
+  try {
+    var search = new URLSearchParams(window.location.search);
+    ['plat', 'region', 'os', 'mode', 'lang'].forEach(function (key) {
+      var fromQuery = search.get(key);
+      if (fromQuery) S.prefs[key] = fromQuery;
+    });
+  } catch (e) { /* query 读失败仍用默认/localStorage */ }
 
   function curGroup() { return GROUPS[S.groupIdx] || GROUPS[0]; }
   function curDev() {
@@ -623,15 +630,32 @@
        它们对本页是无视觉声明维：matrix 仅 any/default 单选项、renderApp 不消费——
        设一个永远停在同一档的可见分段控件是给人看的假 UI。自动化用 __qa.setPref 写。
        若将来某页 OS/主题真的改变渲染，须提供一个不污染人工栏的可测机制，不得放回可见 seg。 */
-    /* Region stays in prefs / hash / __qa.setPref so old region=cn/global
-       links still open. Hide the visible segmented control until a page
-       actually paints a region axis. */
+    /* Region is a visible content axis on the live QA bar (CN / Global).
+       Hash, persist, and __qa.setPref stay the same; freeze renderApp maps
+       region+lang onto the frozen locale page. */
+    var region = m.region;
+    if (region) {
+      row2.appendChild(grp(region.label || '区域', seg(region.options || [],
+        function (it) { return S.prefs.region === it.v; },
+        function (it) { S.prefs.region = it.v; persist(); syncAll(); }, 'region')));
+    }
     var lang = m.lang;
     if (lang) {
       var langSel = document.createElement('select');
       langSel.className = 'qa-language-select';
       langSel.setAttribute('data-qa-pref-key', 'lang');
-      (lang.options || []).forEach(function (it) {
+      var langOpts = (lang.options || []).slice();
+      var frozenShell = document.documentElement.getAttribute('data-qa-frozen') === '1';
+      if (frozenShell && S.prefs.region === 'cn') {
+        langOpts = langOpts.filter(function (it) { return it.v === 'zh-CN'; });
+      } else if (frozenShell && S.prefs.region === 'global') {
+        langOpts = langOpts.filter(function (it) { return it.v !== 'zh-CN'; });
+      }
+      if (langOpts.length && !langOpts.some(function (it) { return it.v === S.prefs.lang; })) {
+        S.prefs.lang = langOpts[0].v;
+        persist();
+      }
+      langOpts.forEach(function (it) {
         var op = document.createElement('option'); op.value = it.v; op.textContent = it.label + ' · ' + it.v;
         if (S.prefs.lang === it.v) op.selected = true;
         langSel.appendChild(op);
@@ -3007,10 +3031,50 @@ function createQaComments(host) {
 
   // The full data-node ancestry disambiguates repeated instances. No text,
   // element index, absolute page coordinate, or fuzzy fallback is used as identity.
+  function frozenFrame() {
+    return host.stage.querySelector('iframe.qa-frozen-frame');
+  }
+  function frozenDoc() {
+    var frame = frozenFrame();
+    try { return frame && frame.contentDocument ? frame.contentDocument : null; } catch (_) { return null; }
+  }
+  function inFrozenDoc(n) {
+    var inner = frozenDoc();
+    return !!(n && inner && inner.documentElement && inner.documentElement.contains(n));
+  }
+  function hostRect(el) {
+    var r = el.getBoundingClientRect();
+    if (!inFrozenDoc(el)) return r;
+    var fr = frozenFrame().getBoundingClientRect();
+    return {
+      left: fr.left + r.left,
+      top: fr.top + r.top,
+      right: fr.left + r.right,
+      bottom: fr.top + r.bottom,
+      width: r.width,
+      height: r.height,
+    };
+  }
+  function styleOf(el) {
+    var view = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+    return view.getComputedStyle(el);
+  }
+  function nodeRoots() {
+    var roots = [host.stage];
+    var inner = frozenDoc();
+    if (inner && inner.documentElement) roots.push(inner.documentElement);
+    return roots;
+  }
+  function ownsNode(n) {
+    if (!n) return false;
+    if (host.stage.contains(n)) return true;
+    return inFrozenDoc(n);
+  }
   function path(n) {
     var a = [];
-    for (var x = n; x && x !== host.stage; x = x.parentElement) {
-      if (x.hasAttribute('data-node')) a.unshift(x.getAttribute('data-node'));
+    var innerRoot = frozenDoc() && frozenDoc().documentElement;
+    for (var x = n; x && x !== host.stage && x !== innerRoot; x = x.parentElement) {
+      if (x.hasAttribute && x.hasAttribute('data-node')) a.unshift(x.getAttribute('data-node'));
     }
     return a;
   }
@@ -3020,17 +3084,20 @@ function createQaComments(host) {
   }
   function chain(n) {
     var a = [];
-    for (var x = n; x && x !== host.stage; x = x.parentElement) {
-      if (x.hasAttribute('data-node')) a.push(x);
+    var innerRoot = frozenDoc() && frozenDoc().documentElement;
+    for (var x = n; x && x !== host.stage && x !== innerRoot; x = x.parentElement) {
+      if (x.hasAttribute && x.hasAttribute('data-node')) a.push(x);
     }
     return a;
   }
   function rebuild() {
     index = new Map();
-    host.stage.querySelectorAll('[data-node]').forEach(function (n) {
-      var k = JSON.stringify(path(n));
-      if (!index.has(k)) index.set(k, []);
-      index.get(k).push(n);
+    nodeRoots().forEach(function (root) {
+      root.querySelectorAll('[data-node]').forEach(function (n) {
+        var k = JSON.stringify(path(n));
+        if (!index.has(k)) index.set(k, []);
+        index.get(k).push(n);
+      });
     });
     dirty = false;
   }
@@ -3043,15 +3110,22 @@ function createQaComments(host) {
     return { node: n };
   }
   function geometry(n, anchor) {
-    var b = n.getBoundingClientRect();
+    var b = hostRect(n);
     if (!b.width || !b.height) return { node: n, reason: '内容当前不可见' };
     var clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    if (inFrozenDoc(n)) {
+      var fr = frozenFrame().getBoundingClientRect();
+      clip.left = Math.max(clip.left, fr.left);
+      clip.top = Math.max(clip.top, fr.top);
+      clip.right = Math.min(clip.right, fr.right);
+      clip.bottom = Math.min(clip.bottom, fr.bottom);
+    }
     for (var el = n; el; el = el.parentElement) {
-      var css = getComputedStyle(el);
+      var css = styleOf(el);
       if (el.hidden || el.getAttribute('aria-hidden') === 'true' || css.display === 'none' ||
           css.visibility === 'hidden' || Number(css.opacity) === 0) return { node: n, reason: '内容当前不可见' };
       if (el !== n) {
-        var r = el.getBoundingClientRect();
+        var r = hostRect(el);
         if (/(auto|scroll|hidden|clip)/.test(css.overflowX)) { clip.left = Math.max(clip.left, r.left); clip.right = Math.min(clip.right, r.right); }
         if (/(auto|scroll|hidden|clip)/.test(css.overflowY)) { clip.top = Math.max(clip.top, r.top); clip.bottom = Math.min(clip.bottom, r.bottom); }
       }
@@ -3097,6 +3171,7 @@ function createQaComments(host) {
     if (on && tiled()) { say('请先关闭「平铺全部状态」，再点选评论范围'); return; }
     mode = on; modeButton.setAttribute('aria-pressed', String(on));
     host.stage.classList.toggle('qc-selecting', on);
+    document.documentElement.setAttribute('data-qa-commenting', on ? '1' : '0');
     if (on) {
       if (draft || active) close();
       panel.hidden = true;
@@ -3106,7 +3181,7 @@ function createQaComments(host) {
     schedule();
   }
   function makeAnchor(node, x, y) {
-    var b = node.getBoundingClientRect();
+    var b = hostRect(node);
     return { path: path(node), tag: node.tagName, label: label(node),
       u: Math.max(0, Math.min(1, (x - b.left) / b.width)), v: Math.max(0, Math.min(1, (y - b.top) / b.height)) };
   }
@@ -3301,11 +3376,25 @@ function createQaComments(host) {
     if (!doc.hidden && (pinButtons.size || selected || mode)) schedule();
   }
   function targetAt(x, y) {
+    var frame = frozenFrame();
+    if (frame) {
+      var fr = frame.getBoundingClientRect();
+      if (x >= fr.left && x <= fr.right && y >= fr.top && y <= fr.bottom) {
+        var inner = frozenDoc();
+        if (inner && inner.elementsFromPoint) {
+          var innerHits = inner.elementsFromPoint(x - fr.left, y - fr.top);
+          for (var j = 0; j < innerHits.length; j++) {
+            var innerNode = innerHits[j].closest && innerHits[j].closest('[data-node]');
+            if (innerNode && ownsNode(innerNode) && geometry(innerNode, { u: .5, v: .5 }).r) return innerNode;
+          }
+        }
+      }
+    }
     var elements = doc.elementsFromPoint(x, y);
     for (var i = 0; i < elements.length; i++) {
       if (root.contains(elements[i])) return null;
       var n = elements[i].closest && elements[i].closest('[data-node]');
-      if (n && host.stage.contains(n) && geometry(n, { u: .5, v: .5 }).r) return n;
+      if (n && ownsNode(n) && geometry(n, { u: .5, v: .5 }).r) return n;
     }
     return null;
   }
@@ -3365,10 +3454,28 @@ function createQaComments(host) {
     // Animation/resize style changes do not change identities. Avoid rebuilding
     // the entire Figma node index on each animation frame.
     if (records.some(function (r) { return r.type === 'childList' || r.attributeName === 'data-node'; })) dirty = true;
+    watchFrozenDoc();
     schedule();
   });
   observer.observe(host.stage, { childList: true, subtree: true, attributes: true,
     attributeFilter: ['data-node', 'hidden', 'aria-hidden', 'style', 'class'] });
+  var frozenObserverTarget = null;
+  var frozenLoadBound = null;
+  function watchFrozenDoc() {
+    var frame = frozenFrame();
+    if (frame && frozenLoadBound !== frame) {
+      frozenLoadBound = frame;
+      frame.addEventListener('load', function () { dirty = true; watchFrozenDoc(); schedule(); });
+    }
+    var inner = frozenDoc();
+    var next = inner && inner.documentElement;
+    if (next === frozenObserverTarget) return;
+    frozenObserverTarget = next;
+    if (next) observer.observe(next, { childList: true, subtree: true, attributes: true,
+      attributeFilter: ['data-node', 'hidden', 'aria-hidden', 'style', 'class'] });
+    dirty = true;
+  }
+  watchFrozenDoc();
   window.addEventListener('focus', reload);
   window.addEventListener('online', remoteTick);
   window.addEventListener('resize', schedule);

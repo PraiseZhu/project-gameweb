@@ -61,7 +61,8 @@ export to pack quality so static review happens on crushed art.
 5. Keep runtime fallback files when the page still has an `ind/` owner
    (`figma-indicator-*.png` / `.webp`, calendar fallback slices). Pages
    without `ind/` skip those files. After rewrite, delete unreferenced
-   image files. Move only audit/probe/screenshot trees out.
+   image files. Keep `frozen/` as served output: do not rewrite its refs
+   and do not prune its images. Move only audit/probe/screenshot trees out.
 6. Fail if the served folder **after mutation** exceeds 15MB, or if any
    `qa-assets` / fallback path 404s. `--dry-run` reports current bytes and
    planned actions; it must not fail because the working folder is still

@@ -14,7 +14,7 @@ export const PACK_KEEP_ROOT = new Set([
   'index.html', 'truth.json', 'fonts-manifest.json',
   'calendar-figma-fallback-manifest.json', 'favicon.ico',
 ]);
-export const PACK_KEEP_DIRS = new Set(['assets', 'fixtures', 'fonts', 'content-package']);
+export const PACK_KEEP_DIRS = new Set(['assets', 'fixtures', 'fonts', 'content-package', 'frozen']);
 export const PACK_FALLBACK_RE = /figma-indicator[-.][\w.-]+\.(?:png|webp)/i;
 const LEGACY_INDICATOR_IDS = new Set(['397:35947', '397:35949']);
 const TEXT_EXTS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json']);
@@ -117,6 +117,10 @@ export function dirBytes(dir) {
 
 export function isPackKeepFile(name) { return PACK_KEEP_ROOT.has(name) || PACK_FALLBACK_RE.test(name); }
 export function isPackKeepDir(name) { return PACK_KEEP_DIRS.has(name); }
+
+function isFrozenRel(rel) {
+  return rel === 'frozen' || String(rel || '').startsWith('frozen/');
+}
 
 export function collectFallbackRefs(html) {
   const found = new Set();
@@ -307,6 +311,7 @@ export function removeUnreferencedPackedFiles(demoDir, html = '') {
     const name = rel.split('/').pop() || '';
     if (PACK_KEEP_ROOT.has(name) || isFallbackKeepPath(rel)) continue;
     if (rel === 'content-package' || rel.startsWith('content-package/')) continue;
+    if (isFrozenRel(rel)) continue;
     if (!UNREFERENCED_IMAGE_RE.test(rel)) continue;
     if (referenced.has(file)) continue;
     assertSafePackPath(root, file);
@@ -317,7 +322,11 @@ export function removeUnreferencedPackedFiles(demoDir, html = '') {
 }
 
 function packReferenceFiles(root) {
-  return listPackFiles(root).filter((file) => TEXT_EXTS.has(extname(file).toLowerCase()));
+  return listPackFiles(root).filter((file) => {
+    const rel = relative(root, file).replace(/\\/g, '/');
+    if (isFrozenRel(rel)) return false;
+    return TEXT_EXTS.has(extname(file).toLowerCase());
+  });
 }
 function escapeRegExp(value) { return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 

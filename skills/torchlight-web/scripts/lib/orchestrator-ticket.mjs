@@ -15,6 +15,7 @@ const ALLOWED_SCRIPTS = Object.freeze([
   'scripts/figma-html-from-handoff.mjs',
   'scripts/lib/later-axes-probe.mjs',
   'scripts/pack-demo.mjs',
+  'scripts/freeze/freeze-demo.mjs',
 ]);
 
 function ticketPath(id) {

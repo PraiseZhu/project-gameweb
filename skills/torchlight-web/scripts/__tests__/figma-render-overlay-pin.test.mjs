@@ -188,10 +188,10 @@ test('product kv cover uses one scale and origin, not cropLeft plus origin', () 
   assert.equal(tabletScale, 993 / 750);
 });
 
-test('QA chrome hides Region while keeping hash and setPref', () => {
-  assert.match(chrome, /Region stays in prefs \/ hash \/ __qa\.setPref/);
+test('QA chrome paints Region segmented control', () => {
+  assert.match(chrome, /row2\.appendChild\(grp\(region\.label/);
+  assert.match(chrome, /S\.prefs\.region = it\.v/);
   assert.match(chrome, /key in \(\{ plat: 1, region: 1, os: 1, mode: 1, lang: 1 \}\)/);
-  assert.doesNotMatch(chrome, /row2\.appendChild\(grp\(region\.label/);
   const qaChrome = readFileSync(new URL('../../templates/qa-chrome.js', import.meta.url), 'utf8');
   assert.match(qaChrome, /if \(key === 'region'\) continue/);
   assert.match(qaChrome, /const PREF_KEYS = \['plat', 'region', 'os', 'mode', 'lang'\]/);

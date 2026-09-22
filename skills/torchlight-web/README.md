@@ -10,7 +10,7 @@
 | 只有 Figma 链接、没有包 | 停下来要包。禁止 `figma-showcase` 九步，即使用户说「先看稿、没有清单」。 |
 | `preview:first` 红 | 不许给人打开 QA `index.html`，不许开 Interaction / Resize。红 payload 的 `productView.command` 必须是 `null`。外置 truth 的内部检查必须走 HTTP；给人的地址是命令结束后仍可打开的 QA `file://.../index.html`。`?product=1` 只给机器闸和截图。 |
 | 清单对账红 | 不许给人打开 QA `index.html`。对账认设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景 / 整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh（`scripts/lib/inventory-static-gate-probe.mjs`）。缺 probe 脚本、缺 `index.html`、缺 Chrome、缺 `productScroll` 一律红。按钮/logo 软溢出不按尺寸红。不要拿普通产品预览去对 inventory。 |
-| 两次给人看 | ①静态±翻译 ②交互+拉伸。人说继续后 Lead 跑 `npm run torchlightweb -- accept --demo <dir>`，再 `continue`。`continue` 不会自己签字。第一次没接受不许开后轴；第二次没接受 Pack 失败。禁止跳过人核。脚本闸仍是 `node scripts/human-review.mjs present/accept/can-start/pack-allowed --demo <dir>`。 |
+| 两次给人看 | ①静态±翻译 ②交互+拉伸。人说继续后 Lead 跑 `npm run torchlightweb -- accept --demo <dir>`，再 `continue`。`continue` 不会自己签字。第一次没接受不许开后轴；第二次没接受 Pack 失败。禁止跳过人核。脚本闸仍是 `node scripts/human-review.mjs present/accept/can-start/pack-allowed --demo <dir>`。Main 绿后、停 1 前冻出 `demo/frozen/index.html`（main QA 壳，画布是冻页）；开发四包是同目录静态页。直连 `freeze-demo` 无票锁死。 |
 | 拉仓后说 `torchlightweb` | `node scripts/recall-torchlightweb.mjs`：靠仓根 `CLAUDE.md` 触发表，不装进 `.claude/skills/`。 |
 
 ## 非 torchlightweb 维护路径（figma-showcase 本地抽稿，触发词禁用）

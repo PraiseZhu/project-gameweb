@@ -12,7 +12,7 @@ description: >-
 
 This is the Torchlight public Skill identity. Local Torch demo output is a verification example only, not the Skill identity and not an AppStore application.
 
-**Recall:** 仓根 `CLAUDE.md` 触发表命中 `torchlightweb` / `火炬网页还原` 后立即执行本文件，不要先问。官方命令只有 `npm run torchlightweb` 状态机。禁止 `figma-showcase`、跳过人核、直连 `figma:html-from-handoff` / `pack:demo`。禁止搜、改、验证 `skills/yise-web-ui`；火炬链路只碰本包和本次硬要的 `standards/` 源。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
+**Recall:** 仓根 `CLAUDE.md` 触发表命中 `torchlightweb` / `火炬网页还原` 后立即执行本文件，不要先问。官方命令只有 `npm run torchlightweb` 状态机。禁止 `figma-showcase`、跳过人核、直连 `figma:html-from-handoff` / `pack:demo` / `freeze-demo`。禁止搜、改、验证 `skills/yise-web-ui`；火炬链路只碰本包和本次硬要的 `standards/` 源。本包不靠 `.claude/skills/` 安装链；那个目录被 gitignore，夜间健康检查也会把隐藏 skill 标红。
 
 **完成标准（与 README、仓根 CLAUDE.md 同一句）：** 吃 ready 包 → 写出 demo/`index.html` → `preview:first` 必须绿 → 清单对账必须绿（整框 PNG 非空；满铺 `bg/` `kv` / 无名 `kv` / 时间背景宽高等于 `pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh）→ 政策镜像必须绿 → 产品视口门必须绿（390 / 1440 `?product=1`，sec 无缝、满铺子层不重画）→ 像素门必须绿（每屏截已有页对规范稿分区图；超阈值拦，差异图在 `artifacts/stop1-pixel/`）→ 才给人 QA `index.html`（带工具栏）。Main 静态停下来等人验收。拉伸与外文字号政策听本包 `DESIGN.md`。
 
@@ -23,7 +23,7 @@ This is the Torchlight public Skill identity. Local Torch demo output is a verif
 | 人说 `torchlightweb` **且已有 ready 交接包** | 官方只跑 `npm run torchlightweb -- --handoff <dir> --demo <dir>`。状态机内部才调用 `figma:html-from-handoff`：吃包（稿里的 family 必须已在 `fonts/registry.json`，缺字红停并给出 `fonts:register`）→ 写出 demo/`index.html` → 装登记册里的源字体（`figma-fonts`，Figma 给不了字文件；韩文覆盖听 `localeFontFamily.ko`，不把 Apple SD Gothic Neo 写成所有韩文的硬门）→ `preview:first` 必须绿 → 清单对账必须绿（`scripts/lib/inventory-static-gate-probe.mjs`：设计视口简中 + `?inventory-static-gate=1` 坐标，以及 `?product=1` 滚动后的钉视口 / 切图摆放 / 后段背景；整框 PNG 非空，满铺 `bg/` `kv` / 无名 `kv` / 时间背景尺寸=`pageBox`；产品视口首屏无名 `kv` 必须 cover-crop 进 100vh，PC `center center` / 手机 `center 0`，不得只跟列宽 `k`）→ 政策镜像必须绿 → 才给人 QA `index.html`（带工具栏）。然后停在 `wait-stop-1`，只写 presented。人说继续后 Lead 跑 `npm run torchlightweb -- accept --demo <dir>` 才签字；再 `continue` 才跑后轴探针。新稿新字：`npm run fonts:register -- --family "<稿里一字不差>" --file <合法文件> --source <来源> --license <许可>`，登记一次后每次还原自动拷。 |
 | 人说 `torchlightweb` **只有 Figma 链接、没有包** | **停下来要包**。禁止 `figma-showcase`、禁止直连 Figma 抽节点。用户说「先看稿、没有清单」也一样停。 |
 | `figma:from-handoff` 单独跑 | 只验包、打印消费计划，**不写 HTML**。触发词 `torchlightweb` 不能再暗示「说了就会出 HTML」，除非状态机已经跑过 `figma:html-from-handoff`。 |
-| 直连 `figma:html-from-handoff` / `pack:demo` | 无一次性票据时 CLI 锁死。`TORCHLIGHTWEB_ORCHESTRATOR=1` 不再放行。Agent 不得 import `buildHtmlFromHandoff` 当触发词入口。 |
+| 直连 `figma:html-from-handoff` / `pack:demo` / `freeze-demo` | 无一次性票据时 CLI 锁死。`TORCHLIGHTWEB_ORCHESTRATOR=1` 不再放行。Agent 不得 import `buildHtmlFromHandoff` 当触发词入口。 |
 
 Commands from repo root; each step `cd`s itself:
 
@@ -1261,6 +1261,7 @@ proposal 点名维护者看 EVOLUTION.md；全是 isNew=false 时整组省略。
 
 对人只交 QA 壳：默认打开 `index.html`（控制栏、切换器、状态补齐 tab、拉伸手柄、__qa API）。
 停 1 打开 QA `index.html`（点击 inert）；停 2 打开 `index.html?interaction=1`（可点）。
+Main 闸门全绿后、停 1 给人看之前，编排器冻出 `demo/frozen/`：给人看的是 `frozen/index.html`（main 那套 figma-acceptance-harness：端 / 尺寸 / 语言，画布是冻页；停 1 冻页不可点，停 2 可点已捕获帧）。开发四包是同目录 `cn/tw/en/ko.static.html`。机器闸仍打实时 `index.html?product=1`。
 **不要把 `?product=1` 给人。** `?product=1` 只给机器闸门和交付截图用：只渲染 stage + 产品帧，
 不建调试 UI。文件名 `*-product.png` vs `*-qa-shell.png`。QA 壳截图只能支撑 candidate 级证据。
 

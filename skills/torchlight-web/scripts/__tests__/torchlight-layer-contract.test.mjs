@@ -151,6 +151,8 @@ test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not po
   assert.match(chrome, /BEZEL = PRODUCT_VIEW \? 0 : 22/);
   assert.match(chrome, /fit: !PRODUCT_VIEW/);
   assert.match(chrome, /product view setPref only accepts lang/);
+  assert.match(chrome, /new URLSearchParams\(window\.location\.search\)/);
+  assert.match(chrome, /\['plat', 'region', 'os', 'mode', 'lang'\]\.forEach/);
   assert.match(chrome, /function applyPref\(key, value\)/);
   assert.match(chrome, /setPref: applyPref/);
   assert.doesNotMatch(chrome, /if \(!PRODUCT_VIEW\) window\.__qa = \{/);
@@ -234,9 +236,10 @@ test('sc-torch-yise-isolation: torchlightweb must not import or cwd into yise-we
   const orch = read('scripts/torchlightweb.mjs');
   const html = read('scripts/figma-html-from-handoff.mjs');
   const fromHandoff = read('scripts/figma-from-handoff.mjs');
+  const freeze = read('scripts/freeze/freeze-demo.mjs');
   const skill = read('SKILL.md');
   const claude = readClaude();
-  for (const src of [orch, html, fromHandoff]) {
+  for (const src of [orch, html, fromHandoff, freeze]) {
     assert.doesNotMatch(src, /skills\/yise-web-ui/);
     assert.doesNotMatch(src, /cd skills\/yise-web-ui/);
     assert.doesNotMatch(src, /yisewebui/);

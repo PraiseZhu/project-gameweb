@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN" data-qa-frozen="1" data-ops-interaction="0">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>火炬之光：无限 figma preview</title>
+<style>
+  html, body { margin: 0; min-height: 100%; background: #080b10; color: #e5e7eb; }
+  .frame { position: relative; overflow: hidden !important; overflow-x: clip !important; overflow-y: hidden !important; }
+  iframe.qa-frozen-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #080b10;
+    pointer-events: auto;
+  }
+  html[data-qa-commenting="1"] iframe.qa-frozen-frame { pointer-events: none; }
+</style>
+</head>
+<body>
+<script id="qa-truth" type="application/json">{{QA_TRUTH}}</script>
+<script id="qa-devices" type="application/json">{{QA_DEVICES}}</script>
+<script id="qa-design-policy" type="application/json">{{QA_DESIGN_POLICY}}</script>
+<script>
+(function () {
+  var el = document.getElementById('qa-design-policy');
+  window.__designPolicy = el && el.textContent ? JSON.parse(el.textContent) : {};
+})();
+</script>
+<script>
+window.__qaDemo = {{QA_DEMO}};
+</script>
+<script>
+/* FIGMA_CHROME_BEGIN */
+{{FIGMA_CHROME}}
+/* FIGMA_CHROME_END */
+</script>
+</body>
+</html>

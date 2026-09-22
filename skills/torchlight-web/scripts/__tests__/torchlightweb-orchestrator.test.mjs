@@ -19,12 +19,14 @@ import {
 } from '../lib/later-axes-probe.mjs';
 import { mintOrchestratorTicket, consumeOrchestratorTicket } from '../lib/orchestrator-ticket.mjs';
 import { htmlFromHandoffArgs, parseChildJson } from '../torchlightweb.mjs';
+import { writeOpsShell } from '../freeze/freeze-ops.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const CLI = join(ROOT, 'scripts/torchlightweb.mjs');
 const HTML_CLI = join(ROOT, 'scripts/figma-html-from-handoff.mjs');
 const PACK_CLI = join(ROOT, 'scripts/pack-demo.mjs');
 const PROBE_CLI = join(ROOT, 'scripts/lib/later-axes-probe.mjs');
+const FREEZE_CLI = join(ROOT, 'scripts/freeze/freeze-demo.mjs');
 
 function demoDir() {
   const dir = mkdtempSync(join(tmpdir(), 'torchlightweb-orch-'));
@@ -42,6 +44,22 @@ function greenMain() {
 
 function writeGreenProbe(demo) {
   writeFileSync(join(demo, 'later-axes-probe.json'), `${JSON.stringify(greenLaterAxesProbeFixture({ demoDir: demo }), null, 2)}\n`);
+}
+
+function fakeFreeze(demo, { interaction = false } = {}) {
+  mkdirSync(join(demo, 'frozen'), { recursive: true });
+  writeOpsShell(join(demo, 'frozen'), { interaction });
+  for (const name of ['cn.static.html', 'tw.static.html', 'en.static.html', 'ko.static.html']) {
+    writeFileSync(join(demo, 'frozen', name), `<!doctype html><title>${name}</title>\n`);
+  }
+  return { ok: true, frozenDir: join(demo, 'frozen'), interaction };
+}
+
+async function runMachine(options) {
+  return runTorchlightweb({
+    freezeDemo: ({ demoDir, interaction }) => fakeFreeze(demoDir, { interaction }),
+    ...options,
+  });
 }
 
 test('empty demo assets do not pass --reuse-existing; existing PNGs may reuse', () => {
@@ -94,7 +112,7 @@ test('torchlightweb refuses showcase / skip-preview / extra flags', () => {
 test('pixel-gate red main does not present stop 1', async () => {
   const demo = demoDir();
   const handoff = join(demo, 'handoff');
-  const result = await runTorchlightweb({
+  const result = await runMachine({
     command: 'start',
     demoDir: demo,
     handoffDir: handoff,
@@ -104,6 +122,7 @@ test('pixel-gate red main does not present stop 1', async () => {
       productView: { url: null, command: null, blocked: true },
       stop1FigmaPixelGate: { ok: false, problems: ['pc 1:1: diffRatio 12.00%'] },
     }),
+    freezeDemo: () => { throw new Error('must not freeze when main is red'); },
     packDemo: () => { throw new Error('must not pack'); },
   });
   assert.equal(result.ok, false);
@@ -113,12 +132,32 @@ test('pixel-gate red main does not present stop 1', async () => {
   assert.equal(existsSync(join(demo, 'human-review.json')), false);
 });
 
+test('freeze-stop-1 red does not present the QA shell', async () => {
+  const demo = demoDir();
+  const handoff = join(demo, 'handoff');
+  const result = await runMachine({
+    command: 'start',
+    demoDir: demo,
+    handoffDir: handoff,
+    now: '2026-09-03T00:00:00.000Z',
+    buildMain: greenMain,
+    freezeDemo: () => ({ ok: false, error: 'capture-failed' }),
+    packDemo: () => { throw new Error('must not pack'); },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'freeze-stop-1-red');
+  assert.notEqual(result.phase, 'wait-stop-1');
+  assert.equal(existsSync(join(demo, 'human-review.json')), false);
+  assert.equal(existsSync(join(demo, 'frozen', 'index.html')), false);
+});
+
 test('missing ready pack stops and does not invent showcase', async () => {
   const demo = demoDir();
-  const result = await runTorchlightweb({
+  const result = await runMachine({
     command: 'start',
     demoDir: demo,
     buildMain: () => { throw new Error('must not build without pack'); },
+    freezeDemo: () => { throw new Error('must not freeze without pack'); },
     packDemo: () => { throw new Error('must not pack'); },
   });
   assert.equal(result.ok, false);
@@ -133,28 +172,30 @@ test('refuses continue until accepted', async () => {
   const demo = demoDir();
   const handoff = join(demo, 'handoff');
   let packed = false;
-  const start = await runTorchlightweb({
+  const start = await runMachine({
     command: 'start',
     demoDir: demo,
     handoffDir: handoff,
     now: '2026-09-03T00:00:00.000Z',
     buildMain: greenMain,
+    freezeDemo: ({ demoDir }) => fakeFreeze(demoDir),
     packDemo: () => { packed = true; return { ok: true }; },
   });
   assert.equal(start.ok, true, start.error);
   assert.equal(start.phase, 'wait-stop-1');
-  assert.match(start.productView?.url || '', /index\.html$/);
+  assert.match(start.productView?.url || '', /frozen\/index\.html$/);
   assert.doesNotMatch(start.productView?.url || '', /product=1/);
   assert.doesNotMatch(start.productView?.url || '', /interaction=1/);
   const review = JSON.parse(readFileSync(join(demo, 'human-review.json'), 'utf8'));
   assert.equal(review.stops['static-and-translation'].presented, true);
   assert.equal(review.stops['static-and-translation'].accepted, false);
 
-  const skipped = await runTorchlightweb({
+  const skipped = await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:01:00.000Z',
     buildMain: greenMain,
+    freezeDemo: ({ demoDir }) => fakeFreeze(demoDir),
     packDemo: () => { packed = true; return { ok: true }; },
     probeLaterAxes: () => { throw new Error('must not probe before accept'); },
   });
@@ -170,7 +211,7 @@ test('accept then continue probes later axes and does not jump to stop 2 until p
   const handoff = join(demo, 'handoff');
   let packed = false;
   let probed = 0;
-  await runTorchlightweb({
+  await runMachine({
     command: 'start',
     demoDir: demo,
     handoffDir: handoff,
@@ -178,7 +219,7 @@ test('accept then continue probes later axes and does not jump to stop 2 until p
     buildMain: greenMain,
     packDemo: () => { packed = true; return { ok: true }; },
   });
-  const accepted = await runTorchlightweb({
+  const accepted = await runMachine({
     command: 'accept',
     demoDir: demo,
     now: '2026-09-03T00:01:00.000Z',
@@ -189,7 +230,7 @@ test('accept then continue probes later axes and does not jump to stop 2 until p
   assert.equal(accepted.phase, 'wait-stop-1');
   assert.equal(JSON.parse(readFileSync(join(demo, 'human-review.json'), 'utf8')).stops['static-and-translation'].accepted, true);
 
-  const redProbe = await runTorchlightweb({
+  const redProbe = await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:02:00.000Z',
@@ -206,7 +247,7 @@ test('accept then continue probes later axes and does not jump to stop 2 until p
   assert.equal(redProbe.laterAxes.interaction, 'red');
   assert.equal(packed, false);
 
-  const greenProbe = await runTorchlightweb({
+  const greenProbe = await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:03:00.000Z',
@@ -221,14 +262,15 @@ test('accept then continue probes later axes and does not jump to stop 2 until p
   assert.equal(greenProbe.ok, true, greenProbe.error);
   assert.equal(greenProbe.phase, 'wait-stop-2');
   assert.equal(greenProbe.laterAxes.interaction, 'probed');
-  assert.match(greenProbe.productView?.url || '', /[?&]interaction=1/);
+  assert.match(greenProbe.productView?.url || '', /frozen\/index\.html$/);
   assert.doesNotMatch(greenProbe.productView?.url || '', /product=1/);
+  assert.doesNotMatch(greenProbe.productView?.url || '', /interaction=1/);
   assert.match(greenProbe.productView?.command || '', /open /);
   assert.equal(JSON.parse(readFileSync(join(demo, 'human-review.json'), 'utf8')).stops['interaction-and-resize'].accepted, false);
   assert.equal(packed, false);
   assert.equal(probed, 2);
 
-  const skipPack = await runTorchlightweb({
+  const skipPack = await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:04:00.000Z',
@@ -239,7 +281,7 @@ test('accept then continue probes later axes and does not jump to stop 2 until p
   assert.equal(skipPack.error, 'second-stop-not-accepted');
   assert.equal(packed, false);
 
-  const accept2 = await runTorchlightweb({
+  const accept2 = await runMachine({
     command: 'accept',
     demoDir: demo,
     now: '2026-09-03T00:05:00.000Z',
@@ -248,7 +290,7 @@ test('accept then continue probes later axes and does not jump to stop 2 until p
   });
   assert.equal(accept2.ok, true, accept2.error);
 
-  const done = await runTorchlightweb({
+  const done = await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:06:00.000Z',
@@ -326,11 +368,37 @@ test('empty later-axes samples and self-exempted inert controls are not green', 
   }), false);
 });
 
+test('freeze-stop-2 red does not present interaction review', async () => {
+  const demo = demoDir();
+  const handoff = join(demo, 'handoff');
+  await runMachine({
+    command: 'start',
+    demoDir: demo,
+    handoffDir: handoff,
+    now: '2026-09-03T00:00:00.000Z',
+    buildMain: greenMain,
+  });
+  await runMachine({ command: 'accept', demoDir: demo, now: '2026-09-03T00:01:00.000Z' });
+  const result = await runMachine({
+    command: 'continue',
+    demoDir: demo,
+    now: '2026-09-03T00:02:00.000Z',
+    probeLaterAxes: async () => {
+      writeGreenProbe(demo);
+      return { ok: true, problems: [] };
+    },
+    freezeDemo: () => ({ ok: false, error: 'capture-failed' }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, 'freeze-stop-2-red');
+  assert.equal(JSON.parse(readFileSync(join(demo, 'human-review.json'), 'utf8')).stops['interaction-and-resize'].presented, false);
+});
+
 test('empty later-axes samples cannot present stop 2 or pack', async () => {
   const demo = demoDir();
   const handoff = join(demo, 'handoff');
   let packed = false;
-  await runTorchlightweb({
+  await runMachine({
     command: 'start',
     demoDir: demo,
     handoffDir: handoff,
@@ -338,8 +406,8 @@ test('empty later-axes samples cannot present stop 2 or pack', async () => {
     buildMain: greenMain,
     packDemo: () => { packed = true; return { ok: true }; },
   });
-  await runTorchlightweb({ command: 'accept', demoDir: demo, now: '2026-09-03T00:01:00.000Z' });
-  const empty = await runTorchlightweb({
+  await runMachine({ command: 'accept', demoDir: demo, now: '2026-09-03T00:01:00.000Z' });
+  const empty = await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:02:00.000Z',
@@ -362,7 +430,7 @@ test('empty later-axes samples cannot present stop 2 or pack', async () => {
   assert.equal(packed, false);
 
   writeGreenProbe(demo);
-  const presented = await runTorchlightweb({
+  const presented = await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:03:00.000Z',
@@ -370,7 +438,7 @@ test('empty later-axes samples cannot present stop 2 or pack', async () => {
     probeLaterAxes: async () => ({ ok: true, problems: [] }),
   });
   assert.equal(presented.ok, true, presented.error);
-  await runTorchlightweb({ command: 'accept', demoDir: demo, now: '2026-09-03T00:04:00.000Z' });
+  await runMachine({ command: 'accept', demoDir: demo, now: '2026-09-03T00:04:00.000Z' });
   writeFileSync(join(demo, 'later-axes-probe.json'), JSON.stringify({
     schema: LATER_AXES_PROBE_SCHEMA,
     ok: true,
@@ -378,7 +446,7 @@ test('empty later-axes samples cannot present stop 2 or pack', async () => {
     samples: [],
     problems: [],
   }));
-  const packedResult = await runTorchlightweb({
+  const packedResult = await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:05:00.000Z',
@@ -392,7 +460,7 @@ test('empty later-axes samples cannot present stop 2 or pack', async () => {
 test('machine-written resize-acceptance.json cannot authorize pack', async () => {
   const demo = demoDir();
   const handoff = join(demo, 'handoff');
-  await runTorchlightweb({
+  await runMachine({
     command: 'start',
     demoDir: demo,
     handoffDir: handoff,
@@ -400,8 +468,8 @@ test('machine-written resize-acceptance.json cannot authorize pack', async () =>
     buildMain: greenMain,
     packDemo: () => ({ ok: true }),
   });
-  await runTorchlightweb({ command: 'accept', demoDir: demo, now: '2026-09-03T00:01:00.000Z' });
-  await runTorchlightweb({
+  await runMachine({ command: 'accept', demoDir: demo, now: '2026-09-03T00:01:00.000Z' });
+  await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:02:00.000Z',
@@ -410,13 +478,13 @@ test('machine-written resize-acceptance.json cannot authorize pack', async () =>
       return { ok: true, problems: [] };
     },
   });
-  await runTorchlightweb({ command: 'accept', demoDir: demo, now: '2026-09-03T00:03:00.000Z' });
+  await runMachine({ command: 'accept', demoDir: demo, now: '2026-09-03T00:03:00.000Z' });
   writeFileSync(join(demo, 'resize-acceptance.json'), JSON.stringify({
     schema: 'torchlight-resize-acceptance/v1',
     status: 'accepted',
     via: 'torchlightweb-machine',
   }));
-  const packed = await runTorchlightweb({
+  const packed = await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:04:00.000Z',
@@ -431,7 +499,7 @@ test('start on wait-stop-2 rebuilds Main and returns to wait-stop-1 without pack
   const handoff = join(demo, 'handoff');
   let packed = false;
   let builds = 0;
-  await runTorchlightweb({
+  await runMachine({
     command: 'start',
     demoDir: demo,
     handoffDir: handoff,
@@ -439,8 +507,8 @@ test('start on wait-stop-2 rebuilds Main and returns to wait-stop-1 without pack
     buildMain: () => { builds += 1; return greenMain(); },
     packDemo: () => { packed = true; return { ok: true }; },
   });
-  await runTorchlightweb({ command: 'accept', demoDir: demo, now: '2026-09-03T00:01:00.000Z' });
-  await runTorchlightweb({
+  await runMachine({ command: 'accept', demoDir: demo, now: '2026-09-03T00:01:00.000Z' });
+  await runMachine({
     command: 'continue',
     demoDir: demo,
     now: '2026-09-03T00:02:00.000Z',
@@ -450,7 +518,7 @@ test('start on wait-stop-2 rebuilds Main and returns to wait-stop-1 without pack
     },
   });
   assert.equal(JSON.parse(readFileSync(torchlightwebMachinePath(demo), 'utf8')).phase, 'wait-stop-2');
-  const rebuilt = await runTorchlightweb({
+  const rebuilt = await runMachine({
     command: 'start',
     demoDir: demo,
     handoffDir: handoff,
@@ -469,7 +537,7 @@ test('start on wait-stop-2 rebuilds Main and returns to wait-stop-1 without pack
   assert.equal(review.stops['interaction-and-resize'].accepted, false);
 });
 
-test('direct html-from-handoff, later-axes probe, and pack-demo CLIs are locked without a ticket, even with env var', () => {
+test('direct html-from-handoff, later-axes probe, pack-demo, and freeze-demo CLIs are locked without a ticket, even with env var', () => {
   const html = spawnSync(process.execPath, [HTML_CLI, '--handoff', '/tmp', '--demo', '/tmp'], {
     cwd: ROOT,
     encoding: 'utf8',
@@ -496,6 +564,15 @@ test('direct html-from-handoff, later-axes probe, and pack-demo CLIs are locked 
   });
   assert.notEqual(pack.status, 0);
   assert.match(pack.stdout + pack.stderr, /pack-demo CLI is locked/);
+
+  const freeze = spawnSync(process.execPath, [FREEZE_CLI, '--demo', '/tmp'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, TORCHLIGHTWEB_ORCHESTRATOR: '1' },
+    timeout: 15000,
+  });
+  assert.notEqual(freeze.status, 0);
+  assert.match(freeze.stdout + freeze.stderr, /freeze-demo CLI is locked/);
 });
 
 test('orchestrator tickets are one-shot and refuse env-only unlock', () => {
@@ -563,4 +640,5 @@ test('SKILL / README / package lock torchlightweb as the only orchestrator', () 
   assert.doesNotMatch(cli, /buildHtmlFromHandoff\(/);
   assert.doesNotMatch(cli, /TORCHLIGHTWEB_ORCHESTRATOR=1/);
   assert.match(cli, /scripts\/lib\/later-axes-probe\.mjs/);
+  assert.match(cli, /scripts\/freeze\/freeze-demo\.mjs/);
 });

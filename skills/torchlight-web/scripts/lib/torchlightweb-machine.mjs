@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
-import { inspectPackPath, packRoot } from './pack-demo.mjs';
+import { packRoot } from './pack-demo.mjs';
 import {
   acceptStop,
   canStartLaterAxis,
@@ -193,11 +193,25 @@ function currentStop(phase) {
 }
 
 function productViewForDemo(demoDir, { interaction = false } = {}) {
-  const indexPath = join(packRoot(demoDir), 'index.html');
+  const frozenIndex = join(packRoot(demoDir), 'frozen', 'index.html');
+  const liveIndex = join(packRoot(demoDir), 'index.html');
+  const frozen = existsSync(frozenIndex);
+  const indexPath = frozen ? frozenIndex : liveIndex;
   if (!existsSync(indexPath)) return { url: null, command: null, blocked: true };
   const href = pathToFileURL(indexPath).href;
-  const url = interaction ? `${href}?interaction=1` : href;
+  const url = interaction && !frozen ? `${href}?interaction=1` : href;
   return { url, command: `open "${url}"` };
+}
+
+async function freezeOrFail({ freezeDemo, root, interaction = false }) {
+  if (typeof freezeDemo !== 'function') {
+    return { ok: true, skipped: true, reason: 'freeze-demo-not-wired' };
+  }
+  const frozen = await Promise.resolve(freezeDemo({ demoDir: root, interaction }));
+  if (!frozen || frozen.ok !== true) {
+    return { ok: false, error: frozen?.error || 'freeze-red', freeze: frozen };
+  }
+  return frozen;
 }
 
 function payload(ok, record, extra = {}) {
@@ -224,6 +238,7 @@ export async function runTorchlightweb(options) {
     buildMain,
     packDemo,
     probeLaterAxes,
+    freezeDemo,
   } = options;
   const root = packRoot(demoDir);
   mkdirSync(root, { recursive: true });
@@ -237,9 +252,9 @@ export async function runTorchlightweb(options) {
       nextHumanStep: nextStep(record),
     });
   }
-  if (command === 'start') return startMachine({ record, root, handoffDir, now, buildMain });
+  if (command === 'start') return startMachine({ record, root, handoffDir, now, buildMain, freezeDemo });
   if (command === 'accept') return acceptMachine({ record, root, now });
-  if (command === 'continue') return await continueMachine({ record, root, now, packDemo, probeLaterAxes });
+  if (command === 'continue') return await continueMachine({ record, root, now, packDemo, probeLaterAxes, freezeDemo });
   return payload(false, record, { error: `unknown-command:${command}` });
 }
 
@@ -254,7 +269,7 @@ function nextStep(record) {
   return '未知相。';
 }
 
-function startMachine({ record, root, handoffDir, now, buildMain }) {
+async function startMachine({ record, root, handoffDir, now, buildMain, freezeDemo }) {
   if (!handoffDir && !record.handoffDir) {
     stamp(record, 'need-ready-pack', now);
     const file = writeMachine(root, record);
@@ -292,6 +307,15 @@ function startMachine({ record, root, handoffDir, now, buildMain }) {
     });
   }
 
+  const frozen = await freezeOrFail({ freezeDemo, root, interaction: false });
+  if (frozen.ok !== true) {
+    writeMachine(root, record);
+    return payload(false, record, {
+      error: 'freeze-stop-1-red',
+      freeze: frozen.freeze || frozen,
+      nextHumanStep: 'Main 绿了但冻页失败，不许给人打开 QA 入口。',
+    });
+  }
   const presented = presentStop(root, STOP_1, { previewOk: true });
   if (presented.ok !== true) {
     return payload(false, record, {
@@ -307,6 +331,7 @@ function startMachine({ record, root, handoffDir, now, buildMain }) {
     file,
     waiting: true,
     main,
+    freeze: frozen,
     humanReview: presented,
     productView: productViewForDemo(root),
     nextHumanStep: nextStep(record),
@@ -342,7 +367,7 @@ function acceptMachine({ record, root, now }) {
   });
 }
 
-async function continueMachine({ record, root, now, packDemo, probeLaterAxes }) {
+async function continueMachine({ record, root, now, packDemo, probeLaterAxes, freezeDemo }) {
   if (record.missing || record.phase === 'need-ready-pack') {
     return payload(false, record, {
       error: 'missing-ready-pack',
@@ -370,11 +395,11 @@ async function continueMachine({ record, root, now, packDemo, probeLaterAxes }) 
     stamp(record, 'later-axes', now);
     record.translation = translationOf(root);
     writeMachine(root, record);
-    return await runLaterAxesPhase({ record, root, now, probeLaterAxes });
+    return await runLaterAxesPhase({ record, root, now, probeLaterAxes, freezeDemo });
   }
 
   if (record.phase === 'later-axes') {
-    return await runLaterAxesPhase({ record, root, now, probeLaterAxes });
+    return await runLaterAxesPhase({ record, root, now, probeLaterAxes, freezeDemo });
   }
 
   if (record.phase === 'wait-stop-2') {
@@ -418,7 +443,7 @@ async function continueMachine({ record, root, now, packDemo, probeLaterAxes }) 
   return payload(false, record, { error: `cannot-continue:${record.phase}`, nextHumanStep: nextStep(record) });
 }
 
-async function runLaterAxesPhase({ record, root, now, probeLaterAxes }) {
+async function runLaterAxesPhase({ record, root, now, probeLaterAxes, freezeDemo }) {
   if (typeof probeLaterAxes !== 'function') {
     return payload(false, record, {
       error: 'later-axes-probe-missing',
@@ -445,6 +470,14 @@ async function runLaterAxesPhase({ record, root, now, probeLaterAxes }) {
       nextHumanStep: nextStep(record),
     });
   }
+  const frozen = await freezeOrFail({ freezeDemo, root, interaction: true });
+  if (frozen.ok !== true) {
+    return payload(false, record, {
+      error: 'freeze-stop-2-red',
+      freeze: frozen.freeze || frozen,
+      nextHumanStep: '后轴探针绿了但冻页失败，不许给人打开停 2。',
+    });
+  }
   const presented = presentStop(root, STOP_2, { previewOk: true });
   if (presented.ok !== true) {
     return payload(false, record, {
@@ -458,6 +491,7 @@ async function runLaterAxesPhase({ record, root, now, probeLaterAxes }) {
     file,
     waiting: true,
     laterAxes: record.laterAxes,
+    freeze: frozen,
     humanReview: presented,
     productView: productViewForDemo(root, { interaction: true }),
     nextHumanStep: nextStep(record),
