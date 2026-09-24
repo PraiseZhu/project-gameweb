@@ -45,7 +45,9 @@ export to pack quality so static review happens on crushed art.
    new bytes ≥ the **current** file. Slice-time lossless/q90 WebP is not
    a skip reason.
 2. Collapse SHA-identical images to one file; retarget `qa-assets`,
-   `truth.json`, and hardcoded fallback paths. Drop extract-only
+   `truth.json`, hardcoded fallback paths, and `content-package/assets.json`.
+   Replaceable files collapse only inside `content-package/` so a later
+   slot swap cannot rewrite page assets. Drop extract-only
    `lib/` / `scripts/` and the build-time `assets-manifest.json`.
 3. Subset fonts to page TEXT + ASCII + the other locales' copy, write woff2,
    rewrite `#qa-fonts`. Do not silently swap a missing family. Do not drop
@@ -54,9 +56,14 @@ export to pack quality so static review happens on crushed art.
    and `missing.family` so chrome font authenticity checks still work.
 4. Compact `truth.json` and always externalize `#qa-truth` for the packed
    demo (HTTP preview / XD Sites). file:// single-file is no longer the pack
-   target. Drop extract-only `failClosed` and duplicate `componentSets[].nodes`
-   (the renderer mounts `variants[].nodes` + `variantTrees`). Keep ancestor
-   fields. Compact `#qa-assets` JSON (drop default `exportBounds`, collapse
+   target. Drop extract-only `failClosed`, duplicate `componentSets[].nodes`,
+   the duplicate `variantTrees` map (the renderer mounts
+   `variants[].nodes` and rebuilds trees from them), `copy.unread`,
+   empty `prototype` shells, and extract-only audit fields
+   (`descendantEffects`, `scope`, `via`, `behavior`, `counts`,
+   `pageStateGraph`). Keep ancestor fields, `pageBox`, `sliceExport`,
+   `orderKey`, `rotation`, and `fillGeometry`. Compact `#qa-assets`
+   JSON (drop default `exportBounds`, collapse
    file-only records) but keep `assets/` paths and `exportBox`.
 5. Keep runtime fallback files when the page still has an `ind/` owner
    (`figma-indicator-*.png` / `.webp`, calendar fallback slices). Pages
@@ -74,11 +81,16 @@ export to pack quality so static review happens on crushed art.
 8. Runtime reference gates recurse HTML, CSS, JS, MJS, and JSON. A leftover
    packed asset path in a script or JSON file is a pack failure. Only
    root-relative `/...` paths resolve from the demo root; CSS/JS/JSON paths
-   without a leading `/` stay relative to that file. Quoted local names may
-   contain spaces; only srcset descriptors split on whitespace.
+   without a leading `/` stay relative to that file, except
+   `content-package/...` which is always demo-root (the replaceable index
+   writes that prefix). JS `url(path, query)` is not a CSS `url()`. Quoted
+   local names may contain spaces; only srcset descriptors split on whitespace.
 9. After a successful swap, leftover backup cleanup is outside the rollback
    critical section. Cleanup failure keeps the new demo and reports the leftover
    backup; it must not delete the new demo and restore a half-removed backup.
+   Commit copies the packed work tree into the live demo path. Do not rename
+   the live demo folder: a Windows preview / Explorer handle can pin that
+   name and return EPERM after the budget already passed.
 
 ## What Pack does not own
 
@@ -117,4 +129,4 @@ A green Main HTML-10MB gate is not a pack pass.
 
 ## Pack freshness hashes
 
-After mutation, pack writes SHA-256 for index.html, truth.json, and fonts-manifest.json onto out.hashes. A stale zip or a previous demo folder cannot prove the current pack. Compare packed hashes with the deployed files before claiming the live page is this skill revision.
+After mutation, pack writes SHA-256 for index.html, truth.json, and fonts-manifest.json onto out.hashes. A stale zip or a previous demo folder cannot prove the current pack. Compare packed hashes with the deployed files before claiming the live page is this skill revision. QA comment chrome ships inside that packed `index.html`; an already-deployed page does not pick up `docs/qa-comments.md` until that HTML is replaced. A season `commentPageId` is pack config. Do not reuse one pageId across different handoff pages that share a pathname.

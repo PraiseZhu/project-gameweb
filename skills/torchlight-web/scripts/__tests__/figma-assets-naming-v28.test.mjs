@@ -580,7 +580,7 @@ test('exportBox is page-aligned, never canvas renderBox', () => {
 
 test('whole-frame box export requests use_absolute_bounds=true', () => {
   const src = readFileSync(fileURLToPath(new URL('../figma-assets.mjs', import.meta.url)), 'utf8');
-  assert.match(src, /pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour/);
+  assert.match(src, /pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour && !unclippedImgInkSpill/);
   assert.match(src, /if \(chunk\[0\]\.exportBounds !== 'render'\) q\.set\('use_absolute_bounds', 'true'\)/);
   const timeBg = pickSliceNodes({
     schema: 'torchlight-ready-platform-truth/v1',
@@ -608,6 +608,37 @@ test('whole-frame box export requests use_absolute_bounds=true', () => {
   }).find((pick) => pick.nodeId === 'img-hero');
   assert.equal(timeBg?.exportBounds, 'box');
   assert.deepEqual(timeBg?.exportBox, { x: 10, y: 20, w: 200, h: 300 });
+});
+
+test('unclipped img/ FRAME with spilling inkBox exports that plate, not pageBox', () => {
+  const picks = pickSliceNodes({
+    schema: 'torchlight-ready-platform-truth/v1',
+    source: { schema: 'inventory/v2' },
+    platforms: {
+      mobile: {
+        sections: {
+          'sec:3': {
+            nodes: [{
+              id: '1119:4159',
+              type: 'FRAME',
+              name: 'img/立绘',
+              status: 'determined',
+              role: 'img',
+              pageBox: { x: 0, y: 2382, w: 750, h: 544 },
+              box: { x: 0, y: 2382, w: 750, h: 544 },
+              renderBox: { x: 0, y: 2270, w: 750, h: 782 },
+              inkBox: { x: -198, y: 2183, w: 1122, h: 1124 },
+              sliceExport: { bounds: 'render', scale: 1, format: 'png', file: '1119-4159.png', box: { x: 0, y: 2382, w: 750, h: 544 } },
+              style: { fills: [] },
+            }],
+          },
+        },
+      },
+    },
+  });
+  assert.equal(picks[0]?.nodeId, '1119:4159');
+  assert.equal(picks[0].exportBounds, 'render');
+  assert.deepEqual(picks[0].exportBox, { x: -198, y: 2183, w: 1122, h: 1124 });
 });
 
 test('rotated img/ arrow exports same-space render canvas, not squat pageBox AABB', () => {

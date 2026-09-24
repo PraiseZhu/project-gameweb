@@ -1214,6 +1214,72 @@ test('extractCopy: Figma LINE SEPARATOR splits the same as newline for cell span
   assert.match(out.byNode.mobile23.translations.en.value, /try again/);
 });
 
+test('extractCopy: table （小字）/（大字） is a size note, not painted copy', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko', L: 'ja' }, phaseRows: [60] },
+    rows: {
+      60: {
+        'zh-CN': '塔罗斯的困兽（大字）\n传奇掉落契灵签到领  通关剧情送自选触媒\n圆桌会谈 10月14日20:00（小字）\n全新赛季 10月16日10:00（小字）',
+        en: 'Tartarus（大字）\nCrush the Riot, Claim the Hoard\n\nSEASON LAUNCH: Oct 15, 7 PM PDT（小字）',
+        'zh-TW': '塔羅斯的困獸（大字）\n傳奇掉落契靈簽到領 通關送觸媒解放雙手\n全新賽季 10月16日 10:00（小字）',
+        ko: '타르타로스（大字） \n레전드 드롭 정령 무료 증정! 스토리 완성시 촉발체 선택상자 획득!\n \n10월16일 11:00(금) 정식 오픈（小字）',
+        ja: 'タロスの囚われし獣（大字）\nログインで伝説ペット獲得！ストーリークリアで「自走反応媒介」贈呈！\nラウンドテーブル 10月14日21:00（小字）\n新シーズン 10月16日11:00（小字）',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'sub', name: 'sub', characters: '传奇掉落契灵签到领  通关剧情送自选触媒', parentId: 'hero', orderKey: '1' },
+    { nodeId: 'd1', name: '圆桌会谈 10月14日20:00', characters: '圆桌会谈 10月14日20:00', parentId: 'dates', orderKey: '2' },
+    { nodeId: 'd2', name: '全新赛季 10月16日10:00', characters: '全新赛季 10月16日10:00', parentId: 'dates', orderKey: '3' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p, source: 'fixtures/lark-copy.json', sourceKind: 'fixture' } });
+  const overlay = {
+    nodeRow: {
+      d1: { row: 60, lineIndex: 2, takeCount: 1, why: 'roundtable date' },
+      d2: { row: 60, lineIndex: 3, takeCount: 1, why: 'season date' },
+    },
+  };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.d1.matchKind, 'designated');
+  assert.equal(out.byNode.d1.translations['zh-CN'].value, '圆桌会谈 10月14日20:00');
+  assert.equal(out.byNode.d1.translations.en.value, 'SEASON LAUNCH: Oct 15, 7 PM PDT');
+  assert.equal(String(out.byNode.d1.translations.en.value).includes('小字'), false);
+  assert.equal(out.byNode.d2.translations.en.absent, true);
+  assert.equal(out.byNode.d2.translations['zh-TW'].value, '');
+  assert.equal(out.byNode.d2.translations.ko.absent, true);
+  assert.equal(out.byNode.d2.translations.ja.value, '新シーズン 10月16日11:00');
+  assert.equal(out.byNode.d1.localeLineCounts.en, 3);
+  assert.equal(out.byNode.d1.localeLineCounts.ja, 4);
+});
+
+test('extractCopy: source-bare badge does not keep table 【】 / [] wrappers', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko', L: 'ja' } },
+    rows: {
+      63: {
+        'zh-CN': '传奇掉落契灵自选包\n【传奇掉落】',
+        en: 'Legendary Drop Pactspirit Selection Pack\n[Legendary]',
+        'zh-TW': '傳奇掉落契靈自選包\n【傳奇掉落】',
+        ko: '레전드 드롭 정령 자유 선택 상자\n[레전드 드롭!]',
+        ja: '伝説ドロップペットセレクトパック\n【伝説ドロップ】',
+      },
+    },
+  };
+  const texts = [
+    { nodeId: 'pack', name: 'pack', characters: '传奇掉落契灵自选包', parentId: 'card', orderKey: '1' },
+    { nodeId: 'badge', name: '传奇战斗', characters: '传奇战斗', parentId: 'card', orderKey: '2' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p, source: 'fixtures/lark-copy.json', sourceKind: 'fixture' } });
+  const overlay = { nodeRow: { badge: { row: 63, lineIndex: 1, takeCount: 1, why: 'badge' } } };
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts, copyOverlay: overlay });
+  assert.equal(out.byNode.badge.matchKind, 'designated');
+  assert.equal(out.byNode.badge.translations['zh-CN'].value, '传奇掉落');
+  assert.equal(out.byNode.badge.translations.en.value, 'Legendary');
+  assert.equal(out.byNode.badge.translations['zh-TW'].value, '傳奇掉落');
+  assert.equal(out.byNode.badge.translations.ko.value, '레전드 드롭!');
+  assert.equal(out.byNode.badge.translations.ja.value, '伝説ドロップ');
+});
+
 test('designationsToOverlay passes lineIndex and takeCount through to nodeRow', () => {
   const overlay = designationsToOverlay({
     designations: {
@@ -1329,6 +1395,229 @@ test('extractCopy: leftover calendar row binds when translations agree', () => {
   assert.equal(out.byNode.title.translations.en.value, 'Subscribe to Season Schedule');
   assert.ok(Array.isArray(out.report.leftoverRows));
   assert.ok(out.report.leftoverRows.includes('51'));
+});
+
+test('buildHandoffCopyEnvelope: designation binds 进入官网 instance TEXT to row 4, not master 官方充值', () => {
+  const demoDir = mkdtempSync(join(tmpdir(), 'handoff-copy-3114-'));
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' }, langs: ['zh-CN', 'en', 'zh-TW', 'ko'], phaseRows: PHASE_ONE },
+    rows: {
+      3: { 'zh-CN': '官方充值', en: 'Shop', 'zh-TW': '官方儲值', ko: '홈페이지 충전' },
+      4: { 'zh-CN': '进入官网', en: 'Official Website', 'zh-TW': '進入官網', ko: '홈페이지로 이동하기' },
+    },
+  }));
+  writeFileSync(join(demoDir, 'copy-designations.json'), JSON.stringify({
+    designations: {
+      'I1119:3114;1119:3346': { row: 4, why: 'btn/进入官网 instance characters' },
+    },
+  }));
+  const pcInventory = {
+    nodes: [
+      { id: '1119:3114', type: 'INSTANCE', name: 'btn/进入官网', status: 'determined', role: 'btn', parentId: 'fix' },
+      {
+        id: 'I1119:3114;1119:3346',
+        type: 'TEXT',
+        role: 'copy',
+        status: 'determined',
+        name: '官方充值',
+        text: { characters: '进入官网' },
+        parentId: '1119:3114',
+        orderKey: '1',
+      },
+      {
+        id: 'I1119:3115;1119:3346',
+        type: 'TEXT',
+        role: 'copy',
+        status: 'determined',
+        name: '官方充值',
+        text: { characters: '官方充值' },
+        parentId: '1119:3115',
+        orderKey: '2',
+      },
+    ],
+  };
+  const out = buildHandoffCopyEnvelope({ demoDir, pcInventory });
+  assert.equal(out.byNode['I1119:3114;1119:3346']?.matchKind, 'designated');
+  assert.equal(String(out.byNode['I1119:3114;1119:3346']?.row), '4');
+  assert.equal(out.byNode['I1119:3114;1119:3346']?.translations?.en?.value, 'Official Website');
+  assert.equal(out.byNode['I1119:3115;1119:3346']?.matchKind, 'exact');
+  assert.equal(String(out.byNode['I1119:3115;1119:3346']?.row), '3');
+  assert.equal(out.byNode['I1119:3115;1119:3346']?.translations?.en?.value, 'Shop');
+});
+
+test('buildHandoffCopyEnvelope: designation binds 赛季福利 TEXT to row 62, not 76/77/78', () => {
+  const demoDir = mkdtempSync(join(tmpdir(), 'handoff-copy-62-'));
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' }, langs: ['zh-CN', 'en', 'zh-TW', 'ko'], phaseRows: [62, 76, 77, 78] },
+    rows: {
+      62: { 'zh-CN': '赛季福利', en: 'Season Rewards', 'zh-TW': '賽季福利', ko: '시즌 혜택' },
+      76: { 'zh-CN': '赛季福利\n签到即可领取「传奇掉落契灵自选包」！', en: 'Season Rewards\nLog in to claim a pack!' },
+      77: { 'zh-CN': '赛季福利\n完成目标即可领取「基础触媒多选箱」！\n', en: 'Season Rewards\nComplete objectives!' },
+      78: { 'zh-CN': '赛季福利\n参与赛季系列活动可领取超值大礼。', en: 'Season Rewards\nJoin season events.' },
+    },
+  }));
+  writeFileSync(join(demoDir, 'copy-designations.json'), JSON.stringify({
+    designations: {
+      '1119:3145': { row: 62, why: 'PC sidebar 赛季福利' },
+      '1119:4124': { row: 62, why: 'mobile 赛季福利' },
+    },
+  }));
+  const pcInventory = {
+    nodes: [
+      { id: '1119:3144', type: 'FRAME', name: 'Frame 1312316806', status: 'skipped' },
+      { id: '1119:3145', type: 'TEXT', role: 'copy', status: 'determined', name: '赛季福利', text: { characters: '赛季福利' }, parentId: '1119:3144' },
+    ],
+  };
+  const mobileInventory = {
+    nodes: [
+      { id: '1119:4123', type: 'FRAME', name: 'Frame 1312316825', status: 'skipped' },
+      { id: '1119:4124', type: 'TEXT', role: 'copy', status: 'determined', name: '赛季福利', text: { characters: '赛季福利' }, parentId: '1119:4123' },
+    ],
+  };
+  const out = buildHandoffCopyEnvelope({ demoDir, pcInventory, mobileInventory });
+  for (const id of ['1119:3145', '1119:4124']) {
+    assert.equal(out.byNode[id]?.matchKind, 'designated');
+    assert.equal(String(out.byNode[id]?.row), '62');
+    assert.equal(out.byNode[id]?.translations?.en?.value, 'Season Rewards');
+    assert.equal(out.byNode[id]?.translations?.['zh-TW']?.value, '賽季福利');
+    assert.equal(out.byNode[id]?.translations?.ko?.value, '시즌 혜택');
+    assert.doesNotMatch(String(out.byNode[id]?.translations?.en?.value || ''), /\n/);
+  }
+});
+
+test('buildHandoffCopyEnvelope: designation binds mobile 契灵结晶 TEXT to row 65', () => {
+  const demoDir = mkdtempSync(join(tmpdir(), 'handoff-copy-65-'));
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' }, langs: ['zh-CN', 'en', 'zh-TW', 'ko'], phaseRows: [64, 65] },
+    rows: {
+      64: { 'zh-CN': '触媒自选包', en: 'Activation Medium Selection Pack', 'zh-TW': '觸媒自選包', ko: '기본 촉발체 자유 선택 상자' },
+      65: { 'zh-CN': '契灵结晶-战斗×30', en: 'Pactspirit Crystal - Battle\nx30', 'zh-TW': '契靈結晶-戰鬥×30', ko: '정령 결정-전투×30' },
+    },
+  }));
+  writeFileSync(join(demoDir, 'copy-designations.json'), JSON.stringify({
+    designations: {
+      '1119:4120': { row: 65, why: 'mobile 契灵结晶战斗量' },
+    },
+  }));
+  const pcInventory = {
+    nodes: [
+      { id: '1119:3143', type: 'TEXT', role: 'copy', status: 'determined', name: '契灵结晶-战斗×30', text: { characters: '契灵结晶-战斗×30' }, parentId: '1119:3142' },
+    ],
+  };
+  const mobileInventory = {
+    nodes: [
+      { id: '1119:4116', type: 'RECTANGLE', name: '契灵结晶-战斗 8', status: 'determined', parentId: '1119:4113' },
+      { id: '1119:4119', type: 'FRAME', name: 'Frame 1312316827', status: 'determined' },
+      { id: '1119:4120', type: 'TEXT', role: 'copy', status: 'determined', name: '契灵结晶- 战斗×10', text: { characters: '契灵结晶-\n战斗×10' }, parentId: '1119:4119' },
+    ],
+  };
+  const out = buildHandoffCopyEnvelope({ demoDir, pcInventory, mobileInventory });
+  assert.equal(out.byNode['1119:4120']?.matchKind, 'designated');
+  assert.equal(String(out.byNode['1119:4120']?.row), '65');
+  assert.equal(out.byNode['1119:4120']?.translations?.['zh-TW']?.value, '契靈結晶-戰鬥×30');
+  assert.equal(out.byNode['1119:4120']?.translations?.en?.value, 'Pactspirit Crystal - Battle\nx30');
+  assert.equal(out.byNode['1119:4120']?.translations?.ko?.value, '정령 결정-전투×30');
+  assert.equal(out.byNode['1119:3143']?.matchKind, 'exact');
+  assert.equal(String(out.byNode['1119:3143']?.row), '65');
+  assert.equal(out.byNode['1119:4116'], undefined);
+});
+
+test('buildHandoffCopyEnvelope: designation binds module titles to row 78/80 first sentence', () => {
+  const demoDir = mkdtempSync(join(tmpdir(), 'handoff-copy-78-80-'));
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' }, langs: ['zh-CN', 'en', 'zh-TW', 'ko'], phaseRows: [77, 78, 79, 80] },
+    rows: {
+      77: { 'zh-CN': '赛季福利\n完成目标即可领取「基础触媒多选箱」！\n', en: 'Season Rewards\nComplete objectives!' },
+      78: { 'zh-CN': '赛季福利\n参与赛季系列活动可领取超值大礼。', en: 'Season Rewards\nJoin season events.', 'zh-TW': '賽季福利\n參與賽季系列活動可領取超值大禮。', ko: '시즌 혜택\n시즌 시리즈 이벤트 참여 시 풍성한 보상.' },
+      79: { 'zh-CN': '新人限定福利\n传奇自选掉落契灵签到即领！\n\n*每个账号限领取一次，已领取过将无法再次参与。', en: 'New Player Exclusive\nLog in to claim a pack!\n\n*One claim per account.' },
+      80: { 'zh-CN': '新人限定福利\n完成目标可获得传奇自选战斗契灵！\n\n*每个账号限领取一次，已领取过将无法再次参与。', en: 'New Player Exclusive\nComplete objectives for a pack!\n\n*One claim per account.', 'zh-TW': '新人限定福利\n完成目標可獲得傳奇自選戰鬥契靈！\n\n*每個帳號限領取一次。', ko: '신규 유저 한정 혜택\n목표 달성 시 패키지 획득!\n\n* 계정당 1회.' },
+    },
+  }));
+  writeFileSync(join(demoDir, 'copy-designations.json'), JSON.stringify({
+    designations: {
+      'I1119:3623;1119:3160': { row: 78, lineIndex: 0, takeCount: 1, why: 'PC module7 v3 title' },
+      'I1119:4717;1119:4276': { row: 78, lineIndex: 0, takeCount: 1, why: 'mobile module7 v3 title' },
+      'I1119:3645;1119:3160': { row: 80, lineIndex: 0, takeCount: 1, why: 'PC module8 v2 title' },
+      'I1119:4739;1119:4276': { row: 80, lineIndex: 0, takeCount: 1, why: 'mobile module8 v2 title' },
+    },
+  }));
+  const pcInventory = {
+    nodes: [
+      { id: 'I1119:3623;1119:3160', type: 'TEXT', role: 'copy', status: 'determined', name: 'xxxxxx', text: { characters: '赛季福利' }, parentId: '1119:3623', orderKey: '1' },
+      { id: '1119:3631', type: 'TEXT', role: 'copy', status: 'determined', name: 'body', text: { characters: '参与赛季系列活动可领取超值大礼。' }, parentId: '1119:3630', orderKey: '2' },
+      { id: 'I1119:3645;1119:3160', type: 'TEXT', role: 'copy', status: 'determined', name: 'xxxxxx', text: { characters: '新人限定福利' }, parentId: '1119:3645', orderKey: '3' },
+      { id: '1119:3653', type: 'TEXT', role: 'copy', status: 'determined', name: 'body', text: { characters: '完成目标可获得传奇自选战斗契灵！' }, parentId: '1119:3652', orderKey: '4' },
+    ],
+  };
+  const mobileInventory = {
+    nodes: [
+      { id: 'I1119:4717;1119:4276', type: 'TEXT', role: 'copy', status: 'determined', name: 'xxxxx', text: { characters: '赛季福利' }, parentId: 'I1119:4717;1119:4275', orderKey: '1' },
+      { id: '1119:4725', type: 'TEXT', role: 'copy', status: 'determined', name: 'body', text: { characters: '参与赛季系列活动可领取超值大礼。' }, parentId: '1119:4724', orderKey: '2' },
+      { id: 'I1119:4739;1119:4276', type: 'TEXT', role: 'copy', status: 'determined', name: 'xxxxx', text: { characters: '新人限定福利' }, parentId: 'I1119:4739;1119:4275', orderKey: '3' },
+      { id: '1119:4747', type: 'TEXT', role: 'copy', status: 'determined', name: 'body', text: { characters: '完成目标可获得传奇自选战斗契灵！' }, parentId: '1119:4746', orderKey: '4' },
+    ],
+  };
+  const out = buildHandoffCopyEnvelope({ demoDir, pcInventory, mobileInventory });
+  for (const id of ['I1119:3623;1119:3160', 'I1119:4717;1119:4276']) {
+    assert.equal(out.byNode[id]?.matchKind, 'designated');
+    assert.equal(String(out.byNode[id]?.row), '78');
+    assert.equal(out.byNode[id]?.translations?.en?.value, 'Season Rewards');
+    assert.equal(out.byNode[id]?.translations?.['zh-TW']?.value, '賽季福利');
+    assert.equal(out.byNode[id]?.translations?.ko?.value, '시즌 혜택');
+    assert.doesNotMatch(String(out.byNode[id]?.translations?.en?.value || ''), /\n/);
+  }
+  for (const id of ['I1119:3645;1119:3160', 'I1119:4739;1119:4276']) {
+    assert.equal(out.byNode[id]?.matchKind, 'designated');
+    assert.equal(String(out.byNode[id]?.row), '80');
+    assert.equal(out.byNode[id]?.translations?.en?.value, 'New Player Exclusive');
+    assert.equal(out.byNode[id]?.translations?.['zh-TW']?.value, '新人限定福利');
+    assert.equal(out.byNode[id]?.translations?.ko?.value, '신규 유저 한정 혜택');
+    assert.doesNotMatch(String(out.byNode[id]?.translations?.en?.value || ''), /\n/);
+  }
+});
+
+test('buildHandoffCopyEnvelope: designation binds module7 v2 title to row 77 first sentence', () => {
+  const demoDir = mkdtempSync(join(tmpdir(), 'handoff-copy-77-'));
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' }, langs: ['zh-CN', 'en', 'zh-TW', 'ko'], phaseRows: [76, 77, 78] },
+    rows: {
+      76: { 'zh-CN': '赛季福利\n签到即可领取「传奇掉落契灵自选包」！', en: 'Season Rewards\nLog in to claim a pack.' },
+      77: { 'zh-CN': '赛季福利\n完成目标即可领取「基础触媒多选箱」！', en: 'Season Rewards\nComplete objectives to earn a Base Activation Medium Selection Chest!', 'zh-TW': '賽季福利\n完成目標即可領取「基礎觸媒多選箱」！', ko: '시즌 혜택\n목표 달성 시 기본 촉발체 자유 선택 상자 지급!' },
+      78: { 'zh-CN': '赛季福利\n参与赛季系列活动可领取超值大礼。', en: 'Season Rewards\nJoin season events.' },
+    },
+  }));
+  writeFileSync(join(demoDir, 'copy-designations.json'), JSON.stringify({
+    designations: {
+      'I1119:3613;1119:3160': { row: 77, lineIndex: 0, takeCount: 1, why: 'PC module7 v2 title' },
+      'I1119:4707;1119:4276': { row: 77, lineIndex: 0, takeCount: 1, why: 'mobile module7 v2 title' },
+    },
+  }));
+  const pcInventory = {
+    nodes: [
+      { id: 'I1119:3613;1119:3160', type: 'TEXT', role: 'copy', status: 'determined', name: 'xxxxxx', text: { characters: '赛季福利' }, parentId: '1119:3613', orderKey: '1' },
+      { id: '1119:3621', type: 'TEXT', role: 'copy', status: 'determined', name: 'body', text: { characters: '完成目标即可领取「基础触媒多选箱」！' }, parentId: '1119:3620', orderKey: '2' },
+    ],
+  };
+  const mobileInventory = {
+    nodes: [
+      { id: 'I1119:4707;1119:4276', type: 'TEXT', role: 'copy', status: 'determined', name: 'xxxxx', text: { characters: '赛季福利' }, parentId: 'I1119:4707;1119:4275', orderKey: '1' },
+      { id: '1119:4715', type: 'TEXT', role: 'copy', status: 'determined', name: 'body', text: { characters: '完成目标即可领取「基础触媒多选箱」！' }, parentId: '1119:4714', orderKey: '2' },
+    ],
+  };
+  const out = buildHandoffCopyEnvelope({ demoDir, pcInventory, mobileInventory });
+  for (const id of ['I1119:3613;1119:3160', 'I1119:4707;1119:4276']) {
+    assert.equal(out.byNode[id]?.matchKind, 'designated');
+    assert.equal(String(out.byNode[id]?.row), '77');
+    assert.equal(out.byNode[id]?.translations?.en?.value, 'Season Rewards');
+    assert.equal(out.byNode[id]?.translations?.['zh-TW']?.value, '賽季福利');
+    assert.equal(out.byNode[id]?.translations?.ko?.value, '시즌 혜택');
+    assert.doesNotMatch(String(out.byNode[id]?.translations?.en?.value || ''), /\n/);
+  }
 });
 
 test('extractCopy: nested instance title shares the uniquely bound cell-split row', () => {

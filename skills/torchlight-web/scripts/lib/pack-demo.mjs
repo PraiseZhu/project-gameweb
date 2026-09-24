@@ -193,6 +193,10 @@ export function packBudgetBreakdown(demoDir) {
 function resolveRuntimeReference(root, base, ref) {
   const clean = String(ref || '').trim().replace(/\\/g, '/').split(/[?#]/, 1)[0];
   if (clean.startsWith('/')) return resolve(root, `.${clean}`);
+  /* content-package/assets.json stores src from the demo root, not from
+     that JSON file. Resolving it as file-relative doubles the folder
+     (content-package/content-package/assets/…). */
+  if (clean.startsWith('content-package/')) return resolve(root, clean);
   return resolve(base, clean);
 }
 
@@ -240,7 +244,15 @@ function localReferences(text = '') {
       for (const candidate of value.split(',')) add(candidate.trim().split(/\s+/, 1)[0]);
     } else add(value);
   }
-  for (const match of String(text).matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi)) add(match[2]);
+  for (const match of String(text).matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi)) {
+    const value = String(match[2] || '').trim();
+    const quoted = Boolean(match[1]);
+    /* JS apiUrl(path, query) is not CSS url(). Quoted names with spaces stay. */
+    if (!value) continue;
+    if (!quoted && /[,\s]/.test(value)) continue;
+    if (!quoted && !/[./]/.test(value)) continue;
+    add(value);
+  }
   for (const match of String(text).matchAll(/@import\s+(?:url\(\s*)?["']([^"']+)["']/gi)) add(match[1]);
   // JS/JSON quoted scrape: only served folders + indicator fallbacks.
   // Bare "399-42188.png" in inlined renderer comments is not a served path.
@@ -379,20 +391,62 @@ function isComponentSetRecord(value) {
   return Boolean(value && typeof value === 'object' && Object.hasOwn(value, 'componentSetId') && Object.hasOwn(value, 'variants'));
 }
 
+function isVariantGraphRecord(value) {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && Array.isArray(value.componentSets)
+    && value.variantTrees
+    && typeof value.variantTrees === 'object',
+  );
+}
+
+function isCopyRecord(value) {
+  return Boolean(value && typeof value === 'object' && Object.hasOwn(value, 'byNode'));
+}
+
+function isEmptyPrototype(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  if (!keys.length) return true;
+  return keys.length === 1
+    && keys[0] === 'interactions'
+    && Array.isArray(value.interactions)
+    && value.interactions.length === 0;
+}
+
+const PACKED_TRUTH_EXTRACT_ONLY = new Set([
+  'failClosed',
+  'descendantEffects',
+  'scope',
+  'via',
+  'behavior',
+  'counts',
+  'pageStateGraph',
+]);
+
 /**
- * Packed truth.json is served. Extract-only failClosed and the COMPONENT_SET
- * paint list (duplicated by variants[].nodes + variantTrees) are not runtime.
- * Keep variants[].nodes — the inlined renderer mounts those trees.
+ * Packed truth.json is served. Extract-only failClosed, COMPONENT_SET paint
+ * lists, duplicate variantTrees maps, copy.unread, empty prototype shells,
+ * and other extract-only audit fields are not runtime. Keep
+ * variants[].nodes — the inlined renderer mounts those trees and rebuilds
+ * variantTrees from them when the packed map is absent. Keep ancestor
+ * fields, pageBox, sliceExport, orderKey, rotation, and fillGeometry.
  */
 export function slimPackedTruth(raw) {
   const walk = (value) => {
     if (Array.isArray(value)) return value.map(walk);
     if (!value || typeof value !== 'object') return value;
     const dropSetNodes = isComponentSetRecord(value);
+    const dropDuplicateTrees = isVariantGraphRecord(value);
+    const dropUnread = isCopyRecord(value);
     const next = {};
     for (const [key, child] of Object.entries(value)) {
-      if (key === 'failClosed') continue;
+      if (PACKED_TRUTH_EXTRACT_ONLY.has(key)) continue;
+      if (dropUnread && key === 'unread') continue;
+      if (key === 'prototype' && isEmptyPrototype(child)) continue;
       if (dropSetNodes && key === 'nodes') continue;
+      if (dropDuplicateTrees && key === 'variantTrees') continue;
       next[key] = walk(child);
     }
     return next;

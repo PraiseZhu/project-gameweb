@@ -229,10 +229,10 @@ export function viewFitScale({
  * Segmented width ruler (DESIGN.md 第 5.0). Not one k for every viewport:
  *   viewportW > 1920              → column follows viewport, k = viewportW / 3840
  *   1127 ≤ viewportW ≤ 1920       → freeze columnWidth 1920, k locked at 0.5
- *   viewportW ≤ 1126              → mobile tree; k = min(1, viewportW / 750)
- *                                   (official 751–1126 keeps 750-px button size
- *                                   while the window is the crop box; do not
- *                                   freeze a 750 column; do not let k>1 blow CTA)
+ *   viewportW ≤ 1126              → mobile tree; k = viewportW / 750
+ *                                   (official 10vw; first-screen buttons/cards
+ *                                   scale with the window like later UI; do not
+ *                                   freeze a 750 column then leftover-center)
  * officialRootFontPx stays 0.1 * viewportW (html 10vw). Tree cutoff stays 1126/1127.
  * Do not copy season patches (1440/1024/750/650 rem, aspect-ratio, hover, 812 QR).
  */
@@ -249,9 +249,11 @@ export function isLock1920CtaSetName(name) {
  * Cross-composition named-modal identity. Official SS13 keeps the popup
  * mounted when the tree switches at 1126: the PC sheet is replaced by the
  * matching mobile sheet, it is not closed. Inventory labels differ
- * (`pc_cn订阅赛季日程` vs `mobile订阅赛季日程`); strip platform / locale
- * prefixes so restore can find the counterpart. Exact leftover text still
- * has to match — do not invent a second modal.
+ * (`pc_cn订阅赛季日程` vs `mobile订阅赛季日程`, `pc_播放弹窗` vs
+ * `mobile视频弹窗`); strip platform / locale prefixes so restore can
+ * find the counterpart. Exact leftover text still has to match — do
+ * not invent a second modal. Dual-end play leftover 播放/视频 is the
+ * same overlay.
  */
 export function namedModalTopic(name) {
   let raw = String(name || '').trim();
@@ -259,7 +261,11 @@ export function namedModalTopic(name) {
   raw = raw.replace(/^modal\s*[\/／]\s*/i, '');
   raw = raw.replace(/^(?:pc|mobile|pad|desktop|phone|tablet)(?:[_-](?:cn|tw|en|jp|kr|zh))?/i, '');
   raw = raw.replace(/^(?:cn|tw|en|jp|kr|zh)[_-]/i, '');
-  return raw.replace(/^[_-]+/, '').trim();
+  raw = raw.replace(/^[_-]+/, '').trim();
+  /* Dual-end play sheets share one topic. Inventory leftover is 播放弹窗
+     on PC and 视频弹窗 on mobile; both are the play overlay. */
+  if (raw === '播放弹窗' || raw === '视频弹窗') return '视频弹窗';
+  return raw;
 }
 
 export function matchNamedModalByTopic(candidates, wantedName, prefs) {
@@ -342,13 +348,12 @@ export function widthScale({
     return { k: null, designWidth: used, officialRootFontPx: null, columnWidth: null, columnLeft: null };
   }
   if (width <= TORCHLIGHT_COMPOSITION_BREAKPOINTS[0].max) {
-    /* Official mobile UI rem is authored at 750. 751–1126 keeps that
-       size (k=1) while the window itself is the crop box — KV and later
-       bg cover fill viewportW, 750 later UI centers. Do not freeze a 750
-       column and center-crop: that paints brown bezel beside the page
-       and clips top-bar chrome. Below 750 then k = viewportW/750.
-       k = viewportW/750 unbounded would blow 1126 to 1.5×. */
-    const mobileK = Math.min(1, width / DESIGN_WIDTHS.mobile);
+    /* Official mobile UI rem is authored at 750 and html is 10vw, so
+       the whole 0–1126 band (first-screen buttons/cards included) is
+       k = viewportW/750. Do not freeze a 750 column and center-crop:
+       that paints brown bezel beside the page and clips top-bar chrome.
+       Composition still cuts to PC at 1127; that freeze is the cap. */
+    const mobileK = width / DESIGN_WIDTHS.mobile;
     return {
       k: mobileK,
       designWidth: DESIGN_WIDTHS.mobile,
@@ -442,39 +447,53 @@ export function pageOverflowPolicy({ productView = false } = {}) {
 }
 
 /* Page height ends at the visual page: min(bg/pc|bg/mobile board, page
-   frame). A 20000 artboard past the 18360 page frame is empty tail, not
-   extra scroll. Content past that lock is overflow, not a reason to
-   Math.max the scroll height. Missing board keeps the content extent
-   (capped by the page frame when present) so legacy fixtures still paint. */
-export function pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0 } = {}) {
+   frame), after the same layoutOffsetDesign that moves later UI and the
+   long board together. Official ≤1126 keeps that relative lock (gap:0);
+   locking to the unshifted Figma board after a 100vh crop leaves an
+   empty brown tail. A 20000 artboard past the 18360 page frame is still
+   empty tail, not extra scroll. Content past that lock is overflow, not
+   a reason to Math.max the scroll height. Missing board keeps the
+   content extent (capped by the page frame when present) so legacy
+   fixtures still paint. */
+export function pageScrollLock({
+  boardBottom = 0,
+  contentBottom = 0,
+  pageFrameBottom = 0,
+  layoutOffsetDesign = 0,
+} = {}) {
   const board = Number(boardBottom);
   const content = Number(contentBottom);
   const frame = Number(pageFrameBottom);
   const boardH = Number.isFinite(board) && board > 0 ? board : 0;
   const contentH = Number.isFinite(content) && content > 0 ? content : 0;
   const frameH = Number.isFinite(frame) && frame > 0 ? frame : 0;
+  const layoutOffset = Number(layoutOffsetDesign);
+  const shift = Number.isFinite(layoutOffset) ? layoutOffset : 0;
   if (!(boardH > 0)) {
-    const height = frameH > 0 && contentH > 0 ? Math.min(frameH, contentH)
-      : (frameH > 0 ? frameH : contentH);
+    const shiftedFrame = frameH > 0 ? frameH + shift : 0;
+    const height = shiftedFrame > 0 && contentH > 0 ? Math.min(shiftedFrame, contentH)
+      : (shiftedFrame > 0 ? shiftedFrame : contentH);
     return {
       height,
       overflowPx: 0,
       reason: 'board-missing',
       boardBottom: boardH,
       contentBottom: contentH,
-      pageFrameBottom: frameH,
+      pageFrameBottom: shiftedFrame || frameH,
     };
   }
-  const visualEnd = frameH > 0 ? Math.min(boardH, frameH) : boardH;
+  const shiftedBoard = boardH + shift;
+  const shiftedFrame = frameH > 0 ? frameH + shift : 0;
+  const visualEnd = shiftedFrame > 0 ? Math.min(shiftedBoard, shiftedFrame) : shiftedBoard;
   const overflowPx = contentH > visualEnd + 0.5 ? contentH - visualEnd : 0;
   return {
     height: visualEnd,
     overflowPx,
     reason: overflowPx > 0 ? 'content-past-board'
-      : (frameH > 0 && boardH > frameH + 0.5 ? 'page-frame' : 'board-bottom'),
-    boardBottom: boardH,
+      : (shiftedFrame > 0 && shiftedBoard > shiftedFrame + 0.5 ? 'page-frame' : 'board-bottom'),
+    boardBottom: shiftedBoard,
     contentBottom: contentH,
-    pageFrameBottom: frameH,
+    pageFrameBottom: shiftedFrame || frameH,
   };
 }
 
@@ -619,7 +638,7 @@ export function resizeOwns() {
   return [
     'product/QA tree from composition width (torchlight official 0–1126 mobile, ≥1127 pc; no pad tree)',
     'device-picker buckets stay 0–750 / 751–1023 / ≥1024 and do not select the Figma tree',
-    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5 and center-crop (left=(viewportW-1920)/2); ≤1126 mobile k=min(1, viewportW/750) so 751–1126 keeps 750-px UI while the window itself is the crop box for KV and later bg (750 later UI centers; official 10vw html font stays 0.1*viewportW)',
+    'segmented width ruler: >1920 k=viewportW/3840 and column follows viewport; 1127–1920 freeze columnWidth 1920 at k=0.5 and center-crop (left=(viewportW-1920)/2); ≤1126 mobile k=viewportW/750 for first-screen and later alike (official 10vw; 751–1126 buttons/cards scale with the window, not freeze at 750); later UI and the long bg/mobile board share that same windowW/750 (official later aspect stays locked; do not X-cover the sheet against frozen 750 UI; page clip follows the window so zoomed later sits flush around 800; later Y joins the used 100vh hero bottom on the later ruler; first-screen KV cover measures the window in first-screen k; official 10vw html font stays 0.1*viewportW)',
     'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; KV window is the real viewport, not the frozen 1920 column; inventory stays one sheet)',
     'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
     'left directory rail stretches to the current viewport height without SS5 node IDs',
@@ -631,7 +650,7 @@ export function resizeOwns() {
     'fixed directory follows remaining viewport height without inheriting KV cover scale',
     'hero lock / exit / release geometry while the window size changes',
     'temporary lock-1920 name list: fix/ prefix, COMPONENT_SET btn/主要按钮, 首屏主按钮 follow page k when viewportW>1920 so relative size vs KV stays the freeze-band ratio (no per-button freeze counter; landscape fix/ top bar is viewport flex-end on 1127–1920 and >1920; overlay shop/globe/dropmenu are siblings of the wide fix/ group; not a lasting naming system; not @fit=)',
-    'first-screen slg / calendar / primary CTA keep one vertical cluster: bottom-anchor together in page coords at every band, including ≤1126 on first cut (title-group nested SLG and play button ride the owner); phone calendar + CTA stay on Figma pageBox (overlapping stack, no invented row); 751–1126 shifts title/calendar/CTA by the same leftover so the authored gap holds and CTA is not clipped at 750; zh-CN shares that pageBox x with other languages; freeze-band KV covers the real viewport and QA wrap is vp.w not 1920; later pageBox is not padded to 100vh; SLG size stays page k at every PC band (no extra viewport-width stretch above 1920)',
+    'first-screen slg / calendar / primary CTA keep one vertical cluster: bottom-anchor together in page coords at every band, including ≤1126 on first cut (title-group nested SLG and play button ride the owner); phone calendar + CTA stay on Figma pageBox (overlapping stack, no invented row); ≤1126 first-screen UI shares k=viewportW/750 with later so leftover extra is 0 above 750 (do not freeze 750 then leftover-center); every language shares that pageBox x/y with zh-CN, including later sections; a language-shell remount must not add leftover a second time onto nested CTA art; freeze-band KV covers the real viewport and QA wrap is vp.w not 1920; later pageBox is not padded to 100vh; ≤1126 later UI and the long bg/mobile board share windowW/750 uniform scale plus layoutOffsetDesign so relative stretch matches official (scroll lock follows that visual end, not the unshifted Figma board); SLG size stays page k at every PC band (no extra viewport-width stretch above 1920)',
     'named modal stays open across light-drag and the pointerup full rebuild; overlay re-pins to the current frame (official popup is position:fixed and survives resize); tree switch at 1126 restores the matching mobile/PC sheet by topic + locale, it does not close',
   ];
 }

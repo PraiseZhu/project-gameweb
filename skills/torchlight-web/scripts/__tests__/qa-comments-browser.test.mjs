@@ -261,6 +261,254 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await page.close();
     });
 
+    await t.test('list navigation reopens a named modal and carousel page that hid the target', async () => {
+      const page = await pageFor('reveal-surface');
+      await page.evaluate(() => {
+        const stage = document.querySelector('#stage');
+        const frame = document.createElement('div');
+        frame.className = 'frame';
+        frame.innerHTML = document.querySelector('#stage').innerHTML;
+        stage.replaceChildren(frame);
+        const hero = document.createElement('div');
+        hero.setAttribute('data-node', 'hero-home');
+        hero.setAttribute('data-node-name', '首页KV');
+        hero.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:900px;background:#0f172a';
+        hero.textContent = 'homepage';
+        const host = document.createElement('div');
+        host.className = 'fx-named-modals';
+        host.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:0;overflow:hidden;pointer-events:none';
+        const modal = document.createElement('div');
+        modal.setAttribute('data-modal-name', '预约弹窗');
+        modal.setAttribute('data-node', 'modal-1');
+        modal.setAttribute('data-node-name', '预约弹窗');
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        modal.style.cssText = 'position:absolute;left:40px;top:40px;width:420px;min-height:120px;background:#334155;display:none';
+        modal.innerHTML = '<p data-node="modal-copy" data-node-name="弹窗文案" data-figma-type="TEXT" style="display:block;width:360px;min-height:70px">Modal copy for comments</p>';
+        host.appendChild(modal);
+        frame.append(hero, host);
+        frame.__fxNamedModals = [{ name: '预约弹窗', layer: modal }];
+        frame.__fxOpenNamedModal = function (entry) {
+          entry.layer.hidden = false;
+          entry.layer.style.display = 'block';
+          entry.layer.setAttribute('aria-hidden', 'false');
+          entry.layer.setAttribute('data-modal-open', 'true');
+          host.style.height = '560px';
+          host.style.overflow = 'visible';
+          host.style.pointerEvents = 'auto';
+          host.setAttribute('data-modal-fill', 'cover');
+        };
+        const carousel = document.createElement('div');
+        carousel.setAttribute('data-motion-carousel', 'true');
+        carousel.setAttribute('data-motion-carousel-index', '0');
+        carousel.style.cssText = 'position:absolute;left:40px;top:220px;width:420px;height:140px;overflow:hidden';
+        const page0 = document.createElement('div');
+        page0.setAttribute('data-motion-carousel-page', 'true');
+        page0.setAttribute('data-node', 'carousel-0');
+        page0.style.cssText = 'width:420px;height:140px;background:#1e3a5f';
+        page0.textContent = 'page 0';
+        const page1 = document.createElement('div');
+        page1.setAttribute('data-motion-carousel-page', 'true');
+        page1.setAttribute('data-node', 'carousel-1');
+        page1.setAttribute('aria-hidden', 'true');
+        page1.hidden = true;
+        page1.style.cssText = 'width:420px;height:140px;background:#14532d';
+        page1.innerHTML = '<p data-node="carousel-copy" data-node-name="第三屏文案" data-figma-type="TEXT" style="display:block;width:360px;min-height:70px">Third screen copy</p>';
+        carousel.append(page0, page1);
+        carousel.__fxCarouselMoveTo = function (idx) {
+          page0.hidden = idx !== 0; page0.setAttribute('aria-hidden', idx === 0 ? 'false' : 'true');
+          page1.hidden = idx !== 1; page1.setAttribute('aria-hidden', idx === 1 ? 'false' : 'true');
+          carousel.setAttribute('data-motion-carousel-index', String(idx));
+        };
+        const variantOwner = document.createElement('div');
+        variantOwner.setAttribute('data-switch-owner', 'true');
+        variantOwner.setAttribute('data-switch', 'module-2');
+        variantOwner.setAttribute('data-switch-page-source', 'component-set-variant');
+        variantOwner.setAttribute('data-switch-index', '0');
+        variantOwner.style.cssText = 'position:absolute;left:40px;top:380px;width:420px;height:140px;overflow:hidden';
+        const variant0 = document.createElement('div');
+        variant0.setAttribute('data-switch', 'module-2');
+        variant0.setAttribute('data-switch-variant-content', 'true');
+        variant0.setAttribute('data-switch-variant-index', '0');
+        variant0.style.cssText = 'width:420px;height:140px;background:#7c2d12';
+        variant0.textContent = 'variant 0';
+        const variant2 = document.createElement('div');
+        variant2.setAttribute('data-switch', 'module-2');
+        variant2.setAttribute('data-switch-variant-content', 'true');
+        variant2.setAttribute('data-switch-variant-index', '2');
+        variant2.setAttribute('aria-hidden', 'true');
+        variant2.hidden = true;
+        variant2.style.cssText = 'width:420px;height:140px;background:#365314';
+        variant2.innerHTML = '<p data-node="variant-copy" data-node-name="img/文字背景" data-figma-type="TEXT" style="display:block;width:360px;min-height:70px">Variant three copy</p>';
+        variantOwner.append(variant0, variant2);
+        frame.__fxApplySwitch = function (sid, idx) {
+          if (sid !== 'module-2') return;
+          variant0.hidden = idx !== 0; variant0.setAttribute('aria-hidden', idx === 0 ? 'false' : 'true');
+          variant2.hidden = idx !== 2; variant2.setAttribute('aria-hidden', idx === 2 ? 'false' : 'true');
+          variantOwner.setAttribute('data-switch-index', String(idx));
+        };
+        frame.appendChild(carousel);
+        frame.appendChild(variantOwner);
+        frame.__fxOpenNamedModal(frame.__fxNamedModals[0]);
+        carousel.__fxCarouselMoveTo(1);
+        frame.__fxApplySwitch('module-2', 2);
+      });
+      await publish(page, 'Need the reservation sheet', '[data-node="modal-copy"]');
+      await page.evaluate(() => {
+        const modal = document.querySelector('[data-modal-name="预约弹窗"]');
+        const host = document.querySelector('.fx-named-modals');
+        modal.hidden = true;
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        modal.removeAttribute('data-modal-open');
+        host.style.height = '0px';
+        host.style.overflow = 'hidden';
+        host.removeAttribute('data-modal-fill');
+      });
+      await count(page, '.qc-pin:not([hidden])', 0);
+      await panel(page);
+      await page.locator('.qc-item').filter({ hasText: 'Need the reservation sheet' }).click();
+      await page.waitForFunction(() => {
+        const modal = document.querySelector('[data-modal-name="预约弹窗"]');
+        const host = document.querySelector('.fx-named-modals');
+        const copy = document.querySelector('[data-node="modal-copy"]');
+        const box = copy && copy.getBoundingClientRect();
+        return modal && modal.getAttribute('data-modal-open') === 'true' && !modal.hidden
+          && host && host.getAttribute('data-modal-fill') === 'cover'
+          && box && box.height > 0 && box.top > 80;
+      }, null, { timeout: 6000 });
+      await count(page, '.qc-pin:not([hidden])', 1);
+      await page.keyboard.press('Escape');
+      await page.evaluate(() => {
+        const modal = document.querySelector('[data-modal-name="预约弹窗"]');
+        const overlay = document.querySelector('.fx-named-modals');
+        modal.hidden = true;
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        modal.removeAttribute('data-modal-open');
+        overlay.style.height = '0px';
+        overlay.style.overflow = 'hidden';
+        overlay.removeAttribute('data-modal-fill');
+        const host = document.querySelector('[data-motion-carousel]');
+        if (host && host.__fxCarouselMoveTo) host.__fxCarouselMoveTo(1);
+      });
+      await publish(page, 'Third screen crop', '[data-node="carousel-copy"]');
+      await page.evaluate(() => {
+        const host = document.querySelector('[data-motion-carousel]');
+        if (host && host.__fxCarouselMoveTo) host.__fxCarouselMoveTo(0);
+      });
+      await panel(page);
+      await page.locator('.qc-item').filter({ hasText: 'Third screen crop' }).click();
+      await page.waitForFunction(() => {
+        const copy = document.querySelector('[data-node="carousel-copy"]');
+        return copy && !copy.closest('[hidden], [aria-hidden="true"]');
+      }, null, { timeout: 6000 });
+      await page.keyboard.press('Escape');
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        if (frame && frame.__fxApplySwitch) frame.__fxApplySwitch('module-2', 2);
+      });
+      await publish(page, 'Need the third variant crop', '[data-node="variant-copy"]');
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        if (frame && frame.__fxApplySwitch) frame.__fxApplySwitch('module-2', 0);
+      });
+      await panel(page);
+      await page.locator('.qc-item').filter({ hasText: 'Need the third variant crop' }).click();
+      await page.waitForFunction(() => {
+        const copy = document.querySelector('[data-node="variant-copy"]');
+        return copy && !copy.closest('[hidden], [aria-hidden="true"]');
+      }, null, { timeout: 6000 });
+      await page.close();
+    });
+
+    await t.test('an open named modal hides page-layer pins until the modal closes', async () => {
+      const page = await pageFor('layer-pins');
+      await page.evaluate(() => {
+        const stage = document.querySelector('#stage');
+        const frame = document.createElement('div');
+        frame.className = 'frame';
+        frame.innerHTML = document.querySelector('#stage').innerHTML;
+        stage.replaceChildren(frame);
+        const pageCopy = document.createElement('p');
+        pageCopy.setAttribute('data-node', 'page-copy');
+        pageCopy.setAttribute('data-node-name', '页面文案');
+        pageCopy.setAttribute('data-figma-type', 'TEXT');
+        pageCopy.style.cssText = 'position:absolute;left:40px;top:320px;display:block;width:360px;min-height:70px';
+        pageCopy.textContent = 'Page copy under the modal';
+        const host = document.createElement('div');
+        host.className = 'fx-named-modals';
+        host.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:0;overflow:hidden;pointer-events:none';
+        const modal = document.createElement('div');
+        modal.setAttribute('data-modal-name', '预约弹窗');
+        modal.setAttribute('data-node', 'modal-1');
+        modal.setAttribute('data-node-name', '预约弹窗');
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        modal.style.cssText = 'position:absolute;left:40px;top:40px;width:420px;min-height:120px;background:#334155;display:none';
+        modal.innerHTML = '<p data-node="modal-copy" data-node-name="弹窗文案" data-figma-type="TEXT" style="display:block;width:360px;min-height:70px">Modal copy for comments</p>';
+        host.appendChild(modal);
+        frame.append(pageCopy, host);
+        frame.__fxNamedModals = [{ name: '预约弹窗', layer: modal }];
+        frame.__fxOpenNamedModal = function (entry) {
+          entry.layer.hidden = false;
+          entry.layer.style.display = 'block';
+          entry.layer.setAttribute('aria-hidden', 'false');
+          entry.layer.setAttribute('data-modal-open', 'true');
+          host.style.height = '560px';
+          host.style.overflow = 'visible';
+          host.style.pointerEvents = 'auto';
+        };
+        frame.__fxCloseNamedModal = function (entry) {
+          entry.layer.hidden = true;
+          entry.layer.style.display = 'none';
+          entry.layer.setAttribute('aria-hidden', 'true');
+          entry.layer.removeAttribute('data-modal-open');
+          host.style.height = '0px';
+          host.style.overflow = 'hidden';
+        };
+      });
+      await publish(page, 'Page layer issue', '[data-node="page-copy"]');
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        frame.__fxOpenNamedModal(frame.__fxNamedModals[0]);
+      });
+      await publish(page, 'Modal layer issue', '[data-node="modal-copy"]');
+      await page.waitForFunction(() => {
+        const pins = [...document.querySelectorAll('.qc-pin:not([hidden])')];
+        const modalOpen = document.querySelector('[data-modal-open="true"]');
+        return modalOpen && pins.length === 1 && /Modal layer issue/.test(pins[0].title || '');
+      }, null, { timeout: 6000 });
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        frame.__fxCloseNamedModal(frame.__fxNamedModals[0]);
+      });
+      await page.waitForFunction(() => {
+        const pins = [...document.querySelectorAll('.qc-pin:not([hidden])')];
+        const modalOpen = document.querySelector('[data-modal-open="true"]');
+        return !modalOpen && pins.length === 1 && /Page layer issue/.test(pins[0].title || '');
+      }, null, { timeout: 6000 });
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        frame.__fxOpenNamedModal(frame.__fxNamedModals[0]);
+      });
+      await panel(page);
+      await page.locator('.qc-item').filter({ hasText: 'Page layer issue' }).click();
+      await page.waitForFunction(() => {
+        const modalOpen = document.querySelector('[data-modal-open="true"]');
+        const outline = document.querySelector('.qc-outline');
+        const pins = [...document.querySelectorAll('.qc-pin:not([hidden])')];
+        const copy = document.querySelector('[data-node="page-copy"]');
+        const detail = document.querySelector('.qc-pop');
+        if (modalOpen || !outline || outline.hidden || !copy || !detail) return false;
+        const a = outline.getBoundingClientRect(), b = copy.getBoundingClientRect();
+        return pins.length === 1 && /Page layer issue/.test(pins[0].title || '')
+          && /Page layer issue/.test(detail.textContent || '')
+          && Math.abs(a.x - b.x) < 4 && Math.abs(a.y - b.y) < 4;
+      }, null, { timeout: 6000 });
+      await page.close();
+    });
+
     await t.test('resolve hides the pin; restoring from the resolved list brings it back', async () => {
       const page = await pageFor('resolve');
       await publish(page, 'Resolve after fix');

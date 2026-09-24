@@ -563,7 +563,7 @@ test('HEIGHT display title with only maxWidth wraps instead of nowrap-then-shrin
     autoResize: 'HEIGHT',
     maxWidth: 400,
     maxHeight: 80,
-  }), false);
+  }), true);
 });
 
 test('6.1 C width overflow against ancestor maxWidth shrinks; height growth without maxHeight does not', () => {
@@ -621,11 +621,29 @@ test('6.1 D data-fit-px 110 vs locale base 120 is step-fit, not percent', () => 
 test('renderer enqueue requires written Auto Layout max, not semanticBreak or ownerWidth', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
-  assert.match(src, /(hasAlCaps || rotatedNowrap) && !semanticBreak/);
+  assert.match(src, /axisFitPolicy\.shrink \|\| rotatedNowrap \|\| semanticBreak/);
   assert.doesNotMatch(src, /hasAlCaps \|\| semanticBreak/);
   assert.doesNotMatch(src, /widthFit: _ownerW/);
   assert.match(src, /boundedHugLabel = inlineHugs && !constraint\.openFlow && _centered && _fillsOwner && hasAlCaps/);
-  assert.match(src, /if \(!c\.groupKey \|\| c\.semanticBreak\) continue;/);
+  assert.match(src, /if \(!c\.groupKey\) continue;/);
+  assert.match(src, /if \(opts\.semanticBreak\) return;/);
+  assert.match(src, /_paintSemanticBreakText/);
+  assert.doesNotMatch(src, /semanticBreak \? semanticBreak\.lines\.join\('\\n'\)/);
+});
+
+test('renderer semantic break turns off overflow-wrap anywhere so approved English words stay whole', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
+  const at = src.indexOf("el.setAttribute('data-text-layout-policy', 'semantic-explicit-break')");
+  assert.ok(at > 0);
+  const block = src.slice(at - 1200, at + 280);
+  assert.match(block, /overflowWrap = 'normal'/);
+  assert.match(block, /wordBreak = 'keep-all'/);
+  assert.match(block, /whiteSpace = 'pre'/);
+  assert.match(block, /approvedLineCount >= 2 \? 'nowrap' : 'wrap'/);
+  assert.match(block, /data-semantic-break-nowrap/);
+  assert.doesNotMatch(block, /nid === '1119:4111'/);
+  assert.match(block, /HEIGHT wrap already set overflow-wrap:anywhere/);
 });
 
 test('renderer runFit forwards Auto Layout maxWidth/maxHeight into _fitText', async () => {
@@ -749,6 +767,14 @@ test('renderer HEIGHT+HUG wraps inside written maxWidth instead of flex-spilling
   assert.match(src, /skipped-auto-layout-max/);
   assert.match(src, /data-fit-wrap-cap/);
   assert.match(src, /fitOwnerFromSkipped/);
+  assert.match(src, /data-text-wrap-anchor', 'source-center'/);
+  assert.match(src, /centeredWrap/);
+  assert.match(src, /_realignCenteredHeightWraps\(frame\)/);
+  const realignAt = src.indexOf('_realignTranslatedClipText(el, box)');
+  assert.ok(realignAt > 0);
+  const realign = src.slice(realignAt, realignAt + 2200);
+  assert.match(realign, /hug-height-block/);
+  assert.match(realign, /sourceCenterInParent/);
 });
 
 test('latin fallback without target locale still marks copy-missing', async () => {
