@@ -313,9 +313,34 @@
     const sourceRight = Number(box && ((box.x ?? 0) + (box.w ?? 0)));
     if (!(vw > 0) || !(k > 0) || !(sourceRight > 0)) return 0;
     /* Overlay host is viewport-wide (`fixedHost` width 100%), not the
-       frozen 1920 column. Pin the cluster right edge to the current
-       window; do not add columnLeft or freeze-band chrome is cropped. */
-    return (vw / k) - sourceRight;
+       frozen 1920 column. Pin the design page right to the current
+       window; do not add columnLeft or freeze-band chrome is cropped.
+       Authored CN right-edge inset is already inside sourceRight
+       (PC 3840−3796=44; mobile 750−736=14) and must stay every season.
+       Pin `_designWidth`, not the visual leaf: a short mobile `fix/`
+       group (736 vs 750) would otherwise eat that inset. */
+    const pageW = Number(this._designWidth);
+    const pinRight = pageW > 0 ? pageW : sourceRight;
+    if (!(pinRight > 0)) return 0;
+    return (vw / k) - pinRight;
+  },
+  _isWideTopbarGroup(node, box, designW) {
+    const pageW = Number(designW);
+    const w = Number(box && box.w);
+    if (!(pageW > 0) || !(w > 0)) return false;
+    const name = String((node && node.name) || '');
+    const pfx = String((node && node.prefix) || name.split('/')[0] || '').toLowerCase();
+    /* Wide `fix/` hosts (PC 侧边栏 1200, mobile 右上方导航 366) are overlay
+       groups, not the visible right edge. Inset records the rightmost leaf. */
+    if (pfx === 'fix' || /^fix(?:\/|$)/i.test(name)) return w >= pageW * 0.25;
+    return false;
+  },
+  _scanTopbarSeasonRightInset(nodes, designW) {
+    const pageW = Number(designW);
+    if (!(pageW > 0)) return 0;
+    const right = this._scanTopbarClusterRight(nodes, pageW);
+    if (!(right > 0) || right > pageW) return 0;
+    return Math.max(0, pageW - right);
   },
   _isRightTopbarChrome(box, designW) {
     const x = Number(box && box.x);
@@ -416,7 +441,8 @@
         const box = node && (node.pageBox || node.box);
         const rawName = String(node && node.name || '');
         const pfx = String(node && node.prefix || rawName.split('/')[0] || '').toLowerCase();
-        if (this._isRightTopbarChrome(box, designW) && this._isTopbarOverlayChrome(node, pfx, null)) {
+        if (this._isRightTopbarChrome(box, designW) && this._isTopbarOverlayChrome(node, pfx, null)
+          && !this._isWideTopbarGroup(node, box, designW)) {
           const edge = Number(box.x ?? 0) + Number(box.w ?? 0);
           if (edge > right) right = edge;
         }
@@ -426,6 +452,221 @@
     };
     walk(nodes);
     return right;
+  },
+  _langButtonSlotFromTruth(host, overlays) {
+    const hostId = host && host.getAttribute && String(host.getAttribute('data-node') || '');
+    if (!hostId || !Array.isArray(overlays) || !overlays.length) return null;
+    const hostNode = overlays.find((node) => String((node && node.id) || '') === hostId);
+    const menu = overlays.find((node) => {
+      return String((node && node.parentId) || '') === hostId
+        && /^dropmenu\/多语言/.test(String((node && node.name) || ''));
+    });
+    if (!hostNode || !menu) return null;
+    const menuId = String(menu.id || '');
+    const icon = overlays.find((node) => {
+      return String((node && node.parentId) || '') === menuId
+        && /img\/(?:icon|按钮背景)/.test(String((node && node.name) || ''));
+    }) || menu;
+    const hostBox = hostNode.pageBox || hostNode.box || {};
+    const iconBox = icon.pageBox || icon.box || {};
+    return {
+      left: Number(iconBox.x ?? 0) - Number(hostBox.x ?? 0),
+      top: Number(iconBox.y ?? 0) - Number(hostBox.y ?? 0),
+      width: Number(iconBox.w ?? 0),
+      height: Number(iconBox.h ?? 0),
+    };
+  },
+  /* CN hides dropmenu/多语言. Align remaining top-right chrome to the
+     painted img/奖励底框 right, plus any child that overflows that plate.
+     Do not move the 奖励栏 itself. Mobile globe stays on the authored
+     language-icon slot. */
+  _isCnTopbarRegion(frame) {
+    const prefs = (frame && frame.__fxRenderPrefs) || {};
+    const region = String(prefs.region || (frame && frame.getAttribute && frame.getAttribute('data-fx-region')) || '').trim();
+    const lang = String(prefs.lang || (frame && frame.getAttribute && frame.getAttribute('data-fx-lang')) || '').trim();
+    if (region === 'cn') return true;
+    if (region === 'global') return false;
+    return lang === 'zh-CN';
+  },
+  _elementLeftFromFrame(el, frame) {
+    let left = 0;
+    let node = el;
+    while (node && node !== frame) {
+      left += Number.parseFloat(node.style && node.style.left) || 0;
+      node = node.parentElement;
+    }
+    return left;
+  },
+  _cnRewardPanelRightFromFrame(frame) {
+    const inner = frame && typeof frame.querySelector === 'function'
+      && frame.querySelector('[data-name="img/奖励底框"]');
+    if (!inner || !inner.getAttribute) return 0;
+    const w = Number.parseFloat(inner.style && inner.style.width);
+    const ownerLeft = this._elementLeftFromFrame(inner, frame);
+    if (!(Number.isFinite(ownerLeft) && Number.isFinite(w) && w > 0)) return 0;
+    let overflowRight = 0;
+    if (typeof inner.querySelectorAll === 'function') {
+      for (const child of inner.querySelectorAll('[style]')) {
+        const childW = Number.parseFloat(child.style && child.style.width);
+        if (!(Number.isFinite(childW) && childW > 0)) continue;
+        const childLeft = this._elementLeftFromFrame(child, inner);
+        const extra = childLeft + childW - w;
+        if (Number.isFinite(extra) && extra > overflowRight) overflowRight = extra;
+      }
+    }
+    return ownerLeft + w + overflowRight;
+  },
+  _cnRewardPanelRightFromTruth(overlays) {
+    const nodes = Array.isArray(overlays) ? overlays : [];
+    const plate = nodes.find((node) => String((node && node.name) || '') === 'img/奖励底框');
+    if (!plate) return 0;
+    const box = plate.pageBox || plate.box || {};
+    const left = Number(box.x);
+    const width = Number(box.w);
+    if (!(Number.isFinite(left) && Number.isFinite(width) && width > 0)) return 0;
+    let right = left + width;
+    const plateId = String(plate.id || plate.nodeId || '');
+    for (const node of nodes) {
+      if (!node || String(node.parentId || '') !== plateId) continue;
+      const child = node.pageBox || node.box || {};
+      const childLeft = Number(child.x);
+      const childW = Number(child.w);
+      if (!(Number.isFinite(childLeft) && Number.isFinite(childW) && childW > 0)) continue;
+      const childRight = childLeft + childW;
+      if (childRight > right) right = childRight;
+    }
+    return right;
+  },
+  _cnTopbarFlushRight(frame, overlays) {
+    const live = this._cnRewardPanelRightFromFrame(frame);
+    if (live > 0) return live;
+    return this._cnRewardPanelRightFromTruth(overlays);
+  },
+  _placeCnOfficialSiteOnLangSlot(frame, overlays) {
+    if (!frame || typeof frame.querySelectorAll !== 'function') return;
+    const isCn = this._isCnTopbarRegion(frame);
+    const platNow = String((frame.__fxRenderPrefs && frame.__fxRenderPrefs.plat)
+      || (frame.getAttribute && frame.getAttribute('data-fx-base')) || '').trim();
+    const isMobile = platNow === 'mobile' || Number(this._designWidth) <= 750;
+    const alignRight = !isMobile && isCn ? this._cnTopbarFlushRight(frame, overlays) : 0;
+    const buttons = [...frame.querySelectorAll('[data-btn-name="进入官网"], [data-name="btn/进入官网"]')];
+    for (const btn of buttons) {
+      if (!btn || btn.getAttribute('data-dropmenu') === 'true') continue;
+      if (!btn.__fxOfficialSiteBox) {
+        btn.__fxOfficialSiteBox = {
+          left: btn.style.left || '',
+          top: btn.style.top || '',
+          width: btn.style.width || '',
+          height: btn.style.height || '',
+        };
+      }
+      const host = btn.parentElement;
+      const hostLeft = Number.parseFloat((host && host.style.left) || '0') || 0;
+      const menu = host && [...host.children].find((el) => {
+        return el !== btn && /多语言/.test(String(el.getAttribute('data-dropmenu-name') || el.getAttribute('data-name') || ''));
+      });
+      if (isCn && isMobile) {
+        /* CN skips painting dropmenu/多语言, so the live icon is gone.
+           Use the authored language-button box (menu+icon, or truth
+           pageBox vs the shared fix/ host). */
+        let slotLeft = NaN;
+        let slotTop = NaN;
+        let slotW = '';
+        let slotH = '';
+        if (menu) {
+          const icon = menu.querySelector('[data-name="img/icon"]') || menu.querySelector('[data-name="img/按钮背景"]');
+          const menuLeft = Number.parseFloat(menu.style.left) || 0;
+          const menuTop = Number.parseFloat(menu.style.top) || 0;
+          const iconLeft = icon ? (Number.parseFloat(icon.style.left) || 0) : 0;
+          const iconTop = icon ? (Number.parseFloat(icon.style.top) || 0) : 0;
+          slotLeft = menuLeft + iconLeft;
+          slotTop = menuTop + iconTop;
+          slotW = (icon && icon.style.width) || menu.style.width;
+          slotH = (icon && icon.style.height) || menu.style.height;
+        } else {
+          const slot = this._langButtonSlotFromTruth(host, overlays);
+          if (slot && Number.isFinite(slot.left) && Number.isFinite(slot.top)) {
+            slotLeft = slot.left;
+            slotTop = slot.top;
+            if (slot.width > 0) slotW = slot.width + 'px';
+            if (slot.height > 0) slotH = slot.height + 'px';
+          }
+        }
+        if (Number.isFinite(slotLeft) && Number.isFinite(slotTop)) {
+          btn.style.left = slotLeft + 'px';
+          btn.style.top = slotTop + 'px';
+          if (slotW) btn.style.width = slotW;
+          if (slotH) btn.style.height = slotH;
+          btn.setAttribute('data-cn-official-slot', 'lang-button');
+          continue;
+        }
+      } else if (isCn && !isMobile && alignRight > 0) {
+        const rest = btn.__fxOfficialSiteBox;
+        const width = Number.parseFloat(rest.width || btn.style.width) || 0;
+        if (width > 0) {
+          /* 516 INSTANCE hitbox is wider than the gold plate
+             (`img/按钮背景`). Flush the painted plate to img/奖励底框
+             right (plus any overflowing child), not the empty hitbox. */
+          const plate = btn.querySelector && btn.querySelector('[data-name="img/按钮背景"]');
+          const plateLeft = plate ? (Number.parseFloat(plate.style && plate.style.left) || 0) : 0;
+          const plateW = plate ? (Number.parseFloat(plate.style && plate.style.width) || 0) : 0;
+          const visualSpan = plateW > 0 ? plateLeft + plateW : width;
+          const nextLeft = alignRight - hostLeft - visualSpan;
+          const authoredLeft = Number.parseFloat(rest.left) || 0;
+          const delta = nextLeft - authoredLeft;
+          btn.style.left = nextLeft + 'px';
+          btn.style.top = rest.top;
+          btn.style.width = rest.width;
+          btn.style.height = rest.height;
+          btn.setAttribute('data-cn-official-slot', 'reward-panel-right');
+          if (host && Math.abs(delta) > 0.5) {
+            for (const sib of host.children) {
+              if (sib === btn) continue;
+              if (sib.getAttribute('data-cn-official-slot') === 'reward-panel-right') continue;
+              const name = String(sib.getAttribute('data-name') || sib.getAttribute('data-btn-name') || '');
+              if (!/进入官网|官方充值|折扣/.test(name)) continue;
+              if (!sib.__fxCnTopbarLeft) sib.__fxCnTopbarLeft = sib.style.left || '';
+              const sibLeft = Number.parseFloat(sib.__fxCnTopbarLeft) || 0;
+              sib.style.left = (sibLeft + delta) + 'px';
+              sib.setAttribute('data-cn-official-slot', 'reward-panel-right');
+            }
+          }
+          continue;
+        }
+      }
+      if (btn.__fxOfficialSiteBox) {
+        btn.style.left = btn.__fxOfficialSiteBox.left;
+        btn.style.top = btn.__fxOfficialSiteBox.top;
+        btn.style.width = btn.__fxOfficialSiteBox.width;
+        btn.style.height = btn.__fxOfficialSiteBox.height;
+        btn.removeAttribute('data-cn-official-slot');
+      }
+      if (host) {
+        for (const sib of host.children) {
+          if (sib.__fxCnTopbarLeft != null) {
+            sib.style.left = sib.__fxCnTopbarLeft;
+            sib.removeAttribute('data-cn-official-slot');
+          }
+        }
+      }
+    }
+    const nav = frame.querySelector('[data-name="fix/右上方导航"]');
+    if (nav) {
+      if (!nav.__fxCnNavLeft) nav.__fxCnNavLeft = nav.style.left || '';
+      const navW = Number.parseFloat(nav.style.width) || 0;
+      const pageW = Number(this._designWidth) || 0;
+      if (isCn && isMobile && navW > 0 && pageW > 0) {
+        /* Official CN iPhone/Android pin the remaining globe to the window
+           right (QA right=0). Authored group ends 14px early (736/750). */
+        nav.style.left = (pageW - navW) + 'px';
+        nav.setAttribute('data-cn-official-slot', 'window-right');
+      } else {
+        nav.style.left = nav.__fxCnNavLeft;
+        if (nav.getAttribute('data-cn-official-slot') === 'window-right') {
+          nav.removeAttribute('data-cn-official-slot');
+        }
+      }
+    }
   },
   _openNamedModalNames(frame) {
     if (!frame || typeof frame.querySelectorAll !== 'function') return [];
@@ -445,14 +686,17 @@
   },
   /* Official SS13: PC popup stays mounted when the tree cuts at 1126; the
      matching mobile sheet replaces it. Labels differ (`pc_cn订阅赛季日程`
-     vs `mobile订阅赛季日程`); strip platform / locale prefixes. */
+     vs `mobile订阅赛季日程`); strip platform / locale prefixes. Dual-end
+     play leftover is `pc_播放弹窗` vs `mobile视频弹窗` — same overlay. */
   _namedModalTopic(name) {
     let raw = String(name || '').trim();
     if (!raw) return '';
     raw = raw.replace(/^modal\s*[\/／]\s*/i, '');
     raw = raw.replace(/^(?:pc|mobile|pad|desktop|phone|tablet)(?:[_-](?:cn|tw|en|jp|kr|zh))?/i, '');
     raw = raw.replace(/^(?:cn|tw|en|jp|kr|zh)[_-]/i, '');
-    return raw.replace(/^[_-]+/, '').trim();
+    raw = raw.replace(/^[_-]+/, '').trim();
+    if (raw === '播放弹窗' || raw === '视频弹窗') return '视频弹窗';
+    return raw;
   },
   _matchNamedModalByTopic(candidates, wantedName, prefs) {
     const wanted = String(wantedName || '').trim();
@@ -565,16 +809,25 @@
   },
   /* Later official is rem, not a second 100vh. Do not pad later pageBox
      to the first-screen slot — that leaves #180f02 under sec/3 after
-     bg/pc背景2. Keep Figma height. */
+     bg/pc背景2. Keep Figma height. ≤1126 first-screen and later share
+     windowW/750 (official later aspect stays locked). */
   _laterStageHeight(sectionH, { k, viewportH, slotH } = {}) {
     void k; void viewportH; void slotH;
     return Number(sectionH) || 0;
+  },
+  _laterUniformScale(designWidth, pageK) {
+    const dw = Number(designWidth);
+    const page = Number(pageK);
+    const vw = Number(this._viewportWidth);
+    if (!(dw > 0)) return Number.isFinite(page) && page > 0 ? page : 1;
+    if (Number.isFinite(vw) && vw > 750 && vw <= 1126) return vw / dw;
+    return Number.isFinite(page) && page > 0 ? page : 1;
   },
   scale() {
     const dw = this._designWidth || 3840;
     const w = Number(this._viewportWidth);
     if (Number.isFinite(w) && w > 0) {
-      if (dw <= 750 || w <= 1126) return Math.min(1, w / 750);
+      if (dw <= 750 || w <= 1126) return w / 750;
       if (w <= 1920) return 0.5;
       return w / 3840;
     }
@@ -970,6 +1223,97 @@
     return true;
   },
 
+  /* VECTOR language-chip plates bake a square AABB PNG. The authored contour
+     already has the 6px corners. Clip the CSS fill to that rounded rect so
+     the four tips stay round; SVG `fill` cannot take a CSS gradient.
+     `border-radius` scales with the overlay zoom. Inset `box-shadow` follows
+     the radius without shifting the label. */
+  _sourceFillCss(n) {
+    const fills = Array.isArray(n && n.style && n.style.fills) ? n.style.fills : [];
+    const vis = fills.filter((fill) => fill && fill.visible !== false);
+    const first = vis[0];
+    if (!first) return '';
+    if (String(first.type || '').startsWith('GRADIENT')) return this._cssGradient(first) || '';
+    return this._solidFill(vis) || '';
+  },
+  _roundedVectorRadius(n, sourcePath) {
+    const fromStyle = Number(n && n.style && (n.style.radius != null ? n.style.radius : n.style.cornerRadius));
+    if (Number.isFinite(fromStyle) && fromStyle > 0) return fromStyle;
+    const match = String(sourcePath || '').match(/^\s*M\s*0\s+(\d+(?:\.\d+)?)/i);
+    if (!match) return null;
+    const radius = Number(match[1]);
+    return Number.isFinite(radius) && radius > 0 ? radius : null;
+  },
+  _isLangSwitchButton(el) {
+    if (!el || !el.getAttribute) return false;
+    const named = [
+      el.getAttribute('data-btn-name'),
+      el.getAttribute('data-name'),
+      el.getAttribute('data-node-name'),
+    ].filter(Boolean).join(' ');
+    return /切换语言/.test(named);
+  },
+  _langChipHostOf(el) {
+    if (!el || !el.closest) return null;
+    return el.closest('[data-btn-name="切换语言"], [data-name="btn/切换语言"], [data-btn-variant="true"]');
+  },
+  _fitLangChipHost(el) {
+    const host = this._langChipHostOf(el);
+    if (!host || !this._isLangSwitchButton(host)) return false;
+    host.style.background = 'transparent';
+    host.style.backgroundImage = 'none';
+    const radius = el.style.borderRadius;
+    if (radius) {
+      host.style.borderRadius = radius;
+      host.style.overflow = 'hidden';
+    }
+    host.setAttribute('data-lang-chip-host', 'vector-plate');
+    for (const img of [...host.querySelectorAll(':scope > img.fx-img, :scope > img[data-asset-src]')]) {
+      img.style.display = 'none';
+      img.setAttribute('data-shape-rounded-vector-hidden', 'square-aabb-slice');
+    }
+    return true;
+  },
+  _paintAuthoredRoundedVector(el, n) {
+    if (!el || !n || n.type !== 'VECTOR') return false;
+    const named = String(n.name || '');
+    if (!/img\/(?:选中背景|未选中背景)/.test(named) && !/切换语言/.test(named)) return false;
+    const sourcePath = this._sourceFillPath(n);
+    const fillCss = this._sourceFillCss(n);
+    if (!sourcePath || !fillCss) return false;
+    const radius = this._roundedVectorRadius(n, sourcePath);
+    el.style.background = fillCss;
+    el.style.removeProperty('clip-path');
+    el.style.removeProperty('-webkit-clip-path');
+    if (radius != null) el.style.borderRadius = radius + 'px';
+    el.style.overflow = 'hidden';
+    const st = n.style || {};
+    const strokeCss = st.strokeColor
+      ? (st.strokeColor.color ? this._rgba(st.strokeColor.color) : this._rgba(st.strokeColor))
+      : '';
+    const weight = Number(st.strokeWeight);
+    if (strokeCss && Number.isFinite(weight) && weight > 0) {
+      const align = st.strokeAlign || 'INSIDE';
+      if (align === 'OUTSIDE') el.style.boxShadow = '0 0 0 ' + weight + 'px ' + strokeCss;
+      else if (align === 'CENTER') {
+        el.style.boxShadow = 'inset 0 0 0 ' + (weight / 2) + 'px ' + strokeCss
+          + ', 0 0 0 ' + (weight / 2) + 'px ' + strokeCss;
+      } else {
+        el.style.boxShadow = 'inset 0 0 0 ' + weight + 'px ' + strokeCss;
+      }
+      el.setAttribute('data-shape-rounded-vector-stroke', String(weight));
+      el.removeAttribute('data-stroke-unrendered');
+    }
+    el.setAttribute('data-shape-rounded-vector', 'source-border-radius');
+    if (radius != null) el.setAttribute('data-shape-rounded-vector-radius', String(radius));
+    el.removeAttribute('data-shape-approx');
+    for (const img of [...el.querySelectorAll('img.fx-img, img[data-asset-src]')]) {
+      img.style.display = 'none';
+      img.setAttribute('data-shape-rounded-vector-hidden', 'square-aabb-slice');
+    }
+    return true;
+  },
+
   /** fills 里有没有渐变/图片（需要占位而不是纯色） */
   _fillKind(fills) {
     if (!Array.isArray(fills)) return 'none';
@@ -1323,9 +1667,16 @@
     const notoTarget = /Noto Sans/i.test(target);
     const regularStyle = /Regular/i.test(String(fontStyle || ''));
     const youHeiRegular = youHeiSource && (requested === 600 || (!Number.isFinite(requested) && regularStyle));
-    if (youHeiSource && notoTarget && youHeiRegular) return 400;
+    if (youHeiSource && notoTarget && youHeiRegular) {
+      if (/Noto Sans HK/i.test(target)) return Number.isFinite(requested) ? requested : 600;
+      return 400;
+    }
     if (youHeiTarget) {
       return Number.isFinite(requested) ? requested : 600;
+    }
+    const notoSource = /Noto Sans/i.test(source);
+    if (notoSource && notoTarget && family !== sourceFamily && (requested === 400 || (!Number.isFinite(requested) && regularStyle))) {
+      return 600;
     }
     return Number.isFinite(requested) ? requested : 400;
   },
@@ -1448,7 +1799,13 @@
     if (Math.abs(natW - pw) <= 2 && Math.abs(natH - ph) <= 2) return true;
     const sx = natW / pw;
     const sy = natH / ph;
-    return sx > 0.05 && sy > 0.05 && sx <= 1.02 && sy <= 1.02 && Math.abs(sx - sy) <= 0.02;
+    if (sx > 0.05 && sy > 0.05 && sx <= 1.02 && sy <= 1.02 && Math.abs(sx - sy) <= 0.02) return true;
+    /* Figma render PNG ceils and sometimes pads a few px past exportBox
+       (named prize plates around the authored box). That is still the named
+       plate — recentering by natural size slides the art. */
+    const padW = natW - pw;
+    const padH = natH - ph;
+    return padW >= -2 && padH >= -2 && padW <= 12 && padH <= 12;
   },
   _ownerSliceBox(assetRec, ownerBox, renderBox, extraBox = null, sliceExportBox = null) {
     /* Whole-frame img/bg/kv clip to pageBox. Canvas renderBox (x≈-14000) and
@@ -1456,13 +1813,20 @@
        even when sliceExport.box copied the short pageBox (103×50 vs 102×103). */
     const ownerReady = this._geomReady(ownerBox);
     const delivered = assetRec && assetRec.exportBox;
+    /* Ancestor-visible renderBox can be the section crop while the
+       unclipped descendant plate lives on extraBox/inkBox. A PNG that
+       matches that plate must win before the cropped renderBox. */
+    if (this._boxSpillsOwner(extraBox, ownerBox) && this._pngMatchesBox(assetRec, extraBox)) {
+      return extraBox;
+    }
+    if (this._boxSpillsOwner(delivered, ownerBox) && this._pngMatchesBox(assetRec, delivered)) return delivered;
     if (this._boxSpillsOwner(renderBox, ownerBox)
       && (this._pngMatchesBox(assetRec, renderBox) || !this._pngMatchesBox(assetRec, ownerBox))) {
       return renderBox;
     }
-    if (this._boxSpillsOwner(delivered, ownerBox) && this._pngMatchesBox(assetRec, delivered)) return delivered;
     if (this._boxSpillsOwner(renderBox, ownerBox)) return renderBox;
     if (this._boxSpillsOwner(delivered, ownerBox)) return delivered;
+    if (this._boxSpillsOwner(extraBox, ownerBox)) return extraBox;
     if (ownerReady && this._pngMatchesBox(assetRec, ownerBox)) return ownerBox;
     if (this._pngMatchesBox(assetRec, sliceExportBox) && this._sameCoordinateSpace(sliceExportBox, ownerBox)) {
       if (Number(sliceExportBox.w) <= Number(ownerBox.w) + 0.5
@@ -1538,6 +1902,18 @@
         exportW = natW;
         exportH = natH;
         policy = 'owner-ink-spill-natural';
+      }
+      if (sourceBackedSpill && natW > 0 && natH > 0
+        && (natW > exportW + 2 || natH > exportH + 2)
+        && (natW - exportW) <= 12 && (natH - exportH) <= 12) {
+        /* Figma PNG ceils/pads a few px past exportBox. The extra sits on
+           the origin edge of the bitmap — pinning it on the plate origin
+           slides named art. Keep the named plate; hang the extra off top/left. */
+        exportX -= (natW - exportW);
+        exportY -= (natH - exportH);
+        exportW = natW;
+        exportH = natH;
+        policy = 'owner-ink-from-unclipped-png-pad';
       }
       img.style.left = (exportX - ownerX) + 'px';
       img.style.top = (exportY - ownerY) + 'px';
@@ -1619,6 +1995,26 @@
       .filter(Boolean).map(String).join(' ').toLowerCase();
     return /(?:^|[\s/>])btn\/|btn\/按钮|下载按钮|预约按钮|折扣信息/.test(haystack);
   },
+  _isHeroDateLineContext({ ancestorNames = [], name = '' } = {}) {
+    const haystack = [name, ...(Array.isArray(ancestorNames) ? ancestorNames : [])]
+      .filter(Boolean).map(String).join(' ');
+    return /sec\/1/.test(haystack) && /(?:^|[\s/])(?:slg|标题)(?:$|[\s/])/.test(haystack);
+  },
+  _isClaimFootnoteContext({ ancestorNames = [], name = '' } = {}) {
+    const haystack = [name, ...(Array.isArray(ancestorNames) ? ancestorNames : [])]
+      .filter(Boolean).map(String).join(' ');
+    return /switch\/模块8/.test(haystack)
+      && /\*每个账号限领取一次/.test(haystack);
+  },
+
+    /* Mirrors scripts/lib/translation/semantic-layout.mjs#paintSemanticBreakText.
+       join('') still equals the adopted translation (may contain a Feishu
+       cell newline). Collapse that table newline to a space, then insert
+       one break between the approved lines. */
+    _paintSemanticBreakText(lines = []) {
+      const parts = Array.isArray(lines) ? lines.map((line) => String(line).replace(/\n/g, ' ')) : [];
+      return parts.join('\n');
+    },
 
     _officialTargetDesignSize({ sourceFontSize, sourceLineHeight = null, role = 'unknown', language = 'zh-CN', fontWeight = 400, ancestorNames = [], name = '' } = {}) {
     /* 镜像 scripts/lib/translation/typography-policy.mjs#officialTargetDesignSize（tier-aware）。
@@ -1638,6 +2034,8 @@
       throw new Error('figma-render: tierRules missing from DESIGN.md YAML');
     }
     const tier = this._isButtonLabelContext({ role, ancestorNames, name })
+      || this._isHeroDateLineContext({ ancestorNames, name })
+      || this._isClaimFootnoteContext({ ancestorNames, name })
       ? 'heading'
       : (Number(fontWeight) < bodyMax
         ? 'body'
@@ -1922,38 +2320,47 @@
     return Number.isFinite(value) && value > 0 ? value : null;
   },
   /* Mirror scripts/lib/resize/index.mjs#pageScrollLock. */
-  _pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0 } = {}) {
+  _pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0, layoutOffsetDesign = 0 } = {}) {
     const board = Number(boardBottom);
     const content = Number(contentBottom);
     const frame = Number(pageFrameBottom);
     const boardH = Number.isFinite(board) && board > 0 ? board : 0;
     const contentH = Number.isFinite(content) && content > 0 ? content : 0;
     const frameH = Number.isFinite(frame) && frame > 0 ? frame : 0;
+    const layoutOffset = Number(layoutOffsetDesign);
+    const shift = Number.isFinite(layoutOffset) ? layoutOffset : 0;
     if (!(boardH > 0)) {
-      const height = frameH > 0 && contentH > 0 ? Math.min(frameH, contentH)
-        : (frameH > 0 ? frameH : contentH);
+      const shiftedFrame = frameH > 0 ? frameH + shift : 0;
+      const height = shiftedFrame > 0 && contentH > 0 ? Math.min(shiftedFrame, contentH)
+        : (shiftedFrame > 0 ? shiftedFrame : contentH);
       return {
         height,
         overflowPx: 0,
         reason: 'board-missing',
         boardBottom: boardH,
         contentBottom: contentH,
-        pageFrameBottom: frameH,
+        pageFrameBottom: shiftedFrame || frameH,
       };
     }
     /* bg/pc may be a 20000 artboard past the page frame (18360) and last
        section. Lock at the visual page end so the empty board tail is not
-       extra scroll. Content past that lock still fail-closes. */
-    const visualEnd = frameH > 0 ? Math.min(boardH, frameH) : boardH;
+       extra scroll. layoutOffsetDesign moves later UI *and* the long bg
+       sheet together (official ≤1126 keeps that relative lock). The lock
+       must follow that same offset: a cropped 100vh first screen that
+       still locks to the unshifted Figma board leaves a brown empty tail.
+       Content past that visual end still fail-closes. */
+    const shiftedBoard = boardH + shift;
+    const shiftedFrame = frameH > 0 ? frameH + shift : 0;
+    const visualEnd = shiftedFrame > 0 ? Math.min(shiftedBoard, shiftedFrame) : shiftedBoard;
     const overflowPx = contentH > visualEnd + 0.5 ? contentH - visualEnd : 0;
     return {
       height: visualEnd,
       overflowPx,
       reason: overflowPx > 0 ? 'content-past-board'
-        : (frameH > 0 && boardH > frameH + 0.5 ? 'page-frame' : 'board-bottom'),
-      boardBottom: boardH,
+        : (shiftedFrame > 0 && shiftedBoard > shiftedFrame + 0.5 ? 'page-frame' : 'board-bottom'),
+      boardBottom: shiftedBoard,
       contentBottom: contentH,
-      pageFrameBottom: frameH,
+      pageFrameBottom: shiftedFrame || frameH,
     };
   },
   _primaryCtaNowrapEligible({ language, status, hasAdoptedCopy } = {}) {
@@ -1961,13 +2368,14 @@
     const lang = raw.startsWith('en') ? 'en' : raw;
     return lang === 'en' && status === 'matched' && hasAdoptedCopy === true;
   },
-  _axisConstraintPolicy({ maxWidth = null, maxHeight = null, language = '', primaryCtaNowrap = false, hasAdoptedCopy = false } = {}) {
+  _axisConstraintPolicy({ maxWidth = null, maxHeight = null, language = '', primaryCtaNowrap = false, hasAdoptedCopy = false, autoResize = 'FIXED' } = {}) {
     const raw = String(language || '').replace('_', '-').toLowerCase();
     const lang = raw.startsWith('zh-tw') || raw.startsWith('zh-hk') ? 'zh-TW'
       : raw.startsWith('zh') ? 'zh-CN' : raw.startsWith('ja') ? 'ja'
       : raw.startsWith('ko') ? 'ko' : raw.startsWith('en') ? 'en' : raw;
     const widthCap = this._positiveLayoutCap(maxWidth);
     const heightCap = this._positiveLayoutCap(maxHeight);
+    const heightWrapBox = String(autoResize || 'FIXED').toUpperCase() === 'HEIGHT';
     if (lang === 'zh-CN') {
       return { wrap: true, nowrap: false, shrink: false, fitMaxWidth: null, fitMaxHeight: null, reason: 'zh-cn-figma-exact' };
     }
@@ -1981,6 +2389,9 @@
       return { wrap: false, nowrap: true, shrink: true, fitMaxWidth: widthCap, fitMaxHeight: null, reason: 'primary-cta-single-line' };
     }
     if (widthCap != null && heightCap == null) {
+      if (heightWrapBox) {
+        return { wrap: true, nowrap: false, shrink: false, fitMaxWidth: widthCap, fitMaxHeight: null, reason: 'height-auto-resize-wrap' };
+      }
       return { wrap: false, nowrap: true, shrink: true, fitMaxWidth: widthCap, fitMaxHeight: null, reason: 'horizontal-max-shrink' };
     }
     if (widthCap == null && heightCap != null) {
@@ -2060,24 +2471,30 @@
   _realignTranslatedClipText(el, box) {
     if (!el || !el.parentElement || typeof getComputedStyle !== 'function') return;
     if (el.getAttribute('data-fit-policy') === 'zh-cn-figma-exact') return;
-    const writtenMaxH = Number(el.getAttribute('data-fit-max-height'));
-    if (!(writtenMaxH > 0)) return;
     const parent = el.parentElement;
     const overflowY = getComputedStyle(parent).overflowY || getComputedStyle(parent).overflow;
-    if (overflowY !== 'hidden') return;
     const parentH = parent.clientHeight || Number.parseFloat(parent.style.height) || 0;
     const sourceH = Number(box && box.h);
     const storedRaw = el.getAttribute('data-fit-source-top');
     const storedTop = storedRaw == null || storedRaw === '' ? NaN : Number(storedRaw);
     const sourceTop = Number.isFinite(storedTop) ? storedTop : Number.parseFloat(el.style.top);
     if (!(parentH > 0) || !(sourceH > 0) || !Number.isFinite(sourceTop)) return;
-    if (parentH + 0.5 < writtenMaxH && parentH <= sourceH + sourceTop + 0.5) return;
+    const writtenMaxH = Number(el.getAttribute('data-fit-max-height'));
+    const sourceCenterInParent = Math.abs((sourceTop + sourceH / 2) - parentH / 2) <= 2;
+    const centeredWrap = el.getAttribute('data-text-wrap-policy') === 'hug-height-block'
+      && String(el.style.textAlign || '').toLowerCase() === 'center'
+      && sourceCenterInParent;
+    if (!centeredWrap) {
+      if (overflowY !== 'hidden') return;
+      if (!(writtenMaxH > 0)) return;
+      if (parentH + 0.5 < writtenMaxH && parentH <= sourceH + sourceTop + 0.5) return;
+    }
     if (!el.hasAttribute('data-fit-source-top')) el.setAttribute('data-fit-source-top', String(sourceTop));
     const fittedH = (typeof el.scrollHeight === 'number' && el.scrollHeight > 0)
       ? el.scrollHeight
       : (el.offsetHeight || 0);
     if (!(fittedH > 0) || Math.abs(fittedH - sourceH) < 0.5) return;
-    if (sourceTop + fittedH <= parentH + 0.5) return;
+    if (!centeredWrap && sourceTop + fittedH <= parentH + 0.5) return;
     const sourceCenter = sourceTop + sourceH / 2;
     let nextTop = sourceCenter - fittedH / 2;
     if (fittedH <= parentH) nextTop = Math.max(0, Math.min(nextTop, parentH - fittedH));
@@ -2085,6 +2502,89 @@
     if (Math.abs(nextTop - sourceTop) < 0.5) return;
     el.style.top = nextTop + 'px';
     el.setAttribute('data-fit-clip-realign', 'source-center');
+  },
+  _realignCenteredHeightWraps(frame) {
+    if (!frame || typeof frame.querySelectorAll !== 'function') return;
+    for (const el of frame.querySelectorAll('[data-text-wrap-policy="hug-height-block"]')) {
+      if (el.getAttribute('data-fit-policy') === 'zh-cn-figma-exact') continue;
+      const sourceH = Number(el.getAttribute('data-text-source-height'))
+        || Number.parseFloat(el.style.minHeight)
+        || 0;
+      if (!(sourceH > 0)) continue;
+      this._realignTranslatedClipText(el, { h: sourceH });
+    }
+  },
+  _restackSkippedVerticalHugClusters(frame) {
+    if (!frame || typeof frame.querySelectorAll !== 'function') return;
+    const groups = new Map();
+    for (const el of frame.querySelectorAll('[data-skipped-al-source]')) {
+      const sourceId = el.getAttribute('data-skipped-al-source');
+      if (!sourceId) continue;
+      if (String(el.getAttribute('data-skipped-al-mode') || '').toUpperCase() !== 'VERTICAL') continue;
+      if (String(el.getAttribute('data-skipped-al-vsize') || '').toUpperCase() !== 'HUG') continue;
+      const list = groups.get(sourceId) || [];
+      list.push(el);
+      groups.set(sourceId, list);
+    }
+    const designPx = (el, attr, fallback) => {
+      const n = Number.parseFloat(el.getAttribute(attr));
+      return Number.isFinite(n) ? n : fallback;
+    };
+    for (const members of groups.values()) {
+      const sourceId = members[0] && members[0].getAttribute('data-skipped-al-source');
+      const topLevel = members.filter((el) => {
+        const parent = el.parentElement;
+        /* Live GROUP between skipped HUG siblings restacks as the member. */
+        if (parent && parent.getAttribute('data-skipped-al-source') === sourceId && parent.getAttribute('data-node')) return false;
+        return true;
+      });
+      if (topLevel.length < 2) continue;
+      /* Hidden switch-variant copies keep source top but offsetHeight 0.
+         Skip them so an off-page layer cannot freeze the visible pair. */
+      const visible = topLevel.filter((el) => el.offsetParent != null && el.offsetHeight > 0);
+      if (visible.length < 2) continue;
+      visible.sort((a, b) => designPx(a, 'data-skipped-al-source-y', 0) - designPx(b, 'data-skipped-al-source-y', 0));
+      /* Figma VERTICAL itemSpacing can stay 10 while the authored siblings
+         actually abut (source y+h of one = source y of the next). Restack
+         from those source gaps, not the leftover AL field, or zh-CN locks
+         shift even when heights did not grow. */
+      const declaredGap = designPx(visible[0], 'data-skipped-al-gap', 0);
+      const sourceGaps = [];
+      for (let i = 1; i < visible.length; i += 1) {
+        const prevY = designPx(visible[i - 1], 'data-skipped-al-source-y', 0);
+        const prevH = designPx(visible[i - 1], 'data-skipped-al-source-h', visible[i - 1].offsetHeight || 0);
+        const nextY = designPx(visible[i], 'data-skipped-al-source-y', 0);
+        const authored = nextY - (prevY + prevH);
+        sourceGaps.push(Number.isFinite(authored) ? authored : declaredGap);
+      }
+      const boxH = designPx(visible[0], 'data-skipped-al-box-h', 0);
+      const boxY = designPx(visible[0], 'data-skipped-al-box-y', 0);
+      const originY = designPx(visible[0], 'data-skipped-al-origin-y', 0);
+      const align = String(visible[0].getAttribute('data-skipped-al-primary') || '').toUpperCase();
+      const constraintV = String(visible[0].getAttribute('data-skipped-al-constraint-v') || '').toUpperCase();
+      const heights = visible.map((el) => el.offsetHeight || 0);
+      const sourceHeights = visible.map((el, i) => designPx(el, 'data-skipped-al-source-h', heights[i]));
+      const sourceSpan = sourceHeights.reduce((sum, h) => sum + h, 0)
+        + sourceGaps.reduce((sum, g) => sum + g, 0);
+      const gapTotal = sourceGaps.reduce((sum, g) => sum + g, 0);
+      const total = heights.reduce((sum, h) => sum + h, 0) + gapTotal;
+      /* CENTER/BOTTOM: keep source coordinates when live heights still match
+         the authored boxes. If a locale scaled down or wrapped taller, restack
+         the live total inside the skipped HUG box. */
+      const heightsMatchSource = visible.every((el, i) => Math.abs(heights[i] - sourceHeights[i]) <= 0.5);
+      const clusterH = heightsMatchSource ? sourceSpan : total;
+      let cursor;
+      if (constraintV === 'BOTTOM' || align === 'MAX') cursor = boxY + boxH - clusterH - originY;
+      else if ((align === 'CENTER' || constraintV === 'CENTER') && !heightsMatchSource) {
+        cursor = boxY + (boxH - clusterH) / 2 - originY;
+      } else cursor = boxY - originY;
+      for (let i = 0; i < visible.length; i += 1) {
+        visible[i].style.top = cursor + 'px';
+        visible[i].setAttribute('data-skipped-al-restack', 'vertical-hug');
+        if (sourceGaps[i] != null) visible[i].setAttribute('data-skipped-al-restack-gap', String(sourceGaps[i]));
+        cursor += heights[i] + (sourceGaps[i] || 0);
+      }
+    }
   },
 
   /* cell-split 按该语言自己的句数切。稿上层数更多时，多出来的层是 absent，
@@ -3028,11 +3528,13 @@
        must sit on the frame, not the first-paint closure. */
     frame.__fxRenderPrefs = {
       lang: String((ctx.prefs && ctx.prefs.lang) || ''),
+      region: String((ctx.prefs && ctx.prefs.region) || ''),
       plat: String(__plat || ''),
       base: String(__base || ''),
     };
     frame.setAttribute('data-fx-base', __base);
     frame.setAttribute('data-fx-lang', String((ctx.prefs && ctx.prefs.lang) || ''));
+    frame.setAttribute('data-fx-region', String((ctx.prefs && ctx.prefs.region) || ''));
     /* Static mobile scale: native 20:2205 tree at designWidth 750.
        Fallback to the PC tree on a phone viewport is not a scale fix. */
     const __activeTruth = __platforms[__base] || t;
@@ -3132,12 +3634,23 @@
     this._productView = productView;
     this._frameWidth = this._productColumnWidth(viewportW, designWidth);
     const k = this.scale();
+    const laterUniformScale = this._laterUniformScale(designWidth, k);
+    /* ≤1126 first-screen and later share windowW/750, so laterUniformScale
+       equals k and nested later zoom must not multiply it twice. */
+    const laterAlreadyUniform = Math.abs(Number(laterUniformScale) - Number(k)) > 1e-6;
     const windowStageWidth = this._windowStageWidthDesign(designWidth, k);
     const windowStageShiftX = windowStageWidth - Number(designWidth);
     this._topbarClusterRightDesign = this._scanTopbarClusterRight(
       __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes,
       designWidth,
     );
+    this._topbarSeasonRightInsetDesign = this._scanTopbarSeasonRightInset(
+      __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes,
+      designWidth,
+    );
+    if (Number.isFinite(Number(this._topbarSeasonRightInsetDesign))) {
+      frame.setAttribute('data-topbar-season-right-inset', String(this._topbarSeasonRightInsetDesign));
+    }
 
     const sections = __activeTruth.sections || {};
     /* 分区绘制顺序按【稿内 y 升序】，不按 truth 里的键序。
@@ -3374,7 +3887,7 @@
         viewportHeight: viewportH,
         /* Width-k layout: extra = 100vh design − first.height so sec/2 starts
            at the crop window bottom. KV visual scale stays on heroVisualScale. */
-        scale: pageStageScale,
+        scale: k,
         pageOriginY,
         firstSection: { id: sectionId, y: first.y, height: first.height },
         followingSections: following.map((entry) => ({ id: entry.id, y: entry.meta.y })),
@@ -3384,6 +3897,22 @@
     const heroLayoutOffsetDesign = heroSlot && Number.isFinite(Number(heroSlot.layoutOffsetDesign))
       ? Number(heroSlot.layoutOffsetDesign)
       : 0;
+    /* Page zoom is laterUniformScale; later nested zoom is 1. Later CSS
+       top is therefore designTop × laterScale. Hero used CSS is still
+       viewportH (nested counter × page zoom cancel). Leave later on the
+       k-edge (heroLayoutOffsetDesign) and 900 walks later to
+       H×laterScale/k. Join later to the used hero bottom on the later
+       ruler: designTop = viewportH / laterScale. The extra term is that
+       join, not a lift into the hero. */
+    const heroViewportH = heroSlot && Number(heroSlot.viewportHeight) > 0
+      ? Number(heroSlot.viewportHeight)
+      : 0;
+    const laterJoinOffsetDesign = laterAlreadyUniform
+      && Number(laterUniformScale) > 0
+      && Number(k) > 0
+      && heroViewportH > 0
+      ? heroLayoutOffsetDesign + heroViewportH * (1 / Number(laterUniformScale) - 1 / Number(k))
+      : heroLayoutOffsetDesign;
     const heroUiYRatio = heroSlot && Number(heroSlot.heroHeight) > 0
       ? Number(heroSlot.designHeight) / Number(heroSlot.heroHeight)
       : 1;
@@ -3403,19 +3932,20 @@
           slotH: heroSlot && Number(heroSlot.designHeight) > 0 ? Number(heroSlot.designHeight) : 0,
         })
         : sectionH;
-      return (Number(m.y || 0) + laterH + (afterHero ? heroLayoutOffsetDesign : 0)) - pageOriginY;
+      return (Number(m.y || 0) + laterH + (afterHero ? laterJoinOffsetDesign : 0)) - pageOriginY;
     };
     const pageScrollExtent = pageScope && heroSlot
       ? Math.max(
         Number(heroSlot.designHeight) || 0,
         ...ids.map((id) => shiftedSectionBottom(id)),
-        chromePaintedBottom() + (Number.isFinite(heroLayoutOffsetDesign) ? heroLayoutOffsetDesign : 0),
+        chromePaintedBottom() + (Number.isFinite(laterJoinOffsetDesign) ? laterJoinOffsetDesign : 0),
       )
       : pageContentExtent;
     const pageScrollLock = this._pageScrollLock({
       boardBottom: pageBgBoardBottom(),
       contentBottom: pageScrollExtent,
       pageFrameBottom,
+      layoutOffsetDesign: laterJoinOffsetDesign,
     });
     const pageScrollHeight = pageScrollLock.height;
     frame.setAttribute('data-page-scroll-lock', pageScrollLock.reason);
@@ -3440,10 +3970,12 @@
         + Number((sections[heroSlot.sectionId] && sections[heroSlot.sectionId].meta && sections[heroSlot.sectionId].meta.height) || heroSlot.heroHeight || 0)
       : 0;
     const afterHeroBackgroundShift = (node) => {
-      if (!heroSlot || !Number.isFinite(heroLayoutOffsetDesign) || heroLayoutOffsetDesign === 0) return 0;
+      if (!heroSlot || !Number.isFinite(laterJoinOffsetDesign) || laterJoinOffsetDesign === 0) return 0;
+      const name = String(node && node.name || '');
+      if (/^bg\/(pc|mobile)$/i.test(name)) return laterJoinOffsetDesign;
       const y = Number(node && node.box && node.box.y);
       if (!Number.isFinite(y)) return 0;
-      return y > heroSectionBottomY + 0.5 ? heroLayoutOffsetDesign : 0;
+      return y > heroSectionBottomY + 0.5 ? laterJoinOffsetDesign : 0;
     };
     frame.setAttribute('data-hero-scroll-slot', heroSlot ? 'active' : 'fallback-missing-page-structure');
     if (heroSlot) {
@@ -3451,6 +3983,7 @@
       frame.setAttribute('data-hero-content-root', heroSlot.contentRootId);
       frame.setAttribute('data-hero-slot-design-height', String(heroSlot.designHeight));
       frame.setAttribute('data-hero-layout-offset-design', String(heroSlot.layoutOffsetDesign));
+      frame.setAttribute('data-later-join-offset-design', String(laterJoinOffsetDesign));
       frame.setAttribute('data-hero-page-scale', String(pageStageScale));
       frame.setAttribute('data-hero-page-crop-left', String(pageStageCropLeft));
       frame.setAttribute('data-hero-visual-scale', String(heroVisualScale));
@@ -3462,6 +3995,7 @@
       frame.removeAttribute('data-hero-content-root');
       frame.removeAttribute('data-hero-slot-design-height');
       frame.removeAttribute('data-hero-layout-offset-design');
+      frame.removeAttribute('data-later-join-offset-design');
       frame.removeAttribute('data-hero-page-scale');
       frame.removeAttribute('data-hero-page-crop-left');
       frame.removeAttribute('data-hero-visual-scale');
@@ -3556,11 +4090,6 @@
         stage.setAttribute('data-hero-ui-plane', 'source-ui-scale');
         stage.setAttribute('data-hero-ui-y-ratio', String(heroUiYRatio));
       }
-      /* ≤1126 official KV fills the window. A 750-wide overflow:hidden
-         stage clips that cover back to a brown-bezel strip. Keep UI k
-         at min(1, W/750); only the stage box follows the window. */
-      const stageWidthDesign = windowStageWidth;
-      stage.style.width = stageWidthDesign + 'px';
       /* 分区高度往上取整到【缩放后的整数 CSS px】。
          2026-08-04 实测：sec/3 稿高 1543，k=0.5 → 771.5px，半像素。
          半像素的后果不是"矮了半格"：
@@ -3572,6 +4101,20 @@
          —— 背景是整页一张、跨分区连续的，缝隙不可见。 */
       const _rawH = meta.height ?? 0;
       const isHeroStage = !pageStageMode && heroSlot && String(sid) === heroSlot.sectionId;
+      /* ≤1126 first-screen KV fills the window. A 750-wide overflow:hidden
+         hero stage clips that cover back to a brown-bezel strip. Later
+         751–1126 zoom is already windowW/750, so later *sections* stay
+         authored 750 — widening those plus uniform zoom would double-stretch.
+         Page clip must still be the window: a 750 page + overflowX:clip
+         keeps zoomed later art at 750 CSS and leaves a brown right strip
+         around 800. */
+      const stageWidthDesign = (pageStageMode || isHeroStage)
+        ? windowStageWidth
+        : (laterAlreadyUniform ? Number(designWidth) : windowStageWidth);
+      stage.style.width = stageWidthDesign + 'px';
+      if (!pageStageMode && pageScope && !isHeroStage && laterAlreadyUniform) {
+        stage.setAttribute('data-later-stage-width', 'authored');
+      }
       /* Do not ceil section height in design px. Adjacent Figma pageBoxes
          already abut (0/2143/4286). Ceil(*k)/k adds up to 1 design px per
          section and shows as a black seam at every join. */
@@ -3617,9 +4160,9 @@
            stay put. */
         stage.style.left = (secX - pageX) + 'px';
         const afterHeroLayout = heroSlot && !isHeroStage && Number(secY) > pageY + 0.5;
-        const responsiveSecTop = (secY - pageY) + (afterHeroLayout ? heroLayoutOffsetDesign : 0);
+        const responsiveSecTop = (secY - pageY) + (afterHeroLayout ? laterJoinOffsetDesign : 0);
         stage.style.top = responsiveSecTop + 'px';
-        if (afterHeroLayout) stage.setAttribute('data-hero-layout-shift-design', String(heroLayoutOffsetDesign));
+        if (afterHeroLayout) stage.setAttribute('data-hero-layout-shift-design', String(laterJoinOffsetDesign));
         if (heroSlot) {
           stage.setAttribute('data-hero-slot-role', isHeroStage ? 'hero' : 'after-hero');
           const reveal = (heroSlot.revealSections || []).find((entry) => String(entry.id) === String(sid));
@@ -3636,10 +4179,24 @@
          zoom 让浏览器在**最终尺寸**下重新排版与光栅化，字形清晰一致。
          连带好处：zoom 改布局占位，stage 在文档流里就占缩放后的高度，
          transform 时代补占位的 .fx-spacer 就此退役（见本函数末尾）。 */
-      /* Hero UI size stays on platform width-scale k. Vertical place uses
-         Figma y as a fraction of the 100vh slot, not y×k. KV cover-crop is
-         applied to the kv/bg visual plane, not this UI section. */
-      stage.style.zoom = String(pageStageMode ? pageStageScale : (pageScope ? 1 : k));
+      /* Nested stages inherit page zoom. Later keeps zoom 1 so ≤1126
+         windowW/750 is not squared. Hero counters only when page zoom
+         differs from first-screen k; KV cover still fills the window. */
+      const heroCounterZoom = laterAlreadyUniform && Number(laterUniformScale) > 0
+        ? Number(k) / Number(laterUniformScale)
+        : 1;
+      const sectionZoom = pageStageMode
+        ? laterUniformScale
+        : (pageScope
+          ? (isHeroStage ? heroCounterZoom : 1)
+          : k);
+      stage.style.zoom = String(sectionZoom);
+      if (pageStageMode && laterAlreadyUniform) {
+        stage.setAttribute('data-later-uniform-scale', String(laterUniformScale));
+      }
+      if (isHeroStage && laterAlreadyUniform) {
+        stage.setAttribute('data-hero-ui-counter-zoom', String(heroCounterZoom));
+      }
       /* Keep page-stage at designWidth so zoom k still maps the Figma plane.
          clipW = frameWidth/k was 1920/0.5=3840 — a no-op. Horizontal clip
          belongs on .frame / .stage-wrap (overflow-x:clip + scrollLeft lock). */
@@ -4045,6 +4602,16 @@
         const indicatorVariant = (n) => {
           const values = propertyValues(n && (n.componentProperties || n.properties || n.prototype?.componentProperties));
           if (values.some((v) => /^(disabled?|disable|unavailable)$/i.test(v))) return 'disabled';
+          /* ind/ Default vs Variant2 is the two-state visual. Mapping
+             generic `default` onto normal hid the selected mark and left
+             Variant2 unlabelled, so applySwitch could page without swapping
+             highlight/normal pixels. */
+          const isInd = (parse(n).role === 'ind') || /^ind\s*[\/／]/i.test(String(value(n && n.name) || ''));
+          if (isInd) {
+            if (values.some((v) => /^(variant2|normal|inactive|off)$/i.test(v))) return 'normal';
+            if (values.some((v) => /^(default|active|selected|highlight|current|on)$/i.test(v))) return 'active';
+            return null;
+          }
           if (values.some((v) => /^(active|selected|highlight|current|on)$/i.test(v))) return 'active';
           if (values.some((v) => /^(normal|inactive|default|off)$/i.test(v))) return 'normal';
           return null;
@@ -4929,6 +5496,37 @@
           nested 3840/1177px box and made alternate state geometry depend on
           component-set canvas coordinates. */
        const skipNodeIds = options.skipNodeIds instanceof Set ? options.skipNodeIds : new Set();
+       const staticGateView = typeof document !== 'undefined'
+         && document.documentElement
+         && document.documentElement.getAttribute('data-inventory-static-gate') === '1';
+       const pageRegion = String((frame.__fxRenderPrefs && frame.__fxRenderPrefs.region)
+         || (ctx.prefs && ctx.prefs.region)
+         || '').trim();
+       const cnHiddenLangOwnerIds = new Set();
+       if (!staticGateView && pageRegion === 'cn') {
+         for (const item of (rawList || list || [])) {
+           const itemName = String(__u(item && item.name) || '');
+           if (!/^dropmenu\/多语言/.test(itemName)) continue;
+           const ownerId = String(__u(item && item.id) || '');
+           if (ownerId) cnHiddenLangOwnerIds.add(ownerId);
+         }
+       }
+       const isCnHiddenLangNode = (node) => {
+         if (!cnHiddenLangOwnerIds.size || !node) return false;
+         const id = String(__u(node.id) || '');
+         const name = String(__u(node.name) || '');
+         if (/^dropmenu\/多语言/.test(name)) return true;
+         if (cnHiddenLangOwnerIds.has(id)) return true;
+         for (const ownerId of cnHiddenLangOwnerIds) {
+           if (id.indexOf('I' + ownerId + ';') === 0) return true;
+         }
+         const ancestors = Array.isArray(node.ancestorIds) ? node.ancestorIds : [];
+         const owners = Array.isArray(node.ownerPath) ? node.ownerPath : [];
+         for (const rawId of [...ancestors, ...owners, node.parentId]) {
+           if (cnHiddenLangOwnerIds.has(String(__u(rawId) || ''))) return true;
+         }
+         return false;
+       };
        const activeComponentSets = asArr(__activeTruth && __activeTruth.componentVariantGraph
          && __activeTruth.componentVariantGraph.componentSets);
        /* Hero UI vertical mapping bookkeeping: top-level blocks take the
@@ -5009,8 +5607,11 @@
            const pageTop = Number(itemBox && itemBox.y) - Number(paintOriginY);
            const h = Number(itemBox && itemBox.h);
            if (!Number.isFinite(pageTop) || !Number.isFinite(h) || h <= 0) continue;
-           /* Mobile leftover `img/标题slg` at overlay y=0 is top-bar art. */
-           if (kind === 'slg' && pageTop < heroUiHalf) continue;
+           /* Mobile leftover `img/标题slg` at overlay y=0 is top-bar art.
+              PC `slg` / `img/标题slg` starts at page y=667 / 1052, still
+              the in-section title: half-hero skip would leave it unshifted
+              while calendar / CTA pin up, opening the Figma gap. */
+           if (kind === 'slg' && pageTop <= 0.5) continue;
            const b = pageTop + h;
            if (bottom == null || b > bottom) bottom = b;
            if (top == null || pageTop < top) top = pageTop;
@@ -5018,13 +5619,18 @@
          if (!(bottom > 0)) return 0;
          /* Shared shift is in PAGE coords. Nested title SLG lives in a
             local owner, so the paint path must convert before writing top.
-            uiY < 1 (tall hero cropped to 100vh) pulls the cluster up.
-            Do not pad the cluster down when the slot is taller than the
-            Figma hero — that is the leftover first-screen drop. Clamp the
-            pull so the topmost clustered control stays in the window. */
+            Pin the cluster bottom (奖卡) to the 100vh slot:
+            uiY < 1 pulls the cluster up, uiY > 1 pads it down.
+            ≤1126 must not keep the topmost control (play / SLG) in the
+            window — that swallows the welfare bottom around 860–1120,
+            and leaving shift=0 lets the pack float up below 540. */
          let shift = bottom * heroUiYRatio - bottom;
-         if (shift > 0) shift = 0;
-         if (Number.isFinite(top) && top + shift < 0) shift = -top;
+         const mobileSlot = Number(this._viewportWidth) <= 1126
+           || __normalizedPlat === 'mobile';
+         if (!mobileSlot) {
+           if (shift > 0) shift = 0;
+           if (Number.isFinite(top) && top + shift < 0) shift = -top;
+         }
          return shift;
        })();
        const heroClusterShiftValue = Number(heroClusterBottomShift) || 0;
@@ -5273,6 +5879,7 @@
       for (let ni = 0; ni < list.length; ni++) {
         const n = list[ni];
         if (skipNodeIds.has(String(__u(n && n.id)))) continue;
+        if (isCnHiddenLangNode(n)) continue;
         /* 遮罩节点（Figma 不画本体，isMask:true）：不要当图形填实心。
            清单仍把 unknown IMAGE 遮罩当独立节点（CONSUMER：unknown 只画），
            闸门按 inventory id 量 DOM。只跳过无图的几何遮罩；带 IMAGE 的
@@ -5529,7 +6136,8 @@
         const __indVariantName = String((n && (n.componentProperties && (n.componentProperties['Property 1'] && (n.componentProperties['Property 1'].value || n.componentProperties['Property 1']))
           || n.variantProps && (n.variantProps['Property 1'] || n.variantProps.state))) || n.name || '');
         const __indVariantState = /highlight|active|选中/i.test(__indVariantName) ? 'highlight'
-          : /normal|idle|未选/i.test(__indVariantName) ? 'normal'
+          : /variant2|normal|idle|未选/i.test(__indVariantName) ? 'normal'
+          : /default/i.test(__indVariantName) ? 'highlight'
           : null;
         const __indComponentFallback = (pfx === 'ind' || String(n && n.role || '') === 'ind') && __componentId && !assetRec
           ? {
@@ -5809,17 +6417,16 @@
           /* A TEXT/art overlay inside a row frame has no layoutAlign. If the
              unknown row is skipped as a paint parent, that overlay must not
              inherit the ancestor mix/ VERTICAL flow and slide off its source x. */
-          /* zh-CN static gate measures authored pageBox. Auto Layout flex
+          /* Stretch uses authored pageBox in every language. Auto Layout flex
              restacks mixed-size children (vertical CENTER / overlapping
-             horizontal CENTER) and walks them off the inventory box. Keep
-             source x/y for zh-CN. First-screen calendar / CTA / title keep
-             that same pageBox x in every language so 751–1126 leftover
-             centering matches en/tw/kr. */
-          const zhSourceExactLayout = String(ctx.prefs && ctx.prefs.lang || '') === 'zh-CN';
+             horizontal CENTER) and walks them off the inventory box, so 751–1126
+             leftover / later bg cover only match zh-CN. Keep source x/y for the
+             page stage; Translation still shrinks copy inside those boxes. */
+          const sourceExactLayout = true;
           const parentHeroClusterLayout = !!(parent && parent.el && parent.el.closest
             && parent.el.closest('[data-hero-cluster="bottom"]'));
           const participatesInAutoLayout = inAutoLayout && childLayoutAlign === 'INHERIT'
-            && sourceParticipatesInFlow && !zhSourceExactLayout && !parentHeroClusterLayout;
+            && sourceParticipatesInFlow && !sourceExactLayout && !parentHeroClusterLayout;
           if (participatesInAutoLayout) {
           const pel = parent.el;
           /* A horizontal HUG owner with a FILL text track between fixed flow
@@ -5849,7 +6456,7 @@
             && childLayoutAlign === 'INHERIT'
             && childLayoutSizing === 'HUG';
           if (backgroundHeroShift && parentAutoLayoutMode === 'VERTICAL'
-              && heroLayoutOffsetDesign > 0
+              && laterJoinOffsetDesign > 0
               && afterHeroBackgroundShift(n) > 0
               && !(parent.el.getAttribute('data-hero-bg-gap-inserted') === '1')) {
             /* Vertical auto-layout owns slice stacking. Insert one spacer at the
@@ -5857,13 +6464,13 @@
                the first-screen slice stays at Figma y. */
             const gap = document.createElement('div');
             gap.setAttribute('data-hero-bg-gap', '1');
-            gap.style.flex = '0 0 ' + heroLayoutOffsetDesign + 'px';
+            gap.style.flex = '0 0 ' + laterJoinOffsetDesign + 'px';
             gap.style.width = '100%';
-            gap.style.height = heroLayoutOffsetDesign + 'px';
+            gap.style.height = laterJoinOffsetDesign + 'px';
             gap.style.pointerEvents = 'none';
             parent.el.appendChild(gap);
             parent.el.setAttribute('data-hero-bg-gap-inserted', '1');
-            parent.el.setAttribute('data-hero-bg-gap-design', String(heroLayoutOffsetDesign));
+            parent.el.setAttribute('data-hero-bg-gap-design', String(laterJoinOffsetDesign));
           }
           if (pel.getAttribute('data-auto-layout') !== parentAutoLayoutMode) {
             const padT = Number(__u(parentLayout.paddingTop) || 0);
@@ -5966,8 +6573,39 @@
              consuming normal-flow space and a KV's background/portrait/shadow
              stack vertically. Only a proven Auto Layout child may flow. */
           el.style.position = 'absolute';
-          const sourceLeft = ((box.x ?? 0) - originX);
+          const skippedOwner = n.fitOwnerFromSkipped;
+          const skippedOwnerBox = skippedOwner && skippedOwner.box;
+          const skippedOwnerW = skippedOwnerBox && Number(skippedOwnerBox.w);
+          const skippedOwnerX = skippedOwnerBox && Number(skippedOwnerBox.x);
+          const skippedCentersPrimary = skippedOwner
+            && String(skippedOwner.layoutMode || '').toUpperCase() === 'HORIZONTAL'
+            && String(skippedOwner.primaryAxisAlignItems || '').toUpperCase() === 'CENTER'
+            && Number.isFinite(skippedOwnerW) && skippedOwnerW > 0
+            && Number.isFinite(skippedOwnerX)
+            && Number.isFinite(Number(box.w));
+          const sourceLeft = skippedCentersPrimary
+            ? (skippedOwnerX - originX) + (skippedOwnerW - Number(box.w)) / 2
+            : ((box.x ?? 0) - originX);
           el.style.left = sourceLeft + 'px';
+          if (skippedCentersPrimary) {
+            el.setAttribute('data-skipped-al-center-x', String(skippedOwner.sourceId || ''));
+            el.setAttribute('data-skipped-al-center-box-x', String(skippedOwnerX));
+          }
+          if (skippedOwner && skippedOwner.sourceId) {
+            el.setAttribute('data-skipped-al-source', String(skippedOwner.sourceId));
+            if (skippedOwner.layoutMode) el.setAttribute('data-skipped-al-mode', String(skippedOwner.layoutMode));
+            if (skippedOwner.layoutSizingVertical) el.setAttribute('data-skipped-al-vsize', String(skippedOwner.layoutSizingVertical));
+            if (skippedOwner.primaryAxisAlignItems) el.setAttribute('data-skipped-al-primary', String(skippedOwner.primaryAxisAlignItems));
+            if (skippedOwner.constraintsVertical) el.setAttribute('data-skipped-al-constraint-v', String(skippedOwner.constraintsVertical));
+            if (Number.isFinite(Number(skippedOwner.itemSpacing))) el.setAttribute('data-skipped-al-gap', String(skippedOwner.itemSpacing));
+            if (skippedOwnerBox) {
+              el.setAttribute('data-skipped-al-box-y', String(skippedOwnerBox.y));
+              el.setAttribute('data-skipped-al-box-h', String(skippedOwnerBox.h));
+            }
+            el.setAttribute('data-skipped-al-origin-y', String(originY));
+            el.setAttribute('data-skipped-al-source-y', String(box.y ?? 0));
+            if (Number.isFinite(Number(box.h))) el.setAttribute('data-skipped-al-source-h', String(box.h));
+          }
           const sourceTop = ((box.y ?? 0) - originY);
           /* 751–1126 later UI stays 750-authored. Center the 750 stack in the
              now-window-wide stage so TorchCon / Learn More are not left-stuck
@@ -6025,7 +6663,7 @@
              page shift a second time as a local top. */
           const pageTop = Number(box.y ?? 0) - Number(paintOriginY);
           heroClusterLayer = heroClusterCandidate
-            && !(isSlgLayer && pageTop < heroUiHalf)
+            && !(isSlgLayer && pageTop <= 0.5)
             && !parentAlreadyClustered;
           const ancestorAlreadyShifted = !!(parent && parent.el && parent.el.closest
             && parent.el.closest('[data-topbar-viewport-shift]'));
@@ -6144,13 +6782,29 @@
             && !fullBleedHeroArt
             && !inNamedModalPaint
             && !el.getAttribute('data-topbar-viewport-shift');
-          if (leftoverCandidate && Number(this._viewportWidth) > 750 && Number(this._viewportWidth) <= 1126
+          const parentIsLaterSection = !!(!isHeroStage && parent && parent.el
+            && parent.el.getAttribute && parent.el.getAttribute('data-hero-slot-role') === 'after-hero');
+          /* Nested children keep local x. A language-shell remount paints the
+             variant tree into the already-centered INSTANCE; the COMPONENT root
+             is skipNodeIds so parent looks null and leftover would fire again. */
+          const leftoverAlreadyOnHost = !!(
+            (parent && parent.el && parent.el.closest
+              && parent.el.closest('[data-hero-mobile-center], [data-later-mobile-center]'))
+            || (container && container.closest
+              && container.closest('[data-hero-mobile-center], [data-later-mobile-center]'))
+          );
+          if (leftoverCandidate && !leftoverAlreadyOnHost
+              && Number(this._viewportWidth) > 750 && Number(this._viewportWidth) <= 1126
               && Number(k) > 0 && windowStageShiftX > 0.5
-              && (isHeroStage ? (!parent || parentIsHeroSection) : !parent)) {
-            /* 751–1126 leftover is not only isHeroTitleOwner || isHeroCta || isHeroCalendar.
-               Title / calendar / CTA / play / 福利 / cards share one leftover so
-               they sit in the window. Logo / age stay at source x (window-left).
-               Nested children keep local x. */
+              && (isHeroStage
+                ? (!parent || parentIsHeroSection)
+                : (!laterAlreadyUniform && (!parent || parentIsLaterSection)))) {
+            /* Leftover only fires when stage is wider than the 750 board
+               (k frozen). Title / calendar / CTA / play / 福利 / cards share
+               one leftover so they sit in the window. Later section roots (switch/模块*) hang on
+               the after-hero stage the same way, in every language. leftover is not only isHeroTitleOwner || isHeroCta || isHeroCalendar.
+               ≤1126 k=windowW/750 makes windowStageShiftX 0, so this path stays off.
+               Logo / age stay at source x (window-left). Nested children keep local x. */
             const leftover = windowStageShiftX / 2;
             el.style.left = (sourceLeft + leftover) + 'px';
             if (isHeroStage) el.setAttribute('data-hero-mobile-center', String(leftover));
@@ -6204,18 +6858,22 @@
             const origin = coverAnchor
               ? 'center bottom-anchor'
               : (__normalizedPlat === 'mobile' ? 'center 0' : 'center center');
-            const planeRatio = coverHeroVisualScale / coverPageStageScale;
+            /* Nested hero already counters laterUniformScale, so KV cover
+               measures the window in first-screen k, not later page zoom.
+               viewportW/laterScale at 900 is 750 and leaves a right gap. */
+            const planeRatio = coverHeroVisualScale / (Number(k) > 0 ? Number(k) : coverPageStageScale);
+            const coverHeroRuler = Number(k) > 0 ? Number(k) : coverPageStageScale;
             /* Frozen 1920 column sits at CSS left. KV fills the real viewport:
                scale from the unscaled page origin, then shift by
                (viewport − scaled sheet) / 2 in design px so 1440×900 measures
                1440×900, not a 1612×900 sheet sitting inside the 1920 column. */
             const columnLeftCss = this._columnLeftCss();
-            const columnLeftDesign = coverPageStageScale > 0 ? columnLeftCss / coverPageStageScale : 0;
-            const viewportWDesign = coverPageStageScale > 0
-              ? Number(this._viewportWidth) / coverPageStageScale
+            const columnLeftDesign = coverHeroRuler > 0 ? columnLeftCss / coverHeroRuler : 0;
+            const viewportWDesign = coverHeroRuler > 0
+              ? Number(this._viewportWidth) / coverHeroRuler
               : sourceW;
-            const viewportHDesign = coverPageStageScale > 0 && Number(ctx.viewport && ctx.viewport.h) > 0
-              ? Number(ctx.viewport.h) / coverPageStageScale
+            const viewportHDesign = coverHeroRuler > 0 && Number(ctx.viewport && ctx.viewport.h) > 0
+              ? Number(ctx.viewport.h) / coverHeroRuler
               : (heroCropWindowDesign > 0 ? heroCropWindowDesign : sourceH);
             const coverLeftDesign = (viewportWDesign - sourceW * planeRatio) / 2 - columnLeftDesign;
             const coverTopDesign = origin === 'center bottom-anchor'
@@ -6236,7 +6894,8 @@
               el.setAttribute('data-kv-cover-window', 'viewport');
             }
             const clipH = heroCropWindowDesign > 0 ? Math.min(sourceH, heroCropWindowDesign) : sourceH;
-            if (isBg && heroLayoutOffsetDesign > 0 && clipH > 0 && clipH < sourceH - 0.5) {
+            if (isBg && Number.isFinite(laterJoinOffsetDesign) && laterJoinOffsetDesign !== 0
+              && clipH > 0 && clipH < sourceH - 0.5) {
               el.style.clipPath = 'inset(0 0 ' + (sourceH - clipH) + 'px 0)';
               el.setAttribute('data-hero-visual-clip', String(clipH));
             }
@@ -6256,11 +6915,12 @@
           const sourceH = Number(box.h) || 0;
           const pageBg = !!(pageStageMode && !parent);
           const boxW = Number(stageWidthDesign) || Number(designWidth) || sourceW;
-          /* Page-root `bg/mobile` / `bg/pc` is one long sheet. Uniform X cover
-             fills 751–1126 leftover; keep source height so the scaled sheet
-             does not invent extra scroll (C4). Nested later-stage bg still
-             cover-crops into its own slot. */
-          if (sourceW > 0 && sourceH > 0 && boxW > 0) {
+          /* Page-root `bg/mobile` / `bg/pc` is one long sheet. ≤1126 later
+             zoom is already windowW/750 with the UI, so a second X-only cover walks the sheet
+             up/down against frozen 750 art (official later
+             keeps source aspect). Nested later-stage bg still cover-crops
+             into its own slot outside that band. */
+          if (sourceW > 0 && sourceH > 0 && boxW > 0 && !laterAlreadyUniform) {
             const cover = Math.max(boxW / sourceW, 1);
             const coverLeft = (boxW - sourceW * cover) / 2;
             const sourceTopNow = parseFloat(el.style.top);
@@ -6274,6 +6934,9 @@
               el.setAttribute('data-later-cover-window', pageBg ? 'page-window' : 'later-stage');
               el.setAttribute('data-later-cover-axis', 'x');
             }
+          } else if (laterAlreadyUniform) {
+            el.setAttribute('data-later-cover-axis', 'uniform');
+            el.setAttribute('data-later-cover-window', pageBg ? 'page-window' : 'later-stage');
           }
         }
         el.style.width = (box.w ?? 0) + 'px';
@@ -6435,7 +7098,7 @@
           const childInkSpill = list.some((child) => {
             if (!child || String(child.parentId) !== String(nid)) return false;
             const childBox = child.pageBox || child.box;
-            const ink = child.renderBox || child.sliceExport && child.sliceExport.box;
+            const ink = child.inkBox || child.renderBox || child.sliceExport && child.sliceExport.box;
             if (!this._geomReady(childBox) || !this._geomReady(ink) || !this._geomReady(box)) return false;
             return Number(ink.w) > Number(box.w) + 0.5
               || Number(ink.h) > Number(box.h) + 0.5
@@ -6862,6 +7525,26 @@
             el.style.boxSizing = 'border-box';
             el.style.overflowWrap = 'anywhere';
             el.setAttribute('data-text-wrap-cap', String(wrapCap));
+            /* HEIGHT wrap pins width to the written cap. A CENTER leaf whose
+               source box is a different width must stay centered on that box,
+               not grow/shrink from the zh-CN left edge. */
+            if (String(tx.align || '').toUpperCase() === 'CENTER'
+              && Number.isFinite(Number(box.w)) && Number(box.w) > 0
+              && Math.abs(wrapCap - Number(box.w)) > 0.5) {
+              const layoutLeft = Number.parseFloat(el.style.left);
+              const sourceLeftNow = Number.isFinite(layoutLeft) ? layoutLeft : ((box.x ?? 0) - originX);
+              el.style.left = (sourceLeftNow + (Number(box.w) - wrapCap) / 2) + 'px';
+              el.setAttribute('data-text-wrap-anchor', 'source-center');
+            }
+            if (axisPolicy.reason === 'height-auto-resize-wrap'
+              && String(__u(n.layout && n.layout.layoutSizingVertical) || '').toUpperCase() === 'HUG') {
+              const zhSourceExact = String(ctx.prefs && ctx.prefs.lang || '') === 'zh-CN';
+              if (!zhSourceExact) {
+                el.style.height = 'auto';
+                el.style.minHeight = '0px';
+                el.setAttribute('data-text-hug-policy', 'height-wrap-locale-hug');
+              }
+            }
           }
           if (constraint.openFlow) {
             // Generic widow/orphan mitigation for open-flow translations.
@@ -7184,7 +7867,7 @@
             ? t.copy.semanticLayout.byNode[nid] : null;
           const semanticBreak = semanticLayout && semanticLayout[ctx.prefs.lang]
             && Array.isArray(semanticLayout[ctx.prefs.lang].lines)
-            && semanticLayout[ctx.prefs.lang].lines.length > 1
+            && semanticLayout[ctx.prefs.lang].lines.length >= 1
             ? semanticLayout[ctx.prefs.lang] : null;
           /* A status visual is a locale+semantic contract, not a text override:
              retain the adopted Lark value for accessibility/audit, and replace
@@ -7242,23 +7925,36 @@
             if (_hasRich && String(val) === String(fallback) && !semanticBreak) this._renderRichText(el, String(val), _richOverrides, _richTable, tx);
             else {
               if (_hasRich) el.setAttribute('data-richtext-skipped', 'translated-copy-differs');
-              el.textContent = semanticBreak ? semanticBreak.lines.join('\n') : val;
+              el.textContent = semanticBreak ? this._paintSemanticBreakText(semanticBreak.lines) : val;
             }
             if (semanticBreak) {
               /* Preserve only data-approved break boundaries. This is neither
                  a node selector nor browser width wrapping: semantic layout
-                 belongs to copy truth and carries its own provenance. */
-              el.style.whiteSpace = 'pre-wrap';
+                 belongs to copy truth and carries its own provenance.
+                 HEIGHT wrap already set overflow-wrap:anywhere; that would
+                 still split a word after the approved newline is painted.
+                 Use pre so only the approved newlines count. */
+              el.style.whiteSpace = 'pre';
               el.style.height = 'auto';
               el.style.minHeight = (Number(box.h) || 0) + 'px';
+              el.style.overflowWrap = 'normal';
+              el.style.wordBreak = 'keep-all';
+              /* text-wrap:wrap makes Chrome treat pre as pre-wrap, so an
+                 approved first line that still contains a space (Activation
+                 Medium) rebreaks. nowrap keeps only the approved newlines.
+                 One-line entries and long footnotes keep wrap so they can
+                 still fill the modal. */
+              const approvedLineCount = Array.isArray(semanticBreak.lines) ? semanticBreak.lines.length : 0;
+              el.style.textWrap = approvedLineCount >= 2 ? 'nowrap' : 'wrap';
               el.setAttribute('data-text-layout-policy', 'semantic-explicit-break');
+              if (approvedLineCount >= 2) el.setAttribute('data-semantic-break-nowrap', '1');
               el.setAttribute('data-semantic-break-lines', String(semanticBreak.lines.length));
               el.setAttribute('data-semantic-break-provenance', String((semanticBreak.provenance || {}).kind || 'unspecified'));
             }
             /* 手动换行丢失留痕（第 14 项）：稿内原文带 \n 而表行没有 —— 显示的译文
                按框宽自然折行，折的位置与稿不同。打标让壳能现数（读数「换行丢失 N 条」），
                不许静默。（显示原文兜底时不算丢失：原文里的 \n 还在。） */
-            if (String(fallback ?? '').includes('\n') && !String(val).includes('\n')) {
+            if (!semanticBreak && String(fallback ?? '').includes('\n') && !String(val).includes('\n')) {
               el.setAttribute('data-copy-lb-lost', '1');
               /* text-wrap:balance 只给【真的丢了换行】的这条加，不给所有定宽文字加。
                  这条限定是门 E 逼出来的（2026-08-04）：balance 会改折行位置，
@@ -7427,8 +8123,9 @@
             language: ctx.prefs && ctx.prefs.lang,
             primaryCtaNowrap: ctaNowrap,
             hasAdoptedCopy: _hasAdoptedCopy,
+            autoResize: ar,
           });
-          if (!_zhSourceExact && !_copyUnbound && !inlineHugs && !constraint.openFlow && (axisFitPolicy.shrink || rotatedNowrap) && !semanticBreak) {
+          if (!_zhSourceExact && !_copyUnbound && !inlineHugs && !constraint.openFlow && (axisFitPolicy.shrink || rotatedNowrap || semanticBreak)) {
             el.setAttribute('data-fit-group', _fitGroupKey);
             if (_localizedSourceTitle && hasAlCaps) {
               el.setAttribute('data-fit-inline-policy', 'source-title-group-glyph-safe-width');
@@ -7438,14 +8135,18 @@
             if (alOwner.maxWidth != null) el.setAttribute('data-fit-max-width', String(alOwner.maxWidth));
             if (alOwner.maxHeight != null) el.setAttribute('data-fit-max-height', String(alOwner.maxHeight));
             if (rotatedNowrap && rotatedFitW > 0) el.setAttribute('data-fit-max-width', String(rotatedFitW));
-            if (rotatedNowrap && rotatedFitH > 0) el.setAttribute('data-fit-max-height', String(rotatedFitH));
+            /* Rotated local height is the source fontSize (one line). CSS CJK
+               line boxes are taller than fontSize; Noto Sans HK is taller still.
+               Using that as maxHeight shrinks zh-TW below the other langs.
+               Keep the written Auto Layout height, if any. */
+            if (rotatedNowrap && rotatedFitH > 0) el.setAttribute('data-text-unrotated-h-not-fit-cap', String(rotatedFitH));
             fitCandidates.push({
               el, tx, box, groupKey: _fitGroupKey,
               sourceTitleInlineSafe: !!(hasAlCaps && _localizedSourceTitle),
               sourceTitleText: (hasAlCaps && _localizedSourceTitle) ? String(fallback || '') : '',
               semanticBreak: !!semanticBreak,
               maxWidth: (rotatedNowrap && rotatedFitW > 0) ? rotatedFitW : axisFitPolicy.fitMaxWidth,
-              maxHeight: (rotatedNowrap && rotatedFitH > 0) ? rotatedFitH : axisFitPolicy.fitMaxHeight,
+              maxHeight: axisFitPolicy.fitMaxHeight,
               axisReason: axisFitPolicy.reason,
             });
           }
@@ -7798,13 +8499,21 @@
               const descendantPlateOverflow = !!(sliceSpillsOwner && pfx === 'img'
                 && Number(exportBox.h) >= Number(box.h) * 2 - 0.5);
               const visibleRender = n.renderBox || {};
-              const ancestorVisiblePlate = !!(sliceSpillsOwner && pfx === 'img'
+              const unclippedInkPlate = !!(sliceSpillsOwner && pfx === 'img'
+                && n.clipsContent !== true
+                && this._geomReady(n.inkBox)
+                && this._boxSpillsOwner(n.inkBox, box)
+                && this._pngMatchesBox(assetRec, n.inkBox));
+              const ancestorVisiblePlate = !unclippedInkPlate && !!(sliceSpillsOwner && pfx === 'img'
                 && this._geomReady(visibleRender) && this._geomReady(box)
                 && this._sameCoordinateSpace(visibleRender, box)
                 && Number(visibleRender.h) > Number(box.h) + 0.5
                 && Number(visibleRender.h) < Number(box.h) * 2 - 0.5
                 && Math.abs(Number(visibleRender.w) - Number(box.w)) <= 2);
-              if (ancestorVisiblePlate) {
+              if (unclippedInkPlate) {
+                el.style.overflow = 'visible';
+                el.setAttribute('data-owner-clip', 'unclipped-ink-visible');
+              } else if (ancestorVisiblePlate) {
                 el.style.overflow = 'visible';
                 const clipTop = Number(visibleRender.y) - Number(box.y);
                 const clipLeft = Number(visibleRender.x) - Number(box.x);
@@ -7869,13 +8578,19 @@
               el.setAttribute('data-gradient-unrendered', '1');
             }
           }
+          this._paintAuthoredRoundedVector(el, n);
         }
         // 挂到父节点下（没有父节点才挂 stage）。DFS 先序 → 同级 append 顺序即绘制顺序。
         (parent ? parent.el : container).appendChild(el);
+        if (el.getAttribute('data-shape-rounded-vector') === 'source-border-radius') this._fitLangChipHost(el);
         /* One inventory bg/* sheet, two views: the clipped first-screen crop
-           and the unscaled tail that continues behind later sections. */
+           and the unscaled tail that continues behind later sections.
+           Official ≤1126 keeps later UI and this sheet on the same transform;
+           a negative crop offset must still spawn the tail, or the page
+           lock-to-board leaves an empty brown band. */
         if (!parent && el.getAttribute('data-hero-visual-plane') === 'bg'
-          && heroLayoutOffsetDesign > 0 && heroCropWindowDesign > 0) {
+          && Number.isFinite(laterJoinOffsetDesign) && laterJoinOffsetDesign !== 0
+          && heroCropWindowDesign > 0) {
           const sourceH = Number(box.h);
           const clipH = Number(el.getAttribute('data-hero-visual-clip') || 0);
           if (sourceH > clipH + 0.5 && clipH > 0) {
@@ -7883,7 +8598,7 @@
             tail.style.transform = '';
             tail.style.left = ((box.x ?? 0) - originX) + 'px';
             tail.style.clipPath = 'inset(' + clipH + 'px 0 0 0)';
-            tail.style.top = ((Number.parseFloat(el.style.top) || 0) + heroLayoutOffsetDesign) + 'px';
+            tail.style.top = ((Number.parseFloat(el.style.top) || 0) + laterJoinOffsetDesign) + 'px';
             tail.removeAttribute('data-hero-visual-plane-scale');
             tail.setAttribute('data-hero-visual-plane', 'bg-tail');
             container.appendChild(tail);
@@ -8474,14 +9189,22 @@
           layers.push({ index, state, el: layer, externals: [], isBase: false, fillCss, sliceFile: variantSliceFile });
         }
         if (!mountBlocked && layers.length === trees.length) {
-          if (!owner.el.style.overflow || owner.el.style.overflow === 'visible') owner.el.style.overflow = 'hidden';
+          if (!/切换语言/.test(String(owner.el.getAttribute('data-btn-name') || owner.el.getAttribute('data-name') || ''))
+            && (!owner.el.style.overflow || owner.el.style.overflow === 'visible')) {
+            owner.el.style.overflow = 'hidden';
+          }
           owner.el.setAttribute('data-btn-variant-mount-status', 'owner-local-mutually-exclusive');
           owner.el.setAttribute('data-btn-variant-count', String(layers.length));
           owner.el.__fxButtonVariantLayers = layers;
           const selected = layers.find((layer) => layer.index === owner.initialIndex) || layers[0];
           if (selected) {
             owner.el.setAttribute('data-btn-variant-fill-source', selected.state);
-            if (selected.fillCss) owner.el.style.background = selected.fillCss;
+            if (this._isLangSwitchButton(owner.el)) {
+              const plate = owner.el.querySelector('[data-shape-rounded-vector="source-border-radius"]');
+              if (plate) this._fitLangChipHost(plate);
+            } else if (selected.fillCss) {
+              owner.el.style.background = selected.fillCss;
+            }
           }
           /* Alternate COMPONENT trees keep master TEXT. Directory rows and other
              instances must keep their own label override on every variant layer. */
@@ -8822,7 +9545,10 @@
           layer.style.zIndex = String(paintIndex);
           layer.style.left = '0';
           layer.style.top = '0';
-          layer.style.width = windowStageWidth + 'px';
+          /* Paint-root clip follows the window, same as the page stage.
+             Authored 750 here plus page overflowX:clip is the 800 right gap. */
+          const laterLayerW = windowStageWidth;
+          layer.style.width = laterLayerW + 'px';
           layer.style.height = (pageScrollHeight || meta.height || 0) + 'px';
           layer.style.pointerEvents = 'none';
           /* First-screen pagePaintOrder roots are section frames (sec/1),
@@ -8869,8 +9595,8 @@
                layoutOffsetDesign (pad or crop). Extra>0 lengthens this clip so
                the moved stage is not cut; extra<0 shortens it so the empty tail
                past bg/pc背景* is not a #180f02 band under sec/3. */
-            const laterShift = Number.isFinite(Number(heroLayoutOffsetDesign))
-              ? Number(heroLayoutOffsetDesign)
+            const laterShift = Number.isFinite(Number(laterJoinOffsetDesign))
+              ? Number(laterJoinOffsetDesign)
               : 0;
             const laterMinH = this._laterStageHeight(sectionH, {
               k,
@@ -8879,7 +9605,7 @@
             });
             layer.style.left = '0';
             layer.style.top = '0';
-            layer.style.width = windowStageWidth + 'px';
+            layer.style.width = laterLayerW + 'px';
             layer.style.height = (sectionY - pageY + laterMinH + laterShift) + 'px';
             layer.style.overflow = 'hidden';
             layer.setAttribute('data-section-layer-box', 'pageBox-clip');
@@ -8938,11 +9664,12 @@
                 const kvClipH = Number(firstMeta && firstMeta.height) || Number(heroSlot.heroHeight) || 0;
                 /* Frozen 1920 column sits at CSS left. KV fills the real
                    viewport: place the zoomed sheet so its CSS box covers
-                   viewportW, not the frozen column. */
+                   viewportW, not the frozen column. Hero KV is on k, not later
+                   page zoom. */
                 const columnLeftCss = this._columnLeftCss();
-                const columnLeftDesign = pageStageScale > 0 ? columnLeftCss / pageStageScale : 0;
-                const viewportWDesign = pageStageScale > 0
-                  ? Number(this._viewportWidth) / pageStageScale
+                const columnLeftDesign = Number(k) > 0 ? columnLeftCss / Number(k) : 0;
+                const viewportWDesign = Number(k) > 0
+                  ? Number(this._viewportWidth) / Number(k)
                   : designWidth;
                 const coverLeftDesign = (viewportWDesign - designWidth * kvRatio) / 2 - columnLeftDesign;
                 layer.style.zoom = String(kvRatio);
@@ -8959,9 +9686,9 @@
               }
             }
             if (bg) {
-              if (layer && heroLayoutOffsetDesign > 0) {
+              if (layer && Number.isFinite(laterJoinOffsetDesign) && laterJoinOffsetDesign !== 0) {
                 layer.setAttribute('data-hero-bg-follow', 'after-hero-slices');
-                layer.setAttribute('data-hero-bg-shift-design', String(heroLayoutOffsetDesign));
+                layer.setAttribute('data-hero-bg-shift-design', String(laterJoinOffsetDesign));
               }
               paint(bg.nodes, bg.raw, layer || fixedStage, {
                 originX: pageX,
@@ -9209,15 +9936,14 @@
         const namedModals = wired;
         const modalPolicy = () => {
           const policy = designPolicy();
-          /* YAML default is cover (PC 3840 sheet on a frozen 1920 column).
-             Mobile 750×1334 cover on 390×844 becomes 474×844 and overflows
-             the sheet. Contain keeps the authored sheet inside the viewport.
-             Read data-fx-base from this remount; the click listener itself
-             is installed once and must not keep the first-paint PC base. */
-          const liveBase = frame.getAttribute('data-fx-base') || __base;
-          const fill = (liveBase === 'mobile')
-            ? 'contain'
-            : (policy.modalViewportFill === 'cover' ? 'cover' : 'contain');
+          /* YAML default is cover for both trees (PC 3840 on 1920, and the
+             ≤1126 mobile tree on the current window). Do not force mobile
+             contain: min(1126/750, 1066/1334) freezes the sheet near 600.
+             Cover overflow still clips via [data-modal-sheet] below.
+             Read data-fx-base from this remount for designW/H fallback;
+             the click listener itself is installed once and must not keep
+             the first-paint PC base. */
+          const fill = policy.modalViewportFill === 'cover' ? 'cover' : 'contain';
           const scrim = Number(policy.modalScrimOpacity);
           const lock = policy.modalLockPageScroll === true;
           return {
@@ -9290,10 +10016,18 @@
           const visibleW = Math.max(0, Number.parseFloat(frame.style.width) || frame.clientWidth || frameRect.width);
           const visibleH = Math.max(0, Number.parseFloat(frame.style.height) || frame.clientHeight || frameRect.height);
           const policy = modalPolicy();
-          const scale = policy.fill === 'cover'
-            ? Math.max(visibleW / designW, visibleH / designH)
-            : Math.min(visibleW / designW, visibleH / designH);
+          /* Official iPhone/Android QA scales the 750×1334 sheet by width
+             only. Cover max(W,H) crops the sides of every named popup. Keep
+             YAML cover for PC; phone uses width k. */
+          const liveTree = String(frame.getAttribute('data-fx-base') || liveBase || '');
+          const scale = liveTree === 'mobile'
+            ? (visibleW / designW)
+            : (policy.fill === 'cover'
+              ? Math.max(visibleW / designW, visibleH / designH)
+              : Math.min(visibleW / designW, visibleH / designH));
           layer.setAttribute('data-modal-fit-k', String(scale));
+          if (liveTree === 'mobile') layer.setAttribute('data-modal-fit-axis', 'width');
+          else layer.removeAttribute('data-modal-fit-axis');
           if (modalHost) {
             if (!modalHost.__fxNamedModalRest) {
               modalHost.__fxNamedModalRest = {
@@ -9316,7 +10050,10 @@
           }
           const scaledW = designW * scale;
           const scaledH = designH * scale;
-          const phoneOverflow = scaledW > visibleW + 1 || scaledH > visibleH + 1;
+          const phoneWidthFit = liveTree === 'mobile';
+          /* Official 900 calendar sheet: width k, leftover centered.
+             Origin 0,0 on the whole mobile tree left 751–1126 stuck top-left. */
+          const phoneOverflow = !phoneWidthFit && (scaledW > visibleW + 1 || scaledH > visibleH + 1);
           if (phoneOverflow) {
             /* Cover can make the 750×1334 phone sheet wider than the 390 host.
                Keep cover on an inner sheet and clip the measured layer to the
@@ -9350,8 +10087,13 @@
             layer.style.transform = 'none';
             layer.style.overflow = 'hidden';
           } else {
-            layer.style.left = '0px';
-            layer.style.top = '0px';
+            /* Mobile tree: width k so 390 sides stay in frame. Offset
+               leftover so ≤1126 stays centered (official 900 ty=-260.4).
+               Contain that still fits on PC stays centered. */
+            const offsetX = (visibleW - scaledW) / 2;
+            const offsetY = (visibleH - scaledH) / 2;
+            layer.style.left = offsetX + 'px';
+            layer.style.top = offsetY + 'px';
             layer.style.width = designW + 'px';
             layer.style.height = designH + 'px';
             layer.style.maxWidth = 'none';
@@ -9405,6 +10147,9 @@
           hideInPlace(entry.layer, false);
           entry.layer.setAttribute('data-modal-open', 'true');
           pinModalToViewport(entry);
+          if (typeof this._restackSkippedVerticalHugClusters === 'function') {
+            this._restackSkippedVerticalHugClusters(entry.layer);
+          }
           if (modalPolicy().lock) lockNamedModalScroll(true);
           if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
             frame.__fxAssetScheduler.prime(entry.layer);
@@ -9617,7 +10362,25 @@
           /* Stop-2 completion for btn/切换语言 is the authored COMPONENT fill
              (root or same-box child), not only data-btn-variant-state. Current lang = highlight variant. */
           owner.setAttribute('data-btn-variant-fill-source', next.state);
-          if (next.fillCss) owner.style.background = next.fillCss;
+          if (this._isLangSwitchButton(owner)) {
+            /* Resting instance keeps img/未选中背景. Highlight VECTOR lives
+               on the cloned layer. Leaving the resting plate painted makes
+               later-axes fill-pixel read the normal gradient on the
+               current-lang chip. */
+            for (const plate of [...owner.querySelectorAll('[data-name="img/选中背景"], [data-name="img/未选中背景"]')]) {
+              if (plate.closest && plate.closest('[data-btn-variant-layer="true"]')) continue;
+              const named = String(plate.getAttribute('data-name') || '');
+              const hide = next.state === 'highlight'
+                ? /img\/未选中背景/.test(named)
+                : /img\/选中背景/.test(named);
+              hideBtnLayer(plate, hide);
+            }
+            const plate = [...owner.querySelectorAll('[data-shape-rounded-vector="source-border-radius"]')]
+              .find((el) => !el.hidden && el.getAttribute('aria-hidden') !== 'true');
+            if (plate) this._fitLangChipHost(plate);
+          } else if (next.fillCss) {
+            owner.style.background = next.fillCss;
+          }
           if (frame.__fxAssetScheduler && typeof frame.__fxAssetScheduler.prime === 'function') {
             const target = next.isBase ? owner : next.el;
             frame.__fxAssetScheduler.prime(target);
@@ -9704,6 +10467,77 @@
             || '',
           ).trim();
         };
+        const currentPageRegion = () => {
+          const qa = typeof window !== 'undefined' ? window.__qa : null;
+          const qaRegion = qa && typeof qa.prefs === 'function' ? qa.prefs().region : '';
+          return String(
+            (frame.__fxRenderPrefs && frame.__fxRenderPrefs.region)
+            || qaRegion
+            || (ctx.prefs && ctx.prefs.region)
+            || '',
+          ).trim();
+        };
+        const hideCnLanguageDropmenu = (owner) => {
+          if (!owner || !isLanguageDropmenu(owner)) return;
+          const staticGateView = typeof document !== 'undefined'
+            && document.documentElement
+            && document.documentElement.getAttribute('data-inventory-static-gate') === '1';
+          const regionNow = currentPageRegion();
+          if (!staticGateView && regionNow === 'cn') {
+            hideBtnLayer(owner, true);
+            placeCnOfficialSiteOnLangSlot();
+            return;
+          }
+          hideBtnLayer(owner, false);
+          const options = languageOptionButtons(owner);
+          const zhCnSlot = options.find((option) => {
+            const optionLang = option.getAttribute('data-lang')
+              || dropmenuLangFromEvent(option, owner)
+              || uniqueDropmenuLang(option.textContent);
+            return optionLang === 'zh-CN';
+          }) || null;
+          const koSlot = options.find((option) => {
+            const optionLang = option.getAttribute('data-lang')
+              || dropmenuLangFromEvent(option, owner)
+              || uniqueDropmenuLang(option.textContent);
+            return optionLang === 'ko';
+          }) || null;
+          for (const option of options) {
+            const optionLang = option.getAttribute('data-lang')
+              || dropmenuLangFromEvent(option, owner)
+              || uniqueDropmenuLang(option.textContent);
+            if (optionLang && !option.getAttribute('data-lang')) option.setAttribute('data-lang', optionLang);
+            const hideZhCn = !staticGateView && regionNow === 'global' && optionLang === 'zh-CN';
+            if (hideZhCn) hideBtnLayer(option, true);
+            else {
+              if (option.__fxOriginalDisplay === 'none') option.__fxOriginalDisplay = '';
+              hideBtnLayer(option, false);
+            }
+          }
+          /* Official Global: drop 简中, put 韩文 in that same authored slot. */
+          if (!staticGateView && regionNow === 'global' && zhCnSlot && koSlot && zhCnSlot !== koSlot) {
+            if (!koSlot.__fxLangSlotLeft) {
+              koSlot.__fxLangSlotLeft = koSlot.style.left || '';
+              koSlot.__fxLangSlotTop = koSlot.style.top || '';
+            }
+            koSlot.style.left = zhCnSlot.style.left;
+            koSlot.style.top = zhCnSlot.style.top;
+            koSlot.setAttribute('data-lang-slot', 'global-ko-in-zh-cn');
+          } else if (koSlot && koSlot.__fxLangSlotLeft != null) {
+            koSlot.style.left = koSlot.__fxLangSlotLeft;
+            koSlot.style.top = koSlot.__fxLangSlotTop;
+            koSlot.removeAttribute('data-lang-slot');
+          }
+          placeCnOfficialSiteOnLangSlot();
+        };
+        const langButtonSlotFromTruth = (host) => this._langButtonSlotFromTruth(
+          host,
+          __activeTruth && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes,
+        );
+        const placeCnOfficialSiteOnLangSlot = () => this._placeCnOfficialSiteOnLangSlot(
+          frame,
+          __activeTruth && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes,
+        );
         const syncLanguageDropmenuHighlight = (owner, lang) => {
           if (!owner || !isLanguageDropmenu(owner)) return false;
           const current = String(lang || currentPageLang()).trim();
@@ -9720,6 +10554,7 @@
             }
             option.setAttribute('data-btn-variant-state', nextState);
           }
+          hideCnLanguageDropmenu(owner);
           return applied > 0;
         };
         const applyDropmenuLang = (lang) => {
@@ -9790,7 +10625,10 @@
           if (current !== 'on' && current !== 'off') return false;
           const next = current === 'on' ? 'off' : 'on';
           const ok = applyDropmenuVariant(owner, next);
-          if (ok && next === 'on') syncLanguageDropmenuHighlight(owner, currentPageLang());
+          if (ok && next === 'on') {
+            syncLanguageDropmenuHighlight(owner, currentPageLang());
+            hideCnLanguageDropmenu(owner);
+          }
           return ok;
         };
         /* setPref('lang') rebuilds the page from the Figma rest state (all
@@ -9800,6 +10638,7 @@
         frame.__fxSyncLanguageDropmenuHighlight = () => {
           for (const owner of [...frame.querySelectorAll('[data-dropmenu="true"]')]) {
             syncLanguageDropmenuHighlight(owner, currentPageLang());
+            hideCnLanguageDropmenu(owner);
           }
         };
         frame.__fxSyncLanguageDropmenuHighlight();
@@ -10011,7 +10850,12 @@
             && x.getAttribute('data-switch-page-source') !== 'component-set-variant')) {
             el.setAttribute('data-switch-index', String(idx));
           }
+          /* Hidden variant layers skip restack on first paint. Re-run after the
+             visible pair is shown so HEIGHT wrap / CENTER footnotes settle. */
+          this._realignCenteredHeightWraps(frame);
+          this._restackSkippedVerticalHugClusters(frame);
         };
+        frame.__fxApplySwitch = applySwitch;
         /* Direct-child pages are present in the initial Figma tree, so settle
            the source-selected state immediately through the same applySwitch()
            pathway used by tabs, indicators, and prev/next commands. This is
@@ -10678,6 +11522,13 @@
       if (typeof frame.__fxSyncLanguageDropmenuHighlight === 'function') {
         frame.__fxSyncLanguageDropmenuHighlight();
       }
+      /* CN skips painting dropmenu/多语言, so the interaction bridge never
+         sees a language owner. Still place mobile 进入官网 on the authored
+         language-button slot after overlay paint. */
+      this._placeCnOfficialSiteOnLangSlot(
+        frame,
+        __activeTruth && __activeTruth.fixedOverlays && __activeTruth.fixedOverlays.nodes,
+      );
       this._installHeroScrollSlot(frame, heroSlot);
       this._installMotionAdapter(frame, motionAdapter);
       this._installAssetScheduler(frame);
@@ -10740,38 +11591,40 @@
         }
         for (const c of fitCandidates) this._fitText(c.el, c.tx, c.box, { widthFit: c.widthFit, heightFit: c.heightFit, maxWidth: c.maxWidth, maxHeight: c.maxHeight, sourceTitleInlineSafe: c.sourceTitleInlineSafe, semanticBreak: c.semanticBreak });
         for (const c of fitCandidates) this._realignTranslatedClipText(c.el, c.box);
-        /* 组级最小统一字号（required-scale prepass，官网实证：同一组件组标题/正文
-           统一字号，最严格成员定全组等级，其余兄弟跟随，最长项折行也不单独缩）。
-           逐成员 step-fit 后读取各自"所需 scale"（未缩=100）；组内取 min，若确有成员
-           溢出（min<100）则把该档回灌全组（含本来不缩的短项），并回灌 owner 高度使
-           视觉一致；若组内无任何成员溢出（全在源字号下成立），保持源字号不动——
-           保住 zh-CN 保真与本就合适的语言，不盲目统一降组。 */
+        /* 组级最小统一字号。6.1 C 后逐成员写 data-fit-px（整数），不再写百分比
+           data-fit-scale。组内取最小整数 px 回灌全组（含 semanticBreak 兄弟，
+           它们自己不跑 _fitText）。全员仍在 locale 基准则不动。 */
         const groups = new Map();
         for (const c of fitCandidates) {
-          if (!c.groupKey || c.semanticBreak) continue;
-          const sAttr = c.el.getAttribute('data-fit-scale');
-          const required = sAttr == null ? 100 : Number(sAttr);
+          if (!c.groupKey) continue;
+          const _gFs = Number(c.el.getAttribute('data-locale-base-fontsize'));
+          const localeBase = Number.isFinite(_gFs) && _gFs > 0 ? _gFs : c.tx.fontSize;
+          const fitPx = Number(c.el.getAttribute('data-fit-px'));
+          const currentPx = Number.isFinite(fitPx) && fitPx > 0
+            ? fitPx
+            : (Number.parseFloat(c.el.style.fontSize) || localeBase);
           if (!groups.has(c.groupKey)) groups.set(c.groupKey, []);
-          groups.get(c.groupKey).push({ c, required });
+          groups.get(c.groupKey).push({ c, localeBase, currentPx });
         }
         for (const members of groups.values()) {
           if (members.length < 2) continue;
-          const minScale = Math.min(...members.map((m) => m.required));
-          if (minScale >= 100) continue; // all fit at source size: keep source
+          const groupMinPx = Math.min(...members.map((m) => m.currentPx).filter((n) => Number.isFinite(n) && n > 0));
+          if (!Number.isFinite(groupMinPx) || groupMinPx <= 0) continue;
+          const anyShrunk = members.some((m) => m.currentPx + 0.5 < m.localeBase);
+          if (!anyShrunk) continue;
           for (const m of members) {
-            if (m.required === minScale) continue; // already at strictest
-            const _gFs = Number(m.c.el.getAttribute('data-locale-base-fontsize'));
+            if (m.c.axisReason === 'vertical-max-wrap'
+              || m.c.el.getAttribute('data-text-layout-policy') === 'vertical-max-wrap') continue;
+            const nextPx = this._groupUnifyFontSize({ currentPx: m.currentPx, localeBasePx: m.localeBase, groupMinPx });
+            if (nextPx == null || Math.abs(nextPx - m.currentPx) < 0.5) continue;
             const _gLh = Number(m.c.el.getAttribute('data-locale-base-lineheight'));
-            if (m.c.axisReason === 'vertical-max-wrap' || m.c.el.getAttribute('data-text-layout-policy') === 'vertical-max-wrap') continue;
-            const localeBase = Number.isFinite(_gFs) && _gFs > 0 ? _gFs : m.c.tx.fontSize;
-            const currentPx = Number(m.c.el.getAttribute('data-fit-px')) || Number.parseFloat(m.c.el.style.fontSize);
-            const groupMinPx = localeBase * minScale / 100;
-            const nextPx = this._groupUnifyFontSize({ currentPx, localeBasePx: localeBase, groupMinPx });
-            if (nextPx == null) continue;
+            const lhBase = Number.isFinite(_gLh) && _gLh > 0 ? _gLh : m.c.tx.lineHeight;
             m.c.el.style.fontSize = nextPx + 'px';
-            m.c.el.style.lineHeight = ((Number.isFinite(_gLh) && _gLh > 0 ? _gLh : m.c.tx.lineHeight) * (nextPx / localeBase)) + 'px';
-            m.c.el.setAttribute('data-fit-scale', String(minScale));
-            m.c.el.setAttribute('data-fit-group-unified', String(m.required) + '->' + String(minScale));
+            if (Number.isFinite(lhBase) && lhBase > 0 && Number.isFinite(m.localeBase) && m.localeBase > 0) {
+              m.c.el.style.lineHeight = (lhBase * (nextPx / m.localeBase)) + 'px';
+            }
+            m.c.el.setAttribute('data-fit-px', String(nextPx));
+            m.c.el.setAttribute('data-fit-group-unified', String(m.currentPx) + '->' + String(nextPx));
           }
         }
       };
@@ -10780,6 +11633,8 @@
         // 先按当前状态量一次（字体已缓存时这一次就是终态），字体就绪后再量一次收口。
         runFit();
         growHugOwners();
+        this._realignCenteredHeightWraps(frame);
+        this._restackSkippedVerticalHugClusters(frame);
         document.fonts.ready.then(() => {
           // 重量之前把上一轮的痕迹清掉，否则会在已缩过的基础上继续缩（越缩越小）
           for (const c of fitCandidates) {
@@ -10797,10 +11652,14 @@
             }
             c.el.removeAttribute('data-fit-clip-realign');
             c.el.removeAttribute('data-fit-scale');
+            c.el.removeAttribute('data-fit-px');
+            c.el.removeAttribute('data-fit-group-unified');
             c.el.removeAttribute('data-fit-overflow');
           }
           runFit();
           growHugOwners();
+          this._realignCenteredHeightWraps(frame);
+          this._restackSkippedVerticalHugClusters(frame);
           // 通知壳重算读数（缩字号条数/字宽对账都变了）
           if (typeof window !== 'undefined' && typeof window.__fxOnFontsReady === 'function') {
             window.__fxOnFontsReady();
@@ -10809,6 +11668,8 @@
       } else {
         runFit();   // 没有 FontFaceSet 的环境（Node 冒烟桩）按原样量一次
         growHugOwners();
+        this._realignCenteredHeightWraps(frame);
+        this._restackSkippedVerticalHugClusters(frame);
       }
   },
 

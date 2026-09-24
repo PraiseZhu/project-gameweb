@@ -583,6 +583,126 @@ test('html-from-handoff binds lark-copy into truth.copy.byNode and switches lang
   assert.match(src, /attachHandoffCopy\(demoDir, truth, spec, inventories\)/);
 });
 
+test('html-from-handoff attaches demo semantic-layout/v1 only for the designated node+locale', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-semantic-'));
+  const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920, copyId: '1119:3135', copyText: '触媒自选包' });
+  const mobileDoc = sample('2:2', { roles: GOLD_MOBILE_PREFIX_CLASSES, pageWidth: 750, copyId: '1119:4111', copyText: '触媒自选包' });
+  const pcPath = join(dir, 'pc.json');
+  const mobilePath = join(dir, 'mo.json');
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: 'ready', outDir: join(dir, 'out'),
+  });
+  const demoDir = join(dir, 'demo');
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: {
+      langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' },
+      langs: ['zh-CN', 'en', 'zh-TW', 'ko'],
+      fetchedAt: '2026-09-21T00:00:00Z',
+      phaseRows: Array.from({ length: 82 }, (_, i) => i + 3),
+    },
+    rows: {
+      64: {
+        'zh-CN': '触媒自选包',
+        en: 'Activation Medium Selection Pack',
+        'zh-TW': '觸媒自選包',
+        ko: '기본 촉발체 자유 선택 상자',
+      },
+    },
+  }, null, 2));
+  writeFileSync(join(demoDir, 'copy-designations.json'), JSON.stringify({
+    designations: {
+      '1119:4111': { row: 64, why: 'mobile row 64' },
+      '1119:3135': { row: 64, why: 'pc row 64' },
+    },
+  }));
+  const adopted = 'Activation Medium Selection Pack';
+  writeFileSync(join(demoDir, 'semantic-layout.json'), JSON.stringify({
+    schema: 'semantic-layout/v1',
+    byNode: {
+      '1119:4111': {
+        en: {
+          lines: ['Activation Medium', ' Selection Pack'],
+          provenance: { kind: 'user-approved-lark-row-wrap', row: 64, locale: 'en', plat: 'mobile' },
+        },
+      },
+    },
+  }, null, 2));
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const truth = JSON.parse(readFileSync(join(demoDir, 'truth.json'), 'utf8'));
+  assert.equal(truth.copy.byNode['1119:4111'].en, adopted);
+  assert.equal(truth.copy.byNode['1119:3135'].en, adopted);
+  assert.deepEqual(truth.copy.semanticLayout.byNode['1119:4111'].en.lines, [
+    'Activation Medium',
+    ' Selection Pack',
+  ]);
+  assert.equal(truth.copy.semanticLayout.byNode['1119:3135'], undefined);
+  assert.equal(truth.copy.semanticLayout.byNode['1119:4747'], undefined);
+  const html = readFileSync(join(demoDir, 'index.html'), 'utf8');
+  assert.match(html, /semantic-explicit-break/);
+});
+
+test('html-from-handoff proposes zh-CN dash wraps when semantic-layout.json is missing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-zh-dash-'));
+  const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920, copyId: '1119:3143', copyText: '契灵结晶-战斗×30' });
+  const mobileDoc = sample('2:2', { roles: GOLD_MOBILE_PREFIX_CLASSES, pageWidth: 750, copyId: '1119:4120', copyText: '契灵结晶-战斗×30' });
+  const pcPath = join(dir, 'pc.json');
+  const mobilePath = join(dir, 'mo.json');
+  writeFileSync(pcPath, JSON.stringify(pcDoc));
+  writeFileSync(mobilePath, JSON.stringify(mobileDoc));
+  const pack = writeHandoffPack({
+    pcPath, mobilePath, pcDoc, mobileDoc, kind: 'ready', outDir: join(dir, 'out'),
+  });
+  const demoDir = join(dir, 'demo');
+  mkdirSync(join(demoDir, 'fixtures'), { recursive: true });
+  writeFileSync(join(demoDir, 'fixtures', 'lark-copy.json'), JSON.stringify({
+    _meta: {
+      langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', J: 'ko' },
+      langs: ['zh-CN', 'en', 'zh-TW', 'ko'],
+      fetchedAt: '2026-09-21T00:00:00Z',
+      phaseRows: Array.from({ length: 82 }, (_, i) => i + 3),
+    },
+    rows: {
+      65: {
+        'zh-CN': '契灵结晶-战斗×30',
+        en: 'Pactspirit Crystal - Battle\nx30',
+        'zh-TW': '契靈結晶-戰鬥×30',
+        ko: '정령 결정-전투×30',
+      },
+    },
+  }, null, 2));
+  writeFileSync(join(demoDir, 'copy-designations.json'), JSON.stringify({
+    designations: {
+      '1119:3143': { row: 65, why: 'pc row 65' },
+      '1119:4120': { row: 65, why: 'mobile row 65' },
+    },
+  }));
+  const result = buildHtmlFromHandoff({
+    handoffDir: pack.outDir,
+    demoDir,
+    skipPreview: true,
+  });
+  assert.equal(result.wroteHtml, true, (result.problems || []).join('\n'));
+  const truth = JSON.parse(readFileSync(join(demoDir, 'truth.json'), 'utf8'));
+  assert.deepEqual(truth.copy.semanticLayout.byNode['1119:3143'].en.lines, [
+    'Pactspirit Crystal ',
+    '- Battle\nx30',
+  ]);
+  assert.deepEqual(truth.copy.semanticLayout.byNode['1119:3143'].ko.lines, [
+    '정령 결정',
+    '-전투×30',
+  ]);
+  assert.equal(truth.copy.semanticLayout.byNode['1119:3143']['zh-TW'], undefined);
+  assert.equal(truth.copy.semanticLayout.byNode['1119:3143'].en.provenance.kind, 'zh-source-structure');
+});
+
 test('html-from-handoff designations bind duplicate 查看更多 to phase-1 row 26', () => {
   const dir = mkdtempSync(join(tmpdir(), 'html-from-handoff-designate-'));
   const pcDoc = sample('1:1', { roles: GOLD_PC_PREFIX_CLASSES, pageWidth: 1920, copyId: 'I949:5195;949:5333', copyText: '查看更多' });

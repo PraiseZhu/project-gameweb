@@ -23,11 +23,11 @@ test('Torch non-Chinese copy uses matching Source Han / Noto, not Bebas for CJK 
   assert.equal(routeFontFamily({ language: 'zh-TW', sourceFamily: YOUHEI, sourceWeight: 600 }).family, 'Noto Sans HK');
 });
 
-test('YouHei Regular 600 becomes Noto 400; zh-CN stays 600; Bold stays 900', () => {
+test('YouHei Regular 600 becomes Noto 400; zh-TW HK keeps 600; zh-CN stays 600; Bold stays 900', () => {
   assert.equal(routeFontFamily({ language: 'en', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
   assert.equal(routeFontFamily({ language: 'ja', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
   assert.equal(routeFontFamily({ language: 'ko', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
-  assert.equal(routeFontFamily({ language: 'zh-TW', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 400);
+  assert.equal(routeFontFamily({ language: 'zh-TW', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 600);
   assert.equal(routeFontFamily({ language: 'zh-CN', sourceFamily: YOUHEI, sourceWeight: 600 }).weight, 600);
   assert.equal(routeFontFamily({ language: 'en', sourceFamily: YOUHEI, sourceWeight: 900 }).weight, 900);
 });
@@ -43,6 +43,7 @@ function rendererFontHelpers() {
 
 const WEIGHT_CASES = Object.freeze([
   { name: 'youhei-regular-to-noto', args: { family: 'Noto Sans', sourceFamily: YOUHEI, sourceWeight: 600, fontStyle: 'Regular' }, expected: 400 },
+  { name: 'youhei-regular-to-noto-hk-keeps-600', args: { family: 'Noto Sans HK', sourceFamily: YOUHEI, sourceWeight: 600, fontStyle: 'Regular' }, expected: 600 },
   { name: 'youhei-regular-style-without-weight', args: { family: 'Noto Sans JP', sourceFamily: YOUHEI, sourceWeight: null, fontStyle: 'Regular' }, expected: 400 },
   { name: 'zh-cn-youhei-regular-stays', args: { family: YOUHEI, sourceFamily: YOUHEI, sourceWeight: 600, fontStyle: 'Regular' }, expected: 600 },
   { name: 'youhei-bold-to-noto-stays', args: { family: 'Noto Sans', sourceFamily: YOUHEI, sourceWeight: 900, fontStyle: 'Bold' }, expected: 900 },
@@ -50,11 +51,19 @@ const WEIGHT_CASES = Object.freeze([
   { name: 'noto-jp-600-stays', args: { family: 'Noto Sans JP', sourceFamily: 'Noto Sans JP', sourceWeight: 600, fontStyle: 'Regular' }, expected: 600 },
   { name: 'non-youhei-600-does-not-drop', args: { family: 'Noto Sans', sourceFamily: 'Source Han Sans', sourceWeight: 600, fontStyle: 'Regular' }, expected: 600 },
   { name: 'youhei-bold-regular-style-keeps-900', args: { family: 'Noto Sans', sourceFamily: YOUHEI, sourceWeight: 900, fontStyle: 'Regular' }, expected: 900 },
+  { name: 'zh-cn-noto-regular-stays-400', args: { family: 'Noto Sans SC', sourceFamily: 'Noto Sans SC', sourceWeight: 400, fontStyle: 'Regular' }, expected: 400 },
+  { name: 'sc-regular-to-en-lifts-600', args: { family: 'Noto Sans', sourceFamily: 'Noto Sans SC', sourceWeight: 400, fontStyle: 'Regular' }, expected: 600 },
+  { name: 'sc-regular-to-kr-lifts-600', args: { family: 'Noto Sans KR', sourceFamily: 'Noto Sans SC', sourceWeight: 400, fontStyle: 'Regular' }, expected: 600 },
+  { name: 'sc-regular-to-hk-lifts-600', args: { family: 'Noto Sans HK', sourceFamily: 'Noto Sans SC', sourceWeight: 400, fontStyle: 'Regular' }, expected: 600 },
 ]);
 
 test('Noto 600 language variants keep 600; non-YouHei 600 does not drop', () => {
   assert.equal(routeFontFamily({ language: 'en', sourceFamily: 'Noto Sans', sourceWeight: 600, fontStyle: 'Regular' }).weight, 600);
   assert.equal(routeFontFamily({ language: 'ja', sourceFamily: 'Noto Sans JP', sourceWeight: 600, fontStyle: 'Regular' }).weight, 600);
+  assert.equal(routeFontFamily({ language: 'en', sourceFamily: 'Noto Sans SC', sourceWeight: 400, fontStyle: 'Regular' }).weight, 600);
+  assert.equal(routeFontFamily({ language: 'ko', sourceFamily: 'Noto Sans SC', sourceWeight: 400, fontStyle: 'Regular' }).weight, 600);
+  assert.equal(routeFontFamily({ language: 'zh-TW', sourceFamily: 'Noto Sans SC', sourceWeight: 400, fontStyle: 'Regular' }).weight, 600);
+  assert.equal(routeFontFamily({ language: 'zh-CN', sourceFamily: 'Noto Sans SC', sourceWeight: 400, fontStyle: 'Regular' }).weight, 400);
   for (const row of WEIGHT_CASES) {
     assert.equal(routeFontWeight(row.args), row.expected, row.name);
   }

@@ -201,6 +201,49 @@ test('lib and inline renderer policy stay aligned on adopted horizontal shrink',
   assert.equal(libPolicy.reason, 'horizontal-max-shrink');
 });
 
+test('HEIGHT with only maxWidth wraps instead of nowrap-shrink', () => {
+  const args = {
+    maxWidth: 660,
+    maxHeight: null,
+    language: 'en',
+    hasAdoptedCopy: true,
+    autoResize: 'HEIGHT',
+  };
+  const libPolicy = axisConstraintPolicy(args);
+  const inlinePolicy = helpers._axisConstraintPolicy(args);
+  assert.deepEqual(inlinePolicy, libPolicy);
+  assert.equal(libPolicy.reason, 'height-auto-resize-wrap');
+  assert.equal(libPolicy.nowrap, false);
+  assert.equal(libPolicy.wrap, true);
+  assert.equal(libPolicy.shrink, false);
+  assert.equal(libPolicy.fitMaxWidth, 660);
+  assert.equal(libPolicy.fitMaxHeight, null);
+  const stillNowrap = axisConstraintPolicy({
+    maxWidth: 660,
+    language: 'en',
+    hasAdoptedCopy: true,
+    autoResize: 'FIXED',
+  });
+  assert.equal(stillNowrap.reason, 'horizontal-max-shrink');
+  assert.match(renderer, /autoResize: ar/);
+  assert.match(renderer, /_restackSkippedVerticalHugClusters/);
+  assert.match(renderer, /height-auto-resize-wrap/);
+  assert.match(renderer, /this\._restackSkippedVerticalHugClusters\(entry\.layer\)/);
+  assert.match(renderer, /offsetParent != null && el\.offsetHeight > 0/);
+  assert.match(renderer, /data-skipped-al-source-h/);
+  assert.match(renderer, /height-wrap-locale-hug/);
+  assert.match(renderer, /this\._restackSkippedVerticalHugClusters\(frame\);/);
+  const restackAt = renderer.indexOf('_restackSkippedVerticalHugClusters(frame) {');
+  assert.ok(restackAt > 0);
+  const restack = renderer.slice(restackAt, restackAt + 3800);
+  assert.match(restack, /sourceGaps/);
+  assert.match(restack, /nextY - \(prevY \+ prevH\)/);
+  assert.match(restack, /offsetParent != null && el\.offsetHeight > 0/);
+  assert.match(restack, /sourceSpan/);
+  assert.match(restack, /parent\.getAttribute\('data-skipped-al-source'\) === sourceId && parent\.getAttribute\('data-node'\)/);
+  assert.doesNotMatch(restack, /cursor \+= heights\[i\] \+ gap;/);
+});
+
 test('renderer wiring uses provenance and does not prefer ownerWidth', () => {
   assert.match(renderer, /layoutCapSelf/);
   assert.match(renderer, /axisSource\.maxWidth === 'self'/);
@@ -209,4 +252,35 @@ test('renderer wiring uses provenance and does not prefer ownerWidth', () => {
   assert.match(renderer, /_groupUnifyFontSize/);
   assert.doesNotMatch(renderer, /primaryCtaSingleLine \|\| btnLabelSingleLine/);
   assert.doesNotMatch(renderer, /Number\(constraint\.ownerWidth\) \|\| Number\(box\.w\) \|\| alOwner\.maxWidth/);
+});
+
+test('dual-axis wrap-then-shrink does not treat wrapping scrollWidth as overflow', () => {
+  const dual = axisConstraintPolicy({
+    maxWidth: 600,
+    maxHeight: 126,
+    language: 'en',
+    hasAdoptedCopy: true,
+  });
+  assert.equal(dual.reason, 'dual-axis-wrap-then-shrink');
+  assert.equal(dual.nowrap, false);
+  assert.equal(dual.wrap, true);
+  assert.equal(dual.shrink, true);
+  assert.equal(dual.fitMaxWidth, 600);
+  assert.equal(dual.fitMaxHeight, 126);
+  const fitAt = renderer.indexOf('_fitText(el, tx, box, opts = {})');
+  const nextAt = renderer.indexOf('_buildHeroScrollSlot', fitAt);
+  assert.ok(fitAt > 0 && nextAt > fitAt);
+  const body = renderer.slice(fitAt, nextAt);
+  assert.match(body, /if \(wraps\) \{/);
+  assert.match(body, /if \(maxH != null && measuredH\(\) > maxH \+ 0\.5\) return false;/);
+  assert.match(body, /return true;/);
+  const unifyAt = renderer.indexOf("for (const c of fitCandidates) {\n          if (!c.groupKey) continue;");
+  assert.ok(unifyAt > 0);
+  const unifyBody = renderer.slice(unifyAt, unifyAt + 2200);
+  assert.match(unifyBody, /axisReason === 'vertical-max-wrap'/);
+  assert.match(unifyBody, /data-fit-px/);
+  assert.match(unifyBody, /anyShrunk/);
+  assert.doesNotMatch(unifyBody, /axisReason === 'dual-axis-wrap-then-shrink'/);
+  assert.doesNotMatch(unifyBody, /getAttribute\('data-fit-scale'\)/);
+  assert.doesNotMatch(unifyBody, /setAttribute\('data-fit-scale'/);
 });

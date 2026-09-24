@@ -702,7 +702,7 @@ test("restoreOwnerComposites relinks skipped Auto Layout max onto live TEXT pare
       status: "skipped",
       why: "art-fragment",
       parentId: "clip",
-      layout: { layoutMode: "HORIZONTAL", layoutSizingHorizontal: "FIXED", layoutSizingVertical: "HUG", maxWidth: 1954, maxHeight: 250 },
+      layout: { layoutMode: "HORIZONTAL", layoutSizingHorizontal: "FIXED", layoutSizingVertical: "HUG", primaryAxisAlignItems: "CENTER", counterAxisAlignItems: "CENTER", maxWidth: 1954, maxHeight: 250 },
       pageBox: { x: 0, y: 40, w: 1954, h: 144 },
     },
     {
@@ -729,8 +729,104 @@ test("restoreOwnerComposites relinks skipped Auto Layout max onto live TEXT pare
   assert.equal(copy.fitOwnerFromSkipped.layoutMode, "HORIZONTAL");
   assert.equal(copy.fitOwnerFromSkipped.layoutSizingHorizontal, "FIXED");
   assert.equal(copy.fitOwnerFromSkipped.layoutSizingVertical, "HUG");
+  assert.equal(copy.fitOwnerFromSkipped.primaryAxisAlignItems, "CENTER");
+  assert.equal(copy.fitOwnerFromSkipped.counterAxisAlignItems, "CENTER");
   assert.deepEqual(copy.fitOwnerFromSkipped.box, { x: 0, y: 40, w: 1954, h: 144 });
   assert.deepEqual(copy.parentBox, { x: 0, y: 40, w: 1954, h: 144 });
+});
+
+test("restoreOwnerComposites stamps skipped AL through a live group without max", () => {
+  const restored = restoreOwnerComposites([
+    {
+      id: "modal",
+      type: "FRAME",
+      name: "modal/x",
+      status: "determined",
+      pageBox: { x: 0, y: 0, w: 750, h: 1334 },
+    },
+    {
+      id: "wrap",
+      type: "FRAME",
+      name: "Frame skip",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "modal",
+      layout: {
+        layoutMode: "VERTICAL",
+        layoutSizingHorizontal: "HUG",
+        layoutSizingVertical: "HUG",
+        itemSpacing: 10,
+        constraints: { vertical: "BOTTOM", horizontal: "CENTER" },
+        maxWidth: 700,
+      },
+      pageBox: { x: 25.5, y: 889, w: 700, h: 116 },
+    },
+    {
+      id: "btn",
+      type: "GROUP",
+      name: "btn/下载日历文件",
+      status: "determined",
+      role: "btn",
+      parentId: "wrap",
+      pageBox: { x: 25.5, y: 923, w: 700, h: 24 },
+    },
+    {
+      id: "copy",
+      type: "TEXT",
+      name: "1.下载iCalendar文件；",
+      status: "determined",
+      role: "copy",
+      parentId: "btn",
+      pageBox: { x: 25.5, y: 923, w: 700, h: 24 },
+      text: { characters: "1.下载iCalendar文件；", fontSize: 20, autoResize: "HEIGHT" },
+    },
+  ]);
+  const copy = restored.find((node) => node.id === "copy");
+  assert.equal(copy.parentId, "btn");
+  assert.equal(copy.fitOwnerFromSkipped.sourceId, "wrap");
+  assert.equal(copy.fitOwnerFromSkipped.maxWidth, 700);
+  assert.equal(copy.fitOwnerFromSkipped.itemSpacing, 10);
+  assert.equal(copy.fitOwnerFromSkipped.constraintsVertical, "BOTTOM");
+  const btn = restored.find((node) => node.id === "btn");
+  assert.equal(btn.fitOwnerFromSkipped.sourceId, "wrap");
+  assert.equal(btn.fitOwnerFromSkipped.constraintsVertical, "BOTTOM");
+  assert.equal(copy.layoutCapSelf.maxWidth, null);
+  assert.equal(copy.fitOwnerFromSkipped.axisSource.maxWidth, "inherited");
+  const liveMax = restoreOwnerComposites([
+    {
+      id: "clip",
+      type: "FRAME",
+      status: "unknown",
+      pageBox: { x: 0, y: 0, w: 400, h: 200 },
+    },
+    {
+      id: "far",
+      type: "FRAME",
+      status: "skipped",
+      why: "art-fragment",
+      parentId: "clip",
+      layout: { layoutMode: "VERTICAL", maxWidth: 400 },
+      pageBox: { x: 0, y: 0, w: 400, h: 200 },
+    },
+    {
+      id: "near",
+      type: "FRAME",
+      status: "determined",
+      parentId: "far",
+      layout: { layoutMode: "HORIZONTAL", maxWidth: 200 },
+      pageBox: { x: 0, y: 0, w: 200, h: 40 },
+    },
+    {
+      id: "leaf",
+      type: "TEXT",
+      status: "determined",
+      parentId: "near",
+      pageBox: { x: 0, y: 0, w: 180, h: 24 },
+      text: { characters: "Hi", fontSize: 20 },
+    },
+  ]).find((node) => node.id === "leaf");
+  assert.equal(liveMax.parentId, "near");
+  assert.equal(liveMax.fitOwnerFromSkipped, undefined);
 });
 
 test("restoreOwnerComposites records per-axis self vs inherited caps before stamp", () => {

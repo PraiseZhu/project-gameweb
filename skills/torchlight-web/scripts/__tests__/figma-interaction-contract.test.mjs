@@ -300,6 +300,22 @@ test('keeps the component-set graph when indicator count is smaller than variant
   assert.ok(!model.unresolved.some((entry) => entry.id === 'switch'));
 });
 
+test('ind Default vs Variant2 is selected vs unselected, not other', () => {
+  const model = deriveInteractionModel([
+    { id: 'section', type: 'FRAME', name: 'sec/one' },
+    { id: 'switch', type: 'INSTANCE', name: 'switch/模块', parentId: 'section' },
+    { id: 'slider', type: 'FRAME', name: 'slider', parentId: 'section' },
+    { id: 'ind-a', type: 'INSTANCE', name: 'ind/轮播点', parentId: 'slider', componentProperties: { 'Property 1': { value: 'Default' } } },
+    { id: 'ind-b', type: 'INSTANCE', name: 'ind/轮播点', parentId: 'slider', componentProperties: { 'Property 1': { value: 'Variant2' } } },
+  ]);
+  const byId = new Map(model.components.map((entry) => [entry.id, entry]));
+  assert.equal(byId.get('ind-a').controlState, 'active');
+  assert.equal(byId.get('ind-b').controlState, 'normal');
+  const attrs = new Map(model.attributes.map((entry) => [entry.id, entry.attrs]));
+  assert.equal(attrs.get('ind-a')['data-indicator'], 'true');
+  assert.equal(attrs.get('ind-b')['data-indicator'], 'true');
+});
+
 test('independent btn with normal and highlight is not a missing switch owner', () => {
   const graph = {
     componentSetId: 'lang-set',

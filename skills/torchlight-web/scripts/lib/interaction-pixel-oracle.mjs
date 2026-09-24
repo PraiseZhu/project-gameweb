@@ -90,6 +90,19 @@ export function measuredOk(entry) {
     && entry.measured === true;
 }
 
+export function regionChromeEvidenceComplete(pixel) {
+  const region = pixel && pixel.regionChrome;
+  if (!region || typeof region !== 'object') return false;
+  const claimed = (row) => row && row.claimed === true;
+  const cnPc = region.cnPc;
+  const globalPc = region.globalPc;
+  const cnMobile = region.cnMobile;
+  if (claimed(cnPc) && !measuredOk(cnPc)) return false;
+  if (claimed(globalPc) && !measuredOk(globalPc)) return false;
+  if (claimed(cnMobile) && !measuredOk(cnMobile)) return false;
+  return true;
+}
+
 export function mobileModalSheetVerdict({
   hostW,
   hostH,
@@ -205,5 +218,6 @@ export function laterAxesPixelEvidenceComplete(parsed) {
   if (!modalLangGoOk(pixel.mobile, { plat: 'mobile' })) return false;
   if (!catalogEvidenceOk(pixel.pcCatalog, { plat: 'pc' })) return false;
   if (!catalogEvidenceOk(pixel.mobileCatalog, { plat: 'mobile' })) return false;
+  if (!regionChromeEvidenceComplete(pixel)) return false;
   return true;
 }

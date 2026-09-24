@@ -10,6 +10,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -113,9 +114,13 @@ function groupImagesByHash(demoDir, images) {
   const hashes = new Map();
   for (const src of images) {
     const path = rel(demoDir, src);
+    const digest = sha256File(src);
+    /* Replaceable slots stay in their own tree so a later swap of one
+       lang/platform file cannot rewrite page assets. SHA-identical
+       files still collapse inside that tree. */
     const hash = path.startsWith('content-package/')
-      ? `content-package:${path}`
-      : sha256File(src);
+      ? `content-package:${digest}`
+      : digest;
     hashes.set(src, hash);
     const existing = groups.get(hash);
     if (!existing || path.length < rel(demoDir, existing).length) groups.set(hash, src);
@@ -365,19 +370,45 @@ function workDirFor(demoDir) {
   return work;
 }
 
+function replaceDirContents(from, to) {
+  mkdirSync(to, { recursive: true });
+  for (const name of readdirSync(to)) {
+    rmSync(join(to, name), { recursive: true, force: true });
+  }
+  for (const name of readdirSync(from)) {
+    cpSync(join(from, name), join(to, name), { recursive: true, dereference: false });
+  }
+}
+
 function commitWorkTree(demoDir, workDir, workProofDir) {
   const backup = `${demoDir}.pack-backup-${process.pid}`;
-  renameSync(demoDir, backup);
   try {
-    renameSync(workDir, demoDir);
+    if (existsSync(backup)) rmSync(backup, { recursive: true, force: true });
+    cpSync(demoDir, backup, { recursive: true, dereference: false });
+  } catch (error) {
+    if (existsSync(backup)) rmSync(backup, { recursive: true, force: true });
+    throw error;
+  }
+  try {
+    /* Windows EPERM: a live preview / explorer handle can pin the demo
+       folder name. Copy-in-place keeps that path instead of renaming it. */
+    replaceDirContents(workDir, demoDir);
     const proofTarget = `${demoDir}-png-proof`;
     if (existsSync(workProofDir)) {
-      if (!existsSync(proofTarget)) renameSync(workProofDir, proofTarget);
-      else cpSync(workProofDir, proofTarget, { recursive: true, force: false, dereference: false });
+      if (!existsSync(proofTarget)) {
+        try { renameSync(workProofDir, proofTarget); }
+        catch {
+          cpSync(workProofDir, proofTarget, { recursive: true, dereference: false });
+          rmSync(workProofDir, { recursive: true, force: true });
+        }
+      } else {
+        cpSync(workProofDir, proofTarget, { recursive: true, force: false, dereference: false });
+      }
     }
+    rmSync(workDir, { recursive: true, force: true });
   } catch (error) {
-    if (existsSync(demoDir)) rmSync(demoDir, { recursive: true, force: true });
-    if (existsSync(backup)) renameSync(backup, demoDir);
+    try { replaceDirContents(backup, demoDir); }
+    catch { /* keep the original error */ }
     throw error;
   }
   try {

@@ -830,6 +830,13 @@ test('rotated TEXT box uses Figma size, not skipped Auto Layout maxWidth', () =>
   assert.equal(pc.h, 22.3);
   assert.match(rendererSrc, /rotated-single-line/);
   assert.match(rendererSrc, /data-text-rotation-nowrap/);
+  assert.match(rendererSrc, /data-text-unrotated-h-not-fit-cap/);
+  const fitAt = rendererSrc.indexOf('if (rotatedNowrap && rotatedFitW > 0) el.setAttribute(\'data-fit-max-width\'');
+  const fitEnd = rendererSrc.indexOf('fitCandidates.push({', fitAt);
+  assert.ok(fitAt > 0 && fitEnd > fitAt);
+  const rotatedFit = rendererSrc.slice(fitAt, fitEnd);
+  assert.doesNotMatch(rotatedFit, /rotatedNowrap && rotatedFitH > 0\) el\.setAttribute\('data-fit-max-height'/);
+  assert.match(rotatedFit, /data-text-unrotated-h-not-fit-cap/);
 });
 
 test('rotated TEXT paints against layout pageBox, not glyph renderBox or 0.55 nudge', () => {
@@ -845,6 +852,16 @@ test('rotated TEXT paints against layout pageBox, not glyph renderBox or 0.55 nu
   assert.doesNotMatch(body, /glyphNudge/);
   assert.doesNotMatch(body, /0\.55/);
   assert.doesNotMatch(body, /textRenderBoxReady && this\._sameCoordinateSpace\(_textRenderBox, box\)\s*\n\s*\? _textRenderBox/);
+});
+
+test('skipped HORIZONTAL CENTER Auto Layout owner recenters the live TEXT on that box', () => {
+  const start = rendererSrc.indexOf('const skippedOwner = n.fitOwnerFromSkipped;');
+  assert.ok(start > 0);
+  const body = rendererSrc.slice(start, rendererSrc.indexOf('const sourceTop =', start) + 40);
+  assert.match(body, /skippedCentersPrimary/);
+  assert.match(body, /primaryAxisAlignItems/);
+  assert.match(body, /data-skipped-al-center-x/);
+  assert.match(body, /\(skippedOwnerW - Number\(box\.w\)\) \/ 2/);
 });
 
 test('VECTOR brush stroke with a slice does not fall back to CSS hairline', () => {
@@ -884,6 +901,22 @@ test('img/立绘 spilling renderBox PNG is not vertically recentered', () => {
   assert.match(rendererSrc, /24MP export may set p\.scale < 1/);
 });
 
+test('unclipped img/立绘 inkBox PNG paints the plate, not the ancestor-visible crop', () => {
+  const helpers = compileOwnerSliceHelpers();
+  const ownerBox = { x: 0, y: 2382, w: 750, h: 544 };
+  const renderBox = { x: 0, y: 2270, w: 750, h: 782 };
+  const inkBox = { x: -198, y: 2183, w: 1122, h: 1124 };
+  const sliceExportBox = { ...ownerBox };
+  const assetRec = { pixelSize: '1122x1124', exportBox: inkBox };
+  const paint = helpers._ownerSliceBox(assetRec, ownerBox, renderBox, inkBox, sliceExportBox);
+  assert.ok(Math.abs(Number(paint.x) + 198) < 0.5, JSON.stringify(paint));
+  assert.ok(Math.abs(Number(paint.y) - 2183) < 0.5, JSON.stringify(paint));
+  assert.ok(Math.abs(Number(paint.w) - 1122) < 0.5, JSON.stringify(paint));
+  assert.ok(Math.abs(Number(paint.h) - 1124) < 0.5, JSON.stringify(paint));
+  assert.match(rendererSrc, /unclipped-ink-visible/);
+  assert.match(rendererSrc, /child\.inkBox \|\| child\.renderBox/);
+});
+
 test('24MP p.scale < 1 spill PNG still keeps the placed plate, not natural recenter', () => {
   const helpers = compileOwnerSliceHelpers();
   const ownerBox = { x: 0, y: 4928, w: 3840, h: 1630 };
@@ -893,11 +926,20 @@ test('24MP p.scale < 1 spill PNG still keeps the placed plate, not natural recen
   assert.equal(helpers._sourceBackedSpill(renderBox, ownerBox, 0, 0), true);
   assert.equal(helpers._sourceBackedSpill(ownerBox, ownerBox, 3840, 3593), false);
   assert.equal(helpers._sourceBackedSpill(renderBox, ownerBox, 800, 400), false);
+  const prizeOwner = { x: 77.140625, y: 1294.380859375, w: 132.859375, h: 102.619140625 };
+  const prizeRender = { x: 77.140625, y: 1283, w: 161.359375, h: 142.5 };
+  assert.equal(helpers._sourceBackedSpill(prizeRender, prizeOwner, 162, 151), true);
+  assert.equal(helpers._sourceBackedSpill(prizeRender, prizeOwner, 200, 200), false);
+  assert.match(rendererSrc, /owner-ink-from-unclipped-png-pad/);
   const start = rendererSrc.indexOf('const sourceBackedSpill = this._sourceBackedSpill');
   assert.ok(start > 0);
   const body = rendererSrc.slice(start, rendererSrc.indexOf("el.setAttribute('data-asset-bounds-resolved', policy)", start));
   assert.doesNotMatch(body, /Math\.abs\(natW - Number\(placed\.w\)\) <= 2/);
   assert.match(body, /sourceBackedSpill\s*\n\s*\? \(matchesPlaced \? 'none' : 'fill'\)/);
+  assert.match(body, /exportX -= \(natW - exportW\)/);
+  assert.match(body, /exportY -= \(natH - exportH\)/);
+  assert.doesNotMatch(body, /exportX -= \(natW - exportW\) \/ 2/);
+  assert.doesNotMatch(body, /exportY -= \(natH - exportH\) \/ 2/);
 });
 
 test('SC-5 page scroll follows min(board, page frame), not a 20000 artboard tail', () => {
@@ -905,7 +947,7 @@ test('SC-5 page scroll follows min(board, page frame), not a 20000 artboard tail
   assert.match(rendererSrc, /pageBgBoardBottom/);
   assert.match(rendererSrc, /pageBgBoardBottom\(\)/);
   assert.doesNotMatch(rendererSrc, /A 20000 bg\/pc board past the last CTA/);
-  const lockStart = rendererSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0 } = {})');
+  const lockStart = rendererSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0');
   const lockHeader = rendererSrc.indexOf(') {', lockStart);
   const lockBrace = lockHeader + 2;
   const lockEnd = closeBrace(rendererSrc, lockBrace);
@@ -930,6 +972,15 @@ test('SC-5 page scroll follows min(board, page frame), not a 20000 artboard tail
   assert.equal(artboardPastFrame.height, 18360);
   assert.equal(artboardPastFrame.reason, 'page-frame');
   assert.equal(artboardPastFrame.overflowPx, 0);
+  const cropped1126 = lock({
+    boardBottom: 7862,
+    contentBottom: 6058,
+    pageFrameBottom: 7140,
+    layoutOffsetDesign: -712,
+  });
+  assert.equal(cropped1126.height, 6428);
+  assert.equal(cropped1126.reason, 'page-frame');
+  assert.match(rendererSrc, /layoutOffsetDesign: laterJoinOffsetDesign/);
   assert.match(rendererSrc, /data-page-scroll-overflow/);
   assert.match(rendererSrc, /removeAttribute\('data-page-scroll-overflow'\)/);
   assert.doesNotMatch(rendererSrc, /const pageScrollHeight = pageScope && heroSlot\s*\n\s*\? Math\.max/);
@@ -951,13 +1002,17 @@ test('SC-7 freeze-band classifies logo/age left and down-arrow window-center', (
   assert.equal(isPageLeft({ name: 'btn/播放按钮' }, 'btn'), false);
   assert.equal(isPageLeft({ name: 'img/标题slg', pageBox: { x: 0, y: 0, w: 364, h: 173 } }, 'img'), true);
   assert.equal(isPageLeft({ name: 'img/标题slg', pageBox: { x: 0, y: 776, w: 750, h: 239 } }, 'img'), false);
-  assert.match(rendererSrc, /isSlgLayer && pageTop < heroUiHalf/);
-  assert.doesNotMatch(rendererSrc, /pinViewport && isSlgLayer && pageTop < heroUiHalf/);
+  assert.match(rendererSrc, /isSlgLayer && pageTop <= 0\.5/);
+  assert.doesNotMatch(rendererSrc, /isSlgLayer && pageTop < heroUiHalf/);
+  assert.doesNotMatch(rendererSrc, /kind === 'slg' && pageTop < heroUiHalf/);
+  assert.match(rendererSrc, /kind === 'slg' && pageTop <= 0\.5/);
   assert.equal(isLeft({ x: 0, w: 1020 }, 3840), true);
   assert.equal(isLeft({ x: 158, w: 125 }, 3840), true);
   assert.match(rendererSrc, /data-page-left-chrome-y', 'source'/);
   assert.match(rendererSrc, /Upper-half logo \/ age keep Figma y/);
   assert.match(rendererSrc, /data-later-cover-axis', 'x'/);
+  assert.match(rendererSrc, /data-later-cover-axis', 'uniform'/);
+  assert.match(rendererSrc, /_laterUniformScale/);
   assert.match(rendererSrc, /isKv && Number\.isFinite\(nodeYForCover\)/);
   assert.doesNotMatch(rendererSrc, /isPageBackgroundRoot && heroLayoutOffsetDesign > 0/);
   const centerShift = extractNamed(rendererSrc, '_topbarWindowCenterShiftDesign(box)');

@@ -50,9 +50,11 @@ export function integerPxWidthFitShouldWrap({ autoResize = 'FIXED', maxWidth = n
   const ar = String(autoResize || 'FIXED').toUpperCase();
   const width = Number(maxWidth);
   const height = Number(maxHeight);
+  /* HEIGHT is a wrap box. Dual-axis still wraps to maxWidth first; shrink
+     only if the wrapped block exceeds maxHeight. Horizontal-only HEIGHT
+     wraps and does not nowrap-shrink. */
   return ar === 'HEIGHT'
-    && Number.isFinite(width) && width > 0
-    && !(Number.isFinite(height) && height > 0);
+    && Number.isFinite(width) && width > 0;
 }
 
 export function isTruncating(autoResize, truncation) {
@@ -269,10 +271,12 @@ export function axisConstraintPolicy({
   language = '',
   primaryCtaNowrap = false,
   hasAdoptedCopy = false,
+  autoResize = 'FIXED',
 } = {}) {
   const lang = normalizeLanguage(language);
   const widthCap = positiveLayoutCap(maxWidth);
   const heightCap = positiveLayoutCap(maxHeight);
+  const heightWrapBox = String(autoResize || 'FIXED').toUpperCase() === 'HEIGHT';
   if (lang === 'zh-CN') {
     return {
       wrap: true,
@@ -314,6 +318,18 @@ export function axisConstraintPolicy({
     };
   }
   if (widthCap != null && heightCap == null) {
+    /* HEIGHT is a wrap box. Horizontal-only maxWidth must pin width and
+       wrap; nowrap-shrink is for WIDTH / FIXED / hug titles. */
+    if (heightWrapBox) {
+      return {
+        wrap: true,
+        nowrap: false,
+        shrink: false,
+        fitMaxWidth: widthCap,
+        fitMaxHeight: null,
+        reason: 'height-auto-resize-wrap',
+      };
+    }
     return {
       wrap: false,
       nowrap: true,

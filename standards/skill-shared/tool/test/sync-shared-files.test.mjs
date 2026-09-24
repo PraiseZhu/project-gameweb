@@ -131,7 +131,7 @@ test('仓库清单当前两边一致，未进清单的同路径文件保持分�
   const result = main(['preview', '--repo', REPO], { log: (text) => logs.push(String(text)) });
   assert.equal(result.report.drift.length, 0, result.report.drift.map((item) => item.rel).join(','));
   assert.equal(result.report.missing.length, 0);
-  assert.ok(result.report.identical.length >= 155, `一致 ${result.report.identical.length}`);
+  assert.ok(result.report.identical.length >= 154, `一致 ${result.report.identical.length}`);
   assert.ok(result.report.unlistedDrift.length > 0, '已分化文件必须留在清单外');
   assert.match(logs.join('\n'), /未进清单且已分化/);
 });

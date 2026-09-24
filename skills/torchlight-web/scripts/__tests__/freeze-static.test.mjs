@@ -144,7 +144,11 @@ test('frozen index is the main QA shell wrapping locale static pages', () => {
   assert.match(demoBlock, /region === 'cn'/);
   assert.match(demoBlock, /armFrozenDoc/);
   assert.match(demoBlock, /frame\.style\.overflowY = 'hidden'/);
-  assert.match(html1, /frozenShell && S\.prefs\.region === 'cn'/);
+  assert.match(html1, /function lockRegionLang\(\)/);
+  assert.match(html1, /S\.prefs\.region === 'cn' && it\.v !== 'zh-CN'/);
+  assert.match(html1, /S\.prefs\.region === 'global' && it\.v === 'zh-CN'/);
+  assert.match(html1, /function frozenFrame\(\)/);
+  assert.match(html1, /data-qa-commenting/);
   assert.match(html1, /overflow: hidden !important/);
   assert.doesNotMatch(demoBlock, /__figmaRender/);
   assert.doesNotMatch(html1, /FIGMA_RENDER_BEGIN/);

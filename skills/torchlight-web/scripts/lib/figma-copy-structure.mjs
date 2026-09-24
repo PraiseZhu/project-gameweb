@@ -12,12 +12,57 @@ function unwrap(value) {
   return value && typeof value === 'object' && 'value' in value ? value.value : value;
 }
 
+const TABLE_SIZE_HINT_RE = /[\uff08(](?:\u5927\u5b57|\u5c0f\u5b57)[\uff09)]\s*$/u;
+
+/** Table-only size notes. Never painted; matching keys drop them too. */
+export function stripTableSizeHint(raw) {
+  return String(raw ?? '').replace(TABLE_SIZE_HINT_RE, '').trim();
+}
+
 export function cellLines(raw) {
   return String(raw ?? '')
     .replace(/\r\n?|[\u2028\u2029]/g, '\n')
     .split('\n')
-    .map((line) => line.trim())
+    .map((line) => stripTableSizeHint(line.trim()))
     .filter((line) => line !== '');
+}
+
+const WHOLE_LINE_WRAPPERS = [
+  ['\u3010', '\u3011'],
+  ['[', ']'],
+  ['\u300c', '\u300d'],
+];
+
+/**
+ * Table cells often wrap a badge in \u3010\u3011 / [] / \u300c\u300d.
+ * If the TEXT layer itself has no matching wrapper, keep the inner words only.
+ * Only a whole-line pair is stripped; inner punctuation stays.
+ */
+export function stripWholeLineWrappersIfSourceBare(sourceCharacters, adopted) {
+  const source = String(sourceCharacters ?? '').trim();
+  const value = String(adopted ?? '');
+  if (!value) return value;
+  if (WHOLE_LINE_WRAPPERS.some(([open, close]) => source.startsWith(open) && source.endsWith(close))) {
+    return value;
+  }
+  return value
+    .replace(/\r\n?|[\u2028\u2029]/g, '\n')
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      for (const [open, close] of WHOLE_LINE_WRAPPERS) {
+        if (
+          trimmed.startsWith(open)
+          && trimmed.endsWith(close)
+          && trimmed.length > open.length + close.length
+        ) {
+          const inner = trimmed.slice(open.length, trimmed.length - close.length).trim();
+          if (inner) return stripTableSizeHint(inner);
+        }
+      }
+      return stripTableSizeHint(line);
+    })
+    .join('\n');
 }
 
 export function lineBreakOf(raw) {
@@ -82,7 +127,7 @@ export function inferCellLineSpan(nodeCharacters, cellZh) {
 
 /** Date/time typesetting: "7月11日 16:30" vs "7月11日16:30" are the same line. */
 export function cellLineKey(raw) {
-  const chars = Array.from(normalizeCopy(raw));
+  const chars = Array.from(normalizeCopy(stripTableSizeHint(raw)));
   return chars
     .filter((ch, i) => {
       if (ch !== ' ') return true;

@@ -97,7 +97,10 @@ There are two explicit workflow declarations:
 2. After Interaction and Resize: open the same QA `index.html?interaction=1` (toolbar included, clicks live)
    and stop. Tell the user this axis is done. Do not Pack until they
    say continue, then `accept`, then `continue`. Later-axes Chrome probe
-   must be green first, including language-button fill pixels
+   must be green first, including the CN/Global language shell by name
+   (CN hides `dropmenu/多语言`; Global drops 简中 and slots 韩文; mobile CN
+   `btn/进入官网` on the language-icon slot; missing names are `not-claimed`),
+   language-button fill pixels
    (current lang = inventory highlight variant, others = normal),
    PC modal sheet pose (sheet centered; panel from this page img/弹窗背景) measured
    on `zh-CN` with `modal.lang=zh-CN` and a visible homepage named modal `go`,
@@ -130,10 +133,15 @@ closed on those files, and must not invent a progress mark. It is
 complemented by independent reusable capabilities and one optional audit:
 
 - **Translation Skill** — locale/copy context plus font, glyph, weight, and
-  browser typography evidence (`scripts/lib/translation/index.mjs`). Copy mapping: docs/copy-extraction-adapter.md. A Feishu cell split across TEXT layers must carry lineIndex/takeCount, or be inferred from that layer zh-CN; writing only row must not dump the whole cell onto every layer.
+  browser typography evidence (`scripts/lib/translation/index.mjs`). Copy mapping: docs/copy-extraction-adapter.md. A Feishu cell split across TEXT layers must carry lineIndex/takeCount, or be inferred from that layer zh-CN; writing only row must not dump the whole cell onto every layer. Semantic wrap follows zh-CN source structure (`docs/semantic-line-break-contract.md`); do not ask stop 1 which English word to break on.
 - **Interaction Skill** — formerly Motion Skill. Click, switch/tab, directory
   scrollspy, independent `btn/` normal/highlight replacement, programmatic
-  hover/press, named modal openers, and retained motion contracts
+  hover/press, named modal openers, CN/Global language shell by name
+  (`docs/interaction-skill.md`: hide `dropmenu/多语言` on CN, drop 简中 on
+  Global, mobile `btn/进入官网` on the language-icon slot; stop-2 later-axes
+  probe claims that shell by name, missing names are `not-claimed`; QA
+  comments bind `data-node` and reopen named modal / switch / variant /
+  carousel from those attributes, `docs/qa-comments.md`), and retained motion contracts
   (`scripts/lib/figma-interaction-contract.mjs`,
   `scripts/lib/figma-button-press-contract.mjs`,
   `scripts/lib/motion-contract.mjs`). File names stay for compatibility; new
@@ -146,7 +154,7 @@ complemented by independent reusable capabilities and one optional audit:
 - **Resize Skill** — viewport stretch, composition base, DESIGN.md §5.0
   segmented ruler (product and QA simulated viewport share the table:
   `>1920` `k=viewportW/3840`; `1127–1920` freeze column 1920
-  at `k=0.5` center-crop inside a `viewportW` window (do not put `width=1920; left=负值` on `.frame`); `≤1126` mobile `k=min(1, viewportW/750)` so 751–1126 keeps 750-px UI while the window itself is the crop box), official `10vw`
+  at `k=0.5` center-crop inside a `viewportW` window (do not put `width=1920; left=负值` on `.frame`); `≤1126` mobile `k=viewportW/750` so first-screen buttons/cards scale with the window like later UI), official `10vw`
   html font, first-screen slot = current window height (later section starts at the viewport bottom; title/CTA pin to that slot, not y×k mid-drift), first-screen KV window = real viewport (`max(viewportW/designW,
   viewportH/heroH)`, not the frozen 1920 column), product/QA tree from
   composition width (torchlight official `0–1126` mobile / `≥1127` pc),
@@ -159,6 +167,8 @@ complemented by independent reusable capabilities and one optional audit:
   served-folder budget. Keep `figma-indicator-*` fallback files only when the
   page still has an `ind/` owner. See `docs/pack-skill.md`. Slice-time WebP
   (alpha lossless / opaque q90) and the 10MB `index.html` gate stay in Main.
+  QA comment chrome is inside the packed HTML; live pages do not self-upgrade
+  (`docs/qa-comments.md` 部署). A season `commentPageId` is pack config.
 
 **Figma Prototype Truth Audit** is optional evidence, not a prerequisite. It is
 read-only and fail-closed when explicitly requested. `observed` can support a

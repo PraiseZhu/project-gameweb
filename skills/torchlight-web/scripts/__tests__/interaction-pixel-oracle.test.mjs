@@ -12,6 +12,7 @@ import {
   mobileModalSheetVerdict,
   pcModalCloseVerdict,
   pcModalSheetVerdict,
+  regionChromeEvidenceComplete,
 } from '../lib/interaction-pixel-oracle.mjs';
 import { greenLaterAxesProbeFixture, languageButtonFillsFromTruth, laterAxesProbeEvidenceComplete, scoreOpenerCatalog } from '../lib/later-axes-probe.mjs';
 
@@ -153,6 +154,7 @@ test('later-axes green fixture now carries pixel evidence', () => {
   const fixture = greenLaterAxesProbeFixture();
   assert.equal(laterAxesPixelEvidenceComplete(fixture), true);
   assert.equal(laterAxesProbeEvidenceComplete(fixture), true);
+  assert.equal(regionChromeEvidenceComplete(fixture.pixel), true);
   assert.ok(fixture.pixel.languages.length >= 1);
   const noPixel = { ...fixture, pixel: undefined };
   assert.equal(laterAxesProbeEvidenceComplete(noPixel), false);
@@ -215,6 +217,27 @@ test('skip, missing fields, and unmeasured modal cannot go green', () => {
     ...fixture,
     pixel: { ...fixture.pixel, pcCatalog: undefined },
   }), false);
+  assert.equal(laterAxesPixelEvidenceComplete({
+    ...fixture,
+    pixel: { ...fixture.pixel, regionChrome: undefined },
+  }), false);
+  assert.equal(laterAxesPixelEvidenceComplete({
+    ...fixture,
+    pixel: {
+      ...fixture.pixel,
+      regionChrome: {
+        ...fixture.pixel.regionChrome,
+        cnPc: { ok: false, measured: true, skipped: false, claimed: true, problems: ['cn-dropmenu-visible'] },
+      },
+    },
+  }), false);
+  assert.equal(regionChromeEvidenceComplete({
+    regionChrome: {
+      cnPc: { ok: true, measured: true, skipped: false, claimed: false, problems: [], reason: 'no-dropmenu/多语言' },
+      globalPc: { ok: true, measured: true, skipped: false, claimed: false, problems: [] },
+      cnMobile: { ok: true, measured: true, skipped: false, claimed: false, problems: [] },
+    },
+  }), true);
   assert.equal(catalogEvidenceOk({
     ok: true, measured: true, skipped: false,
     openers: [{ go: 'modal/pc适龄提示', ok: true, measured: true, skipped: false, opened: false, closed: true }],
@@ -563,6 +586,7 @@ test('later-axes opens an already-on region dropmenu before sampling option fill
   assert.match(src, /data-btn-variant-layer="true"/);
   assert.match(src, /child\.tagName === 'IMG' && child\.getAttribute\('src'\)/);
   assert.match(src, /img\\\/\(\?:选中背景\|未选中背景\)/);
+  assert.match(src, /data-shape-rounded-vector/);
 });
 
 test('language remount contract checks every requested language against live menu state', () => {

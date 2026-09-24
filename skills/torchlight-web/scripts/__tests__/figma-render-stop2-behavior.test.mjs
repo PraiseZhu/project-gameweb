@@ -578,6 +578,8 @@ async function snapshotBoardPage(page) {
     const frame = document.querySelector('.frame');
     const stage = document.querySelector('[data-node-id="page-scope"]');
     const tail = document.querySelector('[data-node="tail"]');
+    const zoom = Number(stage && stage.style && stage.style.zoom) || 1;
+    const visualH = Number(frame.scrollHeight) || 0;
     return {
       lock: frame.getAttribute('data-page-scroll-lock'),
       board: Number(frame.getAttribute('data-page-scroll-board')),
@@ -585,7 +587,7 @@ async function snapshotBoardPage(page) {
       height: Number(frame.getAttribute('data-page-scroll-height')),
       overflow: frame.getAttribute('data-page-scroll-overflow'),
       stageH: stage ? parseFloat(stage.style.height) : null,
-      scrollHeight: frame.scrollHeight,
+      scrollHeight: zoom > 0 ? visualH / zoom : visualH,
       tailPresent: !!tail,
     };
   });
@@ -671,6 +673,112 @@ browserTest('page scroll locks at the page frame when bg/pc artboard is taller',
     assert.equal(measured.lock, 'page-frame');
     assert.equal(measured.overflow, null);
     assert.ok(measured.scrollHeight < 19000, JSON.stringify(measured));
+  } finally {
+    await browser.close();
+  }
+});
+
+function heightWrapCenterTruth() {
+  return {
+    platforms: {
+      pc: {
+        pageChrome: { meta: { x: 0, y: 0, width: 400, height: 220 }, nodes: [] },
+        sections: {
+          section: {
+            meta: { x: 0, y: 0, width: 400, height: 220 },
+            nodes: [
+              {
+                id: 'body-clip',
+                type: 'FRAME',
+                name: '正文',
+                parentId: 'section',
+                box: { x: 0, y: 0, w: 400, h: 120 },
+                clipsContent: true,
+                layout: { layoutSizingHorizontal: 'FILL', layoutSizingVertical: 'FIXED' },
+                style: { fills: [] },
+              },
+              {
+                id: 'body-text',
+                type: 'TEXT',
+                name: 'body',
+                parentId: 'body-clip',
+                characters: '短句正文。',
+                box: { x: 12, y: 32, w: 376, h: 56 },
+                layout: { layoutSizingHorizontal: 'FIXED', layoutSizingVertical: 'HUG' },
+                fitOwnerFromSkipped: {
+                  sourceId: 'skipped-hug',
+                  layoutMode: 'HORIZONTAL',
+                  layoutSizingHorizontal: 'FIXED',
+                  layoutSizingVertical: 'HUG',
+                  maxWidth: 300,
+                  maxHeight: 220,
+                  axisSource: { maxWidth: 'inherited', maxHeight: 'inherited' },
+                },
+                text: {
+                  characters: '短句正文。',
+                  align: 'CENTER',
+                  vAlign: 'CENTER',
+                  autoResize: 'HEIGHT',
+                  fontSize: 20,
+                  lineHeight: 28,
+                  fontFamily: 'Noto Sans',
+                  fontWeight: 400,
+                  color: { r: 1, g: 1, b: 1, a: 1 },
+                },
+                style: { fills: [] },
+              },
+            ],
+          },
+        },
+      },
+    },
+    copy: {
+      byNode: {
+        'body-text': {
+          en: 'Recruit Wolf, Rat, Lion, and Mammoth Followers to fight beside you in the Netherrealm.',
+        },
+      },
+    },
+  };
+}
+
+browserTest('HEIGHT CENTER wrap stays centered in the source box and clip frame', async () => {
+  const { browser, page } = await setup({ width: 400, height: 220 });
+  try {
+    await renderApp(page, heightWrapCenterTruth(), { plat: 'pc', lang: 'en' });
+    const measured = await page.evaluate(() => {
+      const el = document.querySelector('[data-node="body-text"]');
+      const clip = document.querySelector('[data-node="body-clip"]');
+      if (!el || !clip) return { missing: true };
+      const er = el.getBoundingClientRect();
+      const cr = clip.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const ink = range.getBoundingClientRect();
+      return {
+        wrap: el.getAttribute('data-text-wrap-policy'),
+        anchor: el.getAttribute('data-text-wrap-anchor'),
+        realign: el.getAttribute('data-fit-clip-realign'),
+        textAlign: getComputedStyle(el).textAlign,
+        dxEl: (er.left + er.width / 2) - (cr.left + cr.width / 2),
+        dyEl: (er.top + er.height / 2) - (cr.top + cr.height / 2),
+        dxInk: (ink.left + ink.width / 2) - (cr.left + cr.width / 2),
+        dyInk: (ink.top + ink.height / 2) - (cr.top + cr.height / 2),
+        elH: er.height,
+        clipH: cr.height,
+        text: (el.textContent || '').slice(0, 40),
+      };
+    });
+    assert.equal(measured.missing, undefined, JSON.stringify(measured));
+    assert.equal(measured.wrap, 'hug-height-block');
+    assert.equal(measured.anchor, 'source-center');
+    assert.equal(measured.realign, 'source-center');
+    assert.equal(measured.textAlign, 'center');
+    assert.ok(Math.abs(measured.dxEl) <= 1.5, JSON.stringify(measured));
+    assert.ok(Math.abs(measured.dxInk) <= 1.5, JSON.stringify(measured));
+    assert.ok(Math.abs(measured.dyEl) <= 2, JSON.stringify(measured));
+    assert.ok(Math.abs(measured.dyInk) <= 2, JSON.stringify(measured));
+    assert.match(measured.text, /Recruit Wolf/);
   } finally {
     await browser.close();
   }

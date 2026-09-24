@@ -92,6 +92,15 @@ test('SC-06 composition switch keeps the same modal topic and locale', () => {
   });
   assert.equal(next.keep, true);
   assert.equal(next.nextName, 'modal/mobile_tw预约弹窗');
+  const play = persistNamedModal({
+    openName: 'pc_播放弹窗',
+    fromComposition: 'pc',
+    toComposition: 'mobile',
+    lang: 'zh-CN',
+    catalog: ['pc_播放弹窗', 'mobile视频弹窗', 'mobile适龄提示'],
+  });
+  assert.equal(play.keep, true);
+  assert.equal(play.nextName, 'mobile视频弹窗');
 });
 
 test('SC-03 dropmenu selection moves highlight without copying sibling labels', () => {

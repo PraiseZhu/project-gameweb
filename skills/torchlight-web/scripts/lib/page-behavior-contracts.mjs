@@ -13,11 +13,15 @@ function finiteBox(box) {
 }
 
 function topicKey(name) {
-  return String(name || '')
+  let raw = String(name || '')
     .replace(/^modal\//i, '')
     .replace(/^(pc|mobile)(_(cn|tw|en|kr))?_?/i, '')
     .replace(/^(cn|tw|en|kr)_/i, '')
     .trim();
+  /* Dual-end play sheets share one topic. Inventory leftover is 播放弹窗
+     on PC and 视频弹窗 on mobile; both are the play overlay. */
+  if (raw === '播放弹窗' || raw === '视频弹窗') return '视频弹窗';
+  return raw;
 }
 
 function langTokens(lang) {

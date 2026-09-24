@@ -6,3 +6,4 @@ export * from './component-policy.mjs';
 export * from './layout-policy.mjs';
 export * from '../motion-contract.mjs';
 export * from './font-routing.mjs';
+export * from './semantic-layout.mjs';

@@ -32,6 +32,7 @@ import {
 
 const chromeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/figma-chrome.js'), 'utf8');
 const renderSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../templates/figma-render.js'), 'utf8');
+const resizeSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/resize/index.mjs'), 'utf8');
 const navRailCheckSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../lib/figma-nav-rail-browser-check.mjs'), 'utf8');
 
 test('composition numbers come from DESIGN.md YAML', () => {
@@ -212,11 +213,11 @@ test('hero lock/exit/release stays a resize geometry contract', () => {
 test('width scale is segmented: freeze k=0.5 on 1127–1920, stretch only above 1920', () => {
   assert.equal(widthScale({ viewportW: 390 }).k, 390 / 750);
   assert.equal(widthScale({ viewportW: 390 }).columnWidth, 390);
-  assert.equal(widthScale({ viewportW: 1126 }).k, 1);
+  assert.equal(widthScale({ viewportW: 1126 }).k, 1126 / 750);
   assert.equal(widthScale({ viewportW: 1126 }).columnWidth, 1126);
   assert.equal(widthScale({ viewportW: 1126 }).columnLeft, 0);
   assert.equal(widthScale({ viewportW: 750 }).k, 1);
-  assert.equal(widthScale({ viewportW: 751 }).k, 1);
+  assert.equal(widthScale({ viewportW: 751 }).k, 751 / 750);
   assert.equal(widthScale({ viewportW: 1127 }).k, 0.5);
   assert.equal(widthScale({ viewportW: 1127 }).columnWidth, 1920);
   assert.equal(widthScale({ viewportW: 1127 }).columnLeft, (1127 - 1920) / 2);
@@ -297,7 +298,23 @@ test('page scroll lock ends at min(board, page frame); overflow past the lock do
   const artboardPastFrame = pageScrollLock({ boardBottom: 20000, contentBottom: 17911, pageFrameBottom: 18360 });
   assert.equal(artboardPastFrame.height, 18360);
   assert.equal(artboardPastFrame.reason, 'page-frame');
-  const lockFn = renderSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0 } = {})');
+  const cropped1126 = pageScrollLock({
+    boardBottom: 7862,
+    contentBottom: 6058,
+    pageFrameBottom: 7140,
+    layoutOffsetDesign: -712,
+  });
+  assert.equal(cropped1126.height, 6428);
+  assert.equal(cropped1126.reason, 'page-frame');
+  assert.equal(cropped1126.overflowPx, 0);
+  const paddedLater = pageScrollLock({
+    boardBottom: 7862,
+    contentBottom: 8000,
+    pageFrameBottom: 7140,
+    layoutOffsetDesign: 200,
+  });
+  assert.equal(paddedLater.height, 7340);
+  const lockFn = renderSrc.indexOf('_pageScrollLock({ boardBottom = 0, contentBottom = 0, pageFrameBottom = 0');
   const headerEnd = renderSrc.indexOf(') {', lockFn);
   const bodyStart = headerEnd + 2;
   let depth = 0;
@@ -314,8 +331,15 @@ test('page scroll lock ends at min(board, page frame); overflow past the lock do
   }
   const inline = new Function(renderSrc.slice(renderSrc.indexOf('(', lockFn) + 1, headerEnd).trim(), renderSrc.slice(bodyStart + 1, end));
   assert.deepEqual(inline({ boardBottom: 1000, contentBottom: 1300 }), over);
+  assert.deepEqual(inline({
+    boardBottom: 7862,
+    contentBottom: 6058,
+    pageFrameBottom: 7140,
+    layoutOffsetDesign: -712,
+  }), cropped1126);
   assert.doesNotMatch(renderSrc, /const pageScrollHeight = pageScope && heroSlot\s*\n\s*\? Math\.max/);
   assert.match(renderSrc, /data-page-scroll-overflow/);
+  assert.match(renderSrc, /layoutOffsetDesign: laterJoinOffsetDesign/);
 });
 
 test('QA frame and product view both clip page X; viewport width still resizes', () => {
@@ -446,10 +470,20 @@ test('temporary lock-1920 names follow page k above 1920', () => {
   assert.match(renderSrc, /parentAlreadyClustered/);
   assert.match(renderSrc, /data-hero-mobile-center/);
   assert.match(renderSrc, /data-later-mobile-center/);
+  assert.match(renderSrc, /parentIsLaterSection/);
+  assert.match(renderSrc, /!parent \|\| parentIsLaterSection/);
+  assert.match(renderSrc, /leftoverAlreadyOnHost/);
+  assert.match(renderSrc, /leftoverCandidate && !leftoverAlreadyOnHost/);
   assert.match(renderSrc, /_windowStageWidthDesign/);
   assert.match(renderSrc, /Calendar \+ CTA stay on Figma pageBox/);
   assert.match(renderSrc, /leftover is not only isHeroTitleOwner \|\| isHeroCta \|\| isHeroCalendar/);
   assert.match(renderSrc, /parentHeroClusterLayout/);
+  assert.match(renderSrc, /sourceExactLayout = true/);
+  assert.match(renderSrc, /Later section roots \(switch\/模块\*\) hang on/);
+  assert.match(resizeSrc, /every language shares that pageBox x\/y with zh-CN, including later sections/);
+  assert.match(resizeSrc, /language-shell remount must not add leftover a second time onto nested CTA art/);
+  assert.match(resizeSrc, /later UI and the long bg\/mobile board share windowW\/750 uniform scale plus layoutOffsetDesign/);
+  assert.match(renderSrc, /if \(\/\^bg\\\/\(pc\|mobile\)\$\/i\.test\(name\)\) return laterJoinOffsetDesign;/);
   assert.match(renderSrc, /data-page-left-chrome-y', 'source'/);
   assert.match(renderSrc, /pageLeftUpperChrome/);
   assert.doesNotMatch(renderSrc, /Park the calendar immediately left/);
@@ -486,14 +520,18 @@ test('tree switch restores the matching named modal by topic, not the raw PC lab
   assert.equal(namedModalTopic('mobile适龄提示'), '适龄提示');
   assert.equal(namedModalTopic('pc_en预约弹窗'), '预约弹窗');
   assert.equal(namedModalTopic('mobile_en预约弹窗'), '预约弹窗');
+  assert.equal(namedModalTopic('pc_播放弹窗'), '视频弹窗');
+  assert.equal(namedModalTopic('mobile视频弹窗'), '视频弹窗');
   const mobileSheets = [
     { name: 'mobile订阅赛季日程' },
     { name: 'mobile适龄提示' },
     { name: 'mobile_en预约弹窗' },
+    { name: 'mobile视频弹窗' },
   ];
   assert.equal(matchNamedModalByTopic(mobileSheets, 'pc_cn订阅赛季日程').name, 'mobile订阅赛季日程');
   assert.equal(matchNamedModalByTopic(mobileSheets, 'pc适龄提示').name, 'mobile适龄提示');
   assert.equal(matchNamedModalByTopic(mobileSheets, 'pc_en预约弹窗').name, 'mobile_en预约弹窗');
+  assert.equal(matchNamedModalByTopic(mobileSheets, 'pc_播放弹窗').name, 'mobile视频弹窗');
   assert.equal(matchNamedModalByTopic(mobileSheets, 'pc弹窗详细规则1'), null);
   assert.match(renderSrc, /_namedModalTopic/);
   assert.match(renderSrc, /_matchNamedModalByTopic/);
@@ -520,7 +558,7 @@ test('classifyResizeIntent hands k + columnWidth + composition in one shot', () 
     viewportH: 800,
   });
   assert.equal(phone.composition.key, 'mobile');
-  assert.equal(phone.widthScale.k, 1);
+  assert.equal(phone.widthScale.k, 1126 / 750);
   assert.equal(phone.columnWidth, 1126);
 });
 
@@ -725,18 +763,18 @@ test('sc-hero-planes: 100vh cover stays on real viewport, not frozen 1920', () =
   assert.equal(fill.designHeight, 900 / 0.5);
   assert.equal(fill.cropWindowDesign, 900 / fill.slotScale);
   assert.ok(fill.slotScale >= 900 / 2160);
-  /* 751–1126 UI k=1. Cover must still grow with the window or KV stays 750
-     and #180f02 shows on the right. Layout extra stays on k. */
+  /* ≤1126 UI k = viewportW/750. Cover still grows with the window so KV
+     does not stay 750 and leave #180f02 on the right. */
   const tabletCover = Math.max(993 / 750, 1080 / 1334);
   assert.ok(tabletCover > 1);
   assert.equal(tabletCover, 993 / 750);
   const tabletFill = heroViewportFill({
     viewportH: 1080,
-    widthScaleK: 1,
+    widthScaleK: 993 / 750,
     heroDesignHeight: 1334,
   });
-  assert.equal(tabletFill.slotScale, 1);
-  assert.ok(tabletFill.slotScale < tabletCover);
+  assert.equal(tabletFill.slotScale, 993 / 750);
+  assert.ok(tabletFill.slotScale <= tabletCover);
 });
 
 test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stays on buttons', () => {
@@ -753,7 +791,15 @@ test('sc-shared-freeze: later 100vh pad and SLG stretch are named, freeze k stay
   assert.doesNotMatch(renderSrc, /scale\(' \+ stretch \+ ', 1\)/);
   assert.match(renderSrc, /page-window/);
   assert.match(renderSrc, /data-later-cover-axis', 'x'/);
-  assert.match(renderSrc, /Long `bg\/mobile` \/ `bg\/pc` X-cover is uniform/);
+  assert.match(renderSrc, /data-later-cover-axis', 'uniform'/);
+  assert.match(renderSrc, /_laterUniformScale/);
+  assert.match(renderSrc, /laterAlreadyUniform/);
+  assert.match(renderSrc, /heroLayoutOffsetDesign \+ heroViewportH \* \(1 \/ Number\(laterUniformScale\) - 1 \/ Number\(k\)\)/);
+  assert.match(renderSrc, /Join later to the used hero bottom on the later/);
+  assert.match(renderSrc, /pageStageMode \|\| isHeroStage/);
+  assert.match(renderSrc, /const laterLayerW = windowStageWidth/);
+  assert.match(renderSrc, /X-only cover walks the sheet/);
+  assert.match(resizeSrc, /later UI and the long bg\/mobile board share that same windowW\/750/);
   assert.match(chromeSrc, /构图 <b>/);
   assert.match(chromeSrc, /compositionTree/);
   assert.match(renderSrc, /_laterStageHeight/);

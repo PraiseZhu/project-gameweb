@@ -30,6 +30,14 @@ User-visible behavior after the static Figma page is already on screen:
 - named modal openers: play → video, mobile nav / language overlays
 - horizontal scroll / carousel only when Main has a source-backed graph
 - calendar today / return-today on `dyn/今日日期` (state swap, not a motion reveal)
+- QA comments (`docs/qa-comments.md`, `templates/figma-chrome.js`): bind by
+  `data-node` path; list clicks reopen the owning named modal / `switch/`
+  page / component-set variant / carousel page from those attributes, then
+  scroll. An open named modal hides page-layer pins. Hit-test follows paint
+  order and still selects inert title/text over full-bleed `kv`/`bg`. A
+  season `commentPageId` is pack config, not a node-id lock. Deploying the
+  comment chrome means replacing that page's HTML; the comments Worker is a
+  separate deploy. Live insurance copies stay until someone asks.
 - later: calendar reveal, character switch, and other timed effects
 
 ## Two interaction families
@@ -121,13 +129,40 @@ parent group to normal. Replacement is in-place hide/show of already extracted
 variant trees. TEXT/HUG nodes need `display:none` plus the saved original
 display. Flattened `I{owner};…` descendants must not be reparented.
 
+The Figma tree is the Global layout and still contains 简中. `region=cn`
+and `region=global` are two tidyings of that one tree, not two files.
+Age `@lang=cn` stays a language filter, not a copied node id.
+
+- **CN**: hide in-page `dropmenu/多语言`; lock language to `zh-CN`. Keep
+  the authored `fix/` right inset to the window every season (PC 44 /
+  mobile 14 from page width, not a leaf). PC remaining chrome (充值 /
+  进入官网 / 折扣, not the 奖励栏) flushes painted `img/按钮背景` to
+  `img/奖励底框` right plus any overflowing child of that plate, not a
+  season node-id. Mobile `fix/右上方导航` pins to the window right;
+  `btn/进入官网` occupies the language-button slot (`img/icon` of
+  `dropmenu/多语言`). CN does not paint that menu, so the slot comes
+  from authored pageBox.
+- **Global**: drop 简中 from the in-page list and put 韩文 in that same
+  authored left/top (`data-lang-slot=global-ko-in-zh-cn`). Chips stay
+  `btn/切换语言` with `img/选中背景` / `img/未选中背景`.
+
+Stop-2 later-axes probe claims this by **name**. Missing
+`dropmenu/多语言`, missing `btn/进入官网`, or a Global menu that never
+had a 简中 slot is `not-claimed`, never a season id. Do not copy
+`1119:3120`, `15px`, `394 vs 364`, or phase-1 `949:*` ids.
+
 Stop-2 completion for `dropmenu/多语言` `btn/切换语言` is the authored
 COMPONENT fill, not `data-btn-variant-state`. Current page language
 gets Property 1=highlight from this page inventory; every other
 option stays Property 1=normal. Labels
 stay visible. Fill pixels may be that CSS rgb/gradient (root or same-box
 child) or the visible
-`img/选中背景` / `img/未选中背景` VECTOR slice. After a language remount, open-menu highlight must read
+`img/选中背景` / `img/未选中背景` VECTOR slice. Those VECTOR plates keep the
+authored 6px radius and 1px inside stroke from the VECTOR path / radius
+style; the `btn/切换语言` host stays transparent so a square AABB fill does not
+cover the rounded chip. Property 1=highlight hides the resting
+`img/未选中背景` VECTOR on the instance so fill-pixel reads the
+highlight plate, not the normal gradient still sitting under it. After a language remount, open-menu highlight must read
 `frame.__fxRenderPrefs.lang` written at the start of every `renderApp`,
 never the first-paint `ctx.prefs` closure. Duplicate TEXT
 (`EnglishEnglish`) still maps to one lang. `later-axes-probe`
@@ -151,10 +186,13 @@ links for them.
 
 `ind/进度条` is still a switch indicator: swap the two source-backed
 highlight/normal assets in place. It is not an independent `btn/`.
+`ind/` Default vs Variant2 is that two-state visual: Default is the selected
+mark, Variant2 is unselected. Mapping generic `default` onto normal leaves
+Variant2 unlabeled, so arrows can page while the dots stay frozen.
 
 ### Named modal contracts
 
-PC named modals pin the authored sheet in the current viewport; panel top comes from this page img/弹窗背景. On mobile, a modal must stay inside the phone sheet.
+PC named modals pin the authored sheet in the current viewport; panel top comes from this page img/弹窗背景. On mobile, a modal must stay inside the phone sheet. iPhone/Android scale the 750 sheet by width only (`viewportW/750`) so both sides stay in view; do not cover-crop the sides. `≤1126` leftover stays centered (`(visibleW-scaledW)/2`, `(visibleH-scaledH)/2`; official 900 `ty=(H-scaledH)/2`).
 
 `@go` copies the modal layer name, not a node id:
 
@@ -216,7 +254,7 @@ resizes. Product named modals must stay open across QA light-drag and the
 pointerup full rebuild: snapshot `data-modal-name` before `innerHTML` wipe,
 restore with `__fxOpenNamedModal`, and re-pin during light drag. Do not
 treat a drag as a close. Crossing 1126 switches the Figma tree: restore the
-matching mobile/PC sheet by topic (`pc_cn订阅赛季日程` → `mobile订阅赛季日程`),
+matching mobile/PC sheet by topic (`pc_cn订阅赛季日程` → `mobile订阅赛季日程`, `pc_播放弹窗` → `mobile视频弹窗`),
 the same way the rest of the page switches. A missing counterpart stays closed.
 The overlay host keeps page-stage `zoom` while closed;
 pinning must set host/layer `zoom` to `1` and scale only from the visible
@@ -246,7 +284,7 @@ is inert, never true. Real QA / `?product=1` pages opt in only with
 `?interaction=1` from chrome `renderInto`; the demo shell must not default
 the flag to true. Stop 1 URLs stay `?product=1` without that query. Stop 2
 and later-axes probes append `interaction=1`. QA matrix language stays on
-the chrome bar; in-page dropmenu / modal / switch / directory clicks stay
+the chrome bar (CN lists only zh-CN; Global omits zh-CN). In-page dropmenu / modal / switch / directory clicks stay
 inert until that opt-in. It must not rewrite accepted static geometry or
 assets to make a click work. Incomplete graphs stay unresolved.
 
@@ -316,4 +354,5 @@ Do not clone the first option's TEXT onto later rows.
 Resize may switch the 1126/1127 tree. Interaction must keep the open modal
 by **topic + locale + composition**, not by a single raw name. If several
 `预约弹窗` layers exist, pick the matching `pc_` / `mobile_` plus current
-lang. Losing the modal or snapping to homepage is a fail.
+lang. Dual-end play leftover `pc_播放弹窗` / `mobile视频弹窗` is the same
+topic. Losing the modal or snapping to homepage is a fail.

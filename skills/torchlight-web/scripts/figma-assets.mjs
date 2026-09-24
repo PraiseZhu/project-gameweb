@@ -388,6 +388,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
         ...descendantEffects.map((e) => e.effectType),
       ].filter(Boolean);
       const rb = n.renderBox || null;
+      const ink = n.inkBox || null;
       const hasSoftSpillEffect = allEffectTypes.some((type) =>
         type === 'DROP_SHADOW' || type === 'LAYER_BLUR' || type === 'BACKGROUND_BLUR');
       /* A baked `img/` instance can carry its entire visual frame (including
@@ -405,6 +406,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const wholeFrameSlice = isWholeFrameSliceNode(n);
       const pageOrBox = n.pageBox || b;
       const sameSpaceInk = !!(rb && pageOrBox && sameCoordinateSpace(rb, pageOrBox));
+      const sameSpaceUnclippedInk = !!(ink && pageOrBox && sameCoordinateSpace(ink, pageOrBox));
       /* Same-space ink larger than the owner (play 188 vs 124). A shorter
          visible renderBox (time-bg 167 vs 260) or a huge LAYER_BLUR inkBox
          is not play-button spill — those stay on pageBox. */
@@ -415,6 +417,24 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
           (Number(rb.w) > Number(pageOrBox.w) + 0.5 && Number(rb.h) > Number(pageOrBox.h) + 0.5)
           || (hairlineOwner && (Number(rb.w) > Number(pageOrBox.w) + 0.5 || Number(rb.h) > Number(pageOrBox.h) + 0.5))
         );
+      /* Unclipped `img/` FRAME (no clipsContent): descendants may hang past
+         pageBox while ancestor-visible renderBox stays the section crop
+         (mobile 立绘 1122×1124 ink vs 750×544 owner / 750×782 render).
+         Export that ink; a pageBox PNG already lost the feet. A shorter
+         renderBox (time-bg) or an unclipped bg/kv plate stays pageBox. */
+      const unclippedImgInkSpill = pfx === 'img'
+        && n.clipsContent !== true
+        && sameSpaceUnclippedInk
+        && (
+          Number(ink.w) > Number(pageOrBox.w) + 0.5
+          || Number(ink.h) > Number(pageOrBox.h) + 0.5
+          || Number(ink.x) < Number(pageOrBox.x) - 0.5
+          || Number(ink.y) < Number(pageOrBox.y) - 0.5
+        )
+        && !(sameSpaceInk && (
+          Number(rb.w) + 0.5 < Number(pageOrBox.w)
+          || Number(rb.h) + 0.5 < Number(pageOrBox.h)
+        ));
       /* Rotated `img/` (left/right slider arrow) keeps a squat pageBox AABB
          while same-space renderBox still holds the long baked contour.
          Export that render canvas; stretching the squat PNG into the tall
@@ -431,9 +451,9 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
           (Number(rb.h) > Number(pageOrBox.h) + 0.5 && Number(rb.w) + 2 >= Number(pageOrBox.w))
           || (Number(rb.w) > Number(pageOrBox.w) + 0.5 && Number(rb.h) + 2 >= Number(pageOrBox.h))
         );
-      const pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour && !fragmentStroke;
+      const pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour && !unclippedImgInkSpill && !fragmentStroke;
       const listedBounds = pageBoxExport ? 'box' : n.sliceExport?.bounds;
-      const exportBounds = fragmentStroke
+      const exportBounds = fragmentStroke || unclippedImgInkSpill
         ? 'render'
         : (listedBounds || (softSpill ? 'render' : 'box'));
       const clippedVisible = !pageBoxExport && rb && b && Number(rb.w) > 0 && Number(rb.h) > 0
@@ -441,7 +461,7 @@ export function pickSliceNodes(truth, { minDim = 24 } = {}) {
       const exportBox = pageBoxExport
         ? pageAlignedExportBox(n, { exportBounds, renderBox: rb })
         : (exportBounds === 'render'
-          ? roundBox((hairlineOwner && rb) || n.inkBox || rb)
+          ? roundBox((hairlineOwner && rb) || (unclippedImgInkSpill && ink) || n.inkBox || rb)
           : roundBox(clippedVisible ? rb : b));
       const outW = Math.round((exportBox?.w ?? w) || 0);
       const outH = Math.round((exportBox?.h ?? h) || 0);

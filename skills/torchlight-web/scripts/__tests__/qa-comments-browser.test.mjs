@@ -20,9 +20,9 @@ function fixture(runtime) {
     'header{height:84px;padding:12px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}',
     'header select,header button{font:inherit;padding:6px;background:#202939;color:inherit;border:1px solid #64748b}',
     '.stage{position:absolute;left:32px;top:100px;width:1000px;height:560px;overflow:auto;background:#172033}',
-    '.canvas{width:920px;min-height:1500px;transform-origin:0 0;padding:64px 40px}',
+    '.canvas{position:relative;width:920px;min-height:1500px;transform-origin:0 0;padding:64px 40px}',
     '[data-node="section-1"]{background:#1d2e48;padding:28px;width:780px;min-height:400px}',
-    '[data-node="card-1"]{background:#273f5e;padding:32px;width:600px;min-height:250px}',
+    '[data-node="card-1"]{position:relative;background:#273f5e;padding:32px;width:600px;min-height:250px}',
     '[data-node="text-1"]{display:block;width:400px;min-height:70px;font-size:26px;line-height:1.4;margin:0 0 32px}',
     '[data-node="button-1"]{display:block;width:200px;height:44px}',
     '.spacer{height:500px}[data-node="footer-1"]{padding:20px;background:#26475b;width:400px;height:100px}</style>',
@@ -34,7 +34,12 @@ function fixture(runtime) {
     "var state={lang:'en',region:'global',state:'home',composition:'pc',grid:false};",
     'var scale=1, comments=null, clicked=0;',
     'function render(){',
-    'document.querySelector("#stage").innerHTML=\'<div class="canvas" style="transform:scale(\'+scale+\')"><section data-node="section-1" data-node-name="活动内容区" data-figma-type="FRAME"><article data-node="card-1" data-node-name="奖励卡片" data-figma-type="FRAME"><p data-node="text-1" data-node-name="活动标题" data-figma-type="TEXT">Season rewards \'+state.lang+\' \'+state.region+\'</p><button data-node="button-1" data-node-name="领取奖励" data-figma-type="INSTANCE" onclick="clicked++">领取奖励</button></article></section><div class="spacer"></div><div data-node="footer-1" data-node-name="页尾内容" data-figma-type="FRAME">页面底部的另一块内容</div></div>\';',
+    "var overlay=new URL(location.href).searchParams.get('case')==='overlay-hit'?'<div data-node=\"__fixed__\" data-node-id=\"page-fixed-overlays\" style=\"position:absolute;inset:0;z-index:20;pointer-events:none\"></div><div data-node=\"cover-1\" data-node-name=\"页面内容\" data-figma-type=\"FRAME\" style=\"position:absolute;inset:0;z-index:5;pointer-events:auto\"></div><div data-node=\"kv-1\" data-node-name=\"kv\" data-prefix=\"kv\" style=\"position:absolute;inset:0;z-index:0;pointer-events:none\"></div>':'';",
+    "var mask=new URL(location.href).searchParams.get('case')==='overlay-mask'?'<div data-node=\"mask-1\" data-prefix=\"img\" data-node-name=\"img/遮罩\" data-figma-type=\"RECTANGLE\" style=\"position:absolute;left:32px;top:32px;width:400px;height:70px;z-index:8;background:#991b1b\"></div>':'';",
+    "var inert=new URL(location.href).searchParams.get('case')==='inert-hit'||new URL(location.href).searchParams.get('case')==='hidden-hit'?'<div data-node=\"kv-inert\" data-node-name=\"kv\" data-prefix=\"kv\" style=\"position:absolute;inset:0;z-index:0;pointer-events:none\"></div>':'';",
+    "var inertPe=new URL(location.href).searchParams.get('case')==='inert-hit'||new URL(location.href).searchParams.get('case')==='hidden-hit'?'pointer-events:none;':'';",
+    "var hiddenLang=new URL(location.href).searchParams.get('case')==='hidden-hit'?'<p data-node=\"text-hidden\" data-node-name=\"隐藏文案\" data-figma-type=\"TEXT\" hidden style=\"position:absolute;left:40px;top:64px;width:400px;min-height:70px;pointer-events:none\">Hidden language copy</p>':'';",
+    'document.querySelector("#stage").innerHTML=\'<div class="canvas" style="transform:scale(\'+scale+\')">\'+overlay+inert+\'<section data-node="section-1" data-node-name="活动内容区" data-figma-type="FRAME" style="position:relative;z-index:1;\'+inertPe+\'"><article data-node="card-1" data-node-name="奖励卡片" data-figma-type="FRAME" style="\'+inertPe+\'">\'+mask+hiddenLang+\'<p data-node="text-1" data-node-name="活动标题" data-figma-type="TEXT" style="\'+inertPe+\'">Season rewards \'+state.lang+\' \'+state.region+\'</p><button data-node="button-1" data-node-name="领取奖励" data-figma-type="INSTANCE" style="\'+inertPe+\'" onclick="clicked++">领取奖励</button></article></section><div class="spacer"></div><div data-node="footer-1" data-node-name="页尾内容" data-figma-type="FRAME">页面底部的另一块内容</div></div>\';',
     'if(comments)comments.refresh();}',
     "['lang','region','state'].forEach(function(k){document.getElementById(k).onchange=function(e){state[k]=e.target.value;render();};});",
     'document.querySelector("#rebuild").onclick=render;',
@@ -61,6 +66,10 @@ async function publish(page, text, target, point) {
   await enterDraft(page, target, point);
   await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill(text);
   await page.getByRole('button', { name: '发布评论', exact: true }).click();
+  await page.getByRole('button', { name: '回复这条评论', exact: true }).waitFor({ state: 'visible', timeout: 6000 });
+}
+async function openReply(page) {
+  await page.getByRole('button', { name: '回复这条评论', exact: true }).click();
   await page.locator('.qc-pop textarea[aria-label="补充评论"]').waitFor({ state: 'visible', timeout: 6000 });
 }
 async function panel(page) {
@@ -149,6 +158,8 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await count(page, '.qc-pin', 1);
       await page.locator('.qc-pin').click();
       assert.match(await page.locator('.qc-pop').innerText(), /标题内容需要修正/);
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="补充评论"]').count(), 0);
+      await page.getByRole('button', { name: '回复这条评论', exact: true }).waitFor({ state: 'visible' });
       await page.keyboard.press('Escape');
       await page.locator('[data-node="text-1"]').evaluate(n => { n.textContent = 'The corrected title'; });
       await count(page, '.qc-pin', 1);
@@ -166,6 +177,11 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await page.locator('.qc-pop textarea[aria-label="评论内容"]').click();
       await page.locator('.qc-pop textarea[aria-label="评论内容"]').fill('Keep this unfinished note');
       await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="评论内容"]').inputValue(), 'Keep this unfinished note');
+      await panel(page);
+      await visible(page, '.qc-panel');
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="评论内容"]').inputValue(), 'Keep this unfinished note');
+      await page.getByRole('button', { name: '评论：点选或框选内容', exact: true }).click();
       assert.equal(await page.locator('.qc-pop textarea[aria-label="评论内容"]').inputValue(), 'Keep this unfinished note');
       await page.close();
     });
@@ -208,6 +224,23 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       assert.equal(await page.inputValue('#region'), 'global');
       assert.equal(await page.inputValue('#state'), 'home');
       await visible(page, '.qc-pop');
+      await visible(page, '.qc-panel');
+      await page.getByRole('button', { name: '评论：点选或框选内容', exact: true }).click();
+      await visible(page, '.qc-panel');
+      await page.locator('.qc-pop').waitFor({ state: 'hidden', timeout: 6000 });
+      await page.getByRole('button', { name: '评论：点选或框选内容', exact: true }).click();
+      await page.locator('.qc-item').filter({ hasText: 'English global home comment' }).click();
+      await visible(page, '.qc-pop');
+      await visible(page, '.qc-panel');
+      await page.keyboard.press('Escape');
+      await page.locator('.qc-pop').waitFor({ state: 'hidden', timeout: 6000 });
+      await visible(page, '.qc-panel');
+      await page.locator('.qc-item').filter({ hasText: 'English global home comment' }).click();
+      await visible(page, '.qc-pop');
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="补充评论"]').count(), 0);
+      await page.getByRole('button', { name: '回复这条评论', exact: true }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: '关闭列表', exact: true }).click();
+      await page.locator('.qc-panel').waitFor({ state: 'hidden', timeout: 6000 });
       await page.close();
     });
 
@@ -217,7 +250,7 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await publish(page, 'Second open comment', '[data-node="text-1"]', { u: .8, v: .75 });
       await page.waitForFunction(() => [...document.querySelectorAll('.qc-pin:not([hidden])')].map((n) => n.textContent).join(',') === '1,2');
       await page.locator('.qc-pin').filter({ hasText: /^1$/ }).click();
-      await page.getByRole('button', { name: '✓ 标记已解决', exact: true }).click();
+      await page.getByRole('button', { name: '标记已解决', exact: true }).click();
       await page.waitForFunction(() => [...document.querySelectorAll('.qc-pin:not([hidden])')].map((n) => n.textContent).join(',') === '1');
       await page.selectOption('#lang', 'ja');
       await count(page, '.qc-pin', 0);
@@ -228,6 +261,254 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await page.close();
     });
 
+    await t.test('list navigation reopens a named modal and carousel page that hid the target', async () => {
+      const page = await pageFor('reveal-surface');
+      await page.evaluate(() => {
+        const stage = document.querySelector('#stage');
+        const frame = document.createElement('div');
+        frame.className = 'frame';
+        frame.innerHTML = document.querySelector('#stage').innerHTML;
+        stage.replaceChildren(frame);
+        const hero = document.createElement('div');
+        hero.setAttribute('data-node', 'hero-home');
+        hero.setAttribute('data-node-name', '首页KV');
+        hero.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:900px;background:#0f172a';
+        hero.textContent = 'homepage';
+        const host = document.createElement('div');
+        host.className = 'fx-named-modals';
+        host.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:0;overflow:hidden;pointer-events:none';
+        const modal = document.createElement('div');
+        modal.setAttribute('data-modal-name', '预约弹窗');
+        modal.setAttribute('data-node', 'modal-1');
+        modal.setAttribute('data-node-name', '预约弹窗');
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        modal.style.cssText = 'position:absolute;left:40px;top:40px;width:420px;min-height:120px;background:#334155;display:none';
+        modal.innerHTML = '<p data-node="modal-copy" data-node-name="弹窗文案" data-figma-type="TEXT" style="display:block;width:360px;min-height:70px">Modal copy for comments</p>';
+        host.appendChild(modal);
+        frame.append(hero, host);
+        frame.__fxNamedModals = [{ name: '预约弹窗', layer: modal }];
+        frame.__fxOpenNamedModal = function (entry) {
+          entry.layer.hidden = false;
+          entry.layer.style.display = 'block';
+          entry.layer.setAttribute('aria-hidden', 'false');
+          entry.layer.setAttribute('data-modal-open', 'true');
+          host.style.height = '560px';
+          host.style.overflow = 'visible';
+          host.style.pointerEvents = 'auto';
+          host.setAttribute('data-modal-fill', 'cover');
+        };
+        const carousel = document.createElement('div');
+        carousel.setAttribute('data-motion-carousel', 'true');
+        carousel.setAttribute('data-motion-carousel-index', '0');
+        carousel.style.cssText = 'position:absolute;left:40px;top:220px;width:420px;height:140px;overflow:hidden';
+        const page0 = document.createElement('div');
+        page0.setAttribute('data-motion-carousel-page', 'true');
+        page0.setAttribute('data-node', 'carousel-0');
+        page0.style.cssText = 'width:420px;height:140px;background:#1e3a5f';
+        page0.textContent = 'page 0';
+        const page1 = document.createElement('div');
+        page1.setAttribute('data-motion-carousel-page', 'true');
+        page1.setAttribute('data-node', 'carousel-1');
+        page1.setAttribute('aria-hidden', 'true');
+        page1.hidden = true;
+        page1.style.cssText = 'width:420px;height:140px;background:#14532d';
+        page1.innerHTML = '<p data-node="carousel-copy" data-node-name="第三屏文案" data-figma-type="TEXT" style="display:block;width:360px;min-height:70px">Third screen copy</p>';
+        carousel.append(page0, page1);
+        carousel.__fxCarouselMoveTo = function (idx) {
+          page0.hidden = idx !== 0; page0.setAttribute('aria-hidden', idx === 0 ? 'false' : 'true');
+          page1.hidden = idx !== 1; page1.setAttribute('aria-hidden', idx === 1 ? 'false' : 'true');
+          carousel.setAttribute('data-motion-carousel-index', String(idx));
+        };
+        const variantOwner = document.createElement('div');
+        variantOwner.setAttribute('data-switch-owner', 'true');
+        variantOwner.setAttribute('data-switch', 'module-2');
+        variantOwner.setAttribute('data-switch-page-source', 'component-set-variant');
+        variantOwner.setAttribute('data-switch-index', '0');
+        variantOwner.style.cssText = 'position:absolute;left:40px;top:380px;width:420px;height:140px;overflow:hidden';
+        const variant0 = document.createElement('div');
+        variant0.setAttribute('data-switch', 'module-2');
+        variant0.setAttribute('data-switch-variant-content', 'true');
+        variant0.setAttribute('data-switch-variant-index', '0');
+        variant0.style.cssText = 'width:420px;height:140px;background:#7c2d12';
+        variant0.textContent = 'variant 0';
+        const variant2 = document.createElement('div');
+        variant2.setAttribute('data-switch', 'module-2');
+        variant2.setAttribute('data-switch-variant-content', 'true');
+        variant2.setAttribute('data-switch-variant-index', '2');
+        variant2.setAttribute('aria-hidden', 'true');
+        variant2.hidden = true;
+        variant2.style.cssText = 'width:420px;height:140px;background:#365314';
+        variant2.innerHTML = '<p data-node="variant-copy" data-node-name="img/文字背景" data-figma-type="TEXT" style="display:block;width:360px;min-height:70px">Variant three copy</p>';
+        variantOwner.append(variant0, variant2);
+        frame.__fxApplySwitch = function (sid, idx) {
+          if (sid !== 'module-2') return;
+          variant0.hidden = idx !== 0; variant0.setAttribute('aria-hidden', idx === 0 ? 'false' : 'true');
+          variant2.hidden = idx !== 2; variant2.setAttribute('aria-hidden', idx === 2 ? 'false' : 'true');
+          variantOwner.setAttribute('data-switch-index', String(idx));
+        };
+        frame.appendChild(carousel);
+        frame.appendChild(variantOwner);
+        frame.__fxOpenNamedModal(frame.__fxNamedModals[0]);
+        carousel.__fxCarouselMoveTo(1);
+        frame.__fxApplySwitch('module-2', 2);
+      });
+      await publish(page, 'Need the reservation sheet', '[data-node="modal-copy"]');
+      await page.evaluate(() => {
+        const modal = document.querySelector('[data-modal-name="预约弹窗"]');
+        const host = document.querySelector('.fx-named-modals');
+        modal.hidden = true;
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        modal.removeAttribute('data-modal-open');
+        host.style.height = '0px';
+        host.style.overflow = 'hidden';
+        host.removeAttribute('data-modal-fill');
+      });
+      await count(page, '.qc-pin:not([hidden])', 0);
+      await panel(page);
+      await page.locator('.qc-item').filter({ hasText: 'Need the reservation sheet' }).click();
+      await page.waitForFunction(() => {
+        const modal = document.querySelector('[data-modal-name="预约弹窗"]');
+        const host = document.querySelector('.fx-named-modals');
+        const copy = document.querySelector('[data-node="modal-copy"]');
+        const box = copy && copy.getBoundingClientRect();
+        return modal && modal.getAttribute('data-modal-open') === 'true' && !modal.hidden
+          && host && host.getAttribute('data-modal-fill') === 'cover'
+          && box && box.height > 0 && box.top > 80;
+      }, null, { timeout: 6000 });
+      await count(page, '.qc-pin:not([hidden])', 1);
+      await page.keyboard.press('Escape');
+      await page.evaluate(() => {
+        const modal = document.querySelector('[data-modal-name="预约弹窗"]');
+        const overlay = document.querySelector('.fx-named-modals');
+        modal.hidden = true;
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        modal.removeAttribute('data-modal-open');
+        overlay.style.height = '0px';
+        overlay.style.overflow = 'hidden';
+        overlay.removeAttribute('data-modal-fill');
+        const host = document.querySelector('[data-motion-carousel]');
+        if (host && host.__fxCarouselMoveTo) host.__fxCarouselMoveTo(1);
+      });
+      await publish(page, 'Third screen crop', '[data-node="carousel-copy"]');
+      await page.evaluate(() => {
+        const host = document.querySelector('[data-motion-carousel]');
+        if (host && host.__fxCarouselMoveTo) host.__fxCarouselMoveTo(0);
+      });
+      await panel(page);
+      await page.locator('.qc-item').filter({ hasText: 'Third screen crop' }).click();
+      await page.waitForFunction(() => {
+        const copy = document.querySelector('[data-node="carousel-copy"]');
+        return copy && !copy.closest('[hidden], [aria-hidden="true"]');
+      }, null, { timeout: 6000 });
+      await page.keyboard.press('Escape');
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        if (frame && frame.__fxApplySwitch) frame.__fxApplySwitch('module-2', 2);
+      });
+      await publish(page, 'Need the third variant crop', '[data-node="variant-copy"]');
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        if (frame && frame.__fxApplySwitch) frame.__fxApplySwitch('module-2', 0);
+      });
+      await panel(page);
+      await page.locator('.qc-item').filter({ hasText: 'Need the third variant crop' }).click();
+      await page.waitForFunction(() => {
+        const copy = document.querySelector('[data-node="variant-copy"]');
+        return copy && !copy.closest('[hidden], [aria-hidden="true"]');
+      }, null, { timeout: 6000 });
+      await page.close();
+    });
+
+    await t.test('an open named modal hides page-layer pins until the modal closes', async () => {
+      const page = await pageFor('layer-pins');
+      await page.evaluate(() => {
+        const stage = document.querySelector('#stage');
+        const frame = document.createElement('div');
+        frame.className = 'frame';
+        frame.innerHTML = document.querySelector('#stage').innerHTML;
+        stage.replaceChildren(frame);
+        const pageCopy = document.createElement('p');
+        pageCopy.setAttribute('data-node', 'page-copy');
+        pageCopy.setAttribute('data-node-name', '页面文案');
+        pageCopy.setAttribute('data-figma-type', 'TEXT');
+        pageCopy.style.cssText = 'position:absolute;left:40px;top:320px;display:block;width:360px;min-height:70px';
+        pageCopy.textContent = 'Page copy under the modal';
+        const host = document.createElement('div');
+        host.className = 'fx-named-modals';
+        host.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:0;overflow:hidden;pointer-events:none';
+        const modal = document.createElement('div');
+        modal.setAttribute('data-modal-name', '预约弹窗');
+        modal.setAttribute('data-node', 'modal-1');
+        modal.setAttribute('data-node-name', '预约弹窗');
+        modal.hidden = true;
+        modal.setAttribute('aria-hidden', 'true');
+        modal.style.cssText = 'position:absolute;left:40px;top:40px;width:420px;min-height:120px;background:#334155;display:none';
+        modal.innerHTML = '<p data-node="modal-copy" data-node-name="弹窗文案" data-figma-type="TEXT" style="display:block;width:360px;min-height:70px">Modal copy for comments</p>';
+        host.appendChild(modal);
+        frame.append(pageCopy, host);
+        frame.__fxNamedModals = [{ name: '预约弹窗', layer: modal }];
+        frame.__fxOpenNamedModal = function (entry) {
+          entry.layer.hidden = false;
+          entry.layer.style.display = 'block';
+          entry.layer.setAttribute('aria-hidden', 'false');
+          entry.layer.setAttribute('data-modal-open', 'true');
+          host.style.height = '560px';
+          host.style.overflow = 'visible';
+          host.style.pointerEvents = 'auto';
+        };
+        frame.__fxCloseNamedModal = function (entry) {
+          entry.layer.hidden = true;
+          entry.layer.style.display = 'none';
+          entry.layer.setAttribute('aria-hidden', 'true');
+          entry.layer.removeAttribute('data-modal-open');
+          host.style.height = '0px';
+          host.style.overflow = 'hidden';
+        };
+      });
+      await publish(page, 'Page layer issue', '[data-node="page-copy"]');
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        frame.__fxOpenNamedModal(frame.__fxNamedModals[0]);
+      });
+      await publish(page, 'Modal layer issue', '[data-node="modal-copy"]');
+      await page.waitForFunction(() => {
+        const pins = [...document.querySelectorAll('.qc-pin:not([hidden])')];
+        const modalOpen = document.querySelector('[data-modal-open="true"]');
+        return modalOpen && pins.length === 1 && /Modal layer issue/.test(pins[0].title || '');
+      }, null, { timeout: 6000 });
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        frame.__fxCloseNamedModal(frame.__fxNamedModals[0]);
+      });
+      await page.waitForFunction(() => {
+        const pins = [...document.querySelectorAll('.qc-pin:not([hidden])')];
+        const modalOpen = document.querySelector('[data-modal-open="true"]');
+        return !modalOpen && pins.length === 1 && /Page layer issue/.test(pins[0].title || '');
+      }, null, { timeout: 6000 });
+      await page.evaluate(() => {
+        const frame = document.querySelector('.frame');
+        frame.__fxOpenNamedModal(frame.__fxNamedModals[0]);
+      });
+      await panel(page);
+      await page.locator('.qc-item').filter({ hasText: 'Page layer issue' }).click();
+      await page.waitForFunction(() => {
+        const modalOpen = document.querySelector('[data-modal-open="true"]');
+        const outline = document.querySelector('.qc-outline');
+        const pins = [...document.querySelectorAll('.qc-pin:not([hidden])')];
+        const copy = document.querySelector('[data-node="page-copy"]');
+        const detail = document.querySelector('.qc-pop');
+        if (modalOpen || !outline || outline.hidden || !copy || !detail) return false;
+        const a = outline.getBoundingClientRect(), b = copy.getBoundingClientRect();
+        return pins.length === 1 && /Page layer issue/.test(pins[0].title || '')
+          && /Page layer issue/.test(detail.textContent || '')
+          && Math.abs(a.x - b.x) < 4 && Math.abs(a.y - b.y) < 4;
+      }, null, { timeout: 6000 });
+      await page.close();
+    });
+
     await t.test('resolve hides the pin; restoring from the resolved list brings it back', async () => {
       const page = await pageFor('resolve');
       await publish(page, 'Resolve after fix');
@@ -235,14 +516,19 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await page.locator('.qc-pin').click();
       assert.equal(await page.getByRole('button', { name: '关闭窗口', exact: true }).count(), 1);
       assert.equal(await page.getByRole('button', { name: '关闭评论', exact: true }).count(), 0);
-      await page.getByRole('button', { name: '✓ 标记已解决', exact: true }).click();
+      await page.getByRole('button', { name: '标记已解决', exact: true }).click();
       await count(page, '.qc-pin:not([hidden])', 0);
+      await page.locator('.qc-pop').waitFor({ state: 'hidden', timeout: 6000 });
       await panel(page);
       await count(page, '.qc-item', 0);
       await page.locator('.qc-panel select').nth(1).selectOption('resolved');
       await count(page, '.qc-item', 1);
       await page.locator('.qc-item').click();
-      await page.getByRole('button', { name: /恢复评论/ }).click();
+      await visible(page, '.qc-pop');
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await visible(page, '.qc-pop');
+      assert.equal(await page.getByRole('button', { name: '恢复为未解决', exact: true }).count(), 1);
+      await page.getByRole('button', { name: '恢复为未解决', exact: true }).click();
       await count(page, '.qc-pin', 1);
       await page.close();
     });
@@ -251,18 +537,21 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       const page = await pageFor('thread-reply');
       await publish(page, 'First note on this card');
       await count(page, '.qc-pin', 1);
-      assert.equal(await page.locator('.qc-pop textarea[aria-label="补充评论"]').inputValue(), '');
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="补充评论"]').count(), 0);
+      await openReply(page);
       await page.locator('.qc-pop textarea[aria-label="补充评论"]').fill('Follow-up in the same pin');
       await page.getByRole('button', { name: '发布补充', exact: true }).click();
       await page.waitForFunction(() => {
         const reply = document.querySelector('.qc-reply');
-        const input = document.querySelector('.qc-pop textarea[aria-label="补充评论"]');
-        return reply && reply.textContent.includes('Follow-up in the same pin') && input && input.value === '';
+        const toggle = document.querySelector('.qc-pop button[aria-label="回复这条评论"]');
+        return reply && reply.textContent.includes('Follow-up in the same pin') && toggle;
       });
-      assert.equal(await page.locator('.qc-pop textarea[aria-label="补充评论"]').inputValue(), '');
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="补充评论"]').count(), 0);
       await count(page, '.qc-pin', 1);
       await page.reload();
       await page.locator('.qc-pin').click();
+      assert.equal(await page.locator('.qc-pop textarea[aria-label="补充评论"]').count(), 0);
+      await page.getByRole('button', { name: '回复这条评论', exact: true }).waitFor({ state: 'visible' });
       assert.match(await page.locator('.qc-copy').innerText(), /First note on this card/);
       assert.match(await page.locator('.qc-reply').innerText(), /Follow-up in the same pin/);
       await page.close();
@@ -302,6 +591,55 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       await panel(page);
       await count(page, '.qc-item', 1);
       assert.match(await page.locator('.qc-item').innerText(), /删除|替换|找不到|不存在|失效/);
+      await page.close();
+    });
+
+    await t.test('point selection prefers text and buttons under a covering pin shell', async () => {
+      const page = await pageFor('overlay-hit');
+      await enterDraft(page, '[data-node="text-1"]');
+      const pe = await page.evaluate(() => ({
+        selecting: document.querySelector('#stage').classList.contains('qc-selecting'),
+        fixed: getComputedStyle(document.querySelector('[data-node="__fixed__"]')).pointerEvents,
+        cover: getComputedStyle(document.querySelector('[data-node="cover-1"]')).pointerEvents,
+      }));
+      assert.equal(pe.selecting, true);
+      assert.equal(pe.fixed, 'none');
+      assert.equal(pe.cover, 'auto');
+      assert.match(await page.locator('.qc-pop select option:checked').innerText(), /当前：活动标题/);
+      const labels = await page.locator('.qc-pop select option').allTextContents();
+      assert.equal(labels.some((text) => /__fixed__|页面内容|^kv$/.test(text)), false);
+      await page.keyboard.press('Escape');
+      await enterDraft(page, '[data-node="button-1"]', { u: .5, v: .5 });
+      assert.match(await page.locator('.qc-pop select option:checked').innerText(), /领取奖励|奖励卡片/);
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: '评论：点选或框选内容', exact: true }).click();
+      const canvas = await page.locator('.canvas').boundingBox();
+      await page.mouse.click(canvas.x + 12, canvas.y + 12);
+      await visible(page, '.qc-pop textarea[aria-label="评论内容"]');
+      assert.match(await page.locator('.qc-pop select option:checked').innerText(), /当前：kv/);
+      await page.close();
+    });
+
+    await t.test('point selection follows paint order when an image covers text', async () => {
+      const page = await pageFor('overlay-mask');
+      await enterDraft(page, '[data-node="text-1"]');
+      assert.match(await page.locator('.qc-pop select option:checked').innerText(), /当前：img\/遮罩/);
+      await page.close();
+    });
+
+    await t.test('inert text and title stay selectable over a full-bleed kv', async () => {
+      const page = await pageFor('inert-hit');
+      await enterDraft(page, '[data-node="text-1"]');
+      assert.match(await page.locator('.qc-pop select option:checked').innerText(), /当前：活动标题/);
+      await page.close();
+    });
+
+    await t.test('hidden language copy is not selected over visible inert text', async () => {
+      const page = await pageFor('hidden-hit');
+      await enterDraft(page, '[data-node="text-1"]');
+      const current = await page.locator('.qc-pop select option:checked').innerText();
+      assert.match(current, /当前：活动标题/);
+      assert.equal(/隐藏文案/.test(current), false);
       await page.close();
     });
 
@@ -427,7 +765,7 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       const second = await pageFor('remote-race');
       await count(second, '.qc-pin', 1);
       await second.locator('.qc-pin').click();
-      await second.getByRole('button', { name: '✓ 标记已解决', exact: true }).click();
+      await second.getByRole('button', { name: '标记已解决', exact: true }).click();
       await panel(second);
       await second.getByRole('combobox', { name: '解决状态', exact: true }).selectOption('pending');
       await count(second, '.qc-item', 1);
@@ -541,10 +879,10 @@ test('QA comments: real storage, content selection, navigation and tab synchroni
       const resolvingId = await receiver.locator('.qc-pin[aria-expanded=true]').getAttribute('data-comment-id');
       await panel(sender);
       await sender.locator('.qc-item').filter({ hasText: 'Tab propagation 1' }).last().click();
-      await sender.getByRole('button', { name: '✓ 标记已解决', exact: true }).click();
+      await sender.getByRole('button', { name: '标记已解决', exact: true }).click();
       await count(receiver, '.qc-pin:not([hidden])', 19);
       assert.equal(await receiver.locator('.qc-pin').evaluateAll((nodes, id) => nodes.some(n => n.dataset.commentId === id), resolvingId), false);
-      await receiver.getByRole('button', { name: /恢复评论/ }).waitFor({ state: 'visible' });
+      await receiver.locator('.qc-pop').waitFor({ state: 'hidden', timeout: 6000 });
       const otherContext = await browser.newContext({ viewport: { width: 1240, height: 820 } });
       const isolated = await pageFor('tabs', otherContext);
       await panel(isolated);

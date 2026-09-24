@@ -190,6 +190,11 @@ export function greenLaterAxesProbeFixture({
         openers: [{ go: 'modal/mobile_sheet', openedGo: 'mobile_sheet', ok: true, measured: true, skipped: false, opened: true, closed: true }],
         inert: { ok: true, measured: true, skipped: false, openedModal: false, clicked: 1 },
       },
+      regionChrome: {
+        cnPc: { ok: true, measured: true, skipped: false, claimed: true, problems: [] },
+        globalPc: { ok: true, measured: true, skipped: false, claimed: true, problems: [] },
+        cnMobile: { ok: true, measured: true, skipped: false, claimed: true, problems: [] },
+      },
     },
   };
 }
@@ -449,6 +454,117 @@ function waitMs(page, ms) {
   return page.evaluate((delay) => new Promise((resolveWait) => setTimeout(resolveWait, delay)), ms);
 }
 
+async function measureRegionChrome(page, { base, width }) {
+  const notClaimed = (reason) => ({
+    ok: true, measured: true, skipped: false, claimed: false, problems: [], reason,
+  });
+  const claimedFail = (problems) => ({
+    ok: false, measured: true, skipped: false, claimed: true, problems,
+  });
+  const claimedOk = (extra = {}) => ({
+    ok: true, measured: true, skipped: false, claimed: true, problems: [], ...extra,
+  });
+
+  await page.setViewportSize({ width: Math.max(width, 1280), height: 1080 });
+  await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&region=cn&lang=zh-CN`, {
+    waitUntil: 'load',
+    timeout: 120000,
+  });
+  await waitQa(page);
+  const cnPcRaw = await page.evaluate(() => {
+    const owner = [...document.querySelectorAll('[data-dropmenu="true"]')]
+      .find((el) => /多语言|语言|language/i.test(el.getAttribute('data-dropmenu-name') || el.getAttribute('data-name') || ''));
+    const painted = (el) => {
+      if (!el || el.hidden) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const box = el.getBoundingClientRect();
+      return box.width >= 1 && box.height >= 1;
+    };
+    const shop = [...document.querySelectorAll('[data-btn-name], [data-name]')]
+      .find((el) => /官方充值|充值/.test(el.getAttribute('data-btn-name') || el.getAttribute('data-name') || ''));
+    const official = [...document.querySelectorAll('[data-btn-name="进入官网"], [data-name="btn/进入官网"]')][0] || null;
+    return {
+      hasDropmenu: Boolean(owner),
+      dropmenuVisible: painted(owner),
+      shopVisible: painted(shop),
+      officialVisible: painted(official),
+    };
+  });
+  let cnPc;
+  if (!cnPcRaw.hasDropmenu) cnPc = notClaimed('no-dropmenu/多语言');
+  else if (cnPcRaw.dropmenuVisible) cnPc = claimedFail(['cn-dropmenu-visible']);
+  else if (!cnPcRaw.shopVisible || !cnPcRaw.officialVisible) cnPc = claimedFail(['cn-topbar-missing-shop-or-official']);
+  else cnPc = claimedOk();
+
+  await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&region=global&lang=zh-TW`, {
+    waitUntil: 'load',
+    timeout: 120000,
+  });
+  await waitQa(page);
+  const globalPcRaw = await page.evaluate(() => {
+    const owner = [...document.querySelectorAll('[data-dropmenu="true"]')]
+      .find((el) => /多语言|语言|language/i.test(el.getAttribute('data-dropmenu-name') || el.getAttribute('data-name') || ''));
+    const painted = (el) => {
+      if (!el || el.hidden) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const box = el.getBoundingClientRect();
+      return box.width >= 1 && box.height >= 1;
+    };
+    if (!owner) return { hasDropmenu: false };
+    if (owner.getAttribute('data-dropmenu-state') !== 'on') {
+      owner.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    }
+    const options = [...owner.querySelectorAll('[data-lang], [data-btn-name="切换语言"], [data-name="btn/切换语言"]')];
+    const zh = options.find((el) => (el.getAttribute('data-lang') || '') === 'zh-CN');
+    const ko = options.find((el) => (el.getAttribute('data-lang') || '') === 'ko');
+    const zhVisible = painted(zh);
+    const hasZhSlot = Boolean(zh);
+    return {
+      hasDropmenu: true,
+      hasZhSlot,
+      zhVisible,
+      koSlot: ko ? ko.getAttribute('data-lang-slot') : '',
+    };
+  });
+  let globalPc;
+  if (!globalPcRaw.hasDropmenu) globalPc = notClaimed('no-dropmenu/多语言');
+  else if (!globalPcRaw.hasZhSlot) globalPc = notClaimed('global-no-zh-cn-slot');
+  else if (globalPcRaw.zhVisible) globalPc = claimedFail(['global-zh-cn-visible']);
+  else if (globalPcRaw.koSlot !== 'global-ko-in-zh-cn') globalPc = claimedFail(['global-ko-slot-missing']);
+  else globalPc = claimedOk();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${base}/index.html?interaction=1#g=Mobile&d=0&w=390&h=844&state=entry&plat=phone&region=cn&lang=zh-CN`, {
+    waitUntil: 'load',
+    timeout: 120000,
+  });
+  await waitQa(page);
+  const cnMobileRaw = await page.evaluate(() => {
+    const official = [...document.querySelectorAll('[data-btn-name="进入官网"], [data-name="btn/进入官网"]')]
+      .find((el) => el.getAttribute('data-dropmenu') !== 'true');
+    const dropmenu = [...document.querySelectorAll('[data-dropmenu="true"]')]
+      .find((el) => /多语言|语言|language/i.test(el.getAttribute('data-dropmenu-name') || el.getAttribute('data-name') || ''));
+    return {
+      hasOfficial: Boolean(official),
+      officialSlot: official ? official.getAttribute('data-cn-official-slot') : '',
+      hasDropmenu: Boolean(dropmenu),
+    };
+  });
+  let cnMobile;
+  if (!cnMobileRaw.hasOfficial) cnMobile = notClaimed('no-btn/进入官网');
+  else if (!cnMobileRaw.hasDropmenu) cnMobile = notClaimed('no-dropmenu/多语言');
+  else if (cnMobileRaw.officialSlot !== 'lang-button') cnMobile = claimedFail(['cn-official-not-on-lang-button']);
+  else cnMobile = claimedOk();
+
+  const problems = [];
+  for (const [key, row] of [['cnPc', cnPc], ['globalPc', globalPc], ['cnMobile', cnMobile]]) {
+    if (row.claimed && !row.ok) problems.push(`region-chrome ${key}: ${(row.problems || []).join(',')}`);
+  }
+  return { cnPc, globalPc, cnMobile, problems };
+}
+
 async function waitQa(page) {
   await page.waitForFunction(() => window.__qa && typeof window.__qa.setPref === 'function', null, { timeout: 120000 });
 }
@@ -471,17 +587,20 @@ async function collectLanguageOptions(page, authoredFills = null) {
     };
     const fillImage = (node) => {
       if (!painted(node)) return '';
+      const named = String(node.getAttribute('data-name') || '');
+      if (/img\/(?:选中背景|未选中背景)/.test(named)) {
+        const slice = node.tagName === 'IMG' ? node : node.querySelector('img');
+        if (slice && slice.getAttribute('src') && painted(slice)) return named;
+        /* VECTOR plates keep authored CSS fill + 6px radius; the square
+           AABB PNG is hidden. Named slice is enough for fill-pixel. */
+        if (node.getAttribute('data-shape-rounded-vector') === 'source-border-radius') return named;
+      }
       const cs = getComputedStyle(node);
       const image = cs.backgroundImage;
       if (image && image !== 'none') return image;
       const color = cs.backgroundColor;
       if (color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') {
         return `linear-gradient(0deg, ${color} 0%, ${color} 100%)`;
-      }
-      const named = String(node.getAttribute('data-name') || '');
-      if (/img\/(?:选中背景|未选中背景)/.test(named)) {
-        const slice = node.tagName === 'IMG' ? node : node.querySelector('img');
-        if (slice && slice.getAttribute('src') && painted(slice)) return named;
       }
       return '';
     };
@@ -889,7 +1008,9 @@ export function scoreOpenerCatalog(raw, plat) {
 async function measureInteractionPixels(page, { base, width, authoredFills = null }) {
   const problems = [];
   await page.setViewportSize({ width: Math.max(width, 1280), height: 1080 });
-  await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&lang=zh-CN`, {
+  /* Official CN hides in-page dropmenu/多语言. Seed language pixels on
+     Global; later zh-CN setPref locks region=cn for the age modal. */
+  await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&region=global&lang=zh-TW`, {
     waitUntil: 'load',
     timeout: 120000,
   });
@@ -1019,7 +1140,7 @@ async function measureInteractionPixels(page, { base, width, authoredFills = nul
   if (!pcClose.ok) problems.push(`pc-close: ${pcClose.problems.join(',')}`);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${base}/index.html?interaction=1#g=Mobile&d=0&w=390&h=844&state=entry&plat=phone&lang=zh-CN`, {
+  await page.goto(`${base}/index.html?interaction=1#g=Mobile&d=0&w=390&h=844&state=entry&plat=phone&region=cn&lang=zh-CN`, {
     waitUntil: 'load',
     timeout: 120000,
   });
@@ -1103,7 +1224,7 @@ async function measureInteractionPixels(page, { base, width, authoredFills = nul
   await waitMs(page, 200);
   const pcCatalog = await (async () => {
     await page.setViewportSize({ width: Math.max(width, 1280), height: 1080 });
-    await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&lang=zh-CN`, {
+    await page.goto(`${base}/index.html?interaction=1#g=PC&d=3&w=${width}&h=1080&state=entry&plat=desktop&region=cn&lang=zh-CN`, {
       waitUntil: 'load',
       timeout: 120000,
     });
@@ -1118,7 +1239,7 @@ async function measureInteractionPixels(page, { base, width, authoredFills = nul
   if (!pcCatalog.ok) problems.push(`pc-catalog: ${(pcCatalog.problems || []).join(',')}`);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${base}/index.html?interaction=1#g=Mobile&d=0&w=390&h=844&state=entry&plat=phone&lang=zh-CN`, {
+  await page.goto(`${base}/index.html?interaction=1#g=Mobile&d=0&w=390&h=844&state=entry&plat=phone&region=cn&lang=zh-CN`, {
     waitUntil: 'load',
     timeout: 120000,
   });
@@ -1131,6 +1252,9 @@ async function measureInteractionPixels(page, { base, width, authoredFills = nul
   const mobileCatalog = await measureVisibleOpenerCatalog(page, { plat: 'mobile' });
   if (!mobileCatalog.ok) problems.push(`mobile-catalog: ${(mobileCatalog.problems || []).join(',')}`);
 
+  const regionChrome = await measureRegionChrome(page, { base, width });
+  for (const problem of regionChrome.problems || []) problems.push(problem);
+
   return {
     ok: problems.length === 0,
     languages,
@@ -1139,6 +1263,11 @@ async function measureInteractionPixels(page, { base, width, authoredFills = nul
     mobile: mobileVerdict,
     pcCatalog,
     mobileCatalog,
+    regionChrome: {
+      cnPc: regionChrome.cnPc,
+      globalPc: regionChrome.globalPc,
+      cnMobile: regionChrome.cnMobile,
+    },
     problems,
   };
 }

@@ -117,18 +117,22 @@ export function classifyAutoResize({ autoResize, browser = {} } = {}) {
 /* 组级排版：同一组件组的同级标题/正文应统一字号/排版等级，而不是逐节点独立
    step-fit（真实产品线五语言实测基线：02 奖励卡标题组、正文组、角色名组、
    06 列表组全部组内同字号，最长项折行也不单独缩小；私有证据，见 artifacts/）。
-   组标识 = 最内层容器祖先（ancestorNames 末项）+ 语义角色 + 源字号：同级组
-   共享同一个最内层组件容器，文案/节点 id 不参与，组件嵌套深度不一也不影响。 */
+   组标识 = 最内层非数字槽容器 + 语义角色 + 源字号：同级组共享同一个组件容器，
+   文案/节点 id 不参与，组件嵌套深度不一也不影响。 */
 export function buildFitGroupKey({ ancestorNames = [], parentName = '', role = '', fontSize = null } = {}) {
   /* 同级同位文本（各卡的标题位、各卡的正文位）共享同一个直接父容器名
      （如 02 奖励卡标题槽、03 特别活动标题槽都复用同一个 Figma 组件 Frame 名）。
      直接父容器名比 ancestorNames 末项稳：末项可能是节点自身或更深层包装，
      而同一组件位的兄弟其直接父容器同名。文案/节点 id 不参与。parentName 缺失
-     时退回 ancestorNames 末项（旧行为）。 */
-  const direct = String(parentName || '').trim();
+     时退回 ancestorNames 末项（旧行为）。
+     奖励栏三张卡的直接父是数字槽 1/2/3（手机 1/6/5），那一层不能当分母；
+     再往上一层共享容器（PC 奖励 / 手机 Frame 427321341）才是组。 */
   const names = Array.isArray(ancestorNames) ? ancestorNames.map((a) => String(a || '')).filter(Boolean) : [];
+  const direct = String(parentName || '').trim();
+  const numberedSlot = /^(?:\d+)$/;
+  const fromAncestors = [...names].reverse().find((name) => name && !numberedSlot.test(name)) || '';
   const fallback = names.length ? names[names.length - 1] : '';
-  const container = direct || fallback;
+  const container = (direct && !numberedSlot.test(direct) ? direct : '') || fromAncestors || fallback;
   return container + '|' + String(role || '') + '|' + String(fontSize ?? '');
 }
 
@@ -272,11 +276,31 @@ export function isButtonLabelContext({ role = 'unknown', ancestorNames = [], nam
   return /(?:^|[\s/>])btn\/|btn\/按钮|下载按钮|预约按钮|折扣信息/.test(haystack);
 }
 
+/* Hero date lines sit in a CENTER 2400/740 box. Regular 400 would otherwise
+   take the body 0.8 scale, so EN/KO look smaller and off-center vs zh-TW. */
+export function isHeroDateLineContext({ ancestorNames = [], name = '' } = {}) {
+  const haystack = [name, ...(Array.isArray(ancestorNames) ? ancestorNames : [])]
+    .filter(Boolean).map(String).join(' ');
+  return /sec\/1/.test(haystack) && /(?:^|[\s/])(?:slg|标题)(?:$|[\s/])/.test(haystack);
+}
+
+/* Module-8 claim footnotes are Medium 500, so they would otherwise take body
+   0.8. Official EN/KO keep the same visual size as zh-TW. Name is the zh-CN
+   source string; ancestor is switch/模块8 so other Regular 500 copy stays body. */
+export function isClaimFootnoteContext({ ancestorNames = [], name = '' } = {}) {
+  const haystack = [name, ...(Array.isArray(ancestorNames) ? ancestorNames : [])]
+    .filter(Boolean).map(String).join(' ');
+  return /switch\/模块8/.test(haystack)
+    && /\*每个账号限领取一次/.test(haystack);
+}
+
 /* 由 Figma 源 fontWeight + 源字号推出官网缩放档（tier）。这是"源字号档"维度的分类器，
    解决同 fontWeight=700 的标题在官网分属不同缩放档的问题。不按文案/node/section 特判。
    按钮祖先（btn/）走 heading：清单源字号，只在书面 max 放不下时才收。 */
 export function classifySourceSizeTier({ fontWeight = 400, sourceFontSize = null, role = 'unknown', ancestorNames = [], name = '' } = {}) {
   if (isButtonLabelContext({ role, ancestorNames, name })) return 'heading';
+  if (isHeroDateLineContext({ ancestorNames, name })) return 'heading';
+  if (isClaimFootnoteContext({ ancestorNames, name })) return 'heading';
   if (Number(fontWeight) < TIER_RULES.bodyMaxWeightExclusive) return 'body';
   const src = Number(sourceFontSize);
   /* 卡片标题档：源 > YAML cardTitleMinSourcePxExclusive 的粗体大标题。 */

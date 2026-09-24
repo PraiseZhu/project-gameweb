@@ -374,14 +374,36 @@ test('owner-model scope/assetPolicy/role evidence is derived in the renderer, no
   assert.match(renderer, /data-owner-mask-children/);
 });
 
-test('zh-CN static keeps authored pageBox instead of Auto Layout flex restack', () => {
-  assert.match(renderer, /zhSourceExactLayout/);
-  assert.match(renderer, /sourceParticipatesInFlow && !zhSourceExactLayout && !parentHeroClusterLayout/);
+test('every language keeps authored pageBox instead of Auto Layout flex restack', () => {
+  assert.match(renderer, /sourceExactLayout = true/);
+  assert.match(renderer, /sourceParticipatesInFlow && !sourceExactLayout && !parentHeroClusterLayout/);
+  assert.match(renderer, /parentIsLaterSection/);
+  assert.match(renderer, /!laterAlreadyUniform && \(!parent \|\| parentIsLaterSection\)/);
+  assert.doesNotMatch(renderer, /zhSourceExactLayout/);
+});
+
+test('751–1126 leftover is not applied twice inside a language-shell remount', () => {
+  assert.match(renderer, /leftoverAlreadyOnHost/);
+  assert.match(renderer, /language-shell remount paints the/);
+  assert.match(renderer, /container\.closest\s*&&/);
+  assert.match(renderer, /leftoverCandidate && !leftoverAlreadyOnHost/);
+});
+
+test('long bg/mobile board shares layoutOffsetDesign with later UI, including a negative 100vh crop', () => {
+  assert.match(renderer, /if \(\/\^bg\\\/\(pc\|mobile\)\$\/i\.test\(name\)\) return laterJoinOffsetDesign;/);
+  assert.match(renderer, /Number\.isFinite\(laterJoinOffsetDesign\) && laterJoinOffsetDesign !== 0/);
+  assert.doesNotMatch(renderer, /&& heroLayoutOffsetDesign > 0 && heroCropWindowDesign > 0/);
+  assert.match(renderer, /layoutOffsetDesign: laterJoinOffsetDesign/);
+  assert.match(renderer, /heroLayoutOffsetDesign \+ heroViewportH \* \(1 \/ Number\(laterUniformScale\) - 1 \/ Number\(k\)\)/);
+  assert.match(renderer, /Join later to the used hero bottom on the later/);
+  assert.match(renderer, /pageStageMode \|\| isHeroStage/);
+  assert.match(renderer, /const laterLayerW = windowStageWidth/);
 });
 
 test('paint siblings are absolute unless source-backed Auto Layout admits flow', () => {
   assert.match(renderer, /el\.style\.position = 'absolute';/);
-  assert.match(renderer, /const sourceLeft = \(\(box\.x \?\? 0\) - originX\);/);
+  assert.match(renderer, /const sourceLeft = skippedCentersPrimary/);
+  assert.match(renderer, /\(\(box\.x \?\? 0\) - originX\)/);
   assert.match(renderer, /el\.style\.left = sourceLeft \+ 'px';/);
   assert.match(renderer, /Only a proven Auto Layout child may flow/);
 });
@@ -433,14 +455,16 @@ test('hero cover scale stays on the hero slot, not the released page stage', () 
   assert.match(renderer, /sourceW \* planeRatio/);
   assert.match(renderer, /transformOrigin = '0 0'/);
   assert.match(renderer, /heroVisualScale = coverScale/);
-  assert.match(renderer, /scale: pageStageScale/);
+  assert.match(renderer, /scale: k,/);
   assert.match(renderer, /data-hero-visual-scale/);
-  assert.match(renderer, /heroVisualScale \/ pageStageScale/);
+  assert.match(renderer, /coverHeroVisualScale \/ \(Number\(k\) > 0 \? Number\(k\) : coverPageStageScale\)/);
+  assert.match(renderer, /const coverHeroRuler = Number\(k\) > 0 \? Number\(k\) : coverPageStageScale/);
+  assert.match(renderer, /Number\(this\._viewportWidth\) \/ coverHeroRuler/);
   assert.doesNotMatch(renderer, /pageStageScale = slotScale/);
   assert.doesNotMatch(renderer, /heroVisualScale = slotScale/);
   assert.match(renderer, /data-kv-cover-plane/);
   assert.match(renderer, /data-hero-ui-plane/);
-  assert.match(renderer, /stage\.style\.zoom = String\(pageStageMode \? pageStageScale : \(pageScope \? 1 : k\)\)/);
+  assert.match(renderer, /Nested stages inherit page zoom/);
   assert.match(renderer, /Math\.abs\(planeRatio - 1\) > 0\.001/);
   assert.match(renderer, /heroVisualPlane \|\| firstScreenKvInSection/);
   assert.match(renderer, /coverHeroSlot/);
@@ -467,7 +491,7 @@ test('section stage clip is sourced from Figma clipsContent, not a global defaul
 test('baked image render spill exports and verifies the render canvas, never the layout box', () => {
   assert.match(assetPipeline, /const isBakedImageOwner = pfx === 'img' && \(n\.type === 'INSTANCE' \|\| n\.type === 'COMPONENT'\)/);
   assert.match(assetPipeline, /pageAlignedExportBox/);
-  assert.match(assetPipeline, /pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour/);
+  assert.match(assetPipeline, /pageBoxExport = wholeFrameSlice && !softSpill && !rotatedLocalContour && !unclippedImgInkSpill/);
   assert.match(assetPipeline, /renderCropPolicy: exportBounds === 'render' && isBakedImageOwner/);
   assert.match(coverageGate, /if \(rec\?\.exportBounds !== 'render'\) problems\.push/);
   assert.match(coverageGate, /exportBox!=renderBox/);
@@ -588,7 +612,7 @@ test('auto-layout axis alignment fields flow from fixture into truth and feed th
   assert.match(renderer, /const prim = String\(__u\(parentLayout\.primaryAxisAlignItems\)/);
   assert.match(renderer, /pel\.style\.alignItems = ai\[counter\]/);
   assert.match(renderer, /pel\.style\.justifyContent = jc\[prim\]/);
-  assert.match(renderer, /zhSourceExactLayout/);
+  assert.match(renderer, /sourceExactLayout = true/);
 });
 
 test('multiline HUG explanatory text keeps source width instead of max-content', () => {

@@ -46,13 +46,28 @@ group share the strictest integer size. Ellipsis or clipping is not a pass.
 Axis split (user 2026-09-17, see DESIGN.md 第 6 章): horizontal-only maxWidth
 nowrap-shrinks adopted copy to the written cap; vertical-only maxHeight wraps
 and must not shrink; dual-axis is 用户待确认 and keeps wrap-then-shrink.
-`TEXT.autoResize=HEIGHT` is not a Frame height cap.
+`HEIGHT` dual-axis pins width to maxWidth, wraps, then shrinks only when the
+wrapped block still exceeds maxHeight. Horizontal-only `HEIGHT` also wraps to
+maxWidth and must not nowrap-shrink. Do not treat wrapping `scrollWidth` as
+a width overflow. Vertical-only maxHeight still skips group unify. Dual-axis
+siblings that share a group still follow the strictest integer size after
+wrap-then-shrink. `TEXT.autoResize=HEIGHT` is not a Frame height cap.
+Skipped vertical HUG owners restack siblings from authored source gaps
+after wrap; CENTER keeps source coordinates when heights have not grown.
+Their snapshot `box.h` is not a written maxHeight. HEIGHT HUG adopted
+copy hugs the glyph instead of pinning `minHeight` to the zh-CN box.
+Hugging CENTER display titles that grow from the source box keep
+sibling VECTOR ornaments' outer ends and clip only the inner end back
+to the live title edge (plus the authored gap). Hairline VECTOR boxes expand to the baked render height before the
+inner clip, or a zero-tall clip-path hides the stroke. Do not move
+the outer ends; do not invent a new title layout.
 
 ### Auto Layout caps beat HUG growth
 
 Most copy in the current Torchlight file sits in a wrapping Auto Layout
 frame. Horizontal-only `maxWidth` nowrap-shrinks adopted copy to that written
-cap. Vertical-only `maxHeight` wraps and does not shrink. Dual-axis is 用户待确认
+cap unless `TEXT.autoResize=HEIGHT`, which wraps to maxWidth instead.
+Vertical-only `maxHeight` wraps and does not shrink. Dual-axis is 用户待确认
 and keeps wrap-then-shrink. An axis with no written max is not a shrink reason
 and must not invent a box. Sibling nodes in a group still share one integer size.
 
@@ -64,15 +79,18 @@ size per group (reward-card title group, body group, character-name group,
 list group) with the longest item wrapping rather than shrinking.
 
 - **Group key** (`buildFitGroupKey`): the innermost shared container ancestor
-  (`ancestorNames` last entry) + semantic role + source font size. Sibling
-  cards share the same innermost component container, so they cluster into one
-  group regardless of nesting depth; title and body groups stay separate
-  because role/size differ. No node id or copy string participates.
+  (`ancestorNames` last non-numeric entry, or a non-numeric `parentName`) +
+  semantic role + source font size. Digit-only card slots (`1`/`2`/`3`) are
+  skipped so reward-row siblings stay one group. Title and body groups stay
+  separate because role/size differ. No node id or copy string participates.
 - **Uniform fit** (`unifyGroupFitScales`, mirrored in the renderer's
-  `runFit`): after each node measures its own stepped fit, a multi-member
-  group that produced divergent scales is unified to the strictest (smallest)
-  scale, applied to every sibling, and stamped `data-fit-group-unified`.
-  Single-member groups and already-uniform groups are left untouched.
+  `runFit`): after each node measures its own integer-px fit, a multi-member
+  group that produced divergent `data-fit-px` sizes is unified to the
+  strictest (smallest) integer px, applied to every sibling including
+  semantic-break members that skipped `_fitText`, and stamped
+  `data-fit-group-unified`. Single-member groups and groups that all still
+  sit at the locale base are left untouched. Do not read percent
+  `data-fit-scale` here: 6.1 C only writes integer px.
 - Natural wrapping and container growth are always preferred; a group only
   shrinks when its members are individually authorized to fit, and then the
   whole group moves together with a recorded reason and size.
@@ -80,9 +98,11 @@ list group) with the longest item wrapping rather than shrinking.
 The browser evidence record carries `fitGroup` and `fitGroupUnified` so a
 gate can assert that no fitted group ends with divergent sibling scales.
 
-4. **Human semantic review** remains separate from all mechanical gates. An
-   unresolved translation row must stay unresolved and cannot be hidden by a
-   typography result.
+4. **Unresolved copy rows stay unresolved.** Semantic wrap is not a human
+   stop-1 choice of “break after this English word”. Align from zh-CN source
+   structure (`docs/semantic-line-break-contract.md`); HEIGHT / dual-axis
+   fit stays DESIGN.md 第 6 章 and must not invent those breaks. An
+   unresolved translation row cannot be hidden by a typography result.
 
 5. **Independent Translation is not claimed without a copy table.** A zh-CN
    font/glyph check is Main static evidence. `translationAxisClaim()` returns
@@ -110,7 +130,7 @@ Import `scripts/lib/translation/index.mjs` for the reusable interface:
 - `buildFontFallbackPolicy`: preserves the requested family first and reports
   unavailable requested families for review; generic fallback candidates are
   evidence, not silent style replacement.
-- `routeFontWeight` / `buildFontWeightPolicy`: zh-CN YouHei keeps the inventory weight (Regular = 600). Map 600→400 only when the source is YouHei Regular and the target is a Noto family. Figma-specified Noto 600 language variants, any non-YouHei 600, Bold 900, and unadopted copy keep their source weight. `fontStyle` is passed through as Regular evidence and must not by itself reweight a Noto 600 face. Locale size tiers still use the **source** YouHei weight, so mapping CSS to 400 does not drop Regular copy into the body 0.8 scale.
+- `routeFontWeight` / `buildFontWeightPolicy`: zh-CN YouHei keeps the inventory weight (Regular = 600). Map 600→400 only when the source is YouHei Regular and the target is a Noto family other than `Noto Sans HK`. zh-TW `Noto Sans HK` keeps 600 so it matches zh-CN YouHei Regular at the same size table. Figma-specified Noto 600 language variants, any non-YouHei 600, Bold 900, and unadopted copy keep their source weight. zh-CN Noto Regular 400 stays 400; routing that same Regular Noto face onto another locale Noto (EN/KR/HK) lifts to 600 so official Global dates match QA. `fontStyle` is passed through as Regular evidence and must not by itself reweight a Noto 600 face. Locale size tiers still use the **source** YouHei weight, so mapping CSS to 400 does not drop Regular copy into the body 0.8 scale.
 - `buildFontWeightPolicy` still reports missing or synthetic weights per language after that mapping.
 - `classifyFontWeight` and `classifyTypographyRange`: classify requested
   weight/readiness and measured browser range without changing Figma style.
@@ -392,7 +412,8 @@ who may wrap vs shrink, and what copy swap must not destroy.
 Listen to DESIGN.md 第 6 章. User 2026-09-17 axis rules:
 
 - Horizontal-only (`maxWidth` written, no `maxHeight`): adopted non-zh-CN
-  copy nowrap-shrinks to the written maxWidth. Do not replace that number
+  copy nowrap-shrinks to the written maxWidth, except `TEXT.autoResize=HEIGHT`
+  which wraps to that width. Do not replace that number
   with a wider parent, `ownerWidth`, or `box.w`.
 - Vertical-only (`maxHeight` written, no `maxWidth`): wrap. Do not pass
   maxHeight into `_fitText` / `integerPxFit`. Do not invent a width cap.

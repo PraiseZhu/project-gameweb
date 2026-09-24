@@ -2266,3 +2266,57 @@ test("A11：@lang 对不上窗仍红；壳内 @lang 红；不写 @lang 不挡 re
   assert.equal(stateCheck.ok, true, stateCheck.problems.join("\n"));
   assert.equal(stateCheck.problems.join("\n").includes("不能写 @lang"), false);
 });
+
+test("实例 TEXT 保留 characters override，图层名可以仍是母版", () => {
+  const page = {
+    id: "page", name: "pc", type: "FRAME",
+    absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 200 },
+    children: [{
+      id: "inst", name: "btn/进入官网", type: "INSTANCE", componentId: "comp",
+      absoluteBoundingBox: { x: 0, y: 0, width: 160, height: 40 },
+      overrides: [{
+        id: "Iinst;txt",
+        overriddenFields: ["characters"],
+      }],
+      children: [{
+        id: "Iinst;txt", name: "官方充值", type: "TEXT", characters: "进入官网",
+        absoluteBoundingBox: { x: 10, y: 8, width: 140, height: 24 },
+        style: { fontFamily: "Noto Sans SC", fontSize: 20, fontWeight: 500 },
+      }],
+    }],
+  };
+  const set = {
+    id: "set", name: "btn/按钮", type: "COMPONENT_SET",
+    absoluteBoundingBox: { x: 0, y: 0, width: 160, height: 40 },
+    componentPropertyDefinitions: {
+      "Property 1": { type: "VARIANT", defaultValue: "Default", variantOptions: ["Default"] },
+    },
+    children: [{
+      id: "comp", name: "Property 1=Default", type: "COMPONENT",
+      absoluteBoundingBox: { x: 0, y: 0, width: 160, height: 40 },
+      children: [{
+        id: "txt", name: "官方充值", type: "TEXT", characters: "官方充值",
+        absoluteBoundingBox: { x: 10, y: 8, width: 140, height: 24 },
+        style: { fontFamily: "Noto Sans SC", fontSize: 20, fontWeight: 500 },
+      }],
+    }],
+  };
+  const shelf = {
+    id: "shelf", name: "货架", type: "FRAME",
+    absoluteBoundingBox: { x: 0, y: 0, width: 800, height: 400 },
+    children: [page, set],
+  };
+  const built = buildInventory(shelf, { requestedNodeId: "page" });
+  const inst = built.nodes.find((n) => n.id === "inst");
+  const text = built.nodes.find((n) => n.id === "Iinst;txt");
+  const master = built.attachments.componentSets
+    .flatMap((item) => item.nodes)
+    .find((n) => n.id === "txt");
+  assert.equal(text.text.characters, "进入官网");
+  assert.equal(text.name, "官方充值");
+  assert.equal(master.text.characters, "官方充值");
+  assert.deepEqual(inst.instanceOverrides.overrides, [{
+    id: "Iinst;txt",
+    overriddenFields: ["characters"],
+  }]);
+});

@@ -630,37 +630,25 @@
        它们对本页是无视觉声明维：matrix 仅 any/default 单选项、renderApp 不消费——
        设一个永远停在同一档的可见分段控件是给人看的假 UI。自动化用 __qa.setPref 写。
        若将来某页 OS/主题真的改变渲染，须提供一个不污染人工栏的可测机制，不得放回可见 seg。 */
-    /* Region is a visible content axis on the live QA bar (CN / Global).
-       Hash, persist, and __qa.setPref stay the same; freeze renderApp maps
-       region+lang onto the frozen locale page. */
     var region = m.region;
     if (region) {
       row2.appendChild(grp(region.label || '区域', seg(region.options || [],
         function (it) { return S.prefs.region === it.v; },
-        function (it) { S.prefs.region = it.v; persist(); syncAll(); }, 'region')));
+        function (it) { applyPref('region', it.v); }, 'region')));
     }
     var lang = m.lang;
     if (lang) {
       var langSel = document.createElement('select');
       langSel.className = 'qa-language-select';
       langSel.setAttribute('data-qa-pref-key', 'lang');
-      var langOpts = (lang.options || []).slice();
-      var frozenShell = document.documentElement.getAttribute('data-qa-frozen') === '1';
-      if (frozenShell && S.prefs.region === 'cn') {
-        langOpts = langOpts.filter(function (it) { return it.v === 'zh-CN'; });
-      } else if (frozenShell && S.prefs.region === 'global') {
-        langOpts = langOpts.filter(function (it) { return it.v !== 'zh-CN'; });
-      }
-      if (langOpts.length && !langOpts.some(function (it) { return it.v === S.prefs.lang; })) {
-        S.prefs.lang = langOpts[0].v;
-        persist();
-      }
-      langOpts.forEach(function (it) {
+      (lang.options || []).forEach(function (it) {
+        if (S.prefs.region === 'cn' && it.v !== 'zh-CN') return;
+        if (S.prefs.region === 'global' && it.v === 'zh-CN') return;
         var op = document.createElement('option'); op.value = it.v; op.textContent = it.label + ' · ' + it.v;
         if (S.prefs.lang === it.v) op.selected = true;
         langSel.appendChild(op);
       });
-      langSel.onchange = function () { S.prefs.lang = langSel.value; persist(); syncAll(); };
+      langSel.onchange = function () { applyPref('lang', langSel.value); };
       row2.appendChild(grp(lang.label || '语言', langSel));
     }
 
@@ -754,7 +742,7 @@
 
   /* DESIGN.md §5.0 同一张表：字/按钮和列宽。产品页和 QA 模拟视口都走。
      >1920 stretch；1127–1920 冻 1920 / k=0.5 居中裁；≤1126 手机
-     k=min(1, 宽/750)。751–1126 按钮保持 750 稿尺寸，列宽跟窗口铺 KV
+     k=宽/750（首屏按钮/奖卡跟窗口走，和后屏同一把尺）。列宽跟窗口铺 KV
      和后屏，不要再裁一列 750。QA 的 fit/bezel 仍是壳装饰。 */
   function productColumnWidth(viewportW, plat) {
     var w = Number(viewportW);
@@ -775,7 +763,7 @@
   function productUiScaleK(viewportW, plat) {
     var w = Number(viewportW);
     if (!isFinite(w) || w <= 0) return null;
-    if (plat === 'mobile' || w <= 1126) return Math.min(1, w / 750);
+    if (plat === 'mobile' || w <= 1126) return w / 750;
     if (w <= 1920) return 0.5;
     return w / 3840;
   }
@@ -2483,12 +2471,28 @@
      产品视图(?product=1)不建控制栏、不读深链、不挂 current/goto/resize。
      页上 dropmenu/多语言 仍要切整页语种，和工具栏 Language 同一条 persist+syncAll，
      所以产品视图只暴露 setPref('lang')。 */
+  function hasRegionAxis() {
+    return !!(cfg.matrix && cfg.matrix.region && (cfg.matrix.region.options || []).length);
+  }
+  function lockRegionLang() {
+    if (!hasRegionAxis()) return;
+    if (S.prefs.region === 'cn') S.prefs.lang = 'zh-CN';
+    else if (S.prefs.lang === 'zh-CN') S.prefs.lang = 'zh-TW';
+  }
   function applyPref(key, value) {
     if (!cfg.matrix || !(key in ({ plat: 1, region: 1, os: 1, mode: 1, lang: 1 }))) {
       throw new Error('__qa.setPref: 未声明的维度 ' + key);
     }
     if (key === 'plat') syncDeviceToPlat(value);
-    S.prefs[key] = value; persist(); syncAll();
+    S.prefs[key] = value;
+    if (hasRegionAxis()) {
+      if (key === 'lang') S.prefs.region = value === 'zh-CN' ? 'cn' : 'global';
+      if (key === 'region') {
+        if (value === 'cn') S.prefs.lang = 'zh-CN';
+        else if (S.prefs.lang === 'zh-CN') S.prefs.lang = 'zh-TW';
+      }
+    }
+    persist(); syncAll();
   }
   if (PRODUCT_VIEW) {
     window.__qa = {
@@ -2616,6 +2620,7 @@
           return !matrix[key] || matrix[key].options.some(function (option) { return option.v === context[key]; });
         }) || !stateEntries().some(function (entry) { return entry.id === context.state; })) return false;
         S.prefs.lang = context.lang; S.prefs.region = context.region; S.state = context.state;
+        lockRegionLang();
         S.grid = false;
         if (compositionKeyForViewport(viewport()) !== context.composition) {
           S.devIdx = -1; S.freeW = savedViewport.w; S.freeH = savedViewport.h;
@@ -2626,6 +2631,7 @@
     });
   }
   if (!PRODUCT_VIEW) readHash();   // 深链(g=/d=/w=/h=/state=)是 QA 功能,产品视图不消费
+  lockRegionLang();
   syncAll();
   /* 窗口 resize 与 slider 同理：RAF 合并，同帧多次 resize 只重渲染一次。 */
   var winResizeScheduled = false;
@@ -2671,9 +2677,9 @@ function createQaComments(host) {
     n.setAttribute('aria-label', label); n.title = label; return n;
   }
   var style = mk('style');
-  style.textContent = '.qc-root{position:fixed;inset:0;z-index:100000;pointer-events:none;font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#e6eaf0}.qc-root [hidden]{display:none!important}.qc-toolbar{display:flex;gap:6px;align-items:center}.qc-btn{font:inherit;border:1px solid #39424f;border-radius:7px;padding:6px 10px;background:#1e232c;color:#e6eaf0;cursor:pointer}.qc-btn:hover{background:#2b3544}.qc-btn[aria-pressed=true],.qc-primary{background:#2563eb;color:#fff;border-color:#3b82f6}.qc-root textarea,.qc-root select{font:inherit;color:inherit;background:#101620;border:1px solid #39424f;border-radius:6px;padding:8px;max-width:100%}.qc-root textarea{display:block;width:100%;min-height:90px;resize:vertical;user-select:text}.qc-panel,.qc-pop{pointer-events:auto;background:#171b22;border:1px solid #39424f;border-radius:12px;box-shadow:0 14px 48px #0008;padding:14px}.qc-panel{position:absolute;right:12px;top:12px;bottom:12px;width:min(360px,calc(100vw - 24px));display:flex;flex-direction:column;gap:10px}.qc-pop{position:absolute;width:min(340px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto}.qc-head,.qc-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.qc-note{font-size:12px;color:#a3afbf;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0}.qc-warning{color:#fbbf24}.qc-list{overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}.qc-item{display:block;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;width:100%;padding:10px 12px;background:#12171f}.qc-item small{display:block;color:#a3afbf;margin-bottom:4px}.qc-item[aria-current=true]{border-color:#60a5fa;background:#1c2b40}.qc-copy{white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;margin:10px 0;padding:10px 12px;background:#101620;border:1px solid #2b3544;border-radius:8px;font-size:14px;line-height:1.6}.qc-pin{position:absolute;pointer-events:auto;transform:translate(-50%,-50%);border:2px solid white;border-radius:50% 50% 50% 3px;background:#2563eb;color:white;min-width:25px;height:25px;font:600 11px/19px sans-serif;cursor:pointer;padding:0 4px;box-shadow:0 2px 8px #0008}.qc-outline{position:absolute;border:2px solid #60a5fa;background:#3b82f619;pointer-events:none;border-radius:3px}.qc-toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100vw - 28px);background:#17263b;border:1px solid #416286;padding:9px 16px;border-radius:8px;white-space:pre-wrap}.qc-selecting [data-node]{cursor:crosshair!important;pointer-events:auto!important}';
+  style.textContent = '.qc-root{position:fixed;inset:0;z-index:100000;pointer-events:none;font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#e6eaf0}.qc-root [hidden]{display:none!important}.qc-toolbar{display:flex;gap:6px;align-items:center}.qc-btn{font:inherit;border:1px solid #39424f;border-radius:7px;padding:6px 10px;background:#1e232c;color:#e6eaf0;cursor:pointer}.qc-btn:hover{background:#2b3544}.qc-btn[aria-pressed=true],.qc-primary{background:#2563eb;color:#fff;border-color:#3b82f6}.qc-root textarea,.qc-root select{font:inherit;color:inherit;background:#101620;border:1px solid #39424f;border-radius:6px;padding:8px;max-width:100%}.qc-root textarea{display:block;width:100%;min-height:90px;resize:vertical;user-select:text}.qc-panel,.qc-pop{pointer-events:auto;background:#171b22;border:1px solid #39424f;border-radius:12px;box-shadow:0 14px 48px #0008;padding:14px}.qc-panel{position:absolute;right:12px;top:12px;bottom:12px;width:min(360px,calc(100vw - 24px));display:flex;flex-direction:column;gap:10px}.qc-pop{position:absolute;width:min(340px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto}.qc-head,.qc-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}.qc-note{font-size:12px;color:#a3afbf;white-space:pre-wrap;overflow-wrap:anywhere;margin:7px 0}.qc-warning{color:#fbbf24}.qc-list{overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px}.qc-item{display:block;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;width:100%;padding:10px 12px;background:#12171f}.qc-item small{display:block;color:#a3afbf;margin-bottom:4px}.qc-item[aria-current=true]{border-color:#60a5fa;background:#1c2b40}.qc-copy{white-space:pre-wrap;overflow-wrap:anywhere;max-height:250px;overflow:auto;margin:10px 0;padding:10px 12px;background:#101620;border:1px solid #2b3544;border-radius:8px;font-size:14px;line-height:1.6}.qc-pin{position:absolute;pointer-events:auto;transform:translate(-50%,-50%);border:2px solid white;border-radius:50% 50% 50% 3px;background:#2563eb;color:white;min-width:25px;height:25px;font:600 11px/19px sans-serif;cursor:pointer;padding:0 4px;box-shadow:0 2px 8px #0008}.qc-outline{position:absolute;border:2px solid #60a5fa;background:#3b82f619;pointer-events:none;border-radius:3px}.qc-toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100vw - 28px);background:#17263b;border:1px solid #416286;padding:9px 16px;border-radius:8px;white-space:pre-wrap}.qc-selecting,.qc-selecting *{cursor:crosshair!important}';
 
-  style.textContent += '.qc-root *{box-sizing:border-box}.qc-root button:focus-visible,.qc-toolbar button:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}.qc-btn:disabled{opacity:.45;cursor:not-allowed}.qc-toolbar .qc-btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.qc-toolbar svg,.qc-icon-btn svg,.qc-btn svg{width:16px;height:16px}.qc-selecting{touch-action:none}.qc-panel{top:var(--qc-top,12px)}.qc-pop{z-index:2}.qc-outline{z-index:-1}.qc-pin[aria-expanded=true]{background:#f59e0b}.qc-root .qc-note{margin:4px 0}.qc-icon-btn{width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-color:transparent;background:transparent}.qc-icon-btn:hover{background:#2b3544}.qc-count{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#2563eb;color:#fff;font:600 11px/18px sans-serif;text-align:center}.qc-head strong{font-size:14px}.qc-filters{display:flex;flex-direction:column;gap:8px}.qc-filter{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#a3afbf}.qc-filter select{width:100%}.qc-status{display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;margin-right:6px}.qc-status-open{background:#1e3a8a;color:#bfdbfe}.qc-status-done{background:#14532d;color:#bbf7d0}.qc-ok{background:#15803d;border-color:#22c55e;color:#fff}.qc-ok:hover{background:#16a34a}.qc-actions{justify-content:flex-end}.qc-thread{display:flex;flex-direction:column;gap:8px;margin:8px 0}.qc-reply{padding:8px 10px 8px 12px;border-left:2px solid #3b82f6;background:#12171f;border-radius:0 8px 8px 0}.qc-reply .qc-note{margin:0 0 4px}.qc-pop textarea[aria-label="补充评论"]{min-height:64px}';
+  style.textContent += '.qc-root *{box-sizing:border-box}.qc-root button:focus-visible,.qc-toolbar button:focus-visible{outline:2px solid #93c5fd;outline-offset:3px}.qc-btn:disabled{opacity:.45;cursor:not-allowed}.qc-toolbar .qc-btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.qc-toolbar svg,.qc-icon-btn svg,.qc-btn svg{width:16px;height:16px}.qc-selecting{touch-action:none}.qc-panel{top:var(--qc-top,12px)}.qc-pop{z-index:2}.qc-outline{z-index:-1}.qc-pin[aria-expanded=true]{background:#f59e0b}.qc-root .qc-note{margin:4px 0}.qc-icon-btn{width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-color:transparent;background:transparent}.qc-icon-btn:hover{background:#2b3544}.qc-count{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#2563eb;color:#fff;font:600 11px/18px sans-serif;text-align:center}.qc-head strong{font-size:14px}.qc-filters{display:flex;flex-direction:column;gap:8px}.qc-filter{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#a3afbf}.qc-filter select{width:100%}.qc-status{display:inline-block;padding:1px 6px;border-radius:999px;font-size:11px;margin-right:6px}.qc-status-open{background:#1e3a8a;color:#bfdbfe}.qc-status-done{background:#14532d;color:#bbf7d0}.qc-ok{background:#15803d;border-color:#22c55e;color:#fff}.qc-ok:hover{background:#16a34a}.qc-actions{justify-content:flex-end}.qc-thread{display:flex;flex-direction:column;gap:8px;margin:8px 0}.qc-reply{padding:8px 10px 8px 12px;border-left:2px solid #3b82f6;background:#12171f;border-radius:0 8px 8px 0}.qc-reply .qc-note{margin:0 0 4px}.qc-composer{margin-top:12px;padding-top:10px;border-top:1px solid #2b3544}.qc-thread-actions{display:flex;align-items:center;justify-content:flex-start;margin-top:8px}.qc-head-actions{display:flex;align-items:center;gap:2px;margin-left:auto}.qc-resolve{color:#93c5fd}.qc-resolve[aria-pressed=true]{color:#86efac}.qc-pop textarea[aria-label="补充评论"]{min-height:64px}';
   doc.head.appendChild(style);
   var root = mk('div', 'qc-root');
   var pins = mk('div'), outline = mk('div', 'qc-outline');
@@ -2686,13 +2692,13 @@ function createQaComments(host) {
 
   var mode = false, db = null, channel = null, rows = [], draft = null, active = null;
   var drag = null, hover = null, writeBusy = false, disposed = false;
-  var dbKey = String(host.pageKey), index = new Map(), dirty = true, rafId = null;
+  var dbKey = String(host.pageKey), index = new Map(), contentNodes = [], fallbackNodes = [], dirty = true, rafId = null;
   var timer = null, contextKey = '', pinButtons = new Map(), lastListKey = '';
   var submitButton = null, composerNote = null, detailNote = null, loadSequence = 0;
   var api = host.commentApi || null, pollTimer = null, remoteBusy = false, remoteDurable = null;
-  var sending = false, remoteError = '', lastDetailKey = '', swallowClick = null;
+  var sending = false, remoteError = '', lastDetailKey = '', swallowClick = null, replyOpen = false, openedResolved = false;
   var toolbar = mk('div', 'qc-toolbar');
-  var modeButton = btn('', function () { if (!writeBusy) { close(); setMode(!mode); } });
+  var modeButton = btn('', function () { if (!writeBusy) setMode(!mode); });
   modeButton.append(svgIcon('M20 11a8 8 0 0 1-8 8H4v-8a8 8 0 1 1 16 0ZM8 10h8M8 14h5'), mk('span', '', '添加评论'));
   modeButton.setAttribute('aria-label', '评论：点选或框选内容');
   modeButton.setAttribute('aria-pressed', 'false');
@@ -2700,7 +2706,7 @@ function createQaComments(host) {
   var allCount = mk('span', 'qc-count', '0');
   var allButton = btn('', function () {
     if (writeBusy) return;
-    close(); setMode(false); panel.hidden = !panel.hidden; drawList(); schedule();
+    panel.hidden = !panel.hidden; drawList(); schedule();
   });
   allButton.append(svgIcon('M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01'), mk('span', '', '全部评论 · '), allCount);
   allButton.setAttribute('aria-label', '全部评论 · 0');
@@ -2968,7 +2974,9 @@ function createQaComments(host) {
       // Do not rebuild a composer/detail that the user is still typing into.
       if (active && !draft) {
         var row = rows.find(function (r) { return r.id === active; });
-        if (row) renderDetail(row, { keepReplyDraft: options.keepReplyDraft !== false }); else close();
+        if (!row) close();
+        else if (row.resolved && !openedResolved) close();
+        else renderDetail(row, { keepReplyDraft: options.keepReplyDraft !== false });
       }
       syncPins(); drawList(); schedule();
     };
@@ -3013,17 +3021,25 @@ function createQaComments(host) {
       tx.oncomplete = function () {
         writeBusy = false;
         draft = null;
-        active = row.id;
         setMode(false);
-        if (resolved === undefined && !reply) lastDetailKey = '';
-        if (reply) {
+        if (resolved === true) {
+          active = null;
           lastDetailKey = '';
-          var input = pop.querySelector('textarea[aria-label="补充评论"]');
-          if (input) input.value = '';
+          replyOpen = false;
+          pop.hidden = true;
+          outline.hidden = true;
+        } else {
+          active = row.id;
+          if (resolved === false) openedResolved = false;
+          if (resolved === undefined && !reply) lastDetailKey = '';
+          if (reply) {
+            lastDetailKey = '';
+            replyOpen = false;
+          }
         }
-        storageReady(); reload({ keepReplyDraft: !reply });
+        storageReady(); reload({ keepReplyDraft: !reply && resolved !== true });
         if (channel) { try { channel.postMessage({ pageKey: dbKey }); } catch (e) { /* committed data remains readable on focus */ } }
-        say((reply ? '补充已保存' : resolved === undefined ? '评论已保存' : resolved ? '已解决' : '已恢复') + (api ? '，等待同步' : ''));
+        say((reply ? '补充已保存' : resolved === undefined ? '评论已保存' : resolved ? '已解决，图钉已隐藏' : '已恢复') + (api ? '，等待同步' : ''));
         flushPending();
       };
     } catch (e) { if (tx) { try { tx.abort(); } catch (_) {} } failed(e); }
@@ -3070,6 +3086,11 @@ function createQaComments(host) {
     if (host.stage.contains(n)) return true;
     return inFrozenDoc(n);
   }
+  function commentFrame() {
+    var inner = frozenDoc();
+    if (inner) return inner.querySelector('.frame') || inner.body || inner.documentElement;
+    return host.stage.querySelector('.frame') || host.stage;
+  }
   function path(n) {
     var a = [];
     var innerRoot = frozenDoc() && frozenDoc().documentElement;
@@ -3078,25 +3099,80 @@ function createQaComments(host) {
     }
     return a;
   }
+  function nodeName(n) {
+    return (n.getAttribute('data-node-name') || n.getAttribute('data-name') || '').trim();
+  }
+  function nodePrefix(n) {
+    var prefix = n.getAttribute('data-prefix') || '';
+    if (prefix) return prefix;
+    var name = nodeName(n);
+    var slash = name.indexOf('/');
+    return slash > 0 ? name.slice(0, slash) : '';
+  }
+  // Pin/page shells, full-bleed kv/bg, and empty covering frames steal clicks.
+  // Identity still records them in path(); selection and expand skip them.
+  function commentShellRank(n) {
+    var id = n.getAttribute('data-node') || '';
+    if (id === '__fixed__' || id === '__page__') return 100;
+    var prefix = nodePrefix(n);
+    var name = nodeName(n);
+    if (prefix === 'bg' || /^bg(?:\/|$)/i.test(name)) return 90;
+    if (prefix === 'kv' || /^kv(?:\/|$)/i.test(name) || name === 'kv') return 80;
+    var r = hostRect(n);
+    var frame = commentFrame();
+    var b = hostRect(frame);
+    var covers = b.width > 0 && b.height > 0 && r.width * r.height >= b.width * b.height * 0.5;
+    if (covers && !String(n.textContent || '').trim() && !n.querySelector('[data-node]')) return 95;
+    if (covers && commentKind(n) >= 3) return 85;
+    return 0;
+  }
+  function commentKind(n) {
+    var type = (n.getAttribute('data-figma-type') || '').toUpperCase();
+    var prefix = nodePrefix(n);
+    if (type === 'TEXT' || prefix === 'txt') return 0;
+    if (prefix === 'btn' || prefix === 'dropmenu') return 1;
+    if (prefix === 'img') return 2;
+    return 3;
+  }
   function label(n) {
-    return (n.getAttribute('data-node-name') || n.getAttribute('data-name') ||
+    return (nodeName(n) ||
       (n.textContent || '内容区域').trim().slice(0, 50) || '内容区域').slice(0, 100);
   }
   function chain(n) {
     var a = [];
     var innerRoot = frozenDoc() && frozenDoc().documentElement;
     for (var x = n; x && x !== host.stage && x !== innerRoot; x = x.parentElement) {
-      if (x.hasAttribute && x.hasAttribute('data-node')) a.push(x);
+      if (!x.hasAttribute || !x.hasAttribute('data-node')) continue;
+      if (a.length && commentShellRank(x) >= 95) continue;
+      a.push(x);
     }
     return a;
   }
   function rebuild() {
     index = new Map();
-    nodeRoots().forEach(function (root) {
-      root.querySelectorAll('[data-node]').forEach(function (n) {
+    contentNodes = [];
+    fallbackNodes = [];
+    var frame = commentFrame();
+    var b = hostRect(frame);
+    var frameArea = b.width * b.height;
+    nodeRoots().forEach(function (rootEl) {
+      rootEl.querySelectorAll('[data-node]').forEach(function (n) {
         var k = JSON.stringify(path(n));
         if (!index.has(k)) index.set(k, []);
         index.get(k).push(n);
+        var id = n.getAttribute('data-node') || '';
+        if (id === '__fixed__' || id === '__page__') return;
+        var prefix = nodePrefix(n);
+        var name = nodeName(n);
+        if (prefix === 'bg' || /^bg(?:\/|$)/i.test(name) || prefix === 'kv' || /^kv(?:\/|$)/i.test(name) || name === 'kv') {
+          fallbackNodes.push(n);
+          return;
+        }
+        var r = hostRect(n);
+        var covers = frameArea > 0 && r.width * r.height >= frameArea * 0.5;
+        if (covers && !String(n.textContent || '').trim() && !n.querySelector('[data-node]')) return;
+        if (covers && commentKind(n) >= 3) return;
+        contentNodes.push(n);
       });
     });
     dirty = false;
@@ -3109,7 +3185,7 @@ function createQaComments(host) {
     if (row.anchor.tag && row.anchor.tag !== n.tagName) return { reason: '原内容类型已改变，请重新定位' };
     return { node: n };
   }
-  function geometry(n, anchor) {
+  function visibility(n) {
     var b = hostRect(n);
     if (!b.width || !b.height) return { node: n, reason: '内容当前不可见' };
     var clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
@@ -3130,12 +3206,42 @@ function createQaComments(host) {
         if (/(auto|scroll|hidden|clip)/.test(css.overflowY)) { clip.top = Math.max(clip.top, r.top); clip.bottom = Math.min(clip.bottom, r.bottom); }
       }
     }
-    var x = b.left + anchor.u * b.width, y = b.top + anchor.v * b.height;
     var box = { left: Math.max(b.left, clip.left), top: Math.max(b.top, clip.top),
       right: Math.min(b.right, clip.right), bottom: Math.min(b.bottom, clip.bottom) };
     box.width = Math.max(0, box.right - box.left); box.height = Math.max(0, box.bottom - box.top);
-    var visible = x >= clip.left && x <= clip.right && y >= clip.top && y <= clip.bottom && box.width > 0 && box.height > 0;
-    return { node: n, r: box, x: x, y: y, visible: visible, reason: visible ? '' : '评论位置在可视范围外，点击列表可滚动定位' };
+    return { node: n, b: b, r: box, clip: clip };
+  }
+  function openNamedModalLayer() {
+    var frame = commentFrame();
+    return frame && frame.querySelector ? frame.querySelector('[data-modal-open="true"]') : null;
+  }
+  function closeOpenNamedModals() {
+    var frame = commentFrame();
+    if (!frame || typeof frame.__fxCloseNamedModal !== 'function' || !Array.isArray(frame.__fxNamedModals)) return false;
+    var closed = false;
+    frame.__fxNamedModals.forEach(function (entry) {
+      if (entry && entry.layer && entry.layer.getAttribute('data-modal-open') === 'true') {
+        frame.__fxCloseNamedModal(entry);
+        closed = true;
+      }
+    });
+    return closed;
+  }
+  function commentInOpenNamedModal(node) {
+    var openModal = openNamedModalLayer();
+    return !!(openModal && node && node.closest && openModal.contains(node));
+  }
+  function geometry(n, anchor) {
+    var v = visibility(n);
+    if (!v.b) return v;
+    var x = v.b.left + anchor.u * v.b.width, y = v.b.top + anchor.v * v.b.height;
+    var visible = x >= v.clip.left && x <= v.clip.right && y >= v.clip.top && y <= v.clip.bottom && v.r.width > 0 && v.r.height > 0;
+    var openModal = openNamedModalLayer();
+    var coveredByOpenModal = !!(openModal && n.closest && !openModal.contains(n));
+    return {
+      node: n, r: v.r, x: x, y: y, visible: visible, coveredByOpenModal: coveredByOpenModal,
+      reason: visible ? (coveredByOpenModal ? '其他层级，当前弹窗打开时先隐藏' : '') : '评论位置在可视范围外，点击列表可滚动定位'
+    };
   }
   function locate(row) {
     if (tiled()) return { reason: '平铺视图，请从列表打开单个状态' };
@@ -3144,7 +3250,7 @@ function createQaComments(host) {
     return f.node ? geometry(f.node, row.anchor) : f;
   }
   function drawBox(p) {
-    if (!p || !p.r || !p.r.width || !p.r.height) { outline.hidden = true; return; }
+    if (!p || !p.r || !p.r.width || !p.r.height || p.coveredByOpenModal) { outline.hidden = true; return; }
     outline.hidden = false;
     Object.assign(outline.style, { left: p.r.left + 'px', top: p.r.top + 'px', width: p.r.width + 'px', height: p.r.height + 'px' });
   }
@@ -3163,7 +3269,7 @@ function createQaComments(host) {
   function close() {
     if (writeBusy) return;
     draft = null; active = null; submitButton = null; composerNote = null; detailNote = null;
-    lastDetailKey = '';
+    lastDetailKey = ''; replyOpen = false; openedResolved = false;
     pop.hidden = true; outline.hidden = true; schedule();
   }
   function setMode(on) {
@@ -3173,8 +3279,7 @@ function createQaComments(host) {
     host.stage.classList.toggle('qc-selecting', on);
     document.documentElement.setAttribute('data-qa-commenting', on ? '1' : '0');
     if (on) {
-      if (draft || active) close();
-      panel.hidden = true;
+      if (active && !draft) close();
       say('点击内容或拖动框选；蓝框确认范围，可扩大到整块内容。Esc 退出');
     }
     else { drag = null; hover = null; }
@@ -3188,7 +3293,7 @@ function createQaComments(host) {
   function form(node, x, y) {
     active = null;
     draft = { pageKey: dbKey, context: ctx(), viewport: host.viewport(), anchor: makeAnchor(node, x, y) };
-    pop.replaceChildren(); pop.hidden = false; panel.hidden = true;
+    pop.replaceChildren(); pop.hidden = false;
     var h = mk('div', 'qc-head'); h.append(mk('strong', '', '新评论'), closeBtn('取消', close));
     pop.setAttribute('aria-label', '写新评论');
     var sel = mk('select'); sel.setAttribute('aria-label', '评论对象');
@@ -3210,7 +3315,7 @@ function createQaComments(host) {
     input.oninput = function () { submitButton.disabled = !input.value.trim() || writeBusy || !db || !locate(draft).visible; };
     input.onkeydown = function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitButton.click(); } };
     sel.onchange = function () {
-      var n = candidates[Number(sel.value)], b = n.getBoundingClientRect();
+      var n = candidates[Number(sel.value)], b = hostRect(n);
       draft.anchor = makeAnchor(n, Math.max(b.left, Math.min(b.right, x)), Math.max(b.top, Math.min(b.bottom, y)));
       drawBox(locate(draft)); place(draft); schedule();
     };
@@ -3224,66 +3329,160 @@ function createQaComments(host) {
 
   function renderDetail(row, options) {
     options = options || {};
-    var draftText = options.keepReplyDraft ? replyDraftValue() : '';
+    var draftText = (options.keepReplyDraft && replyOpen) ? replyDraftValue() : '';
     var key = JSON.stringify([row.id, row.resolved, row.updatedAt, repliesOf(row).map(function (item) { return item.id; })]);
     if (options.keepReplyDraft && key === lastDetailKey) return;
     lastDetailKey = key;
     pop.replaceChildren(); pop.hidden = false; submitButton = null; composerNote = null;
     var h = mk('div', 'qc-head');
-    h.append(mk('strong', '', row.resolved ? '已解决' : '评论'), closeBtn('关闭窗口', close));
+    var resolve = btn('', function () { save(row, !row.resolved); });
+    resolve.classList.add('qc-icon-btn', 'qc-resolve');
+    resolve.setAttribute('aria-label', row.resolved ? '恢复为未解决' : '标记已解决');
+    resolve.setAttribute('aria-pressed', String(!!row.resolved));
+    resolve.appendChild(svgIcon('M5 12.5l4 4 10-10'));
+    resolve.title = row.resolved ? '恢复后，图钉会再出现在页面上' : '解决后，图钉从当前页面隐藏；列表里仍可找回';
+    resolve.disabled = !db || writeBusy;
+    var headActions = mk('div', 'qc-head-actions');
+    headActions.append(resolve, closeBtn('关闭窗口', close));
+    h.append(mk('strong', '', row.resolved ? '已解决' : '评论'), headActions);
     pop.setAttribute('aria-label', row.resolved ? '已解决评论' : '评论详情');
     var meta = mk('p', 'qc-note', [row.context.lang, row.context.region, row.context.state,
       row.context.composition, row.anchor.label].join(' · '));
     detailNote = mk('p', 'qc-note qc-warning', locate(row).reason || '');
-    var resolve = btn(row.resolved ? '恢复为未解决' : '标记已解决', function () { save(row, !row.resolved); });
-    resolve.prepend(svgIcon(row.resolved ? 'M3 12a9 9 0 1 0 3-6.7M3 4v5h5' : 'M5 12.5l4 4 10-10'));
-    resolve.setAttribute('aria-label', row.resolved ? '↶ 恢复评论' : '✓ 标记已解决');
-    resolve.title = row.resolved ? '恢复后，图钉会再出现在页面上' : '解决后，图钉从当前页面隐藏；列表里仍可找回';
-    if (row.resolved) resolve.classList.add('qc-ok'); else resolve.classList.add('qc-primary');
-    resolve.disabled = !db || writeBusy;
     var thread = mk('div', 'qc-thread');
     repliesOf(row).forEach(function (item) {
       var reply = mk('div', 'qc-reply');
       reply.append(authorTime(item, 'p'), mk('div', '', item.body));
       thread.appendChild(reply);
     });
-    var replyInput = mk('textarea');
-    replyInput.placeholder = '补充这条评论…';
-    replyInput.setAttribute('aria-label', '补充评论');
-    replyInput.maxLength = 4000;
-    replyInput.disabled = !db || writeBusy || repliesOf(row).length >= 30;
-    var replyButton = btn('发布补充', function () {
-      if (!replyInput.value.trim() || writeBusy || !db) return;
-      var now = Date.now();
-      save(row, undefined, { id: newId(), body: replyInput.value.trim(), createdAt: now });
-    });
-    replyButton.classList.add('qc-primary');
-    replyButton.disabled = !replyInput.value.trim() || replyInput.disabled;
-    replyInput.oninput = function () { replyButton.disabled = !replyInput.value.trim() || writeBusy || !db || repliesOf(row).length >= 30; };
-    replyInput.onkeydown = function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); replyButton.click(); } };
-    var replyActions = mk('div', 'qc-actions'); replyActions.append(replyButton);
-    var replyNote = mk('p', 'qc-note', repliesOf(row).length >= 30 ? '这条评论已满 30 条补充。' : '可继续补充，不会新增图钉。');
-    pop.append(h, meta, authorTime(row), mk('p', 'qc-note qc-sync-state', syncLabel(row)), detailNote, mk('div', 'qc-copy', row.body), thread, replyNote, replyInput, replyActions, resolve);
-    if (api && row._sync) pop.appendChild(btn('立即重试同步', function () { retry(row); }));
-    if (draftText) {
-      replyInput.value = draftText;
-      replyButton.disabled = !draftText.trim() || replyInput.disabled;
+    var full = repliesOf(row).length >= 30;
+    var composer = mk('div', 'qc-composer');
+    if (full) {
+      composer.appendChild(mk('p', 'qc-note', '这条评论已满 30 条补充。'));
+    } else if (replyOpen || draftText) {
+      var replyInput = mk('textarea');
+      replyInput.placeholder = '补充这条评论…';
+      replyInput.setAttribute('aria-label', '补充评论');
+      replyInput.maxLength = 4000;
+      replyInput.disabled = !db || writeBusy;
+      var replyButton = btn('发布补充', function () {
+        if (!replyInput.value.trim() || writeBusy || !db) return;
+        var now = Date.now();
+        save(row, undefined, { id: newId(), body: replyInput.value.trim(), createdAt: now });
+      });
+      replyButton.classList.add('qc-primary');
+      replyButton.disabled = !replyInput.value.trim() || replyInput.disabled;
+      replyInput.oninput = function () { replyButton.disabled = !replyInput.value.trim() || writeBusy || !db; };
+      replyInput.onkeydown = function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); replyButton.click(); } };
+      var cancelReply = btn('取消', function () {
+        replyOpen = false; lastDetailKey = '';
+        renderDetail(row);
+      });
+      var replyActions = mk('div', 'qc-actions'); replyActions.append(cancelReply, replyButton);
+      composer.append(mk('p', 'qc-note', '可继续补充，不会新增图钉。'), replyInput, replyActions);
+      if (draftText) {
+        replyInput.value = draftText;
+        replyButton.disabled = !draftText.trim() || replyInput.disabled;
+      }
+    } else {
+      var replyToggle = btn('回复', function () {
+        replyOpen = true; lastDetailKey = '';
+        renderDetail(row, { focusReply: true });
+      });
+      replyToggle.setAttribute('aria-label', '回复这条评论');
+      var threadActions = mk('div', 'qc-thread-actions');
+      threadActions.appendChild(replyToggle);
+      composer.appendChild(threadActions);
     }
-    if (!options.keepReplyDraft) replyInput.focus();
+    pop.append(h, meta, authorTime(row), mk('p', 'qc-note qc-sync-state', syncLabel(row)), detailNote, mk('div', 'qc-copy', row.body), thread, composer);
+    if (api && row._sync) pop.appendChild(btn('立即重试同步', function () { retry(row); }));
+    if (options.focusReply) {
+      var input = pop.querySelector('textarea[aria-label="补充评论"]');
+      if (input) input.focus();
+    }
     place(row); schedule();
+  }
+  function namedModalNameOf(el) {
+    if (!el || !el.getAttribute) return '';
+    return String(el.getAttribute('data-modal-name') || '').trim();
+  }
+  function namedModalCatalog(frame) {
+    return frame && Array.isArray(frame.__fxNamedModals) ? frame.__fxNamedModals : [];
+  }
+  function namedModalByName(name) {
+    var wanted = String(name || '').trim();
+    if (!wanted) return null;
+    var frame = commentFrame();
+    return namedModalCatalog(frame).find(function (entry) {
+      return entry && String(entry.name || '') === wanted;
+    }) || null;
+  }
+  function openNamedModalByName(name) {
+    var frame = commentFrame();
+    var modal = namedModalByName(name);
+    if (!modal || !frame || typeof frame.__fxOpenNamedModal !== 'function') return false;
+    frame.__fxOpenNamedModal(modal);
+    return true;
+  }
+  function revealCommentSurface(node) {
+    if (!node || !node.closest) return [];
+    var frame = commentFrame();
+    var opened = [];
+    var innerRoot = frozenDoc() && frozenDoc().documentElement;
+    for (var el = node; el && el !== host.stage && el !== innerRoot; el = el.parentElement) {
+      if (!el.getAttribute) continue;
+      var modalName = namedModalNameOf(el);
+      if (modalName && el.getAttribute('data-modal-open') !== 'true'
+          && openNamedModalByName(modalName)) {
+        opened.push('modal:' + modalName);
+      }
+      var switchPage = el.getAttribute('data-switch-page');
+      var switchId = el.getAttribute('data-switch');
+      var variantIndex = el.getAttribute('data-switch-variant-index');
+      if (switchPage == null && variantIndex != null) switchPage = variantIndex;
+      if (switchPage != null && switchId && frame && typeof frame.__fxApplySwitch === 'function') {
+        frame.__fxApplySwitch(switchId, Number(switchPage));
+        opened.push('switch:' + switchId + ':' + switchPage);
+      }
+      var carouselHost = el.hasAttribute('data-motion-carousel') ? el
+        : (el.closest ? el.closest('[data-motion-carousel]') : null);
+      if (carouselHost && typeof carouselHost.__fxCarouselMoveTo === 'function') {
+        var pages = carouselHost.querySelectorAll('[data-motion-carousel-page]');
+        var idx = -1;
+        for (var i = 0; i < pages.length; i++) {
+          if (pages[i] === el || (pages[i].contains && pages[i].contains(el))) { idx = i; break; }
+        }
+        if (idx >= 0) {
+          carouselHost.__fxCarouselMoveTo(idx, false);
+          opened.push('carousel:' + idx);
+        }
+      }
+    }
+    return opened;
   }
   function show(row) {
     if (!row || writeBusy) return;
-    close(); setMode(false); panel.hidden = true;
+    var keepList = !panel.hidden;
+    close(); setMode(false);
+    panel.hidden = !keepList;
     if (!current(row) || tiled()) {
       if (typeof host.navigate !== 'function' || !host.navigate(row.context, row.viewport || {}) || !current(row) || tiled()) {
         say('评论所在的页面组合已不可用；仍可在列表查看或标记解决');
-        active = row.id; renderDetail(row); return;
+        active = row.id; openedResolved = !!row.resolved; renderDetail(row); return;
       }
     }
     active = row.id;
+    replyOpen = false;
+    openedResolved = !!row.resolved;
+    dirty = true;
+    var found = find(row);
+    if (found.node && openNamedModalLayer() && !commentInOpenNamedModal(found.node)) closeOpenNamedModals();
+    var opened = found.node ? revealCommentSurface(found.node) : [];
+    dirty = true;
     var p = locate(row);
-    if (p.node) p.node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+    var openedModal = opened.some(function (item) { return String(item).indexOf('modal:') === 0; })
+      || !!(p.node && commentInOpenNamedModal(p.node));
+    if (p.node && !openedModal) p.node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
     renderDetail(row); drawList();
   }
   function drawList() {
@@ -3335,7 +3534,9 @@ function createQaComments(host) {
   function refresh() {
     var key = ckey(ctx()) + ':' + tiled();
     if (key !== contextKey) {
-      if (contextKey && (draft || active || mode)) { close(); setMode(false); }
+      var keepList = !panel.hidden;
+      if (contextKey && (draft || mode || (active && !keepList))) { close(); setMode(false); }
+      panel.hidden = !keepList;
       contextKey = key; syncPins(); drawList();
     }
     schedule();
@@ -3355,8 +3556,8 @@ function createQaComments(host) {
     rows.forEach(function (row) {
       var b = pinButtons.get(row.id);
       if (!b) return;
-      var p = locate(row); positions.set(row.id, p); b.hidden = !p.visible;
-      if (p.visible) { b.style.left = p.x + 'px'; b.style.top = p.y + 'px'; }
+      var p = locate(row); positions.set(row.id, p); b.hidden = !p.visible || !!p.coveredByOpenModal;
+      if (p.visible && !p.coveredByOpenModal) { b.style.left = p.x + 'px'; b.style.top = p.y + 'px'; }
       b.setAttribute('aria-expanded', String(active === row.id));
     });
     var selected = draft || rows.find(function (r) { return r.id === active; });
@@ -3375,7 +3576,20 @@ function createQaComments(host) {
     // Measure only while comments/selection are present; never traverse the tree per frame.
     if (!doc.hidden && (pinButtons.size || selected || mode)) schedule();
   }
+  function nodeAtPoint(list, x, y) {
+    var best = null, bestArea = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var n = list[i];
+      var v = visibility(n);
+      if (!v.b || !v.r || x < v.r.left || x > v.r.right || y < v.r.top || y > v.r.bottom) continue;
+      var area = v.r.width * v.r.height;
+      if (area < bestArea) { best = n; bestArea = area; }
+    }
+    return best;
+  }
   function targetAt(x, y) {
+    var top = doc.elementFromPoint(x, y);
+    if (top && root.contains(top)) return null;
     var frame = frozenFrame();
     if (frame) {
       var fr = frame.getBoundingClientRect();
@@ -3383,20 +3597,33 @@ function createQaComments(host) {
         var inner = frozenDoc();
         if (inner && inner.elementsFromPoint) {
           var innerHits = inner.elementsFromPoint(x - fr.left, y - fr.top);
+          var innerSeen = [];
           for (var j = 0; j < innerHits.length; j++) {
-            var innerNode = innerHits[j].closest && innerHits[j].closest('[data-node]');
-            if (innerNode && ownsNode(innerNode) && geometry(innerNode, { u: .5, v: .5 }).r) return innerNode;
+            var innerEl = innerHits[j];
+            var innerNode = innerEl.closest && innerEl.closest('[data-node]');
+            if (!innerNode || !ownsNode(innerNode) || innerSeen.indexOf(innerNode) >= 0) continue;
+            innerSeen.push(innerNode);
+            if (commentShellRank(innerNode) >= 80) continue;
+            return innerNode;
           }
+          if (dirty) rebuild();
+          return nodeAtPoint(contentNodes, x, y) || nodeAtPoint(fallbackNodes, x, y);
         }
       }
     }
-    var elements = doc.elementsFromPoint(x, y);
-    for (var i = 0; i < elements.length; i++) {
-      if (root.contains(elements[i])) return null;
-      var n = elements[i].closest && elements[i].closest('[data-node]');
-      if (n && ownsNode(n) && geometry(n, { u: .5, v: .5 }).r) return n;
+    var hits = doc.elementsFromPoint(x, y);
+    var seen = [];
+    for (var i = 0; i < hits.length; i++) {
+      var el = hits[i];
+      if (root.contains(el) || !host.stage.contains(el)) continue;
+      var n = el.closest('[data-node]');
+      if (!n || n === host.stage || !host.stage.contains(n) || seen.indexOf(n) >= 0) continue;
+      seen.push(n);
+      if (commentShellRank(n) >= 80) continue;
+      return n;
     }
-    return null;
+    if (dirty) rebuild();
+    return nodeAtPoint(contentNodes, x, y) || nodeAtPoint(fallbackNodes, x, y);
   }
   host.stage.addEventListener('pointermove', function (e) {
     if (!mode || draft) return;
@@ -3444,7 +3671,10 @@ function createQaComments(host) {
     swallowClick = null;
   }, true);
   doc.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && !writeBusy) { close(); setMode(false); panel.hidden = true; }
+    if (e.key !== 'Escape' || writeBusy) return;
+    if (!pop.hidden) { close(); setMode(false); return; }
+    if (mode) { setMode(false); return; }
+    panel.hidden = true;
   });
   try {
     channel = new BroadcastChannel('gameweb-qa-comments');
@@ -3453,7 +3683,11 @@ function createQaComments(host) {
   var observer = new MutationObserver(function (records) {
     // Animation/resize style changes do not change identities. Avoid rebuilding
     // the entire Figma node index on each animation frame.
-    if (records.some(function (r) { return r.type === 'childList' || r.attributeName === 'data-node'; })) dirty = true;
+    if (records.some(function (r) { return r.type === 'childList' || r.attributeName === 'data-node'; })) {
+      dirty = true;
+      lastListKey = '';
+      if (!panel.hidden) drawList();
+    }
     watchFrozenDoc();
     schedule();
   });
@@ -3461,6 +3695,7 @@ function createQaComments(host) {
     attributeFilter: ['data-node', 'hidden', 'aria-hidden', 'style', 'class'] });
   var frozenObserverTarget = null;
   var frozenLoadBound = null;
+  var frozenScrollBound = null;
   function watchFrozenDoc() {
     var frame = frozenFrame();
     if (frame && frozenLoadBound !== frame) {
@@ -3468,6 +3703,10 @@ function createQaComments(host) {
       frame.addEventListener('load', function () { dirty = true; watchFrozenDoc(); schedule(); });
     }
     var inner = frozenDoc();
+    if (inner && frozenScrollBound !== inner) {
+      frozenScrollBound = inner;
+      inner.addEventListener('scroll', schedule, true);
+    }
     var next = inner && inner.documentElement;
     if (next === frozenObserverTarget) return;
     frozenObserverTarget = next;
