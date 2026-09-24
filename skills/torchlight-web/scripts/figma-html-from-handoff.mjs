@@ -26,6 +26,13 @@ import { runInventoryStaticGate } from './lib/inventory-static-gate.mjs';
 import { runStop1FigmaPixelGate } from './lib/stop1-figma-pixel-gate.mjs';
 import { languageMatrixOptions, pageLangsFromImgLangSets, hasTranslationTable, isPresentTable } from './lib/translation/locale-policy.mjs';
 import { buildHandoffCopyEnvelope, flattenCopyByNodeForRenderer } from './lib/figma-copy-adapter.mjs';
+import {
+  loadDemoSemanticLayout,
+  mergeSemanticLayouts,
+  proposeSemanticLayoutFromZhSource,
+  sourceCharactersFromTree,
+  validateSemanticLayout,
+} from './lib/translation/semantic-layout.mjs';
 import { assessCopyCoverage, collectInventoryTexts } from './lib/figma-copy-coverage.mjs';
 import { parseDesignPolicyFile } from '../../../standards/design-policy/tool/src/parse-design-policy.mjs';
 import { mirrorDesignPolicy } from '../../../standards/design-policy/tool/src/mirror-design-policy.mjs';
@@ -86,8 +93,9 @@ function failBuild(consume, problems, extra = {}) {
   return { ok: false, wroteHtml: false, consume, problems, ...extra };
 }
 
-function isCopyDesignationError(error) {
-  return String(error?.message || '').startsWith('copy-designation red:');
+function isCopyPipelineError(error) {
+  const message = String(error?.message || '');
+  return message.startsWith('copy-designation red:') || message.startsWith('semantic-layout red:');
 }
 
 export function parsePreviewJson(stdout) {
@@ -202,6 +210,18 @@ function attachHandoffCopy(demoDir, truth, spec, inventories = {}) {
     unread: copyEnv.unread || [],
     languages: Object.values(copyEnv.larkSnap?._meta?.langCols || {}).filter((lang) => lang && lang !== 'ja'),
   };
+  try {
+    const sourceCharactersById = {};
+    sourceCharactersFromTree(truth.platforms, sourceCharactersById);
+    const proposed = proposeSemanticLayoutFromZhSource({ copyByNode: flattened, sourceCharactersById });
+    const authored = loadDemoSemanticLayout(demoDir, flattened);
+    const merged = mergeSemanticLayouts(authored, proposed);
+    if (Object.keys(merged.byNode).length) {
+      truth.copy.semanticLayout = validateSemanticLayout({ layout: merged, copyByNode: flattened });
+    }
+  } catch (err) {
+    throw new Error('semantic-layout red: ' + (err && err.message ? err.message : String(err)));
+  }
   const report = { copy: { ...copyEnv.report, unread: copyEnv.unread || [], languages: truth.copy.languages } };
   writeFileSync(join(demoDir, 'extract-report.json'), `${JSON.stringify(report, null, 2)}\n`);
   const sourceTexts = [
@@ -415,7 +435,7 @@ export function buildHtmlFromHandoff({
     written = writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes, inventories);
   } catch (err) {
     return failBuild(consume, [err && err.message ? err.message : String(err)], {
-      wroteHtml: !isCopyDesignationError(err) && existsSync(join(demoDir, 'index.html')),
+      wroteHtml: !isCopyPipelineError(err) && existsSync(join(demoDir, 'index.html')),
     });
   }
   const { indexPath, htmlVolume } = written;

@@ -267,12 +267,22 @@ function relinkSkippedMaxOwners(nodes, byId) {
     let parentId = node.parentId;
     const seen = new Set([String(node.id || '')]);
     let inherited = null;
+    let liveParentId = null;
     while (parentId != null && parentId !== '' && !seen.has(String(parentId))) {
       seen.add(String(parentId));
       const parent = byId.get(String(parentId));
       if (!parent) break;
       if (!isSkipped(parent)) {
-        const next = { ...node, parentId: parent.id };
+        if (liveParentId == null) liveParentId = parent.id;
+        if (!inherited) {
+          /* A nearer live AL max still owns this leaf. Do not walk past it
+             to a farther skipped wrapper. Live groups without max may
+             continue so a skipped AL ancestor can stamp 4367-style nested copy. */
+          if (isAutoLayoutMaxOwner(parent)) return { ...node, parentId: liveParentId };
+          parentId = parent.parentId;
+          continue;
+        }
+        const next = { ...node, parentId: liveParentId };
         if (inherited) {
           const layout = isPlainObject(next.layout) ? { ...next.layout } : {};
           const selfWidth = layoutCap(layout, 'maxWidth');
@@ -288,18 +298,23 @@ function relinkSkippedMaxOwners(nodes, byId) {
             layoutMode: inherited.layoutMode,
             layoutSizingHorizontal: inherited.layoutSizingHorizontal,
             layoutSizingVertical: inherited.layoutSizingVertical,
+            primaryAxisAlignItems: inherited.primaryAxisAlignItems,
+            counterAxisAlignItems: inherited.counterAxisAlignItems,
+            itemSpacing: inherited.itemSpacing,
+            constraintsVertical: inherited.constraintsVertical,
             box: inherited.box || null,
             axisSource: {
               maxWidth: selfWidth != null ? 'self' : (inherited.maxWidth != null ? 'inherited' : null),
               maxHeight: selfHeight != null ? 'self' : (inherited.maxHeight != null ? 'inherited' : null),
             },
           };
-          const ownerBox = parent.pageBox || parent.box;
+          const ownerBox = byId.get(String(liveParentId));
+          const liveBox = ownerBox && (ownerBox.pageBox || ownerBox.box);
           const childBox = next.pageBox || next.box;
-          if (ownerBox && childBox && Number.isFinite(Number(ownerBox.x)) && Number.isFinite(Number(childBox.x))) {
+          if (liveBox && childBox && Number.isFinite(Number(liveBox.x)) && Number.isFinite(Number(childBox.x))) {
             next.parentBox = {
-              x: Number(childBox.x) - Number(ownerBox.x),
-              y: Number(childBox.y) - Number(ownerBox.y),
+              x: Number(childBox.x) - Number(liveBox.x),
+              y: Number(childBox.y) - Number(liveBox.y),
               w: Number(childBox.w),
               h: Number(childBox.h),
             };
@@ -310,6 +325,10 @@ function relinkSkippedMaxOwners(nodes, byId) {
       if (!inherited && isAutoLayoutMaxOwner(parent)) {
         const sizingH = parent.layout && parent.layout.layoutSizingHorizontal;
         const sizingV = parent.layout && parent.layout.layoutSizingVertical;
+        const prim = parent.layout && parent.layout.primaryAxisAlignItems;
+        const counter = parent.layout && parent.layout.counterAxisAlignItems;
+        const spacing = parent.layout && parent.layout.itemSpacing;
+        const constraintV = parent.layout && parent.layout.constraints && parent.layout.constraints.vertical;
         inherited = {
           sourceId: parent.id,
           maxWidth: layoutCap(parent.layout, 'maxWidth'),
@@ -317,10 +336,56 @@ function relinkSkippedMaxOwners(nodes, byId) {
           layoutMode: parent.layout && parent.layout.layoutMode ? String(parent.layout.layoutMode) : undefined,
           layoutSizingHorizontal: sizingH != null && sizingH !== '' ? String(sizingH) : undefined,
           layoutSizingVertical: sizingV != null && sizingV !== '' ? String(sizingV) : undefined,
+          primaryAxisAlignItems: prim != null && prim !== '' ? String(prim) : undefined,
+          counterAxisAlignItems: counter != null && counter !== '' ? String(counter) : undefined,
+          itemSpacing: Number.isFinite(Number(spacing)) ? Number(spacing) : undefined,
+          constraintsVertical: constraintV != null && constraintV !== '' ? String(constraintV) : undefined,
           box: parent.pageBox || parent.box || null,
         };
       }
       parentId = parent.parentId;
+    }
+    if (inherited && liveParentId) {
+      const layout = isPlainObject(node.layout) ? { ...node.layout } : {};
+      const selfWidth = layoutCap(layout, 'maxWidth');
+      const selfHeight = layoutCap(layout, 'maxHeight');
+      if (inherited.maxWidth != null && layoutCap(layout, 'maxWidth') == null) layout.maxWidth = inherited.maxWidth;
+      if (inherited.maxHeight != null && layoutCap(layout, 'maxHeight') == null) layout.maxHeight = inherited.maxHeight;
+      const live = byId.get(String(liveParentId));
+      const liveBox = live && (live.pageBox || live.box);
+      const childBox = node.pageBox || node.box;
+      const next = {
+        ...node,
+        parentId: liveParentId,
+        layout,
+        layoutCapSelf: { maxWidth: selfWidth, maxHeight: selfHeight },
+        fitOwnerFromSkipped: {
+          sourceId: inherited.sourceId,
+          maxWidth: inherited.maxWidth,
+          maxHeight: inherited.maxHeight,
+          layoutMode: inherited.layoutMode,
+          layoutSizingHorizontal: inherited.layoutSizingHorizontal,
+          layoutSizingVertical: inherited.layoutSizingVertical,
+          primaryAxisAlignItems: inherited.primaryAxisAlignItems,
+          counterAxisAlignItems: inherited.counterAxisAlignItems,
+          itemSpacing: inherited.itemSpacing,
+          constraintsVertical: inherited.constraintsVertical,
+          box: inherited.box || null,
+          axisSource: {
+            maxWidth: selfWidth != null ? 'self' : (inherited.maxWidth != null ? 'inherited' : null),
+            maxHeight: selfHeight != null ? 'self' : (inherited.maxHeight != null ? 'inherited' : null),
+          },
+        },
+      };
+      if (liveBox && childBox && Number.isFinite(Number(liveBox.x)) && Number.isFinite(Number(childBox.x))) {
+        next.parentBox = {
+          x: Number(childBox.x) - Number(liveBox.x),
+          y: Number(childBox.y) - Number(liveBox.y),
+          w: Number(childBox.w),
+          h: Number(childBox.h),
+        };
+      }
+      return next;
     }
     return node;
   });

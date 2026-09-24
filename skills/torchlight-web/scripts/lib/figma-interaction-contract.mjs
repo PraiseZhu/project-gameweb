@@ -116,6 +116,13 @@ function componentState(node) {
   const values = Object.values(dropmenuPropertyMap(node)).map((value) => value.toLowerCase());
   if (!values.length) return null;
   if (values.some((value) => /^(disabled?|disable|unavailable|off)$/.test(value))) return 'disabled';
+  /* ind/ Default vs Variant2 is the two-state visual. Generic `default` is
+     the selected mark on this set, not the unselected normal. */
+  if (interactionRole(node) === 'ind') {
+    if (values.some((value) => /^(variant2|normal|inactive)$/.test(value))) return 'normal';
+    if (values.some((value) => /^(default|active|highlight|selected|on)$/.test(value))) return 'active';
+    return 'other';
+  }
   if (values.some((value) => /^(active|highlight|selected|on)$/.test(value))) return 'active';
   if (values.some((value) => /^(normal|default|inactive)$/.test(value))) return 'normal';
   return 'other';

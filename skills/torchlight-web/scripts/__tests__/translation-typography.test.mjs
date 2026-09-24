@@ -339,6 +339,18 @@ test('fit group key uses direct parent container name when available (same-slot 
   assert.notEqual(a, body, 'different source font size keeps title vs body separate');
 });
 
+test('fit group key skips digit-only reward slots so 63/64/65 share one group', () => {
+  const pc63 = buildFitGroupKey({ parentName: '1', ancestorNames: ['fix/侧边栏', '奖励', '1', 'Frame 1312316808'], role: 'copy', fontSize: 30 });
+  const pc64 = buildFitGroupKey({ parentName: '2', ancestorNames: ['fix/侧边栏', '奖励', '2', 'Frame 1312316808'], role: 'copy', fontSize: 30 });
+  const pc65 = buildFitGroupKey({ parentName: '3', ancestorNames: ['fix/侧边栏', '奖励', '3', 'Frame 1312316808'], role: 'copy', fontSize: 30 });
+  assert.equal(pc63, pc64);
+  assert.equal(pc64, pc65);
+  const mobile63 = buildFitGroupKey({ parentName: '1', ancestorNames: ['sec/1', 'Frame 427321341', '1', 'Frame 1312316827'], role: 'copy', fontSize: 20 });
+  const mobile64 = buildFitGroupKey({ parentName: '6', ancestorNames: ['sec/1', 'Frame 427321341', '6', 'Frame 1312316827'], role: 'copy', fontSize: 20 });
+  assert.equal(mobile63, mobile64);
+  assert.notEqual(pc63, mobile63, 'PC and mobile keep separate shared frames');
+});
+
 test('computeGroupRequiredScales unifies to strictest only when a member overflows', () => {
   // one member overflows (required 85), others fit at source (100): group pulls all to 85
   const m1 = { key: 'G', requiredScale: 100 };
@@ -382,6 +394,16 @@ test('locale font scale: body and source-size title tiers use their official evi
   assert.equal(localeFontScale({ role: 'button', language: 'zh-TW', fontWeight: 900, sourceFontSize: 46 }), 1, 'btn/ keeps inventory size');
   assert.equal(localeFontScale({ role: 'unknown', language: 'en', fontWeight: 400, sourceFontSize: 40, ancestorNames: ['fix/顶部信息', 'btn/按钮'] }), 1, 'btn ancestor is not body 0.8');
   assert.equal(localeFontScale({ role: 'unknown', language: 'en', fontWeight: 400, sourceFontSize: 40, ancestorNames: ['fix/顶部信息', '折扣信息'] }), 1, 'discount chip is not body 0.8');
+  assert.equal(localeFontScale({ role: 'copy', language: 'en', fontWeight: 400, sourceFontSize: 42, ancestorNames: ['cn_pc', '页面内容', 'sec/1', 'slg'] }), 1, 'PC hero date stays heading vs zh-TW');
+  assert.equal(localeFontScale({ role: 'copy', language: 'ko', fontWeight: 400, sourceFontSize: 26, ancestorNames: ['cn_mobile', '页面内容', 'sec/1', '标题'] }), 1, 'mobile hero date stays heading vs zh-TW');
+  assert.equal(localeFontScale({ role: 'copy', language: 'en', fontWeight: 400, sourceFontSize: 42, ancestorNames: ['cn_pc', '页面内容', 'sec/2', '正文'] }), 0.8, 'other Regular copy still body 0.8');
+  const dateEn = officialTargetDesignSize({ sourceFontSize: 42, sourceLineHeight: 62, role: 'copy', language: 'en', fontWeight: 400, ancestorNames: ['sec/1', 'slg'], name: '圆桌会谈 10月14日20:00' });
+  assert.equal(dateEn.ratio, 1);
+  assert.equal(dateEn.fontSize, 42);
+  assert.equal(dateEn.tier, 'heading');
+  assert.equal(localeFontScale({ role: 'copy', language: 'en', fontWeight: 500, sourceFontSize: 34, ancestorNames: ['switch/模块8', '正文'], name: '*每个账号限领取一次，已领取过将无法再次参与。' }), 1, 'module-8 claim footnote stays heading vs zh-TW');
+  assert.equal(localeFontScale({ role: 'copy', language: 'ko', fontWeight: 500, sourceFontSize: 18, ancestorNames: ['switch/模块8', '正文'], name: '*每个账号限领取一次，已领取过将无法再次参与。' }), 1, 'mobile claim footnote stays heading vs zh-TW');
+  assert.equal(localeFontScale({ role: 'copy', language: 'en', fontWeight: 500, sourceFontSize: 34, ancestorNames: ['sec/2', '正文'], name: '*每个账号限领取一次，已领取过将无法再次参与。' }), 0.8, 'same string outside module 8 stays body');
   const btnTw = officialTargetDesignSize({ sourceFontSize: 46, sourceLineHeight: 52, role: 'unknown', language: 'zh-TW', fontWeight: 900, ancestorNames: ['btn/按钮'] });
   assert.equal(btnTw.ratio, 1);
   assert.equal(btnTw.fontSize, 46);

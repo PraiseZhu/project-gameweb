@@ -18,7 +18,7 @@
 
 import { normalizeCopy, editDistance, fuzzyThreshold } from './figma-copy-normalize.mjs';
 import { deriveContext, resolveContextualRow, validateCopyOverlay } from './figma-copy-context.mjs';
-import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferSplitShareRow, splitLocaleCellByOwnLines, inferCellLineSpan, cellLines, lineBreakOf } from './figma-copy-structure.mjs';
+import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferSplitShareRow, splitLocaleCellByOwnLines, inferCellLineSpan, cellLines, lineBreakOf, stripWholeLineWrappersIfSourceBare } from './figma-copy-structure.mjs';
 
 const LANGS_FALLBACK = ['zh-CN', 'en', 'ko', 'ja', 'zh-TW'];
 
@@ -233,7 +233,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
   const _review = [];
 
   /** 命中唯一一行后造五语叶子；空语言列不造叶子（值是 null），记 missingLangs。 */
-  function adopt(t, kind, { lineIndex = null, lineCount = null, lineSpan = 1, partIndex = 0, partCount = 1, takeCount = 1, joinWith = '\n' } = {}) {
+  function adopt(t, kind, { lineIndex = null, lineCount = null, lineSpan = 1, partIndex = 0, partCount = 1, takeCount = 1, joinWith = '\n', sourceCharacters = '' } = {}) {
 
     const translations = {};
     const missingLangs = [];
@@ -247,7 +247,11 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
         continue;
       }
       if (!split) {
-        translations[lang] = larkLeaf(`/rows/${t.row}/${lang}`);
+        const leaf = larkLeaf(`/rows/${t.row}/${lang}`);
+        translations[lang] = {
+          ...leaf,
+          value: stripWholeLineWrappersIfSourceBare(sourceCharacters, leaf && leaf.value != null ? leaf.value : v),
+        };
         continue;
       }
       const take = Number.isInteger(takeCount) && takeCount > 1 ? takeCount : span;
@@ -301,7 +305,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       const leaf = larkLeaf(`/rows/${t.row}/${lang}`);
       translations[lang] = {
         ...leaf,
-        value: pieces.join('\n'),
+        value: stripWholeLineWrappersIfSourceBare(sourceCharacters, pieces.join('\n')),
         splitLine: lineIndex,
         splitSpan: span,
         splitPart: partIndex,
@@ -395,7 +399,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
         : null;
       byNode[nodeId] = {
         ...base,
-        ...adopt({ row: __row, rawZh: __rawZh }, 'designated', adoptSplit),
+        ...adopt({ row: __row, rawZh: __rawZh }, 'designated', { ...adoptSplit, sourceCharacters: raw }),
         ...(cellSplitOut ? { cellSplit: cellSplitOut } : {}),
         note: `人工指认第 ${__row} 行（${__nodeRow.why || 'copy-designations'}）；值由 larkLeaf 机械取，非手填${Number.isInteger(splitMeta.lineIndex) ? `；拆格句序第 ${splitMeta.lineIndex + 1}/${splitMeta.lineCount} 句起共 ${splitMeta.takeCount || 1} 句` : ''}`,
       };
@@ -422,7 +426,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       }
       byNode[nodeId] = {
         ...base,
-        ...adopt({ row: cellGroup.row, rawZh: cellGroup.rawZh }, 'cell-split', { ...splitMeta, joinWith: lineBreakOf(raw) }),
+        ...adopt({ row: cellGroup.row, rawZh: cellGroup.rawZh }, 'cell-split', { ...splitMeta, joinWith: lineBreakOf(raw), sourceCharacters: raw }),
         cellSplit: splitMeta,
         note: `表第 ${cellGroup.row} 行一格 ${cellGroup.lines.length} 句对相邻 TEXT，本层第 ${splitMeta.lineIndex + 1} 句第 ${splitMeta.partIndex + 1}/${splitMeta.partCount} 截；请审拆句`,
       };
@@ -450,7 +454,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       // 多行命中：译文完全一致则视同单行（取最小行号），否则 ambiguous 报红
       const tuples = new Set(hits.map((t) => JSON.stringify(translationTuple(larkSnap, at, t.row, langs))));
       if (tuples.size === 1) {
-        byNode[nodeId] = { ...base, ...adopt(hits[0], kind), note: `表里 ${hits.map((t) => t.row).join('/')} 行简中与译文完全一致，取第 ${hits[0].row} 行` };
+        byNode[nodeId] = { ...base, ...adopt(hits[0], kind, { sourceCharacters: raw }), note: `表里 ${hits.map((t) => t.row).join('/')} 行简中与译文完全一致，取第 ${hits[0].row} 行` };
         tally[kind] += 1;
       } else {
         // ── 同字段多场景（任务3）：译文不同不一定是缺陷，可能是「目录短译/内容长译」。
@@ -463,7 +467,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
           if (!res.unresolved) {
             const hit = hits.find((t) => Number(t.row) === Number(res.row)) || { row: res.row, rawZh: at(larkSnap, `/rows/${res.row}/zh-CN`) };
             byNode[nodeId] = {
-              ...base, ...adopt({ row: res.row, rawZh: String(hit.rawZh ?? '') }, kind),
+              ...base, ...adopt({ row: res.row, rawZh: String(hit.rawZh ?? '') }, kind, { sourceCharacters: raw }),
               context: { contextKey: ctx.contextKey, scene: ctx.scene, via: res.via },
               note: `多场景按 context(${ctx.contextKey}) 经 ${res.via} 选定第 ${res.row} 行：${res.why}`,
             };
@@ -491,7 +495,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
     }
 
     if (hits.length === 1) {
-      byNode[nodeId] = { ...base, ...adopt(hits[0], kind) };
+      byNode[nodeId] = { ...base, ...adopt(hits[0], kind, { sourceCharacters: raw }) };
       tally[kind] += 1;
       continue;
     }
@@ -560,7 +564,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       name: entry.name,
       characters: entry.characters,
       normalized: entry.normalized,
-      ...adopt({ row: picked.row, rawZh: String(hit.tableZhCN ?? hit.rawZh ?? '') }, kind, split),
+      ...adopt({ row: picked.row, rawZh: String(hit.tableZhCN ?? hit.rawZh ?? '') }, kind, { ...split, sourceCharacters: entry.characters }),
       note: picked.why,
     };
     if (kind === 'inferred-leftover') tally.inferredLeftover += 1;

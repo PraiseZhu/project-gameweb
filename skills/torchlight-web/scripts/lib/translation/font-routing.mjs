@@ -110,10 +110,21 @@ export function routeFontWeight({ family = null, sourceFamily = null, sourceWeig
   const notoTarget = isNotoFamily(target);
   const regularStyle = /Regular/i.test(String(fontStyle || ''));
   const youHeiRegular = youHeiSource && (requested === 600 || (!Number.isFinite(requested) && regularStyle));
-  /* Only YouHei Regular → Noto Regular 400. Figma Noto 600 and any other 600 stay. */
-  if (youHeiSource && notoTarget && youHeiRegular) return 400;
+  /* YouHei Regular 600 → Noto Regular 400 for en/ja/ko. zh-TW Noto Sans HK
+     keeps 600 so it matches zh-CN YouHei Regular at the same size table. */
+  if (youHeiSource && notoTarget && youHeiRegular) {
+    if (/Noto Sans HK/i.test(target)) return Number.isFinite(requested) ? requested : 600;
+    return 400;
+  }
   if (youHeiTarget) {
     return Number.isFinite(requested) ? requested : 600;
+  }
+  /* Official Global dates (EN/TW/KO) paint Noto 600 even when the zh-CN
+     inventory face is Noto Regular 400. Keep source 400 on zh-CN; lift
+     Regular Noto→Noto locale routing to 600 so those lines match QA. */
+  const notoSource = isNotoFamily(source);
+  if (notoSource && notoTarget && family !== sourceFamily && (requested === 400 || (!Number.isFinite(requested) && regularStyle))) {
+    return 600;
   }
   return Number.isFinite(requested) ? requested : 400;
 }

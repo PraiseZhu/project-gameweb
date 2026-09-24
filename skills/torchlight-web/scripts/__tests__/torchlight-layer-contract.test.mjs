@@ -134,7 +134,7 @@ test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not po
   assert.match(render, /pagePaintOrder.length === 1/);
   assert.match(render, /data-hero-crop-window/);
   assert.match(render, /heroVisualPlane/);
-  assert.match(render, /pageScope \? 1 : k/);
+  assert.match(render, /pageScope\s*\n\s+\? \(isHeroStage \? heroCounterZoom : 1\)/);
   assert.match(render, /data-hero-ui-y-ratio/);
   assert.match(render, /data-name/);
   assert.match(chrome, /data-hero-source-height/);

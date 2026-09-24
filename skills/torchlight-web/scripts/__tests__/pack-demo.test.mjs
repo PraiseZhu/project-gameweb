@@ -107,12 +107,18 @@ test('indicator fallback files are keep-list, audit json is not', () => {
   assert.equal(isPackKeepFile('index.html'), true);
 });
 
-test('packed truth drops failClosed and componentSet.nodes, keeps variant trees', () => {
+test('packed truth drops failClosed, componentSet.nodes, and duplicate variantTrees', () => {
   const slim = slimPackedTruth({
     schema: 'ready-handoff-truth/v1',
+    copy: {
+      byNode: { '9:9': { 'zh-CN': 'ok' } },
+      unread: [{ id: '9:8', reason: 'no-row' }],
+    },
     platforms: {
       pc: {
         failClosed: { unknownNodes: [{ id: 'x' }] },
+        counts: { nodes: 9 },
+        pageStateGraph: { states: [] },
         componentVariantGraph: {
           componentSets: [{
             componentSetId: '1:1',
@@ -121,15 +127,43 @@ test('packed truth drops failClosed and componentSet.nodes, keeps variant trees'
           }],
           variantTrees: { '1:1': [{ componentId: '1:2', nodes: [{ id: '1:2' }] }] },
         },
-        sections: { 'sec/1': { nodes: [{ id: '9:9', ancestorIds: ['1:0'] }] } },
+        sections: { 'sec/1': { nodes: [{
+          id: '9:9',
+          ancestorIds: ['1:0'],
+          pageBox: { x: 1, y: 2, w: 3, h: 4 },
+          sliceExport: { file: 'assets/9-9.webp' },
+          orderKey: '0.1.2',
+          rotation: 0.2,
+          fillGeometry: [{ path: 'M0 0' }],
+          prototype: { interactions: [] },
+          descendantEffects: [{ type: 'DROP_SHADOW' }],
+          scope: 'page',
+          via: 'extract',
+          behavior: 'static',
+        }] } },
       },
     },
   });
   assert.equal(slim.platforms.pc.failClosed, undefined);
+  assert.equal(slim.platforms.pc.counts, undefined);
+  assert.equal(slim.platforms.pc.pageStateGraph, undefined);
+  assert.equal(slim.copy.unread, undefined);
+  assert.deepEqual(slim.copy.byNode['9:9'], { 'zh-CN': 'ok' });
   assert.equal(slim.platforms.pc.componentVariantGraph.componentSets[0].nodes, undefined);
   assert.deepEqual(slim.platforms.pc.componentVariantGraph.componentSets[0].variants[0].nodes, [{ id: '1:2' }]);
-  assert.deepEqual(slim.platforms.pc.componentVariantGraph.variantTrees['1:1'][0].nodes, [{ id: '1:2' }]);
-  assert.deepEqual(slim.platforms.pc.sections['sec/1'].nodes[0].ancestorIds, ['1:0']);
+  assert.equal(slim.platforms.pc.componentVariantGraph.variantTrees, undefined);
+  const node = slim.platforms.pc.sections['sec/1'].nodes[0];
+  assert.deepEqual(node.ancestorIds, ['1:0']);
+  assert.deepEqual(node.pageBox, { x: 1, y: 2, w: 3, h: 4 });
+  assert.equal(node.sliceExport.file, 'assets/9-9.webp');
+  assert.equal(node.orderKey, '0.1.2');
+  assert.equal(node.rotation, 0.2);
+  assert.deepEqual(node.fillGeometry, [{ path: 'M0 0' }]);
+  assert.equal(node.prototype, undefined);
+  assert.equal(node.descendantEffects, undefined);
+  assert.equal(node.scope, undefined);
+  assert.equal(node.via, undefined);
+  assert.equal(node.behavior, undefined);
 });
 
 test('missing figma-indicator fallback fails closed', () => {
@@ -370,6 +404,26 @@ test('CSS relative assets stay relative to the stylesheet, not the demo root', (
   assert.deepEqual(missingRuntimeReferences(dir, html), ['assets/missing.webp']);
 });
 
+test('JS apiUrl(path, query) is not a CSS url() runtime ref', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-apiurl-'));
+  mkdirSync(join(dir, 'assets'));
+  const html = '<script>function apiUrl(path, query) { return path + query; }</script><img src="assets/ok.webp">';
+  writeFileSync(join(dir, 'index.html'), html);
+  writeFileSync(join(dir, 'assets/ok.webp'), 'ok');
+  assert.deepEqual(missingRuntimeReferences(dir, html), []);
+});
+
+test('content-package src in assets.json resolves from the demo root', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-content-root-'));
+  mkdirSync(join(dir, 'content-package/assets'), { recursive: true });
+  writeFileSync(join(dir, 'index.html'), '<script src="content-package/assets.json"></script>');
+  writeFileSync(join(dir, 'content-package/assets.json'), JSON.stringify({
+    assets: { m: { files: { pc: { 'zh-CN': { src: 'content-package/assets/cn.webp' } } } } },
+  }));
+  writeFileSync(join(dir, 'content-package/assets/cn.webp'), 'ok');
+  assert.deepEqual(missingRuntimeReferences(dir, readFileSync(join(dir, 'index.html'), 'utf8')), []);
+});
+
 test('quoted local names with spaces fail closed in HTML and CSS', () => {
   const dir = mkdtempSync(join(tmpdir(), 'yise-pack-space-name-'));
   mkdirSync(join(dir, 'styles'));
@@ -426,7 +480,9 @@ test('backup cleanup failure does not restore a half-removed backup over the pac
   const src = readFileSync(join(ROOT, 'scripts/pack-demo.mjs'), 'utf8');
   const commit = src.slice(src.indexOf('function commitWorkTree'), src.indexOf('function ensureTruthFile'));
   assert.match(commit, /packed demo committed, but leftover backup could not be removed/);
+  assert.match(commit, /replaceDirContents\(workDir, demoDir\)/);
   assert.match(commit, /try \{\s*rmSync\(backup/);
+  assert.doesNotMatch(commit, /renameSync\(demoDir, backup\)/);
   assert.doesNotMatch(commit, /rmSync\(backup[\s\S]*catch \(error\) \{\s*if \(existsSync\(demoDir\)\) rmSync\(demoDir/);
 });
 
@@ -578,6 +634,45 @@ test('unreferenced images are not encoded and are deleted after rewrite', () => 
   assert.equal(existsSync(join(dir, 'assets/used.webp')), true);
   assert.equal(existsSync(join(dir, 'assets/orphan.png')), false);
   assert.equal(existsSync(join(dir, 'assets/orphan.webp')), false);
+});
+
+test('pack collapses SHA-identical content-package files without mixing page assets', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-content-sha-'));
+  mkdirSync(join(dir, 'assets'));
+  mkdirSync(join(dir, 'content-package/assets'), { recursive: true });
+  writeFileSync(join(dir, 'human-review.json'), JSON.stringify(acceptedStops()));
+  writeFileSync(join(dir, 'assets/page.png'), PNG);
+  writeFileSync(join(dir, 'content-package/assets/cn.png'), PNG);
+  writeFileSync(join(dir, 'content-package/assets/tw.png'), PNG);
+  writeFileSync(join(dir, 'content-package/assets.json'), JSON.stringify({
+    schemaVersion: 1,
+    region: 'cn',
+    assets: {
+      '模块2玩法截图': {
+        replaceable: true,
+        files: {
+          pc: {
+            'zh-CN': { src: 'content-package/assets/cn.png' },
+            'zh-TW': { src: 'content-package/assets/tw.png' },
+          },
+        },
+      },
+    },
+  }));
+  writeFileSync(join(dir, 'content-package/manifest.json'), JSON.stringify({ region: 'cn', assets: 'assets.json' }));
+  writeFileSync(join(dir, 'index.html'), '<script id="qa-truth" type="application/json">{}</script><img src="assets/page.png" data-asset="模块2玩法截图">');
+  writeGreenLaterAxesProbe(dir);
+  const result = spawnSync(process.execPath, [CLI, '--demo', dir], { cwd: ROOT, encoding: 'utf8', timeout: 120000, env: packEnv() });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const json = JSON.parse(readFileSync(join(dir, 'content-package/assets.json'), 'utf8'));
+  const cn = json.assets['模块2玩法截图'].files.pc['zh-CN'].src;
+  const tw = json.assets['模块2玩法截图'].files.pc['zh-TW'].src;
+  assert.equal(cn, tw);
+  assert.match(cn, /^content-package\/assets\/.+\.(?:png|webp)$/);
+  assert.equal(existsSync(join(dir, cn)), true);
+  assert.equal(existsSync(join(dir, 'assets/page.webp')) || existsSync(join(dir, 'assets/page.png')), true);
+  assert.notEqual(cn, 'assets/page.webp');
+  assert.notEqual(cn, 'assets/page.png');
 });
 
 test('pack keeps content-package index and hidden-lang files, rewrites src after compress', () => {

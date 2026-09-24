@@ -83,6 +83,17 @@ test('indicator variants copy from cached first-paint subtrees', () => {
   assert.match(body, /data-indicator-variant', active \? 'active' : 'normal'/);
 });
 
+test('ind Default vs Variant2 stamps selected vs unselected for applySwitch', () => {
+  const variantAt = renderer.indexOf('const indicatorVariant = (n) => {');
+  const nextAt = renderer.indexOf('const componentVariantGraph = (n) => {', variantAt);
+  assert.ok(variantAt > 0 && nextAt > variantAt);
+  const body = renderer.slice(variantAt, nextAt);
+  assert.match(body, /variant2\|normal\|inactive\|off/);
+  assert.match(body, /default\|active\|selected\|highlight\|current\|on/);
+  assert.match(renderer, /variant2\|normal\|idle\|未选/);
+  assert.match(renderer, /\/default\/i\.test\(__indVariantName\) \? 'highlight'/);
+});
+
 test('variant layers keep direction commands clickable without starting swipe', () => {
   assert.match(renderer, /switchCommandOwnerId: String\(owner.switchId\)/);
   assert.match(renderer, /data-switch-command', 'true'/);
@@ -148,6 +159,87 @@ test('language dropmenu matches one option label, not the whole menu tree', () =
   assert.match(renderer, /authored COMPONENT fill/);
   assert.match(renderer, /_variantPaintFills/);
   assert.doesNotMatch(renderer, /dropmenuLangFromNode/);
+});
+
+test('CN hides in-page dropmenu/多语言 by name; Global keeps the highlight contract', () => {
+  assert.match(renderer, /isCnHiddenLangNode/);
+  assert.match(renderer, /\/\^dropmenu\\\/多语言/);
+  assert.match(renderer, /hideCnLanguageDropmenu/);
+  assert.match(renderer, /hideCnLanguageDropmenu\(owner\);/);
+  assert.match(renderer, /regionNow === 'global' && optionLang === 'zh-CN'/);
+  assert.match(renderer, /data-lang-slot/);
+  assert.match(renderer, /global-ko-in-zh-cn/);
+  assert.match(renderer, /placeCnOfficialSiteOnLangSlot/);
+  assert.match(renderer, /_placeCnOfficialSiteOnLangSlot/);
+  assert.match(renderer, /data-cn-official-slot/);
+  assert.match(renderer, /langButtonSlotFromTruth/);
+  assert.match(renderer, /_langButtonSlotFromTruth/);
+  assert.match(renderer, /_cnRewardPanelRightFromFrame/);
+  assert.match(renderer, /_cnRewardPanelRightFromTruth/);
+  assert.match(renderer, /_cnTopbarFlushRight/);
+  assert.match(renderer, /_isCnTopbarRegion/);
+  assert.doesNotMatch(renderer, /FIGMA_3120_OVERFLOW_RIGHT/);
+  assert.doesNotMatch(renderer, /1119:3120/);
+  assert.match(renderer, /reward-panel-right/);
+  assert.match(renderer, /img\/按钮背景/);
+  assert.match(renderer, /visualSpan/);
+  assert.match(renderer, /Flush the painted plate to img\/奖励底框/);
+  assert.match(renderer, /fix\/右上方导航/);
+  assert.match(renderer, /CN skips painting dropmenu\/多语言/);
+  assert.match(renderer, /_paintAuthoredRoundedVector/);
+  assert.match(renderer, /source-border-radius/);
+  assert.match(renderer, /_roundedVectorRadius/);
+  assert.match(renderer, /data-shape-rounded-vector-radius/);
+  assert.match(renderer, /data-shape-rounded-vector-stroke/);
+  assert.match(renderer, /_fitLangChipHost/);
+  assert.match(renderer, /Resting instance keeps img\/未选中背景/);
+  assert.match(renderer, /\[data-name="img\/选中背景"\], \[data-name="img\/未选中背景"\]/);
+  assert.match(renderer, /data-lang-chip-host/);
+  assert.doesNotMatch(renderer, /source-clip-path/);
+  assert.match(renderer, /_topbarSeasonRightInsetDesign/);
+  assert.match(renderer, /data-topbar-season-right-inset/);
+  const docs = readFileSync(new URL('../../docs/interaction-skill.md', import.meta.url), 'utf8');
+  assert.match(docs, /drop 简中 from the in-page list/);
+  assert.match(docs, /`btn\/进入官网` occupies the language-button/);
+  assert.doesNotMatch(docs, /1119:3120 right \(15px/);
+  assert.match(docs, /img\/奖励底框` right plus any overflowing child/);
+  assert.match(docs, /not-claimed/);
+  assert.doesNotMatch(docs, /Figma 1135:1072/);
+  assert.match(renderer, /data-fx-region/);
+  assert.match(renderer, /region: String\(\(ctx\.prefs && ctx\.prefs\.region\) \|\| ''\)/);
+  assert.doesNotMatch(renderer, /949:5148/);
+  assert.doesNotMatch(renderer, /949:6003/);
+  const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
+  assert.match(docs, /QA comments/);
+  assert.match(docs, /data-node/);
+  assert.match(docs, /Deploying the\s+comment chrome means replacing that page's HTML/);
+  const qaComments = readFileSync(new URL('../../docs/qa-comments.md', import.meta.url), 'utf8');
+  assert.match(qaComments, /## 部署/);
+  assert.match(qaComments, /已部署的旧 HTML 不会自行升级/);
+  assert.match(qaComments, /pageId 是这一站的配置，不是 Figma id/);
+  assert.doesNotMatch(qaComments, /ss14-season-phase2-qa-sso-live/);
+  const packDocs = readFileSync(new URL('../../docs/pack-skill.md', import.meta.url), 'utf8');
+  assert.match(packDocs, /QA comment chrome ships inside that packed `index.html`/);
+  assert.match(packDocs, /Do not reuse one pageId/);
+  assert.match(chrome, /function revealCommentSurface\(node\)/);
+  assert.match(chrome, /data-switch-variant-index/);
+  assert.match(chrome, /data-motion-carousel-page/);
+  assert.doesNotMatch(chrome, /1119:/);
+  assert.match(chrome, /function lockRegionLang\(\)/);
+  assert.match(chrome, /S\.prefs\.region === 'cn' && it\.v !== 'zh-CN'/);
+  assert.match(chrome, /S\.prefs\.region === 'global' && it\.v === 'zh-CN'/);
+  assert.match(chrome, /applyPref\('region', it\.v\)/);
+  assert.doesNotMatch(chrome, /Hide the visible segmented control until a page/);
+  const laterAxes = readFileSync(new URL('../lib/later-axes-probe.mjs', import.meta.url), 'utf8');
+  assert.match(laterAxes, /region=global&lang=zh-TW/);
+  assert.match(laterAxes, /region=cn&lang=zh-CN/);
+  assert.match(laterAxes, /measureRegionChrome/);
+  assert.match(laterAxes, /claimed: false/);
+  assert.match(laterAxes, /no-dropmenu\/多语言/);
+  assert.match(laterAxes, /data-lang-slot/);
+  assert.match(laterAxes, /lang-button/);
+  const oracle = readFileSync(new URL('../lib/interaction-pixel-oracle.mjs', import.meta.url), 'utf8');
+  assert.match(oracle, /regionChromeEvidenceComplete/);
 });
 
 test('named modal overlays close when either side is exclusive', () => {
@@ -221,6 +313,24 @@ test('named modal cover fill, scrim, and scroll lock follow DESIGN.md YAML', () 
   assert.doesNotMatch(renderer, /const scale = Math\.min\(visibleW \/ designW, visibleH \/ designH\);/);
 });
 
+test('named modal YAML cover applies to the ≤1126 mobile tree, not a forced contain card', () => {
+  const policyAt = renderer.indexOf('const modalPolicy = () =>');
+  const pinAt = renderer.indexOf('const pinModalToViewport = (entry) =>', policyAt);
+  assert.ok(policyAt > 0 && pinAt > policyAt);
+  const policy = renderer.slice(policyAt, pinAt);
+  assert.match(policy, /policy\.modalViewportFill === 'cover' \? 'cover' : 'contain'/);
+  assert.doesNotMatch(policy, /liveBase === 'mobile'/);
+  assert.doesNotMatch(policy, /\? 'contain'/);
+  const pin = renderer.slice(pinAt, renderer.indexOf('const closeNamedModal = (entry) =>', pinAt));
+  assert.match(pin, /phoneOverflow/);
+  assert.match(pin, /data-modal-sheet/);
+  assert.match(pin, /liveTree === 'mobile'/);
+  assert.match(pin, /visibleW \/ designW/);
+  assert.match(pin, /offsetX = \(visibleW - scaledW\) \/ 2/);
+  assert.match(pin, /offsetY = \(visibleH - scaledH\) \/ 2/);
+  assert.doesNotMatch(pin, /phoneWidthFit \? 0/);
+});
+
 test('named modal pin drops host zoom so Figma sheet is not scaled twice', () => {
   const pinAt = renderer.indexOf('const pinModalToViewport = (entry) =>');
   const unpinAt = renderer.indexOf('const unpinModalHost = (entry) =>');
@@ -236,6 +346,10 @@ test('named modal pin drops host zoom so Figma sheet is not scaled twice', () =>
   assert.match(pin, /data-modal-sheet/);
   assert.match(pin, /layer\.style\.width = visibleW \+ 'px'/);
   assert.match(pin, /sheet\.style\.width = designW \+ 'px'/);
+  assert.match(pin, /≤1126 stays centered/);
+  assert.match(pin, /Contain that still fits on PC stays centered/);
+  assert.match(pin, /layer\.style\.left = offsetX \+ 'px'/);
+  assert.match(pin, /layer\.style\.top = offsetY \+ 'px'/);
   assert.doesNotMatch(pin, /frame\.style\.zoom/);
   assert.doesNotMatch(pin, /visibleW = frameRect\.width \/ \(pageZoom/);
   assert.doesNotMatch(pin, /const visibleW = frameRect\.width;/);
@@ -337,6 +451,8 @@ test('full rebuild restores open named modals instead of closing them', () => {
   assert.match(renderer, /Official named popup stays mounted across window resize/);
   assert.match(renderer, /_matchNamedModalByTopic/);
   assert.match(renderer, /pc_cn订阅赛季日程/);
+  assert.match(renderer, /pc_播放弹窗/);
+  assert.match(renderer, /if \(raw === '播放弹窗' \|\| raw === '视频弹窗'\) return '视频弹窗'/);
   const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
   assert.match(chrome, /_pinOpenNamedModals\(frame\)/);
   assert.match(chrome, /syncDragContentFollow/);

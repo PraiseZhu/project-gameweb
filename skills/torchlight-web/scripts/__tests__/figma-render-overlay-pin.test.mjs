@@ -5,13 +5,19 @@ import { runInNewContext } from 'node:vm';
 
 const renderer = readFileSync(new URL('../../templates/figma-render.js', import.meta.url), 'utf8');
 const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
-const positioning = renderer.match(/el\.style\.position = 'absolute';\s*const sourceLeft = \(\(box\.x \?\? 0\) - originX\);\s*el\.style\.left = sourceLeft \+ 'px';\s*const sourceTop = \(\(box\.y \?\? 0\) - originY\);/);
+const sourceLeftBlock = renderer.match(/const sourceLeft = skippedCentersPrimary\s*\?[\s\S]*?: \(\(box\.x \?\? 0\) - originX\);\s*el\.style\.left = sourceLeft \+ 'px';/);
+const sourceTopBlock = renderer.match(/const sourceTop = \(\(box\.y \?\? 0\) - originY\);/);
+const positioning = sourceLeftBlock && sourceTopBlock
+  ? [sourceLeftBlock[0] + '\n' + sourceTopBlock[0]]
+  : null;
 
 function paintPosition(overrides = {}) {
   assert.ok(positioning, 'absolute positioning must keep inventory pageBox on overlay roots');
   const context = {
     box: { x: 2764, y: 70, w: 600, h: 80 },
-    originX: 0, originY: 0, el: { style: {} }, ...overrides,
+    originX: 0, originY: 0, el: { style: {} },
+    skippedCentersPrimary: false,
+    ...overrides,
   };
   runInNewContext(positioning[0] + "\nel.style.top = sourceTop + 'px';", context);
   return context;
@@ -66,6 +72,18 @@ test('inventory-static-gate keeps pageBox: no lock-1920 and no topbar window-rig
   assert.match(renderer, /_isWindowCenterTopbarChrome/);
   assert.match(renderer, /data-topbar-viewport-plane/);
   assert.match(renderer, /inOverlayHost \? 0 : -columnLeftDesign/);
+  assert.match(renderer, /_topbarSeasonRightInsetDesign/);
+  assert.match(renderer, /Authored CN right-edge inset is already inside sourceRight/);
+  assert.match(renderer, /Pin `_designWidth`, not the visual leaf/);
+  assert.match(renderer, /_cnRewardPanelRightFromFrame/);
+  assert.match(renderer, /_cnRewardPanelRightFromTruth/);
+  assert.match(renderer, /_cnTopbarFlushRight/);
+  assert.match(renderer, /_isCnTopbarRegion/);
+  assert.doesNotMatch(renderer, /FIGMA_3120_OVERFLOW_RIGHT/);
+  assert.doesNotMatch(renderer, /1119:3120/);
+  assert.match(renderer, /img\/按钮背景/);
+  assert.match(renderer, /visualSpan/);
+  assert.match(renderer, /_isWideTopbarGroup/);
   assert.match(renderer, /Page-tree left chrome \(logo \/ age\)/);
   assert.match(renderer, /官网\|充值\|地球\|语言\|年龄/);
   assert.doesNotMatch(renderer, /官网\|充值\|地球\|语言\|年龄\|按钮\$/);
@@ -159,14 +177,14 @@ test('other stages, roles and pins retain existing source-box placement', () => 
 });
 
 test('product kv cover uses one scale and origin, not cropLeft plus origin', () => {
-  const hero = renderer.match(/const slotH = viewportH \* \(fillVh \/ 100\);[\s\S]*?scale: pageStageScale,/);
+  const hero = renderer.match(/const slotH = viewportH \* \(fillVh \/ 100\);[\s\S]*?scale: k,/);
   assert.ok(hero, 'hero slot cover math must stay source-visible');
   assert.match(hero[0], /const coverW = Number\.isFinite\(Number\(this\._viewportWidth\)\) && this\._viewportWidth > 0/);
   assert.match(hero[0], /const coverScale = Math\.max\(/);
   assert.match(hero[0], /coverW \/ Number\(designWidth\)/);
   assert.match(hero[0], /slotH \/ coverSourceH/);
   assert.match(hero[0], /heroVisualCropLeft = 0/);
-  assert.match(hero[0], /scale: pageStageScale/);
+  assert.match(hero[0], /scale: k,/);
   assert.doesNotMatch(hero[0], /coverW \/ slotScale - designWidth/);
   const kv = renderer.match(/if \(isFirstScreenVisual && isKv\) \{[\s\S]*?el\.setAttribute\('data-kv-cover-origin'/);
   assert.ok(kv, 'kv cover-crop block must stay source-visible');
@@ -188,10 +206,13 @@ test('product kv cover uses one scale and origin, not cropLeft plus origin', () 
   assert.equal(tabletScale, 993 / 750);
 });
 
-test('QA chrome hides Region while keeping hash and setPref', () => {
-  assert.match(chrome, /Region stays in prefs \/ hash \/ __qa\.setPref/);
+test('QA chrome shows CN/Global and locks language options to the official region split', () => {
+  assert.match(chrome, /function lockRegionLang\(\)/);
+  assert.match(chrome, /row2\.appendChild\(grp\(region\.label/);
+  assert.match(chrome, /S\.prefs\.region === 'cn' && it\.v !== 'zh-CN'/);
+  assert.match(chrome, /S\.prefs\.region === 'global' && it\.v === 'zh-CN'/);
   assert.match(chrome, /key in \(\{ plat: 1, region: 1, os: 1, mode: 1, lang: 1 \}\)/);
-  assert.doesNotMatch(chrome, /row2\.appendChild\(grp\(region\.label/);
+  assert.doesNotMatch(chrome, /Hide the visible segmented control until a page/);
   const qaChrome = readFileSync(new URL('../../templates/qa-chrome.js', import.meta.url), 'utf8');
   assert.match(qaChrome, /if \(key === 'region'\) continue/);
   assert.match(qaChrome, /const PREF_KEYS = \['plat', 'region', 'os', 'mode', 'lang'\]/);
