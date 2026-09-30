@@ -295,6 +295,8 @@ test('determined nodes after the last sec/ still paint on pageChrome', () => {
   assert.equal(Object.values(truth.sections).some((section) => (
     Array.isArray(section?.nodes) && section.nodes.some((node) => node.id === 'footer-btn')
   )), false);
+  const footer = truth.pageChrome.nodes.find((node) => node.id === 'footer-btn');
+  assert.equal(footer && footer.paintRootId, 'content');
 });
 
 test('page chrome origin prefers the live page node when page.pageBox is still canvas', () => {

@@ -358,10 +358,13 @@ async function measureDemo({ demoDir, handoffDir, platform, lang, viewportKind =
            PNGs are larger than the owner and overflow:hidden on the owner;
            report the clipped owner box, not the raw img layout box. */
         const boundsPolicy = el.getAttribute('data-asset-bounds-resolved') || '';
-        let imgBox = img && (boundsPolicy === 'owner-ink-from-unclipped-png' || boundsPolicy === 'owner-ink-spill-natural')
+        const ownerClipPolicy = boundsPolicy === 'owner-ink-from-unclipped-png'
+          || boundsPolicy === 'owner-ink-from-unclipped-png-pad'
+          || boundsPolicy === 'owner-ink-spill-natural';
+        let imgBox = img && ownerClipPolicy
           ? box
           : (ownImg ? boxOf(ownImg, origin) : (img ? boxOf(img, origin) : null));
-        if (ownImg && imgBox && box && boundsPolicy !== 'owner-ink-from-unclipped-png' && boundsPolicy !== 'owner-ink-spill-natural') {
+        if (ownImg && imgBox && box && !ownerClipPolicy) {
           const far = Math.abs(imgBox.x - box.x) > Math.max(64, box.w)
             || Math.abs(imgBox.y - box.y) > Math.max(64, box.h);
           if (far) imgBox = box;
@@ -376,6 +379,12 @@ async function measureDemo({ demoDir, handoffDir, platform, lang, viewportKind =
           text: String(el.innerText || el.textContent || '').trim(),
           bakedDescendants: el.getAttribute('data-asset-descendants') === 'baked',
           inSection: inSectionOf(el) && !overlayOwner,
+          cnOfficialSlot: el.getAttribute('data-cn-official-slot')
+            || (el.closest('[data-cn-official-slot]') && el.closest('[data-cn-official-slot]').getAttribute('data-cn-official-slot'))
+            || null,
+          componentInstanceMountStatus: el.getAttribute('data-component-instance-mount-status') || null,
+          langShellValue: el.getAttribute('data-lang-shell-value') || null,
+          imgLangValue: el.getAttribute('data-img-lang-value') || null,
         };
       }
       return { nodes, scale, origin: { x: origin.left, y: origin.top, w: origin.width, h: origin.height } };
@@ -700,7 +709,13 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
     const shot = await page.screenshot({ type: 'png' });
     const png = PNG.sync.read(shot);
     const x = Math.max(0, Math.min(png.width - 1, Math.round(Number(measured.seamSample.x) || png.width / 2)));
-    const y0 = Math.round(Number(measured.seamSample.y));
+    /* Authored Figma gutters sit a few CSS px below 100vh. Sampling the
+       raw next.top then walks off the screenshot (dyMax < dyMin) and
+       reports section-seam-pixels-missing. Clamp onto the last in-view
+       rows so the covering-plate join is still measured. */
+    let y0 = Math.round(Number(measured.seamSample.y));
+    if (y0 < 0) y0 = 0;
+    if (y0 > png.height - 1) y0 = png.height - 1;
     const rows = [];
     /* A 100vh join sits on the last screenshot row. +dy would clamp onto
        that same KV pixel and fake a solid --stage band. Only walk pixels
@@ -885,11 +900,15 @@ async function measureProductScroll(page, { inventory, demoDir, viewport, lang, 
           const img = el.matches('img') ? el : el.querySelector(':scope > img.fx-img, :scope img.fx-img, img');
           const idx = ordered.indexOf(el);
           const drawn = sampleDrawnImage(img);
+          const slotHost = el.closest('[data-cn-official-slot]');
           nodes[id] = {
             x: (r.left - origin.left) / scale,
             y: (r.top - origin.top) / scale,
             w: r.width / scale,
             h: r.height / scale,
+            cnOfficialSlot: el.getAttribute('data-cn-official-slot')
+              || (slotHost && slotHost.getAttribute('data-cn-official-slot'))
+              || null,
             hasImg: !!(img && String(img.tagName || '').toUpperCase() === 'IMG'),
             text: String(el.innerText || el.textContent || '').trim(),
             fontWeight: cs.fontWeight || null,

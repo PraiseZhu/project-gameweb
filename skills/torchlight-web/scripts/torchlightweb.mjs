@@ -127,6 +127,12 @@ function probeLaterAxes({ demoDir }) {
   return runChild('scripts/lib/later-axes-probe.mjs', ['--demo', demoDir], { timeout: 900000 });
 }
 
+function freezeDemo({ demoDir, interaction = false }) {
+  const args = ['--demo', demoDir];
+  if (interaction) args.push('--interaction');
+  return runChild('scripts/freeze/freeze-demo.mjs', args, { timeout: 3600000 });
+}
+
 async function main(argv = process.argv.slice(2)) {
   const parsed = parseTorchlightwebArgs(argv);
   if (parsed.ok !== true) {
@@ -143,6 +149,7 @@ async function main(argv = process.argv.slice(2)) {
     buildMain,
     packDemo,
     probeLaterAxes,
+    freezeDemo,
   }));
   writeAndExit(result, result.ok ? 0 : 2);
 }

@@ -355,6 +355,43 @@ test('img/ lang variants follow page language and never fall back to cn', () => 
   assert.equal(resolveImgLangVariant({ componentSets: [hashed], componentId: 'hash-cn', language: 'en' }).componentId, 'hash-en');
   assert.equal(isLegalImgLangSet(emptyProps), true);
   assert.equal(resolveImgLangVariant({ componentSets: [emptyProps], componentId: 'empty-cn', language: 'en' }).componentId, 'empty-en');
+
+  const landing = {
+    componentSetId: 'set-landing',
+    name: 'img/logo',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['jp', 'tw', 'en', 'kr'] } },
+    variants: [
+      { componentId: 'land-jp', name: 'lang=jp', componentProperties: { lang: { type: 'VARIANT', value: 'jp' } } },
+      { componentId: 'land-tw', name: 'lang=tw', componentProperties: { lang: { type: 'VARIANT', value: 'tw' } } },
+      { componentId: 'land-en', name: 'lang=en', componentProperties: { lang: { type: 'VARIANT', value: 'en' } } },
+      { componentId: 'land-kr', name: 'lang=kr', componentProperties: { lang: { type: 'VARIANT', value: 'kr' } } },
+    ],
+  };
+  assert.equal(isLegalImgLangSet(landing), true);
+  assert.deepEqual(pageLangsFromImgLangSets([landing]), ['zh-CN', 'zh-TW', 'en', 'ja', 'ko']);
+  const landingCn = resolveImgLangVariant({ componentSets: [landing], componentId: 'land-jp', language: 'zh-CN' });
+  assert.equal(landingCn.status, 'matched');
+  assert.equal(landingCn.componentId, 'land-en');
+  assert.equal(landingCn.value, 'en');
+  assert.equal(landingCn.reason, 'landing-cn-reuses-en');
+  assert.notEqual(landingCn.componentId, 'land-jp');
+  const landingJa = resolveImgLangVariant({ componentSets: [landing], componentId: 'land-jp', language: 'ja' });
+  assert.equal(landingJa.status, 'matched');
+  assert.equal(landingJa.componentId, 'land-jp');
+  const noEn = {
+    componentSetId: 'set-no-en',
+    name: 'img/标题slg',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['jp', 'tw', 'kr'] } },
+    variants: [
+      { componentId: 'noen-jp', name: 'lang=jp', componentProperties: { lang: { type: 'VARIANT', value: 'jp' } } },
+      { componentId: 'noen-tw', name: 'lang=tw', componentProperties: { lang: { type: 'VARIANT', value: 'tw' } } },
+      { componentId: 'noen-kr', name: 'lang=kr', componentProperties: { lang: { type: 'VARIANT', value: 'kr' } } },
+    ],
+  };
+  const missingCn = resolveImgLangVariant({ componentSets: [noEn], componentId: 'noen-jp', language: 'zh-CN' });
+  assert.equal(missingCn.status, 'missing');
+  assert.equal(missingCn.componentId, null);
+  assert.notEqual(missingCn.componentId, 'noen-jp');
 });
 
 function primaryCtaFixture() {

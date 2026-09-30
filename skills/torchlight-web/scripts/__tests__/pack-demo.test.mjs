@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_PACK_BUDGET_BYTES,
   collectFallbackRefs,
+  assertFrozenPackIntact,
+  isPackKeepDir,
   isPackKeepFile,
   missingFallbackFiles,
   missingRuntimeReferences,
@@ -66,6 +68,46 @@ function validDemo() {
 
 test('pack budget is 15MB on the served folder', () => {
   assert.equal(DEFAULT_PACK_BUDGET_BYTES, 15 * 1024 * 1024);
+});
+
+test('pack keeps frozen/ and does not rewrite or prune it', () => {
+  assert.equal(isPackKeepDir('frozen'), true);
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-frozen-'));
+  mkdirSync(join(dir, 'assets'));
+  mkdirSync(join(dir, 'frozen/static-assets'), { recursive: true });
+  writeFileSync(join(dir, 'index.html'), '<img src="assets/used.png">');
+  writeFileSync(join(dir, 'assets/used.png'), PNG);
+  writeFileSync(join(dir, 'frozen/index.html'), '<img src="./static-assets/keep.png"><img src="assets/used.png">');
+  writeFileSync(join(dir, 'frozen/cn.static.html'), '<img src="./static-assets/orphan.png">');
+  writeFileSync(join(dir, 'frozen/static-assets/keep.png'), PNG);
+  writeFileSync(join(dir, 'frozen/static-assets/orphan.png'), PNG);
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  const removed = removeUnreferencedPackedFiles(dir, html);
+  assert.equal(removed.removed.some((rel) => rel.startsWith('frozen/')), false);
+  assert.equal(existsSync(join(dir, 'frozen/static-assets/orphan.png')), true);
+  rewritePackedRefs(dir, [{ from: 'assets/used.png', to: 'assets/used.webp' }]);
+  assert.match(readFileSync(join(dir, 'index.html'), 'utf8'), /assets\/used\.webp/);
+  assert.match(readFileSync(join(dir, 'frozen/index.html'), 'utf8'), /assets\/used\.png/);
+  assert.doesNotMatch(readFileSync(join(dir, 'frozen/index.html'), 'utf8'), /assets\/used\.webp/);
+});
+
+test('pack fails closed when frozen HTML still points at live assets/', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-frozen-live-'));
+  mkdirSync(join(dir, 'frozen/static-assets'), { recursive: true });
+  writeFileSync(join(dir, 'frozen/en.static.html'), '<style>.x{background:url(./assets/1119-2985.webp)}</style>');
+  const intact = assertFrozenPackIntact(dir);
+  assert.equal(intact.ok, false);
+  assert.equal(intact.error, 'frozen-live-asset-path');
+});
+
+test('pack inspects a landing ja.static.html the same as the four default freeze pages', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yise-pack-frozen-ja-'));
+  mkdirSync(join(dir, 'frozen/static-assets'), { recursive: true });
+  writeFileSync(join(dir, 'frozen/ja.static.html'), '<style>.x{background:url(./assets/1187-1726.webp)}</style>');
+  const intact = assertFrozenPackIntact(dir);
+  assert.equal(intact.ok, false);
+  assert.equal(intact.error, 'frozen-live-asset-path');
+  assert.equal(intact.leftover.some((href) => href.startsWith('ja.static.html:')), true);
 });
 
 test('pack refuses empty later-axes samples even when ok/probed are true', () => {

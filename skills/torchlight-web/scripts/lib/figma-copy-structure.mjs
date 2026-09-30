@@ -431,8 +431,10 @@ export function findCellSplitGroups(texts, table) {
       const right = list.find((node) => String(node.nodeId) === b.nodeIds[0]) || {};
       return docOrder(left, right);
     });
-    const key = hits[0].nodeIds.join('|');
-    const group = groupFromHits(hits.filter((hit) => hit.nodeIds.join('|') === key));
+    const longest = Math.max(...hits.map((hit) => hit.nodeIds.length));
+    const fullest = hits.filter((hit) => hit.nodeIds.length === longest);
+    const key = fullest[0].nodeIds.join('|');
+    const group = groupFromHits(fullest.filter((hit) => hit.nodeIds.join('|') === key));
     groups.push(group);
     for (const id of group.nodeIds) claimed.add(id);
   }
@@ -610,6 +612,22 @@ function clusterEdges(boundSet, seeds) {
  * sits earlier in the page tree can still uniquely keep the next table row.
  * Two edge candidates stay unresolved.
  */
+export function inferLocalCandidateNeighbor({ nodeId, candidateRows, texts, byNode }) {
+  const rows = candidateRowSet(candidateRows);
+  if (rows.length < 2) return { unresolved: true, via: 'unresolved', why: 'candidate rows are not ambiguous' };
+  const self = (Array.isArray(texts) ? texts : []).find((node) => String(node.nodeId) === String(nodeId));
+  if (!self) return { unresolved: true, via: 'unresolved', why: 'node is missing from document order' };
+  const list = [...sameTreeTexts(texts, self)].sort(docOrder);
+  const index = list.findIndex((node) => String(node.nodeId) === String(nodeId));
+  if (index < 0) return { unresolved: true, via: 'unresolved', why: 'node is missing from document order' };
+  const near = nearestBoundSeeds(list, index, byNode).filter((row) => rows.includes(row));
+  const row = uniqueRow(near);
+  if (row == null) {
+    return { unresolved: true, via: 'unresolved', why: `nearest bound rows ${near.join('/') || 'none'} are not a unique candidate among ${rows.join('/')}` };
+  }
+  return { row, via: 'inferred-adjacent', why: `nearest bound text in this tree keeps row ${row}` };
+}
+
 export function inferAdjacentBoundRow({ nodeId, candidateRows, texts, byNode }) {
   const rows = candidateRowSet(candidateRows);
   if (rows.length < 2) return { unresolved: true, via: 'unresolved', why: 'candidate rows are not ambiguous' };

@@ -91,6 +91,8 @@ test('global CSS is brightness, hover-gated, and transitions filter', () => {
   assert.match(css, /--fx-hover-brightness:1\.12/);
   assert.match(css, /--fx-press-brightness:0\.88/);
   assert.match(css, /@media \(hover: hover\)/);
+  assert.match(css, /html:not\(\[data-ops-interaction="0"\]\) button:hover/);
+  assert.doesNotMatch(css, /@media \(hover: hover\)\{button:hover/);
   assert.match(css, /filter:brightness\(var\(--fx-hover-brightness\)\)/);
   assert.match(css, /filter:brightness\(var\(--fx-press-brightness\)\)/);
   assert.equal(BUTTON_PRESS_TOKENS.transition, 'none');

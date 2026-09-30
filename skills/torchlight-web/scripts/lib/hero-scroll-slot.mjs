@@ -35,9 +35,10 @@ export function resolveHeroContentRoot({
   return null;
 }
 
-/** Later CSS top is next.y + offset. Offset from the first following
- *  section so later starts at the 100vh slot edge. No following section
- *  (or a non-numeric y) keeps extra = viewport/k − first.h.
+/** Later CSS top is next.y + extra. Extra = viewport/k − first.h so the
+ *  100vh crop pads or shortens the first screen; Figma itemSpacing
+ *  (next.y − first.bottom) stays on the covering plate. No following
+ *  section (or a non-numeric y) still uses extra.
  *  Do not Number() a missing next: Number(false/null) is 0. */
 export function laterYOf(followingSections = []) {
   const raw = Array.isArray(followingSections) ? followingSections[0]?.y : undefined;
@@ -45,9 +46,9 @@ export function laterYOf(followingSections = []) {
 }
 
 export function laterLayoutOffsetDesign(designHeight, firstY, heroHeight, followingSections = []) {
-  const nextY = laterYOf(followingSections);
-  const laterStart = Number.isFinite(nextY) ? nextY : (firstY + heroHeight);
-  return designHeight - (laterStart - firstY);
+  void firstY;
+  void followingSections;
+  return designHeight - heroHeight;
 }
 
 export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, firstSection = {}, followingSections = [], contentRootId = null } = {}) {
@@ -61,12 +62,12 @@ export function buildHeroScrollSlot({ viewportHeight, scale, pageOriginY = 0, fi
     && Number.isFinite(firstY);
   if (!valid) return null;
   const designHeight = viewport / factor;
-  /* Official first screen is the real viewport (100vh). Later sections start
-     at that edge in CSS: extra = viewport/k − heroH. Positive pads a short
-     hero; negative crops a tall Figma hero so scrollTop=0 never shows sec/2.
-     Do not keep later at k×hero when that is taller than the window. Official
-     SS13 abuts in CSS (gap:0); the renderer snaps later used-top to the hero
-     used-bottom so zoom(k) cannot leave a hairline. */
+  /* Official first screen is the real viewport (100vh). extra = viewport/k −
+     heroH. Positive pads a short hero; negative crops a tall Figma hero so
+     scrollTop=0 never shows the next section. Do not keep later at k×hero
+     when that is taller than the window. Figma itemSpacing between first
+     bottom and next.top stays (covering-plate join). Hairline zoom(k) seams
+     (<2 CSS px) still snap in the renderer; authored gutters do not. */
   const extra = designHeight - heroHeight;
   const layoutOffsetDesign = laterLayoutOffsetDesign(designHeight, firstY, heroHeight, followingSections);
   const releaseDistance = Math.max(0, extra) * factor;
