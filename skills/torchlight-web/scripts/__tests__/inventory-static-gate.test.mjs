@@ -392,6 +392,9 @@ test('probe script is a shipped skill file, not an optional local extra', () => 
   assert.match(src, /overlayOwnerOf/);
   assert.match(src, /inSection/);
   assert.match(src, /fontWeight/);
+  assert.match(src, /cnOfficialSlot/);
+  assert.match(src, /componentInstanceMountStatus/);
+  assert.match(src, /langShellValue/);
   assert.match(src, /laterKvMeasureIds/);
   assert.match(src, /laterKvPaintNode/);
   assert.match(src, /owner-ink-spill-natural/);
@@ -673,6 +676,73 @@ test('product viewport rejects a gap between sec/1 and sec/2', () => {
     },
   });
   assert.equal(green.ok, true, (green.problems || []).join('\n'));
+
+  const authoredJoin = evaluateProductScrollGate({
+    inventory: {
+      schema: 'inventory/v2',
+      sections: [
+        { id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1472 } },
+        { id: 'sec-3', number: 3, pageBox: { x: 0, y: 1512, w: 750, h: 400 } },
+      ],
+      nodes: [
+        { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1472 } },
+        { id: 'sec-3', status: 'determined', role: 'sec', name: 'sec/3', pageBox: { x: 0, y: 1512, w: 750, h: 400 } },
+      ],
+    },
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: {
+        'sec-1': { cropWindow: '100vh', height: 1623, overflow: 'hidden' },
+        'sec-3': { height: 400, overflow: 'hidden' },
+      },
+      sectionAbut: { gap: 20.8 },
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      slotDesignHeight: 1623,
+      scale: 390 / 750,
+      viewport: { w: 390, h: 844 },
+      firstKv: { hostH: 844, imgSrc: 'assets/kv.webp', assetW: 750, assetH: 1472, assetEmpty: false },
+      firstScreenFloor: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+  });
+  assert.equal(authoredJoin.ok, true, (authoredJoin.problems || []).join('\n'));
+
+  const eatenJoin = evaluateProductScrollGate({
+    inventory: {
+      schema: 'inventory/v2',
+      sections: [
+        { id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1472 } },
+        { id: 'sec-3', number: 3, pageBox: { x: 0, y: 1512, w: 750, h: 400 } },
+      ],
+      nodes: [
+        { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1472 } },
+        { id: 'sec-3', status: 'determined', role: 'sec', name: 'sec/3', pageBox: { x: 0, y: 1512, w: 750, h: 400 } },
+      ],
+    },
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: {},
+      scrolled: 1,
+      scrollTop: 1,
+      layers: {
+        'sec-1': { cropWindow: '100vh', height: 1623, overflow: 'hidden' },
+        'sec-3': { height: 400, overflow: 'hidden' },
+      },
+      sectionAbut: { gap: 0 },
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      slotDesignHeight: 1623,
+      scale: 390 / 750,
+      viewport: { w: 390, h: 844 },
+      firstKv: { hostH: 844, imgSrc: 'assets/kv.webp', assetW: 750, assetH: 1472, assetEmpty: false },
+      firstScreenFloor: { minLum: 40, rows: [{ lum: 40 }] },
+    },
+  });
+  assert.equal(eatenJoin.ok, false);
+  assert.ok(eatenJoin.problems.some((line) => line.includes('section-gap')), (eatenJoin.problems || []).join('\n'));
 
   const blackSeam = evaluateProductScrollGate({
     inventory,
@@ -3295,6 +3365,245 @@ test('product viewport keeps a short-hero arrow on the padded 100vh floor, not r
         height: 70,
         sourceHeight: 70,
         nodes: { 'fix-arrow': { x: 340, y: 1245, w: 70, h: 70 } },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('CN official chrome shift is not pageBox-mismatch', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: '1187:976',
+        status: 'determined',
+        role: 'btn',
+        name: 'btn/进入官网',
+        pageBox: { x: 3194, y: 70, w: 516, h: 150 },
+      }],
+    },
+    measurements: {
+      nodes: {
+        '1187:976': {
+          x: 3309, y: 70, w: 516, h: 150,
+          cnOfficialSlot: 'reward-panel-right',
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('product CN official chrome shift is not topbar-chrome-pageBox-mismatch', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+    overlays: [{ id: 'fix-1', role: 'fix', pin: 'viewport', label: '侧边栏' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 3840, h: 2143 } },
+      { id: 'fix-1', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/侧边栏', pageBox: { x: 2640, y: 70, w: 1200, h: 1790 } },
+      { id: '1187:976', status: 'determined', role: 'btn', name: 'btn/进入官网', parentId: 'fix-1', ancestorIds: ['fix-1'], pageBox: { x: 3194, y: 70, w: 516, h: 150 } },
+      { id: '1187:977', status: 'determined', role: 'btn', name: 'btn/官方充值', parentId: 'fix-1', ancestorIds: ['fix-1'], pageBox: { x: 2766, y: 70, w: 516, h: 150 } },
+      { id: '1187:978', status: 'determined', role: 'dropmenu', name: 'dropmenu/多语言', parentId: 'fix-1', ancestorIds: ['fix-1'], pageBox: { x: 3542, y: 75, w: 254, h: 417 } },
+      { id: 'I1187:978;1187:1176', status: 'determined', role: 'img', name: 'img/icon', parentId: '1187:978', ancestorIds: ['fix-1', '1187:978'], pageBox: { x: 3651, y: 75, w: 142, h: 142 } },
+      { id: '1187:1010', status: 'determined', role: 'img', name: 'img/折扣背景', parentId: '1187:1009', ancestorIds: ['fix-1', '1187:1009'], pageBox: { x: 2826, y: 227.150390625, w: 394, h: 91 } },
+      { id: '1187:1018', status: 'determined', role: 'img', name: 'img/折扣角标', parentId: 'fix-1', ancestorIds: ['fix-1'], pageBox: { x: 2785, y: 69, w: 118.76, h: 84.83 } },
+    ],
+  };
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { 'fix-1': { dTop: 0, dLeft: 0 } },
+      overlayBoxes: { 'fix-1': { top: 35, height: 895 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 1800, overflow: 'hidden' } },
+      slotDesignHeight: 1800,
+      scale: 0.5,
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'fix-1',
+        navShell: false,
+        topbar: true,
+        height: 1790,
+        sourceHeight: 1790,
+        nodes: {
+          'fix-1': { x: 0, y: 0, w: 1200, h: 1790 },
+          '1187:976': { x: 669, y: 0, w: 516, h: 150, cnOfficialSlot: 'reward-panel-right' },
+          '1187:977': { x: 241, y: 0, w: 516, h: 150, cnOfficialSlot: 'reward-panel-right' },
+          '1187:1010': { x: 301, y: 157.15, w: 394, h: 91, cnOfficialSlot: 'reward-panel-right' },
+          '1187:1018': { x: 260, y: -1, w: 118.76, h: 84.83, cnOfficialSlot: 'reward-panel-right' },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+  assert.equal((green.problems || []).some((line) => line.includes('topbar-chrome-pageBox-mismatch')), false);
+  assert.equal((green.problems || []).some((line) => line.includes('topbar-chrome-missing-dom')), false);
+});
+
+test('product CN mobile globe on lang-button slot is not topbar-chrome-pageBox-mismatch', () => {
+  const inventory = {
+    schema: 'inventory/v2',
+    sections: [{ id: 'sec-1', number: 1, pageBox: { x: 0, y: 0, w: 750, h: 1334 } }],
+    overlays: [{ id: 'nav', role: 'fix', pin: 'viewport', label: '右上方导航' }],
+    nodes: [
+      { id: 'sec-1', status: 'determined', role: 'sec', name: 'sec/1', pageBox: { x: 0, y: 0, w: 750, h: 1334 } },
+      { id: 'nav', status: 'determined', role: 'fix', pin: 'viewport', name: 'fix/右上方导航', pageBox: { x: 369.7578125, y: 27, w: 366, h: 158 } },
+      { id: '1187:1871', status: 'determined', role: 'btn', name: 'btn/进入官网', parentId: 'nav', ancestorIds: ['nav'], pageBox: { x: 650.7578125, y: 100, w: 85, h: 85 } },
+      { id: '1187:1872', status: 'determined', role: 'img', name: 'img/按钮背景', parentId: '1187:1871', ancestorIds: ['nav', '1187:1871'], pageBox: { x: 650.7578125, y: 100, w: 85, h: 85 } },
+      { id: '1187:1874', status: 'determined', role: 'img', name: 'img/icon', parentId: '1187:1871', ancestorIds: ['nav', '1187:1871'], pageBox: { x: 682.2109375, y: 128.720703125, w: 21, h: 25 } },
+      { id: '1187:1890', status: 'determined', role: 'dropmenu', name: 'dropmenu/多语言', parentId: 'nav', ancestorIds: ['nav'], pageBox: { x: 505.7578125, y: 31, w: 230, h: 370 } },
+    ],
+  };
+  const green = evaluateProductScrollGate({
+    inventory,
+    viewportKind: 'product',
+    productScroll: {
+      overlay: { position: 'sticky', transform: 'none', zoom: '1', height: '0px' },
+      overlayDeltas: { nav: { dTop: 0, dLeft: 0 } },
+      overlayBoxes: { nav: { top: 14, height: 82 } },
+      scrolled: 1,
+      scrollTop: 400,
+      layers: { 'sec-1': { cropWindow: '100vh', height: 1623, overflow: 'hidden' } },
+      slotDesignHeight: 1623,
+      scale: 0.52,
+      seamPixels: { minLum: 40, rows: [{ lum: 40 }] },
+      chromeTopBar: {
+        id: 'nav',
+        navShell: false,
+        topbar: true,
+        height: 158,
+        sourceHeight: 158,
+        nodes: {
+          nav: { x: 0, y: 0, w: 366, h: 158, cnOfficialSlot: 'window-right' },
+          '1187:1871': { x: 281, y: 4, w: 85, h: 85, cnOfficialSlot: 'lang-button' },
+          '1187:1872': { x: 281, y: 4, w: 85, h: 85, cnOfficialSlot: 'lang-button' },
+          '1187:1874': { x: 312.45, y: 32.72, w: 21, h: 25, cnOfficialSlot: 'lang-button' },
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+  assert.equal((green.problems || []).some((line) => line.includes('topbar-chrome-pageBox-mismatch')), false);
+  assert.equal((green.problems || []).some((line) => line.includes('topbar-chrome-missing-dom')), false);
+});
+
+test('CN official chrome descendants inherit the nav slot shift', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: 'nav',
+          status: 'determined',
+          role: 'fix',
+          name: 'fix/右上方导航',
+          pageBox: { x: 369.7578125, y: 27, w: 366, h: 158 },
+        },
+        {
+          id: 'child',
+          status: 'determined',
+          role: 'btn',
+          name: 'btn/官方充值',
+          parentId: 'nav',
+          ancestorIds: ['nav'],
+          pageBox: { x: 369.7578125, y: 27, w: 309.6, h: 90 },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        nav: { x: 384, y: 27, w: 366, h: 158, cnOfficialSlot: 'window-right' },
+        child: { x: 384, y: 27, w: 309.59375, h: 90 },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('lang-shell EN reuse owner box change is not pageBox-mismatch', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'btn-win',
+        status: 'determined',
+        name: 'windows下载按钮-1',
+        type: 'INSTANCE',
+        pageBox: { x: -1, y: 1098, w: 396, h: 128 },
+      }],
+    },
+    measurements: {
+      nodes: {
+        'btn-win': {
+          x: -1, y: 1098, w: 396, h: 128,
+          componentInstanceMountStatus: 'lang-shell-variant-tree',
+          langShellValue: 'en',
+        },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('prize art imgBox on renderBox is not sliceExport-mismatch', () => {
+  const pageBox = { x: 76.9, y: 1294.38, w: 132.86, h: 102.62 };
+  const renderBox = { x: 76.9, y: 1283, w: 161.36, h: 142.5 };
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [{
+        id: 'prize',
+        status: 'determined',
+        role: 'img',
+        name: 'img/奖品素材',
+        pageBox,
+        renderBox,
+        sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'prize.png', bounds: 'render' },
+      }],
+    },
+    measurements: {
+      nodes: {
+        prize: { x: 76.9, y: 1294.38, w: 132.86, h: 102.62, hasImg: true, imgBox: renderBox },
+      },
+    },
+  });
+  assert.equal(green.ok, true, (green.problems || []).join('\n'));
+});
+
+test('lang-shell EN reuse drops Figma-selected jp children without missing-dom', () => {
+  const green = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        {
+          id: 'btn-win',
+          status: 'determined',
+          name: 'window下载按钮-1',
+          type: 'INSTANCE',
+          pageBox: { x: 1364, y: 1751, w: 518, h: 168 },
+        },
+        {
+          id: 'Ibtn-win;jp-child',
+          status: 'determined',
+          name: 'img/按钮背景',
+          parentId: 'btn-win',
+          ancestorIds: ['btn-win'],
+          pageBox: { x: 1364, y: 1751, w: 518, h: 168 },
+        },
+      ],
+    },
+    measurements: {
+      nodes: {
+        'btn-win': {
+          x: 1364, y: 1751, w: 518, h: 168,
+          componentInstanceMountStatus: 'lang-shell-variant-tree',
+          langShellValue: 'en',
+        },
       },
     },
   });

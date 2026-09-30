@@ -1,10 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDesignPolicyFile } from '../../../../standards/design-policy/tool/src/parse-design-policy.mjs';
 import { languageMatrixOptions } from '../lib/translation/locale-policy.mjs';
 import { safeJsonForScript } from '../lib/fs-utils.mjs';
 import { LOCALE_PAGES } from './static-locale.mjs';
+import {
+  annotateReplaceableHtml,
+  writeMergedReplaceableIndex,
+} from './replaceable-assets.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = path.resolve(HERE, '../..');
@@ -17,21 +21,28 @@ function inlineSafe(code) {
   return String(code).replaceAll('</script', '<\\/script');
 }
 
-function frozenPagesMap() {
+function pagesOrDefault(pages) {
+  return Array.isArray(pages) && pages.length ? pages : LOCALE_PAGES;
+}
+
+function frozenPagesMap(pages = LOCALE_PAGES, pageHref = './') {
+  const prefix = String(pageHref || './');
+  const base = prefix.endsWith('/') ? prefix : prefix + '/';
   return Object.fromEntries(
-    LOCALE_PAGES.map((page) => [page.lang, { src: `./${page.out}`, region: page.region, locale: page.locale }]),
+    pagesOrDefault(pages).map((page) => [page.lang, { src: `${base}${page.out}`, region: page.region, locale: page.locale }]),
   );
 }
 
-function frozenQaDemoScript() {
-  const langs = LOCALE_PAGES.map((page) => page.lang);
+function frozenQaDemoScript(pages = LOCALE_PAGES, pageHref = './') {
+  const freezePages = pagesOrDefault(pages);
+  const langs = freezePages.map((page) => page.lang);
   const data = {
     name: 'torchlight-frozen',
     title: '火炬之光：无限',
     pr: null,
     summary: {
       what: 'Freeze the Main-green product frame into static HTML, then present it in the same QA harness.',
-      how: 'CN/Global plus Language pick cn/tw/en/ko.static.html. Platform and size resize the iframe so the frozen runtime picks PC or mobile.',
+      how: 'CN/Global plus Language pick the frozen locale pages. Platform and size resize the iframe so the frozen runtime picks PC or mobile.',
       accept: 'Stop 1 is the QA shell with frozen canvas clicks off and wheel scroll on. Stop 2 keeps the same shell and turns frozen clicks on.',
     },
     matrix: {
@@ -46,7 +57,7 @@ function frozenQaDemoScript() {
     states: { entry: {} },
     tabStates: [],
     adaptive: null,
-    frozenPages: frozenPagesMap(),
+    frozenPages: frozenPagesMap(freezePages, pageHref),
   };
   return `{
   name: ${safeJsonForScript(data.name)},
@@ -68,6 +79,12 @@ function frozenQaDemoScript() {
   scale: function () { return 1; },
   get supports() { return {}; },
   renderApp: function (ctx) {
+    try {
+      var interactionQ = new URLSearchParams(location.search).get('interaction') || '';
+      if (interactionQ === '1' || interactionQ === 'true' || interactionQ === 'yes') {
+        document.documentElement.setAttribute('data-ops-interaction', '1');
+      }
+    } catch (err) { /* query is optional */ }
     var frame = ctx.frame;
     if (!frame) return;
     var pages = (window.__qaDemo && window.__qaDemo.frozenPages) || {};
@@ -75,7 +92,7 @@ function frozenQaDemoScript() {
     var region = ctx.prefs && ctx.prefs.region;
     var page = pages[lang];
     if (region === 'cn') page = pages['zh-CN'] || page;
-    else if (region === 'global' && (!page || page.region === 'cn')) page = pages['zh-TW'] || pages.en || pages.ko || page;
+    else if (region === 'global' && (!page || page.region === 'cn')) page = pages['zh-TW'] || pages.en || pages.ja || pages.ko || page;
     if (!page) page = pages['zh-CN'];
     if (!page) throw new Error('frozen QA shell: missing locale page for ' + lang);
     var iframe = frame.querySelector('iframe.qa-frozen-frame');
@@ -97,12 +114,20 @@ function frozenQaDemoScript() {
     function armFrozenDoc(doc) {
       if (!doc || doc.documentElement.getAttribute('data-qa-frozen-armed') === '1') return;
       doc.documentElement.setAttribute('data-qa-frozen-armed', '1');
+      doc.documentElement.setAttribute('data-ops-interaction', document.documentElement.getAttribute('data-ops-interaction') || '0');
       var style = doc.createElement('style');
       style.setAttribute('data-qa-frozen-chrome', '1');
       style.textContent = '.frame,.stage{scrollbar-width:none;-ms-overflow-style:none}.frame::-webkit-scrollbar,.stage::-webkit-scrollbar{display:none;width:0;height:0}';
       (doc.head || doc.documentElement).appendChild(style);
+      function isLanguageSwitchEvent(ev) {
+        var node = ev.target;
+        if (!node || !node.closest) return false;
+        if (node.closest('[data-name^="dropmenu/多语言"], [data-dropmenu-name*="多语言"], [data-btn-name="切换语言"]')) return true;
+        return false;
+      }
       var block = function (ev) {
         if (document.documentElement.getAttribute('data-ops-interaction') !== '0') return;
+        if (isLanguageSwitchEvent(ev)) return;
         ev.preventDefault();
         ev.stopPropagation();
       };
@@ -113,6 +138,7 @@ function frozenQaDemoScript() {
       doc.addEventListener('contextmenu', block, true);
       doc.addEventListener('keydown', function (ev) {
         if (document.documentElement.getAttribute('data-ops-interaction') !== '0') return;
+        if (isLanguageSwitchEvent(ev)) return;
         if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
           ev.preventDefault();
           ev.stopPropagation();
@@ -123,29 +149,16 @@ function frozenQaDemoScript() {
       try { armFrozenDoc(iframe.contentDocument); } catch (err) { /* same-origin freeze pages only */ }
     };
     try { armFrozenDoc(iframe.contentDocument); } catch (err) { /* load handler arms after navigation */ }
-    if (iframe.getAttribute('src') !== page.src) iframe.setAttribute('src', page.src);
+    var pageSrc = page.src;
+    if (document.documentElement.getAttribute('data-ops-interaction') === '1' && pageSrc.indexOf('interaction=') < 0) {
+      pageSrc += (pageSrc.indexOf('?') < 0 ? '?' : '&') + 'interaction=1';
+    }
+    if (iframe.getAttribute('src') !== pageSrc) iframe.setAttribute('src', pageSrc);
   }
 }`;
 }
 
-function collectReplaceableIndex(html, locale) {
-  const assets = {};
-  const tagRe = /<(?:img|source|video|div|span)\b[^>]*\sdata-asset(?:-key)?="([^"]+)"[^>]*>/gi;
-  let match;
-  while ((match = tagRe.exec(html))) {
-    const markup = match[0];
-    const key = match[1];
-    const platform = (markup.match(/\sdata-asset-platform="([^"]+)"/i) || [])[1] || 'pc';
-    const lang = (markup.match(/\sdata-asset-lang="([^"]+)"/i) || [])[1] || locale;
-    const src = (markup.match(/\ssrc="([^"]+)"/i) || markup.match(/\sdata-asset-src="([^"]+)"/i) || [])[1] || null;
-    if (!assets[key]) assets[key] = { replaceable: true, files: {} };
-    if (!assets[key].files[platform]) assets[key].files[platform] = {};
-    assets[key].files[platform][lang] = { src, locale };
-  }
-  return assets;
-}
-
-export function writeOpsShell(frozenDir, { interaction = false } = {}) {
+export function writeOpsShell(frozenDir, { interaction = false, pages, pageHref = './' } = {}) {
   if (!existsSync(frozenDir)) mkdirSync(frozenDir, { recursive: true });
   const policy = parseDesignPolicyFile(DESIGN_MD);
   const devices = JSON.parse(readFileSync(DEVICES_TPL, 'utf8'));
@@ -162,41 +175,51 @@ export function writeOpsShell(frozenDir, { interaction = false } = {}) {
     }))
     .replace('{{QA_DEVICES}}', safeJsonForScript(devices))
     .replace('{{QA_DESIGN_POLICY}}', safeJsonForScript(policy))
-    .replace('{{QA_DEMO}}', frozenQaDemoScript())
+    .replace('{{QA_DEMO}}', frozenQaDemoScript(pages, pageHref))
     .replace('{{FIGMA_CHROME}}', chrome);
   const dest = path.join(frozenDir, 'index.html');
   writeFileSync(dest, html);
   return dest;
 }
 
-export function writeReplaceableIndex(frozenDir) {
-  const byLocale = {};
-  const merged = {};
-  for (const page of LOCALE_PAGES) {
+export function writeReplaceableIndex(frozenDir, pages = LOCALE_PAGES, indexRoot = frozenDir) {
+  const byRegion = {};
+  const files = [];
+  let count = 0;
+  for (const page of pagesOrDefault(pages)) {
     const file = path.join(frozenDir, page.out);
     if (!existsSync(file)) continue;
     const html = readFileSync(file, 'utf8');
-    const assets = collectReplaceableIndex(html, page.lang);
-    byLocale[page.locale] = { lang: page.lang, region: page.region, assets };
-    for (const [key, entry] of Object.entries(assets)) {
-      if (!merged[key]) merged[key] = { replaceable: true, files: {} };
-      for (const [platform, langs] of Object.entries(entry.files || {})) {
-        if (!merged[key].files[platform]) merged[key].files[platform] = {};
-        Object.assign(merged[key].files[platform], langs);
-      }
+    const marked = annotateReplaceableHtml(html, { lang: page.locale });
+    const written = writeMergedReplaceableIndex(indexRoot, {
+      region: marked.region,
+      lang: page.locale,
+      slots: marked.slots,
+    });
+    if (written.wrote) {
+      byRegion[marked.region] = written.index;
+      files.push(written.file);
+      count = Math.max(count, Object.keys(written.index.slots || {}).length);
     }
   }
-  const payload = {
-    schemaVersion: 1,
-    source: 'torchlight-freeze',
-    locales: byLocale,
-    assets: merged,
-  };
-  const dest = path.join(frozenDir, 'replaceable-index.json');
-  writeFileSync(dest, `${JSON.stringify(payload, null, 2)}\n`);
-  return { dest, count: Object.keys(merged).length, payload };
+  return { files, count, byRegion };
+}
+
+export function removeDeliverySidecars(frozenDir) {
+  for (const name of ['index.html', 'freeze-manifest.json']) {
+    const file = path.join(frozenDir, name);
+    if (existsSync(file)) rmSync(file);
+  }
+  for (const region of ['cn', 'global']) {
+    const file = path.join(frozenDir, region, 'replaceable-index.json');
+    if (existsSync(file)) rmSync(file);
+    const dir = path.join(frozenDir, region);
+    if (existsSync(dir) && readdirSync(dir).length === 0) rmSync(dir, { recursive: true });
+  }
 }
 
 export function frozenOpsIndex(demoDir) {
+  const review = path.join(demoDir, 'review', 'index.html');
+  if (existsSync(review)) return review;
   return path.join(demoDir, 'frozen', 'index.html');
 }

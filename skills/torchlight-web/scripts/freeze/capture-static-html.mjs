@@ -7,12 +7,22 @@ import { nextScriptCloseEnd, nextScriptOpen } from './html-script-scan.mjs';
 import { launchChromium } from '../lib/resolve-playwright.mjs';
 import {
   reservationModalPattern,
+  freezePagesForDemo,
+  frozenLocaleFiles,
+  htmlLangForFreezeLocale,
   resolveFreezeLocale,
   shouldStripLanguageSwitcher,
   stripLanguageSwitchers,
   stripReservationModalCss,
   stripReservationModals,
+  stripUnreachableOverseasCn,
+  stripDecorativeAlts,
 } from './static-locale.mjs';
+import { annotateReplaceableHtml, writeMergedReplaceableIndex } from './replaceable-assets.mjs';
+import {
+  applyConfirmedCopyOverlay,
+  applyConfirmedFashionBoxOverlay,
+} from './confirmed-deploy-overlay.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const skillRoot = path.resolve(__dirname, '../..');
@@ -184,30 +194,58 @@ export function escapeHtml(text) {
     .replace(/'/g, '&#39;');
 }
 
+function overlayAllowsReplace(name, overlayFiles) {
+  return Array.isArray(overlayFiles) && overlayFiles.includes(name);
+}
+
+function referencedAssetNames(html) {
+  const names = new Set();
+  for (const match of String(html || '').matchAll(/(?:src|href)="([^"]+)"/gi)) {
+    const base = path.basename(String(match[1] || '').split(/[?#]/)[0]);
+    if (base) names.add(base);
+  }
+  for (const match of String(html || '').matchAll(/url\((['"]?)([^)'"]+)\1\)/g)) {
+    const base = path.basename(String(match[2] || '').split(/[?#]/)[0]);
+    if (base) names.add(base);
+  }
+  return names;
+}
+
 export async function mergeAssetDir(stagingAssets, assetsDir, options = {}) {
   const existsFn = options.existsFn || ((target) => fs.existsSync(target));
   const mkdirFn = options.mkdirFn || mkdir;
   const copyFileFn = options.copyFileFn || fs.promises.copyFile;
   const readFn = options.readFn || fs.promises.readFile;
   const readdirFn = options.readdirFn || fs.promises.readdir;
+  const overlayFiles = options.overlayFiles || [];
+  const referenced = options.html ? referencedAssetNames(options.html) : null;
   await mkdirFn(assetsDir, { recursive: true });
   const names = await readdirFn(stagingAssets);
   let copied = 0;
   let reused = 0;
+  let replaced = 0;
   for (const name of names) {
+    if (referenced && !referenced.has(name) && !overlayAllowsReplace(name, overlayFiles)) continue;
     const from = path.join(stagingAssets, name);
     const to = path.join(assetsDir, name);
     if (existsFn(to)) {
       const left = Buffer.from(await readFn(from));
       const right = Buffer.from(await readFn(to));
-      if (Buffer.compare(left, right) !== 0) throw new Error('ASSET_COLLISION:' + name);
-      reused += 1;
-      continue;
+      if (Buffer.compare(left, right) === 0) {
+        reused += 1;
+        continue;
+      }
+      if (overlayAllowsReplace(name, overlayFiles)) {
+        await copyFileFn(from, to);
+        replaced += 1;
+        continue;
+      }
+      throw new Error('ASSET_COLLISION:' + name);
     }
     await copyFileFn(from, to);
     copied += 1;
   }
-  return { copied, reused };
+  return { copied, reused, replaced };
 }
 
 export async function replaceFreezeOutputs(options) {
@@ -364,6 +402,57 @@ function collectKeepDataAttrs(html, runtimeSource) {
     'data-asset-platform',
     'data-asset-lang',
     'data-asset-key',
+    'data-asset-owner',
+    'data-switch',
+    'data-switch-owner',
+    'data-switch-index',
+    'data-switch-initial-index',
+    'data-switch-page-source',
+    'data-switch-variant-count',
+    'data-switch-loop',
+    'data-switch-action',
+    'data-switch-variant-content',
+    'data-switch-variant-base',
+    'data-switch-variant-layer',
+    'data-switch-variant-index',
+    'data-switch-variant-mount-status',
+    'data-switch-variant-external',
+    'data-switch-swipe-host',
+    'data-motion-carousel',
+    'data-motion-carousel-page',
+    'data-motion-carousel-tab',
+    'data-motion-carousel-indicator',
+    'data-motion-carousel-index',
+    'data-motion-carousel-prev',
+    'data-motion-carousel-next',
+    'data-swpage',
+    'data-switch-page',
+    'data-modal-return',
+    'data-skipped-al-source',
+    'data-skipped-al-mode',
+    'data-skipped-al-vsize',
+    'data-skipped-al-gap',
+    'data-skipped-al-box-y',
+    'data-skipped-al-box-h',
+    'data-skipped-al-origin-y',
+    'data-skipped-al-source-y',
+    'data-skipped-al-source-h',
+    'data-skipped-al-primary',
+    'data-skipped-al-constraint-v',
+    'data-source-top',
+    'data-source-height',
+    'data-source-fit',
+    'data-hero-visual-plane',
+    'data-hero-visual-clip',
+    'data-hero-bg-follow',
+    'data-hero-bg-follow-y',
+    'data-hero-bg-clip',
+    'data-hero-bg-capture-top',
+    'data-hero-capture-slot',
+    'data-later-capture-top',
+    'data-hero-source-height',
+    'data-copy-missing',
+    'data-copy-unbound',
   ]) keep.add(name);
   return keep;
 }
@@ -392,12 +481,27 @@ export function stripUnusedDataAttrs(html, keep) {
 export function sanitizeCapturedHtml(html, runtimeSource, locale = 'cn') {
   let out = stripReservationModals(html, locale);
   if (shouldStripLanguageSwitcher(locale)) out = stripLanguageSwitchers(out);
+  else out = stripUnreachableOverseasCn(out, locale);
+  if (process.env.TORCHLIGHT_CONFIRMED_OVERLAY === '1') out = applyConfirmedCopyOverlay(out, locale);
+  out = stripDecorativeAlts(out);
   out = out.replace(/<style([^>]*)>([\s\S]*?)<\/style>/gi, (_, attrs, css) => {
     const nextAttrs = String(attrs || '').replace(/\sid="qa-fonts"/i, ' id="product-fonts"');
     return `<style${nextAttrs}>${stripReservationModalCss(css, locale)}</style>`;
   });
   out = stripUnusedDataAttrs(out, collectKeepDataAttrs(out, runtimeSource));
   return out;
+}
+
+const LIVE_ASSET_PATH_RE = /(?:url\((['"]?))(?!data:|https?:|\/\/)((?:\.\/)?(?:assets|content-package)\/[^)'"]+)\1\)|(?:src|href)="((?:\.\/)?(?:assets|content-package)\/[^"]+)"/gi;
+
+export function leftoverLiveAssetRefs(html) {
+  const found = [];
+  let match;
+  const re = new RegExp(LIVE_ASSET_PATH_RE.source, 'gi');
+  while ((match = re.exec(String(html || '')))) {
+    found.push(match[2] || match[3]);
+  }
+  return found;
 }
 
 const REPLACEABLE_FILE_SAFE = /[^0-9A-Za-z一-鿿._-]+/g;
@@ -462,7 +566,13 @@ async function captureTree(browser, url, viewport) {
     const text = (document.body && document.body.innerText || '').replace(/\s+/g, ' ').trim();
     return text.length > 20 && document.querySelectorAll('*').length >= 20;
   }, { timeout: 120000 });
-  await page.waitForTimeout(800);
+  await page.waitForFunction(() => {
+    const html = document.documentElement;
+    if (html.getAttribute('data-fx-fit-complete') === '1') return true;
+    if (typeof window.__fxFitDone === 'boolean') return window.__fxFitDone;
+    return document.fonts && document.fonts.status === 'loaded';
+  }, { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(200);
   const ready = await page.evaluate(async () => {
     window.__QA_ASSET_MODE = 'full';
     const imgs = [...document.querySelectorAll('img[data-asset-src]')];
@@ -632,8 +742,12 @@ async function main() {
     return `<style${attrs.length ? ' ' + attrs.join(' ') : ''}>\n${block.css}\n</style>`;
   }).join('\n');
 
+  const htmlLang = htmlLangForFreezeLocale(locale);
+  const localeRoot = opts.sourceDir ? path.resolve(opts.sourceDir) : (sourceAbs ? path.dirname(sourceAbs) : '');
+  const localeFiles = frozenLocaleFiles(freezePagesForDemo(localeRoot));
+  const localeBoot = '<script>window.__fxFrozenPages=' + JSON.stringify(localeFiles) + ';</script>';
   let html = `<!doctype html>
-<html lang="${escapeHtml(pc.lang)}" data-product-view="1">
+<html lang="${escapeHtml(htmlLang)}" data-product-view="1">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
@@ -667,6 +781,7 @@ html:not([data-plat]) [data-tree-wrap="mobile"]{display:none!important}
 ${rewriteTree(pc.wrapHtml, 'pc', 'pc')}
 ${rewriteTree(mobile.wrapHtml, 'mobile', 'pc')}
 </div>
+${localeBoot}
 <script>
 ${runtimeJs}
 </script>
@@ -752,6 +867,24 @@ ${runtimeJs}
   }
 
   html = sanitizeCapturedHtml(html, runtimeJs, locale);
+  const fashionBox = process.env.TORCHLIGHT_CONFIRMED_OVERLAY === '1'
+    ? await applyConfirmedFashionBoxOverlay({
+      html,
+      stagingAssets,
+      assetsHref,
+      locale,
+    })
+    : { html };
+  html = fashionBox.html || html;
+  const leftover = leftoverLiveAssetRefs(html);
+  if (leftover.length) throw new Error('LIVE_ASSET_PATH_REMAINING:' + leftover.slice(0, 8).join(','));
+  const replaceable = annotateReplaceableHtml(html, { lang: locale });
+  html = replaceable.html;
+  writeMergedReplaceableIndex(workRoot, {
+    region: replaceable.region,
+    lang: locale,
+    slots: replaceable.slots,
+  });
 
   const stagingHtml = path.join(stagingRoot, path.basename(outPath));
   await writeFile(stagingHtml, html, 'utf8');
@@ -764,6 +897,8 @@ ${runtimeJs}
       stagingAssets,
       backupRoot,
       mergeAssets: opts.mergeAssets,
+      overlayFiles: fashionBox.files || [],
+      html,
     });
   } finally {
     await rm(stagingRoot, { recursive: true, force: true });

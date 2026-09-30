@@ -65,7 +65,7 @@ test('tall Figma hero crops so later starts at the 100vh edge', () => {
   assert.equal(slot.releaseDistance, 0);
 });
 
-test('Figma gap between first.bottom and next.top does not survive the 100vh crop', () => {
+test('Figma gap between first.bottom and next.top survives the 100vh crop', () => {
   const slot = buildHeroScrollSlot({
     viewportHeight: 900,
     scale: 0.5,
@@ -76,8 +76,9 @@ test('Figma gap between first.bottom and next.top does not survive the 100vh cro
   });
   assert.equal(slot.designHeight, 1800);
   assert.equal(slot.extra, 1800 - 2143);
-  assert.equal(slot.layoutOffsetDesign, 1800 - 2275);
-  assert.equal(slot.layoutOffsetDesign, slot.extra - 132);
+  assert.equal(slot.layoutOffsetDesign, slot.extra);
+  assert.equal(slot.layoutOffsetDesign, 1800 - 2143);
+  assert.notEqual(slot.layoutOffsetDesign, 1800 - 2275);
   assert.equal(slot.releaseDistance, 0);
 });
 
@@ -232,7 +233,9 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /ancestorFollowsHeroY/);
   assert.match(render, /data-later-cover-window/);
   assert.match(render, /data-later-layout-shift/);
-  assert.match(render, /if \(\/\^bg\\\/\(pc\|mobile\)\$\/i\.test\(name\)\) return laterJoinOffsetDesign;/);
+  assert.match(render, /if \(\/\^bg\\\/\(pc\|mobile\)\$\/i\.test\(name\)\) return 0;/);
+  assert.match(render, /data-hero-visual-plane', 'bg-tail'/);
+  assert.match(render, /coveringPlate/);
   assert.match(render, /laterJoinOffsetDesign !== 0/);
   assert.doesNotMatch(render, /&& heroLayoutOffsetDesign > 0 && heroCropWindowDesign > 0/);
   assert.match(render, /layoutOffsetDesign: laterJoinOffsetDesign/);

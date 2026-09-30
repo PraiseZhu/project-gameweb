@@ -191,13 +191,15 @@ function parseTap(output) {
 
 function countRealTapCases(output, files = []) {
   const wrappers = new Set();
+  const slash = String.fromCharCode(92);
+  const tapPath = (value) => normalizePathForComparison(String(value || '').split(slash + slash).join(slash)).replace(/\/+/g, '/');
   for (const abs of files) {
-    wrappers.add(abs);
-    wrappers.add(relative(process.cwd(), abs));
+    wrappers.add(tapPath(abs));
+    wrappers.add(tapPath(relative(process.cwd(), abs)));
   }
   return [...String(output).matchAll(/^# Subtest: (.+)$/gm)]
     .map((match) => match[1].trim())
-    .filter((name) => !wrappers.has(name))
+    .filter((name) => !wrappers.has(tapPath(name)))
     .length;
 }
 

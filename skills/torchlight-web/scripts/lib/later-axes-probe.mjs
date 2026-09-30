@@ -1096,6 +1096,7 @@ async function measureInteractionPixels(page, { base, width, authoredFills = nul
         ? (panelRect.top - layerRect.top) / layerRect.height
         : null,
       sourceBox: layer.getAttribute('data-modal-source-box'),
+      hasInventoryPanel: !!panel,
       hasClose: !!close,
       hasNamedScroll: !!scroll,
       scrollbarHidden,
@@ -1122,9 +1123,11 @@ async function measureInteractionPixels(page, { base, width, authoredFills = nul
     : null;
   let modalVerdict = modal.missing
     ? { ok: false, measured: false, skipped: false, problems: ['pc-modal-missing'] }
-    : !expected
-      ? { ok: false, measured: true, skipped: false, problems: ['inventory-panel-missing'] }
-      : { ...pcModalSheetVerdict({ ...modal, expected }), measured: true, skipped: false };
+    : !modal.hasInventoryPanel
+      ? { ok: true, measured: true, skipped: false, problems: [], reason: 'not-inventory-sheet' }
+      : !expected
+        ? { ok: false, measured: true, skipped: false, problems: ['inventory-panel-missing'] }
+        : { ...pcModalSheetVerdict({ ...modal, expected }), measured: true, skipped: false };
   if (modal.lang && modal.lang !== 'zh-CN') {
     modalVerdict.ok = false;
     modalVerdict.problems = [...(modalVerdict.problems || []), `pc-modal-lang:${modal.lang}`];

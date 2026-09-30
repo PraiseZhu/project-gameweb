@@ -467,6 +467,8 @@ test('temporary lock-1920 names follow page k above 1920', () => {
   assert.match(renderSrc, /播放按钮/);
   assert.match(renderSrc, /_scanTopbarClusterRight/);
   assert.match(renderSrc, /isHeroPlay/);
+  assert.match(renderSrc, /windows\|window\|steam/);
+  assert.match(renderSrc, /btn\\\/\(\?:cn\|tw\|en\|jp\|kr\)立即/);
   assert.match(renderSrc, /parentAlreadyClustered/);
   assert.match(renderSrc, /data-hero-mobile-center/);
   assert.match(renderSrc, /data-later-mobile-center/);
@@ -483,7 +485,8 @@ test('temporary lock-1920 names follow page k above 1920', () => {
   assert.match(resizeSrc, /every language shares that pageBox x\/y with zh-CN, including later sections/);
   assert.match(resizeSrc, /language-shell remount must not add leftover a second time onto nested CTA art/);
   assert.match(resizeSrc, /later UI and the long bg\/mobile board share windowW\/750 uniform scale plus layoutOffsetDesign/);
-  assert.match(renderSrc, /if \(\/\^bg\\\/\(pc\|mobile\)\$\/i\.test\(name\)\) return laterJoinOffsetDesign;/);
+  assert.match(renderSrc, /if \(\/\^bg\\\/\(pc\|mobile\)\$\/i\.test\(name\)\) return 0;/);
+  assert.match(renderSrc, /coveringPlate/);
   assert.match(renderSrc, /data-page-left-chrome-y', 'source'/);
   assert.match(renderSrc, /pageLeftUpperChrome/);
   assert.doesNotMatch(renderSrc, /Park the calendar immediately left/);

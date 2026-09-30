@@ -458,10 +458,13 @@ export function cnMasterForComponent(inventory, componentId) {
     const unique = [...new Set(langs)];
     if (unique.length < 2) return null;
     const cn = variants.find((variant) => langValueOf(variant) === 'cn');
-    if (!cn?.id) return null;
+    const en = variants.find((variant) => langValueOf(variant) === 'en');
+    const master = cn || en;
+    if (!master?.id) return null;
+    const nested = asArray(master.nodes).find((node) => String(node?.id || '') === String(master.id));
     return {
-      id: String(cn.id),
-      pageBox: geom(cn.pageBox || cn.box),
+      id: String(master.id),
+      pageBox: geom(master.pageBox || nested?.pageBox || master.sliceExport?.box || master.box),
     };
   }
   return null;
@@ -621,7 +624,9 @@ export function sectionPaintExports(inventory, section) {
     const box = geom(node?.pageBox || node?.box);
     if (!box) throw new Error(`${node?.id || 'unknown'}: pageBox missing`);
     const lang = langValueOf(node);
-    if (String(node?.name || '').startsWith('img/') && lang && lang !== 'cn') {
+    const namedLangOwner = String(node?.name || '').startsWith('img/')
+      || /下载按钮/.test(String(node?.name || ''));
+    if (namedLangOwner && lang && lang !== 'cn' && lang !== 'en') {
       const master = cnMasterForComponent(inventory, node.componentId);
       if (!master?.id || !master.pageBox) throw new Error(`${node.id}: CN master pageBox missing`);
       out.push({

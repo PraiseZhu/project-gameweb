@@ -1813,6 +1813,15 @@
        even when sliceExport.box copied the short pageBox (103×50 vs 102×103). */
     const ownerReady = this._geomReady(ownerBox);
     const delivered = assetRec && assetRec.exportBox;
+    /* Page-tall bg/pc inkBox can be the unclipped 18360 artboard while the
+       delivered PNG is the 10798 pageBox. Stretching that PNG to inkBox
+       keeps later sections on the first-screen cathedral. A PNG that
+       already matches the owner clip stays on the owner. */
+    if (ownerReady && this._pngMatchesBox(assetRec, ownerBox)
+      && this._boxSpillsOwner(extraBox, ownerBox)
+      && !this._pngMatchesBox(assetRec, extraBox)) {
+      return ownerBox;
+    }
     /* Ancestor-visible renderBox can be the section crop while the
        unclipped descendant plate lives on extraBox/inkBox. A PNG that
        matches that plate must win before the cropped renderBox. */
@@ -2178,8 +2187,20 @@
     if (!foundSet || !this._isLegalImgLangSet(foundSet)) {
       return { status: 'not-applicable', language: lang, value, componentId: null, reason: foundSet ? 'not-img-lang-set' : 'set-not-found' };
     }
-    const match = (Array.isArray(foundSet.variants) ? foundSet.variants : [])
-      .find((variant) => this._langValueOfImgVariant(variant) === value) || null;
+    const variants = Array.isArray(foundSet.variants) ? foundSet.variants : [];
+    const match = variants.find((variant) => this._langValueOfImgVariant(variant) === value) || null;
+    if (!match && value === 'cn') {
+      const en = variants.find((variant) => this._langValueOfImgVariant(variant) === 'en') || null;
+      if (en) {
+        return {
+          status: 'matched',
+          language: lang,
+          value: 'en',
+          componentId: String(en.componentId || en.id || ''),
+          reason: 'landing-cn-reuses-en',
+        };
+      }
+    }
     if (!match) {
       return { status: 'missing', language: lang, value, componentId: null, reason: 'missing-language-variant' };
     }
@@ -2452,6 +2473,41 @@
   /* inventory/v2 often ships FONT_SIZE_% as lineHeightPercent and omits
      lineHeightPx. Paint already resolves that to px; fit/reset must use the
      same number or integer-px shrink returns before measuring. */
+  /* A hidden switch layer has no layout box, so scrollWidth is 0.
+     Falling through to a single-line glyph run then shrinks wrapping
+     copy until that one line fits the width. Measure it at the written
+     width instead. This is any inactive layer, not a page or string. */
+  _measureUnlaidWrap(el, width, fontSize, lineHeight) {
+    const doc = el && (el.ownerDocument || (typeof document !== 'undefined' ? document : null));
+    const boxWidth = Number(width);
+    if (!doc || !doc.body || !(boxWidth > 0)) return null;
+    const computed = typeof getComputedStyle === 'function' ? getComputedStyle(el) : null;
+    const probe = doc.createElement('div');
+    probe.textContent = el.textContent || '';
+    probe.style.position = 'fixed';
+    probe.style.left = '-100000px';
+    probe.style.top = '0';
+    probe.style.visibility = 'hidden';
+    probe.style.pointerEvents = 'none';
+    probe.style.boxSizing = (el.style && el.style.boxSizing) || 'border-box';
+    probe.style.width = boxWidth + 'px';
+    probe.style.maxWidth = boxWidth + 'px';
+    probe.style.minWidth = '0';
+    probe.style.whiteSpace = (el.style && el.style.whiteSpace) || 'pre-wrap';
+    probe.style.overflowWrap = (el.style && el.style.overflowWrap) || 'anywhere';
+    probe.style.fontFamily = (el.style && el.style.fontFamily) || (computed && computed.fontFamily) || 'sans-serif';
+    probe.style.fontSize = Number(fontSize) + 'px';
+    probe.style.lineHeight = Number(lineHeight) + 'px';
+    probe.style.fontWeight = (el.style && el.style.fontWeight) || (computed && computed.fontWeight) || '';
+    probe.style.letterSpacing = (el.style && el.style.letterSpacing) || (computed && computed.letterSpacing) || '';
+    doc.body.appendChild(probe);
+    const box = {
+      width: Number(probe.scrollWidth) || 0,
+      height: Number(probe.scrollHeight) || 0,
+    };
+    probe.remove();
+    return box;
+  },
   _resolvedLineHeight(tx, fontSize) {
     const abs = Number(tx && tx.lineHeight);
     if (Number.isFinite(abs) && abs > 0) return abs;
@@ -2910,7 +2966,18 @@
         el.style.width = prev.width;
         return out;
       };
+      const unlaidWrap = () => {
+        if (!wraps) return null;
+        const sw = Number(el.scrollWidth);
+        const sh = Number(el.scrollHeight);
+        if (sw > 0 || sh > 0) return null;
+        const width = (maxW != null ? maxW : null) || Number.parseFloat(el.style.width) || Number.parseFloat(el.style.maxWidth);
+        if (!(width > 0)) return { width: 0, height: 0 };
+        return this._measureUnlaidWrap(el, width, Number.parseFloat(el.style.fontSize) || fs, Number.parseFloat(el.style.lineHeight) || lh);
+      };
       const measuredW = () => withNaturalBox(() => {
+        const alt = unlaidWrap();
+        if (alt) return alt.width;
         if (wraps) {
           const sw = Number(el.scrollWidth);
           if (Number.isFinite(sw) && sw > 0) return sw;
@@ -2921,6 +2988,8 @@
         });
       });
       const measuredH = () => withNaturalBox(() => {
+        const alt = unlaidWrap();
+        if (alt) return alt.height;
         const sh = Number(el.scrollHeight);
         return Number.isFinite(sh) ? sh : 0;
       });
@@ -3075,18 +3144,17 @@
       && Number.isFinite(heroHeight) && heroHeight > 0 && Number.isFinite(firstY);
     if (!valid || Math.abs(firstY - Number(pageOriginY || 0)) > 0.5 || contentRootId == null) return null;
     const designHeight = viewport / factor;
-    /* Official 100vh slot: later starts at viewport/k. Negative extra crops a
-       tall Figma hero so scrollTop=0 never shows sec/2. Official SS13 abuts
-       in CSS (gap:0); used-size snap in _installHeroScrollSlot. */
+    /* Official 100vh slot: extra = viewport/k − heroH. Negative extra crops
+       a tall Figma hero so scrollTop=0 never shows the next section. Later
+       CSS top is next.y + extra, so Figma itemSpacing (covering-plate join)
+       survives. Hairline zoom(k) seams (<2 CSS px) still snap; authored
+       gutters do not. No following section (or a non-numeric y) keeps extra.
+       Do not Number() a missing next: Number(false/null) is 0. */
     const extra = designHeight - heroHeight;
-    /* Later CSS top is next.y + offset. Offset from the first following
-       section so later starts at the 100vh slot edge. No following section
-       (or a non-numeric y) keeps extra. Do not Number() a missing next:
-       Number(false/null) is 0. */
     const rawNextY = followingSections && followingSections[0] && followingSections[0].y;
     const nextY = (typeof rawNextY === 'number' && Number.isFinite(rawNextY)) ? rawNextY : NaN;
-    const laterStart = Number.isFinite(nextY) ? nextY : (firstY + heroHeight);
-    const layoutOffsetDesign = designHeight - (laterStart - firstY);
+    void nextY;
+    const layoutOffsetDesign = extra;
     const releaseDistance = Math.max(0, extra) * factor;
     return {
       stateVersion: 'hero-scroll-slot/v3',
@@ -3564,9 +3632,9 @@
           ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
           '.frame>.fx-stage,.frame>.fx-stage img,.frame>.fx-stage a,[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
           '.frame>.fx-stage input,.frame>.fx-stage textarea,.frame>.fx-stage [contenteditable]:not([contenteditable="false"]),.frame>.fx-stage [data-copy-code]{-webkit-user-select:text;user-select:text}',
-          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
-          '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
-          'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
+          'html[data-ops-interaction="1"] button,html[data-ops-interaction="1"] [role="button"],html[data-ops-interaction="1"] [data-link],html[data-ops-interaction="1"] [data-go],html[data-ops-interaction="1"] [data-sec-target],html[data-ops-interaction="1"] [data-switch-action],html[data-ops-interaction="1"] [data-hscroll-action],html[data-ops-interaction="1"] [data-calendar-now-state="return-today"],html[data-ops-interaction="1"] [data-tab],html[data-ops-interaction="1"] [data-indicator],html[data-ops-interaction="1"] [data-copy-code],html[data-ops-interaction="1"] [data-btn-press="true"]{cursor:pointer}',
+          '@media (hover: hover){html[data-ops-interaction="1"] button:hover,html[data-ops-interaction="1"] [role="button"]:hover,html[data-ops-interaction="1"] [data-link]:hover,html[data-ops-interaction="1"] [data-go]:hover,html[data-ops-interaction="1"] [data-sec-target]:hover,html[data-ops-interaction="1"] [data-switch-action]:hover,html[data-ops-interaction="1"] [data-hscroll-action]:hover,html[data-ops-interaction="1"] [data-calendar-now-state="return-today"]:hover,html[data-ops-interaction="1"] [data-tab]:hover,html[data-ops-interaction="1"] [data-indicator]:hover,html[data-ops-interaction="1"] [data-copy-code]:hover,html[data-ops-interaction="1"] [data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
+          'html[data-ops-interaction="1"] button:active,html[data-ops-interaction="1"] [role="button"]:active,html[data-ops-interaction="1"] [data-link]:active,html[data-ops-interaction="1"] [data-go]:active,html[data-ops-interaction="1"] [data-sec-target]:active,html[data-ops-interaction="1"] [data-switch-action]:active,html[data-ops-interaction="1"] [data-hscroll-action]:active,html[data-ops-interaction="1"] [data-calendar-now-state="return-today"]:active,html[data-ops-interaction="1"] [data-tab]:active,html[data-ops-interaction="1"] [data-indicator]:active,html[data-ops-interaction="1"] [data-copy-code]:active,html[data-ops-interaction="1"] [data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
           '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none;transition:none}',
           '[data-dropmenu="true"]:hover,[data-dropmenu="true"]:active{filter:none}',
           '[data-dropmenu-state="on"] [data-prefix="img"]{filter:none}',
@@ -3878,8 +3946,9 @@
         heroCropWindowDesign = Number(pageStageScale) > 0 ? slotH / pageStageScale : slotH / coverScale;
       }
       /* KV cover uses the real viewport. Later sections stay on width-scale k
-         and start at the 100vh edge (pad or crop), so scrollTop=0 never shows
-         sec/2 and never leaves a gap under a cropped hero. */
+         plus extra = viewport/k − heroH (pad or crop), so scrollTop=0 never
+         shows the next section. Figma itemSpacing after the first section
+         stays as covering-plate join; do not eat that gutter into extra. */
       const following = ids.map((id) => ({ id, meta: sections[id] && sections[id].meta }))
         .filter((entry) => String(entry.id) !== String(sectionId) && Number(entry.meta && entry.meta.y) > Number(first.y))
         .sort((a, b) => Number(a.meta.y) - Number(b.meta.y));
@@ -3972,7 +4041,13 @@
     const afterHeroBackgroundShift = (node) => {
       if (!heroSlot || !Number.isFinite(laterJoinOffsetDesign) || laterJoinOffsetDesign === 0) return 0;
       const name = String(node && node.name || '');
-      if (/^bg\/(pc|mobile)$/i.test(name)) return laterJoinOffsetDesign;
+      /* Covering-plate `bg/pc` / `bg/mobile` stays on Figma y so the
+         first-screen cathedral remains at page origin. Extra only
+         pads/crops later UI to 100vh. The cropped first-section
+         ending is restored by a bg-tail clone (clipPath from slotH)
+         so Figma y=first.bottom still sits in the join. Nested later
+         `bg/pc背景*` already ride the after-hero stage. */
+      if (/^bg\/(pc|mobile)$/i.test(name)) return 0;
       const y = Number(node && node.box && node.box.y);
       if (!Number.isFinite(y)) return 0;
       return y > heroSectionBottomY + 0.5 ? laterJoinOffsetDesign : 0;
@@ -5579,6 +5654,9 @@
          if (/^img\/logo/i.test(raw) || /^btn\/年龄/i.test(raw) || /^fix(?:\/|$)/i.test(raw)) return false;
          if (/^标题(?:$|@)/.test(raw) || /播放按钮/.test(raw) || /日历icon|日历按钮/i.test(raw)) return false;
          if (/^btn\/按钮(?:@|$)/.test(raw) || /^首屏主按钮/.test(raw)) return false;
+         if (/(?:windows|window|steam)\s*下载按钮/.test(raw)) return false;
+         if (/^btn\/(?:cn|tw|en|jp|kr)立即(?:下载|預約|预约)(?:@|$)/.test(raw)) return false;
+         if (/^btn\/(?:cn|tw|en|jp|kr)预约按钮(?:@|$)/.test(raw)) return false;
          const box = node.pageBox || node.box;
          const y = Number(box && box.y) - Number(paintOriginY);
          if (!Number.isFinite(y)) return false;
@@ -5592,6 +5670,9 @@
          if (/播放按钮/.test(raw)) return 'play';
          if (/^首屏主按钮/.test(raw) || this._isLock1920CtaNode(node, activeComponentSets)) return 'cta';
          if (__normalizedPlat === 'mobile' && /^btn\/按钮(?:@|$)/.test(raw)) return 'cta';
+         if (/(?:windows|window|steam)\s*下载按钮/.test(raw)) return 'cta';
+         if (/^btn\/(?:cn|tw|en|jp|kr)立即(?:下载|預約|预约)(?:@|$)/.test(raw)) return 'cta';
+         if (/^btn\/(?:cn|tw|en|jp|kr)预约按钮(?:@|$)/.test(raw)) return 'cta';
          if (/^标题(?:$|@)/.test(raw)) return 'title';
          if (raw === '赛季福利' || ancestorIds.some((id) => welfareOwnerIds.has(id)) || isWelfareBandNode(node)) return 'welfare';
          return '';
@@ -6190,7 +6271,10 @@
           || /^img\/标题slg(?:@|$)/i.test(String(n.name || ''));
         const isHeroCta = this._isLock1920CtaNode(n, activeComponentSets)
           || /^首屏主按钮/.test(String(n.name || ''))
-          || (__normalizedPlat === 'mobile' && /^btn\/按钮(?:@|$)/.test(String(n.name || '')));
+          || (__normalizedPlat === 'mobile' && /^btn\/按钮(?:@|$)/.test(String(n.name || '')))
+          || /(?:windows|window|steam)\s*下载按钮/.test(String(n.name || ''))
+          || /^btn\/(?:cn|tw|en|jp|kr)立即(?:下载|預約|预约)(?:@|$)/.test(String(n.name || ''))
+          || /^btn\/(?:cn|tw|en|jp|kr)预约按钮(?:@|$)/.test(String(n.name || ''));
         const isHeroCalendar = /^btn\/.*(日历icon|日历按钮)/i.test(String(n.name || ''));
         const isHeroTitleOwner = /^标题(?:$|@)/.test(String(n.name || ''));
         const isHeroPlay = /播放按钮/.test(String(n.name || ''));
@@ -7093,8 +7177,8 @@
              background root that still clips to its Figma height cuts the
              shifted tail, which reads as a short background. Keep first-screen
              KV unmoved; only release this clip when the layer is following. */
-          const isPageBackgroundRoot = backgroundHeroShift && pageStageMode
-            && /^bg\//i.test(String(n.name || ''));
+          const isPageBackgroundRoot = /^bg\/(pc|mobile)$/i.test(String(n.name || ''))
+            || (backgroundHeroShift && pageStageMode && /^bg\//i.test(String(n.name || '')));
           const childInkSpill = list.some((child) => {
             if (!child || String(child.parentId) !== String(nid)) return false;
             const childBox = child.pageBox || child.box;
@@ -7109,7 +7193,9 @@
             /* 751–1126 X-cover spills past the 750 authored box. Keep overflow
                visible even when layoutOffset is 0, or the scaled sheet clips
                back to a brown leftover strip. Height still follows page scroll
-               so a 20000 artboard does not invent a blank tail. */
+               so a 20000 artboard does not invent a blank tail. Authored
+               itemSpacing after sec/1 is covering-plate ink on this sheet:
+               clipsContent on pageBox.h would crop that join. */
             el.style.overflow = 'visible';
             el.style.height = (pageScrollHeight || box.h || 0) + 'px';
             el.setAttribute('data-hero-bg-clip', 'released-to-page-scroll-height');
@@ -8583,12 +8669,42 @@
         // 挂到父节点下（没有父节点才挂 stage）。DFS 先序 → 同级 append 顺序即绘制顺序。
         (parent ? parent.el : container).appendChild(el);
         if (el.getAttribute('data-shape-rounded-vector') === 'source-border-radius') this._fitLangChipHost(el);
-        /* One inventory bg/* sheet, two views: the clipped first-screen crop
-           and the unscaled tail that continues behind later sections.
-           Official ≤1126 keeps later UI and this sheet on the same transform;
-           a negative crop offset must still spawn the tail, or the page
-           lock-to-board leaves an empty brown band. */
-        if (!parent && el.getAttribute('data-hero-visual-plane') === 'bg'
+        /* One inventory bg/* sheet, two views: the unmoved first-screen
+           plate and the unscaled tail that continues behind later sections.
+           100vh crops KV/UI to viewport/k; the covering plate stays on
+           Figma y so the cathedral remains. Extra must still spawn the
+           tail: clip away the first-screen band and shift the rest by
+           extra so Figma y=first.bottom (authored ending + itemSpacing)
+           sits in the join, not under the cropped hero. */
+        const coveringPlate = !parent && /^bg\/(pc|mobile)$/i.test(String(n.name || ''));
+        const plateSourceH = Number(box.h);
+        const plateHeroH = heroSlot && Number(heroSlot.heroHeight) > 0
+          ? Number(heroSlot.heroHeight)
+          : 0;
+        if (coveringPlate
+          && laterJoinOffsetDesign < -0.5
+          && plateHeroH > 0
+          && plateSourceH > plateHeroH + 0.5) {
+          /* extra<0 crops KV/UI to 100vh. Clip the tail at Figma first.bottom
+             (not the slot) and shift by extra so local y=heroH lands on the
+             CSS join: extra + heroH = slot. Join then shows the authored
+             ending + itemSpacing, not the 100vh-cropped mid-torso. */
+          const tail = el.cloneNode(true);
+          tail.style.transform = '';
+          tail.style.left = ((box.x ?? 0) - originX) + 'px';
+          tail.style.clipPath = 'inset(' + plateHeroH + 'px 0 0 0)';
+          tail.style.webkitClipPath = 'inset(' + plateHeroH + 'px 0 0 0)';
+          tail.style.top = ((Number.parseFloat(el.style.top) || 0) + laterJoinOffsetDesign) + 'px';
+          tail.style.overflow = 'visible';
+          tail.removeAttribute('data-hero-visual-plane-scale');
+          tail.removeAttribute('data-hero-bg-clip');
+          tail.setAttribute('data-node', String(__u(nid)) + '::bg-tail');
+          tail.setAttribute('data-hero-visual-plane', 'bg-tail');
+          tail.setAttribute('data-hero-visual-clip', String(plateHeroH));
+          tail.setAttribute('data-hero-bg-follow', 'after-hero-slices');
+          tail.setAttribute('data-hero-bg-follow-y', String(laterJoinOffsetDesign));
+          container.appendChild(tail);
+        } else if (!parent && el.getAttribute('data-hero-visual-plane') === 'bg'
           && Number.isFinite(laterJoinOffsetDesign) && laterJoinOffsetDesign !== 0
           && heroCropWindowDesign > 0) {
           const sourceH = Number(box.h);
@@ -8966,10 +9082,18 @@
            calendar roots may be narrower or wider than the page instance.
            Keep width lock for img/ PNG and ordinary component mounts; a
            language shell follows the variant root box instead of staying
-           on the Figma-selected cn width. */
+           on the Figma-selected cn width. Landing download buttons keep the
+           page-instance box: EN/JP/KR masters share one 482×156 artboard
+           while the 750 instance is 396×128. Growing to the master walks
+           the pair off the authored floor. */
+        const keepLangShellInstanceBox = langShellFollow
+          && Number.isFinite(ownerW) && Number.isFinite(ownerH)
+          && Number.isFinite(rootW) && Number.isFinite(rootH)
+          && (Math.abs(ownerW - rootW) > 0.5 || Math.abs(ownerH - rootH) > 0.5)
+          && Math.abs((ownerW / ownerH) - (rootW / rootH)) <= 0.08;
         if (!root || !Number.isFinite(ownerW) || !Number.isFinite(ownerH)
           || !Number.isFinite(rootW) || !Number.isFinite(rootH)
-          || (!langShellFollow && !widthOk) || (!imgLangFollow && !langShellFollow && !heightOk)) {
+          || (!langShellFollow && !widthOk) || (!imgLangFollow && !langShellFollow && !heightOk && !keepLangShellInstanceBox)) {
           if (imgLangFollow) failImgLang('blocked-owner-root-mismatch');
           else owner.el.setAttribute('data-component-instance-mount-status', 'blocked-owner-root-mismatch');
           continue;
@@ -9016,17 +9140,30 @@
         }
         if (langShellFollow) {
           stripOwnerPixels();
-          if (!widthOk) {
-            const dx = (ownerW - rootW) / 2;
+          if (keepLangShellInstanceBox) {
+            const fitX = ownerW / rootW;
+            const fitY = ownerH / rootH;
             owner.el.style.width = rootW + 'px';
-            owner.el.style.left = ((Number.parseFloat(owner.el.style.left) || 0) + dx) + 'px';
-            owner.el.setAttribute('data-lang-shell-width', 'variant-root');
-          }
-          if (!heightOk) {
-            const dy = (ownerH - rootH) / 2;
             owner.el.style.height = rootH + 'px';
-            owner.el.style.top = ((Number.parseFloat(owner.el.style.top) || 0) + dy) + 'px';
-            owner.el.setAttribute('data-lang-shell-height', 'variant-root');
+            owner.el.style.transformOrigin = '0 0';
+            owner.el.style.transform = 'scale(' + fitX + ', ' + fitY + ')';
+            owner.el.setAttribute('data-lang-shell-width', 'instance-box');
+            owner.el.setAttribute('data-lang-shell-height', 'instance-box');
+            owner.el.setAttribute('data-lang-shell-fit-x', String(fitX));
+            owner.el.setAttribute('data-lang-shell-fit-y', String(fitY));
+          } else {
+            if (!widthOk) {
+              const dx = (ownerW - rootW) / 2;
+              owner.el.style.width = rootW + 'px';
+              owner.el.style.left = ((Number.parseFloat(owner.el.style.left) || 0) + dx) + 'px';
+              owner.el.setAttribute('data-lang-shell-width', 'variant-root');
+            }
+            if (!heightOk) {
+              const dy = (ownerH - rootH) / 2;
+              owner.el.style.height = rootH + 'px';
+              owner.el.style.top = ((Number.parseFloat(owner.el.style.top) || 0) + dy) + 'px';
+              owner.el.setAttribute('data-lang-shell-height', 'variant-root');
+            }
           }
           paint(owner.tree.nodes, owner.tree.nodes, owner.el, {
             originX: Number(rootBox.x) || 0,
@@ -9443,10 +9580,18 @@
           const explicitRoot = recordedRoot(raw && (raw.paintRootId ?? raw.pagePaintRootId ?? raw.sourcePaintRootId));
           if (explicitRoot) return explicitRoot;
           let best = null;
-          for (const entry of recordedRoots) {
-            const rootLoc = String(entry.loc || '').replace(/\/id$/, '');
-            if (loc === entry.loc || loc.startsWith(rootLoc + '/')) {
-              if (!best || rootLoc.length > String(best.loc || '').replace(/\/id$/, '').length) best = entry;
+          /* Empty locators match every recorded root (`'' === ''` and
+             `''.startsWith('')`). Footer CTAs without provenance then
+             paint inside the first pagePaintOrder sibling — usually
+             overflow:hidden bg/pc|bg/mobile — and clip off the board. */
+          if (loc) {
+            for (const entry of recordedRoots) {
+              const rawLoc = String(entry.loc || '');
+              if (!rawLoc) continue;
+              const rootLoc = rawLoc.replace(/\/id$/, '');
+              if (loc === rawLoc || loc.startsWith(rootLoc + '/')) {
+                if (!best || rootLoc.length > String(best.loc || '').replace(/\/id$/, '').length) best = entry;
+              }
             }
           }
           if (best) return String(best.id);
@@ -9617,10 +9762,13 @@
             layer.setAttribute('data-hero-crop-window', 'visual-root');
             layer.setAttribute('data-hero-crop-window-design', String(heroSlot.designHeight));
           } else if (/^bg(?:\/|$)/i.test(layerName)) {
-            /* Long `bg/mobile` / `bg/pc` X-cover is uniform. Clip this paint
-               root to pageScrollHeight so scaled height cannot invent extra
-               scroll (C4). Width already follows the window. */
-            layer.style.overflow = 'hidden';
+            /* Long `bg/mobile` / `bg/pc` follows extra so the authored
+               first-section ending stays in the join. Clip this paint
+               root to pageScrollHeight so scaled height cannot invent
+               extra scroll (C4). Width already follows the window.
+               Overflow stays visible: clipsContent on pageBox.h would
+               crop the shifted join band. */
+            layer.style.overflow = 'visible';
             layer.setAttribute('data-later-cover-clip', 'page-window');
           }
           stage.appendChild(layer);
@@ -9750,11 +9898,11 @@
          every page/section stage exists, using each modal's own Figma box.
          Visibility is interaction-owned; geometry stays source-backed. */
       const mountNamedModals = () => {
-        if (!enablePageInteraction) {
-          frame.setAttribute('data-named-modal-count', '0');
-          frame.setAttribute('data-named-modal-source-count', String(asArr(__activeTruth && __activeTruth.modals).length));
-          return;
-        }
+          if (!enablePageInteraction) {
+            frame.setAttribute('data-named-modal-count', '0');
+            frame.setAttribute('data-named-modal-source-count', String(asArr(__activeTruth && __activeTruth.modals).length));
+            return;
+          }
         const records = asArr(__activeTruth && __activeTruth.modals);
         try {
         frame.setAttribute('data-named-modal-source-count', String(records.length));

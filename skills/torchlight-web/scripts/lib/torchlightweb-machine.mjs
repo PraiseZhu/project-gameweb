@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { packRoot } from './pack-demo.mjs';
+import { packFrozenDelivery } from '../freeze/pack-frozen-delivery.mjs';
 import {
   acceptStop,
   canStartLaterAxis,
@@ -193,10 +194,11 @@ function currentStop(phase) {
 }
 
 function productViewForDemo(demoDir, { interaction = false } = {}) {
+  const reviewIndex = join(packRoot(demoDir), 'review', 'index.html');
   const frozenIndex = join(packRoot(demoDir), 'frozen', 'index.html');
   const liveIndex = join(packRoot(demoDir), 'index.html');
-  const frozen = existsSync(frozenIndex);
-  const indexPath = frozen ? frozenIndex : liveIndex;
+  const frozen = existsSync(reviewIndex) || existsSync(frozenIndex);
+  const indexPath = existsSync(reviewIndex) ? reviewIndex : (existsSync(frozenIndex) ? frozenIndex : liveIndex);
   if (!existsSync(indexPath)) return { url: null, command: null, blocked: true };
   const href = pathToFileURL(indexPath).href;
   const url = interaction && !frozen ? `${href}?interaction=1` : href;
@@ -316,6 +318,16 @@ async function startMachine({ record, root, handoffDir, now, buildMain, freezeDe
       nextHumanStep: 'Main 绿了但冻页失败，不许给人打开 QA 入口。',
     });
   }
+  const delivery = packFrozenDelivery({ demoDir: root });
+  if (!delivery || delivery.ok !== true) {
+    writeMachine(root, record);
+    return payload(false, record, {
+      error: 'delivery-pack-red',
+      delivery,
+      nextHumanStep: '冻页原版已留下，但交付副本没压到 15MB 以下或资源不完整。不许打开停 1。',
+    });
+  }
+
   const presented = presentStop(root, STOP_1, { previewOk: true });
   if (presented.ok !== true) {
     return payload(false, record, {

@@ -1646,3 +1646,77 @@ test('extractCopy: nested instance title shares the uniquely bound cell-split ro
   assert.match(String(out.byNode['I689:7408;689:7308;267:20351'].translations.en.value), /New Player Exclusive/);
   assert.equal(String(out.byNode['I689:7408;689:7342'].row), '82');
 });
+
+
+test('extractCopy: exact whole-cell row wins over multiline cells that only start with it', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', H: 'zh-TW', I: 'ja', J: 'ko' }, phaseRows: [62, 76, 77] },
+    rows: {
+      62: { 'zh-CN': '赛季福利', en: 'Season Rewards', 'zh-TW': '賽季福利', ja: 'シーズン特典', ko: '시즌 혜택' },
+      76: { 'zh-CN': '赛季福利\n签到说明', en: 'Season Rewards\nLog in', 'zh-TW': '賽季福利\n簽到', ja: 'シーズン特典\nログイン', ko: '시즌 혜택\n출석' },
+      77: { 'zh-CN': '赛季福利\n目标说明', en: 'Season Rewards\nObjectives', 'zh-TW': '賽季福利\n目標', ja: 'シーズン特典\n目標', ko: '시즌 혜택\n목표' },
+    },
+  };
+  const texts = [
+    { nodeId: 'solo', name: '赛季福利', characters: '赛季福利', parentId: 'side', orderKey: '1', treeKey: 'pc' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.solo.matchKind, 'exact');
+  assert.equal(String(out.byNode.solo.row), '62');
+  assert.equal(out.byNode.solo.translations.en.value, 'Season Rewards');
+  assert.equal(out.byNode.solo.translations.ja.value, 'シーズン特典');
+  assert.equal(out.byNode.solo.translations.ko.value, '시즌 혜택');
+  assert.equal(out.byNode.solo.translations['zh-TW'].value, '賽季福利');
+});
+
+test('extractCopy: repeated heading follows the neighboring bound row inside the same tree', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', I: 'ja' }, phaseRows: [10, 11] },
+    rows: {
+      10: { 'zh-CN': '标题\n说明甲', en: 'Title\nBody A', ja: '見出し\n本文A' },
+      11: { 'zh-CN': '标题\n说明乙', en: 'Title\nBody B', ja: '見出し\n本文B' },
+    },
+  };
+  const texts = [
+    { nodeId: 'titleB', name: '标题', characters: '标题', parentId: 'variant-b', orderKey: '2', treeKey: 'pc' },
+    { nodeId: 'bodyB', name: '说明乙', characters: '说明乙', parentId: 'page-b', orderKey: '2.1', treeKey: 'pc' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.bodyB.matchKind, 'cell-split');
+  assert.equal(String(out.byNode.bodyB.row), '11');
+  assert.notEqual(out.byNode.titleB.matchKind, 'ambiguous');
+  assert.equal(String(out.byNode.titleB.row), '11');
+  assert.equal(out.byNode.titleB.translations.en.value, 'Title');
+  assert.equal(out.byNode.titleB.translations.ja.value, '見出し');
+});
+
+test('extractCopy: text missing from the table stays unresolved for every language', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en', I: 'ja' }, phaseRows: [3] },
+    rows: { 3: { 'zh-CN': '别的句子', en: 'Other', ja: '別' } },
+  };
+  const texts = [
+    { nodeId: 'missing', name: '稿上独有', characters: '稿上独有；', parentId: 'sec', orderKey: '1', treeKey: 'mobile' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.missing.matchKind, 'none');
+  assert.equal(out.byNode.missing.translations, undefined);
+  assert.ok(out._unread.some((item) => item.nodeId === 'missing' && item.matchKind === 'none'));
+});
+
+test('extractCopy: zh-CN keeps the source manual line break after adoption', () => {
+  const snap = {
+    _meta: { langCols: { D: 'zh-CN', F: 'en' }, phaseRows: [8] },
+    rows: { 8: { 'zh-CN': '甲\n乙丙', en: 'A\nBC' } },
+  };
+  const texts = [
+    { nodeId: 'body', name: '乙丙', characters: '乙\n丙', parentId: 'page', orderKey: '1', treeKey: 'pc' },
+  ];
+  const leaf = (p) => ({ value: at(snap, p), provenance: { locator: p } });
+  const out = extractCopy({ figSnap: {}, larkSnap: snap, at, larkLeaf: leaf, texts });
+  assert.equal(out.byNode.body.translations['zh-CN'].value, '乙\n丙');
+  assert.equal(out.byNode.body.translations.en.value, 'BC');
+});

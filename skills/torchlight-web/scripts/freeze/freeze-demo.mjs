@@ -12,8 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { createSafeStaticServer } from '../lib/safe-server.mjs';
 import { requireOrchestratorTicket } from '../lib/orchestrator-ticket.mjs';
 import { checkStaticHtml } from './check-static-html.mjs';
-import { writeOpsShell, writeReplaceableIndex } from './freeze-ops.mjs';
-import { LOCALE_PAGES, SHARED_ASSETS_DIR } from './static-locale.mjs';
+import { writeOpsShell, writeReplaceableIndex, removeDeliverySidecars } from './freeze-ops.mjs';
+import { freezePagesForDemo, SHARED_ASSETS_DIR } from './static-locale.mjs';
 import { assertNotProductSource, withinProject } from './capture-static-html.mjs';
 
 const SKILL_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -91,8 +91,9 @@ export async function freezeDemo({
   const server = createSafeStaticServer(root);
   const origin = await server.listen();
   const frozen = [];
+  const freezePages = freezePagesForDemo(root);
   try {
-    for (const page of LOCALE_PAGES) {
+    for (const page of freezePages) {
       const outAbs = withinProject(frozenDir, page.out, 'out');
       assertNotProductSource(outAbs, indexPath);
       const url = `${origin}/index.html?${captureQuery(page, { interaction })}`;
@@ -132,8 +133,10 @@ export async function freezeDemo({
   } finally {
     await server.close();
   }
-  const opsIndex = writeOpsShell(frozenDir, { interaction });
-  const replaceable = writeReplaceableIndex(frozenDir);
+  const reviewDir = withinProject(root, 'review', 'review');
+  mkdirSync(reviewDir, { recursive: true });
+  const opsIndex = writeOpsShell(reviewDir, { interaction, pages: freezePages, pageHref: '../frozen/' });
+  const replaceable = writeReplaceableIndex(frozenDir, freezePages, reviewDir);
   const manifest = {
     schema: 'torchlight-freeze/v1',
     demoDir: root,
@@ -144,7 +147,8 @@ export async function freezeDemo({
     replaceableCount: replaceable.count,
     opsIndex,
   };
-  writeFileSync(join(frozenDir, 'freeze-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  writeFileSync(join(reviewDir, 'freeze-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  removeDeliverySidecars(frozenDir);
   return { ok: true, ...manifest };
 }
 

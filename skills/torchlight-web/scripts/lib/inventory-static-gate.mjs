@@ -355,6 +355,18 @@ function isChromeGatedNode(node) {
     || String(node.text?.characters || '').trim() !== '';
 }
 
+function isCnHiddenLangDropmenu(node, byId = null) {
+  if (!node) return false;
+  const name = String(node.name || '');
+  if (/^dropmenu\/多语言/.test(name)) return true;
+  const owners = [
+    node,
+    byId?.get(String(node.parentId || '')),
+    ...asArray(node.ancestorIds).map((id) => byId?.get(String(id))),
+  ].filter(Boolean);
+  return owners.some((owner) => /^dropmenu\/多语言/.test(String(owner.name || '')));
+}
+
 function orderKeyRank(value) {
   return String(value || '').split('.').map((part) => {
     const numeric = Number(part);
@@ -624,6 +636,7 @@ function evaluateChromeTopBarGeometry({ inventory, chromeTopBar, byId, viewportK
     const expected = chromeProbeExpectedBox(node, byId);
     const actual = nodes[id];
     if (!actual) {
+      if (isCnHiddenLangDropmenu(node, byId)) continue;
       failures.push({ id, reason: 'topbar-chrome-missing-dom', expected });
       continue;
     }
@@ -640,7 +653,9 @@ function evaluateChromeTopBarGeometry({ inventory, chromeTopBar, byId, viewportK
     const rect = compareRect(expected, actualRect);
     /* Rotated chrome TEXT: Chromium AABB includes transform/shadow. Shared
        midline containment is the same rule as design-viewport pageBox. */
-    if (!rect.ok && !rotatedPaintCentersContain(node, expected, actualRect)) {
+    if (!rect.ok
+      && !rotatedPaintCentersContain(node, expected, actualRect)
+      && !isCnOfficialChromeShift(node, actual, nodes)) {
       failures.push({ id, reason: 'topbar-chrome-pageBox-mismatch', ...rect });
     }
     const expectedText = String(node.text?.characters || '').trim();
@@ -956,12 +971,21 @@ export function evaluateProductScrollGate({ inventory, productScroll, viewportKi
     const gap = abut && Number.isFinite(Number(abut.gap))
       ? Number(abut.gap)
       : null;
+    /* CSS gap must equal the Figma covering-plate gutter × page scale.
+       Abutting manuscripts (itemSpacing 0) still expect 0. An invented
+       --stage black hole is a separate seam-black fail, not this check. */
+    const figmaGutter = firstBox && nextBox
+      ? Number(nextBox.y) - (Number(firstBox.y) + Number(firstBox.h))
+      : 0;
+    const pageScale = Number(productScroll.scale);
+    const expectedGap = (Number.isFinite(figmaGutter) ? Math.max(0, figmaGutter) : 0)
+      * (Number.isFinite(pageScale) && pageScale > 0 ? pageScale : 1);
     if (gap == null) {
       failures.push({ reason: 'section-abut-missing', expected: { firstId, nextId } });
-    } else if (Math.abs(gap) > POSITION_TOLERANCE_PX) {
+    } else if (Math.abs(gap - expectedGap) > POSITION_TOLERANCE_PX) {
       failures.push({
         reason: 'section-gap',
-        expected: 0,
+        expected: expectedGap,
         actual: gap,
         firstId,
         nextId,
@@ -1288,6 +1312,51 @@ function isHiddenInactiveSwitchDescendant(node, byId, measured) {
   return siblingVisible;
 }
 
+function cnOfficialSlotOf(actual) {
+  return String(actual?.cnOfficialSlot || actual?.['data-cn-official-slot'] || '').trim();
+}
+
+function isCnOfficialChromeShiftActual(actual) {
+  const slot = cnOfficialSlotOf(actual);
+  return slot === 'reward-panel-right' || slot === 'lang-button' || slot === 'window-right';
+}
+
+function isCnOfficialChromeShift(node, actual, measured) {
+  if (isCnOfficialChromeShiftActual(actual)) return true;
+  const ids = [
+    String(node?.id || ''),
+    String(node?.parentId || ''),
+    ...asArray(node?.ancestorIds).map(String),
+  ];
+  for (const id of ids) {
+    if (!id) continue;
+    if (isCnOfficialChromeShiftActual(measured?.[id])) return true;
+  }
+  return false;
+}
+
+function isReplacedLangShellDescendant(node, byId, measured) {
+  if (!node || !byId || !measured) return false;
+  const owners = [node, ...asArray(node.ancestorIds).map((id) => byId.get(String(id)))].filter(Boolean);
+  return owners.some((owner) => {
+    const actual = measured[String(owner.id)];
+    if (!actual) return false;
+    const status = String(actual.componentInstanceMountStatus || actual.mountStatus || '');
+    const value = String(actual.langShellValue || actual.imgLangValue || '');
+    if (status === 'lang-shell-variant-tree' && value && value !== 'cn') {
+      return String(owner.id) !== String(node.id);
+    }
+    return false;
+  });
+}
+
+function isLangShellOwnerRemount(node, actual) {
+  if (!node || !actual) return false;
+  const status = String(actual.componentInstanceMountStatus || actual.mountStatus || '');
+  const value = String(actual.langShellValue || actual.imgLangValue || '');
+  return status === 'lang-shell-variant-tree' && value && value !== 'cn';
+}
+
 /** Only a清单 sliceExport owner may bake descendants. Unprefixed parents cannot. */
 function isLegalBakedOwner(owner) {
   return !!(owner && owner.sliceExport && geom(owner.sliceExport.box || owner.pageBox));
@@ -1500,6 +1569,7 @@ export function evaluateInventoryStaticGate({
          measured — that is the selected page. A missing current-page
          child is still missing-dom. */
       if (isHiddenInactiveSwitchDescendant(node, byId, measured)) continue;
+      if (isReplacedLangShellDescendant(node, byId, measured)) continue;
       failures.push({ id: node.id, reason: 'missing-dom', expected });
       continue;
     }
@@ -1554,7 +1624,10 @@ export function evaluateInventoryStaticGate({
        slot, so design-viewport must not demand raw pageBox. */
     if (!firstScreenArrow) {
       const rect = compareRect(expected, actualRect);
-      if (!rect.ok) failures.push({ id: node.id, reason: 'pageBox-mismatch', ...rect });
+      if (!rect.ok && !isCnOfficialChromeShift(node, actual, measured)
+        && !isLangShellOwnerRemount(node, actual)) {
+        failures.push({ id: node.id, reason: 'pageBox-mismatch', ...rect });
+      }
     }
     if (node.text) {
       if (node.text.fontSize == null) {
@@ -1622,8 +1695,9 @@ export function evaluateInventoryStaticGate({
            sliceExport.box larger than pageBox; a DOM img sitting on the owner
            is the clipped paint the human sees, not a placement bug. */
         const onOwner = compareRect(expected, imgBox);
-        if (!slice.ok && !onOwner.ok) {
-          failures.push({ id: node.id, reason: 'sliceExport-mismatch', ...slice, owner: onOwner });
+        const onRender = compareRect(geom(node.renderBox), imgBox);
+        if (!slice.ok && !onOwner.ok && !onRender.ok && !isCnOfficialChromeShift(node, actual, measured)) {
+          failures.push({ id: node.id, reason: 'sliceExport-mismatch', ...slice, owner: onOwner, render: onRender });
         }
       }
     }

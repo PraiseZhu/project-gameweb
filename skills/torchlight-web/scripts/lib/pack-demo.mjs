@@ -24,6 +24,42 @@ export function packRoot(dir) {
   return resolve(dir);
 }
 
+const FROZEN_LIVE_PATH_RE = /(?:url\((['"]?))(?!data:|https?:|\/\/)((?:\.\/)?(?:assets|content-package)\/[^)'"]+)\1\)|(?:src|href)="((?:\.\/)?(?:assets|content-package)\/[^"]+)"/gi;
+
+export function frozenLiveAssetRefs(html) {
+  const found = [];
+  const re = new RegExp(FROZEN_LIVE_PATH_RE.source, 'gi');
+  let match;
+  while ((match = re.exec(String(html || '')))) found.push(match[2] || match[3]);
+  return found;
+}
+
+export function assertFrozenPackIntact(demoDir) {
+  const root = packRoot(demoDir);
+  const frozenDir = join(root, 'frozen');
+  if (!existsSync(frozenDir)) return { ok: true, skipped: true, reason: 'no-frozen' };
+  const pages = readdirSync(frozenDir).filter((name) => /\.static\.html$/i.test(name));
+  const leftover = [];
+  const missing = [];
+  for (const name of pages) {
+    const file = join(frozenDir, name);
+    if (!existsSync(file)) continue;
+    const html = readFileSync(file, 'utf8');
+    leftover.push(...frozenLiveAssetRefs(html).map((href) => `${name}:${href}`));
+    for (const match of html.matchAll(/(?:src|href)="(\.\/static-assets\/[^"]+)"/g)) {
+      const abs = join(frozenDir, match[1].replace(/^\.\//, ''));
+      if (!existsSync(abs)) missing.push(`${name}:${match[1]}`);
+    }
+    for (const match of html.matchAll(/url\((['"]?)(\.\/static-assets\/[^)'"]+)\1\)/g)) {
+      const abs = join(frozenDir, match[2].replace(/^\.\//, ''));
+      if (!existsSync(abs)) missing.push(`${name}:${match[2]}`);
+    }
+  }
+  if (leftover.length) return { ok: false, error: 'frozen-live-asset-path', leftover: leftover.slice(0, 12) };
+  if (missing.length) return { ok: false, error: 'frozen-static-asset-missing', missing: missing.slice(0, 12) };
+  return { ok: true, leftover: [], missing: [] };
+}
+
 function realpathish(p) {
   try { return realpathSync(p); } catch { return resolve(p); }
 }

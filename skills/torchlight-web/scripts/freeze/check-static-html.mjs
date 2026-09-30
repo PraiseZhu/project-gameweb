@@ -27,12 +27,16 @@ const REQUIRED_RUNTIME_FNS = [
   'function applyAgeBadge',
   'function applyHeroClusterY',
   'function applyLaterUiCenter',
-  'function applyPageBgCover',
-  'function applyLaterBgCover',
   'function applyPaintRoots',
   'function applyFixViewportPin',
   'function leftoverShiftX',
   'function paintRegionOptions',
+  'function applySwitch',
+  'function restackSkippedVerticalHug',
+  'function closeOpenModals',
+  'function installSwitchSwipe',
+  'function jumpFrozenLocale',
+  'function scheduleImages',
 ];
 const REQUIRED_COMPARE_VIEWPORTS = [
   { width: 2560, height: 1440 },
@@ -76,7 +80,23 @@ function collectKeepDataAttrs(html, runtimeSource) {
     'data-btn-variant-state', 'data-btn-variant-layer',
     'data-dropmenu-layer', 'data-dropmenu-state',
     'data-region-index',
-    'data-asset', 'data-asset-platform', 'data-asset-lang', 'data-asset-key',
+    'data-asset', 'data-asset-platform', 'data-asset-lang', 'data-asset-key', 'data-asset-owner',
+    'data-switch', 'data-switch-owner', 'data-switch-index', 'data-switch-initial-index',
+    'data-switch-page-source', 'data-switch-variant-count', 'data-switch-loop',
+    'data-switch-action', 'data-switch-variant-content', 'data-switch-variant-base',
+    'data-switch-variant-layer', 'data-switch-variant-index',
+    'data-switch-variant-mount-status', 'data-switch-variant-external',
+    'data-switch-swipe-host', 'data-motion-carousel', 'data-motion-carousel-page',
+    'data-motion-carousel-tab', 'data-motion-carousel-indicator',
+    'data-motion-carousel-index', 'data-motion-carousel-prev',
+    'data-motion-carousel-next', 'data-swpage', 'data-switch-page',
+    'data-modal-return',
+    'data-skipped-al-source', 'data-skipped-al-mode', 'data-skipped-al-vsize',
+    'data-skipped-al-gap', 'data-skipped-al-box-y', 'data-skipped-al-box-h',
+    'data-skipped-al-origin-y', 'data-skipped-al-source-y', 'data-skipped-al-source-h',
+    'data-skipped-al-primary', 'data-skipped-al-constraint-v',
+    'data-source-top', 'data-source-height', 'data-source-fit',
+    'data-copy-missing', 'data-copy-unbound',
   ]) keep.add(name);
   return keep;
 }
@@ -178,6 +198,19 @@ export function checkStaticHtml(root, options = {}) {
   }
   pass('P02', imgs.length + ' imgs have src');
   pass('P22', imgs.length + ' imgs file-referenced');
+
+  const leftoverLive = [...html.matchAll(/(?:url\((['"]?)|(?:src|href)=")((?:\.\/)?(?:assets|content-package)\/[^)"']+)/gi)];
+  if (leftoverLive.length) fail('P24', 'live asset path remaining: ' + leftoverLive.map((m) => m[2]).slice(0, 8).join(','));
+  pass('P24', 'no leftover assets/ or content-package/ refs');
+  if (!runtime.includes('Math.abs(state.dx) < 48')) fail('P25', 'swipe threshold is not 48px');
+  if (!runtime.includes("ev.key !== 'Enter'")) fail('P25', 'keyboard Enter/Space missing');
+  if (!runtime.includes('mobileSheet || scaledH > h + 1')) fail('P25', 'mobile modal must always vertical-center');
+  if (!runtime.includes('closeOpenModals(frame)')) fail('P25', 'hidden platform tree must close modals');
+  pass('P25', 'stop-2 freeze interaction protocol present');
+  if (locale !== 'cn') {
+    if (/data-modal-name="[^"]*适龄提示/.test(html)) fail('P21', locale + ' still has CN age modal');
+    if (/简体中文/.test(html) && /data-name="[^"]*简体中文/.test(html)) fail('P21', locale + ' still has hidden CN language option');
+  }
 
   for (const token of RENDERER_TOKENS) {
     if (html.includes(token)) fail('P01', 'renderer token in static html: ' + token);

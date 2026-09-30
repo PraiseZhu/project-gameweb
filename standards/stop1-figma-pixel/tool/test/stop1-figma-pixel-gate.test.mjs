@@ -385,6 +385,42 @@ test('section paint exports blit CN master into kr img/ instance box', () => {
   assert.deepEqual(paints[0].masterBox, { x: 7746, y: 1647, w: 750, h: 239 });
 });
 
+test('section paint exports blit EN master when landing img/ has no cn', () => {
+  const inventory = {
+    nodes: [
+      {
+        id: '1187:883',
+        name: 'img/标题slg',
+        parentId: '1187:864',
+        componentId: '1187:1114',
+        pageBox: { x: 1020, y: 400, w: 1800, h: 360 },
+        componentProperties: { lang: { value: 'jp', type: 'VARIANT' } },
+      },
+    ],
+    attachments: {
+      componentSets: [{
+        id: '1187:1113',
+        name: 'img/标题slg',
+        variants: [
+          { id: '1187:1114', name: 'lang=jp', pageBox: { x: 0, y: 0, w: 1800, h: 360 } },
+          { id: '1187:1115', name: 'lang=tw', pageBox: { x: 0, y: 400, w: 1800, h: 360 } },
+          { id: '1187:1116', name: 'lang=en', pageBox: { x: 0, y: 800, w: 1800, h: 360 } },
+          { id: '1187:1117', name: 'lang=kr', pageBox: { x: 0, y: 1200, w: 1800, h: 360 } },
+        ],
+      }],
+    },
+  };
+  const paints = sectionPaintExports(inventory, {
+    id: '1187:864',
+    pageBox: { x: 0, y: 0, w: 3840, h: 10798 },
+  });
+  assert.equal(paints.length, 1);
+  assert.equal(paints[0].kind, 'cn-master');
+  assert.equal(paints[0].frameId, '1187:1116');
+  assert.deepEqual(paints[0].destBox, { x: 1020, y: 400, w: 1800, h: 360 });
+  assert.deepEqual(paints[0].masterBox, { x: 0, y: 800, w: 1800, h: 360 });
+});
+
 test('closed dropmenu paints img/icon, not the 370-high instance box', () => {
   const inventory = {
     nodes: [
@@ -495,6 +531,34 @@ test('section paint exports drop untagged later fix clones and descendants', () 
   const later = sectionPaintExports(inventory, { id: 'sec-2', pageBox: { x: 0, y: 1000, w: 750, h: 1000 } });
   assert.deepEqual(first.map((row) => row.frameId), ['fix-first']);
   assert.deepEqual(later.map((row) => row.frameId), ['hero-2']);
+});
+
+test('download-button lang instance blits EN master into the instance pageBox', () => {
+  const inventory = {
+    nodes: [{
+      id: '1301:2902',
+      name: 'windows下载按钮-1',
+      componentId: '1187:1990',
+      parentId: 'sec-1',
+      pageBox: { x: -1, y: 1098, w: 396, h: 128 },
+      componentProperties: { lang: { value: 'jp', type: 'VARIANT' } },
+    }],
+    attachments: {
+      componentSets: [{
+        id: '1187:1989',
+        name: 'windows下载按钮-1',
+        variants: [
+          { id: '1187:1990', name: 'lang=jp', box: { x: 0, y: 0, w: 483, h: 156 } },
+          { id: '1187:2002', name: 'lang=en', box: { x: 0, y: 372, w: 483, h: 156 } },
+        ],
+      }],
+    },
+  };
+  const paints = sectionPaintExports(inventory, { id: 'sec-1', pageBox: { x: 0, y: 0, w: 750, h: 1472 } });
+  const master = paints.find((row) => row.kind === 'cn-master');
+  assert.equal(master.frameId, '1187:2002');
+  assert.deepEqual(master.destBox, { x: -1, y: 1098, w: 396, h: 128 });
+  assert.deepEqual(master.masterBox, { x: 0, y: 372, w: 483, h: 156 });
 });
 
 test('later section paints page-level covering bg before section children', () => {

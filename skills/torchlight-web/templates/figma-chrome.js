@@ -30,7 +30,7 @@
  * 「root font-size 实测 / 断点归属 / 缺文案数」这类读数，一律从**真实 DOM 现测**，
  * 不许读配置里的数字冒充。参考同类产物审计发现的问题：
  * i18n 完整性用「提取器自己生成的 requiredKeys」当基准 = 提取器漏扫就永远绿。
- * 本文件的缺文案数改为 querySelectorAll('[data-copy-missing],[data-text-empty]') 现数 DOM。
+ * 本文件的缺文案数改为 querySelectorAll('[data-copy-missing],[data-copy-unbound],[data-text-empty]') 现数 DOM。
  */
 (function () {
   'use strict';
@@ -2542,7 +2542,7 @@
         orientation: viewport().orientation,
         viewFitScale: typeof S.fitScale === 'number' ? S.fitScale : 1,
         viewIsOneToOne: Math.abs((typeof S.fitScale === 'number' ? S.fitScale : 1) - 1) < 1e-6,
-        copyMissing: document.querySelectorAll('.frame [data-copy-missing]').length,
+        copyMissing: document.querySelectorAll('.frame [data-copy-missing],[data-copy-unbound]').length,
         textEmpty: document.querySelectorAll('.frame [data-text-empty]').length,
         assetPending: document.querySelectorAll('.frame [data-asset-pending]').length,
         fitScaled: document.querySelectorAll('.frame [data-fit-px], .frame [data-fit-scale]').length,
