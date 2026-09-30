@@ -50,7 +50,7 @@ function withPseudo(selector, pseudo) {
 }
 
 function gateInteraction(selector) {
-  return String(selector).split(',').map((part) => `html[data-ops-interaction="1"] ${part.trim()}`).join(',');
+  return String(selector).split(',').map((part) => `html:not([data-ops-interaction="0"]) ${part.trim()}`).join(',');
 }
 
 export function buttonPressCss({

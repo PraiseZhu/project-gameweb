@@ -1732,9 +1732,9 @@
     style.id = 'fx-btn-press';
     style.textContent = [
       ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
-      'html[data-ops-interaction="1"] button,html[data-ops-interaction="1"] [role="button"],html[data-ops-interaction="1"] [data-go],html[data-ops-interaction="1"] [data-btn-press="true"]{cursor:pointer}',
-      '@media (hover:hover){html[data-ops-interaction="1"] button:hover,html[data-ops-interaction="1"] [role="button"]:hover,html[data-ops-interaction="1"] [data-go]:hover,html[data-ops-interaction="1"] [data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
-      'html[data-ops-interaction="1"] button:active,html[data-ops-interaction="1"] [role="button"]:active,html[data-ops-interaction="1"] [data-go]:active,html[data-ops-interaction="1"] [data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
+      'html:not([data-ops-interaction="0"]) button,html:not([data-ops-interaction="0"]) [role="button"],html:not([data-ops-interaction="0"]) [data-go],html:not([data-ops-interaction="0"]) [data-btn-press="true"]{cursor:pointer}',
+      '@media (hover:hover){html:not([data-ops-interaction="0"]) button:hover,html:not([data-ops-interaction="0"]) [role="button"]:hover,html:not([data-ops-interaction="0"]) [data-go]:hover,html:not([data-ops-interaction="0"]) [data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
+      'html:not([data-ops-interaction="0"]) button:active,html:not([data-ops-interaction="0"]) [role="button"]:active,html:not([data-ops-interaction="0"]) [data-go]:active,html:not([data-ops-interaction="0"]) [data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
       '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}'
     ].join('');
     (document.head || document.documentElement).appendChild(style);

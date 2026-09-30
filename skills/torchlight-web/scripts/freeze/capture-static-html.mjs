@@ -298,6 +298,11 @@ export async function replaceFreezeOutputs(options) {
   }
 }
 
+function windowsChromeCandidates() {
+  if (process.platform !== 'win32') return [];
+  const roots = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA].filter(Boolean);
+  return roots.map((root) => path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+}
 export function resolveChromePath(explicit) {
   const candidates = [
     explicit,
@@ -309,8 +314,7 @@ export function resolveChromePath(explicit) {
     process.platform === 'linux' ? '/usr/bin/google-chrome-stable' : '',
     process.platform === 'linux' ? '/usr/bin/chromium' : '',
     process.platform === 'linux' ? '/usr/bin/chromium-browser' : '',
-    process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : '',
-    process.platform === 'win32' ? 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe' : '',
+    ...windowsChromeCandidates(),
   ].filter(Boolean);
   for (const candidate of candidates) {
     try {

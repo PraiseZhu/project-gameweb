@@ -515,7 +515,7 @@ test('stop 1 freeze runtime blocks modals and button highlight until interaction
   assert.doesNotMatch(allow, /fx-named-modal/);
   assert.match(STATIC_RUNTIME, /data-ops-interaction'\) !== '1'/);
   assert.match(STATIC_RUNTIME, /if \(interactionMode === '1'\) paintCurrentLanguageHighlight\(\)/);
-  assert.match(STATIC_RUNTIME, /html\[data-ops-interaction="1"\] button:hover/);
+  assert.match(STATIC_RUNTIME, /html:not\(\[data-ops-interaction="0"\]\) button:hover/);
   const shell = readFileSync(new URL('../freeze/freeze-ops.mjs', import.meta.url), 'utf8');
   const lang = shell.slice(shell.indexOf('function isLanguageSwitchEvent'), shell.indexOf('var block = function'));
   assert.match(lang, /\u5207\u6362\u8bed\u8a00/);
