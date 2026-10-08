@@ -4,18 +4,6 @@
 > 全局权威：`~/.claude/rules/project-versioning.md`
 > 本文件是该全局规范在本项目的实例化。
 
-## 1. Git 初始化清单
-
-本项目创建时已完成（new-project init 脚本自动执行）：
-
-- [x] `git init`
-- [x] 主分支 `main`
-- [x] `.gitignore`（node 模板）
-- [x] `CLAUDE.md`
-- [x] `VERSIONING.md`（本文件）
-- [x] 初始 commit：`chore: initialize project`
-- [x] 注册到 `~/.claude/history/registry.json`
-
 ## 2. 提交触发机制（手动）
 
 **唯一触发方式**：用户喊触发词 → `commit-projects` skill 批量扫所有 `Project*/` 提交。
@@ -75,7 +63,7 @@
 
 ## 8. 存储位置说明
 
-本项目位于**本地磁盘**（`~/AI-Agent/Claude/`，APFS 卷，非 iCloud Drive）。
+本项目位于**本地磁盘**（`/Users/shaoshenze/Documents/claude_code_ssz/`，APFS 卷，非 iCloud Drive）。
 
 - 无 iCloud 多设备同步，不存在 `.git/index.lock` 跨设备冲突风险
 - 不需要 `.nosync` 后缀规避同步

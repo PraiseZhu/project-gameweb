@@ -26,7 +26,7 @@
 组件变体树和 modal 附件本体搭页；`unknown` 节点只画样子、不赋交互；
 `unknown` 的 `modal-trigger` 不自动接线。
 
-做页接入见 issue #5（`zhanxinyi-lab`）。本工具不改 `skills/yise-web-ui/**`，不写回 Figma。
+做页接入见 `standards/figma-naming/handoff/CONSUMER.md`。本工具不改 `skills/**` 源码，不写回 Figma。
 
 ## 事实来源的分层（别再写第二个「唯一事实来源」）
 

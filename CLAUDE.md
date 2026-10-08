@@ -1,8 +1,5 @@
 # Gameweb
 
-> 创建日期：2026-08-04
-> 技术栈：node
-
 ## 项目目标
 
 游戏 Web 页面设计 skill 集合：已规范设计稿出清单，再交给做页 skill 做到 HTML。
@@ -11,31 +8,34 @@
 
 ## 技术栈
 
-- **主语言**：node
-- **框架/库**：（待补充）
-- **运行环境**：（待补充）
+- **主语言**：Node.js（ESM，`"type": "module"`）
+- **框架/库**：无仓根总包。浏览器闸用 Playwright；像素门用 pixelmatch / odiff。政策数字来自各 skill `DESIGN.md` 文首 YAML。
+- **运行环境**：Node.js ≥20，GitHub Actions 用 22
 
 ## 目录约定
 
-仓库顶层只有两类目录：`skills/` 装按项目切分的交付物，`standards/` 装被多个 skill 共用的横切规范。
+仓库里的**包**只放两类目录：`skills/` 装按项目切分的交付物，`standards/` 装被多个 skill 共用的横切规范。GitHub 工作流放 `.github/`，不算包。
 
 ```
 Project Gameweb/
-├── CLAUDE.md           # 本文件 — 项目指引
+├── CLAUDE.md           # 本文件 — 项目指引与触发表
 ├── VERSIONING.md       # 版本管理规范
 ├── README.md           # 用户向项目说明
 ├── .gitignore          # Git 忽略规则
+├── .github/            # pr-gate / 夜间健康 / 内容保护 / 飞书命名文档 / 敏感信息扫描
 ├── skills/             # 按项目切：一个游戏宣发页一个 skill
 │   ├── yise-web-ui/       # 伊瑟宣发页 UI skill
 │   └── torchlight-web/    # 火炬之光宣发页 UI skill
 └── standards/          # 横切复用：被多个 skill 共同引用的规范与工具链
-    ├── figma-naming/   # 图层命名规范 + 已规范稿 inventory/v2 ready 抽取
-    └── skill-shared/   # 伊瑟/火炬公共文件清单：预览、校验漂移、不覆盖已分化副本
+    ├── figma-naming/      # 图层命名规范 + 已规范稿 inventory/v2 ready 抽取
+    ├── skill-shared/      # 伊瑟/火炬公共文件清单：预览、校验漂移、不覆盖已分化副本
+    ├── design-policy/     # DESIGN.md YAML 解析与做页数字镜像
+    └── stop1-figma-pixel/ # 停 1 像素门真源
 ```
 
 **`skills/` — 按项目切。** 一个游戏宣发页对应一个 skill，每个 skill **自包含**：自己的 `SKILL.md`（含 frontmatter）、`package.json`、`scripts/` 与 `__tests__/`、`docs/`、以及自己的发布边界清单。skill 之间不互相 import，各自可以独立发布。
 
-**`standards/` — 横切复用。** 放不属于任何单个游戏、而是被多个 skill 共同引用的规范与工具链。`standards/figma-naming/`：命名规范正文（`spec/`）、体检工具（CLI）、以及已规范稿的 `inventory/v2` ready 抽取。`standards/skill-shared/`：伊瑟 / 火炬公共文件清单，预览和校验漂移；默认 apply 不覆盖已经分化的文件。skill 之间仍不互相 import。
+**`standards/` — 横切复用。** 放不属于任何单个游戏、而是被多个 skill 共同引用的规范与工具链。`standards/figma-naming/`：命名规范正文（`spec/`）、体检工具（CLI）、以及已规范稿的 `inventory/v2` ready 抽取。`standards/skill-shared/`：伊瑟 / 火炬公共文件清单，预览和校验漂移；默认 apply 不覆盖已经分化的文件。`standards/design-policy/`：解析 `DESIGN.md` 文首 YAML，并对做页实现做数字镜像。`standards/stop1-figma-pixel/`：停 1 像素门真源，做页 skill 只转口。skill 之间仍不互相 import。
 
 **落位规则**：新增一个游戏宣发页 skill → 放 `skills/<name>/`；新增一份跨项目共用的规范或工具链 → 放 `standards/<name>/`。判断不清时，看它是否只服务于单个游戏：是则进 `skills/`，否则进 `standards/`。未规范出清单不进本仓。
 
@@ -55,9 +55,9 @@ Project Gameweb/
 - **Figma 命名稿交接**：命中 `出清单` 后，执行 `standards/figma-naming/SKILL.md`。默认 `npm run inventory` 出 `status: ready`。agent 核一遍后 `handoff:pack` 打 ready 包。核前缀时：页上用到的 `img/` 组件集若变体属性是 `lang`、且至少有两个不同的精确小写 `cn/tw/en/jp/kr`，这些合法变体根必须带切图；没有 `lang` 轴、只有一个变体、或值不是精确小写五码的 `img/` 不跟语言。`dropmenu/` 点根切开合，精确小写 `on/off`，PC / 手机都认；稿上是 `btn/` + `modal/` 的仍走弹窗，词表不得把组件集根打成 `btn/`。对人只交交接包路径，不要把 inventory JSON 或核对页链接当交付物。稿上只有一端时，`handoff:pack` 只传那一端。不写回 Figma，不用插件交接。命中 `yisewebui` 后，执行 `skills/yise-web-ui/SKILL.md`：有 ready 包走出页命令；没有包就停下来要包。命中 `torchlightweb` 后，执行 `skills/torchlight-web/SKILL.md`：只跑 `npm run torchlightweb` 状态机；有 ready 包才出页，没有包就停下来要包。禁止 showcase、跳过人核、直连 `figma:html-from-handoff`。
 - **做页消费边界**：做页只吃 ready。unknown 只画不赋交互。拉伸与外文字号政策听对应做页包的 `DESIGN.md`。说明见 `standards/figma-naming/handoff/CONSUMER.md`。
 - **未规范稿**：丢未规范链接时停，去 `projects/project-unnamed-inventory`。本仓 CLI 拒绝 `--status draft` / `inventory-unnamed-*` / `--allow-green-draft`。
-- **AI 助手**：Claude Code（主），其他 provider 通过 `/ask` 调用
-- **代码评审**：通过 `/review` 触发
-- **测试覆盖**：参见 VERSIONING.md
+- **AI 助手**：按本文件触发表执行对应 `SKILL.md`。skill 不装进 `.claude/skills/`（gitignore，夜间健康检查会红）。
+- **代码评审**：按仓库 PR 闸门与人工审查，不把已删除的 `/review` 斜杠命令当唯一入口
+- **测试覆盖**：参见下文「测试与守卫」与 VERSIONING.md
 
 ## 代码规范
 
@@ -78,7 +78,8 @@ Project Gameweb/
 
 进仓契约：新内容只能放 `skills/<name>/` 或 `standards/<name>/`，必须能被夜间和 PR 扫到。标准位置有 `package.json`（只有规范工具可放在 `tool/package.json`），且必须有可核验的 `npm test`（`echo` / `true` / `exit 0` 及其组合不算）。有 `release:audit` / `fonts:check` 会一并跑。没有自测、或把包丢在仓库根 / 分组根 / 隐藏目录 / 嵌套包 / 仓内其他目录里 → 红，不静默跳过。伊瑟 / 火炬公开测试里依赖当前页的走 `test:demo`；实现已脱节的文件会在夜间日志里点名，不算已验证。
 
-- PR：`.github/workflows/pr-gate.yml` 在 `pull_request` 上跑同一把 `.github/scripts/nightly-health.mjs`。挂了看 Job Summary（错误 / 问题 / 导致）。红叉不锁 Merge。翻译层单测入口：`node --test .github/scripts/pr-gate-summary.test.mjs`。闸没跑（例如 fork 未授权 Actions）不等于通过。
+- PR：`.github/workflows/pr-gate.yml` 在 `pull_request` 上跑同一把 `.github/scripts/nightly-health.mjs`（会先调内容保护）。挂了看 Job Summary（错误 / 问题 / 导致）。红叉不锁 Merge。翻译层单测入口：`node --test .github/scripts/pr-gate-summary.test.mjs`。闸没跑（例如 fork 未授权 Actions）不等于通过。
+- 云端语法与密钥扫描：`.github/workflows/personal-ci.yml` 在 push / PR 上跑 actionlint、敏感文件名检查、gitleaks。
 - 夜间：`.github/workflows/nightly-health.yml` 每天北京 0 点跑 `.github/scripts/nightly-health.mjs`，也可手点；触发器仍只有 schedule 与手动，不加 `pull_request`。挂了看 Actions 红点和 GitHub 失败邮件。
 - 伊瑟 / 火炬公开测试由各自 skill 的 `scripts/test-public.mjs` 自动收 `scripts/__tests__/*.test.mjs`。`_*.test.mjs` 和依赖当前页的文件走 `test:demo`，不进夜间。实现已和断言脱节的文件暂列在该脚本的 `BROKEN_PUBLIC`，修完删掉即自动进夜间。
 - 这是仓内健康检查，不是页面 e2e。完整 e2e 要这个项目**当前那一页**（demo：能打开的 HTML 目录，含 `index.html` / `spec.json` / `truth.json`）。没有页，浏览器验不了今天的产出；skill 单测用的是假目录，代替不了。
@@ -91,11 +92,3 @@ Project Gameweb/
 - 提交触发：手动喊"提交代码"/"commit" → `commit-projects` skill
 - 分支策略：`main` 为主分支
 - Push 策略：日常本地优先，push 到远端是独立决策；首次建仓例外由 init 脚本自动 push（见 VERSIONING.md §6）
-
----
-
-## 项目特定记录
-
-- 2026-09-09：火炬/伊瑟隔离出仓：共享 apply 默认 dry-run；夜间可 `--skill torchlight-web`；停 1 skip 与 Playwright 根留在当前 skill；火炬写入 `torchlight-* /v1`，读旧 `yise-*` 仍认。未规范出清单仍在 `projects/project-unnamed-inventory`。
-- 2026-08-24：未规范出清单整包隔离到 `projects/project-unnamed-inventory`。本仓只走已规范 ready → 做页 HTML。
-- 2026-08-18：Lead 会话 `64a3f830` 在 cache 598k 上再 Read 3 张切片，请求涨到 647k 炸会话。判断硬门现只约束 unnamed 仓。

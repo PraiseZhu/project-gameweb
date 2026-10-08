@@ -12,15 +12,15 @@
 | 想体检自己的稿 | [`tool/README.md`](tool/README.md) 的「命名体检快速开始」 |
 | 要改判定逻辑 | [`tool/CLAUDE.md`](tool/CLAUDE.md) |
 
-现行交接：说出 `出清单` → 人给已规范命名、带 `node-id` 的货架链接 → `npm run inventory` → `_tmp/inventory-<page>.json`（`schema=inventory/v2`、`status=ready`）→ `handoff:pack` 打 ready 包 → 做页 `figma:from-handoff` 吃包闸门绿才交付。做页只吃 ready。不写回 Figma，不用插件交接。未规范稿去 `projects/project-unnamed-inventory`。做页接入见 issue #5。
+现行交接：说出 `出清单` → 人给已规范命名、带 `node-id` 的货架链接 → `npm run inventory` → `_tmp/inventory-<page>.json`（`schema=inventory/v2`、`status=ready`）→ `handoff:pack` 打 ready 包 → 做页 `figma:from-handoff` 吃包闸门绿才交付。做页只吃 ready。不写回 Figma，不用插件交接。未规范稿去 `projects/project-unnamed-inventory`。做页接入见 [`handoff/CONSUMER.md`](handoff/CONSUMER.md)。
 
 ## 为什么分成两半
 
 ```
 figma-naming/
 ├── spec/     规范层 —— 人读正文 + 机器表
-│   ├── naming-spec.md            前缀总表、@参数、判定边界（当前 v2.19）
-│   ├── consumer-assumptions.md   规则「不改会怎样」所依赖的下游假定（A-v1.17）
+│   ├── naming-spec.md            前缀总表、@参数、判定边界（当前 v2.20）
+│   ├── consumer-assumptions.md   规则「不改会怎样」所依赖的下游假定（A-v1.18）
 │   ├── spec.mjs                  机器可读镜像（插件 / 体检 / skill 都读这里）
 │   └── inventory.mjs             inventory/v2 取值表
 └── tool/     工具层 —— 按规范查稿、抽取 inventory/v2、人工核对
