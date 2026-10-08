@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { copyFileSync, mkdtempSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { delimiter, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DESIGN_POLICY } from '../lib/design-policy.generated.mjs';
 import {
   PAINTED_HANGUL_FACE,
@@ -165,8 +165,13 @@ test('WOFF2 cmap with fontTools present but brotli missing cannot pretend covera
   assert.doesNotMatch(pyBlock, /\btry\b|\bexcept\b/);
   assert.match(src, /if \(result\.status !== 0\) \{[\s\S]{0,220}throw err/);
 
-  const fontTools = spawnSync('python3', ['-c', 'from fontTools.ttLib import TTFont'], { encoding: 'utf8' });
-  assert.equal(fontTools.status, 0, 'fontTools must be present for this lock');
+  const pythonBins = ['python', 'python3', 'py'];
+  let pythonBin = '';
+  for (const bin of pythonBins) {
+    const probe = spawnSync(bin, ['-c', 'from fontTools.ttLib import TTFont'], { encoding: 'utf8' });
+    if (probe.status === 0) { pythonBin = bin; break; }
+  }
+  assert.ok(pythonBin, 'fontTools must be present for this lock');
 
   const blocker = mkdtempSync(join(tmpdir(), 'no-brotli-'));
   writeFileSync(join(blocker, 'brotli.py'), 'raise ImportError("No module named brotli")\n');
@@ -175,7 +180,7 @@ test('WOFF2 cmap with fontTools present but brotli missing cannot pretend covera
   copyFileSync(LATIN_FONT, isolated);
   const probeFile = join(blocker, 'probe-cmap.mjs');
   writeFileSync(probeFile, `
-    import { missingGlyphsInFont, resetCmapCacheForTests } from ${JSON.stringify(join(ROOT, 'scripts/lib/font-cmap-coverage.mjs'))};
+    import { missingGlyphsInFont, resetCmapCacheForTests } from ${JSON.stringify(pathToFileURL(join(ROOT, 'scripts/lib/font-cmap-coverage.mjs')).href)};
     resetCmapCacheForTests();
     try {
       const missing = missingGlyphsInFont(${JSON.stringify(isolated)}, 'Hello');
@@ -184,7 +189,7 @@ test('WOFF2 cmap with fontTools present but brotli missing cannot pretend covera
       console.log(JSON.stringify({ ok: false, message: String(error && error.message || error) }));
     }
   `);
-  const pythonPath = [blocker, process.env.PYTHONPATH].filter(Boolean).join(':');
+  const pythonPath = [blocker, process.env.PYTHONPATH].filter(Boolean).join(delimiter);
   const result = spawnSync(process.execPath, [probeFile], {
     encoding: 'utf8',
     env: { ...process.env, PYTHONPATH: pythonPath },

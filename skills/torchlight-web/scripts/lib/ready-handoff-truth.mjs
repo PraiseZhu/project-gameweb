@@ -320,7 +320,15 @@ export function platformTruthFromInventory(inventory, options = {}) {
     if (sectionAncestorIds.has(id)) return false;
     if (asArray(node?.ancestorIds).some((ancestor) => sectionIds.has(String(ancestor)))) return false;
     return true;
-  })).map(paintWithPageBox);
+  })).map((node) => {
+    const copy = paintWithPageBox(node);
+    const ancestorIds = asArray(copy.ancestorIds).map(String);
+    const root = roots.has(String(copy.id))
+      ? String(copy.id)
+      : [...ancestorIds].reverse().find((id) => roots.has(id));
+    if (root) copy.paintRootId = root;
+    return copy;
+  });
   chromeNodes.push(...unsectioned);
 
   return {

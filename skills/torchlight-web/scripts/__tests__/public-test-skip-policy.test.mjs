@@ -7,6 +7,7 @@ import {
   playwrightBrowserSkipMessage,
   probePlaywrightCapability,
   publicSkipPolicy,
+  EXTRA_SYMLINK_PROBE_SKIP_ALLOWANCE,
   SYMLINK_UNAVAILABLE_SKIP_ALLOWANCE,
   UNBUNDLED_FONTS_SKIP_ALLOWANCE,
   WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE,
@@ -35,10 +36,11 @@ test('公开自测 skip 策略: 只按平台与真实 symlink 能力增加 allow
   assert.deepEqual(windowsWithSymlink.allowances, [{ label: 'Windows 只读 rename 语义', count: WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE }]);
 
   const restrictedWindows = publicSkipPolicy({ platform: 'win32', symlinkAvailable: false, bundledFonts: true });
-  assert.equal(restrictedWindows.limit, BASE_PUBLIC_SKIP_LIMIT + WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE + SYMLINK_UNAVAILABLE_SKIP_ALLOWANCE);
+  assert.equal(restrictedWindows.limit, BASE_PUBLIC_SKIP_LIMIT + WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE + SYMLINK_UNAVAILABLE_SKIP_ALLOWANCE + EXTRA_SYMLINK_PROBE_SKIP_ALLOWANCE);
   assert.deepEqual(restrictedWindows.allowances, [
     { label: 'Windows 只读 rename 语义', count: WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE },
     { label: '无法创建 symlink 的 r9 PoC', count: SYMLINK_UNAVAILABLE_SKIP_ALLOWANCE },
+    { label: 'pack 与 human-review 的 symlink 探针', count: EXTRA_SYMLINK_PROBE_SKIP_ALLOWANCE },
   ]);
 
 });

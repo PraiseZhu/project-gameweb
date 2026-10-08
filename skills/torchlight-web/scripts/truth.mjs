@@ -7,7 +7,7 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { failJson, failProblems, isPlainObject, safeJsonForScript, stableJson } from './lib/fs-utils.mjs';
 import { DEFAULT_MAX_HTML_BYTES, externalizeQaTruthIfOverLimit } from './lib/html-volume.mjs';
@@ -57,7 +57,7 @@ if (allIdx !== -1) {
     let parsed = null;
     try { parsed = JSON.parse(res.stdout); } catch {}
     results.push({
-      demo: dir.split('/').pop(),
+      demo: basename(dir),
       ok: res.status === 0,
       drift: parsed?.drift ?? null,
       driftedPaths: parsed?.driftedPaths ?? undefined,
@@ -130,8 +130,13 @@ if (checkMode) {
   let a = Object.create(null);
   let b = Object.create(null);
   try { a = JSON.parse(existing); b = JSON.parse(fresh); } catch {}
+  const same = stableJson(a) === stableJson(b);
+  if (same) {
+    console.log(JSON.stringify({ ok: true, drift: false }));
+    process.exit(0);
+  }
   const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])];
-  const driftedKeys = keys.filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+  const driftedKeys = keys.filter((k) => stableJson(a[k]) !== stableJson(b[k]));
   const driftedPaths = diffPaths(a, b);
   console.log(JSON.stringify({ ok: false, drift: true, driftedKeys, driftedPaths }, null, 2));
   process.exit(2);

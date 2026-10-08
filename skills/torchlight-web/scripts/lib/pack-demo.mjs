@@ -14,7 +14,7 @@ export const PACK_KEEP_ROOT = new Set([
   'index.html', 'truth.json', 'fonts-manifest.json',
   'calendar-figma-fallback-manifest.json', 'favicon.ico',
 ]);
-export const PACK_KEEP_DIRS = new Set(['assets', 'fixtures', 'fonts', 'content-package']);
+export const PACK_KEEP_DIRS = new Set(['assets', 'fixtures', 'fonts', 'content-package', 'frozen']);
 export const PACK_FALLBACK_RE = /figma-indicator[-.][\w.-]+\.(?:png|webp)/i;
 const LEGACY_INDICATOR_IDS = new Set(['397:35947', '397:35949']);
 const TEXT_EXTS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json']);
@@ -22,6 +22,42 @@ const RUNTIME_EXTS = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json', '
 
 export function packRoot(dir) {
   return resolve(dir);
+}
+
+const FROZEN_LIVE_PATH_RE = /(?:url\((['"]?))(?!data:|https?:|\/\/)((?:\.\/)?(?:assets|content-package)\/[^)'"]+)\1\)|(?:src|href)="((?:\.\/)?(?:assets|content-package)\/[^"]+)"/gi;
+
+export function frozenLiveAssetRefs(html) {
+  const found = [];
+  const re = new RegExp(FROZEN_LIVE_PATH_RE.source, 'gi');
+  let match;
+  while ((match = re.exec(String(html || '')))) found.push(match[2] || match[3]);
+  return found;
+}
+
+export function assertFrozenPackIntact(demoDir) {
+  const root = packRoot(demoDir);
+  const frozenDir = join(root, 'frozen');
+  if (!existsSync(frozenDir)) return { ok: true, skipped: true, reason: 'no-frozen' };
+  const pages = readdirSync(frozenDir).filter((name) => /\.static\.html$/i.test(name));
+  const leftover = [];
+  const missing = [];
+  for (const name of pages) {
+    const file = join(frozenDir, name);
+    if (!existsSync(file)) continue;
+    const html = readFileSync(file, 'utf8');
+    leftover.push(...frozenLiveAssetRefs(html).map((href) => `${name}:${href}`));
+    for (const match of html.matchAll(/(?:src|href)="(\.\/static-assets\/[^"]+)"/g)) {
+      const abs = join(frozenDir, match[1].replace(/^\.\//, ''));
+      if (!existsSync(abs)) missing.push(`${name}:${match[1]}`);
+    }
+    for (const match of html.matchAll(/url\((['"]?)(\.\/static-assets\/[^)'"]+)\1\)/g)) {
+      const abs = join(frozenDir, match[2].replace(/^\.\//, ''));
+      if (!existsSync(abs)) missing.push(`${name}:${match[2]}`);
+    }
+  }
+  if (leftover.length) return { ok: false, error: 'frozen-live-asset-path', leftover: leftover.slice(0, 12) };
+  if (missing.length) return { ok: false, error: 'frozen-static-asset-missing', missing: missing.slice(0, 12) };
+  return { ok: true, leftover: [], missing: [] };
 }
 
 function realpathish(p) {
@@ -117,6 +153,10 @@ export function dirBytes(dir) {
 
 export function isPackKeepFile(name) { return PACK_KEEP_ROOT.has(name) || PACK_FALLBACK_RE.test(name); }
 export function isPackKeepDir(name) { return PACK_KEEP_DIRS.has(name); }
+
+function isFrozenRel(rel) {
+  return rel === 'frozen' || String(rel || '').startsWith('frozen/');
+}
 
 export function collectFallbackRefs(html) {
   const found = new Set();
@@ -319,6 +359,7 @@ export function removeUnreferencedPackedFiles(demoDir, html = '') {
     const name = rel.split('/').pop() || '';
     if (PACK_KEEP_ROOT.has(name) || isFallbackKeepPath(rel)) continue;
     if (rel === 'content-package' || rel.startsWith('content-package/')) continue;
+    if (isFrozenRel(rel)) continue;
     if (!UNREFERENCED_IMAGE_RE.test(rel)) continue;
     if (referenced.has(file)) continue;
     assertSafePackPath(root, file);
@@ -329,7 +370,11 @@ export function removeUnreferencedPackedFiles(demoDir, html = '') {
 }
 
 function packReferenceFiles(root) {
-  return listPackFiles(root).filter((file) => TEXT_EXTS.has(extname(file).toLowerCase()));
+  return listPackFiles(root).filter((file) => {
+    const rel = relative(root, file).replace(/\\/g, '/');
+    if (isFrozenRel(rel)) return false;
+    return TEXT_EXTS.has(extname(file).toLowerCase());
+  });
 }
 function escapeRegExp(value) { return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 

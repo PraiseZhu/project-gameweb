@@ -15,7 +15,7 @@
 // 严格按字面 6 步，§6 自己点名的真实案例走不通：
 //   稿 "…段位任务，\n即可获得…" 经第 3 步（\n→单空格）得 "…任务， 即可…"，
 //   表 "…任务，即可…" 无空格——不等，会掉成 fuzzy，与 §6 判定的 normalized 冲突。
-// lead 裁决定义：**空白两侧都是 CJK 字符时，删除该空白**（CJK = 中日韩统一表意文字
+// lead 裁决定义：**空白两侧都是 CJK，或一侧是 CJK、另一侧是半角连字符时，删除该空白**（CJK = 中日韩统一表意文字
 // + CJK 标点 + 全角形式，按码点范围判，不是只判标点）：
 //   "任务， 即可"   → 「，」「即」皆 CJK → 删 ✓（§6 案例成立）
 //   "汉字 汉字"     → 皆 CJK → 删 ✓（换行/手动排版产物）
@@ -28,6 +28,12 @@
  * + CJK 标点（U+3001–303F）+ 全角形式（U+FF01–FF60）+ 常用中文排版符号（…—–·引号）。
  * 拉丁字母、阿拉伯数字、半角标点一律非 CJK——这是 "SS5 新…" 空格保留的关键。
  */
+function joinsLayoutSpace(cp) {
+  // ASCII hyphen is a badge separator. A line break beside it is layout,
+  // not another sentence. The hyphen character itself stays in the key.
+  return isCJK(cp) || cp === 0x2d;
+}
+
 function isCJK(cp) {
   return (
     (cp >= 0x3400 && cp <= 0x4dbf) || // 表意文字扩 A
@@ -69,7 +75,7 @@ export function normalizeCopy(x) {
       const prev = chars[i - 1];
       const next = chars[i + 1];
       if (prev === undefined || next === undefined) return true;
-      return !(isCJK(prev.codePointAt(0)) && isCJK(next.codePointAt(0)));
+      return !(joinsLayoutSpace(prev.codePointAt(0)) && joinsLayoutSpace(next.codePointAt(0)));
     })
     .join('');
   return s;

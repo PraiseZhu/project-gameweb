@@ -10,7 +10,7 @@
  *
  * 默认仅读取已有报告；--run 才执行本地验收命令并把输出作为当天证据。
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -18,6 +18,7 @@ import { POLICY_VERSION, evaluateAdmission } from './lib/ledger-policy.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const ISSUE_LIMIT = 500;
+const LEDGER_RETENTION_DAYS = 7;
 const args = process.argv.slice(2);
 const arg = (name) => {
   const i = args.indexOf(`--${name}`);
@@ -35,6 +36,38 @@ export function chinaDate(now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(now);
+}
+
+/** 把 YYYY-MM-DD 往前/后平移 days 天，返回新的 YYYY-MM-DD（本地时间，避免时区偏移）。 */
+export function shiftDate(dateStr, days) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const dt = new Date(year, month - 1, day);
+  dt.setDate(dt.getDate() + days);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * 清理 outDir 里早于 date - maxAgeDays 的每日台账文件（.json / .md / -morning.md）。
+ * 只匹配日期前缀命名的台账文件，绝不触碰 policy-manifest.json、ledger.json 等长期 ledger。
+ * 返回被删除的文件名列表（不含路径），供运行日志/晨报记录。
+ */
+export function pruneOldLedgers(outDir, date, maxAgeDays = LEDGER_RETENTION_DAYS) {
+  if (!existsSync(outDir)) return [];
+  const cutoff = shiftDate(date, -maxAgeDays);
+  const ledgerPattern = /^(\d{4}-\d{2}-\d{2})(-morning)?\.(json|md)$/;
+  const removed = [];
+  for (const name of readdirSync(outDir)) {
+    const match = ledgerPattern.exec(name);
+    if (!match) continue;
+    if (match[1] < cutoff) {
+      unlinkSync(join(outDir, name));
+      removed.push(name);
+    }
+  }
+  return removed;
 }
 
 export function safeReadJson(file) {
@@ -65,6 +98,12 @@ function issue({ source, key, message, evidence = {}, severity = 'blocking' }) {
 /** Maps failure signatures to the project’s documented chain stages. */
 export function classifyIssue({ source = '', key = '', message = '' }) {
   const text = `${source} ${key} ${message}`.toLowerCase();
+  if (/官网仍是上赛季|official-live-site-is-older-season/.test(text)) {
+    return {
+      stage: 'verify/tooling', rootCauseFamily: 'official-live-site-is-older-season',
+      nextStep: '已知限制：官网仍是上赛季，差异属预期。不回改实现，不进入 owner 决策。',
+    };
+  }
   if (/font|字体|glyph|字形|typography|字宽|synthetic-weight/.test(text)) {
     return {
       stage: 'renderer', rootCauseFamily: 'font-routing-or-loaded-face-mismatch',
@@ -156,10 +195,24 @@ function addPixelIssues(out, report, file) {
 function addLiveDiffIssues(out, report, file) {
   if (!report || typeof report !== 'object') return;
   const significant = report.headline?.significant || [];
+  const misses = report.headline?.anchorMisses || [];
+  /* live-diff 的 BASELINE_NOTE 已经说明官网是上赛季。分类层必须认这句，
+     否则每条预期差异仍会进晨读 owner 决策。没有这句的报告保持逐条入账。 */
+  if (typeof report.baseline === 'string' && report.baseline.includes('官网仍是上赛季')) {
+    if (significant.length || misses.length) {
+      out.push(issue({
+        source: 'live-diff',
+        key: 'official-older-season',
+        message: `官网仍是上赛季内容，稿与线上差异属已知限制（显著 ${significant.length}，锚点未命中 ${misses.length}），不进入 owner 决策，不需回改实现。`,
+        severity: 'known',
+        evidence: { file, fetchedAt: report.fetchedAt, url: report.url, knownLimitation: true },
+      }));
+    }
+    return;
+  }
   for (const [index, message] of significant.entries()) {
     out.push(issue({ source: 'live-diff', key: `significant:${index + 1}`, message, severity: 'warning', evidence: { file, fetchedAt: report.fetchedAt, url: report.url } }));
   }
-  const misses = report.headline?.anchorMisses || [];
   for (const miss of misses) {
     out.push(issue({ source: 'live-diff', key: `anchor:${miss.nodeId}`, message: `线上锚点未命中：${miss.matchText}`, severity: 'warning', evidence: { file, fetchedAt: report.fetchedAt, url: report.url, nodeId: miss.nodeId } }));
   }
@@ -262,6 +315,7 @@ function reflectionFor(family) {
     'component-owner-geometry-or-layout-consumption': '以前的节点抽样不足以代表完整组件，父级 owner 坐标、带状关系和 Auto Layout 消费仍可能错误。',
     'source-width-hug-owner-text-growth-crop-consumption': '首构建只抽了可见首屏/单平台截图，没有把每个原生 Figma 平台树、声明 fallback 和状态里的 source owner 宽度、HUG owner、文本增长后 Chrome 几何与裁切消费绑定成组件级 preflight；因此移动样本暴露的问题被误看成单独设备问题。',
     'visual-baseline-coverage-or-decision-gap': '像素基线覆盖不足或仍是 reportOnly，视觉结论没有进入阻断链。',
+    'official-live-site-is-older-season': '官网仍是上赛季。live-diff 的差异是已知限制，不是未拍板的实现缺陷。',
     'acceptance-coverage-or-observation-gap': '现有 gate 观察范围或来源不足，应该补真实 Chrome 的组件级证据，而非扩大容差。',
     'viewport-or-platform-truth-routing': '预览容器行为与真实设备稿/适配规则没有一起验证，容易把裁切或缩放误判为已适配。',
     'source-extraction-or-truth-model-gap': '抽取结构只满足渲染，未完整保留下游验收所需的父子关系、裁切或文本证据。',
@@ -350,14 +404,19 @@ export function toMorningCandidate(root, ledgerStates) {
 /** 晨报六节渲染（v3.1）。sections：证据/变更、次日收尾、观察/待补、owner决策、每周复发/升格、Skill/main 新鲜度。 */
 export function renderMorningReport(report, { rootDir, policy, ledgerStates = {}, skillVersion = null, localPending = [] } = {}) {
   const candidates = (report.rootCauses || []).map((root) => toMorningCandidate({ ...root, date: report.date }, ledgerStates));
-  const groups = { closure: [], observation: [], ownerDecision: [], designRepeat: [] };
+  const knownLimitFamilies = new Set(['official-live-site-is-older-season']);
+  const groups = { closure: [], observation: [], ownerDecision: [], designRepeat: [], knownLimitation: [] };
   for (const candidate of candidates) {
+    if (knownLimitFamilies.has(candidate.family)) {
+      groups.knownLimitation.push(candidate);
+      continue;
+    }
     if (candidate.admission.admitted && candidate.admission.channel === 'tighten') groups.closure.push(candidate);
     if (!candidate.admission.admitted) groups.observation.push(candidate);
     if (candidate.admission.channel === 'expansion') groups.ownerDecision.push(candidate);
     if (candidate.admission.channel === 'design' && (candidate.count || 0) >= 2) groups.designRepeat.push(candidate);
   }
-  const { closure, observation, ownerDecision, designRepeat } = groups;
+  const { closure, observation, ownerDecision, designRepeat, knownLimitation } = groups;
   const L = [];
   L.push('# 次日晨读台账 — ' + report.date, '');
   L.push('- 治理立法：**' + (policy && policy.version ? policy.version : POLICY_VERSION) + '**（' + (policy && policy.ok ? '规则校验通过' : '规则漂移/未校验') + '）');
@@ -366,6 +425,7 @@ export function renderMorningReport(report, { rootDir, policy, ledgerStates = {}
   L.push('');
   L.push('## 1. 证据 / 变更');
   L.push('- 当日问题：**' + report.summary.total + '**（阻断 ' + report.summary.blocking + '，警告 ' + report.summary.warnings + '）');
+  if (knownLimitation.length) L.push('- 已知限制（不进 §4 owner 决策）：' + knownLimitation.map((c) => c.family).join('、') + ' — 官网仍是上赛季，差异属预期，不需回改实现');
   for (const c of (report.evidenceSources && report.evidenceSources.commands) || []) L.push('  - 验收 \'' + c.id + '\' exit=' + c.exitCode);
   if (report.delta) L.push('- 与 ' + (report.delta.comparedTo || '首次') + ' 相比：新根因 ' + (report.delta.newFamilies.join('、') || '无') + '；持续 ' + (report.delta.repeatedFamilies.join('、') || '无') + '；未再出现 ' + (report.delta.resolvedFamilies.join('、') || '无'));
   L.push('');
@@ -386,7 +446,7 @@ export function renderMorningReport(report, { rootDir, policy, ledgerStates = {}
   for (const c of ownerDecision) L.push('- \'' + c.family + '\'（' + c.stage + '）拿不准/涉放宽 → 待 owner 逐条拍板');
   L.push('');
   L.push('## 5. 每周复发 / 升格候选');
-  const repeated = (report.delta && report.delta.repeatedFamilies) || [];
+  const repeated = ((report.delta && report.delta.repeatedFamilies) || []).filter((family) => !knownLimitFamilies.has(family));
   if (!repeated.length && !designRepeat.length) L.push('- 无');
   for (const f of repeated) L.push('- 复发根因：\'' + f + '\'（建议进每周复盘）');
   for (const c of designRepeat) L.push('- 设计类 ×' + c.count + '：\'' + c.family + '\'（≥2 次 → gap-catalog 质询；≥4 次 → 升格候选）');
@@ -482,7 +542,8 @@ if (process.argv[1] === import.meta.filename) {
       morningFile = join(outDir, `${date}-morning.md`);
       writeFileSync(morningFile, morning);
     }
-    console.log(JSON.stringify({ ok: true, date, report: jsonFile, summary: markdownFile, morning: morningFile, policy: policy ? { ok: policy.ok, version: policy.version } : null, issues: report.summary, delta, commands: commands.map(({ id, exitCode }) => ({ id, exitCode })) }, null, 2));
+    const pruned = pruneOldLedgers(outDir, date);
+    console.log(JSON.stringify({ ok: true, date, report: jsonFile, summary: markdownFile, morning: morningFile, pruned, policy: policy ? { ok: policy.ok, version: policy.version } : null, issues: report.summary, delta, commands: commands.map(({ id, exitCode }) => ({ id, exitCode })) }, null, 2));
     process.exitCode = 0;
   }
 }

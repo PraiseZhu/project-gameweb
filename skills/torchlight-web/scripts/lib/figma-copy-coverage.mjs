@@ -131,12 +131,15 @@ export function assessCopyCoverage({ sourceTexts, truth, report, larkSnapshot = 
   const errors = [];
   const warnings = [];
   const observedLanguages = [...new Set(Object.values(byNode || {}).flatMap((binding) => Object.keys(binding?.translations || {})))];
-  const tableLangs = Object.values(larkSnapshot?._meta?.langCols || {}).filter((lang) => lang && lang !== 'ja');
-  const configuredLanguages = (Array.isArray(report?.copy?.languages) && report.copy.languages.length
+  const tableLangs = Object.values(larkSnapshot?._meta?.langCols || {}).filter(Boolean);
+  const rawConfigured = Array.isArray(report?.copy?.languages) && report.copy.languages.length
     ? report.copy.languages
     : (Array.isArray(truth?.copy?.languages) && truth.copy.languages.length
       ? truth.copy.languages
-      : (tableLangs.length ? tableLangs : observedLanguages))).filter((lang) => lang !== 'ja');
+      : (tableLangs.length ? tableLangs : observedLanguages));
+  /* Generic coverage still does not require Japanese. This landing freeze
+     may still bind ja onto truth.copy.byNode for the ja.static.html capture. */
+  const configuredLanguages = rawConfigured.filter((lang) => lang && lang !== 'ja');
 
   if (!larkSnapshot) {
     return {

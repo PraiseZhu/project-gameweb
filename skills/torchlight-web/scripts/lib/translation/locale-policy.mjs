@@ -113,17 +113,23 @@ const PAGE_LANG_LABEL = Object.freeze({
   ko: '한국어',
 });
 
-/** Page-language keys present on used img/ + lang sets. Order follows IMG_LANG_VALUES. */
+/** Page-language keys present on used img/ + lang sets. Order follows IMG_LANG_VALUES.
+ *  Landing sets without a cn axis still keep zh-CN in the switcher; art reuses en. */
 export function pageLangsFromImgLangSets(componentSets = []) {
   const values = new Set();
+  let keepZhCn = false;
   for (const set of Array.isArray(componentSets) ? componentSets : []) {
     if (!isLegalImgLangSet(set)) continue;
-    for (const value of legalImgLangValuesOfSet(set)) values.add(value);
+    const setValues = legalImgLangValuesOfSet(set);
+    for (const value of setValues) values.add(value);
+    if (!setValues.has('cn') && setValues.has('en')) keepZhCn = true;
   }
-  return IMG_LANG_VALUES
+  const langs = IMG_LANG_VALUES
     .filter((value) => values.has(value))
     .map((value) => IMG_VARIANT_TO_PAGE_LANG[value])
     .filter(Boolean);
+  if (keepZhCn && !langs.includes('zh-CN')) langs.unshift('zh-CN');
+  return langs;
 }
 
 export function languageMatrixOptions(pageLangs) {
@@ -134,6 +140,7 @@ export function languageMatrixOptions(pageLangs) {
 /**
  * Resolve the img/ + lang variant that must follow page language.
  * Missing languages stay missing — never fall back to cn / the Figma-selected tree.
+ * Landing pages without a cn axis reuse the en variant for zh-CN (logo/title/art).
  * Callers pass one platform's componentSets; PC and mobile stay separate.
  */
 function imgLangResult(status, language, value, extra = {}) {
@@ -147,10 +154,16 @@ function imgLangResult(status, language, value, extra = {}) {
   };
 }
 
+function imgLangVariantOfSet(set, value) {
+  return (Array.isArray(set?.variants) ? set.variants : [])
+    .find((variant) => langValueOfImgVariant(variant) === value) || null;
+}
+
 export function resolveImgLangVariant({
   componentSets = [],
   componentId = '',
   language = 'zh-CN',
+  fallbacks = null,
 } = {}) {
   const normalizedLanguage = normalizeLanguage(language);
   const value = imgLangVariantValue(normalizedLanguage);
@@ -166,9 +179,29 @@ export function resolveImgLangVariant({
       reason: foundSet ? 'not-img-lang-set' : 'set-not-found',
     });
   }
-  const match = (Array.isArray(foundSet.variants) ? foundSet.variants : [])
-    .find((variant) => langValueOfImgVariant(variant) === value) || null;
+  const match = imgLangVariantOfSet(foundSet, value);
   const setId = String(foundSet.componentSetId || foundSet.id || '');
+  const declaredFallback = fallbacks && typeof fallbacks === 'object' ? String(fallbacks[value] || '') : '';
+  if (!match && declaredFallback) {
+    const fallback = imgLangVariantOfSet(foundSet, declaredFallback);
+    if (fallback) {
+      return imgLangResult('matched', normalizedLanguage, declaredFallback, {
+        componentId: String(fallback.componentId || fallback.id || ''),
+        setId,
+        reason: 'declared-language-fallback',
+      });
+    }
+  }
+  if (!match && value === 'cn') {
+    const en = imgLangVariantOfSet(foundSet, 'en');
+    if (en) {
+      return imgLangResult('matched', normalizedLanguage, 'en', {
+        componentId: String(en.componentId || en.id || ''),
+        setId,
+        reason: 'landing-cn-reuses-en',
+      });
+    }
+  }
   if (!match) {
     return imgLangResult('missing', normalizedLanguage, value, { setId, reason: 'missing-language-variant' });
   }

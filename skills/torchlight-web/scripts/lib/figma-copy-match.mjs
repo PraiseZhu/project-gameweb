@@ -18,7 +18,7 @@
 
 import { normalizeCopy, editDistance, fuzzyThreshold } from './figma-copy-normalize.mjs';
 import { deriveContext, resolveContextualRow, validateCopyOverlay } from './figma-copy-context.mjs';
-import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferSplitShareRow, splitLocaleCellByOwnLines, inferCellLineSpan, cellLines, lineBreakOf, stripWholeLineWrappersIfSourceBare } from './figma-copy-structure.mjs';
+import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferLocalCandidateNeighbor, inferSplitShareRow, splitLocaleCellByOwnLines, inferCellLineSpan, cellLines, lineBreakOf, stripWholeLineWrappersIfSourceBare } from './figma-copy-structure.mjs';
 
 const LANGS_FALLBACK = ['zh-CN', 'en', 'ko', 'ja', 'zh-TW'];
 
@@ -234,6 +234,11 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
 
   /** 命中唯一一行后造五语叶子；空语言列不造叶子（值是 null），记 missingLangs。 */
   function adopt(t, kind, { lineIndex = null, lineCount = null, lineSpan = 1, partIndex = 0, partCount = 1, takeCount = 1, joinWith = '\n', sourceCharacters = '' } = {}) {
+    const lockZhManualBreak = (lang, source, tableValue) => (
+      lang === 'zh-CN' && source && /[\n\r\u2028\u2029]/.test(String(source))
+        ? String(source)
+        : tableValue
+    );
 
     const translations = {};
     const missingLangs = [];
@@ -250,7 +255,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
         const leaf = larkLeaf(`/rows/${t.row}/${lang}`);
         translations[lang] = {
           ...leaf,
-          value: stripWholeLineWrappersIfSourceBare(sourceCharacters, leaf && leaf.value != null ? leaf.value : v),
+          value: lockZhManualBreak(lang, sourceCharacters, stripWholeLineWrappersIfSourceBare(sourceCharacters, leaf && leaf.value != null ? leaf.value : v)),
         };
         continue;
       }
@@ -305,7 +310,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       const leaf = larkLeaf(`/rows/${t.row}/${lang}`);
       translations[lang] = {
         ...leaf,
-        value: stripWholeLineWrappersIfSourceBare(sourceCharacters, pieces.join('\n')),
+        value: lockZhManualBreak(lang, sourceCharacters, stripWholeLineWrappersIfSourceBare(sourceCharacters, pieces.join('\n'))),
         splitLine: lineIndex,
         splitSpan: span,
         splitPart: partIndex,
@@ -406,6 +411,20 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       tally.exact += 1; // designated 计入 exact 桶（已解析）
       continue;
     }
+    const exactFull = table.filter((t) => t.rawZh === raw);
+    if (exactFull.length) {
+      const tuples = new Set(exactFull.map((t) => JSON.stringify(translationTuple(larkSnap, at, t.row, langs))));
+      if (tuples.size === 1) {
+        byNode[nodeId] = {
+          ...base,
+          ...adopt(exactFull[0], 'exact', { sourceCharacters: raw }),
+          note: `整格与表第 ${exactFull.map((t) => t.row).join('/')} 行全等，优先于只作为其他多行格的开头`,
+        };
+        tally.exact += 1;
+        continue;
+      }
+    }
+
     if (cellGroup) {
       const splitMeta = cellSplitMeta;
       if (cellGroup.unresolved) {
@@ -608,6 +627,17 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
     grew = false;
     for (const [nodeId, entry] of Object.entries(byNode)) {
       if (!entry || entry.matchKind !== 'ambiguous') continue;
+      const localNeighbor = inferLocalCandidateNeighbor({
+        nodeId,
+        candidateRows: (entry.candidates || []).map((item) => item.row),
+        texts,
+        byNode,
+      });
+      if (!localNeighbor.unresolved) {
+        adoptInferred(nodeId, entry, localNeighbor, 'inferred-adjacent');
+        grew = true;
+        continue;
+      }
       const adjacent = inferAdjacentBoundRow({
         nodeId,
         candidateRows: (entry.candidates || []).map((item) => item.row),

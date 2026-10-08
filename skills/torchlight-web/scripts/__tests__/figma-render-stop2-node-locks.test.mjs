@@ -901,6 +901,17 @@ test('img/立绘 spilling renderBox PNG is not vertically recentered', () => {
   assert.match(rendererSrc, /24MP export may set p\.scale < 1/);
 });
 
+test('page-tall bg/pc PNG matching pageBox does not stretch to taller inkBox', () => {
+  const helpers = compileOwnerSliceHelpers();
+  const ownerBox = { x: 0, y: 0, w: 3840, h: 10798 };
+  const inkBox = { x: 0, y: -2, w: 3840, h: 18360 };
+  const assetRec = { pixelSize: '2992x8413', exportBox: ownerBox };
+  const paint = helpers._ownerSliceBox(assetRec, ownerBox, ownerBox, inkBox, ownerBox);
+  assert.deepEqual(paint, ownerBox);
+  assert.equal(helpers._pngMatchesBox(assetRec, ownerBox), true);
+  assert.equal(helpers._pngMatchesBox(assetRec, inkBox), false);
+});
+
 test('unclipped img/立绘 inkBox PNG paints the plate, not the ancestor-visible crop', () => {
   const helpers = compileOwnerSliceHelpers();
   const ownerBox = { x: 0, y: 2382, w: 750, h: 544 };
