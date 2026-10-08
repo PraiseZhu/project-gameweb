@@ -1982,9 +1982,9 @@
   },
 
   /* 双真源 locale 目标字号（镜像 scripts/lib/translation/typography-policy.mjs 的
-     officialTargetDesignSize / LOCALE_FONT_SCALE）。证据 artifacts/official-locale-typography-20260810.json：
-     本地 2× 高清稿，官网运行时约为一半，语言比 = 官网该语言视觉字号 / 官网 zh-CN 视觉字号。
-     标题各语言同级（en 拉丁略小），正文 ja/en/ko=0.8、zh-TW=1.0。未收录角色/语言回退 1。 */
+     officialTargetDesignSize）。语言比只读 designPolicy().localeFontScale（DESIGN.md），
+     渲染器不写死官网地址、私有实测 artifact，也不写死某一赛季的 CTA 默认比例。
+     未收录角色/语言回退 1。 */
     _letterSpacingPx(source, language) {
     const src = Number(source);
     const lang = String(language || 'zh-CN');
@@ -2027,10 +2027,9 @@
 
     _officialTargetDesignSize({ sourceFontSize, sourceLineHeight = null, role = 'unknown', language = 'zh-CN', fontWeight = 400, ancestorNames = [], name = '' } = {}) {
     /* 镜像 scripts/lib/translation/typography-policy.mjs#officialTargetDesignSize（tier-aware）。
-       证据 artifacts/official-tier-ratio-20260810.json：同一 fw700 标题按【源字号档】分缩放——
-       卡片标题(源>40) ja 0.833、zh-TW/en/ko 1.0；技能/小节标题(源<=40)全语言 1.0；正文 fw<600
-       ja/en/ko 0.8、zh-TW 1.0。zh-CN 返回 null（不动、保 Figma）。en 标题字重压 400 是 font
-       routing 的字体缺口，不在此处处理。btn/ 走 heading：清单源字号，只在书面 max 放不下时才收。 */
+       档位阈值与语言比只读 designPolicy().tierRules / localeFontScale，不在这里写死赛季实测默认值。
+       zh-CN 返回 null（不动、保 Figma）。en 标题字重是 font routing 的字体缺口，不在此处处理。
+       btn/ 走 heading：清单源字号，只在书面 max 放不下时才收。 */
     const lang = String(language || 'zh-CN');
     if (lang === 'zh-CN') return null;
     const src = Number(sourceFontSize);
@@ -2053,7 +2052,7 @@
     const row = SCALE[tier] || {};
     const ratio = Number.isFinite(row[lang]) ? row[lang] : 1;
     const fontSize = src * ratio;
-    /* ja 卡片标题档官网把行高收紧到≈字号（1.0×），zh-TW 与源同比。 */
+    /* ja 卡片标题档行高收到字号；其它语言按源行高乘 designPolicy 语言比。 */
     let lineHeight = Number.isFinite(Number(sourceLineHeight)) && Number(sourceLineHeight) > 0 ? Number(sourceLineHeight) * ratio : null;
     if (tier === 'card-title' && lang === 'ja') lineHeight = fontSize;
     return { fontSize, lineHeight, ratio, tier, kind: tier === 'body' ? 'body' : 'title', role, language: lang };
@@ -7532,16 +7531,16 @@
           }
 
           /* ═══ 按稿里的排版模式渲染，而不是一律"给个宽度自己折行" ═══
-             实测的错法与后果：标题 ss5新赛季奖励 在稿里是 WIDTH_AND_HEIGHT
-             （宽度由内容撑开 = 673，本来就一行），我给它 673 宽又允许折行，
-             结果折成「SS5新赛季奖」+「励」两行 —— 页面上一眼就不对。
+             实测的错法与后果：宽度自适应标题在稿里是 WIDTH_AND_HEIGHT
+             （宽度由内容撑开，本来就一行），再给同样的宽又允许折行，
+             会把一行折成两行 —— 页面上一眼就不对。
 
              WIDTH_AND_HEIGHT / WIDTH：宽高由内容决定 → pre，绝不折行。
                本机字体跟稿不同时行会变宽，配 text-align 让它**对称溢出**，
                视觉中心仍与稿对齐（overflow 保持 visible，不裁不藏）。
              HEIGHT / FIXED：稿里是定宽自动折行 → pre-wrap。
                pre-wrap 而不是 normal，是为了保住稿里的**真换行符**
-               （2:31229「解锁赛季历战通行证，\n即可获得赛季专属奖励。」稿里就有 \n，
+               （定宽正文里的真换行（不写节点号与赛季文案）稿里就有 \n，
                 当空格处理折行位置会变）。 */
           const ar = tx.autoResize || 'FIXED';
           const hugs = ar === 'WIDTH_AND_HEIGHT' || ar === 'WIDTH';
@@ -7766,7 +7765,7 @@
           }
           /* 定宽折行配 text-wrap:balance（第 14 项）：本地化表没有稿里的手动换行
              （表行没 \n），折行位置由框宽决定 —— balance 让两行长度均衡，
-             避免「励。」这种孤字。这是排版兜底，不是造假：
+             避免末尾孤字。这是排版兜底，不是造假：
              丢了换行这件事本身由 data-copy-lb-lost 留痕 + 壳读数报数，不许只兜底不报。 */
 
           /* 文字块的高度与垂直对齐。稿里 9/9 都有实测高度且 vAlign=TOP。
@@ -7809,8 +7808,8 @@
             }
           }
           /* ═══ 渐变字不定宽：background-clip:text 只在元素背景绘制区（边框盒）内上色 ═══
-             实测（2026-08-04）：标题稿内框 673 宽、墨迹 702 宽 —— 稿本身就溢出 29px；
-             固定框宽下，溢出部分的字形拿不到颜色 → 直接消失（「励」字被吃掉）。
+             实测（2026-08-04）：自适应标题的墨迹宽大于稿框（历史产品线私有证据，不写具体文案）；
+             固定框宽下，溢出部分的字形拿不到颜色 → 直接消失（末字被吃掉）。
              改法：宽度交给内容（max-content，min-width 保底稿框宽），水平位置锚在
              **稿框中心**：left = 中心点，translateX(-50%) 回半宽。字变长变短都对称
              涨缩，视觉中心始终与稿一致；text-align 保持稿里的值。
@@ -7826,7 +7825,7 @@
           /* ═══ 半行距补偿：文字要往【下】挪半个行距 ═══
            *
            * 门 E 第一次跑就抓到的真错位（2026-08-04，用像素位移搜索逐块定量，不靠目测）：
-           *   卡片标题「新赛季启程庆典」比稿【高】3 个 CSS px。
+           *   一张卡片标题比稿【高】3 个 CSS px。
            *   稿内 字号 60 / 行高 72 → (72−60)/2 = 6 设计px = 3 CSS px。数值恰好相等。
            *   补偿后该块 MAE 26.3 → 5.01，且最佳位移归零（低于美术图的噪声底 7.4）。
            *
@@ -7845,8 +7844,8 @@
            *
            * 只对【非 hugs】生效（HEIGHT / FIXED / NONE），这条是实测逼出来的：
            *   WIDTH / WIDTH_AND_HEIGHT 的 box 是**墨迹撑出来的**，不是文本框
-           *   —— 证据：ETHERIASS4 框高 60.96 ≠ 行高 60。给它补偿后 MAE 13.68 → 15.49 变差，
-           *   限定成非 hugs 后回到 13.68。它自身还剩 dx=−1 dy=−1 的小偏移，
+           *   —— 证据：hug 样本的框高不等于行高。给它补偿后误差变大，
+           *   限定成非 hugs 后回到补偿前。它自身还剩很小的平移，
            *   是另一件事（hugs 文字的墨迹框与浏览器字形盒的差异），未修，别混进这条。
            *
            * 多行也对：后续各行的行距 CSS 与 Figma 同为 lineHeight，整块统一平移即可。
@@ -7980,7 +7979,7 @@
             el.setAttribute('aria-hidden', 'true');
           } else if (val != null && val !== '') {
             /* 双真源（用户 2026-08-10 最终决策）：zh-CN 严守 Figma 静态字号；非 zh-CN
-               且有真实译文时，按官网实测的 locale+角色目标等级重设设计坐标字号/行高
+               且有真实译文时，按 designPolicy 的 locale 目标等级重设设计坐标字号/行高
                （officialTargetDesignSize = Figma zh-CN 源 × 语言比），再交给后续组级
                统一与容器自然增长。缺译（走 fallback 原文）不进此分支，保持 Figma 字号
                并已有 data-copy-missing 标记。不改简中、不按文案/node 特判。 */

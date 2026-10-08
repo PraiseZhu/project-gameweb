@@ -85,7 +85,9 @@ if (!Number.isFinite(vpW) || !Number.isFinite(vpH) || vpW < 320 || vpH < 320)
 /* 只报不判开关（任务 16，lead 裁决）：阈值还没实测拍板之前，门 E 对「完整跑完比对、
    纯差异超阈值」的退出码恒 0 —— 一个还没定阈值的门，非零只会教人忽略它。报告里差异
    照出、reportOnly 标记照写；阈值拍板后必须删掉这个开关（它在输出里很显眼，忘删会被看见）。
-   ⚠️ 2026-08-14 起该豁免不再覆盖硬故障：MISSING/ERROR/manifest 漂移无条件 exit 2（见收口处）。 */
+   ⚠️ 2026-08-14 起该豁免不再覆盖硬故障：MISSING/ERROR/manifest 漂移无条件 exit 2（见收口处）。
+   2026-10-08 复核：默认 0.005 只是缺省值，没有 [decided:] 采纳记录，同版本基线覆盖也未拍板。
+   开关保留。不要删开关，也不要放宽阈值，来假装差异已经进了阻断链。 */
 const reportOnly = spec.baselineReportOnly === true;
 
 const declared = spec.baselines ?? [];

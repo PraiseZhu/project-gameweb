@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -9,8 +9,11 @@ import {
   classifyIssue,
   compareWithPrevious,
   dedupeIssues,
+  pruneOldLedgers,
   renderMarkdown,
+  renderMorningReport,
   safeReadJson,
+  shiftDate,
 } from '../daily-ledger.mjs';
 
 test('daily ledger classifies font fallback as renderer font routing', () => {
@@ -131,6 +134,70 @@ test('daily ledger ignores explicit none assertions in failed command output', (
     });
     assert.equal(report.issues.length, 1);
     assert.match(report.issues[0].message, /FAIL coordinates/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('older-season live-diff is a known limitation and stays out of owner decisions', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'daily-ledger-older-season-'));
+  try {
+    const live = join(dir, 'live-diff-report.json');
+    writeFileSync(live, JSON.stringify({
+      baseline: '本门以 Figma 稿为准。官网仍是上赛季内容，差异属预期，不需回改实现。',
+      headline: {
+        significant: ['[1:1] fontSize +20%', '[1:2] lineHeight +30%'],
+        anchorMisses: [{ nodeId: '9', matchText: '旧文案' }],
+      },
+    }));
+    const report = buildDailyReport({
+      demoDir: dir,
+      date: '2026-10-08',
+      files: { verify: join(dir, 'report.json'), pixel: join(dir, 'report-pixel.json'), liveDiff: live },
+    });
+    assert.equal(report.issues.length, 1);
+    assert.equal(report.issues[0].rootCauseFamily, 'official-live-site-is-older-season');
+    assert.equal(report.issues[0].severity, 'known');
+    const md = renderMorningReport(report, { policy: { ok: true, version: 'v3.1' } });
+    const owner = md.split('## 4. owner 决策')[1].split('## 5.')[0];
+    assert.match(owner, /无/);
+    assert.doesNotMatch(owner, /official-live-site-is-older-season/);
+    assert.match(md, /已知限制（不进 §4 owner 决策）/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('daily ledger shifts YYYY-MM-DD dates across month and year boundaries', () => {
+  assert.equal(shiftDate('2026-10-08', -7), '2026-10-01');
+  assert.equal(shiftDate('2026-10-08', 1), '2026-10-09');
+  assert.equal(shiftDate('2026-01-03', -7), '2025-12-27');
+  assert.equal(shiftDate('2026-03-01', -1), '2026-02-28');
+  assert.equal(shiftDate('2026-02-28', 1), '2026-03-01');
+});
+
+test('daily ledger prunes ledgers older than one week but keeps recent and non-ledger files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'daily-ledger-prune-'));
+  try {
+    writeFileSync(join(dir, '2026-09-30.json'), '{}');
+    writeFileSync(join(dir, '2026-09-30.md'), '# old');
+    writeFileSync(join(dir, '2026-09-30-morning.md'), '# old morning');
+    writeFileSync(join(dir, '2026-10-01.json'), '{}');
+    writeFileSync(join(dir, '2026-10-07.json'), '{}');
+    writeFileSync(join(dir, '2026-10-08.md'), '# today');
+    writeFileSync(join(dir, 'policy-manifest.json'), '{}');
+    writeFileSync(join(dir, 'ledger.json'), '{}');
+    writeFileSync(join(dir, 'notes.txt'), 'hi');
+
+    const removed = pruneOldLedgers(dir, '2026-10-08');
+
+    assert.deepEqual(removed.sort(), ['2026-09-30.json', '2026-09-30.md', '2026-09-30-morning.md'].sort());
+    assert.equal(existsSync(join(dir, '2026-10-01.json')), true);
+    assert.equal(existsSync(join(dir, '2026-10-08.md')), true);
+    assert.equal(existsSync(join(dir, 'policy-manifest.json')), true);
+    assert.equal(existsSync(join(dir, 'ledger.json')), true);
+    assert.equal(existsSync(join(dir, 'notes.txt')), true);
+    assert.equal(existsSync(join(dir, '2026-09-30.json')), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -30,12 +30,16 @@
   - 现象:规范金样 ready 包消费时出现 skippedPainted 红闸、首屏黑底、bg/pc 与边框漏画。根因是消费层把 skipped 结构碎片和真实 slice owner 混在一起：要么全滤掉导致背景丢失，要么旧素材门只认 IMAGE fill 漏掉无填充的 sliceExport。page-root 只认 provenance locator，KV/bg 挂不到页面根；Main 静态门误审 modal/variant；render-bound 切图被塞进 owner 盒；完整 PNG 画布被按可见窗压成窄条；节点合成图被全局 imageRef 覆盖；网格文字吃父级宽；跨赛季 half-leading 下移；U+2028 换行丢失；fixed overlay 后代留在 section 表。
   - 提案:已落地通用契约：paint 树 omit skipped；sliceExport owner 进静态素材门；page-root 用 paintRootId/source id/ancestorIds；Main --scope 只审当前页；renderBox 消费 render-bound 切图；PNG 宽高比识别完整 owner 画布；节点 ready composite 优先于全局 imageRef；空 INSTANCE 可挂选中变体树；坐标格文字锁自身 box；zh-CN 不压字距；desktop↔pc 映射；去掉 half-leading translateY；Figma 行分隔符归一；fixed 后代画在 fixedStage。明确不收：CSS 假箭头、指示器菱形、Inter-SemiBold 冒充 700、导航中文名兜底、临时 Figma 分层补图、手补参考 PNG、审阅文案、Frame 名 2×2。
   - 备注:[decided:2026-08-25] 用户确认把昨天 ready 包消费契约收进 Skill；CSS 假箭头、SemiBold 冒充 700、导航名兜底、临时 Figma 补图不收。续：空 INSTANCE 挂选中变体树、zh-CN 不压字距、desktop↔pc 映射写入文档/测试。
-- `replay-pref-fallback-and-pixel-reportonly-exit` **偏好切换 DOM 优先回退链 + pixel reportOnly 退出码分级** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: open
+- `replay-pref-fallback-and-pixel-reportonly-exit` **偏好切换 DOM 优先回退链 + pixel reportOnly 退出码分级** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: landed
   - 现象:GPT-5.4 独立 review 发现三处脚本层健壮性缺陷:①applyCase 的 os/mode 无条件走 __qa.setPref,页面未实现即抛错,不回退可见真实按钮;②clickPref 的 lang 优先 select,页面同时存在隐藏 select 与可见按钮时卡死在隐藏 select;③pixel-compare 的 reportOnly 使 MISSING/ERROR 硬故障与纯差异超阈值同为 exit 0,单独跑脚本只看退出码的用法(README 第 3 步)无法区分'没跑成'与'跑成了但差异大'。
   - 提案:已落地:replay.mjs 抽出 tryPrefViaDom(按钮候选→可见 select,统一 isRenderable 校验),clickPref 走按钮优先+select 回退,applyCase os/mode 走 DOM 优先→setPref 回退→都没有才报错;pixel-compare 退出码改为 ok || (reportOnly && comparedComplete),MISSING/ERROR/manifest 漂移无条件 exit 2。测试:replay-pref-resolution.test.mjs + pixel-reportonly-exit.test.mjs(源码契约不 skip,行为用例 playwright-gated)。
-- `release-surface-deidentification` **发布面脱敏:SS5 专用脚本入 private,通用代码去伊瑟官网痕迹** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: open
+  - 备注:[decided:2026-10-08] 复核 tryPrefViaDom 与 pixel-compare 退出码 ok||(reportOnly&&comparedComplete)。源码契约测试通过；行为用例按既有 playwright 门跳过。无遗漏。
+
+- `release-surface-deidentification` **发布面脱敏:SS5 专用脚本入 private,通用代码去伊瑟官网痕迹** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: landed
   - 现象:release-audit 54 条 notes 复核后用户拍板:28 条 SS5 专用脚本逐条列入 public-release.json private(56/56 带 reasons);14 条通用代码/文档夹带官网实测数据(motion-contract 的 yise.xd.cn site 默认值、typography 的 etheria.xd.com 五语言实测注释、通用测试 fixture 绑死 SS5 demo、两篇 docs 的实例数据)。
-  - 提案:已落地:OFFICIAL_MOTION_TEMPLATE 去站点绑定(site 留空、buildOfficialMotionAdapter 显式 site fail-closed、模板可注入);LOCALE_FONT_SCALE 保留为默认基线并加 localeFontScale({overrides}) 可配置注入、注释改为「真实产品线实测基线(私有证据)」;4 个通用能力测试随私有套件(test:demo)走;docs 实例区用 <demo-dir> 占位并标注参考实例。notes 54→13,剩余均为无风险可保留类 + figma-render.js(ss5-cta 处理中)。
+  - 提案:已落地:OFFICIAL_MOTION_TEMPLATE 去站点绑定(site 留空、buildOfficialMotionAdapter 显式 site fail-closed、模板可注入);LOCALE_FONT_SCALE 保留为默认基线并加 localeFontScale({overrides}) 可配置注入、注释改为「真实产品线实测基线(私有证据)」;4 个通用能力测试随私有套件(test:demo)走;docs 实例区用 <demo-dir> 占位并标注参考实例。notes 54→13,剩余均为无风险可保留类 + figma-render.js 的 ss5-cta 官网实测痕迹已脱敏。
+  - 备注:[decided:2026-10-08] figma-render.js 剩余 ss5-cta 痕迹已脱敏：去掉官网实测 artifact 路径、SS5/ETHERIA 文案样本，以及写进注释的赛季默认比例。yise 入口改为单个历史 demo。语言比仍只读 designPolicy，渲染行为与阈值未改。
+
 - `visual-completion-evidence-grade` **视觉完成声明必须有证据分级与实现隔离(无基准=candidate,禁写完成)** — 出现 1 次,首见 2026-08-14,最近 2026-08-14,status: landed
   - 现象:现象:两起交付把「能打开的网页」当成页面已摆好,比例/位置/裁切/层级未还原仍交付。根因:门 E 只在有 baseline 时才比对,无基准直接降级放行;T4 实现隔离只写在 handbook 不在 Skill 本体;QA 调试壳与产品视图无区分。
   - 提案:已落地:report-pixel.json 增加 verified:false + evidenceLevel:candidate 机械字段,validatePixelReport 拒旧格式 skipped 报告,pr-render 门 E 行带等级标注,SKILL.md/docs 写入 candidate vs confirmed-final 分级与 T4 隔离规则,demo-chrome.md 区分 QA 壳与产品视图。待办:pr-block 对无任何视觉证据的 demo 直接 exit 2;verify.mjs 报告增加顶层 evidenceLevel 并在 pr-block 投影比对。
