@@ -525,7 +525,7 @@ function platformToken(raw) {
 
 function platformFromModalLabel(name) {
   const label = splitInventoryName(name).label || String(name || '');
-  if (/^移动端/.test(label) || /移动端视频弹窗$/.test(label)) return 'mobile';
+  if (/^移动端/.test(label) || /移动端视频弹窗$/.test(label) || /顶部导航/.test(label)) return 'mobile';
   if (/^pc/i.test(label) || /^PC/.test(label)) return 'pc';
   return null;
 }

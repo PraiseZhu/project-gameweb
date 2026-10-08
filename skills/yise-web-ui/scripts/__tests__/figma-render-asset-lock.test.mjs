@@ -253,7 +253,8 @@ test('owner-tree consumption: page/fixed roots keep paint order, placement origi
   assert.match(renderer, /layer\.setAttribute\('data-paint-source-key', key\)/);
   /* placement origin：子节点坐标相对真实 owner（parentId 优先，ownerPath 回退，stack 最后） */
   assert.match(renderer, /const directParentId = nodeParentId\(n\)/);
-  assert.match(renderer, /const coordinateOwnerBox = directParentRecord\?\.pageBox \|\| directParentRecord\?\.box/);
+  assert.match(renderer, /fxOriginForBox/);
+  assert.match(renderer, /nodeUsesPageBox \? 0 : paintOriginX/);
   /* fixed overlay：sticky + 内部 zoom（owner 自身 zoom=1，相对定位不被重复缩放） */
   assert.match(renderer, /fixedStage\.style\.position = 'sticky'/);
   assert.match(renderer, /fixedStage\.style\.zoom = String\(k\)/);
@@ -286,7 +287,7 @@ test('fx-img follows the owner box instead of intrinsic pixels', () => {
 });
 
 test('render-bound slice prefers sliceExport.box over owner pageBox', () => {
-  assert.match(renderer, /const exportBox = geomReady\(slicePageBox\)/);
+  assert.match(renderer, /const exportBox = fxGeomReady\(slicePageBox\)/);
   assert.doesNotMatch(renderer, /const exportBox = \(ownerReady \? box : null\) \|\| slicePageBox/);
 });
 

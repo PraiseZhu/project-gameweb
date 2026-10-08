@@ -92,6 +92,10 @@ export function dirBytes(dir) {
   return total;
 }
 
+export function isFrozenDeliveryPath(relPath) {
+  const rel = String(relPath || '').replace(/\\/g, '/');
+  return rel === 'frozen' || rel.startsWith('frozen/');
+}
 export function isPackKeepFile(name) { return PACK_KEEP_ROOT.has(name) || PACK_FALLBACK_RE.test(name); }
 export function isPackKeepDir(name) { return PACK_KEEP_DIRS.has(name); }
 
@@ -249,7 +253,7 @@ export function removeUnreferencedPackedFiles(demoDir, html = '') {
   for (const file of listPackFiles(root)) {
     const rel = relative(root, file).replace(/\\/g, '/');
     const name = rel.split('/').pop() || '';
-    if (PACK_KEEP_ROOT.has(name) || isFallbackKeepPath(rel)) continue;
+    if (PACK_KEEP_ROOT.has(name) || isFallbackKeepPath(rel) || isFrozenDeliveryPath(rel)) continue;
     if (!UNREFERENCED_IMAGE_RE.test(rel)) continue;
     if (referenced.has(file)) continue;
     assertSafePackPath(root, file);
@@ -297,6 +301,7 @@ export function rewritePackedRefs(demoDir, mappings = []) {
     .sort((a, b) => b.from.length - a.from.length);
   const changed = [];
   for (const file of packReferenceFiles(resolve(demoDir))) {
+    if (isFrozenDeliveryPath(relative(resolve(demoDir), file).replace(/\\/g, '/'))) continue;
     const before = readFileSync(file, 'utf8');
     let after = before;
     for (const { from, to } of normalized) after = rewritePathVariant(after, from, to);

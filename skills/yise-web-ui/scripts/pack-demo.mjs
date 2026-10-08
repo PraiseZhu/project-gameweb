@@ -36,6 +36,7 @@ import {
   packRoot,
   packRuntimeReferencesOk,
   collectReferencedRuntimeFiles,
+  isFrozenDeliveryPath,
   removeUnreferencedPackedFiles,
   rewritePackedRefs,
   sha256File,
@@ -112,6 +113,7 @@ function collectEncodableImages(demoDir) {
   return collectImageFiles(demoDir).filter((file) => {
     const name = rel(demoDir, file).split('/').pop() || '';
     if (fallbackNames.has(resolve(file)) || PACK_FALLBACK_RE.test(name)) return false;
+    if (isFrozenDeliveryPath(rel(demoDir, file))) return false;
     return referenced.has(file);
   });
 }
@@ -207,14 +209,14 @@ function removePackTarget(demoDir, name, { dir = false } = {}) {
 }
 
 function prunePackWorktree(demoDir) {
-  for (const name of ['artifacts', 'verify-artifacts', 'pixel-artifacts', 'fixtures', 'lib', 'scripts']) {
+  for (const name of ['artifacts', 'verify-artifacts', 'pixel-artifacts', 'fixtures', 'lib', 'scripts', 'review']) {
     removePackTarget(demoDir, name, { dir: true });
   }
   for (const name of [
     'extract.mjs', 'extract-helpers.mjs', 'extract-report.json', 'report.json',
     'report-gate-a.json', 'report-assets.json', '_verify-four-fixes.mjs',
     'resize-acceptance.json', 'human-review.json', 'truth.runtime.json', 'assets-manifest.json',
-    'spec.json', '.env',
+    'spec.json', '.env', 'qa-shell.html',
   ]) {
     removePackTarget(demoDir, name);
   }

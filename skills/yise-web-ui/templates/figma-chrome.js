@@ -699,7 +699,7 @@
     var width = window.innerWidth || document.documentElement.clientWidth || 0;
     var requested = platOfWidth(width);
     var platforms = (TRUTH && TRUTH.platforms) || {};
-    if (requested === 'mobile' && platforms.mobile) return 'mobile';
+    if (requested === 'mobile') return platforms.mobile ? 'mobile' : 'refuse-mobile';
     if (requested === 'pad' && platforms.pad) return 'pad';
     return 'pc';
   }
@@ -1111,7 +1111,11 @@
     if (PRODUCT_VIEW) {
       document.documentElement.style.setProperty('--fx-root-scale', '1');
       frame.setAttribute('data-overflow-x', 'hidden');
+      frame.style.contain = 'inline-size';
+      frame.setAttribute('data-page-x-contain', 'inline-size');
     } else {
+      frame.style.contain = '';
+      frame.removeAttribute('data-page-x-contain');
       frame.removeAttribute('data-overflow-x');
     }
     frame.style.transform = 'scale(' + scale + ')';

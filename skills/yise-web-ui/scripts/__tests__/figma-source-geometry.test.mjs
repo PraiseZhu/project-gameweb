@@ -63,8 +63,11 @@ test('zh-CN expected box prefers inventory pageBox over canvas box', () => {
 
 test('renderer source prefers pageBox for paint placement', () => {
   const src = readFileSync(fileURLToPath(new URL('../../templates/figma-render.js', import.meta.url)), 'utf8');
-  assert.match(src, /n\.pageBox && Number\.isFinite\(Number\(n\.pageBox\.x\)\)/);
-  assert.match(src, /directParentRecord\?\.pageBox \|\| directParentRecord\?\.box/);
+  assert.match(src, /fxPaintBox\(n\)/);
+  assert.match(src, /fxOriginForBox/);
+  assert.match(src, /nodeUsesPageBox \? 0 : paintOriginX/);
+  assert.match(src, /fxToPaintSpace/);
+  assert.match(src, /pageBox is already page-local/);
 });
 
 test('zh-CN image paint uses sliceExport/box pixels, not fill stretch', () => {

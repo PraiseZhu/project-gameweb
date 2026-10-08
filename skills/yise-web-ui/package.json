@@ -29,7 +29,8 @@
     "fonts:register": "node scripts/fonts-register.mjs",
     "human:review": "node scripts/human-review.mjs",
     "recall:yisewebui": "node scripts/recall-yisewebui.mjs",
-    "pack:demo": "node scripts/pack-demo.mjs"
+    "pack:demo": "node scripts/pack-demo.mjs",
+    "freeze:stop1": "node scripts/freeze/freeze-demo.mjs"
   },
   "dependencies": {
     "css-to-react-native": "^3.2.0",

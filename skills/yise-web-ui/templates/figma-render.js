@@ -21,6 +21,48 @@
  */
 (function () {
   'use strict';
+  /* PAINT_SPACE_BEGIN
+     pageBox is already page-local. Mix it with a canvas box/origin
+     (SS6 kv canvas x=-63388 vs pageBox 0) and the first screen
+     paints off-canvas, then overflow:hidden clips it to black.
+     Subtract in the same space as the node box. renderBox / exportBox
+     are canvas-space; translate by the canvas to page delta. */
+  function fxPaintBox(node) {
+    const pageBox = node && node.pageBox;
+    const nodeUsesPageBox = !!(pageBox && Number.isFinite(Number(pageBox.x)) && Number.isFinite(Number(pageBox.y)));
+    return { box: nodeUsesPageBox ? pageBox : ((node && node.box) || {}), nodeUsesPageBox };
+  }
+  function fxOwnerBoxInNodeSpace(owner, nodeUsesPageBox) {
+    if (!owner) return null;
+    if (nodeUsesPageBox) return owner.pageBox || (owner.usesPageBox ? owner.box : null);
+    return owner.box || null;
+  }
+  function fxOriginForBox(nodeUsesPageBox, owners, paintOriginX, paintOriginY) {
+    let coordinateOwnerBox = null;
+    for (const owner of owners || []) {
+      coordinateOwnerBox = fxOwnerBoxInNodeSpace(owner, nodeUsesPageBox);
+      if (coordinateOwnerBox) break;
+    }
+    return {
+      originX: coordinateOwnerBox ? (coordinateOwnerBox.x ?? 0) : (nodeUsesPageBox ? 0 : paintOriginX),
+      originY: coordinateOwnerBox ? (coordinateOwnerBox.y ?? 0) : (nodeUsesPageBox ? 0 : paintOriginY),
+    };
+  }
+  function fxGeomReady(item) {
+    return !!(item && [item.x, item.y, item.w, item.h].every((value) => Number.isFinite(Number(value))) && Number(item.w) > 0 && Number(item.h) > 0);
+  }
+  function fxToPaintSpace(item, nodeUsesPageBox, canvasBox, paintBox) {
+    if (!fxGeomReady(item)) return item;
+    if (!nodeUsesPageBox) return item;
+    if (!fxGeomReady(canvasBox) || !fxGeomReady(paintBox)) return item;
+    return {
+      x: Number(item.x) - Number(canvasBox.x) + Number(paintBox.x),
+      y: Number(item.y) - Number(canvasBox.y) + Number(paintBox.y),
+      w: Number(item.w),
+      h: Number(item.h),
+    };
+  }
+  /* PAINT_SPACE_END */
   /* CONTENT_PROTECTION_BEGIN */
   (function installContentProtection(initialDoc) {
     if (!initialDoc?.documentElement || !initialDoc.head) return;
@@ -1415,6 +1457,20 @@
     };
     const __base = __platBases[__normalizedPlat] || 'pc';
     const __hasNative = (__base === __normalizedPlat);
+    if (__plat === 'refuse-mobile') {
+      frame.setAttribute('data-render-plat', 'mobile');
+      frame.setAttribute('data-render-base', 'refused');
+      frame.setAttribute('data-plat-fallback', 'refused-narrow-product-without-mobile-tree');
+      frame.setAttribute('data-product-tree', 'refused');
+      const refusalDoc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
+      if (!refusalDoc) return;
+      const refusal = refusalDoc.createElement('div');
+      refusal.className = 'fx-empty';
+      refusal.setAttribute('data-product-refusal', 'narrow-viewport-requires-mobile-tree');
+      refusal.textContent = 'narrow product=1 has no mobile tree; refusing to paint the PC tree';
+      frame.appendChild(refusal);
+      return;
+    }
     /* Static mobile scale: native 20:2205 tree at designWidth 750.
        Fallback to the PC tree on a phone viewport is not a scale fix. */
     const __activeTruth = __platforms[__base] || t;
@@ -1424,7 +1480,11 @@
     /* Main static paints the page. Clicks stay inert until Interaction
        explicitly opts in (`ctx.enablePageInteraction === true`). */
     const enablePageInteraction = ctx.enablePageInteraction === true;
-    frame.setAttribute('data-page-interaction', enablePageInteraction ? 'live' : 'inert');
+    const __opsDoc = frame.ownerDocument || (typeof document !== 'undefined' ? document : null);
+    const opsInteractionOff = !!(__opsDoc && __opsDoc.documentElement && __opsDoc.documentElement.getAttribute('data-ops-interaction') === '0');
+    const interactionLive = enablePageInteraction && !opsInteractionOff;
+    frame.setAttribute('data-page-interaction', interactionLive ? 'live' : 'inert');
+    if (opsInteractionOff) frame.setAttribute('data-ops-interaction', '0');
     /* Content protection applies to both the clean product view and the QA
        shell. It is deliberately installed outside the interaction opt-in:
        inspection/QA controls must never re-enable text selection or native
@@ -1434,7 +1494,6 @@
     /* Programmatic hover/press is Interaction Skill owned. It is not a Figma
        variant and must not replace source-backed highlight COMPONENT_SET trees. */
     (function installButtonPressFeel() {
-      if (!enablePageInteraction) return;
       const doc = frame && (frame.ownerDocument || (typeof document !== 'undefined' ? document : null));
       if (!doc || !doc.head || doc.querySelector('style[data-fx-button-press]')) return;
       const payload = ctx.interactionPayload || ctx.renderInteractionPayload
@@ -1444,9 +1503,9 @@
           ':root{--fx-hover-brightness:1.12;--fx-press-brightness:.88}',
           '.frame>.fx-stage,.frame>.fx-stage img,.frame>.fx-stage a,[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
           '.frame>.fx-stage input,.frame>.fx-stage textarea,.frame>.fx-stage [contenteditable]:not([contenteditable="false"]),.frame>.fx-stage [data-copy-code]{-webkit-user-select:text;user-select:text}',
-          'button,[role="button"],[data-link],[data-go],[data-sec-target],[data-switch-action],[data-hscroll-action],[data-calendar-now-state="return-today"],[data-tab],[data-indicator],[data-copy-code],[data-btn-press="true"]{cursor:pointer}',
-          '@media (hover: hover){button:hover,[role="button"]:hover,[data-link]:hover,[data-go]:hover,[data-sec-target]:hover,[data-switch-action]:hover,[data-hscroll-action]:hover,[data-calendar-now-state="return-today"]:hover,[data-tab]:hover,[data-indicator]:hover,[data-copy-code]:hover,[data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
-          'button:active,[role="button"]:active,[data-link]:active,[data-go]:active,[data-sec-target]:active,[data-switch-action]:active,[data-hscroll-action]:active,[data-calendar-now-state="return-today"]:active,[data-tab]:active,[data-indicator]:active,[data-copy-code]:active,[data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
+          'html:not([data-ops-interaction="0"]) button,html:not([data-ops-interaction="0"]) [role="button"],html:not([data-ops-interaction="0"]) [data-link],html:not([data-ops-interaction="0"]) [data-go],html:not([data-ops-interaction="0"]) [data-sec-target],html:not([data-ops-interaction="0"]) [data-switch-action],html:not([data-ops-interaction="0"]) [data-hscroll-action],html:not([data-ops-interaction="0"]) [data-calendar-now-state="return-today"],html:not([data-ops-interaction="0"]) [data-tab],html:not([data-ops-interaction="0"]) [data-indicator],html:not([data-ops-interaction="0"]) [data-copy-code],html:not([data-ops-interaction="0"]) [data-btn-press="true"]{cursor:pointer}',
+          '@media (hover: hover){html:not([data-ops-interaction="0"]) button:hover,html:not([data-ops-interaction="0"]) [role="button"]:hover,html:not([data-ops-interaction="0"]) [data-link]:hover,html:not([data-ops-interaction="0"]) [data-go]:hover,html:not([data-ops-interaction="0"]) [data-sec-target]:hover,html:not([data-ops-interaction="0"]) [data-switch-action]:hover,html:not([data-ops-interaction="0"]) [data-hscroll-action]:hover,html:not([data-ops-interaction="0"]) [data-calendar-now-state="return-today"]:hover,html:not([data-ops-interaction="0"]) [data-tab]:hover,html:not([data-ops-interaction="0"]) [data-indicator]:hover,html:not([data-ops-interaction="0"]) [data-copy-code]:hover,html:not([data-ops-interaction="0"]) [data-btn-press="true"]:hover{filter:brightness(var(--fx-hover-brightness))}}',
+          'html:not([data-ops-interaction="0"]) button:active,html:not([data-ops-interaction="0"]) [role="button"]:active,html:not([data-ops-interaction="0"]) [data-link]:active,html:not([data-ops-interaction="0"]) [data-go]:active,html:not([data-ops-interaction="0"]) [data-sec-target]:active,html:not([data-ops-interaction="0"]) [data-switch-action]:active,html:not([data-ops-interaction="0"]) [data-hscroll-action]:active,html:not([data-ops-interaction="0"]) [data-calendar-now-state="return-today"]:active,html:not([data-ops-interaction="0"]) [data-tab]:active,html:not([data-ops-interaction="0"]) [data-indicator]:active,html:not([data-ops-interaction="0"]) [data-copy-code]:active,html:not([data-ops-interaction="0"]) [data-btn-press="true"]:active{filter:brightness(var(--fx-press-brightness))}',
           '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
           '[data-dropmenu="true"]:hover,[data-dropmenu="true"]:active{filter:none}',
           '[data-dropmenu-state="on"] [data-prefix="img"]{filter:none}',
@@ -1455,6 +1514,7 @@
       style.setAttribute('data-fx-button-press', 'figma-button-press-contract/v1');
       style.textContent = css;
       doc.head.appendChild(style);
+      if (!interactionLive) return;
       if (!doc.documentElement || doc.documentElement.getAttribute('data-fx-button-press-keys') === 'true') return;
       doc.documentElement.setAttribute('data-fx-button-press-keys', 'true');
       doc.addEventListener('keydown', function (ev) {
@@ -1840,10 +1900,20 @@
          height on the visual plane. The UI stage itself must be tall enough
          for source Y × uiYRatio (vh/k), or a lower-hero UI title stays in
          the top half. */
-      stage.style.height = (pageStageMode ? (pageScrollHeight || _rawH || _snapH) : _snapH) + 'px';
+      const _heroSlotH = isHeroStage && heroSlot && Number(heroSlot.designHeight) > 0
+        ? Number(heroSlot.designHeight)
+        : _snapH;
+      stage.style.height = (pageStageMode ? (pageScrollHeight || _rawH || _snapH) : _heroSlotH) + 'px';
+      if (pageStageMode) {
+        /* clip still lets overhang contribute to scrollWidth in Chromium. */
+        stage.style.overflowX = 'hidden';
+        stage.style.overflowY = 'visible';
+        stage.setAttribute('data-page-x-clip', 'design-width');
+      }
       if (isHeroStage) {
         stage.style.overflow = 'hidden';
         stage.setAttribute('data-hero-source-height', String(_rawH));
+        stage.setAttribute('data-hero-slot-height', String(_heroSlotH));
       }
       if (pageScope && !pageStageMode) {
         stage.style.position = 'absolute';
@@ -3233,9 +3303,9 @@
            显式跳过确保渐变实心块不会糊住兄弟。 */
         if (n.notPainted === true || n.isMask === true) continue;
         const nid = n.id;
-        const box = (n.pageBox && Number.isFinite(Number(n.pageBox.x)) && Number.isFinite(Number(n.pageBox.y)))
-          ? n.pageBox
-          : (n.box || {});
+        const painted = fxPaintBox(n);
+        const box = painted.box;
+        const nodeUsesPageBox = painted.nodeUsesPageBox;
         const st = n.style || {};
          const seq = seqOf(ni);
          while (stack.length && !isPrefix(stack[stack.length - 1].seq, seq)) stack.pop();
@@ -3533,11 +3603,9 @@
            parent, which fixes expanded-instance children that otherwise jump
            by their missing owner's absolute coordinates. */
         const directParentNode = directParentId ? truthNodeById.get(directParentId) : null;
-        const coordinateOwnerBox = directParentRecord?.pageBox || directParentRecord?.box
-          || directParentNode?.pageBox || directParentNode?.box
-          || parent?.pageBox || parent?.box || null;
-        const originX = coordinateOwnerBox ? (coordinateOwnerBox.x ?? 0) : paintOriginX;
-        const originY = coordinateOwnerBox ? (coordinateOwnerBox.y ?? 0) : paintOriginY;
+        const origin = fxOriginForBox(nodeUsesPageBox, [directParentRecord, directParentNode, parent], paintOriginX, paintOriginY);
+        const originX = origin.originX;
+        const originY = origin.originY;
         /* A ready handoff's declared slice is exported on the bounds named by
            `sliceExport`.  Older/portable consumers only carry that declaration
            in qa-assets, not a duplicate `exportBox` record.  For a render-bound
@@ -3548,26 +3616,23 @@
            from the same source declaration + source renderBox.  Page/owner
            geometry remains untouched, and non-render/page-bound assets keep
            the original owner-box behavior. */
-        const renderBox = n.renderBox || {};
-        const slicePageBox = n.sliceExport && n.sliceExport.box && [n.sliceExport.box.x, n.sliceExport.box.y, n.sliceExport.box.w, n.sliceExport.box.h].every((v) => Number.isFinite(Number(v)))
-          && Number(n.sliceExport.box.w) > 0 && Number(n.sliceExport.box.h) > 0
+        const canvasBox = n.box || {};
+        const renderBox = fxToPaintSpace(n.renderBox || {}, nodeUsesPageBox, canvasBox, box);
+        const slicePageBox = n.sliceExport && n.sliceExport.box && fxGeomReady(n.sliceExport.box)
           ? n.sliceExport.box
           : null;
-        const geomReady = (item) => !!(item
-          && [item.x, item.y, item.w, item.h].every((v) => Number.isFinite(Number(v)))
-          && Number(item.w) > 0 && Number(item.h) > 0);
-        const delivered = assetRec && assetRec.exportBox;
-        const exportBox = geomReady(slicePageBox)
+        const delivered = fxToPaintSpace(assetRec && assetRec.exportBox, nodeUsesPageBox, canvasBox, box);
+        const exportBox = fxGeomReady(slicePageBox)
           ? slicePageBox
-          : (geomReady(delivered)
+          : (fxGeomReady(delivered)
             ? delivered
-            : ((geomReady(renderBox) && geomReady(box)
+            : ((fxGeomReady(renderBox) && fxGeomReady(box)
               && (Number(renderBox.w) > Number(box.w) + 0.5
                 || Number(renderBox.h) > Number(box.h) + 0.5
                 || Number(renderBox.x) < Number(box.x) - 0.5
                 || Number(renderBox.y) < Number(box.y) - 0.5))
               ? renderBox
-              : (geomReady(box) ? box : null)));
+              : (fxGeomReady(box) ? box : null)));
         /* 消费 truth 的 auto-layout（layoutMode HORIZONTAL/VERTICAL）。这些 frame
            的子节点在 truth 里被穿透成顶层 sibling（children=[]，靠 ownerPath 关联），
            若仍按源坐标绝对定位，译文变宽后：按钮 icon 被顶出框、跟随标签压住文字、
@@ -4184,7 +4249,7 @@
              缺译回退原文时保留源 Figma family/weight，不路由。data-copy-missing 在
              下方照常打标留痕。 */
           const _copyByNode = t.copy && t.copy.byNode ? t.copy.byNode[nid] : null;
-          const _adoptedVal = _copyByNode ? _copyByNode[ctx.prefs.lang] : null;
+          const _adoptedVal = _copyByNode ? __u(_copyByNode[ctx.prefs.lang]) : null;
           const _hasAdoptedCopy = _adoptedVal != null && _adoptedVal !== '';
           const fontRoute = _hasAdoptedCopy
             ? this._routeFontFamily({
@@ -4500,7 +4565,7 @@
              ② 查不到但稿里有原文 → 用原文 + data-copy-missing（门 C 抓）
              ③ 连原文都没有 → data-text-empty（说明 truth 缺 characters 叶子） */
           const hit = t.copy && t.copy.byNode ? t.copy.byNode[nid] : null;
-          const val = hit ? normalizeFigmaLineBreaks(hit[ctx.prefs.lang]) : null;
+          const val = hit ? normalizeFigmaLineBreaks(__u(hit[ctx.prefs.lang])) : null;
           const semanticLayout = t.copy && t.copy.semanticLayout && t.copy.semanticLayout.byNode
             ? t.copy.semanticLayout.byNode[nid] : null;
           const semanticBreak = semanticLayout && semanticLayout[ctx.prefs.lang]
@@ -5065,6 +5130,8 @@
           seq,
           el,
           box,
+          pageBox: n.pageBox || null,
+          usesPageBox: nodeUsesPageBox,
           assetLock: !!assetRec && !bakeReleasedForLiveHscroll && evidenceAttrs?.['data-hscroll'] == null,
           nid: String(__u(nid)),
           layout: n.layout || null,
@@ -5767,7 +5834,7 @@
          every page/section stage exists, using each modal's own Figma box.
          Visibility is interaction-owned; geometry stays source-backed. */
       const mountNamedModals = () => {
-        if (!enablePageInteraction) {
+        if (!interactionLive) {
           frame.setAttribute('data-named-modal-count', '0');
           frame.setAttribute('data-named-modal-source-count', String(asArr(__activeTruth && __activeTruth.modals).length));
           return;
@@ -5782,7 +5849,8 @@
         const host = document.createElement('div');
         host.className = 'fx-stage fx-named-modals';
         host.setAttribute('data-node-id', 'named-modals');
-        host.style.position = 'fixed';
+        /* Absolute inside .frame. Do not promote host to position:fixed. */
+        host.style.position = 'absolute';
         host.style.left = '0';
         host.style.top = '0';
         host.style.width = '100%';
@@ -5790,7 +5858,6 @@
         host.style.pointerEvents = 'none';
         host.style.zIndex = '40';
         host.style.overflow = 'visible';
-        host.style.zoom = '1';
         const splitName = (name) => {
           const raw = String(name || '');
           const head = raw.split('@')[0];
@@ -5812,7 +5879,7 @@
           if (value === 'pc' || value === 'desktop') return 'pc';
           if (value === 'pad' || value === 'tablet') return 'pad';
           const label = splitName(modal && modal.name).label || String(modal && modal.name || '');
-          if (/^移动端/.test(label) || /移动端视频弹窗$/.test(label)) return 'mobile';
+          if (/^移动端/.test(label) || /移动端视频弹窗$/.test(label) || /顶部导航/.test(label)) return 'mobile';
           if (/^pc/i.test(label)) return 'pc';
           return null;
         };
@@ -5854,10 +5921,13 @@
           const parsed = splitName(modal && modal.name);
           if (parsed.role !== 'modal') continue;
           const rootNode = asArr(modal.nodes).find((node) => String(node && node.id) === String(modal.id)) || asArr(modal.nodes)[0];
-          const box = __plain((rootNode && (rootNode.pageBox || rootNode.box))
-            || ((modal.pageBox && Number.isFinite(Number(modal.pageBox.w)) && Number.isFinite(Number(modal.pageBox.h)))
-              ? modal.pageBox
-              : (modal.box || {})));
+          const pageBox = (rootNode && rootNode.pageBox) || modal.pageBox || null;
+          const canvasBox = (rootNode && rootNode.box) || modal.box || {};
+          /* pageBox is already page-local. Subtract page origin only from canvas box. */
+          const usesPageBox = !!(pageBox && Number.isFinite(Number(pageBox.w)) && Number.isFinite(Number(pageBox.h)));
+          const box = __plain(usesPageBox ? pageBox : canvasBox);
+          const originX = usesPageBox ? 0 : pageX;
+          const originY = usesPageBox ? 0 : pageY;
           const nodes = asArr(modal.nodes);
           if (!nodes.length || !Number.isFinite(Number(box.w)) || !Number.isFinite(Number(box.h))) continue;
           const layer = document.createElement('div');
@@ -5866,8 +5936,8 @@
           layer.setAttribute('data-modal-name', parsed.label);
           layer.setAttribute('data-node', String(modal.id || ''));
           layer.style.position = 'absolute';
-          layer.style.left = ((Number(box.x) || 0) - pageX) + 'px';
-          layer.style.top = ((Number(box.y) || 0) - pageY) + 'px';
+          layer.style.left = ((Number(box.x) || 0) - originX) + 'px';
+          layer.style.top = ((Number(box.y) || 0) - originY) + 'px';
           layer.style.width = Number(box.w) + 'px';
           layer.style.height = Number(box.h) + 'px';
           layer.setAttribute('data-modal-source-box', [box.x, box.y, box.w, box.h].map((v) => Number(v || 0)).join(','));
@@ -5990,7 +6060,7 @@
         || motionAdapter?.interaction?.carousel
         || motionAdapter?.template?.interaction?.carousel)
         && __motionCarouselHosts.some((host) => host.querySelector('[data-motion-carousel-page]'));
-      if (enablePageInteraction && !__motionCarouselOptIn && !frame.__fxInteractionBridgeInstalled
+      if (interactionLive && !__motionCarouselOptIn && !frame.__fxInteractionBridgeInstalled
         && typeof frame.addEventListener === 'function' && typeof frame.querySelectorAll === 'function') {
         frame.__fxInteractionBridgeInstalled = true;
         let drag = null;
@@ -6721,8 +6791,8 @@
               scrim = doc.createElement('div');
               scrim.id = 'fx-named-modal-scrim';
               scrim.setAttribute('data-fx-modal-scrim', 'true');
-              scrim.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:2147483000;display:none;pointer-events:auto;';
-              (doc.body || frame).appendChild(scrim);
+              scrim.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.7);z-index:39;display:none;pointer-events:auto;';
+              frame.appendChild(scrim);
               scrim.addEventListener('click', () => {
                 for (const entry of (frame.__fxNamedModals || [])) closeNamedModal(entry);
               });
@@ -6745,32 +6815,35 @@
             const source = String(layer.getAttribute('data-modal-source-box') || '').split(',');
             const designW = Number(source[2]) || Number.parseFloat(layer.style.width) || DW[__base];
             const designH = Number(source[3]) || Number.parseFloat(layer.style.height) || (__base === 'mobile' ? 1624 : 2160);
-            const pageZoom = Number.parseFloat(frame.style.zoom) || 1;
-            const visibleW = frameRect.width / (pageZoom || 1);
-            const visibleH = frameRect.height / (pageZoom || 1);
+            const k = (typeof window.__figmaRender === 'object' && typeof window.__figmaRender.scale === 'function')
+              ? Number(window.__figmaRender.scale()) || 1
+              : (Number.parseFloat(frame.style.zoom) || 1);
+            const visibleW = frame.clientWidth || frameRect.width;
+            const visibleH = frame.clientHeight || frameRect.height;
             /* Keep the Figma box. Uniform scale to the visible frame; a 1624-tall
                nav must not be squash-fitted into 1334, and must not overflow the
                phone slot either. */
-            const scale = Math.min(visibleW / designW, visibleH / designH);
+            /* Do not promote host to position:fixed. */
             if (host) {
-              host.style.position = 'fixed';
-              host.style.left = frameRect.left + 'px';
-              host.style.top = frameRect.top + 'px';
-              host.style.width = designW + 'px';
-              host.style.height = Math.max(Number.parseFloat(host.style.height) || 0, designH) + 'px';
-              host.style.transformOrigin = '0 0';
-              host.style.transform = 'scale(' + scale + ')';
+              host.style.position = 'absolute';
+              host.style.left = '0px';
+              host.style.top = (frame.scrollTop || 0) + 'px';
+              host.style.width = (visibleW / (k || 1)) + 'px';
+              host.style.height = (visibleH / (k || 1)) + 'px';
+              host.style.transform = 'none';
               host.style.pointerEvents = 'none';
-              host.style.zIndex = '2147483001';
-              host.style.overflow = 'visible';
+              host.style.zIndex = '40';
+              host.style.overflow = 'hidden';
             }
+            const cover = Math.max(visibleW / (k || 1) / designW, visibleH / (k || 1) / designH);
             layer.style.left = '0px';
             layer.style.top = '0px';
             layer.style.width = designW + 'px';
             layer.style.height = designH + 'px';
             layer.style.maxWidth = 'none';
             layer.style.maxHeight = 'none';
-            layer.style.transform = 'none';
+            layer.style.transformOrigin = '0 0';
+            layer.style.transform = 'scale(' + cover + ')';
             layer.style.pointerEvents = 'auto';
             layer.style.zIndex = '41';
             layer.style.overflow = 'visible';

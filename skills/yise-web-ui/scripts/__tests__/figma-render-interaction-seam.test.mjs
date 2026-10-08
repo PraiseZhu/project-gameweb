@@ -32,8 +32,9 @@ test('renderer consumes @go modal names and fix/@from scroll-gated pin', () => {
 test('Main static leaves page clicks inert until Interaction opts in', () => {
   assert.match(renderer, /enablePageInteraction === true/);
   assert.match(renderer, /data-page-interaction/);
-  assert.match(renderer, /enablePageInteraction && !__motionCarouselOptIn && !frame\.__fxInteractionBridgeInstalled/);
-  assert.match(renderer, /if \(!enablePageInteraction\) return;/);
+  assert.match(renderer, /interactionLive && !__motionCarouselOptIn && !frame\.__fxInteractionBridgeInstalled/);
+  assert.match(renderer, /const interactionLive = enablePageInteraction && !opsInteractionOff;/);
+  assert.match(renderer, /if \(!interactionLive\) return;/);
   const shell = readFileSync(new URL('../../templates/demo-shell.html', import.meta.url), 'utf8');
   const chrome = readFileSync(new URL('../../templates/figma-chrome.js', import.meta.url), 'utf8');
   assert.doesNotMatch(shell, /if \(ctx && ctx\.enablePageInteraction == null\) ctx\.enablePageInteraction = true;/);
@@ -63,6 +64,8 @@ test('named modal runtime only wires openers listed in triggerFrom', () => {
   assert.match(renderer, /Missing platform stays inert/);
   assert.match(renderer, /return platform === activeModalPlatform/);
   assert.doesNotMatch(renderer, /return !platform \|\| platform === activeModalPlatform/);
+  assert.doesNotMatch(renderer, /if \(__platforms\[__base\]\) return __base/);
+  assert.match(renderer, /pageBox is already page-local/);
 });
 
 test('selected component tree keeps inner btn @go live', () => {
@@ -198,7 +201,8 @@ test('dropmenu off/on fixtures stay pressable and do not reuse indicatorVariant'
   assert.match(renderer, /data-btn-name="多语言按钮"/);
   assert.match(renderer, /languageSwitchBtn/);
   assert.match(renderer, /多语言切换按钮/);
-  assert.match(renderer, /Keep the Figma box/);
+  assert.match(renderer, /Do not promote host to position:fixed/);
+  assert.doesNotMatch(renderer, /host\.style\.position = 'fixed'/);
 });
 
 test('dropmenu multi-axis k=v variants stay pressable and mountable', () => {

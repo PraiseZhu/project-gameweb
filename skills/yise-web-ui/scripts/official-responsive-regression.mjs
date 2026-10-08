@@ -123,6 +123,10 @@ async function measureLocal(sample) {
         rootClientWidth: root.clientWidth,
         frameScrollWidth: frame ? frame.scrollWidth : null,
         frameClientWidth: frame ? frame.clientWidth : null,
+        frameScrollLeft: frame ? frame.scrollLeft : null,
+        pageXClipped: !!(frame && (frame.getAttribute('data-overflow-x') === 'hidden'
+          || frame.getAttribute('data-page-x-contain') === 'inline-size'
+          || frame.getAttribute('data-page-x-clip') === 'design-width')),
       };
     });
     await page.screenshot({ path: resolve(artifactDir, `local-product-${sample.w}x${sample.h}.png`), animations: 'disabled' });
@@ -138,9 +142,9 @@ try {
     const local = await measureLocal(sample);
     const isMobile = sample.structure === 'mobile';
     const expectedBase = isMobile ? 'mobile' : 'pc';
-    const officialStructure = isMobile
-      ? official.railFound && Number(official.railWidth) <= Number(config.official.mobileRailMaxWidth ?? 1)
-      : official.railFound && Number(official.railWidth) >= Number(config.official.desktopRailMinWidth ?? 1);
+    const officialFillsViewport = official.railFound
+      && Math.abs(Number(official.railWidth) - Number(sample.w)) <= Number(config.official.railWidthTolerance ?? 2);
+    const officialStructure = officialFillsViewport;
     const localStructure = local.frameFound && local.renderBase === expectedBase
       && (isMobile ? local.fixedRailCount === 0 : local.fixedRailCount === 1);
     rec(`official ${sample.w}px ${sample.structure} structure`, officialStructure,
@@ -150,8 +154,10 @@ try {
     rec(`official ${sample.w}px has no page-level horizontal overflow`, official.rootScrollWidth <= official.rootClientWidth + 1,
       `scroll=${official.rootScrollWidth}/${official.rootClientWidth}`);
     rec(`local product ${sample.w}px clips page X`,
-      local.overflowX === 'hidden' && Number(local.frameScrollWidth) <= Number(local.frameClientWidth) + 1,
-      `overflowX=${local.overflowX} scroll=${local.frameScrollWidth}/${local.frameClientWidth}`);
+      local.overflowX === 'hidden'
+        && Number(local.rootScrollWidth) <= Number(local.rootClientWidth) + 1
+        && Number(local.frameScrollLeft || 0) <= 1,
+      `overflowX=${local.overflowX} root=${local.rootScrollWidth}/${local.rootClientWidth} frameScrollLeft=${local.frameScrollLeft} inner=${local.frameScrollWidth}/${local.frameClientWidth}`);
     if (isMobile) {
       rec(`local product ${sample.w}px first screen fills viewport`,
         local.heroSlot === 'active'

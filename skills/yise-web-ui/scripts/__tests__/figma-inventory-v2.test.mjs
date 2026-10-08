@@ -166,6 +166,18 @@ test("modals own a hidden layer excluded from scroll", () => {
   assert.equal(modal.pendingHumanConfirmation, true);
 });
 
+test('nav overlay label fills mobile platform when inventory left platform null', () => {
+  const inv = fixture();
+  inv.attachments.modals = [
+    { id: '100:60', name: 'modal/顶部导航-1624', platform: null, box: { x: 0, y: 0, w: 750, h: 1624 }, nodes: [{ id: '100:60', name: 'modal/nav' }] },
+    { id: '100:20', name: 'modal/视频弹窗', platform: null, box: { x: 0, y: 0, w: 100, h: 100 }, nodes: [{ id: '100:20', name: 'modal/video' }] },
+  ];
+  const adapted = adaptInventoryToTruthShape(inv, { platformScopeInput: { nodes: [], platformRoots: [] } });
+  const byId = new Map(adapted.modals.map((modal) => [modal.id, modal]));
+  assert.equal(byId.get('100:60').platform, 'mobile');
+  assert.equal(byId.get('100:20').platform, null);
+});
+
 test("supplied incomplete mobile platform scope is red and cannot be masked by PC", () => {
   const inv = fixture();
   const platformScopeInput = {

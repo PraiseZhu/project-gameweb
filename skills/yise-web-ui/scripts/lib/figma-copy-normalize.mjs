@@ -28,6 +28,10 @@
  * + CJK 标点（U+3001–303F）+ 全角形式（U+FF01–FF60）+ 常用中文排版符号（…—–·引号）。
  * 拉丁字母、阿拉伯数字、半角标点一律非 CJK——这是 "SS5 新…" 空格保留的关键。
  */
+function joinsLayoutSpace(cp) {
+  return isCJK(cp) || cp === 0x2d;
+}
+
 function isCJK(cp) {
   return (
     (cp >= 0x3400 && cp <= 0x4dbf) || // 表意文字扩 A
@@ -57,7 +61,7 @@ function isCJK(cp) {
 export function normalizeCopy(x) {
   let s = x === null || x === undefined ? '' : String(x); // 1
   s = s.replace(/[\u200B\u200C\u200D\uFEFF\u2060]/g, ''); // 2 零宽字符 ZWSP/ZWNJ/ZWJ/BOM/WJ
-  s = s.replace(/[\r\n\t]/g, ' '); // 3 换行/制表 → 单空格
+  s = s.replace(/[\r\n\t\u2028\u2029]/g, ' '); // 3 line breaks stay layout 换行/制表 → 单空格
   s = s.replace(/\s+/g, ' '); // 4 连续空白 → 单空格
   s = s.replace(/\u3000/g, ' '); // 5 全角空格 U+3000 → 半角
   s = s.trim(); // 6
@@ -69,7 +73,7 @@ export function normalizeCopy(x) {
       const prev = chars[i - 1];
       const next = chars[i + 1];
       if (prev === undefined || next === undefined) return true;
-      return !(isCJK(prev.codePointAt(0)) && isCJK(next.codePointAt(0)));
+      return !(joinsLayoutSpace(prev.codePointAt(0)) && joinsLayoutSpace(next.codePointAt(0)));
     })
     .join('');
   return s;

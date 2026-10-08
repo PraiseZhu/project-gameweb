@@ -19,7 +19,15 @@ export function collectFigmaTexts(snapshot) {
     }
     for (const child of node.children || []) walk(child);
   };
-  for (const entry of Object.values(snapshot?.nodes || {})) walk(entry?.document);
+  const roots = [];
+  const push = (value) => { if (value && typeof value === 'object') roots.push(value); };
+  for (const entry of Object.values(snapshot?.nodes || {})) push(entry?.document);
+  for (const key of ['components', 'componentSets', 'pages']) {
+    const bag = snapshot?.[key];
+    const list = Array.isArray(bag) ? bag : Object.values(bag || {});
+    for (const entry of list) push(entry?.document || entry);
+  }
+  for (const root of roots) walk(root);
   return [...texts.values()];
 }
 

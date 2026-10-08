@@ -140,6 +140,11 @@ test('sc-resize-official-contract: Resize owns 10vw / 100vh / overflow-x, not po
   assert.match(chrome, /source-y-scale/);
   assert.doesNotMatch(chrome, /I52:3263;17:53006/);
   assert.match(chrome, /PRODUCT_VIEW \? 'hidden' : 'auto'/);
+  assert.match(chrome, /contain = 'inline-size'/);
+  assert.match(chrome, /data-page-x-contain/);
+  assert.match(render, /data-hero-slot-height/);
+  assert.match(resize, /adaptive-width` fills the current viewport/);
+  assert.match(read('scripts/official-responsive-regression.mjs'), /officialFillsViewport/);
   assert.match(chrome, /function officialRootFontVw\(\)/);
   assert.match(chrome, /designPolicy\(\)\.officialRootFontVw/);
   assert.doesNotMatch(chrome, /officialRootFontVw\) \|\| 10/);
