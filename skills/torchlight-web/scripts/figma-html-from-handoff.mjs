@@ -208,7 +208,7 @@ function attachHandoffCopy(demoDir, truth, spec, inventories = {}) {
   truth.copy = {
     byNode: flattened,
     unread: copyEnv.unread || [],
-    languages: Object.values(copyEnv.larkSnap?._meta?.langCols || {}).filter((lang) => lang && lang !== 'ja'),
+    languages: Object.values(copyEnv.larkSnap?._meta?.langCols || {}).filter(Boolean),
   };
   try {
     const sourceCharactersById = {};

@@ -36,6 +36,7 @@ import {
   packBudgetOk,
   packRoot,
   packRuntimeReferencesOk,
+  assertFrozenPackIntact,
   collectReferencedRuntimeFiles,
   removeUnreferencedPackedFiles,
   rewritePackedRefs,
@@ -555,9 +556,10 @@ function main() {
   const fallbackRefs = collectFallbackRefs(html);
   const missingFallbacks = missingFallbackFiles(demoDir, html);
   const runtimeRefs = packRuntimeReferencesOk(demoDir, html);
+  const frozenIntact = assertFrozenPackIntact(demoDir);
   const budgetBytes = Math.round(args.budgetMb * 1024 * 1024) || DEFAULT_PACK_BUDGET_BYTES;
   const out = {
-    ok: laterAxesProbed && secondStop.ok && missingFallbacks.length === 0 && runtimeRefs.ok,
+    ok: laterAxesProbed && secondStop.ok && missingFallbacks.length === 0 && runtimeRefs.ok && frozenIntact.ok,
     dryRun: !!args.dryRun,
     demo: demoDir,
     quality: args.quality,
@@ -568,6 +570,7 @@ function main() {
     laterAxesProbed,
     secondStop,
     runtimeRefs,
+    frozenIntact,
     pillow: !!pythonHas('PIL'),
     fontTools: !!pythonHas('fontTools'),
     planned: {
@@ -583,6 +586,7 @@ function main() {
   if (!secondStop.ok) out.error = secondStop.error || 'second human review stop not accepted; do not Pack';
   if (missingFallbacks.length) out.error = `missing runtime fallback files: ${missingFallbacks.join(', ')}`;
   if (!runtimeRefs.ok) out.error = `missing runtime references: ${runtimeRefs.missing.join(', ')}`;
+  if (!frozenIntact.ok) out.error = frozenIntact.error + (frozenIntact.leftover ? ':' + frozenIntact.leftover.join(',') : '') + (frozenIntact.missing ? ':' + frozenIntact.missing.join(',') : '');
   out.budgetBefore = packBudgetBreakdown(demoDir);
   if (args.dryRun || !out.ok) {
     out.budget = { ok: true, bytes: out.budgetBefore.bytes, budgetBytes, enforced: false, reason: 'dry-run reports current bytes; 15MB is measured after mutation' };
@@ -626,6 +630,10 @@ function mutatePackedDemo(workDir, workProofDir, args, out, budgetBytes) {
   out.unreferenced = removeUnreferencedPackedFiles(workDir, packedHtml);
   out.truthRecheck = packRuntimeReferencesOk(workDir, readFileSync(join(workDir, 'index.html'), 'utf8'));
   if (!out.truthRecheck.ok) throw new Error(`missing runtime references after mutation: ${out.truthRecheck.missing.join(', ')}`);
+  out.frozenRecheck = assertFrozenPackIntact(workDir);
+  if (!out.frozenRecheck.ok) {
+    throw new Error(out.frozenRecheck.error + ':' + [...(out.frozenRecheck.leftover || []), ...(out.frozenRecheck.missing || [])].join(','));
+  }
   out.budgetBreakdown = packBudgetBreakdown(workDir);
   out.budget = packBudgetOk(workDir, { budgetBytes });
   out.bytesAfter = out.budget.bytes;

@@ -251,6 +251,113 @@ browserTest('img/ lang missing ja strips the selected cn art', async () => {
   }
 });
 
+function landingLangSet() {
+  const variant = (id, lang, h) => ({
+    id,
+    componentId: id,
+    type: 'COMPONENT',
+    name: `lang=${lang}`,
+    box: { x: 0, y: 0, w: 200, h },
+    renderBox: { x: -8, y: -4, w: 216, h: h + 8 },
+    componentProperties: { lang: { type: 'VARIANT', value: lang } },
+    sliceExport: { bounds: 'render', scale: 1, format: 'png', file: `${id.replace(':', '-')}.png` },
+    nodes: [{
+      id,
+      type: 'COMPONENT',
+      name: `lang=${lang}`,
+      box: { x: 0, y: 0, w: 200, h },
+      renderBox: { x: -8, y: -4, w: 216, h: h + 8 },
+    }],
+  });
+  return {
+    componentSetId: 'set-landing',
+    name: 'img/logo',
+    propertyDefinitions: { lang: { type: 'VARIANT', variantOptions: ['jp', 'tw', 'en', 'kr'] } },
+    variants: [
+      variant('1187:1122', 'jp', 80),
+      variant('1187:1123', 'tw', 80),
+      variant('1187:1124', 'en', 92),
+      variant('1187:1125', 'kr', 80),
+    ],
+  };
+}
+
+function landingTruth() {
+  const set = landingLangSet();
+  return {
+    platforms: {
+      pc: {
+        pageChrome: { meta: { x: 0, y: 0, width: 400, height: 200 }, nodes: [] },
+        sections: {
+          section: {
+            meta: { x: 0, y: 0, width: 400, height: 200 },
+            nodes: [{
+              id: 'inst-art',
+              type: 'INSTANCE',
+              name: 'img/logo',
+              componentId: '1187:1122',
+              box: { x: 10, y: 10, w: 200, h: 80 },
+              renderBox: { x: 2, y: 6, w: 216, h: 88 },
+              style: { fills: [] },
+            }],
+          },
+        },
+        componentVariantGraph: {
+          componentSets: [set],
+          components: [],
+          variantTrees: { 'set-landing': set.variants },
+        },
+      },
+    },
+  };
+}
+
+function landingAssets() {
+  return {
+    'pc:1187:1122': {
+      file: 'assets/1187-1122.webp',
+      sliceExport: { bounds: 'render', scale: 1, format: 'png' },
+      exportBounds: 'render',
+      exportBox: { x: -8, y: -4, w: 216, h: 88 },
+    },
+    'pc:1187:1124': {
+      file: 'assets/1187-1124.webp',
+      sliceExport: { bounds: 'render', scale: 1, format: 'png' },
+      exportBounds: 'render',
+      exportBox: { x: -8, y: -4, w: 216, h: 100 },
+    },
+  };
+}
+
+browserTest('landing img/ without cn reuses en for zh-CN and never the selected jp tree', async () => {
+  const { browser, page } = await setup();
+  try {
+    await page.evaluate((payload) => {
+      document.getElementById('qa-assets').textContent = JSON.stringify(payload);
+    }, landingAssets());
+    await page.evaluate(({ truth }) => {
+      window.__figmaRender.__assetCache = null;
+      window.__figmaRender.renderApp({
+        truth,
+        rawTruth: truth,
+        prefs: { plat: 'pc', lang: 'zh-CN' },
+        state: 'default',
+        frame: document.querySelector('.frame'),
+        viewport: { w: 400, h: 300, dpr: 1 },
+      });
+    }, { truth: landingTruth() });
+    const state = await ownerState(page);
+    assert.equal(state.status, 'img-lang-variant-tree');
+    assert.equal(state.langValue, 'en');
+    assert.equal(state.componentId, '1187:1124');
+    assert.equal(state.src, 'assets/1187-1124.webp');
+    assert.notEqual(state.src, 'assets/1187-1122.webp');
+    assert.equal(state.placeholder, false);
+  } finally {
+    await browser.close();
+  }
+});
+
 browserTest('cell-split with fewer locale sentences hides extra slots and equal-spans the rest', async () => {
   const { browser, page } = await setup();
   try {

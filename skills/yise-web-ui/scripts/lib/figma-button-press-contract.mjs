@@ -49,6 +49,10 @@ function withPseudo(selector, pseudo) {
   return String(selector).split(',').map((part) => `${part.trim()}${pseudo}`).join(',');
 }
 
+function gateInteraction(selector) {
+  return String(selector).split(',').map((part) => `html:not([data-ops-interaction="0"]) ${part.trim()}`).join(',');
+}
+
 export function buttonPressCss({
   hoverBrightness = BUTTON_PRESS_TOKENS.hoverBrightness,
   pressBrightness = BUTTON_PRESS_TOKENS.pressBrightness,
@@ -60,9 +64,9 @@ export function buttonPressCss({
     `:root{--fx-hover-brightness:${hover};--fx-press-brightness:${press}}`,
     '.frame>.fx-stage,.frame>.fx-stage img,.frame>.fx-stage a,[data-hscroll],[data-hscroll] img,[data-hscroll-surface],[data-switch-owner] img,[data-switch-swipe-host] img{-webkit-user-select:none;user-select:none;-webkit-user-drag:none;-webkit-touch-callout:none}',
     '.frame>.fx-stage input,.frame>.fx-stage textarea,.frame>.fx-stage [contenteditable]:not([contenteditable="false"]),.frame>.fx-stage [data-copy-code]{-webkit-user-select:text;user-select:text}',
-    `${sel},[data-hscroll-action],[data-calendar-now-state="return-today"]{cursor:pointer}`,
-    `@media (hover: hover){${withPseudo(sel, ':hover')}{filter:brightness(var(--fx-hover-brightness))}}`,
-    `${withPseudo(sel, ':active')}{filter:brightness(var(--fx-press-brightness))}`,
+    `${gateInteraction(sel + ',[data-hscroll-action],[data-calendar-now-state="return-today"]')}{cursor:pointer}`,
+    `@media (hover: hover){${gateInteraction(withPseudo(sel, ':hover'))}{filter:brightness(var(--fx-hover-brightness))}}`,
+    `${gateInteraction(withPseudo(sel, ':active'))}{filter:brightness(var(--fx-press-brightness))}`,
     '[data-btn-press="inert"],[data-btn-press="inert"]:hover,[data-btn-press="inert"]:active{cursor:default;filter:none}',
     '[data-dropmenu="true"]:hover,[data-dropmenu="true"]:active{filter:none}',
     '[data-dropmenu-state="on"] [data-prefix="img"]{filter:none}',

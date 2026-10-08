@@ -213,6 +213,8 @@ test('QA chrome shows CN/Global and locks language options to the official regio
   assert.match(chrome, /S\.prefs\.region === 'global' && it\.v === 'zh-CN'/);
   assert.match(chrome, /key in \(\{ plat: 1, region: 1, os: 1, mode: 1, lang: 1 \}\)/);
   assert.doesNotMatch(chrome, /Hide the visible segmented control until a page/);
+  assert.match(chrome, /function frozenFrame\(\)/);
+  assert.match(chrome, /data-qa-commenting/);
   const qaChrome = readFileSync(new URL('../../templates/qa-chrome.js', import.meta.url), 'utf8');
   assert.match(qaChrome, /if \(key === 'region'\) continue/);
   assert.match(qaChrome, /const PREF_KEYS = \['plat', 'region', 'os', 'mode', 'lang'\]/);

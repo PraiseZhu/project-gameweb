@@ -1,4 +1,4 @@
-﻿/* figma-chrome.js — 验收壳运行时（深灰黑主题）。【本 Skill 替换老师 qa-chrome 的 UI 层】
+/* figma-chrome.js — 验收壳运行时（深灰黑主题）。【本 Skill 替换老师 qa-chrome 的 UI 层】
  *
  * ═══ 为什么替换而不是沿用老师的 qa-chrome ═══
  *
@@ -30,7 +30,7 @@
  * 「root font-size 实测 / 断点归属 / 缺文案数」这类读数，一律从**真实 DOM 现测**，
  * 不许读配置里的数字冒充。参考同类产物审计发现的问题：
  * i18n 完整性用「提取器自己生成的 requiredKeys」当基准 = 提取器漏扫就永远绿。
- * 本文件的缺文案数改为 querySelectorAll('[data-copy-missing],[data-text-empty]') 现数 DOM。
+ * 本文件的缺文案数改为 querySelectorAll('[data-copy-missing],[data-copy-unbound],[data-text-empty]') 现数 DOM。
  */
 (function () {
   'use strict';
@@ -190,6 +190,13 @@
     var stored = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (stored) for (var sk in stored) if (sk in S.prefs) S.prefs[sk] = stored[sk];
   } catch (e) { /* 存不了就用默认，不阻断 */ }
+  try {
+    var search = new URLSearchParams(window.location.search);
+    ['plat', 'region', 'os', 'mode', 'lang'].forEach(function (key) {
+      var fromQuery = search.get(key);
+      if (fromQuery) S.prefs[key] = fromQuery;
+    });
+  } catch (e) { /* query 读失败仍用默认/localStorage */ }
 
   function curGroup() { return GROUPS[S.groupIdx] || GROUPS[0]; }
   function curDev() {
@@ -2535,7 +2542,7 @@
         orientation: viewport().orientation,
         viewFitScale: typeof S.fitScale === 'number' ? S.fitScale : 1,
         viewIsOneToOne: Math.abs((typeof S.fitScale === 'number' ? S.fitScale : 1) - 1) < 1e-6,
-        copyMissing: document.querySelectorAll('.frame [data-copy-missing]').length,
+        copyMissing: document.querySelectorAll('.frame [data-copy-missing],[data-copy-unbound]').length,
         textEmpty: document.querySelectorAll('.frame [data-text-empty]').length,
         assetPending: document.querySelectorAll('.frame [data-asset-pending]').length,
         fitScaled: document.querySelectorAll('.frame [data-fit-px], .frame [data-fit-scale]').length,
@@ -3040,10 +3047,55 @@ function createQaComments(host) {
 
   // The full data-node ancestry disambiguates repeated instances. No text,
   // element index, absolute page coordinate, or fuzzy fallback is used as identity.
+  function frozenFrame() {
+    return host.stage.querySelector('iframe.qa-frozen-frame');
+  }
+  function frozenDoc() {
+    var frame = frozenFrame();
+    try { return frame && frame.contentDocument ? frame.contentDocument : null; } catch (_) { return null; }
+  }
+  function inFrozenDoc(n) {
+    var inner = frozenDoc();
+    return !!(n && inner && inner.documentElement && inner.documentElement.contains(n));
+  }
+  function hostRect(el) {
+    var r = el.getBoundingClientRect();
+    if (!inFrozenDoc(el)) return r;
+    var fr = frozenFrame().getBoundingClientRect();
+    return {
+      left: fr.left + r.left,
+      top: fr.top + r.top,
+      right: fr.left + r.right,
+      bottom: fr.top + r.bottom,
+      width: r.width,
+      height: r.height,
+    };
+  }
+  function styleOf(el) {
+    var view = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+    return view.getComputedStyle(el);
+  }
+  function nodeRoots() {
+    var roots = [host.stage];
+    var inner = frozenDoc();
+    if (inner && inner.documentElement) roots.push(inner.documentElement);
+    return roots;
+  }
+  function ownsNode(n) {
+    if (!n) return false;
+    if (host.stage.contains(n)) return true;
+    return inFrozenDoc(n);
+  }
+  function commentFrame() {
+    var inner = frozenDoc();
+    if (inner) return inner.querySelector('.frame') || inner.body || inner.documentElement;
+    return host.stage.querySelector('.frame') || host.stage;
+  }
   function path(n) {
     var a = [];
-    for (var x = n; x && x !== host.stage; x = x.parentElement) {
-      if (x.hasAttribute('data-node')) a.unshift(x.getAttribute('data-node'));
+    var innerRoot = frozenDoc() && frozenDoc().documentElement;
+    for (var x = n; x && x !== host.stage && x !== innerRoot; x = x.parentElement) {
+      if (x.hasAttribute && x.hasAttribute('data-node')) a.unshift(x.getAttribute('data-node'));
     }
     return a;
   }
@@ -3066,9 +3118,9 @@ function createQaComments(host) {
     var name = nodeName(n);
     if (prefix === 'bg' || /^bg(?:\/|$)/i.test(name)) return 90;
     if (prefix === 'kv' || /^kv(?:\/|$)/i.test(name) || name === 'kv') return 80;
-    var r = n.getBoundingClientRect();
-    var frame = host.stage.querySelector('.frame') || host.stage;
-    var b = frame.getBoundingClientRect();
+    var r = hostRect(n);
+    var frame = commentFrame();
+    var b = hostRect(frame);
     var covers = b.width > 0 && b.height > 0 && r.width * r.height >= b.width * b.height * 0.5;
     if (covers && !String(n.textContent || '').trim() && !n.querySelector('[data-node]')) return 95;
     if (covers && commentKind(n) >= 3) return 85;
@@ -3088,8 +3140,9 @@ function createQaComments(host) {
   }
   function chain(n) {
     var a = [];
-    for (var x = n; x && x !== host.stage; x = x.parentElement) {
-      if (!x.hasAttribute('data-node')) continue;
+    var innerRoot = frozenDoc() && frozenDoc().documentElement;
+    for (var x = n; x && x !== host.stage && x !== innerRoot; x = x.parentElement) {
+      if (!x.hasAttribute || !x.hasAttribute('data-node')) continue;
       if (a.length && commentShellRank(x) >= 95) continue;
       a.push(x);
     }
@@ -3099,26 +3152,28 @@ function createQaComments(host) {
     index = new Map();
     contentNodes = [];
     fallbackNodes = [];
-    var frame = host.stage.querySelector('.frame') || host.stage;
-    var b = frame.getBoundingClientRect();
+    var frame = commentFrame();
+    var b = hostRect(frame);
     var frameArea = b.width * b.height;
-    host.stage.querySelectorAll('[data-node]').forEach(function (n) {
-      var k = JSON.stringify(path(n));
-      if (!index.has(k)) index.set(k, []);
-      index.get(k).push(n);
-      var id = n.getAttribute('data-node') || '';
-      if (id === '__fixed__' || id === '__page__') return;
-      var prefix = nodePrefix(n);
-      var name = nodeName(n);
-      if (prefix === 'bg' || /^bg(?:\/|$)/i.test(name) || prefix === 'kv' || /^kv(?:\/|$)/i.test(name) || name === 'kv') {
-        fallbackNodes.push(n);
-        return;
-      }
-      var r = n.getBoundingClientRect();
-      var covers = frameArea > 0 && r.width * r.height >= frameArea * 0.5;
-      if (covers && !String(n.textContent || '').trim() && !n.querySelector('[data-node]')) return;
-      if (covers && commentKind(n) >= 3) return;
-      contentNodes.push(n);
+    nodeRoots().forEach(function (rootEl) {
+      rootEl.querySelectorAll('[data-node]').forEach(function (n) {
+        var k = JSON.stringify(path(n));
+        if (!index.has(k)) index.set(k, []);
+        index.get(k).push(n);
+        var id = n.getAttribute('data-node') || '';
+        if (id === '__fixed__' || id === '__page__') return;
+        var prefix = nodePrefix(n);
+        var name = nodeName(n);
+        if (prefix === 'bg' || /^bg(?:\/|$)/i.test(name) || prefix === 'kv' || /^kv(?:\/|$)/i.test(name) || name === 'kv') {
+          fallbackNodes.push(n);
+          return;
+        }
+        var r = hostRect(n);
+        var covers = frameArea > 0 && r.width * r.height >= frameArea * 0.5;
+        if (covers && !String(n.textContent || '').trim() && !n.querySelector('[data-node]')) return;
+        if (covers && commentKind(n) >= 3) return;
+        contentNodes.push(n);
+      });
     });
     dirty = false;
   }
@@ -3131,15 +3186,22 @@ function createQaComments(host) {
     return { node: n };
   }
   function visibility(n) {
-    var b = n.getBoundingClientRect();
+    var b = hostRect(n);
     if (!b.width || !b.height) return { node: n, reason: '内容当前不可见' };
     var clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    if (inFrozenDoc(n)) {
+      var fr = frozenFrame().getBoundingClientRect();
+      clip.left = Math.max(clip.left, fr.left);
+      clip.top = Math.max(clip.top, fr.top);
+      clip.right = Math.min(clip.right, fr.right);
+      clip.bottom = Math.min(clip.bottom, fr.bottom);
+    }
     for (var el = n; el; el = el.parentElement) {
-      var css = getComputedStyle(el);
+      var css = styleOf(el);
       if (el.hidden || el.getAttribute('aria-hidden') === 'true' || css.display === 'none' ||
           css.visibility === 'hidden' || Number(css.opacity) === 0) return { node: n, reason: '内容当前不可见' };
       if (el !== n) {
-        var r = el.getBoundingClientRect();
+        var r = hostRect(el);
         if (/(auto|scroll|hidden|clip)/.test(css.overflowX)) { clip.left = Math.max(clip.left, r.left); clip.right = Math.min(clip.right, r.right); }
         if (/(auto|scroll|hidden|clip)/.test(css.overflowY)) { clip.top = Math.max(clip.top, r.top); clip.bottom = Math.min(clip.bottom, r.bottom); }
       }
@@ -3150,11 +3212,11 @@ function createQaComments(host) {
     return { node: n, b: b, r: box, clip: clip };
   }
   function openNamedModalLayer() {
-    var frame = host.stage.querySelector('.frame') || host.stage;
-    return frame.querySelector('[data-modal-open="true"]');
+    var frame = commentFrame();
+    return frame && frame.querySelector ? frame.querySelector('[data-modal-open="true"]') : null;
   }
   function closeOpenNamedModals() {
-    var frame = host.stage.querySelector('.frame') || host.stage;
+    var frame = commentFrame();
     if (!frame || typeof frame.__fxCloseNamedModal !== 'function' || !Array.isArray(frame.__fxNamedModals)) return false;
     var closed = false;
     frame.__fxNamedModals.forEach(function (entry) {
@@ -3215,6 +3277,7 @@ function createQaComments(host) {
     if (on && tiled()) { say('请先关闭「平铺全部状态」，再点选评论范围'); return; }
     mode = on; modeButton.setAttribute('aria-pressed', String(on));
     host.stage.classList.toggle('qc-selecting', on);
+    document.documentElement.setAttribute('data-qa-commenting', on ? '1' : '0');
     if (on) {
       if (active && !draft) close();
       say('点击内容或拖动框选；蓝框确认范围，可扩大到整块内容。Esc 退出');
@@ -3223,7 +3286,7 @@ function createQaComments(host) {
     schedule();
   }
   function makeAnchor(node, x, y) {
-    var b = node.getBoundingClientRect();
+    var b = hostRect(node);
     return { path: path(node), tag: node.tagName, label: label(node),
       u: Math.max(0, Math.min(1, (x - b.left) / b.width)), v: Math.max(0, Math.min(1, (y - b.top) / b.height)) };
   }
@@ -3252,7 +3315,7 @@ function createQaComments(host) {
     input.oninput = function () { submitButton.disabled = !input.value.trim() || writeBusy || !db || !locate(draft).visible; };
     input.onkeydown = function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitButton.click(); } };
     sel.onchange = function () {
-      var n = candidates[Number(sel.value)], b = n.getBoundingClientRect();
+      var n = candidates[Number(sel.value)], b = hostRect(n);
       draft.anchor = makeAnchor(n, Math.max(b.left, Math.min(b.right, x)), Math.max(b.top, Math.min(b.bottom, y)));
       drawBox(locate(draft)); place(draft); schedule();
     };
@@ -3349,13 +3412,13 @@ function createQaComments(host) {
   function namedModalByName(name) {
     var wanted = String(name || '').trim();
     if (!wanted) return null;
-    var frame = host.stage.querySelector('.frame') || host.stage;
+    var frame = commentFrame();
     return namedModalCatalog(frame).find(function (entry) {
       return entry && String(entry.name || '') === wanted;
     }) || null;
   }
   function openNamedModalByName(name) {
-    var frame = host.stage.querySelector('.frame') || host.stage;
+    var frame = commentFrame();
     var modal = namedModalByName(name);
     if (!modal || !frame || typeof frame.__fxOpenNamedModal !== 'function') return false;
     frame.__fxOpenNamedModal(modal);
@@ -3363,9 +3426,10 @@ function createQaComments(host) {
   }
   function revealCommentSurface(node) {
     if (!node || !node.closest) return [];
-    var frame = host.stage.querySelector('.frame') || host.stage;
+    var frame = commentFrame();
     var opened = [];
-    for (var el = node; el && el !== host.stage; el = el.parentElement) {
+    var innerRoot = frozenDoc() && frozenDoc().documentElement;
+    for (var el = node; el && el !== host.stage && el !== innerRoot; el = el.parentElement) {
       if (!el.getAttribute) continue;
       var modalName = namedModalNameOf(el);
       if (modalName && el.getAttribute('data-modal-open') !== 'true'
@@ -3526,6 +3590,27 @@ function createQaComments(host) {
   function targetAt(x, y) {
     var top = doc.elementFromPoint(x, y);
     if (top && root.contains(top)) return null;
+    var frame = frozenFrame();
+    if (frame) {
+      var fr = frame.getBoundingClientRect();
+      if (x >= fr.left && x <= fr.right && y >= fr.top && y <= fr.bottom) {
+        var inner = frozenDoc();
+        if (inner && inner.elementsFromPoint) {
+          var innerHits = inner.elementsFromPoint(x - fr.left, y - fr.top);
+          var innerSeen = [];
+          for (var j = 0; j < innerHits.length; j++) {
+            var innerEl = innerHits[j];
+            var innerNode = innerEl.closest && innerEl.closest('[data-node]');
+            if (!innerNode || !ownsNode(innerNode) || innerSeen.indexOf(innerNode) >= 0) continue;
+            innerSeen.push(innerNode);
+            if (commentShellRank(innerNode) >= 80) continue;
+            return innerNode;
+          }
+          if (dirty) rebuild();
+          return nodeAtPoint(contentNodes, x, y) || nodeAtPoint(fallbackNodes, x, y);
+        }
+      }
+    }
     var hits = doc.elementsFromPoint(x, y);
     var seen = [];
     for (var i = 0; i < hits.length; i++) {
@@ -3603,10 +3688,33 @@ function createQaComments(host) {
       lastListKey = '';
       if (!panel.hidden) drawList();
     }
+    watchFrozenDoc();
     schedule();
   });
   observer.observe(host.stage, { childList: true, subtree: true, attributes: true,
     attributeFilter: ['data-node', 'hidden', 'aria-hidden', 'style', 'class'] });
+  var frozenObserverTarget = null;
+  var frozenLoadBound = null;
+  var frozenScrollBound = null;
+  function watchFrozenDoc() {
+    var frame = frozenFrame();
+    if (frame && frozenLoadBound !== frame) {
+      frozenLoadBound = frame;
+      frame.addEventListener('load', function () { dirty = true; watchFrozenDoc(); schedule(); });
+    }
+    var inner = frozenDoc();
+    if (inner && frozenScrollBound !== inner) {
+      frozenScrollBound = inner;
+      inner.addEventListener('scroll', schedule, true);
+    }
+    var next = inner && inner.documentElement;
+    if (next === frozenObserverTarget) return;
+    frozenObserverTarget = next;
+    if (next) observer.observe(next, { childList: true, subtree: true, attributes: true,
+      attributeFilter: ['data-node', 'hidden', 'aria-hidden', 'style', 'class'] });
+    dirty = true;
+  }
+  watchFrozenDoc();
   window.addEventListener('focus', reload);
   window.addEventListener('online', remoteTick);
   window.addEventListener('resize', schedule);

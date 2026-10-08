@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 export const BASE_PUBLIC_SKIP_LIMIT = 184;
 export const SYMLINK_UNAVAILABLE_SKIP_ALLOWANCE = 10;
+export const EXTRA_SYMLINK_PROBE_SKIP_ALLOWANCE = 2;
 export const WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE = 1;
 export const UNBUNDLED_FONTS_SKIP_ALLOWANCE = 3;
 export const MISSING_PLAYWRIGHT_SKIP_ALLOWANCE = 24;
@@ -91,7 +92,10 @@ export function publicSkipPolicy({ platform = process.platform, symlinkAvailable
   const fontsBundled = bundledFonts !== false;
   const allowances = [
     ...(platform === 'win32' ? [{ label: 'Windows 只读 rename 语义', count: WINDOWS_READONLY_RENAME_SKIP_ALLOWANCE }] : []),
-    ...(platform === 'win32' && !symlinkAvailable ? [{ label: '无法创建 symlink 的 r9 PoC', count: SYMLINK_UNAVAILABLE_SKIP_ALLOWANCE }] : []),
+    ...(platform === 'win32' && !symlinkAvailable ? [
+      { label: '无法创建 symlink 的 r9 PoC', count: SYMLINK_UNAVAILABLE_SKIP_ALLOWANCE },
+      { label: 'pack 与 human-review 的 symlink 探针', count: EXTRA_SYMLINK_PROBE_SKIP_ALLOWANCE },
+    ] : []),
     ...(!fontsBundled ? [{ label: '公开包不含 fonts/ 二进制', count: UNBUNDLED_FONTS_SKIP_ALLOWANCE }] : []),
     ...(!playwrightAvailable ? [{ label: '公开包不含可启动 Chrome，preview-first / verify 浏览器测 skip', count: MISSING_PLAYWRIGHT_SKIP_ALLOWANCE }] : []),
   ];

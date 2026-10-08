@@ -389,8 +389,10 @@ test('751–1126 leftover is not applied twice inside a language-shell remount',
   assert.match(renderer, /leftoverCandidate && !leftoverAlreadyOnHost/);
 });
 
-test('long bg/mobile board shares layoutOffsetDesign with later UI, including a negative 100vh crop', () => {
-  assert.match(renderer, /if \(\/\^bg\\\/\(pc\|mobile\)\$\/i\.test\(name\)\) return laterJoinOffsetDesign;/);
+test('long bg/pc and bg/mobile covering plates stay on Figma y; bg-tail restores the authored join ending', () => {
+  assert.match(renderer, /if \(\/\^bg\\\/\(pc\|mobile\)\$\/i\.test\(name\)\) return 0;/);
+  assert.match(renderer, /coveringPlate/);
+  assert.match(renderer, /data-hero-visual-plane', 'bg-tail'/);
   assert.match(renderer, /Number\.isFinite\(laterJoinOffsetDesign\) && laterJoinOffsetDesign !== 0/);
   assert.doesNotMatch(renderer, /&& heroLayoutOffsetDesign > 0 && heroCropWindowDesign > 0/);
   assert.match(renderer, /layoutOffsetDesign: laterJoinOffsetDesign/);

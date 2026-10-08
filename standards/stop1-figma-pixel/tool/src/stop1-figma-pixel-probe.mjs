@@ -517,14 +517,22 @@ export async function runLiveStop1FigmaPixelProbe({
           assertExportNotFlattened({ png: exported.png, frameBox, scale, allowOverflow: true });
           const destW = Math.round(paint.destBox.w * scale);
           const destH = Math.round(paint.destBox.h * scale);
+          const dx = (paint.destBox.x - section.pageBox.x) * scale;
+          const dy = (paint.destBox.y - section.pageBox.y) * scale;
+          if (paint.kind === 'cn-master'
+            && (exported.png.width !== destW || exported.png.height !== destH)) {
+            const fitted = (exported.png.width === destW && exported.png.height === destH)
+              ? exported.png
+              : scalePng(PNG, exported.png, destW, destH);
+            blitPng(baselinePng, fitted, dx, dy);
+            continue;
+          }
           const extraX = exported.png.width - destW;
           const extraY = exported.png.height - destH;
           if (extraX < 0 || extraY < 0) throw new Error(`${paint.frameId}: export smaller than destination box`);
           const cropX = paint.kind === 'dropmenu-off-icon' ? extraX : extraX / 2;
           const cropY = paint.kind === 'dropmenu-off-icon' ? extraY : extraY / 2;
           const cropped = cropPng(PNG, exported.png, { x: cropX, y: cropY, w: destW, h: destH });
-          const dx = (paint.destBox.x - section.pageBox.x) * scale;
-          const dy = (paint.destBox.y - section.pageBox.y) * scale;
           blitPng(baselinePng, cropped, dx, dy);
         }
         assembled[section.id] = {
