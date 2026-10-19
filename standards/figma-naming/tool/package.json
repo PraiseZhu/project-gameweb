@@ -25,8 +25,7 @@
     "handoff:validate": "node scripts/handoff-validate.mjs",
     "handoff:pack": "node scripts/handoff-pack.mjs",
     "handoff:promote": "node scripts/handoff-promote.mjs",
-    "feishu:doc": "node scripts/feishu-naming-doc.mjs",
-    "ledger": "node bin/daily-ledger.mjs --morning"
+    "feishu:doc": "node scripts/feishu-naming-doc.mjs"
   },
   "engines": {
     "node": ">=20"
