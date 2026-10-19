@@ -16,12 +16,12 @@ disable-model-invocation: false
 
 本仓只编已规范 ready。脚本按图层前缀抓树、几何、组件集、变体，出 `status: "ready"`。agent 核前缀/结构后打 ready 交接包，再跑做页 `figma:from-handoff`。闸门绿才算交付。对人只交交接包路径，不要把两份 inventory JSON 或核对页链接当交付物。做页只吃 ready。不做判断包看图写回。
 
-未规范 / 任意命名稿去 `projects/project-unnamed-inventory`。本仓遇到 `--status draft`、`inventory-unnamed-*`、`--allow-green-draft` 直接失败。
+未规范稿流程已废弃。未规范 / 任意命名稿：停，不要去别的仓。本仓遇到 `--status draft`、`inventory-unnamed-*`、`--allow-green-draft` 直接失败。
 
 | 稿 | 本仓 | 做页可吃 |
 |---|---|---|
 | 已规范命名 | `status: "ready"`，打 ready 包，吃包闸门绿 | 是 |
-| 未规范 / 任意命名 | 停，去 unnamed 仓 | 否 |
+| 未规范 / 任意命名 | 停，不要去别的仓 | 否 |
 
 不写回 Figma，不用插件交接，不用官方远程 MCP 改名。本 skill 不写 HTML。
 
@@ -42,7 +42,7 @@ disable-model-invocation: false
 - 链接含 `fileKey` 和 `node-id`，指向整棵货架
 - PC / mobile 的 page id 已明确；分不出就问人
 - `tool/.env` 有只读 `FIGMA_ACCESS_TOKEN`
-- 图层已是规范前缀。仍是设计师原名、或只有部分前缀 → **停**，告诉人去 `projects/project-unnamed-inventory`
+- 图层已是规范前缀。仍是设计师原名、或只有部分前缀 → **停**，告诉人：未规范稿流程已废弃，本仓只收已规范稿
 
 没有 `node-id` 时停在输入门槛，不开插件、不猜根、不写回。
 
@@ -134,7 +134,7 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 | 卡住 | 动作 |
 |---|---|
 | 无 `node-id` / 不是货架根 | 停在输入门槛 |
-| 未规范 / 部分前缀 | 停，去 `projects/project-unnamed-inventory` |
+| 未规范 / 部分前缀 | 停。未规范稿流程已废弃，不要去别的仓 |
 | `inventory` / 自验失败 | 停，原文报问题，不改 JSON |
 | agent 核不过 | 停，点名 node id |
 | `handoff:pack` 失败 | 停，不交付半包 |
