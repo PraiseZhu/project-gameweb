@@ -4,7 +4,7 @@
 
 已规范设计稿出 `inventory/v2` ready 清单，做页 skill 吃 ready 包写出 demo/`index.html`。闸门全绿后才给人 QA `index.html`（带工具栏）。`?product=1` 只给机器闸和截图，不要发给验收的人。
 
-未规范稿出清单见 [`project-unnamed-inventory`](../project-unnamed-inventory)。
+本仓只接收已规范设计稿。旧未规范稿入口 project-unnamed-inventory 在本机不存在（2026-10-19 核验）；当前未确认替代入口，请先完成命名规范再使用本仓流程。
 
 ## 链路
 

@@ -132,7 +132,7 @@ test("serve-inventory-review：本仓列表隐藏 unnamed，feedback/save 拒 dr
       body: JSON.stringify({ file: "inventory-unnamed-1-2.json", record: { nodeId: "s1" } }),
     });
     assert.equal(unnamedFeedback.status, 409);
-    assert.match(JSON.stringify(await unnamedFeedback.json()), /project-unnamed-inventory/);
+    assert.match(JSON.stringify(await unnamedFeedback.json()), /未规范稿流程已废弃/);
 
     const draftSave = await fetch(`${origin}/api/save`, {
       method: "POST",
@@ -140,7 +140,7 @@ test("serve-inventory-review：本仓列表隐藏 unnamed，feedback/save 拒 dr
       body: JSON.stringify({ file: "inventory-392-24190.json", inventory: unnamed }),
     });
     assert.equal(draftSave.status, 409);
-    assert.match(JSON.stringify(await draftSave.json()), /project-unnamed-inventory/);
+    assert.match(JSON.stringify(await draftSave.json()), /未规范稿流程已废弃/);
 
     const unnamedReadySave = await fetch(`${origin}/api/save`, {
       method: "POST",
@@ -148,7 +148,7 @@ test("serve-inventory-review：本仓列表隐藏 unnamed，feedback/save 拒 dr
       body: JSON.stringify({ file: "inventory-unnamed-1-2.json", inventory: named }),
     });
     assert.equal(unnamedReadySave.status, 409);
-    assert.match(JSON.stringify(await unnamedReadySave.json()), /project-unnamed-inventory/);
+    assert.match(JSON.stringify(await unnamedReadySave.json()), /未规范稿流程已废弃/);
   } finally {
     await new Promise((done) => server.close(done));
     rmSync(dir, { recursive: true, force: true });
@@ -181,7 +181,7 @@ test("serve-inventory-review：磁盘 draft 不能靠请求体冒充 ready 写 f
       body: JSON.stringify({ file: "inventory-demo.json", record: { nodeId: "s1" } }),
     });
     assert.equal(feedback.status, 409);
-    assert.match(JSON.stringify(await feedback.json()), /project-unnamed-inventory/);
+    assert.match(JSON.stringify(await feedback.json()), /未规范稿流程已废弃/);
     assert.equal(existsSync(join(dir, "inventory-demo-feedback.json")), false);
 
     const save = await fetch(`${origin}/api/save`, {
@@ -190,7 +190,7 @@ test("serve-inventory-review：磁盘 draft 不能靠请求体冒充 ready 写 f
       body: JSON.stringify({ file: "inventory-demo.json", inventory: forgedReady }),
     });
     assert.equal(save.status, 409);
-    assert.match(JSON.stringify(await save.json()), /project-unnamed-inventory/);
+    assert.match(JSON.stringify(await save.json()), /未规范稿流程已废弃/);
     assert.equal(existsSync(join(dir, "inventory-demo.reviewed.json")), false);
   } finally {
     await new Promise((done) => server.close(done));
@@ -229,7 +229,7 @@ test("serve-inventory-review / build-review-targets：缺 status 不当 ready", 
     assert.equal(save.status, 409);
     assert.throws(
       () => writeReviewTargets({ dir, inventoryPaths: [join(dir, "inventory-demo.json")] }),
-      /project-unnamed-inventory/,
+      /未规范稿流程已废弃/,
     );
   } finally {
     await new Promise((done) => server.close(done));
@@ -317,7 +317,7 @@ test("build-review-targets：draft / unnamed 文件名必须失败并指向独�
     }));
     assert.throws(
       () => writeReviewTargets({ dir, inventoryPaths: [unnamed] }),
-      /project-unnamed-inventory/,
+      /未规范稿流程已废弃/,
     );
 
     const draft = join(dir, "inventory-demo.json");
@@ -330,7 +330,7 @@ test("build-review-targets：draft / unnamed 文件名必须失败并指向独�
     }));
     assert.throws(
       () => writeReviewTargets({ dir, inventoryPaths: [draft] }),
-      /project-unnamed-inventory/,
+      /未规范稿流程已废弃/,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

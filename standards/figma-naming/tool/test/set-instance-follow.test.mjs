@@ -153,7 +153,7 @@ test("completeness：实例或 I… 子件没跟随则红", () => {
   assert.match(result.problems.join("\n"), /实例必须跟组件集 img\//);
 });
 
-test("本仓 apply-review-feedback / apply-gold-morphology CLI 失败并指向独立仓", () => {
+test("本仓 apply-review-feedback / apply-gold-morphology CLI 失败并未规范流程已废弃", () => {
   for (const script of [
     "scripts/apply-review-feedback.mjs",
     "scripts/apply-gold-morphology.mjs",
@@ -163,7 +163,7 @@ test("本仓 apply-review-feedback / apply-gold-morphology CLI 失败并指向�
       cwd: ROOT,
     });
     assert.notEqual(run.status, 0, script);
-    assert.match(`${run.stderr}\n${run.stdout}`, /project-unnamed-inventory/, script);
+    assert.match(`${run.stderr}\n${run.stdout}`, /未规范稿流程已废弃/, script);
   }
 });
 

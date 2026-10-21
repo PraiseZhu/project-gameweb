@@ -52,16 +52,16 @@ function sample(id, extra = {}) {
   return doc;
 }
 
-test("handoff：成对 draft 不能打本仓包，指向未规范仓", () => {
+test("handoff：成对 draft 不能打本仓包，未规范流程已废弃", () => {
   const result = validateHandoffPair(sample("1:1", { status: "draft" }), sample("2:2", { status: "draft" }));
   assert.equal(result.ok, false);
-  assert.match(result.problems.join("\n"), /project-unnamed-inventory/);
+  assert.match(result.problems.join("\n"), /未规范稿流程已废弃/);
 });
 
 test("handoff：--allow-green-draft 在本仓直接拒", () => {
   const result = validateHandoffPair(sample("1:1"), sample("2:2"), { allowGreenDraft: true });
   assert.equal(result.ok, false);
-  assert.match(result.problems.join("\n"), /project-unnamed-inventory/);
+  assert.match(result.problems.join("\n"), /未规范稿流程已废弃/);
 });
 
 test("handoff：replaceable/assetKey 进 consume 与 fingerprint", () => {
@@ -299,19 +299,19 @@ test("handoff：pack 写出 manifest 且本仓包必须是 ready", () => {
   assert.equal(consume.unknown.length, 0);
 });
 
-test("handoff：promote 在本仓直接拒并指向未规范仓", () => {
+test("handoff：promote 在本仓直接拒并未规范流程已废弃", () => {
   assert.throws(() => writePromotedPair({
     pcPath: "a", mobilePath: "b",
     pcDoc: sample("1:1", { status: "draft" }),
     mobileDoc: sample("2:2", { status: "draft" }),
     outDir: "/tmp", confirm: "判断已完成",
-  }), /project-unnamed-inventory/);
+  }), /未规范稿流程已废弃/);
   const result = spawnSync(process.execPath, [
     fileURLToPath(new URL("../scripts/handoff-promote.mjs", import.meta.url)),
     "--pc", "a", "--mobile", "b", "--confirm", "判断已完成",
   ], { encoding: "utf8" });
   assert.notEqual(result.status, 0);
-  assert.match(`${result.stderr}\n${result.stdout}`, /project-unnamed-inventory/);
+  assert.match(`${result.stderr}\n${result.stdout}`, /未规范稿流程已废弃/);
 });
 
 test("handoff：writeHandoffPack 拒绝用 draft 冒充 ready", () => {
@@ -327,7 +327,7 @@ test("handoff：writeHandoffPack 拒绝用 draft 冒充 ready", () => {
     pcDoc, mobileDoc,
     kind: "ready",
     outDir: join(dir, "out"),
-  }), /project-unnamed-inventory|kind 与清单不一致/);
+  }), /未规范稿流程已废弃|kind 与清单不一致/);
 });
 
 test("handoff：writeHandoffPack 拒绝 green-draft kind", () => {
@@ -341,7 +341,7 @@ test("handoff：writeHandoffPack 拒绝 green-draft kind", () => {
     pcDoc: sample("1:1"), mobileDoc: sample("2:2"),
     kind: "green-draft",
     outDir: join(dir, "out"),
-  }), /project-unnamed-inventory/);
+  }), /未规范稿流程已废弃/);
 });
 
 test("handoff：fingerprint 稳定", () => {
@@ -733,7 +733,7 @@ test("handoff：篡改 manifest fingerprint/schema/kind 则 validateHandoffPack 
 
   const badKind = tamper({ kind: "green-draft", ready: false });
   assert.equal(badKind.ok, false);
-  assert.match(badKind.problems.join("\n"), /project-unnamed-inventory|manifest\.kind/);
+  assert.match(badKind.problems.join("\n"), /未规范稿流程已废弃|manifest\.kind/);
 
   const badReady = tamper({ ready: false });
   assert.equal(badReady.ok, false);
@@ -846,7 +846,7 @@ test("handoff CLI：--assets-pc 直接拒，切图不进包", () => {
   assert.match(`${result.stderr}\n${result.stdout}`, /切图 PNG 不进交接包/);
 });
 
-test("handoff CLI：--allow-green-draft 直接拒并指向未规范仓", () => {
+test("handoff CLI：--allow-green-draft 直接拒并未规范流程已废弃", () => {
   const dir = mkdtempSync(join(tmpdir(), "handoff-cli-judge-"));
   const pcPath = join(dir, "pc.json");
   const mobilePath = join(dir, "mo.json");
@@ -857,7 +857,7 @@ test("handoff CLI：--allow-green-draft 直接拒并指向未规范仓", () => {
     "--pc", pcPath, "--mobile", mobilePath, "--out", join(dir, "out"), "--allow-green-draft",
   ], { encoding: "utf8" });
   assert.notEqual(result.status, 0);
-  assert.match(`${result.stderr}\n${result.stdout}`, /project-unnamed-inventory/);
+  assert.match(`${result.stderr}\n${result.stdout}`, /未规范稿流程已废弃/);
 });
 
 test("issue #38：无 tab/ 的合法 ready 稿可打包，不改 unknown / #34 消费", () => {

@@ -18,7 +18,7 @@
 
 ## 做页前交接：inventory/v2
 
-当前面向人的主入口是触发词 `出清单`：已规范货架链接 → 抓取整棵货架 → 整理/自验 → `inventory/v2` ready → ready 交接包 → 做页 `figma:from-handoff` 吃包闸门绿才交付。未规范稿不在本仓，去 `projects/project-unnamed-inventory`。本链路不开插件、不写回 Figma。命令一律从仓库根起跑，每步自己 `cd`。
+当前面向人的主入口是触发词 `出清单`：已规范货架链接 → 抓取整棵货架 → 整理/自验 → `inventory/v2` ready → ready 交接包 → 做页 `figma:from-handoff` 吃包闸门绿才交付。未规范稿流程已废弃，遇到未规范稿直接停。本链路不开插件、不写回 Figma。命令一律从仓库根起跑，每步自己 `cd`。
 
 1. 人提供带 `node-id` 的 Figma 货架链接。链接的 `node-id` 始终指向整棵
    画布货架，覆盖页面本体、同货架 modal 和组件定义；不要只给某个页面链接。

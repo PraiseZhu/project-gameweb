@@ -1,6 +1,6 @@
 # 做页怎么吃交接包
 
-本仓做页只吃 ready 包。真稿，不另造清单。清单只答这一稿画了什么；拉伸/外文字号听做页包里的 `DESIGN.md`。未规范判断写回 / green-draft 在 `projects/project-unnamed-inventory`。已规范命名稿：稿上有的每一端 `inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`）。只有 PC 或只有手机时只传那一端。交接包只装箱信息，不导 png。做页按清单 `sliceExport` 自己导图，不猜图层名、不按节点框重导。
+本仓做页只吃 ready 包。真稿，不另造清单。清单只答这一稿画了什么；拉伸/外文字号听做页包里的 `DESIGN.md`。未规范稿流程已废弃，不打 green-draft、不写回判断包。已规范命名稿：稿上有的每一端 `inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`）。只有 PC 或只有手机时只传那一端。交接包只装箱信息，不导 png。做页按清单 `sliceExport` 自己导图，不猜图层名、不按节点框重导。
 
 ## 已规范稿打出包
 
@@ -16,7 +16,7 @@ npm run handoff:pack -- \
 
 包 `kind=ready`。只有 PC 或只有手机时，对应那一行不要传。不要 `--allow-green-draft`，不要判断包。缺 `pageBox` / `parentBox` / 切图契约 / fix 钉视口 / 字体三项 → 打包失败。不要传 `--assets-pc` / `--assets-mobile`：PNG 不进交接包。`export-handoff-slices` 是做页可选工具，不是装箱前置。
 
-未规范稿去 `projects/project-unnamed-inventory`。本仓 `--allow-green-draft` 直接失败。禁止手改 JSON 的 `status`。
+未规范稿流程已废弃。本仓 `--allow-green-draft` 直接失败。禁止手改 JSON 的 `status`。
 
 ## 做页只有一个吃包入口
 
