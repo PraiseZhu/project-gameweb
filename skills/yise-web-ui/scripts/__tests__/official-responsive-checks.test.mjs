@@ -102,3 +102,17 @@ test('aspect mobile hero does not have to fill a taller viewport', () => {
     viewportHeight: 1100,
   }), false);
 });
+
+test('aspect laterTop must not start before the scaled first-screen bottom', () => {
+  const aspectHero = {
+    mode: 'aspect',
+    heroSlot: 'active',
+    heroHeight: 694,
+    viewportHeight: 1100,
+    sampleWidth: 390,
+    designWidth: 750,
+    designHeroHeight: 1335,
+  };
+  assert.equal(mobileHeroMatchesRule({ ...aspectHero, laterTop: 0 }), false);
+  assert.equal(mobileHeroMatchesRule({ ...aspectHero, laterTop: 694 }), true);
+});
