@@ -2,7 +2,7 @@
  * 真稿交接：校验 ready 清单并打做页包。
  * 稿上有哪一端就装哪一端：--pc / --mobile 可只给一端，manifest.ends 写明。
  * 两端都在时行为与成对包相同。本仓不打 green-draft。
- * 未规范判断写回在 projects/project-unnamed-inventory。
+ * 未规范稿流程已废弃，本仓不打 green-draft、不写回判断包。
  * 已给的每一端都是 ready 时 completeness 只核索引/前缀类/determined 前缀写入，不跑 draft 形态发现（issue #31）。
  * 另接 auditDeclaredStructure：前缀已说死的结构错误直接拒包。
  * 切图 PNG 不进包；manifest.assets 只列 sliceExport 与 node id，做页自导。
@@ -15,9 +15,8 @@ import { auditLikeCli } from "../scripts/check-draft-asset-completeness.mjs";
 import { allNodesOf, auditDeclaredStructure } from "./inventory.mjs";
 
 export const HANDOFF_SCHEMA = "handoff/v1";
-const UNNAMED_REPO = "projects/project-unnamed-inventory";
 const GREEN_DRAFT_REDIRECT =
-  `本仓只打 ready 交接包。green-draft / 判断包写回请到 ${UNNAMED_REPO}`;
+  "本仓只打 ready 交接包。未规范稿流程已废弃，不打 green-draft / 判断包写回";
 
 function optArg(argv, name) {
   const i = argv.indexOf(name);

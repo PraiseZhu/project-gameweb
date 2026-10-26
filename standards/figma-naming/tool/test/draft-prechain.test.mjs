@@ -33,10 +33,10 @@ test("draft-prechain 必须走 auditLikeCli + 形态写回，目录不写盘", (
 test("handoff 必须与 CLI 同一闸门 auditLikeCli", () => {
   const src = readFileSync(fileURLToPath(new URL("../src/handoff.mjs", import.meta.url)), "utf8");
   assert.match(src, /auditLikeCli/);
-  assert.match(src, /project-unnamed-inventory/);
+  assert.match(src, /未规范稿流程已废弃/);
   assert.doesNotMatch(src, /auditDraftAssetCompleteness\(/);
   const packSrc = readFileSync(fileURLToPath(new URL("../scripts/handoff-pack.mjs", import.meta.url)), "utf8");
-  assert.match(packSrc, /project-unnamed-inventory/);
+  assert.match(packSrc, /未规范稿流程已废弃/);
   assert.match(packSrc, /只打 ready/);
 });
 

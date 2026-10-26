@@ -31,9 +31,8 @@ import {
   variantPropertyRaw,
 } from "./lang-axis.mjs";
 
-const UNNAMED_REPO = "projects/project-unnamed-inventory";
 export const UNNAMED_REDIRECT =
-  `本仓只编已规范 ready 清单。未规范稿出清单请到 ${UNNAMED_REPO}（standards/figma-naming/SKILL.md）`;
+  "本仓只编已规范 ready 清单。未规范稿流程已废弃，遇到未规范稿直接停";
 
 /** page id 里的冒号不能进文件名；`--name inventory-unnamed-392:24190` 收成 `392-24190`。 */
 export function sanitizeInventoryName(name) {
@@ -41,7 +40,7 @@ export function sanitizeInventoryName(name) {
   return String(name).replace(/:/g, "-");
 }
 
-/** 本仓拒绝未规范 draft / unnamed 名 / 非 ready 档，指向独立仓。缺 status 也拒。 */
+/** 本仓拒绝未规范 draft / unnamed 名 / 非 ready 档。缺 status 也拒。 */
 export function unnamedRequiresDraft(input) {
   const status = input && input.status;
   const label = String((input && input.name) ?? "").trim();

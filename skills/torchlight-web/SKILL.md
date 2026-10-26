@@ -254,16 +254,6 @@ Official behavior/source observations are recorded in `docs/translation-official
 
 Component motion uses `scripts/lib/motion-contract.mjs` and `docs/motion-contracts.md`. Supported generic patterns are calendar reveal, heading/card reveal-stagger, character switch, tabs/card state change, and scroll-progress trigger. Exact easing/duration stay nullable and unverified until browser/authoritative evidence measures them.
 
-> **目标**：为一个功能 PR 产出一个高保真单文件可交互 HTML demo，并用机械化报告说明：
-> 数据层 truth 来自产品源码且带 provenance，渲染层由 computed-style 绑定验证，像素层由真沙盒截图抽查。
-> 部署到内网后贴进 PR，让 reviewer 不启动沙盒就能完整走一遍功能。
->
-> **设计原则（四要素）**：结构化数据（spec.json + truth.json）、运行脚本（scripts/）、
-> 工具链（Playwright + xd-pages）、验证机制（A-F 六道门；阻断门全过才允许部署/贴 PR）。
->
-> **诞生背景**：2026-07-24 cindy 登录协议 demo 6 轮返工的教训固化——文案手抄漂移、
-> 产品常量变更 demo 滞后、返回按钮/输入框交互 bug 靠人撞、状态覆盖靠人脑记。
-
 ## 目录约定
 
 每个 demo 一个目录（宿主项目内 `_tmp/<name>-hifi/` 起步；随 PR 入库时移到 `docs/design-previews/<feature>/`）：

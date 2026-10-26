@@ -4,7 +4,7 @@
  *   node scripts/handoff-pack.mjs --pc <pc.json> --mobile <mobile.json> --out <dir>
  *   node scripts/handoff-pack.mjs --pc <pc.json> --out <dir>
  *   [--reference <参考稿.json>] 切图 PNG 不进包。
- * 未规范 green-draft 请到 projects/project-unnamed-inventory。
+ * 未规范稿流程已废弃，不打 green-draft。
  */
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +23,7 @@ export function runHandoffPack(argv = process.argv.slice(2)) {
   if (args.allowGreenDraft) {
     console.error(JSON.stringify({
       ok: false,
-      problems: ["本仓只打 ready 交接包。green-draft / 判断包写回请到 projects/project-unnamed-inventory"],
+      problems: ["本仓只打 ready 交接包。未规范稿流程已废弃，不打 green-draft / 判断包写回"],
     }, null, 2));
     process.exit(1);
   }

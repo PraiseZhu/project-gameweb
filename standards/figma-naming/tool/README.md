@@ -2,7 +2,7 @@
 
 给一个 Figma 稿链接，可做两件事：把已规范命名稿编成做页前的 `inventory/v2` ready 清单，或对稿件出**图层命名体检报告**。做页前交接是当前主入口；命名体检是独立的既有工具。
 
-规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.19），21 条规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后由本机 `sync-local` 有变才重铺（密钥放本机，不进 GitHub）；不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
+规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.20），规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后 GitHub Actions `feishu-naming-doc` 会尝试重铺并对账；未配置 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 时跳过发布，改由本机 `sync-local` 铺（密钥放本机）。不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
 
 ## 判什么、不判什么
 
@@ -18,7 +18,7 @@
 
 ## 做页前交接：inventory/v2
 
-当前面向人的主入口是触发词 `出清单`：已规范货架链接 → 抓取整棵货架 → 整理/自验 → `inventory/v2` ready → ready 交接包 → 做页 `figma:from-handoff` 吃包闸门绿才交付。未规范稿不在本仓，去 `projects/project-unnamed-inventory`。本链路不开插件、不写回 Figma。命令一律从仓库根起跑，每步自己 `cd`。
+当前面向人的主入口是触发词 `出清单`：已规范货架链接 → 抓取整棵货架 → 整理/自验 → `inventory/v2` ready → ready 交接包 → 做页 `figma:from-handoff` 吃包闸门绿才交付。未规范稿流程已废弃，遇到未规范稿直接停。本链路不开插件、不写回 Figma。命令一律从仓库根起跑，每步自己 `cd`。
 
 1. 人提供带 `node-id` 的 Figma 货架链接。链接的 `node-id` 始终指向整棵
    画布货架，覆盖页面本体、同货架 modal 和组件定义；不要只给某个页面链接。
@@ -62,8 +62,8 @@
 
 做页先消费 ready 清单中的已确定节点、页面分区、背景/固定层、已解析的实例→变体关系、
 完整组件变体树和 modal 附件本体。摆位置用 `pageBox` / `parentBox`；`fix/` 钉视口；切图按 `sliceExport`（墨迹框、1 倍、png；含 mix 自动拆 img/、BOOLEAN btn/、ind/ 变体根）由做页自导，交接包不带 PNG。`unknown` 节点只画样子，不赋交互；`unknown` 的
-`modal-trigger` 不自动接线。做页接入见 issue #5（指派 `zhanxinyi-lab`）。本工具不改
-`skills/yise-web-ui/**`，不写回 Figma。
+`modal-trigger` 不自动接线。做页接入见 [`../handoff/CONSUMER.md`](../handoff/CONSUMER.md)。本工具不改
+`skills/**` 源码，不写回 Figma。
 
 ## 命名体检快速开始
 

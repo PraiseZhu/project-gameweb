@@ -19,7 +19,7 @@ const REQUIRED_IN_SKILL = [
   "已规范命名稿",
   "status: \"ready\"",
   "本仓只编已规范 ready",
-  "project-unnamed-inventory",
+  "未规范稿流程已废弃",
   "不做判断包看图写回",
   "做页只吃 ready",
   "figma:from-handoff",
@@ -30,12 +30,12 @@ const REQUIRED_IN_SKILL = [
 
 const REQUIRED_IN_PROJECT_CLAUDE = [
   "已规范设计稿",
-  "project-unnamed-inventory",
+  "未规范稿流程已废弃",
   "只吃 ready",
   "未规范稿出清单不在本仓",
 ];
 
-test("SKILL.md 必须写清本仓只走已规范 ready，未规范指向独立仓", () => {
+test("SKILL.md 必须写清本仓只走已规范 ready，未规范流程已废弃", () => {
   const text = readFileSync(SKILL_PATH, "utf8");
   const missing = REQUIRED_IN_SKILL.filter((needle) => !text.includes(needle));
   assert.deepEqual(missing, [], `SKILL.md 缺本仓口径：${missing.join("；")}`);
@@ -47,7 +47,7 @@ test("SKILL.md 必须写清本仓只走已规范 ready，未规范指向独立�
   assert.match(text, /对人只交交接包路径 `_tmp\/out\/handoff-<page>`/);
 });
 
-test("项目 CLAUDE.md 必须把未规范出清单指到独立仓", () => {
+test("项目 CLAUDE.md 必须写清未规范出清单不在本仓且流程已废弃", () => {
   const text = readFileSync(PROJECT_CLAUDE_PATH, "utf8");
   const missing = REQUIRED_IN_PROJECT_CLAUDE.filter((needle) => !text.includes(needle));
   assert.deepEqual(missing, [], `CLAUDE.md 缺本仓口径：${missing.join("；")}`);

@@ -622,13 +622,13 @@ test("v2：跨货架 componentId 在 draft 留 unknown 关系，在 ready 仍阻
   assert.match(readyCheck.problems.join("\n"), /未解析/);
 });
 
-test("unnamedRequiresDraft：本仓拒绝 draft / unnamed，指向未规范仓", () => {
+test("unnamedRequiresDraft：本仓拒绝 draft / unnamed，未规范流程已废弃", () => {
   assert.equal(unnamedRequiresDraft({ status: "ready", name: "inventory-392-24190" }), null);
-  assert.match(unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed-1-2" }) || "", /project-unnamed-inventory/);
-  assert.match(unnamedRequiresDraft({ status: "ready", name: "inventory-unnamed-1-2" }) || "", /project-unnamed-inventory/);
-  assert.match(unnamedRequiresDraft({ status: "draft" }) || "", /project-unnamed-inventory/);
-  assert.match(unnamedRequiresDraft({ status: "certified", name: "inventory-392-24190" }) || "", /project-unnamed-inventory/);
-  assert.match(unnamedRequiresDraft({ name: "inventory-392-24190" }) || "", /project-unnamed-inventory/);
+  assert.match(unnamedRequiresDraft({ status: "draft", name: "inventory-unnamed-1-2" }) || "", /未规范稿流程已废弃/);
+  assert.match(unnamedRequiresDraft({ status: "ready", name: "inventory-unnamed-1-2" }) || "", /未规范稿流程已废弃/);
+  assert.match(unnamedRequiresDraft({ status: "draft" }) || "", /未规范稿流程已废弃/);
+  assert.match(unnamedRequiresDraft({ status: "certified", name: "inventory-392-24190" }) || "", /未规范稿流程已废弃/);
+  assert.match(unnamedRequiresDraft({ name: "inventory-392-24190" }) || "", /未规范稿流程已废弃/);
 });
 
 test("sanitizeInventoryName：page id 冒号改短横线", () => {
@@ -636,23 +636,23 @@ test("sanitizeInventoryName：page id 冒号改短横线", () => {
   assert.match(unnamedRequiresDraft({
     status: "draft",
     name: "inventory-unnamed-392:24190",
-  }) || "", /project-unnamed-inventory/);
+  }) || "", /未规范稿流程已废弃/);
 });
 
-test("bin/inventory：draft / unnamed 在拉稿前失败并指向未规范仓", () => {
+test("bin/inventory：draft / unnamed 在拉稿前失败并未规范流程已废弃", () => {
   const bin = resolve(TOOL_ROOT, "bin/inventory.mjs");
   const missingName = spawnSync(process.execPath, [bin, "--status", "draft"], { encoding: "utf8" });
   assert.notEqual(missingName.status, 0);
-  assert.match(missingName.stderr, /project-unnamed-inventory/);
+  assert.match(missingName.stderr, /未规范稿流程已废弃/);
   const badName = spawnSync(process.execPath, [bin, "--status", "draft", "--name", "inventory-unnamed-1-2"], { encoding: "utf8" });
   assert.notEqual(badName.status, 0);
-  assert.match(badName.stderr, /project-unnamed-inventory/);
+  assert.match(badName.stderr, /未规范稿流程已废弃/);
   const certified = spawnSync(process.execPath, [bin, "--status", "certified"], { encoding: "utf8" });
   assert.notEqual(certified.status, 0);
-  assert.match(certified.stderr, /project-unnamed-inventory|ready/);
+  assert.match(certified.stderr, /未规范稿流程已废弃|ready/);
 });
 
-test("本仓未规范 CLI 一律失败并指向独立仓", () => {
+test("本仓未规范 CLI 一律失败并未规范流程已废弃", () => {
   for (const script of [
     "scripts/prep-judge-pack.mjs",
     "scripts/match-module-catalog.mjs",
@@ -663,7 +663,7 @@ test("本仓未规范 CLI 一律失败并指向独立仓", () => {
   ]) {
     const run = spawnSync(process.execPath, [resolve(TOOL_ROOT, script)], { encoding: "utf8" });
     assert.notEqual(run.status, 0, script);
-    assert.match(`${run.stderr}\n${run.stdout}`, /project-unnamed-inventory/, script);
+    assert.match(`${run.stderr}\n${run.stdout}`, /未规范稿流程已废弃/, script);
   }
 });
 
@@ -836,7 +836,7 @@ test("export-inventory-page / export-handoff-slices 拒绝 draft 和 unnamed 文
           encoding: "utf8",
         });
         assert.notEqual(run.status, 0, `${script} ${inventory}`);
-        assert.match(`${run.stderr}\n${run.stdout}`, /project-unnamed-inventory/, `${script} ${inventory}`);
+        assert.match(`${run.stderr}\n${run.stdout}`, /未规范稿流程已废弃/, `${script} ${inventory}`);
       }
     }
   } finally {
