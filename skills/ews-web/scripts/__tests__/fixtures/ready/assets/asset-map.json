@@ -1,0 +1,68 @@
+{
+  "schema": "ews-assets/v1",
+  "fingerprint": "c0a60c9291cfe685",
+  "pc": {
+    "100:31": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\pc-100-31.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    },
+    "100:32": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\pc-100-32.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    },
+    "100:41": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\pc-100-41.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    },
+    "100:3": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\pc-100-3.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    },
+    "100:8": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\pc-100-8.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    },
+    "100:9": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\pc-100-9.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    }
+  },
+  "mobile": {
+    "200:31": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\mobile-200-31.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    },
+    "200:32": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\mobile-200-32.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    },
+    "200:3": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\mobile-200-3.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    },
+    "200:8": {
+      "path": "scripts\\__tests__\\fixtures\\ready\\assets\\mobile-200-8.png",
+      "sha256": "synthetic",
+      "width": 1,
+      "height": 1
+    }
+  }
+}

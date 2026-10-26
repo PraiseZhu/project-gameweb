@@ -1,0 +1,16 @@
+{
+  "name": "etheria-ews",
+  "description": "Etheria-ews：精确触发词 ews出页。只吃 inventory/v2 ready 交接包，独立 Skill，不走伊瑟/火炬做页。",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test scripts/__tests__/*.test.mjs",
+    "release:audit": "node scripts/release-audit.mjs",
+    "ewsweb": "node scripts/ews-web.mjs",
+    "ews出页": "node scripts/ews-web.mjs",
+    "test:browser": "node scripts/test-browser.mjs"
+  }
+}
