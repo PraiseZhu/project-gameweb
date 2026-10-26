@@ -1118,7 +1118,8 @@
       frame.removeAttribute('data-page-x-contain');
       frame.removeAttribute('data-overflow-x');
     }
-    frame.style.transform = 'scale(' + scale + ')';
+    frame.style.transform = scale === 1 ? 'none' : ('scale(' + scale + ')');
+    frame.style.touchAction = 'pan-y';
     /* wrap 是屏幕容器（bezel：1px border + 10px padding 四边）。全局 box-sizing:border-box，
        style.width 是边框盒宽 —— 必须加上 bezel 的 22px（左右各 1px border + 10px padding），
        不然 frame 会把 bezel 吃掉（内容区被压窄、frame 溢出 wrap 右缘，2026-08-05 实测 frame 比

@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isWholeFrameSliceNode, sliceExportPaintBox } from '../../../../standards/figma-naming/spec/inventory.mjs';
+import { figmaLegalExport } from './figma-export-budget.mjs';
 
 export const POSITION_TOLERANCE_PX = 1;
 export const FONT_SIZE_TOLERANCE_PX = 0.05;
@@ -114,11 +115,16 @@ export function evaluateInventoryStaticGate({
       continue;
     }
     const actual = measured[String(node.id)];
-    if (!actual) {
-      if (isBakedIntoAncestor(node, byId, measured)) continue;
-      failures.push({ id: node.id, reason: 'missing-dom', expected });
-      continue;
-    }
+    const drawBox = geom(actual);
+    if (!drawBox) {
+      /* A PNG-only record is not a DOM box. Baked descendants stay inside the
+         ancestor image; everyone else is still missing. Asset byte checks
+         below still run when the file was measured. */
+      if (!isBakedIntoAncestor(node, byId, measured)) {
+        failures.push({ id: node.id, reason: 'missing-dom', expected });
+      }
+      if (!actual) continue;
+    } else {
     const hugsWidth = String(node.text?.autoResize || '').toUpperCase() === 'WIDTH'
       || String(node.text?.autoResize || '').toUpperCase() === 'WIDTH_AND_HEIGHT';
     const actualRect = {
@@ -175,18 +181,31 @@ export function evaluateInventoryStaticGate({
         if (!slice.ok) failures.push({ id: node.id, reason: 'sliceExport-mismatch', ...slice });
       }
     }
-    if (shouldGateWholeFramePng(node) && (actual.assetEmpty != null || actual.assetW != null || actual.assetH != null)) {
+    }
+    if (actual && shouldGateWholeFramePng(node) && (actual.assetEmpty != null || actual.assetW != null || actual.assetH != null)) {
       const expectedPaint = geom(sliceExportPaintBox(node)) || expected;
       if (actual.assetEmpty === true) {
         failures.push({ id: node.id, reason: 'whole-frame-png-empty' });
       }
       if (shouldGateWholeFramePngSize(node) && expectedPaint && Number(actual.assetW) > 0 && Number(actual.assetH) > 0) {
-        if (Math.abs(Number(actual.assetW) - expectedPaint.w) > 1
-          || Math.abs(Number(actual.assetH) - expectedPaint.h) > 1) {
+        const requested = Number(node.sliceExport && node.sliceExport.scale);
+        const legal = figmaLegalExport(
+          expectedPaint.w,
+          expectedPaint.h,
+          Number.isFinite(requested) && requested > 0 ? requested : 1,
+        );
+        if (Math.abs(Number(actual.assetW) - legal.w) > POSITION_TOLERANCE_PX
+          || Math.abs(Number(actual.assetH) - legal.h) > POSITION_TOLERANCE_PX) {
           failures.push({
             id: node.id,
             reason: 'whole-frame-png-size-mismatch',
-            expected: { w: expectedPaint.w, h: expectedPaint.h },
+            expected: {
+              w: legal.w,
+              h: legal.h,
+              scale: legal.scale,
+              capped: legal.capped,
+              source: { w: legal.sourceW, h: legal.sourceH, scale: legal.sourceScale },
+            },
             actual: { w: actual.assetW, h: actual.assetH },
           });
         }

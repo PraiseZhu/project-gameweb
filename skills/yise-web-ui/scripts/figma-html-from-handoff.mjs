@@ -129,7 +129,7 @@ function writeDemoShell(demoDir, consume, pc, mobile, htmlLimitBytes = DEFAULT_M
 
 function attachSliceAssets(payload, demoDir) {
   try {
-    runNode(ASSETS, ['--demo', demoDir], { timeout: 900000 });
+    runNode(ASSETS, ['--demo', demoDir, '--resume'], { timeout: 1800000 });
     payload.sliceAssets = { ok: true };
     return payload;
   } catch (err) {

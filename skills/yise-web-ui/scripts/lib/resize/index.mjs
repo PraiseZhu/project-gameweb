@@ -215,9 +215,10 @@ export function widthScale({
 }
 
 /**
- * First screen must fill the current viewport height (official hero ≈ 100vh /
- * --vh). Later sections start at or below that edge. Cover-crop may enlarge the
- * hero visual plane; page flow stays on width-scale k.
+ * PC/pad first screen fills the current viewport height (official 100vh).
+ * Mobile locks the Figma hero aspect instead. Later PC sections start at or
+ * below that edge. Cover-crop may enlarge the hero visual plane; page flow
+ * stays on width-scale k.
  */
 export function heroViewportFill({
   viewportH,
@@ -242,11 +243,7 @@ export function heroViewportFill({
   const designHeight = slotH / k;
   const layoutOffsetDesign = Math.max(0, designHeight - heroH);
   const cropWindowDesign = slotH / slotScale;
-  /* Size stays on k. When the 100vh slot is taller than k×hero, hero UI
-     blocks anchor their BOTTOM fraction of the slot so a lower-hero title
-     keeps its Figma distance above the first-screen bottom edge instead of
-     riding y×k upward or floating in the middle. Never compress below
-     source Y. */
+  /* Size stays on k. Lower-half hero UI keeps the Figma bottom gap above the slot, whether the slot is taller or shorter than the hero. Never compress below source Y. */
   const uiYRatio = Math.max(1, designHeight / heroH);
   return {
     slotScale,
@@ -403,8 +400,8 @@ export function resizeOwns() {
     'viewport-to-platform mapping',
     'composition base (pc / mobile / pad-uses-pc-tree)',
     'continuous width scale k = viewportW / designWidth (official 10vw ruler)',
-    'hero first-screen fill of current viewport height (official 100vh crop of KV + long bg/*; inventory stays one sheet)',
-    'hero UI size follows width-scale k; vertical place stays the 100vh slot fraction of the Figma hero',
+    'hero first-screen fill of current viewport height (official PC 100vh crop of KV + long bg/*; mobile locks the Figma hero aspect; inventory stays one sheet)',
+    'hero UI size follows width-scale k; lower-half blocks keep their Figma bottom gap above the 100vh slot',
     'left directory rail stretches to the current viewport height without SS5 node IDs',
     'product-view page overflow-x clip (official adaptive-width)',
     'light-drag vs full rebuild',

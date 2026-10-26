@@ -106,7 +106,7 @@ openFlowNoShrink: true
 
 宽度尺子：`k = viewportW / designWidth`，官方口径 `10vw`（`html { font-size: calc(10vw * var(--moo-root-scale, 1)) }`）。设备名是样品，不是额外布局。
 
-首屏：hero 槽填满当前视口高度，官方口径 `100vh` / `--vh`。`scrollTop=0` 时下一 section 在框外。长 `bg/*` 仍是清单里的一整张图，不切开；首屏只把 KV + 该图 cover-crop 进窗口。
+首屏：PC / pad 的 hero 槽填满当前视口高度，官方口径 100vh / --vh。手机不跟 100vh：槽高 = 视口宽 x (稿面首屏高 / 设计宽)，同一宽度下不同视口高都是同一槽高。scrollTop=0 时，PC 的下一 section 在框外；手机视口高于槽高时下一 section 可以露出来。长 bg/* 仍是清单里的一整张图，不切开；首屏只把 KV + 该图 cover-crop 进窗口，且只缩放一次。
 
 产品树（伊瑟）：
 
@@ -124,7 +124,7 @@ openFlowNoShrink: true
 - UI（首页标题及其它控件）：按源缩放；PC 季节可用宽度尺。
 - 海 / K1：按源比例，居中裁。
 
-三平面不得共用一个 transform。Hero UI 大小走宽度尺 `k`；稿里底边落在首屏下半的块按底边比例钉在 `100vh` 槽上，避免 `y×k` 把标题抬到上半屏。
+三平面不得共用一个 transform。Hero UI 大小走宽度尺 `k`；稿里底边落在首屏下半的块按底边空隙 (首屏稿高减块底) x k 钉在 `100vh` 槽上，避免 `y×k` 把标题抬到上半屏。视口比宽度尺后的稿面首屏更矮时，用同一个空隙把块向上收进槽内，标题和下载不能掉出视口
 
 `fix/` 钉视口。钉哪条边只看该层 `layout.constraints`（稿上 Constraints），不猜图层名。所相对画板 = 直接父 frame 的 `pageBox`（不是 `sec/1`、不是相对父层的 `parentBox`）。垂直 **Bottom**：底边钉视窗底，空隙 = 该层底到父画板底 × 当前档 `k`（槽高 = 视窗高 / `k`，不跟 cover）。视窗变高空隙不拉长，滚走仍钉着。垂直 **Top** / 未写：仍钉顶（顶栏、导航不动）。垂直 **Center**：在视窗槽内垂直居中。水平 **Center**：在父画板宽内居中；**Left / 未写** 钉左；**Right** 钉右，空隙同样 × `k`。尺寸仍走该档 `k`，不跟 cover。里面的 `img/` 只负责切图。
 
@@ -149,7 +149,7 @@ zh-CN 锁 Figma 字号 / 几何 / 手动换行，静态 P0 只验这一条。
 - 完成标准原句。
 - `figma:from-handoff` 只验包、不写 HTML。
 - `kind=ready` 才吃；`unknown` 只画不接线。
-- 设计宽 750 / 3840、`k = viewportW / designWidth`、官方 `10vw`、首屏 `100vh`。
+- 设计宽 750 / 3840、k = viewportW / designWidth、官方 10vw、PC/pad 首屏 100vh、手机首屏锁稿面宽高比。
 - 伊瑟产品树 `0–750` / `751–1023` / `≥1024`；无 pad 树则 `pad-uses-pc-tree`。
 - zh-CN 锁稿；body `0.8`、card-title `0.833`、heading `1.0`；缩字地板 `75%`；HUG / open-flow 不缩。
 - 不把 inventory JSON 焊进本文件。不改 renderer、naming spec、Interaction / Pack / 语义换行。

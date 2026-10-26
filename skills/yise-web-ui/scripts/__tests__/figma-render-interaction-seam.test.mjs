@@ -122,7 +122,9 @@ test('renderer loops applySwitch and keeps calendar/hscroll commands off native 
   assert.match(renderer, /\(\(current % count\) \+ count\) % count/);
   assert.match(renderer, /data-hscroll-action/);
   assert.match(renderer, /data-calendar-now-state/);
-  assert.match(renderer, /dyn-today-date-runtime-swap/);
+  assert.match(renderer, /dyn-today-date-track/);
+  assert.match(renderer, /pending-named-tab/);
+  assert.match(renderer, /data-calendar-return-control/);
   assert.match(renderer, /user-select:none/);
   assert.match(renderer, /overflowX = 'hidden'/);
   assert.match(renderer, /data-calendar-now-state="return-today"/);

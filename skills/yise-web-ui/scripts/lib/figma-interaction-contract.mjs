@@ -468,7 +468,7 @@ export function deriveInteractionModel(nodes = []) {
       entry.calendarNow = {
         states: ['today', 'return-today'],
         initial: 'today',
-        evidence: 'dyn-today-date-runtime-swap',
+        evidence: 'dyn-today-date-track',
       };
     }
     if (role === 'switch' || role === 'swpage' || role === 'tab' || role === 'ind' || role === 'btn') {
