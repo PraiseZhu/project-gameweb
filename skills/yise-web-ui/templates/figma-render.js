@@ -21,6 +21,31 @@
  */
 (function () {
   'use strict';
+  /* HERO_SHORT_WINDOW_BEGIN
+     Short wide windows: a lower-half block keeps its Figma gap above the
+     hero bottom, then the anchored group shifts until the lowest control is
+     flush with the slot. No season node names. */
+  function pinHeroShortWindowBlock({ sourceTop, sourceH, heroUiHalf, designSlotH, heroDesignH }) {
+    const top = Number(sourceTop);
+    const height = Number(sourceH);
+    const bottom = top + height;
+    const slotH = Number(designSlotH) || 0;
+    const heroH = Number(heroDesignH) || 0;
+    const slotExtra = slotH - heroH;
+    let pinnedTop = bottom > heroUiHalf ? top + slotExtra : top;
+    if (bottom > heroUiHalf && slotH > 0) {
+      const maxTop = Math.max(0, slotH - height);
+      pinnedTop = Math.min(Math.max(0, pinnedTop), maxTop);
+    }
+    return pinnedTop;
+  }
+  function heroShortWindowPackDelta(maxBottom, designSlotH) {
+    const slot = Number(designSlotH);
+    const bottom = Number(maxBottom);
+    if (!(bottom > 0) || !(slot - bottom > 0.5)) return 0;
+    return slot - bottom;
+  }
+  /* HERO_SHORT_WINDOW_END */
   /* PAINT_SPACE_BEGIN
      pageBox is already page-local. Mix it with a canvas box/origin
      (SS6 kv canvas x=-63388 vs pageBox 0) and the first screen
@@ -3885,15 +3910,13 @@
                That is sourceTop plus the extra slot, not sourceBottom * slot/hero
                and not a hardcoded season percentage. Upper-half chrome stays
                on source Y. */
-            const designSlotH = Number(heroSlot && heroSlot.designHeight) || 0;
-            const heroDesignH = Number(heroSlot && heroSlot.heroHeight) || 0;
-            const slotExtra = designSlotH - heroDesignH;
-            let pinnedTop = sourceBottom > heroUiHalf ? sourceTop + slotExtra : sourceTop;
-            if (sourceBottom > heroUiHalf && designSlotH > 0) {
-              const maxTop = Math.max(0, designSlotH - sourceH);
-              pinnedTop = Math.min(Math.max(0, pinnedTop), maxTop);
-            }
-            heroUiTop = pinnedTop;
+            heroUiTop = pinHeroShortWindowBlock({
+              sourceTop,
+              sourceH,
+              heroUiHalf,
+              designSlotH: Number(heroSlot && heroSlot.designHeight) || 0,
+              heroDesignH: Number(heroSlot && heroSlot.heroHeight) || 0,
+            });
             const best = heroUiOwnerBlock(heroUiBlocks, localX + (box.w ?? 0) / 2, sourceTop + sourceH / 2);
             if (best) {
               heroUiTop = best.stretchedTop + (sourceTop - best.y);
@@ -7572,8 +7595,8 @@
           if (Number.isFinite(top) && Number.isFinite(height)) maxBottom = Math.max(maxBottom, top + height);
         }
         const designSlot = Number(heroSlot.designHeight);
-        if (maxBottom > 0 && designSlot - maxBottom > 0.5) {
-          const delta = designSlot - maxBottom;
+        const delta = heroShortWindowPackDelta(maxBottom, designSlot);
+        if (delta > 0.5) {
           for (const el of anchored) {
             const top = Number.parseFloat(el.style.top || "0");
             el.style.top = (top + delta) + "px";
