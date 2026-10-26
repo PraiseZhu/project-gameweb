@@ -65,7 +65,9 @@ test('renderer source prefers pageBox for paint placement', () => {
   const src = readFileSync(fileURLToPath(new URL('../../templates/figma-render.js', import.meta.url)), 'utf8');
   assert.match(src, /fxPaintBox\(n\)/);
   assert.match(src, /fxOriginForBox/);
-  assert.match(src, /nodeUsesPageBox \? 0 : paintOriginX/);
+  assert.match(src, /coordinateOwnerBox \? \(coordinateOwnerBox\.x \?\? 0\) : paintOriginX/);
+  assert.match(src, /Using 0/);
+  assert.match(src, /double-applies section Y/);
   assert.match(src, /fxToPaintSpace/);
   assert.match(src, /pageBox is already page-local/);
 });

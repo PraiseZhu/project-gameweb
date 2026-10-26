@@ -7,10 +7,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  compareRect,
   expectedDrawBox,
   evaluateInventoryStaticGate,
   runInventoryStaticGate,
 } from '../lib/inventory-static-gate.mjs';
+import { FIGMA_EXPORT_MAX_EDGE, FIGMA_EXPORT_MAX_PIXELS, figmaLegalExport } from '../lib/figma-export-budget.mjs';
 
 const PAGE_BOX = { x: 10, y: 20, w: 200, h: 40 };
 const CANVAS_BOX = { x: 9000, y: 8000, w: 200, h: 40 };
@@ -200,6 +202,10 @@ test('probe script is a shipped skill file, not an optional local extra', () => 
   assert.match(src, /platform === 'mobile' \? 'mobile' : 'desktop'/);
   assert.match(src, /isWholeFrameSliceNode/);
   assert.match(src, /assetEmpty/);
+  assert.match(src, /designBoxFromVisual/);
+  assert.match(src, /elementIsMeasurable/);
+  assert.doesNotMatch(src, /offsetWidth/);
+  assert.doesNotMatch(src, /offsetHeight/);
 });
 
 test('descendants baked into an ancestor PNG are not missing-dom', () => {
@@ -308,4 +314,74 @@ test('sliceExport without box is red, never skipped-ok', () => {
   });
   assert.equal(red.ok, false);
   assert.ok(red.problems.some((line) => line.includes('missing-sliceExport-box')));
+});
+﻿
+test('baked geometry skip still fails a real missing node and a short full-bleed PNG', () => {
+  const pageBox = { x: 0, y: 0, w: 3840, h: 2160 };
+  const missing = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        { id: 'owner', status: 'determined', role: 'img', pageBox: PAGE_BOX, sliceExport: { box: PAGE_BOX, scale: 1, format: 'png', file: 'owner.png' } },
+        { id: 'alone', status: 'determined', role: 'copy', pageBox: { x: 1, y: 2, w: 10, h: 10 }, text: { fontSize: 16 } },
+      ],
+    },
+    measurements: { nodes: { owner: { x: 10, y: 20, w: 200, h: 40, imgBox: PAGE_BOX, bakedDescendants: true } } },
+  });
+  assert.equal(missing.ok, false);
+  assert.ok(missing.problems.some((line) => line.includes('alone') && line.includes('missing-dom')));
+  assert.ok(!missing.problems.some((line) => line.startsWith('owner:') && line.includes('missing-dom')));
+  const short = evaluateInventoryStaticGate({
+    inventory: {
+      schema: 'inventory/v2',
+      nodes: [
+        { id: 'owner', status: 'determined', role: 'img', name: 'img/owner', pageBox, sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'owner.png', bounds: 'render' } },
+        { id: 'plate', status: 'determined', role: 'bg', name: 'bg/pc', parentId: 'owner', ancestorIds: ['owner'], pageBox, sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'plate.png', bounds: 'render' } },
+      ],
+    },
+    measurements: {
+      nodes: {
+        owner: { x: 0, y: 0, w: 3840, h: 2160, imgBox: pageBox, bakedDescendants: true, assetW: 3840, assetH: 2160, assetEmpty: false },
+        plate: { assetW: 1920, assetH: 1080, assetEmpty: false },
+      },
+    },
+  });
+  assert.ok(short.problems.some((line) => line.includes('plate') && line.includes('whole-frame-png-size-mismatch')), (short.problems || []).join('\n'));
+  assert.ok(!short.problems.some((line) => line.includes('plate') && line.includes('missing-dom')));
+});
+
+test('full-bleed plate above the Figma export budget expects the legal uniform size', () => {
+  const pageBox = { x: 0, y: 0, w: 3840, h: 17182 };
+  assert.ok(pageBox.w * pageBox.h > FIGMA_EXPORT_MAX_PIXELS);
+  assert.ok(pageBox.h > FIGMA_EXPORT_MAX_EDGE);
+  const legal = figmaLegalExport(pageBox.w, pageBox.h, 1);
+  assert.equal(legal.capped, true);
+  assert.ok(Math.abs(legal.scale - 0.696) < 0.01);
+  assert.ok(legal.w * legal.h <= FIGMA_EXPORT_MAX_PIXELS);
+  assert.ok(legal.h <= FIGMA_EXPORT_MAX_EDGE);
+  assert.ok(legal.w < pageBox.w && legal.h < pageBox.h);
+  const node = {
+    id: 'bg-long', status: 'determined', role: 'bg', name: 'bg/pc', pageBox,
+    sliceExport: { box: pageBox, scale: 1, format: 'png', file: 'bg.png', bounds: 'render' },
+  };
+  const dom = { x: 0, y: 0, w: pageBox.w, h: pageBox.h, imgBox: pageBox };
+  const run = (asset) => evaluateInventoryStaticGate({
+    inventory: { schema: 'inventory/v2', nodes: [node] },
+    measurements: { nodes: { 'bg-long': { ...dom, ...asset } } },
+  });
+  const old = run({ assetEmpty: false, assetW: 2372, assetH: 10612 });
+  assert.equal(old.ok, false);
+  assert.equal(old.failures[0].reason, 'whole-frame-png-size-mismatch');
+  assert.equal(old.failures[0].expected.w, legal.w);
+  assert.equal(old.failures[0].expected.h, legal.h);
+  assert.equal(old.failures[0].expected.capped, true);
+  assert.equal(old.failures[0].expected.source.w, 3840);
+  assert.notEqual(old.failures[0].expected.w, 3840);
+  const upsampled = run({ assetEmpty: false, assetW: 3840, assetH: 17182 });
+  assert.equal(upsampled.ok, false);
+  assert.equal(upsampled.failures[0].expected.w, legal.w);
+  const exact = run({ assetEmpty: false, assetW: legal.w, assetH: legal.h });
+  assert.equal(exact.ok, true, (exact.problems || []).join('\n'));
+  const empty = run({ assetEmpty: true, assetW: 0, assetH: 0 });
+  assert.ok(empty.problems.some((line) => line.includes('whole-frame-png-empty')));
 });

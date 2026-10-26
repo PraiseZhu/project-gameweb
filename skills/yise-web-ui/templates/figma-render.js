@@ -43,9 +43,14 @@
       coordinateOwnerBox = fxOwnerBoxInNodeSpace(owner, nodeUsesPageBox);
       if (coordinateOwnerBox) break;
     }
+    /* pageBox is page-local. A section stage is already at secY, so a root
+       with no owner pageBox must still subtract that stage origin. Using 0
+       here double-applies section Y (child.y + secY). Canvas origins stay
+       out because callers that still have a canvas parent pass it in owners;
+       the SS6 kv case wins via parent.pageBox at 0. */
     return {
-      originX: coordinateOwnerBox ? (coordinateOwnerBox.x ?? 0) : (nodeUsesPageBox ? 0 : paintOriginX),
-      originY: coordinateOwnerBox ? (coordinateOwnerBox.y ?? 0) : (nodeUsesPageBox ? 0 : paintOriginY),
+      originX: coordinateOwnerBox ? (coordinateOwnerBox.x ?? 0) : paintOriginX,
+      originY: coordinateOwnerBox ? (coordinateOwnerBox.y ?? 0) : paintOriginY,
     };
   }
   function fxGeomReady(item) {
@@ -61,6 +66,19 @@
       w: Number(item.w),
       h: Number(item.h),
     };
+  }
+  /* Inventory TEXT may ship lineHeightPercent (FONT_SIZE_%) without lineHeight px.
+     Figma 100% of fontSize 50 is a 50px line box; leaving CSS line-height unset
+     lets the browser default (~1.5) inflate HEIGHT-hug copy (50→75, 40→60). */
+  function fxLineHeightPx(tx) {
+    const px = Number(tx && tx.lineHeight);
+    if (Number.isFinite(px) && px > 0) return px;
+    const percent = Number(tx && tx.lineHeightPercent);
+    const fontSize = Number(tx && tx.fontSize);
+    if (Number.isFinite(percent) && percent > 0 && Number.isFinite(fontSize) && fontSize > 0) {
+      return fontSize * percent / 100;
+    }
+    return null;
   }
   /* PAINT_SPACE_END */
   /* CONTENT_PROTECTION_BEGIN */
@@ -277,6 +295,10 @@
       if ('fetchPriority' in img && priority === 'high') img.fetchPriority = 'high';
       const settle = () => {
         img.setAttribute('data-asset-state', img.naturalWidth > 0 ? 'loaded' : 'error');
+        /* Geometry that depends on intrinsic size (uniform-downscale fit) must
+           run here too: on resize re-renders a memory-cached image can finish
+           without its own load listener ever firing. */
+        if (img.naturalWidth > 0 && typeof img.__fxOnAssetSettled === 'function') img.__fxOnAssetSettled();
         return Promise.resolve();
       };
       /* An img without src is already `complete` with naturalWidth=0. Install
@@ -339,6 +361,7 @@
         for (const img of images) {
           if (img.getAttribute('data-asset-state') === 'loading' && img.complete) {
             img.setAttribute('data-asset-state', img.naturalWidth > 0 ? 'loaded' : 'error');
+            if (img.naturalWidth > 0 && typeof img.__fxOnAssetSettled === 'function') img.__fxOnAssetSettled();
           }
         }
       });
@@ -1483,6 +1506,7 @@
     const opsInteractionOff = !!(__opsDoc && __opsDoc.documentElement && __opsDoc.documentElement.getAttribute('data-ops-interaction') === '0');
     const interactionLive = enablePageInteraction && !opsInteractionOff;
     frame.setAttribute('data-page-interaction', interactionLive ? 'live' : 'inert');
+    frame.style.touchAction = 'pan-y';
     if (opsInteractionOff) frame.setAttribute('data-ops-interaction', '0');
     /* Content protection applies to both the clean product view and the QA
        shell. It is deliberately installed outside the interaction opt-in:
@@ -1696,7 +1720,12 @@
         throw new Error('figma-render: heroViewportFillVh missing from DESIGN.md YAML');
       }
       const slotH = viewportH * (fillVh / 100);
-      const slotScale = Math.max(k, slotH / firstHeight);
+      /* Official yise.xd.cn 2026-10-23: PC/pad first screen is this 100vh
+         crop. Mobile keeps the Figma hero aspect (k * heroHeight), so
+         390x640/844/1100 stay the same height and do not grow to 100vh. */
+      const mobileHeroAspect = __base === 'mobile';
+      const heroSlotH = mobileHeroAspect ? (k * firstHeight) : slotH;
+      const slotScale = Math.max(k, heroSlotH / firstHeight);
       if (Number.isFinite(slotScale) && slotScale > 0) {
         heroVisualScale = slotScale;
         heroVisualCropLeft = (this._frameWidth / slotScale - designWidth) / 2;
@@ -1710,7 +1739,7 @@
         .filter((entry) => String(entry.id) !== String(sectionId) && Number(entry.meta && entry.meta.y) > Number(first.y))
         .sort((a, b) => Number(a.meta.y) - Number(b.meta.y));
       return this._buildHeroScrollSlot({
-        viewportHeight: viewportH,
+        viewportHeight: mobileHeroAspect ? heroSlotH : viewportH,
         scale: pageStageScale,
         pageOriginY,
         firstSection: { id: sectionId, y: first.y, height: firstHeight },
@@ -2162,33 +2191,6 @@
             if (Number.isFinite(Number(pinEdges[key]))) attrs[attr] = String(pinEdges[key]);
           }
           return pinV;
-        };
-        const applyFixViewportPin = (el, evidenceAttrs, box, k, ctx) => {
-          const pinV = String(evidenceAttrs?.['data-fix-pin-v'] || '').toUpperCase();
-          const pinH = String(evidenceAttrs?.['data-fix-pin-h'] || '').toUpperCase();
-          const viewportH = Number(ctx && ctx.viewport && ctx.viewport.h);
-          const slotH = Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(k) && k > 0
-            ? viewportH / k
-            : 0;
-          const gapBottom = Number(evidenceAttrs?.['data-fix-gap-bottom']);
-          const gapRight = Number(evidenceAttrs?.['data-fix-gap-right']);
-          const boardW = Number(evidenceAttrs?.['data-fix-board-w']);
-          const sourceW = Number(box.w ?? 0);
-          const sourceH = Number(box.h ?? 0);
-          let top;
-          if (pinV === 'BOTTOM' && Number.isFinite(gapBottom) && slotH > 0) {
-            top = slotH - gapBottom - sourceH;
-            el.setAttribute('data-fix-anchor', 'bottom-gap');
-          } else if (pinV === 'CENTER' && slotH > 0) {
-            top = (slotH - sourceH) / 2;
-            el.setAttribute('data-fix-anchor', 'center');
-          }
-          if (pinH === 'RIGHT' && Number.isFinite(gapRight) && Number.isFinite(boardW) && boardW > 0) {
-            el.style.left = (boardW - gapRight - sourceW) + 'px';
-          } else if (pinH === 'CENTER' && Number.isFinite(boardW) && boardW > 0) {
-            el.style.left = ((boardW - sourceW) / 2) + 'px';
-          }
-          return top;
         };
         const byId = new Map(items.map((n) => [id(n), n]));
         /* Fixed overlay roots are rendered in the page stage, while their
@@ -2668,8 +2670,9 @@
           if (calendarNowLabel(n, p)) {
             attrs['data-calendar-now'] = 'true';
             attrs['data-calendar-now-state'] = 'today';
-            attrs['data-calendar-now-evidence'] = 'dyn-today-date-runtime-swap';
+            attrs['data-calendar-now-evidence'] = 'dyn-today-date-track';
             attrs['data-btn-press'] = 'inert';
+            attrs['data-calendar-return'] = 'pending-named-tab';
           }
           /* Independent btn/ with a real normal+highlight COMPONENT_SET is not a
              missing switch. Directory `btn/导航状态` is that family. `btn/角色头像`
@@ -3147,6 +3150,35 @@
           evidence: explicitOpen && !explicitFrame ? 'truth-open-flow' : explicitFrame ? (hasBoundedOwner ? 'truth-role-and-owner-box' : 'truth-framed-or-clipped') : openFlow ? 'autoResize-and-ancestor-evidence' : 'default-fixed',
         };
       };
+      /* Lives next to paint, not inside interactionBridge: paint pins fix/
+         overlays and would ReferenceError otherwise. */
+      const applyFixViewportPin = (el, evidenceAttrs, box, k, ctx) => {
+        const pinV = String(evidenceAttrs?.['data-fix-pin-v'] || '').toUpperCase();
+        const pinH = String(evidenceAttrs?.['data-fix-pin-h'] || '').toUpperCase();
+        const viewportH = Number(ctx && ctx.viewport && ctx.viewport.h);
+        const slotH = Number.isFinite(viewportH) && viewportH > 0 && Number.isFinite(k) && k > 0
+          ? viewportH / k
+          : 0;
+        const gapBottom = Number(evidenceAttrs?.['data-fix-gap-bottom']);
+        const gapRight = Number(evidenceAttrs?.['data-fix-gap-right']);
+        const boardW = Number(evidenceAttrs?.['data-fix-board-w']);
+        const sourceW = Number(box.w ?? 0);
+        const sourceH = Number(box.h ?? 0);
+        let top;
+        if (pinV === 'BOTTOM' && Number.isFinite(gapBottom) && slotH > 0) {
+          top = slotH - gapBottom - sourceH;
+          el.setAttribute('data-fix-anchor', 'bottom-gap');
+        } else if (pinV === 'CENTER' && slotH > 0) {
+          top = (slotH - sourceH) / 2;
+          el.setAttribute('data-fix-anchor', 'center');
+        }
+        if (pinH === 'RIGHT' && Number.isFinite(gapRight) && Number.isFinite(boardW) && boardW > 0) {
+          el.style.left = (boardW - gapRight - sourceW) + 'px';
+        } else if (pinH === 'CENTER' && Number.isFinite(boardW) && boardW > 0) {
+          el.style.left = ((boardW - sourceW) / 2) + 'px';
+        }
+        return top;
+      };
       const paint = (list, rawList, container, options = {}) => {
        const paintOriginX = options.originX ?? secX;
        const paintOriginY = options.originY ?? secY;
@@ -3166,7 +3198,8 @@
           block's stretched top instead of being stretched themselves, or a
           top-bar button label drifts out of its button frame. heroUiHalf is
           the generic top/bottom-chrome split at half the Figma hero height. */
-       const heroUiBlocks = isHeroStage && pageStageMode && heroUiYRatio > 1.001 ? [] : null;
+       const heroUiBlocks = isHeroStage && heroSlot
+         && Math.abs(Number(heroSlot.designHeight || 0) - Number(heroSlot.heroHeight || 0)) > 0.5 ? [] : null;
        const heroUiHalf = heroUiBlocks && heroSlot ? Number(heroSlot.heroHeight || 0) / 2 : Infinity;
        const heroUiOwnerBlock = (blocks, centerX, centerY) => {
          let best = null;
@@ -3660,8 +3693,9 @@
           const mainAxisOffset = parentAutoLayoutMode === 'HORIZONTAL'
             ? Number(box.x) - Number(parent?.box?.x)
             : Number(box.y) - Number(parent?.box?.y);
-          const sourceParticipatesInFlow = parentAutoLayoutMode === 'HORIZONTAL'
-            || (Number.isFinite(mainAxisOffset) && mainAxisOffset <= 0.5
+          const sourceParticipatesInFlow = (parentAutoLayoutMode === 'HORIZONTAL'
+              && Number.isFinite(mainAxisOffset) && mainAxisOffset >= -0.5 && mainAxisOffset <= 0.5)
+            || (parentAutoLayoutMode === 'VERTICAL' && Number.isFinite(mainAxisOffset) && mainAxisOffset <= 0.5
               && (mainAxisOffset >= -0.5 || childLayoutGrow > 0 || childLayoutSizing === 'FILL'));
           const participatesInAutoLayout = inAutoLayout && childLayoutAlign === 'INHERIT' && sourceParticipatesInFlow;
           if (participatesInAutoLayout) {
@@ -3774,6 +3808,18 @@
           el.style.left = 'auto';
           el.style.top = 'auto';
           el.style.flexShrink = '0';
+          if (String(__u(parentLayout.counterAxisAlignItems) || '').toUpperCase() === 'CENTER') {
+            const childSpan = parentAutoLayoutMode === 'HORIZONTAL' ? Number(box.h) : Number(box.w);
+            const childStart = parentAutoLayoutMode === 'HORIZONTAL' ? Number(box.y) : Number(box.x);
+            const ownerSpan = parentAutoLayoutMode === 'HORIZONTAL' ? Number(parent.box?.h) : Number(parent.box?.w);
+            const ownerStart = parentAutoLayoutMode === 'HORIZONTAL' ? Number(parent.box?.y) : Number(parent.box?.x);
+            if ([childSpan, childStart, ownerSpan, ownerStart].every(Number.isFinite)) {
+              const centerOffset = (childStart - ownerStart) - (ownerSpan - childSpan) / 2;
+              if (parentAutoLayoutMode === 'HORIZONTAL') el.style.marginTop = centerOffset + 'px';
+              else el.style.marginLeft = centerOffset + 'px';
+              el.setAttribute('data-auto-layout-source-center-offset', String(centerOffset));
+            }
+          }
           if (hugFillTextFixedSiblings && isText && childLayoutSizing === 'FILL') {
             /* CSS flex-grow inside max-content is circular. The Figma HUG
                response is the rendered text's intrinsic track with the source
@@ -3834,9 +3880,20 @@
                Figma distance above the first-screen bottom edge — pinned to
                the lower first screen at every viewport instead of drifting
                to the middle. */
-            heroUiTop = sourceBottom > heroUiHalf
-              ? sourceBottom * heroUiYRatio - sourceH
-              : sourceTop * heroUiYRatio;
+            /* Lower-half blocks keep the Figma gap above the first-screen
+               bottom (gap = heroHeight - sourceBottom, screen gap = gap * k).
+               That is sourceTop plus the extra slot, not sourceBottom * slot/hero
+               and not a hardcoded season percentage. Upper-half chrome stays
+               on source Y. */
+            const designSlotH = Number(heroSlot && heroSlot.designHeight) || 0;
+            const heroDesignH = Number(heroSlot && heroSlot.heroHeight) || 0;
+            const slotExtra = designSlotH - heroDesignH;
+            let pinnedTop = sourceBottom > heroUiHalf ? sourceTop + slotExtra : sourceTop;
+            if (sourceBottom > heroUiHalf && designSlotH > 0) {
+              const maxTop = Math.max(0, designSlotH - sourceH);
+              pinnedTop = Math.min(Math.max(0, pinnedTop), maxTop);
+            }
+            heroUiTop = pinnedTop;
             const best = heroUiOwnerBlock(heroUiBlocks, localX + (box.w ?? 0) / 2, sourceTop + sourceH / 2);
             if (best) {
               heroUiTop = best.stretchedTop + (sourceTop - best.y);
@@ -3854,7 +3911,7 @@
           el.style.top = heroUiTop + 'px';
           if (heroUiTop !== sourceTop && !(pinViewport && pfx === 'fix')) {
             el.setAttribute('data-hero-ui-y', String(heroUiYRatio));
-            el.setAttribute('data-hero-ui-anchor', heroUiAnchored ? 'owner-block' : 'slot-ratio');
+            el.setAttribute('data-hero-ui-anchor', heroUiAnchored ? 'owner-block' : 'bottom-gap');
           }
         }
         /* Cover-crop the first-screen visual plane (KV + long bg/*) to 100vh.
@@ -3871,12 +3928,30 @@
           const isBg = /^bg(?:\/|$)/i.test(layerName);
           const isKv = /^kv(?:\/|$)/i.test(layerName);
           if (isFirstScreenVisual && (isBg || isKv)) {
-            if (planeRatio > 1.001) {
+            const boxW = Number(box.w) || 0;
+            const boxH = Number(box.h) || 0;
+            const heroPlate = boxH > 0 && boxH <= Number(heroSlot.heroHeight || boxH) * 1.05;
+            const windowH = Number(heroSlot.designHeight) || boxH;
+            const needsScale = planeRatio > 1.001;
+            const visualRatio = needsScale ? planeRatio : 1;
+            const needsVerticalCenter = heroPlate && Math.abs(windowH - boxH * visualRatio) > 1;
+            if (needsScale || needsVerticalCenter) {
+              /* Single cover. Do not also zoom the paint layer by planeRatio.
+                 A short wide window keeps planeRatio at 1 and still centers
+                 the hero plate vertically, or the title's backdrop crops off
+                 the bottom. A long bg/* stays top-aligned. */
               const planeLeft = Number.parseFloat(el.style.left || '0') || 0;
-              el.style.left = (planeLeft + heroVisualCropLeft) + 'px';
-              el.style.transformOrigin = '0 0';
-              el.style.transform = ((el.style.transform ? el.style.transform + ' ' : '') + 'scale(' + planeRatio + ')').trim();
-              el.setAttribute('data-hero-visual-plane-scale', String(planeRatio));
+              const planeTop = Number.parseFloat(el.style.top || '0') || 0;
+              if (needsScale) {
+                el.style.left = (planeLeft - boxW * (planeRatio - 1) / 2) + 'px';
+                el.style.transformOrigin = '0 0';
+                el.style.transform = ((el.style.transform ? el.style.transform + ' ' : '') + 'scale(' + planeRatio + ')').trim();
+                el.setAttribute('data-hero-visual-plane-scale', String(planeRatio));
+              }
+              if (needsVerticalCenter) {
+                el.style.top = (planeTop + (windowH - boxH * visualRatio) / 2) + 'px';
+              }
+              el.setAttribute('data-kv-cover-plane', 'cover-crop');
             }
             const sourceH = Number(box.h);
             const clipH = heroCropWindowDesign > 0 ? Math.min(sourceH, heroCropWindowDesign) : sourceH;
@@ -4075,7 +4150,12 @@
           el.style.overflow = 'hidden';
           el.style.overflowX = 'hidden';
           el.style.overflowY = 'hidden';
-          el.style.touchAction = 'pan-x';
+          /* The track moves by pointer drag, so the browser must NOT own the
+             horizontal pan: pan-x hands it over and fires pointercancel after
+             a few moves (touch swipe stalls). pan-y matches the official
+             calendar's native feel: horizontal swipe scrolls dates, vertical
+             swipe still scrolls the page. */
+          el.style.touchAction = 'pan-y';
           el.style.userSelect = 'none';
           el.style.webkitUserSelect = 'none';
           el.style.webkitTouchCallout = 'none';
@@ -4207,7 +4287,9 @@
 
         if (isText) {
           el.classList.add('fx-t');
-          const tx = n.text || {};
+          const tx = Object.assign({}, n.text || {});
+          const resolvedLineHeight = fxLineHeightPx(tx);
+          if (resolvedLineHeight != null) tx.lineHeight = resolvedLineHeight;
           const semantic = textContext(n);
           const constraint = textContainerConstraint(n, tx, box, semantic, parent, directOwnerBox,
             !!directOwnerEl && renderedDirectId === String(nodeParentId(n) || ''), directOwnerNode,
@@ -4981,6 +5063,21 @@
               const placedBox = exportBox || sliceBox;
               const lang = String((ctx && ctx.prefs && ctx.prefs.lang) || 'zh-CN');
               const zhStatic = lang === 'zh-CN';
+              /* figma-assets caps oversized owners under Figma's pixel budget and
+                 exports them uniformly downscaled (manifest exportScale < 1).
+                 object-fit:none would then paint only the top-left slice of the
+                 box. A uniform downscale is the complete composite, so map it
+                 back onto its box; a non-uniform ratio stays unscaled. */
+              const fitUniformDownscale = (w, h) => {
+                const nw = Number(img.naturalWidth), nh = Number(img.naturalHeight);
+                const bw = Number(w), bh = Number(h);
+                if (![nw, nh, bw, bh].every((v) => Number.isFinite(v) && v > 0)) return false;
+                const rx = nw / bw, ry = nh / bh;
+                if (rx >= 0.999 || Math.abs(rx - ry) > 0.002 * Math.max(rx, ry)) return false;
+                img.style.objectFit = 'fill';
+                img.setAttribute('data-asset-uniform-downscale', rx.toFixed(6));
+                return true;
+              };
               if (placedBox) {
                 img.style.left = ((placedBox.x ?? box.x ?? 0) - (box.x ?? 0)) + 'px';
                 img.style.top = ((placedBox.y ?? box.y ?? 0) - (box.y ?? 0)) + 'px';
@@ -5012,7 +5109,7 @@
                 const fitDeliveredCanvas = () => {
                   const nw = Number(img.naturalWidth), nh = Number(img.naturalHeight);
                   const ow = Number(box.w), oh = Number(box.h);
-                  const rw = Number(exportBox.w), rh = Number(exportBox.h);
+                  const rw = Number(placedBox.w), rh = Number(placedBox.h);
                   if (![nw, nh, ow, oh, rw, rh].every(Number.isFinite)
                     || nw <= 0 || nh <= 0 || ow <= 0 || oh <= 0 || rw <= 0 || rh <= 0) return;
                   const aspectDistance = (w, h) => Math.abs((nw / nh) - (w / h));
@@ -5024,9 +5121,11 @@
                     fillOwnerCanvas('fill', 'owner-canvas-from-delivered-png');
                   } else {
                     el.setAttribute('data-asset-bounds-resolved', 'render-canvas-from-delivered-png');
+                    fitUniformDownscale(placedBox.w ?? box.w, placedBox.h ?? box.h);
                   }
                 };
                 img.addEventListener('load', fitDeliveredCanvas, { once: true });
+                img.__fxOnAssetSettled = fitDeliveredCanvas;
               } else if (zhStatic) {
                 img.style.top = '0';
                 img.style.left = '0';
@@ -5034,6 +5133,8 @@
                 img.style.height = (box.h ?? 0) + 'px';
                 img.style.objectFit = 'none';
                 el.setAttribute('data-asset-bounds-resolved', 'owner-box-zh-cn');
+                img.__fxOnAssetSettled = () => fitUniformDownscale(box.w, box.h);
+                img.addEventListener('load', img.__fxOnAssetSettled, { once: true });
               } else {
                 img.style.top = '0';
                 img.style.left = '0';
@@ -5119,10 +5220,26 @@
             tail.style.transform = '';
             tail.style.left = ((box.x ?? 0) - originX) + 'px';
             tail.style.clipPath = 'inset(' + clipH + 'px 0 0 0)';
-            tail.style.top = ((Number.parseFloat(el.style.top) || 0) + heroLayoutOffsetDesign) + 'px';
+            tail.style.top = (((box.y ?? 0) - originY) + heroLayoutOffsetDesign) + 'px';
             tail.removeAttribute('data-hero-visual-plane-scale');
+            tail.removeAttribute('data-kv-cover-plane');
             tail.setAttribute('data-hero-visual-plane', 'bg-tail');
-            container.appendChild(tail);
+            const headImg = el.querySelector && el.querySelector('img.fx-img');
+            const tailImg = tail.querySelector && tail.querySelector('img.fx-img');
+            if (headImg && tailImg) {
+              const syncTailFit = () => {
+                if (headImg.style.objectFit) tailImg.style.objectFit = headImg.style.objectFit;
+                if (headImg.style.objectPosition) tailImg.style.objectPosition = headImg.style.objectPosition;
+                const down = headImg.getAttribute('data-asset-uniform-downscale');
+                if (down) tailImg.setAttribute('data-asset-uniform-downscale', down);
+              };
+              if (headImg.complete && headImg.naturalWidth) syncTailFit();
+              else headImg.addEventListener('load', syncTailFit, { once: true });
+            }
+            const tailHost = container && container.getAttribute && container.getAttribute('data-kv-cover-plane') && container.parentElement
+              ? container.parentElement
+              : container;
+            tailHost.appendChild(tail);
           }
         }
         const record = {
@@ -5218,6 +5335,20 @@
         base.style.position = 'absolute';
         base.style.left = '0'; base.style.top = '0';
         base.style.width = '100%'; base.style.height = '100%';
+        /* The owner's auto-layout children were painted as flex items. Moving
+           them into a block wrapper drops the owner's counter-axis CENTER
+           (708 owner, 700 child lands at x+0 instead of x+4), so the base
+           layer carries the owner's flex track. */
+        if (owner.el.hasAttribute('data-auto-layout')) {
+          const s = owner.el.style;
+          base.style.display = s.display;
+          base.style.flexFlow = s.flexFlow;
+          base.style.justifyContent = s.justifyContent;
+          base.style.alignItems = s.alignItems;
+          base.style.gap = s.gap;
+          base.style.padding = s.padding;
+          base.style.boxSizing = s.boxSizing;
+        }
         const originalChildren = [...owner.el.children];
         for (const child of originalChildren) base.appendChild(child);
         owner.el.appendChild(base);
@@ -5738,15 +5869,12 @@
               const rootName = rootNameById.get(String(rootId)) || '';
               const isKvRoot = /^kv(?:\/|$)/i.test(rootName);
               if (isKvRoot && heroSlot && pageStageScale > 0) {
-                const kvRatio = heroVisualScale / pageStageScale;
                 const kvClipH = Number(heroSlot.designHeight) || Number(heroSlot.heroHeight) || 0;
-                layer.style.zoom = String(kvRatio);
-                layer.style.left = heroVisualCropLeft + 'px';
+                layer.style.left = '0px';
                 layer.style.top = '0';
                 layer.style.width = designWidth + 'px';
                 if (kvClipH > 0) layer.style.height = kvClipH + 'px';
                 layer.style.overflow = 'hidden';
-                layer.style.transformOrigin = '0 0';
                 layer.setAttribute('data-kv-cover-plane', 'cover-crop');
                 layer.setAttribute('data-hero-visual-scale', String(heroVisualScale));
                 layer.setAttribute('data-hero-visual-crop-left', String(heroVisualCropLeft));
@@ -6729,13 +6857,20 @@
               || ev.target.closest('[data-btn-name="多语言按钮"]'))
             : null;
           const calendarReturn = ev.target && ev.target.closest
-            ? ev.target.closest('[data-calendar-now="true"][data-calendar-now-state="return-today"]')
+            ? ev.target.closest('[data-calendar-return-control="true"]')
             : null;
           if (calendarReturn) {
             const host = calendarScrollHost(calendarReturn);
             const surface = host && hscrollSurfaceOf(host);
-            if (surface) setHscrollOffset(surface, 0, host);
-            setCalendarNowState(calendarReturn, 'today');
+            const markerId = calendarReturn.getAttribute('data-calendar-for');
+            const marker = markerId && frame.querySelector('[data-node="' + markerId + '"]');
+            if (surface && host && marker) {
+              const scale = hscrollScreenScale(host);
+              const hostRect = host.getBoundingClientRect();
+              const markerRect = marker.getBoundingClientRect();
+              const deltaScreen = (markerRect.left + markerRect.width / 2) - (hostRect.left + hostRect.width / 2);
+              setHscrollOffset(surface, hscrollOffsetOf(surface) + deltaScreen / scale, host);
+            }
             ev.preventDefault();
             ev.stopPropagation();
             return;
@@ -7040,6 +7175,15 @@
           return direct.length ? direct : [...host.querySelectorAll('[data-hscroll-surface="true"], [data-hscroll-overflow-child="true"]')];
         };
         const hscrollSurfaceOf = (host) => hscrollSurfacesOf(host)[0] || null;
+        /* Pointer/wheel deltas are screen px; the track offset is design px
+           inside the zoomed stage. Without this the dates trail the finger
+           (official calendar scrolls 1:1 with the pointer). */
+        const hscrollScreenScale = (host) => {
+          const shown = host && host.getBoundingClientRect ? host.getBoundingClientRect().width : 0;
+          const layout = Number(host && host.offsetWidth);
+          const k = shown > 0 && layout > 0 ? shown / layout : 1;
+          return Number.isFinite(k) && k > 0 ? k : 1;
+        };
         const hscrollOffsetOf = (surface) => {
           const left = Number.parseFloat(surface && surface.style.left || '0');
           if (!Number.isFinite(left)) return 0;
@@ -7086,10 +7230,33 @@
           if (host) syncCalendarNowFromHost(host);
           return next;
         };
-        const pad2 = (value) => String(value).padStart(2, '0');
-        const calendarTodayStamp = () => {
-          const now = new Date();
-          return pad2(now.getMonth() + 1) + '/' + pad2(now.getDate());
+        const calendarDateText = (root) => [...(root && root.querySelectorAll ? root.querySelectorAll('*') : [])].find((node) => {
+          const value = (node.textContent || '').trim();
+          return node.childElementCount === 0 && /^\d{1,2}\/\d{1,2}$/.test(value);
+        }) || null;
+        const calendarParts = (marker) => {
+          const textNode = calendarDateText(marker);
+          const named = [...(marker && marker.children || [])].filter((el) => {
+            const name = el.getAttribute && (el.getAttribute('data-node-name') || el.getAttribute('data-name'));
+            return name && el !== textNode;
+          });
+          if (!textNode) return { pending: true };
+          const textRect = textNode.getBoundingClientRect();
+          const containsText = (el) => {
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0
+              && rect.left <= textRect.left + 1 && rect.right >= textRect.right - 1
+              && rect.top <= textRect.top + 1 && rect.bottom >= textRect.bottom - 1;
+          };
+          const tab = named.find(containsText) || null;
+          const line = named.find((el) => {
+            if (el === tab) return false;
+            const rect = el.getBoundingClientRect();
+            return rect.height > rect.width * 3;
+          }) || null;
+          if (!tab || !line) return { pending: true, textNode };
+          const lineRect = line.getBoundingClientRect();
+          return { pending: false, textNode, tab, line, markerX: lineRect.left + lineRect.width / 2 };
         };
         const calendarScrollHost = (el) => {
           if (!el) return null;
@@ -7113,25 +7280,66 @@
           }
           return [];
         };
-        const setCalendarNowState = (el, state) => {
-          const next = state === 'return-today' ? 'return-today' : 'today';
-          for (const control of calendarNowControlsFor(el)) {
-            control.setAttribute('data-calendar-now-state', next);
-            if (next === 'return-today') {
-              control.setAttribute('data-btn-press', 'true');
-              control.setAttribute('role', 'button');
-              control.setAttribute('tabindex', '0');
-              control.removeAttribute('aria-disabled');
-            } else {
-              control.setAttribute('data-btn-press', 'inert');
-              control.removeAttribute('role');
-              control.removeAttribute('tabindex');
+        const syncCalendarMarker = (host) => {
+          const marker = calendarNowControlsFor(host)[0] || null;
+          if (!marker || !host) return;
+          marker.setAttribute('data-calendar-now-state', 'today');
+          marker.setAttribute('data-btn-press', 'inert');
+          marker.removeAttribute('role');
+          marker.removeAttribute('tabindex');
+          const surface = hscrollSurfaceOf(host);
+          const offset = hscrollOffsetValue(host);
+          if (surface && !surface.contains(marker)) {
+            const currentLeft = Number.parseFloat(marker.style.left || '0');
+            let rest = Number(marker.getAttribute('data-calendar-rest-left'));
+            if (!Number.isFinite(rest)) {
+              rest = Number.isFinite(currentLeft) ? currentLeft : 0;
+              marker.setAttribute('data-calendar-rest-left', String(rest));
             }
-            const textHost = [...control.querySelectorAll('*')].find((node) => {
-              const text = (node.textContent || '').trim();
-              return node.childElementCount === 0 && (/^\d{1,2}\/\d{1,2}$/.test(text) || text === '返回');
-            });
-            if (textHost) textHost.textContent = next === 'today' ? calendarTodayStamp() : '返回';
+            marker.style.left = (rest - offset) + 'px';
+          }
+          const parts = calendarParts(marker);
+          const markerId = marker.getAttribute('data-node') || '';
+          const existing = host.querySelector('[data-calendar-return-control="true"][data-calendar-for="' + markerId + '"]');
+          if (parts.pending) {
+            marker.setAttribute('data-calendar-return', 'pending-named-tab');
+            if (existing) existing.remove();
+            return;
+          }
+          marker.setAttribute('data-calendar-return', 'named-tab');
+          const hostRect = host.getBoundingClientRect();
+          const inside = parts.markerX >= hostRect.left - 0.5 && parts.markerX <= hostRect.right + 0.5;
+          if (inside) {
+            if (existing) existing.remove();
+            return;
+          }
+          const control = existing || parts.tab.cloneNode(true);
+          if (!existing) {
+            control.removeAttribute('data-node');
+            control.removeAttribute('id');
+            for (const child of control.querySelectorAll('[data-node]')) child.removeAttribute('data-node');
+            host.appendChild(control);
+          }
+          const copy = calendarDateText(control);
+          if (copy) copy.textContent = '返回';
+          control.setAttribute('data-calendar-return-control', 'true');
+          control.setAttribute('data-calendar-for', markerId);
+          control.setAttribute('data-calendar-now-state', 'return-today');
+          control.setAttribute('data-btn-press', 'true');
+          control.setAttribute('role', 'button');
+          control.setAttribute('tabindex', '0');
+          const scale = hscrollScreenScale(host);
+          const tabRect = parts.tab.getBoundingClientRect();
+          control.style.position = 'absolute';
+          control.style.top = ((tabRect.top - hostRect.top) / scale) + 'px';
+          control.style.margin = '0';
+          control.style.zIndex = '6';
+          if (parts.markerX < hostRect.left) {
+            control.style.left = '0px';
+            control.style.right = 'auto';
+          } else {
+            control.style.left = 'auto';
+            control.style.right = '0px';
           }
         };
         const hscrollOffsetValue = (host) => {
@@ -7141,7 +7349,7 @@
         };
         const syncCalendarNowFromHost = (host) => {
           if (!host) return;
-          setCalendarNowState(host, hscrollOffsetValue(host) > 1 ? 'return-today' : 'today');
+          syncCalendarMarker(host);
         };
         const stepHscroll = (host, action) => {
           if (!host) return;
@@ -7155,7 +7363,9 @@
           el.style.userSelect = 'none';
           el.style.webkitUserSelect = 'none';
           el.style.webkitTouchCallout = 'none';
-          el.style.touchAction = el.getAttribute('data-hscroll') ? 'pan-x' : 'pan-y';
+          el.style.touchAction = 'pan-y';
+          /* Official calendar shows a grab cursor on its drag-scroll window. */
+          if (el.getAttribute('data-hscroll')) el.style.cursor = 'grab';
           for (const img of el.querySelectorAll('img')) {
             img.setAttribute('draggable', 'false');
             img.style.userSelect = 'none';
@@ -7176,11 +7386,13 @@
             ev.preventDefault();
           }, true);
         }
-        for (const control of frame.querySelectorAll('[data-calendar-now="true"]')) {
-          setCalendarNowState(control, 'today');
-        }
+        for (const host of frame.querySelectorAll('[data-hscroll]')) syncCalendarMarker(host);
         frame.addEventListener('pointerdown', (ev) => {
-          const host = ev.target && ev.target.closest ? ev.target.closest('[data-hscroll][data-hscroll-drag="true"]') : null;
+          const under = (Number.isFinite(ev.clientX) && document.elementsFromPoint)
+            ? document.elementsFromPoint(ev.clientX, ev.clientY) : [];
+          const host = (ev.target && ev.target.closest && ev.target.closest('[data-hscroll][data-hscroll-drag="true"]'))
+            || under.map((el) => el.closest && el.closest('[data-hscroll][data-hscroll-drag="true"]')).find(Boolean)
+            || null;
           const swipeOwner = !host ? switchSwipeOwner(ev.target) : null;
           if (!host && !swipeOwner) return;
           /* Synthetic Playwright PointerEvents omit isPrimary. Treat an
@@ -7194,22 +7406,32 @@
             try { window.getSelection().removeAllRanges(); } catch { /* ignore */ }
           }
           drag = host
-            ? { kind: 'hscroll', host, surface, x: ev.clientX, left: hscrollOffsetOf(surface), moved: false }
-            : { kind: 'switch-swipe', owner: swipeOwner, x: ev.clientX, moved: false };
-          const captureEl = host || swipeOwner;
-          if (captureEl && captureEl.setPointerCapture) {
-            try { captureEl.setPointerCapture(ev.pointerId); } catch { /* synthetic/unsupported pointer stream */ }
-          }
+            ? { kind: 'hscroll', host, surface, pointerId: ev.pointerId, x: ev.clientX, y: ev.clientY, left: hscrollOffsetOf(surface), k: hscrollScreenScale(host), moved: false, axis: null }
+            : { kind: 'switch-swipe', owner: swipeOwner, pointerId: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false, axis: null };
         });
         frame.addEventListener('pointermove', (ev) => {
-          if (!drag) return;
+          if (!drag || (ev.pointerId != null && drag.pointerId != null && ev.pointerId !== drag.pointerId)) return;
           const delta = ev.clientX - drag.x;
+          const deltaY = ev.clientY - (Number.isFinite(drag.y) ? drag.y : ev.clientY);
+          if (!drag.axis) {
+            if (Math.abs(delta) < 6 && Math.abs(deltaY) < 6) return;
+            drag.axis = Math.abs(delta) > Math.abs(deltaY) ? 'x' : 'y';
+            if (drag.axis === 'y') {
+              drag = null;
+              return;
+            }
+            const captureEl = drag.kind === 'hscroll' ? drag.host : drag.owner;
+            if (captureEl && captureEl.setPointerCapture) {
+              try { captureEl.setPointerCapture(ev.pointerId); } catch { /* synthetic/unsupported pointer stream */ }
+            }
+          }
+          if (drag.axis !== 'x') return;
           if (Math.abs(delta) > 5) {
             drag.moved = true;
             if (drag.kind === 'hscroll') drag.host.setAttribute('data-hscroll-dragging', 'true');
             ev.preventDefault();
           }
-          if (drag.kind === 'hscroll') setHscrollOffset(drag.surface, drag.left - delta, drag.host);
+          if (drag.kind === 'hscroll') setHscrollOffset(drag.surface, drag.left - delta / drag.k, drag.host);
         });
         const endHscrollDrag = (ev) => {
           if (!drag) return;
@@ -7243,9 +7465,10 @@
           if (!surface) return;
           const max = Number(surface.getAttribute('data-hscroll-max'));
           if (!Number.isFinite(max) || max <= 0) return;
-          const delta = Math.abs(ev.deltaX) > Math.abs(ev.deltaY) ? ev.deltaX : ev.deltaY;
+          if (!(Math.abs(ev.deltaX) > Math.abs(ev.deltaY))) return;
+          const delta = ev.deltaX;
           if (!delta) return;
-          setHscrollOffset(surface, hscrollOffsetOf(surface) + delta, host);
+          setHscrollOffset(surface, hscrollOffsetOf(surface) + delta / hscrollScreenScale(host), host);
           ev.preventDefault();
         }, { passive: false });
         const currentSectionNumber = () => {
@@ -7337,6 +7560,27 @@
       }
       if (typeof frame.__fxSyncFixedNavigation === 'function') frame.__fxSyncFixedNavigation();
       this._installHeroScrollSlot(frame, heroSlot);
+      if (heroSlot && Number(heroSlot.designHeight) + 0.5 < Number(heroSlot.heroHeight)
+        && typeof frame.querySelectorAll === "function") {
+        const anchored = [...frame.querySelectorAll("[data-hero-ui-anchor]")].filter((el) => {
+          return !(el.parentElement && el.parentElement.closest("[data-hero-ui-anchor]"));
+        });
+        let maxBottom = 0;
+        for (const el of anchored) {
+          const top = Number.parseFloat(el.style.top || "0");
+          const height = Number.parseFloat(el.style.height || "0");
+          if (Number.isFinite(top) && Number.isFinite(height)) maxBottom = Math.max(maxBottom, top + height);
+        }
+        const designSlot = Number(heroSlot.designHeight);
+        if (maxBottom > 0 && designSlot - maxBottom > 0.5) {
+          const delta = designSlot - maxBottom;
+          for (const el of anchored) {
+            const top = Number.parseFloat(el.style.top || "0");
+            el.style.top = (top + delta) + "px";
+            el.setAttribute("data-hero-ui-short-pack", String(Math.round(delta)));
+          }
+        }
+      }
       this._installMotionAdapter(frame, motionAdapter);
       this._installAssetScheduler(frame);
 

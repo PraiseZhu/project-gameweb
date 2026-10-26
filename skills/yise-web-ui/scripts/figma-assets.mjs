@@ -46,6 +46,8 @@ import { pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 import { encodeWebpBatch, planWebpDelivery } from './lib/encode-webp.mjs';
 import { pickSliceNodes } from './lib/figma-slice-nodes.mjs';
+import { figmaLegalExport } from './lib/figma-export-budget.mjs';
+import { decideAssetResume, partialOnlyRefusal } from './lib/figma-asset-resume.mjs';
 
 export { pickSliceNodes, planWebpDelivery };
 
@@ -169,12 +171,21 @@ async function main() {
   const designVersion = truth.design?.fileVersion ?? null;
 
   let picks = pickSliceNodes(truth, { minDim: spec.figma?.sliceMinDimPx ?? 24 });
+  const manifestPath = join(demoDir, 'assets-manifest.json');
+  let onDiskManifest = null;
   if (a.only && a.only.length) {
+    if (existsSync(manifestPath)) onDiskManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     const only = new Set(a.only);
     picks = picks.filter((p) => only.has(p.nodeId));
     const found = new Set(picks.map((p) => p.nodeId));
     const missing = [...only].filter((id) => !found.has(id));
     if (missing.length) fail(`--only 里有 nodeId 不在切图候选中：${missing.join(',')}`);
+    const refusal = partialOnlyRefusal({
+      designVersion,
+      previousVersion: onDiskManifest ? onDiskManifest.designVersion : null,
+      hasManifest: !!onDiskManifest,
+    });
+    if (refusal) fail(refusal);
   }
   const out = {
     ok: true, designVersion, scale,
@@ -189,7 +200,7 @@ async function main() {
     return;
   }
 
-  const token = readToken(demoDir);
+  if (!onDiskManifest && existsSync(manifestPath)) onDiskManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const assetsDir = join(demoDir, 'assets');
   mkdirSync(assetsDir, { recursive: true });
 
@@ -199,31 +210,106 @@ async function main() {
    *
    * Figma 会在超出其导出像素预算时静默等比缩小超长 PNG。若仍按请求倍率期待
    * 原尺寸，清单会报“截断”；更糟的是渲染器不知道来源已缩放，容易把非等比结果
-   * 当作可用图拉伸。这里提前将每个请求限制在 24MP：导出仍是完整、等比的 Figma
-   * 合成图，manifest 的 expectedPx 与实际请求同源，浏览器只做等比放大。24MP 对
-   * 3840×17253 的整页背景约为 2314×10393，已高于 1920 PC 实际显示宽度。
-   * 这适用于任何超长 owner，不依赖 Etheria 的 node id 或具体高度。 */
-  const MAX_EXPORT_PIXELS = 24 * 1024 * 1024;
+   * 当作可用图拉伸。请求前用 figma-export-budget.mjs 把倍率收进 32MP 与单边 16384。
+   * 导出仍是完整等比的 Figma 合成图，manifest 的 expectedPx 与这次请求同源。
+   * 浏览器只把这张完整图等比铺回稿框，不把较低的文件本地放大成 1 倍像素。
+   * 3840x17182 超过这两个上限，合法结果约 2674x11966，不是 3840x17182。 */
   const dw = spec.figma?.frames?.pc?.designWidth ?? 3840;
   for (const p of picks) {
     const baseScale = (p.w >= dw * 0.9) ? Math.min(scale, 1) : scale;
-    const pixelSafeScale = p.w > 0 && p.h > 0
-      ? Math.sqrt(MAX_EXPORT_PIXELS / (p.w * p.h))
-      : baseScale;
-    p.scale = Math.min(baseScale, pixelSafeScale);
+    const expectBox = p.exportBounds === 'render' && p.exportBox ? p.exportBox : p;
+    p.scale = figmaLegalExport(expectBox.w ?? p.w, expectBox.h ?? p.h, baseScale).scale;
   }
   out.scaleByNode = picks.reduce((m, p) => ((m['x' + p.scale] = (m['x' + p.scale] || 0) + 1), m), {});
+
+  function expectedPx(p) {
+    const expectBox = p.exportBounds === 'render' && p.exportBox ? p.exportBox : p;
+    return {
+      wantW: Math.round((expectBox.w ?? p.w) * p.scale),
+      wantH: Math.round((expectBox.h ?? p.h) * p.scale),
+    };
+  }
+
+  function recordFromPng(p, buf, extra = {}) {
+    const file = assetFileName(p.nodeId);
+    const { pxW, pxH } = pngSize(buf);
+    const { wantW, wantH } = expectedPx(p);
+    const clamped = pxW != null && (Math.abs(pxW - wantW) > 1 || Math.abs(pxH - wantH) > 1);
+    const pngSha = createHash('sha256').update(buf).digest('hex');
+    return {
+      file: `assets/${file}`,
+      pngFile: `assets/${file}`,
+      pngSha256: pngSha,
+      sha256: pngSha,
+      bytes: buf.length,
+      name: p.name, reason: p.reason, designSize: `${p.w}x${p.h}`, exportScale: p.scale,
+      pixelSize: pxW != null ? `${pxW}x${pxH}` : null,
+      exportBounds: p.exportBounds,
+      exportBox: p.exportBox || undefined,
+      imageRefs: Array.isArray(p.imageRefs) && p.imageRefs.length ? p.imageRefs : undefined,
+      effectTypes: p.effectTypes,
+      descendantEffectTypes: p.descendantEffectTypes && p.descendantEffectTypes.length ? p.descendantEffectTypes : undefined,
+      renderCropPolicy: p.renderCropPolicy || undefined,
+      dropShadowCount: p.dropShadowCount || undefined,
+      blurCount: p.blurCount || undefined,
+      clamped: clamped || undefined,
+      ...extra,
+      _want: { wantW, wantH, clamped },
+    };
+  }
 
   // 1) 分批向 Figma 要图片 URL（按倍率分组，一批只能用一个 scale）
   const urlMap = {};
   const noUrl = [];
+  const resumeSet = new Set();
+  const resumeWebpSet = new Set();
+  const previous = a.only && a.only.length && onDiskManifest ? onDiskManifest : null;
+  const onlySet = new Set(a.only || []);
+  const manifest = previous ? { ...(previous.assets || {}) } : {};
+  for (const id of onlySet) delete manifest[id];
+  let bytes = previous ? Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0) : 0;
+  const failed = [];
+  const clampedList = [];
+  if (a.resume) {
+    for (const p of picks) {
+      const pngPath = join(assetsDir, assetFileName(p.nodeId));
+      const prev = onDiskManifest && onDiskManifest.assets ? onDiskManifest.assets[p.nodeId] : null;
+      const webpPath = prev && prev.webpFile ? join(demoDir, prev.webpFile) : null;
+      const pngSha256 = existsSync(pngPath) ? createHash('sha256').update(readFileSync(pngPath)).digest('hex') : null;
+      const webpSha256 = webpPath && existsSync(webpPath) ? createHash('sha256').update(readFileSync(webpPath)).digest('hex') : null;
+      const { wantW, wantH } = expectedPx(p);
+      const decision = decideAssetResume({
+        designVersion,
+        previousVersion: onDiskManifest ? onDiskManifest.designVersion : null,
+        record: prev,
+        pngSha256,
+        webpSha256,
+        geometry: {
+          designSize: p.w + 'x' + p.h,
+          exportScale: p.scale,
+          exportBounds: p.exportBounds || null,
+          exportBox: p.exportBox || null,
+          pixelSize: wantW + 'x' + wantH,
+        },
+      });
+      if (!decision.resumePng) continue;
+      manifest[p.nodeId] = { ...prev, resumed: true };
+      bytes += Number(prev.bytes || 0);
+      resumeSet.add(p.nodeId);
+      if (decision.resumeWebp) resumeWebpSet.add(p.nodeId);
+    }
+  }
+  out.resumed = resumeSet.size;
+  const needFetch = picks.filter((p) => !resumeSet.has(p.nodeId));
   const groups = [];
-  for (const key of [...new Set(picks.map((p) => `${p.scale}|${p.exportBounds}`))]) {
+  for (const key of [...new Set(needFetch.map((p) => `${p.scale}|${p.exportBounds}`))]) {
     const [scText, bounds] = key.split('|');
     const sc = Number(scText);
-    const g = picks.filter((p) => p.scale === sc && p.exportBounds === bounds);
+    const g = needFetch.filter((p) => p.scale === sc && p.exportBounds === bounds);
     for (let i = 0; i < g.length; i += BATCH) groups.push(g.slice(i, i + BATCH));
   }
+  if (needFetch.length) {
+    const token = readToken(demoDir);
   for (const chunk of groups) {
     /* ═══ use_absolute_bounds=true：强制按节点框导出，而不是按墨迹裁剪 ═══
      *
@@ -253,17 +339,11 @@ async function main() {
       else noUrl.push({ nodeId: p.nodeId, name: p.name, why: 'Figma 未返回 URL（该图层可能异常，如带图像填充的 TEXT）' });
     }
   }
+  }
 
   // 2) 下载 + 记 sha256（清单是资产的可校验替代品：二进制没有 JSON locator）
-  const manifestPath = join(demoDir, 'assets-manifest.json');
-  const previous = a.only && existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : null;
-  const onlySet = new Set(a.only || []);
-  const manifest = previous ? { ...(previous.assets || {}) } : {};
-  for (const id of onlySet) delete manifest[id];
-  let bytes = previous ? Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0) : 0;
-  const failed = [];
-  const clampedList = [];
   for (const p of picks) {
+    if (resumeSet.has(p.nodeId)) continue;
     const u = urlMap[p.nodeId];
     if (!u) continue;
     try {
@@ -279,8 +359,7 @@ async function main() {
        * 实测踩到过两张：745×17309 的渐变导出成 706×16384。
        * 这里现读 PNG 的 IHDR（前 24 字节）比对，不符就标 clamped 并汇总报出来。 */
       let { pxW, pxH } = pngSize(buf);
-      const expectBox = p.exportBounds === 'render' && p.exportBox ? p.exportBox : p;
-      const wantW = Math.round((expectBox.w ?? p.w) * p.scale), wantH = Math.round((expectBox.h ?? p.h) * p.scale);
+      const { wantW, wantH } = expectedPx(p);
       let renderCrop = null;
       const shouldCropLayerBlur =
         p.exportBounds === 'render' &&
@@ -370,27 +449,12 @@ async function main() {
 
       writeFileSync(join(assetsDir, file), buf);
       bytes += buf.length;
-      const pngSha = createHash('sha256').update(buf).digest('hex');
-
-      manifest[p.nodeId] = {
-        file: `assets/${file}`,
-        pngFile: `assets/${file}`,
-        pngSha256: pngSha,
-        sha256: pngSha,
-        bytes: buf.length,
-        name: p.name, reason: p.reason, designSize: `${p.w}x${p.h}`, exportScale: p.scale,
-        pixelSize: pxW != null ? `${pxW}x${pxH}` : null,
-        exportBounds: p.exportBounds,
-        exportBox: p.exportBox || undefined,
-        imageRefs: Array.isArray(p.imageRefs) && p.imageRefs.length ? p.imageRefs : undefined,
-        effectTypes: p.effectTypes,
-        descendantEffectTypes: p.descendantEffectTypes && p.descendantEffectTypes.length ? p.descendantEffectTypes : undefined,
-        renderCrop: renderCrop || undefined,
-        renderCropPolicy: p.renderCropPolicy || undefined,
-        dropShadowCount: p.dropShadowCount || undefined,
-        blurCount: p.blurCount || undefined,
-        clamped: clamped || undefined,
-      };
+      const rec = recordFromPng(p, buf, { renderCrop: renderCrop || undefined });
+      delete rec._want;
+      rec.pixelSize = pxW != null ? `${pxW}x${pxH}` : null;
+      rec.clamped = clamped || undefined;
+      rec.renderCrop = renderCrop || undefined;
+      manifest[p.nodeId] = rec;
     } catch (e) {
       failed.push({ nodeId: p.nodeId, name: p.name, why: String(e.message || e) });
     }
@@ -401,21 +465,32 @@ async function main() {
     const plan = planWebpDelivery(manifest, { assetsDir, demoDir });
     webp.attempted = plan.jobs.length;
     webp.duplicates = plan.aliases.length;
-    const encoded = encodeWebpBatch(plan.jobs.map((j) => ({ src: j.src, dest: j.dest })));
+    const pendingJobs = [];
+    const alreadyWebp = [];
+    for (const job of plan.jobs) {
+      if (resumeWebpSet.has(job.nodeId) && existsSync(job.dest)) alreadyWebp.push(job);
+      else pendingJobs.push(job);
+    }
+    const encoded = encodeWebpBatch(pendingJobs.map((j) => ({ src: j.src, dest: j.dest })));
     webp.skipped = !!encoded.skipped;
     webp.why = encoded.why || null;
     const bySrc = new Map((encoded.results || []).map((r) => [r.src.replace(/\\/g, '/'), r]));
     const recById = (id) => manifest[id];
+    const alreadyDest = new Set(alreadyWebp.map((j) => j.dest.replace(/\\/g, '/')));
     for (const job of plan.jobs) {
       const rec = recById(job.nodeId);
       if (!rec) continue;
       const hit = bySrc.get(job.src.replace(/\\/g, '/')) || encoded.results?.find((r) => r.dest.replace(/\\/g, '/') === job.dest.replace(/\\/g, '/'));
-      if (!hit) continue;
+      const reused = !hit && alreadyDest.has(job.dest.replace(/\\/g, '/'));
+      if (!hit && !reused) continue;
       rec.file = job.webpRel;
       rec.webpFile = job.webpRel;
-      rec.sha256 = createHash('sha256').update(readFileSync(job.dest)).digest('hex');
-      rec.bytes = hit.bytes;
-      rec.webp = { bytes: hit.bytes, lossless: hit.lossless, alpha: hit.alpha };
+      const destBuf = readFileSync(job.dest);
+      rec.sha256 = createHash('sha256').update(destBuf).digest('hex');
+      rec.bytes = hit ? hit.bytes : destBuf.length;
+      rec.webp = hit
+        ? { bytes: hit.bytes, lossless: hit.lossless, alpha: hit.alpha }
+        : { bytes: destBuf.length, resumed: true };
       webp.converted += 1;
     }
     for (const alias of plan.aliases) {

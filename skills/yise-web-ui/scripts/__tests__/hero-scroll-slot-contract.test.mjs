@@ -11,8 +11,8 @@ function applyFixViewportPinFromRender() {
   const start = render.indexOf('const applyFixViewportPin =');
   assert.notEqual(start, -1, 'renderer must define applyFixViewportPin');
   const sliced = render.slice(start);
-  const end = sliced.indexOf('\n        const byId =');
-  assert.notEqual(end, -1, 'applyFixViewportPin must sit before byId');
+  const end = sliced.indexOf('\n      const paint =');
+  assert.notEqual(end, -1, 'applyFixViewportPin must sit next to paint');
   const fn = new Function(`${sliced.slice(0, end)}\nreturn applyFixViewportPin;`)();
   assert.equal(typeof fn, 'function');
   return fn;

@@ -25,7 +25,7 @@ User-visible behavior after the static Figma page is already on screen:
 - programmatic button hover / pressdown (`scripts/lib/figma-button-press-contract.mjs`)
 - named modal openers: play → video, mobile nav / language overlays
 - horizontal scroll / carousel only when Main has a source-backed graph
-- calendar today / return-today on `dyn/今日日期` (state swap, not a motion reveal)
+- calendar today marker tracks the hscroll track; edge-pinned `返回` when it leaves the viewport (see below)
 - later: calendar reveal, character switch, and other timed effects
 
 ## Two interaction families
@@ -65,11 +65,43 @@ overflowing child is the translate surface so rest-state siblings do not
 pan. Calendar right/left arrows beside that viewport are hscroll
 commands (`data-hscroll-action`), not switch pages; match complete
 direction names such as `右滑动箭头`, never a lone `前` / `后`.
-`dyn/今日日期` is one source layer with two runtime states: entry shows
-today and stays inert; scrolling or paging away shows `返回` and only
-then is it a control; clicking `返回` restores the resting offset and
-today. This is state switching, not `activity-calendar-reveal`. Do not
-invent a second return bitmap when inventory only has `dyn/今日日期`.
+#### Calendar today marker and `返回` (official yise.xd.cn, checked 2026-10-22)
+
+`dyn/今日日期` is the today marker: a red vertical line, a red tab at its
+top, and the date copy on the tab. Daily tracking (moving the marker to
+the real date) is **not** ours: keep the Figma date copy and the Figma
+x position as the marker's date. Never write the runtime date into it.
+
+Recognize the parts by geometry inside `dyn/今日日期`, never by a fixed
+layer name (naming will add names to the line / tab later):
+
+- tab = the named child whose box contains the date TEXT box
+- line = the remaining tall, narrow named child (height ≫ width)
+- marker x = the line's center x (fallback: tab center x)
+
+Runtime contract, PC and mobile alike (the user extended the official
+mobile-only rule to PC on 2026-10-22, because our PC window can hide it):
+
+1. The marker belongs to the calendar track. When the hscroll offset
+   changes, the whole marker translates with the track and is clipped to
+   the `scroll/` viewport, so it always marks the same date column.
+2. When the marker x leaves the viewport, a separate `返回` control
+   appears. It reuses the tab's own look (same tab pixels / fill, copy
+   replaced by `返回`); do not invent a new bitmap or colour.
+   - marker off to the right → pin the control to the viewport's right edge
+   - marker off to the left → pin it to the viewport's left edge, i.e.
+     just right of the fixed category column
+   - vertical position = the tab's own y (the band above the date axis)
+3. While the marker x is inside the viewport the control is hidden. The
+   entry state (offset 0) shows no control.
+4. Clicking `返回` scrolls the track so the marker sits at the viewport
+   center (clamped to the track range), then the control hides.
+5. The marker tab / date stay inert; only the `返回` control is pressable.
+
+Until the line and tab are named and present in truth, only (1) applies
+with what is painted; the `返回` control stays absent and records
+`data-calendar-return="pending-named-tab"` instead of drawing a substitute.
+This is state switching, not `activity-calendar-reveal`.
 Mobile drag uses pointer capture and disables native image drag / text
 selection so a swipe does not highlight a bitmap.
 Product-stage copy defaults to `user-select: none`; `input`, `textarea`,
