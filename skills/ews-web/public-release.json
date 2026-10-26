@@ -10,6 +10,7 @@
     "DESIGN.md",
     "package.json",
     "public-release.json",
+    "naming-contract.json",
     "scripts/",
     "docs/",
     "assets/"

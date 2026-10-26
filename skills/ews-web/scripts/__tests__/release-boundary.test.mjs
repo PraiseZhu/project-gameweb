@@ -6,6 +6,16 @@ import { join } from 'node:path';
 import { validateAssets } from '../lib/asset-contract.mjs';
 import { buildPageModel } from '../lib/page-model.mjs';
 import { imgLangAxisOfSet } from '../lib/image-language.mjs';
+import { PREFIX_ROLES } from '../lib/inventory-ready-fields.mjs';
+
+test('published naming contract matches the actual consumed prefix roles', () => {
+  const contract = JSON.parse(readFileSync(new URL('../../naming-contract.json', import.meta.url), 'utf8'));
+  const manifest = JSON.parse(readFileSync(new URL('../../public-release.json', import.meta.url), 'utf8'));
+  assert.equal(typeof contract.targetSpecVersion, 'string');
+  assert.ok(contract.targetSpecVersion.trim());
+  assert.deepEqual(contract.rolesUsed.slice().sort(), PREFIX_ROLES.slice().sort());
+  assert.ok(manifest.publishable.includes('naming-contract.json'));
+});
 
 test('empty asset map fails for required slices; Lang axis is not lang', () => {
   const empty = validateAssets({
