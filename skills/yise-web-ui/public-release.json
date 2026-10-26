@@ -47,6 +47,7 @@
     "scripts/__tests__/_acceptance-pointer-held-rail-drag.test.mjs",
     "scripts/__tests__/_desktop-page-composition.test.mjs",
     "scripts/__tests__/_drag-content-follows.test.mjs",
+    "scripts/__tests__/_hero-short-window.test.mjs",
     "scripts/__tests__/_hug-intrinsic-width.test.mjs",
     "scripts/__tests__/_kv-entry-nav-responsive.test.mjs",
     "scripts/__tests__/_locale-font-fallback.test.mjs",
