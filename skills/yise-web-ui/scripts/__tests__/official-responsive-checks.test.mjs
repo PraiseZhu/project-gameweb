@@ -116,3 +116,18 @@ test('aspect laterTop must not start before the scaled first-screen bottom', () 
   assert.equal(mobileHeroMatchesRule({ ...aspectHero, laterTop: 0 }), false);
   assert.equal(mobileHeroMatchesRule({ ...aspectHero, laterTop: 694 }), true);
 });
+
+test('aspect heroHeight that is missing or not a number fails closed', () => {
+  const aspectHero = {
+    mode: 'aspect',
+    heroSlot: 'active',
+    laterTop: 694,
+    viewportHeight: 1100,
+    sampleWidth: 390,
+    designWidth: 750,
+    designHeroHeight: 1335,
+  };
+  assert.equal(mobileHeroMatchesRule({ ...aspectHero }), false);
+  assert.equal(mobileHeroMatchesRule({ ...aspectHero, heroHeight: undefined }), false);
+  assert.equal(mobileHeroMatchesRule({ ...aspectHero, heroHeight: NaN }), false);
+});

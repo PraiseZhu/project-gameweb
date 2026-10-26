@@ -60,9 +60,8 @@ export function mobileHeroMatchesRule({
     const sourceHero = Number(designHeroHeight);
     if (!(width > 0) || !(sourceHero > 0) || !(Number(sampleWidth) > 0)) return false;
     const expected = Number(sampleWidth) * (sourceHero / width);
-    if (Math.abs(Number(heroHeight) - expected) > 1) return false;
-    // later content must not start before the scaled first-screen bottom.
-    return laterTop == null || Number(laterTop) >= expected - 1;
+    return Math.abs(Number(heroHeight) - expected) <= 1
+      && (laterTop == null || Number(laterTop) >= expected - 1);
   }
   return Number(heroHeight) >= Number(viewportHeight) - 1
     && (laterTop == null || Number(laterTop) >= Number(viewportHeight) - 1);
