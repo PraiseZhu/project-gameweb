@@ -104,6 +104,7 @@
     "scripts/__tests__/_acceptance-pointer-held-rail-drag.test.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
     "scripts/__tests__/_desktop-page-composition.test.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
     "scripts/__tests__/_drag-content-follows.test.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
+    "scripts/__tests__/_hero-short-window.test.mjs": "短窗首屏验收依赖未入库的 _tmp/demo-392-18375。公开套件没有这页就会多一个 skip，所以列为下划线私有测试，有 demo 时单独运行。",
     "scripts/__tests__/_hug-intrinsic-width.test.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
     "scripts/__tests__/_kv-entry-nav-responsive.test.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
     "scripts/__tests__/_locale-font-fallback.test.mjs": "SS5 页面级私有验收测试:按 process.cwd() 定位 demos/yise-ss5-preview 与 artifacts/ 私有证据,公开环境跑不起来,由 test:demo 显式传参入口运行。",
