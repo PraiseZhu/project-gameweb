@@ -1,0 +1,112 @@
+:root {
+  --ews-screen-h: 100dvh;
+  --ews-root-font: 10vw;
+  --ews-design-w: 1920px;
+  --ews-content-h: 1080px;
+  --ews-scale: 1;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+}
+.ews-root {
+  font-size: var(--ews-root-font);
+  position: relative;
+  height: var(--ews-screen-h);
+}
+.ews-lang-switch {
+  position: fixed;
+  z-index: 45;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 8px;
+}
+.ews-nav {
+  position: fixed;
+  z-index: 40;
+  pointer-events: auto;
+}
+.ews-track {
+  position: relative;
+}
+.ews-page-backgrounds {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: scale(var(--ews-scale));
+  transform-origin: 0 0;
+}
+.ews-screen,
+.ews-footer {
+  height: var(--ews-screen-h);
+  position: relative;
+}
+.ews-screen-scroll {
+  height: var(--ews-screen-h);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.ews-screen-sizer {
+  width: calc(var(--ews-design-w) * var(--ews-scale));
+  height: calc(var(--ews-content-h) * var(--ews-scale));
+  position: relative;
+}
+.ews-screen-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--ews-design-w);
+  height: var(--ews-content-h);
+  transform: scale(var(--ews-scale));
+  transform-origin: 0 0;
+}
+.ews-node {
+  position: absolute;
+  box-sizing: border-box;
+}
+.ews-node[data-role="img"] img,
+.ews-node[data-role="kv"] img,
+.ews-node[data-role="bg"] img,
+.ews-node video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: fill;
+}
+.ews-carousel {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+}
+.ews-carousel-slide {
+  position: relative;
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  min-height: 100%;
+}
+.ews-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+.ews-modal-layer:has(.ews-modal:not([hidden])) {
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.45);
+}
+.ews-modal[hidden] {
+  display: none;
+}
+.ews-modal {
+  transform: scale(var(--ews-scale));
+  transform-origin: 0 0;
+}
+.ews-fail {
+  color: #b00020;
+  font-family: ui-monospace, monospace;
+  white-space: pre-wrap;
+}

@@ -46,6 +46,7 @@ Project Gameweb/
 | 已规范稿出清单 | 出清单 | 立即执行 `standards/figma-naming/SKILL.md`，不要先问要不要跑 |
 | 伊瑟做页 | yisewebui / 伊瑟网页还原 | 立即执行 `skills/yise-web-ui/SKILL.md`，不要先问要不要跑 |
 | 火炬做页 | torchlightweb / 火炬网页还原 | 立即执行 `skills/torchlight-web/SKILL.md`，只跑 `npm run torchlightweb` 状态机，不要先问要不要跑。火炬固定链路不得搜、改、验证 `skills/yise-web-ui` |
+| Etheria-ews | ews出页 | 立即执行 `skills/ews-web/SKILL.md`，走该 Skill 既有 ready 出页流程，不要先问要不要跑。没有 ready 包就停下来要包。不得改走伊瑟/火炬 |
 
 用户丢带 `node-id` 的已规范货架链接、且要交给做页时，同样直接跑该 skill。未规范链接到本仓就停，不要改走别的仓。
 

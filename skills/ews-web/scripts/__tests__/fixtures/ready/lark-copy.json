@@ -1,0 +1,40 @@
+{
+  "_meta": {
+    "langCols": {
+      "A": "zh-CN",
+      "B": "en"
+    },
+    "phaseRows": [
+      10,
+      11,
+      12,
+      21
+    ]
+  },
+  "rows": {
+    "10": {
+      "zh-CN": "标题甲",
+      "en": "Title A"
+    },
+    "11": {
+      "zh-CN": "重复词",
+      "en": "Word-One"
+    },
+    "12": {
+      "zh-CN": "标题丙",
+      "en": "Title C"
+    },
+    "15": {
+      "zh-CN": "重复词",
+      "en": "Word-Two"
+    },
+    "21": {
+      "zh-CN": "第一句\n第二句\n第三句",
+      "en": "Line1\nLine2\nLine3"
+    },
+    "99": {
+      "zh-CN": "范围外",
+      "en": "Out of range"
+    }
+  }
+}

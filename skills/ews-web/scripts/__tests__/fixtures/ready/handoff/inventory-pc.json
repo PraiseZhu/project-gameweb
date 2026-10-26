@@ -1,0 +1,767 @@
+{
+  "schema": "inventory/v2",
+  "specVersion": "1.0",
+  "ok": true,
+  "status": "ready",
+  "fileKey": "synthetic-ews-file",
+  "requestedNodeId": "100:1",
+  "snapshot": {
+    "hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "lastModified": "2026-10-26T00:00:00Z"
+  },
+  "page": {
+    "id": "100:1",
+    "name": "cn_pc",
+    "box": {
+      "x": 0,
+      "y": 0,
+      "w": 1920,
+      "h": 1080
+    },
+    "pageBox": {
+      "x": 0,
+      "y": 0,
+      "w": 1920,
+      "h": 1080
+    }
+  },
+  "sections": [
+    {
+      "id": "100:2",
+      "number": 1,
+      "label": "1",
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "pageBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      }
+    },
+    {
+      "id": "100:12",
+      "number": 2,
+      "label": "footer",
+      "box": {
+        "x": 0,
+        "y": 1000,
+        "w": 1920,
+        "h": 80
+      },
+      "pageBox": {
+        "x": 0,
+        "y": 1000,
+        "w": 1920,
+        "h": 80
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "id": "100:4",
+      "role": "fix",
+      "label": "fix/nav",
+      "pin": "viewport"
+    }
+  ],
+  "backgrounds": [
+    {
+      "id": "100:3",
+      "role": "kv",
+      "label": "background"
+    }
+  ],
+  "modules": [],
+  "nodes": [
+    {
+      "id": "100:1",
+      "scope": "page",
+      "type": "FRAME",
+      "name": "cn_pc",
+      "parentId": null,
+      "orderKey": "0",
+      "status": "unknown",
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "pageBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:2",
+      "scope": "page",
+      "type": "FRAME",
+      "name": "sec/1",
+      "parentId": "100:1",
+      "orderKey": "0.0",
+      "status": "unknown",
+      "role": "sec",
+      "ancestorIds": [
+        "100:1"
+      ],
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "pageBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:3",
+      "scope": "page",
+      "type": "RECTANGLE",
+      "name": "kv",
+      "parentId": "100:1",
+      "orderKey": "0.1",
+      "status": "determined",
+      "role": "kv",
+      "behavior": "slice",
+      "ancestorIds": [
+        "100:1"
+      ],
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "pageBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "sliceExport": {
+        "bounds": "render",
+        "scale": 1,
+        "format": "png",
+        "file": "100-3.png",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 1920,
+          "h": 1080
+        }
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:4",
+      "scope": "page",
+      "type": "FRAME",
+      "name": "fix/nav",
+      "parentId": "100:1",
+      "orderKey": "0.2",
+      "status": "determined",
+      "role": "fix",
+      "behavior": "overlay",
+      "pin": "viewport",
+      "ancestorIds": [
+        "100:1"
+      ],
+      "box": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 80
+      },
+      "pageBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 80
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "viewportBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 80
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:5",
+      "scope": "page",
+      "type": "TEXT",
+      "name": "copy/title",
+      "parentId": "100:2",
+      "orderKey": "0.0.0",
+      "status": "determined",
+      "role": "copy",
+      "ancestorIds": [
+        "100:1",
+        "100:2"
+      ],
+      "characters": "标题甲",
+      "text": {
+        "characters": "标题甲",
+        "fontFamily": "Source Han Sans",
+        "fontWeight": 500,
+        "fontSize": 28
+      },
+      "box": {
+        "x": 120,
+        "y": 80,
+        "w": 240,
+        "h": 48
+      },
+      "pageBox": {
+        "x": 120,
+        "y": 80,
+        "w": 240,
+        "h": 48
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:6",
+      "scope": "page",
+      "type": "TEXT",
+      "name": "copy/mid",
+      "parentId": "100:2",
+      "orderKey": "0.0.1",
+      "status": "determined",
+      "role": "copy",
+      "ancestorIds": [
+        "100:1",
+        "100:2"
+      ],
+      "characters": "重复词",
+      "text": {
+        "characters": "重复词",
+        "fontFamily": "Source Han Sans",
+        "fontWeight": 400,
+        "fontSize": 18
+      },
+      "box": {
+        "x": 120,
+        "y": 140,
+        "w": 240,
+        "h": 32
+      },
+      "pageBox": {
+        "x": 120,
+        "y": 140,
+        "w": 240,
+        "h": 32
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:7",
+      "scope": "page",
+      "type": "TEXT",
+      "name": "copy/tail",
+      "parentId": "100:2",
+      "orderKey": "0.0.2",
+      "status": "determined",
+      "role": "copy",
+      "ancestorIds": [
+        "100:1",
+        "100:2"
+      ],
+      "characters": "标题丙",
+      "text": {
+        "characters": "标题丙",
+        "fontFamily": "Source Han Sans",
+        "fontWeight": 500,
+        "fontSize": 28
+      },
+      "box": {
+        "x": 120,
+        "y": 180,
+        "w": 240,
+        "h": 48
+      },
+      "pageBox": {
+        "x": 120,
+        "y": 180,
+        "w": 240,
+        "h": 48
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:8",
+      "scope": "page",
+      "type": "INSTANCE",
+      "name": "img/海报",
+      "parentId": "100:2",
+      "orderKey": "0.0.3",
+      "status": "determined",
+      "role": "img",
+      "behavior": "slice",
+      "componentId": "100:31",
+      "ancestorIds": [
+        "100:1",
+        "100:2"
+      ],
+      "box": {
+        "x": 120,
+        "y": 240,
+        "w": 240,
+        "h": 48
+      },
+      "pageBox": {
+        "x": 120,
+        "y": 240,
+        "w": 240,
+        "h": 48
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "sliceExport": {
+        "bounds": "render",
+        "scale": 1,
+        "format": "png",
+        "file": "100-31.png",
+        "box": {
+          "x": 120,
+          "y": 240,
+          "w": 240,
+          "h": 48
+        }
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:9",
+      "scope": "page",
+      "type": "INSTANCE",
+      "name": "img/装饰",
+      "parentId": "100:2",
+      "orderKey": "0.0.4",
+      "status": "determined",
+      "role": "img",
+      "behavior": "slice",
+      "componentId": "100:41",
+      "ancestorIds": [
+        "100:1",
+        "100:2"
+      ],
+      "box": {
+        "x": 10,
+        "y": 10,
+        "w": 40,
+        "h": 40
+      },
+      "pageBox": {
+        "x": 10,
+        "y": 10,
+        "w": 40,
+        "h": 40
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "sliceExport": {
+        "bounds": "render",
+        "scale": 1,
+        "format": "png",
+        "file": "100-41.png",
+        "box": {
+          "x": 10,
+          "y": 10,
+          "w": 40,
+          "h": 40
+        }
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:10",
+      "scope": "page",
+      "type": "TEXT",
+      "name": "copy/split",
+      "parentId": "100:2",
+      "orderKey": "0.0.5",
+      "status": "determined",
+      "role": "copy",
+      "ancestorIds": [
+        "100:1",
+        "100:2"
+      ],
+      "characters": "第一句",
+      "text": {
+        "characters": "第一句",
+        "fontFamily": "Source Han Sans",
+        "fontWeight": 400,
+        "fontSize": 16
+      },
+      "box": {
+        "x": 120,
+        "y": 300,
+        "w": 240,
+        "h": 24
+      },
+      "pageBox": {
+        "x": 120,
+        "y": 300,
+        "w": 240,
+        "h": 24
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:11",
+      "scope": "page",
+      "type": "TEXT",
+      "name": "copy/split2",
+      "parentId": "100:2",
+      "orderKey": "0.0.6",
+      "status": "determined",
+      "role": "copy",
+      "ancestorIds": [
+        "100:1",
+        "100:2"
+      ],
+      "characters": "第二句",
+      "text": {
+        "characters": "第二句",
+        "fontFamily": "Source Han Sans",
+        "fontWeight": 400,
+        "fontSize": 16
+      },
+      "box": {
+        "x": 120,
+        "y": 330,
+        "w": 240,
+        "h": 24
+      },
+      "pageBox": {
+        "x": 120,
+        "y": 330,
+        "w": 240,
+        "h": 24
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "rotation": 0
+    },
+    {
+      "id": "100:12",
+      "scope": "page",
+      "type": "FRAME",
+      "name": "footer",
+      "parentId": "100:1",
+      "orderKey": "0.3",
+      "status": "determined",
+      "role": "sec",
+      "ancestorIds": [
+        "100:1"
+      ],
+      "box": {
+        "x": 0,
+        "y": 1000,
+        "w": 1920,
+        "h": 80
+      },
+      "pageBox": {
+        "x": 0,
+        "y": 1000,
+        "w": 1920,
+        "h": 80
+      },
+      "parentBox": {
+        "x": 0,
+        "y": 0,
+        "w": 1920,
+        "h": 1080
+      },
+      "rotation": 0
+    }
+  ],
+  "attachments": {
+    "modals": [],
+    "componentSets": [
+      {
+        "id": "100:30",
+        "type": "COMPONENT_SET",
+        "name": "img/海报",
+        "componentPropertyDefinitions": {
+          "lang": {
+            "type": "VARIANT",
+            "variantOptions": [
+              "cn",
+              "en"
+            ]
+          }
+        },
+        "variants": [
+          {
+            "id": "100:31",
+            "type": "COMPONENT",
+            "name": "lang=cn",
+            "order": 0,
+            "status": "determined",
+            "role": "img",
+            "behavior": "slice",
+            "componentProperties": {
+              "lang": "cn"
+            },
+            "box": {
+              "x": 0,
+              "y": 0,
+              "w": 240,
+              "h": 48
+            },
+            "pageBox": {
+              "x": 120,
+              "y": 200,
+              "w": 240,
+              "h": 48
+            },
+            "parentBox": {
+              "x": 0,
+              "y": 0,
+              "w": 1920,
+              "h": 1080
+            },
+            "sliceExport": {
+              "bounds": "render",
+              "scale": 1,
+              "format": "png",
+              "file": "100-31.png",
+              "box": {
+                "x": 120,
+                "y": 200,
+                "w": 240,
+                "h": 48
+              }
+            },
+            "rotation": 0
+          },
+          {
+            "id": "100:32",
+            "type": "COMPONENT",
+            "name": "lang=en",
+            "order": 1,
+            "status": "determined",
+            "role": "img",
+            "behavior": "slice",
+            "componentProperties": {
+              "lang": "en"
+            },
+            "box": {
+              "x": 0,
+              "y": 0,
+              "w": 240,
+              "h": 48
+            },
+            "pageBox": {
+              "x": 120,
+              "y": 200,
+              "w": 240,
+              "h": 48
+            },
+            "parentBox": {
+              "x": 0,
+              "y": 0,
+              "w": 1920,
+              "h": 1080
+            },
+            "sliceExport": {
+              "bounds": "render",
+              "scale": 1,
+              "format": "png",
+              "file": "100-32.png",
+              "box": {
+                "x": 120,
+                "y": 200,
+                "w": 240,
+                "h": 48
+              }
+            },
+            "rotation": 0
+          }
+        ]
+      },
+      {
+        "id": "100:40",
+        "type": "COMPONENT_SET",
+        "name": "img/装饰",
+        "componentPropertyDefinitions": {
+          "Property 1": {
+            "type": "VARIANT",
+            "variantOptions": [
+              "a"
+            ]
+          }
+        },
+        "variants": [
+          {
+            "id": "100:41",
+            "type": "COMPONENT",
+            "name": "Property 1=a",
+            "status": "determined",
+            "role": "img",
+            "behavior": "slice",
+            "componentProperties": {
+              "Property 1": "a"
+            },
+            "box": {
+              "x": 0,
+              "y": 0,
+              "w": 40,
+              "h": 40
+            },
+            "pageBox": {
+              "x": 10,
+              "y": 10,
+              "w": 40,
+              "h": 40
+            },
+            "parentBox": {
+              "x": 0,
+              "y": 0,
+              "w": 1920,
+              "h": 1080
+            },
+            "sliceExport": {
+              "bounds": "render",
+              "scale": 1,
+              "format": "png",
+              "file": "100-41.png",
+              "box": {
+                "x": 10,
+                "y": 10,
+                "w": 40,
+                "h": 40
+              }
+            },
+            "rotation": 0
+          }
+        ]
+      }
+    ],
+    "components": []
+  },
+  "relations": [
+    {
+      "kind": "instance-uses-variant",
+      "status": "determined",
+      "evidence": "figma:componentId",
+      "from": {
+        "id": "100:8",
+        "scope": "page"
+      },
+      "to": {
+        "id": "100:31",
+        "scope": "component-set:100:30",
+        "componentSetId": "100:30",
+        "componentId": null
+      }
+    },
+    {
+      "kind": "instance-uses-variant",
+      "status": "determined",
+      "evidence": "figma:componentId",
+      "from": {
+        "id": "100:9",
+        "scope": "page"
+      },
+      "to": {
+        "id": "100:41",
+        "scope": "component-set:100:40",
+        "componentSetId": "100:40",
+        "componentId": null
+      }
+    }
+  ],
+  "counts": {
+    "determined": 10,
+    "unknown": 2,
+    "skipped": 0
+  }
+}
