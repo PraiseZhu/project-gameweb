@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,16 +7,41 @@ import { createRequire } from 'node:module';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const require = createRequire(import.meta.url);
+const DEFAULT_HELPER = fileURLToPath(new URL('./lib/esm-specifiers.mjs', import.meta.url));
 
-/**
- * Column-0 ESM specifiers, one statement per line (repo convention).
- * Not seen: indented imports and a second import on the same line.
- */
-export function collectModuleSpecifiers(source) {
-  const text = String(source ?? '').replace(/^\uFEFF/, '');
-  const fromRe = /^(?:import|export)\b[^;'"`=(]*?\bfrom\s*['"]([^'"]+)['"]/gm;
-  const sideRe = /^import\s*['"]([^'"]+)['"]/gm;
-  return [fromRe, sideRe].flatMap((re) => [...text.matchAll(re)].map((m) => m[1]));
+export function scanEsmSpecifiers(items, { helperPath } = {}) {
+  const helper = helperPath || DEFAULT_HELPER;
+  const res = spawnSync(
+    process.execPath,
+    ['--experimental-vm-modules', '--no-warnings', helper],
+    {
+      input: JSON.stringify({ items }),
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+      windowsHide: true,
+    },
+  );
+  if (res.error || res.status !== 0) {
+    const detail = String(res.stderr || res.error?.message || res.stdout || '').trim();
+    return { ok: false, error: detail || `esm specifier helper exit ${res.status}` };
+  }
+  try {
+    const parsed = JSON.parse(res.stdout);
+    if (!parsed || parsed.ok !== true || !Array.isArray(parsed.items)) {
+      return { ok: false, error: parsed?.error || 'esm specifier helper returned invalid JSON' };
+    }
+    return parsed;
+  } catch (error) {
+    return { ok: false, error: `esm specifier helper JSON: ${error.message}` };
+  }
+}
+
+export function collectModuleSpecifiers(source, options) {
+  const scanned = scanEsmSpecifiers([{ id: 'inline', source: String(source ?? '') }], options);
+  if (!scanned.ok) throw new Error(scanned.error);
+  const item = scanned.items[0] || {};
+  if (item.error) throw new Error(item.error);
+  return item.specifiers || [];
 }
 
 function walk(rel) {
@@ -106,21 +132,31 @@ for (const rel of stop1BrowserTools) {
   }
 }
 
-for (const file of publishFiles) {
-  if (!file.endsWith('.mjs')) continue;
-  const text = readFileSync(join(ROOT, file), 'utf8');
-  const imports = collectModuleSpecifiers(text);
-  for (const spec of imports) {
-    if (spec.startsWith('.')) {
-      const target = relative(ROOT, resolve(ROOT, dirname(file), spec)).replaceAll('\\', '/');
-      if (!publishFiles.includes(target)) problems.push(file + ': 发布面缺少相对依赖 ' + spec);
+const mjsFiles = publishFiles.filter((file) => file.endsWith('.mjs'));
+const scanned = scanEsmSpecifiers(mjsFiles.map((file) => ({
+  id: file,
+  source: readFileSync(join(ROOT, file), 'utf8'),
+})));
+if (!scanned.ok) {
+  problems.push(`esm specifier helper failed: ${scanned.error}`);
+} else {
+  for (const item of scanned.items) {
+    if (item.error) {
+      problems.push(`${item.id}: 无法解析 ESM（${item.error}）`);
       continue;
     }
-    if (spec.startsWith('node:')) continue;
-    try {
-      require.resolve(spec, { paths: [ROOT] });
-    } catch {
-      problems.push(`${file}: 发布面 import 无法在独立目录解析 ${spec}`);
+    for (const spec of item.specifiers || []) {
+      if (spec.startsWith('.')) {
+        const target = relative(ROOT, resolve(ROOT, dirname(item.id), spec)).replaceAll('\\', '/');
+        if (!publishFiles.includes(target)) problems.push(item.id + ': 发布面缺少相对依赖 ' + spec);
+        continue;
+      }
+      if (spec.startsWith('node:')) continue;
+      try {
+        require.resolve(spec, { paths: [ROOT] });
+      } catch {
+        problems.push(`${item.id}: 发布面 import 无法在独立目录解析 ${spec}`);
+      }
     }
   }
 }
