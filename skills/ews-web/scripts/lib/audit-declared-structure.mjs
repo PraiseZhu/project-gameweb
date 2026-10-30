@@ -142,12 +142,48 @@ function modalsNamed(byName, raw) {
   return byName.get(key) || byName.get(`modal/${key}`) || [];
 }
 
-function inventoryReplaceableDefinitionKey(node, byId) {
+function instanceReferencedMasterId(nodeId, instanceId) {
+  if (typeof nodeId !== 'string' || typeof instanceId !== 'string' || !instanceId) return null;
+  const prefix = instanceId.startsWith('I') ? `${instanceId};` : `I${instanceId};`;
+  if (!nodeId.startsWith(prefix)) return null;
+  const rest = nodeId.slice(prefix.length);
+  if (!rest || rest.startsWith(';') || rest.endsWith(';')) return null;
+  return rest;
+}
+
+function nodeIsInsideDefinition(node, definitionId, byId) {
+  if (!node || !definitionId) return false;
+  if (node.id === definitionId) return true;
+  return ancestorsOf(node, byId).some((item) => item.id === definitionId);
+}
+
+function provenReplaceableMaster(node, byId) {
+  const instance = [...ancestorsOf(node, byId)].reverse().find((item) => item?.type === 'INSTANCE');
+  if (!instance?.componentId) return null;
+  const masterId = instanceReferencedMasterId(node.id, instance.id);
+  if (!masterId) return null;
+  const master = byId.get(masterId);
+  if (!master) return null;
+  if (!nodeIsInsideDefinition(master, instance.componentId, byId)) return null;
+  return master;
+}
+
+function imgLangReplaceableKey(node, byId) {
   if (node?.type === 'COMPONENT_SET' && parseName(node.name).prefix === 'img') return `img-lang-set:${node.id}`;
   if (node?.type === 'COMPONENT') {
     const setId = (node.ancestorIds || []).find((id) => byId.get(id)?.type === 'COMPONENT_SET');
     const set = setId ? byId.get(setId) : null;
     if (set && parseName(set.name).prefix === 'img') return `img-lang-set:${set.id}`;
+  }
+  return null;
+}
+
+function inventoryReplaceableDefinitionKey(node, byId) {
+  const selfLang = imgLangReplaceableKey(node, byId);
+  if (selfLang) return selfLang;
+  const master = provenReplaceableMaster(node, byId);
+  if (master && master.replaceable === true && master.assetKey && master.assetKey === node.assetKey) {
+    return imgLangReplaceableKey(master, byId) || master.id;
   }
   return node?.id;
 }

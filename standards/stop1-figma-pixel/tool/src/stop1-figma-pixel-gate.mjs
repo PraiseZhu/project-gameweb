@@ -583,16 +583,38 @@ export function sectionLiveCopyMasks(inventory, section) {
   return masks;
 }
 
-function droppedUntaggedFixCloneIds(inventory, byId) {
+function belongsToSection(node, sectionId, byId) {
+  const want = String(sectionId || '');
+  if (!want || !node) return false;
+  if (String(node.id) === want) return true;
+  if (String(node.parentId || '') === want) return true;
+  if (asArray(node.ancestorIds).some((id) => String(id) === want)) return true;
+  let current = node;
+  const seen = new Set();
+  while (current?.parentId && !seen.has(String(current.parentId))) {
+    seen.add(String(current.parentId));
+    if (String(current.parentId) === want) return true;
+    current = byId.get(String(current.parentId));
+    if (!current) break;
+    if (String(current.id) === want) return true;
+  }
+  return false;
+}
+
+function droppedUntaggedFixCloneIds(inventory, byId, options = {}) {
   const overlays = asArray(inventory?.overlays).filter((entry) => entry && (entry.role === 'fix' || entry.pin === 'viewport'));
   const seen = new Set();
   const droppedRoots = new Set();
+  const keepOwnedBySectionId = String(options.keepOwnedBySectionId || '');
   for (const overlay of overlays) {
     const raw = overlay?.from ?? overlay?.params?.from ?? byId.get(String(overlay?.id || ''))?.params?.from;
     if (Number.isFinite(Number(raw))) continue;
     const key = String(overlay.label || overlay.name || overlay.id || '');
-    if (seen.has(key)) droppedRoots.add(String(overlay.id));
-    else seen.add(key);
+    if (seen.has(key)) {
+      const node = byId.get(String(overlay.id));
+      if (keepOwnedBySectionId && belongsToSection(node, keepOwnedBySectionId, byId)) continue;
+      droppedRoots.add(String(overlay.id));
+    } else seen.add(key);
   }
   const dropped = new Set(droppedRoots);
   for (const node of asArray(inventory?.nodes)) {
@@ -601,12 +623,14 @@ function droppedUntaggedFixCloneIds(inventory, byId) {
   return dropped;
 }
 
-export function sectionPaintExports(inventory, section) {
+export function sectionPaintExports(inventory, section, options = {}) {
   const sectionBox = geom(section?.pageBox);
   if (!sectionBox || !inventory) return [];
   const nodes = asArray(inventory.nodes);
   const byId = new Map(nodes.filter((node) => node?.id).map((node) => [String(node.id), node]));
-  const droppedFixCloneIds = droppedUntaggedFixCloneIds(inventory, byId);
+  const droppedFixCloneIds = droppedUntaggedFixCloneIds(inventory, byId, {
+    keepOwnedBySectionId: options.keepSectionOwnedFix === true ? String(section?.id || '') : '',
+  });
   const byParent = new Map();
   for (const node of nodes) {
     const parent = String(node?.parentId || '');

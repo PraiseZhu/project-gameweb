@@ -27,6 +27,9 @@ npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 # yise-web-ui
 cd skills/yise-web-ui
 npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
+# ews-web / Etheria-ews
+cd skills/ews-web
+npm run figma:from-handoff -- ../../_tmp/out/handoff-<page>
 ```
 
 `inventory:check` 不是做页吃包入口。它只保留对单份 `status=ready` inventory JSON 的五项诊断。吃包用 `figma:from-handoff`。非 ready 包不可被消费。对人只交交接包目录，不要把 inventory JSON 当交付物。

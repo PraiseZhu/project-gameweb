@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { build } from "esbuild";
+import { fileURLToPath } from "node:url";
 import { VERDICT_KEY } from "../src/naming/verdicts.mjs";
 
 /**
@@ -20,7 +21,7 @@ import { VERDICT_KEY } from "../src/naming/verdicts.mjs";
  */
 
 const bundle = await build({
-  entryPoints: [new URL("../plugin/main.mjs", import.meta.url).pathname],
+  entryPoints: [fileURLToPath(new URL("../plugin/main.mjs", import.meta.url))],
   bundle: true,
   format: "iife",
   platform: "browser",

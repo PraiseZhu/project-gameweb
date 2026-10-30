@@ -35,6 +35,8 @@ export function lint(root) {
   const indNodes = [];  // ind/ 与其作用域、祖先链信息（遍历结束后统一判定）
   const switchesByScope = new Map(); // 最近 sec/（无则体检根）作用域内的全部 switch/
   const nodeContexts = new Map(); // 唯一 DFS 已知的豁免上下文，供即时与跨节点 finding 共用
+  const byId = new Map();
+  const parentById = new Map();
   const rootScope = root;
 
   /**
@@ -67,6 +69,7 @@ export function lint(root) {
     }
 
     stats.nodes++;
+    byId.set(n.id, n);
     const prefix = parsed.prefix;
     if (prefix) {
       stats.prefixed++;
@@ -288,6 +291,7 @@ export function lint(root) {
       ? { id: n.id, name: n.name }
       : ctx.replaceableAncestor;
     children.forEach((c, index) => {
+      parentById.set(c.id, n);
       const structuralPath = ctx.structuralPath
         ? `${ctx.structuralPath}/${n.type}@${index}`
         : `${n.type}@${index}`;
@@ -446,8 +450,8 @@ export function lint(root) {
   }
 
   /* ── 跨节点：同一替换位置定义了两次 ──
-     实例是引用，不算第二份定义。img+lang 组件集根与合法变体根是同一份定义
-     （A12：根上的标记传到变体），不算重复。 */
+     实例是引用，不算第二份定义。已证明的实例后代映射到母版身份。
+     img+lang 组件集根与合法变体根是同一份定义（A12），不算重复。 */
   const byReplaceableKey = new Map();
   for (const item of replaceableDefs) {
     const list = byReplaceableKey.get(item.key) ?? [];
@@ -457,9 +461,7 @@ export function lint(root) {
   for (const [key, group] of byReplaceableKey) {
     const distinct = new Map();
     for (const item of group) {
-      const k = item.instance
-        ? `${item.instance.componentId ?? "?"}::${item.instance.path ?? ""}`
-        : replaceableDefinitionKey(item);
+      const k = replaceableDupIdentity(item, byId, parentById);
       if (!distinct.has(k)) distinct.set(k, item);
     }
     if (distinct.size < 2) continue;
@@ -585,6 +587,71 @@ function replaceableDefinitionKey(item) {
     }
   }
   return node?.id;
+}
+
+function instanceReferencedMasterId(nodeId, instanceId) {
+  if (typeof nodeId !== "string" || typeof instanceId !== "string" || !instanceId) return null;
+  const prefix = instanceId.startsWith("I") ? `${instanceId};` : `I${instanceId};`;
+  if (!nodeId.startsWith(prefix)) return null;
+  const rest = nodeId.slice(prefix.length);
+  if (!rest || rest.startsWith(";") || rest.endsWith(";")) return null;
+  return rest;
+}
+
+function ancestorChain(node, parentById) {
+  const out = [];
+  const seen = new Set();
+  let current = parentById.get(node?.id);
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    out.unshift(current);
+    current = parentById.get(current.id);
+  }
+  return out;
+}
+
+function isUnderNode(node, ancestorId, parentById) {
+  if (!node || !ancestorId) return false;
+  if (node.id === ancestorId) return true;
+  return ancestorChain(node, parentById).some((item) => item.id === ancestorId);
+}
+
+function nearestInstanceNode(node, parentById) {
+  let current = parentById.get(node?.id);
+  const seen = new Set();
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    if (current.type === "INSTANCE") return current;
+    current = parentById.get(current.id);
+  }
+  return null;
+}
+
+function provenReplaceableMasterNode(item, byId, parentById) {
+  const instance = nearestInstanceNode(item?.node, parentById);
+  if (!instance?.id || !instance.componentId) return null;
+  const masterId = instanceReferencedMasterId(item.node?.id, instance.id);
+  if (!masterId) return null;
+  const master = byId.get(masterId);
+  if (!master) return null;
+  if (!isUnderNode(master, instance.componentId, parentById)) return null;
+  return master;
+}
+
+function replaceableDupIdentity(item, byId, parentById) {
+  const proven = provenReplaceableMasterNode(item, byId, parentById);
+  if (proven) {
+    const parsed = parseName(proven.name);
+    if (parsed.replaceable?.marked && parsed.replaceable.assetKey === item.key) {
+      return replaceableDefinitionKey({
+        node: proven,
+        ancestorNodes: ancestorChain(proven, parentById),
+      });
+    }
+    return item.node.id;
+  }
+  if (nearestInstanceNode(item.node, parentById)) return item.node.id;
+  return replaceableDefinitionKey(item);
 }
 
 function imgLangSetParent(parent) {

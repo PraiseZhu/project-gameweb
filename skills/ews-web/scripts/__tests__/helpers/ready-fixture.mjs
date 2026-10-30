@@ -4,6 +4,7 @@ import { deflateSync } from 'node:zlib';
 import { join } from 'node:path';
 import { stampReadyFields } from '../../lib/inventory-ready-fields.mjs';
 import { buildManifest } from '../../lib/handoff-contract.mjs';
+import { extraPaintSliceIds } from '../../lib/paint-slices.mjs';
 import { rebuildInventoryIndexes } from '../../lib/rebuild-indexes.mjs';
 
 export const PNG_1x1 = Buffer.from(
@@ -340,17 +341,17 @@ export function makeLark() {
   };
 }
 
-export function writeReadyPack(dir, { pc = pcInventory(), mobile = mobileInventory() } = {}) {
+export function writeReadyPack(dir, docs = {}) {
+  const pc = Object.hasOwn(docs, 'pc') ? docs.pc : pcInventory();
+  const mobile = Object.hasOwn(docs, 'mobile') ? docs.mobile : mobileInventory();
   mkdirSync(dir, { recursive: true });
-  const pcPath = join(dir, 'inventory-pc.json');
-  const mobilePath = join(dir, 'inventory-mobile.json');
-  writeFileSync(pcPath, `${JSON.stringify(pc, null, 2)}\n`);
-  writeFileSync(mobilePath, `${JSON.stringify(mobile, null, 2)}\n`);
+  if (pc) writeFileSync(join(dir, 'inventory-pc.json'), `${JSON.stringify(pc, null, 2)}\n`);
+  if (mobile) writeFileSync(join(dir, 'inventory-mobile.json'), `${JSON.stringify(mobile, null, 2)}\n`);
   const manifest = buildManifest({
-    pcPath: 'inventory-pc.json',
-    mobilePath: 'inventory-mobile.json',
-    pcDoc: pc,
-    mobileDoc: mobile,
+    pcPath: pc ? 'inventory-pc.json' : null,
+    mobilePath: mobile ? 'inventory-mobile.json' : null,
+    pcDoc: pc || null,
+    mobileDoc: mobile || null,
     kind: 'ready',
   });
   writeFileSync(join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
@@ -380,7 +381,7 @@ export function writeAssets(dir, packDocs) {
       seen.add(id);
       const colors = colorSample === PNG_BLUE ? [0, 0, 255, 255] : colorSample === PNG_RED ? [255, 0, 0, 255] : [0, 160, 80, 255];
       const buf = syntheticPng(Math.round(box.w), Math.round(box.h), colors);
-      const name = `${end}-${id.replace(':', '-')}.png`;
+      const name = `${end}-${id.replace(/[:;]/g, '-')}.png`;
       const file = join(dir, name);
       writeFileSync(file, buf);
       const size = pngSize(buf);
@@ -398,6 +399,11 @@ export function writeAssets(dir, packDocs) {
     for (const node of doc.nodes || []) {
       if (node.sliceExport?.file) add(node.id, pick(end, node.id), node.sliceExport.box);
     }
+    const byId = new Map((doc.nodes || []).map((node) => [String(node.id), node]));
+    for (const id of extraPaintSliceIds(doc)) {
+      const node = byId.get(String(id));
+      add(id, pick(end, id), node?.pageBox || { w: 1, h: 1 });
+    }
   }
   const fontFile = join(dir, 'fonts', 'source-han-sans.woff2');
   writeFileSync(fontFile, FONT_BYTES);
@@ -412,6 +418,217 @@ export function writeAssets(dir, packDocs) {
   };
   writeFileSync(join(dir, 'asset-map.json'), `${JSON.stringify(map, null, 2)}\n`);
   return map;
+}
+
+function solid(r, g, b, a = 1) {
+  return [{ type: 'SOLID', visible: true, color: { r, g, b, a } }];
+}
+
+function playerCardSet({ setId, confirmedId, pendingId, confirmedInnerId, confirmedName, pendingName, box }) {
+  const innerBox = { x: box.x + 10, y: box.y + 10, w: box.w - 20, h: box.h - 20 };
+  const confirmed = {
+    id: confirmedId, type: 'COMPONENT', name: `Property 1=${confirmedName}`,
+    status: 'determined',
+    componentProperties: { 'Property 1': confirmedName },
+    box, pageBox: box, parentBox: box, ancestorIds: [setId],
+  };
+  const pending = {
+    id: pendingId, type: 'COMPONENT', name: `Property 1=${pendingName}`,
+    status: 'determined',
+    componentProperties: { 'Property 1': pendingName },
+    box, pageBox: box, parentBox: box, ancestorIds: [setId],
+  };
+  const inner = {
+    id: confirmedInnerId, type: 'FRAME', name: 'img/[replaceable]选手图',
+    parentId: confirmedId, status: 'determined', role: 'img', behavior: 'slice',
+    replaceable: true, assetKey: '选手图',
+    ancestorIds: [setId, confirmedId],
+    box: innerBox, pageBox: innerBox, parentBox: box,
+    sliceExport: sliceOf(confirmedInnerId, innerBox),
+  };
+  return {
+    id: setId,
+    type: 'COMPONENT_SET',
+    name: '角色选手卡片',
+    componentPropertyDefinitions: {
+      'Property 1': { type: 'VARIANT', variantOptions: [confirmedName, pendingName] },
+    },
+    variants: stampAll([confirmed, pending]),
+    nodes: stampAll([confirmed, pending, inner]),
+  };
+}
+
+function pagedEndNodes({
+  pageId, secId, switchId, prefix, confirmedVariant, pendingVariant, confirmedInnerId,
+  secBox, switchBox, cardW, cardH, gap, includePagerButtons = true,
+}) {
+  const y = switchBox.y;
+  const slots = [0, 1, 2, 3].map((index) => {
+    const x = switchBox.x + index * (cardW + gap);
+    return { x, y, w: cardW, h: cardH };
+  });
+  const instanceIds = [0, 1, 2, 3].map((index) => `${prefix}${81 + index}`);
+  const childIds = [0, 1, 2, 3].map((index) => `${prefix}${81 + index}a`);
+  const confirmed = index => index < 2;
+  const nodes = [
+    { id: secId, scope: 'page', type: 'FRAME', name: 'sec/5', label: '5', parentId: pageId, orderKey: '0.6', status: 'determined', role: 'sec', ancestorIds: [pageId], box: secBox, pageBox: secBox, parentBox: secBox },
+    { id: switchId, scope: 'page', type: 'FRAME', name: 'switch/选手', label: '选手', parentId: secId, orderKey: '0.6.0', status: 'determined', role: 'switch', ancestorIds: [pageId, secId], box: switchBox, pageBox: switchBox, parentBox: secBox },
+  ];
+  for (let index = 0; index < 4; index += 1) {
+    const box = slots[index];
+    const instanceId = instanceIds[index];
+    const childId = childIds[index];
+    const isConfirmed = confirmed(index);
+    nodes.push({
+      id: instanceId, scope: 'page', type: 'INSTANCE', name: '角色选手卡片',
+      parentId: switchId, orderKey: `0.6.0.${index}`, status: 'unknown',
+      componentId: isConfirmed ? confirmedVariant : pendingVariant,
+      ancestorIds: [pageId, secId, switchId],
+      box, pageBox: box, parentBox: switchBox,
+    });
+    const inner = { x: box.x + 10, y: box.y + 10, w: box.w - 20, h: box.h - 20 };
+    const innerId = isConfirmed ? `I${instanceId};${confirmedInnerId}` : childId;
+    nodes.push({
+      id: innerId, scope: 'page', type: 'FRAME',
+      name: isConfirmed ? 'img/[replaceable]选手图' : 'img/选手图',
+      parentId: instanceId, orderKey: `0.6.0.${index}.0`, status: 'determined', role: 'img', behavior: 'slice',
+      replaceable: isConfirmed, assetKey: isConfirmed ? '选手图' : null,
+      ancestorIds: [pageId, secId, switchId, instanceId],
+      box: inner, pageBox: inner, parentBox: box,
+      sliceExport: sliceOf(innerId, inner),
+      fills: solid(isConfirmed ? 0.2 : 0.6, isConfirmed ? 0.4 : 0.6, isConfirmed ? 0.8 : 0.6),
+    });
+  }
+  const dotY = switchBox.y + switchBox.h + 20;
+  const dotHost = { x: switchBox.x + 200, y: dotY, w: 160, h: 16 };
+  const dotHostId = `${prefix}91`;
+  nodes.push({
+    id: dotHostId, scope: 'page', type: 'FRAME', name: '轮播点', parentId: secId, orderKey: '0.6.1',
+    status: 'unknown', ancestorIds: [pageId, secId], box: dotHost, pageBox: dotHost, parentBox: secBox,
+    layout: {
+      layoutMode: 'HORIZONTAL',
+      layoutSizingHorizontal: 'HUG',
+      layoutSizingVertical: 'HUG',
+      itemSpacing: 3,
+      constraints: { horizontal: 'LEFT', vertical: 'TOP' },
+    },
+  });
+  const dotSizes = [48, 24, 24, 24];
+  const dotGap = 3;
+  let dotX = dotHost.x;
+  for (let index = 0; index < 4; index += 1) {
+    const box = { x: dotX, y: dotHost.y, w: dotSizes[index], h: 16 };
+    dotX += dotSizes[index] + dotGap;
+    const selected = index === 0;
+    nodes.push({
+      id: `${prefix}${85 + index}`, scope: 'page', type: 'VECTOR',
+      name: selected ? 'ind/轮播点-选中' : 'ind/轮播点-未选中',
+      parentId: dotHostId, orderKey: `0.6.1.${index}`, status: 'determined', role: 'ind',
+      ancestorIds: [pageId, secId, dotHostId], box, pageBox: box, parentBox: dotHost,
+      fills: selected ? solid(1, 1, 1) : solid(0.4, 0.4, 0.4),
+    });
+  }
+  if (includePagerButtons) {
+    const btnY = switchBox.y + 160;
+    nodes.push({
+      id: `${prefix}89`, scope: 'page', type: 'FRAME', name: 'btn/切换按钮', parentId: secId, orderKey: '0.6.2',
+      status: 'determined', role: 'btn', ancestorIds: [pageId, secId],
+      box: { x: 24, y: btnY, w: 48, h: 48 }, pageBox: { x: 24, y: btnY, w: 48, h: 48 }, parentBox: secBox,
+      fills: solid(0.1, 0.1, 0.1),
+    });
+    nodes.push({
+      id: `${prefix}90`, scope: 'page', type: 'FRAME', name: 'btn/切换按钮', parentId: secId, orderKey: '0.6.3',
+      status: 'determined', role: 'btn', ancestorIds: [pageId, secId],
+      box: { x: secBox.w - 72, y: btnY, w: 48, h: 48 }, pageBox: { x: secBox.w - 72, y: btnY, w: 48, h: 48 }, parentBox: secBox,
+      fills: solid(0.1, 0.1, 0.1),
+    });
+  }
+  const barBox = { x: switchBox.x + 520, y: switchBox.y + switchBox.h + 36, w: 80, h: 24 };
+  const barId = `${prefix}92`;
+  const indexId = `${prefix}93`;
+  nodes.push({
+    id: barId, scope: 'page', type: 'FRAME', name: '滑条', parentId: secId, orderKey: '0.6.4',
+    status: 'determined', ancestorIds: [pageId, secId], box: barBox, pageBox: barBox, parentBox: secBox,
+  });
+  nodes.push({
+    id: indexId, scope: 'page', type: 'TEXT', name: 'copy/滑条', parentId: barId, orderKey: '0.6.4.0',
+    status: 'determined', role: 'copy', ancestorIds: [pageId, secId, barId],
+    characters: '01/10',
+    text: { characters: '01/10', fontFamily: 'Source Han Sans', fontWeight: 400, fontSize: 16 },
+    box: barBox, pageBox: barBox, parentBox: barBox,
+  });
+  return { nodes, instanceIds, slots };
+}
+
+export function appendPagedPlayers(pc, mobile, options = {}) {
+  const pcSet = playerCardSet({
+    setId: '300:10', confirmedId: '300:11', pendingId: '300:21', confirmedInnerId: '300:12',
+    confirmedName: '已有选手', pendingName: '待确定选手',
+    box: { x: 0, y: 0, w: 360, h: 360 },
+  });
+  const moSet = playerCardSet({
+    setId: '400:10', confirmedId: '400:11', pendingId: '400:21', confirmedInnerId: '400:12',
+    confirmedName: '已确认选手', pendingName: '待确认选手',
+    box: { x: 0, y: 0, w: 150, h: 220 },
+  });
+  const pcAdd = pagedEndNodes({
+    pageId: '100:1', secId: '100:70', switchId: '100:80', prefix: '100:',
+    confirmedVariant: '300:11', pendingVariant: '300:21', confirmedInnerId: '300:12',
+    secBox: { x: 0, y: 2160, w: 1920, h: 800 },
+    switchBox: { x: 180, y: 2200, w: 1560, h: 360 },
+    cardW: 360, cardH: 360, gap: 40,
+    includePagerButtons: options.pagerButtons?.pc !== false,
+  });
+  const moAdd = pagedEndNodes({
+    pageId: '200:1', secId: '200:70', switchId: '200:80', prefix: '200:',
+    confirmedVariant: '400:11', pendingVariant: '400:21', confirmedInnerId: '400:12',
+    secBox: { x: 0, y: 2500, w: 750, h: 900 },
+    switchBox: { x: 24, y: 2560, w: 702, h: 220 },
+    cardW: 150, cardH: 220, gap: 18,
+    includePagerButtons: options.pagerButtons?.mobile !== false,
+  });
+  const nextPc = rebuildInventoryIndexes({
+    ...pc,
+    nodes: stampAll([...(pc.nodes || []), ...pcAdd.nodes]),
+    attachments: {
+      ...pc.attachments,
+      componentSets: [...(pc.attachments?.componentSets || []), pcSet],
+    },
+  });
+  const nextMo = rebuildInventoryIndexes({
+    ...mobile,
+    nodes: stampAll([...(mobile.nodes || []), ...moAdd.nodes]),
+    attachments: {
+      ...mobile.attachments,
+      componentSets: [...(mobile.attachments?.componentSets || []), moSet],
+    },
+  });
+  return { pc: nextPc, mobile: nextMo };
+}
+
+export function pagedSwitchCards(count, { placeholder = false } = {}) {
+  const templates = [
+    { state: 'confirmed', fromInstance: { pc: '100:81', mobile: '200:81' } },
+    { state: 'confirmed', fromInstance: { pc: '100:82', mobile: '200:82' } },
+    { state: 'pending', fromInstance: { pc: '100:83', mobile: '200:83' } },
+    { state: 'pending', fromInstance: { pc: '100:84', mobile: '200:84' } },
+  ];
+  const cards = [];
+  for (let i = 0; i < count; i += 1) cards.push({ ...templates[i % 4] });
+  return {
+    switchId: { pc: '100:80', mobile: '200:80' },
+    placeholder,
+    cards,
+  };
+}
+
+export function pagedConfig(cardCount, extra = {}) {
+  const base = defaultConfig();
+  return {
+    ...base,
+    screens: [...base.screens, { key: 'players', pc: '100:70', mobile: '200:70' }],
+    pagedSwitches: [pagedSwitchCards(cardCount, extra)],
+  };
 }
 
 export function defaultConfig() {
@@ -446,12 +663,18 @@ export function defaultDesignations() {
         '100:21': { row: 40, why: 'user' },
         '100:25': { row: 41, why: 'user' },
       },
+      deliberatelyUnbound: {
+        '100:93': { why: 'paged index chrome' },
+      },
     },
     mobile: {
       designations: {
         '200:5': { row: 10, why: 'user' },
         '200:21': { row: 40, why: 'user' },
         '200:25': { row: 41, why: 'user' },
+      },
+      deliberatelyUnbound: {
+        '200:93': { why: 'paged index chrome' },
       },
     },
   };

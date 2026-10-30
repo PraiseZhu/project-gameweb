@@ -11,6 +11,14 @@
     "release:audit": "node scripts/release-audit.mjs",
     "ewsweb": "node scripts/ews-web.mjs",
     "ews出页": "node scripts/ews-web.mjs",
+    "figma:from-handoff": "node scripts/figma-from-handoff.mjs",
+    "policy-mirror": "node scripts/policy-mirror.mjs",
+    "preview:first": "node scripts/preview-first.mjs",
+    "reconcile-page": "node scripts/reconcile-page.mjs",
+    "product-viewport": "node scripts/product-viewport.mjs",
+    "live-copy": "node scripts/live-copy.mjs",
+    "stop1-pixel": "node scripts/stop1-pixel.mjs",
+    "stop1": "node scripts/stop1.mjs",
     "test:browser": "node scripts/test-browser.mjs"
   }
 }

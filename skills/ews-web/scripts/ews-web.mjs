@@ -9,6 +9,10 @@ import { validateAssets } from './lib/asset-contract.mjs';
 import { buildPageModel } from './lib/page-model.mjs';
 import { documentHtml } from '../assets/runtime/render.mjs';
 import { contained, physicalPath, resolveInside, sanitizeFileToken, sanitizeRel } from './lib/safe-fs.mjs';
+import { applyCommentShareCli } from './lib/comment-share.mjs';
+import { publishRuntimeDir, runtimeIdentityFromDir } from './lib/runtime-identity.mjs';
+import { enrichVariantAssets } from './lib/variant-assets.mjs';
+import { renderOutsetOf } from './lib/render-geometry.mjs';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const SKILL_ROOT = resolve(HERE, '..');
@@ -91,6 +95,49 @@ function outputPath(outDir, name) {
   return target.abs;
 }
 
+
+// Slice ink outside its layout box (Figma renderBox beyond pageBox) needs a render-bounds PNG.
+// A pageBox-sized PNG there has lost pixels; fail visible instead of drawing it shifted/cropped.
+export function sliceRenderCoverageGaps(model, publishedAssets) {
+  const gaps = [];
+  const seen = new Set();
+  for (const end of Object.keys(model.platforms || {})) {
+    const assets = publishedAssets?.[end] || {};
+    const walk = (value) => {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) { for (const item of value) walk(item); return; }
+      const outset = value.renderOutset || renderOutsetOf(value);
+      if (value.sliceExport?.bounds === 'render' && outset && value.pageBox) {
+        const id = String(value.sourceNodeId || value.id);
+        const key = `${end}/${id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const rec = assets[value.pagedAsset] || assets[value.id] || assets[id];
+          const o = outset;
+          const scale = Number(value.sliceExport.scale) || 1;
+          const want = { width: Math.round((value.pageBox.w + o.l + o.r) * scale), height: Math.round((value.pageBox.h + o.t + o.b) * scale) };
+          const got = { width: Number(rec?.width), height: Number(rec?.height) };
+          if (!(Math.abs(got.width - want.width) <= 1 && Math.abs(got.height - want.height) <= 1)) {
+            gaps.push({
+              kind: 'slice-render-uncovered',
+              end,
+              nodeId: id,
+              name: value.name || '',
+              renderOutset: o,
+              png: got,
+              want,
+              note: '切图尺寸与 render 框不符，需按 render 框重导；当前仅供诊断，不可验收',
+            });
+          }
+        }
+      }
+      for (const child of Object.values(value)) walk(child);
+    };
+    walk(model.platforms[end]);
+  }
+  return gaps;
+}
+
 export function runEwsWeb(argv = process.argv.slice(2), { cwd = process.cwd() } = {}) {
   const handoff = arg(argv, '--handoff');
   const assetsArg = arg(argv, '--assets');
@@ -106,7 +153,7 @@ export function runEwsWeb(argv = process.argv.slice(2), { cwd = process.cwd() } 
   if (problems.length) return { ok: false, problems };
 
   const configPath = resolve(cwd, configArg);
-  const config = readJson(configPath);
+  const config = applyCommentShareCli(readJson(configPath), argv);
   const configDir = dirname(configPath);
   const assetMapPath = resolve(cwd, assetsArg);
   const assetMap = readJson(assetMapPath);
@@ -156,6 +203,26 @@ export function runEwsWeb(argv = process.argv.slice(2), { cwd = process.cwd() } 
 
   const model = buildPageModel({ truth, copy, assets: assets.assets, config, pack });
   if (!model.ok) return { ok: false, problems: model.problems };
+  enrichVariantAssets(assets, model, assetRoot);
+  let liveTexts = 0;
+  let matchedNodes = 0;
+  let originalKeepNodes = 0;
+  for (const bag of Object.values(copy.byPlatform || {})) {
+    liveTexts += (bag.texts || []).length;
+    for (const bound of Object.values(bag.byNode || {})) {
+      if (bound.matchKind === 'deliberately-unbound') originalKeepNodes += 1;
+      else if (bound.translations && Object.keys(bound.translations).length) matchedNodes += 1;
+    }
+  }
+  model.translationAccepted = copy.translationAccepted === true;
+  model.translationCoverage = {
+    liveTexts,
+    matchedNodes,
+    originalKeepNodes,
+    preview: copy.translationAccepted === true
+      ? 'complete'
+      : (copy.ok ? 'authorized-original-keep' : 'blocked'),
+  };
 
   const assetInputs = ['pc', 'mobile'].flatMap((end) => Object.values(assets.assets[end] || {}));
   assetInputs.push(...(assets.assets.fonts || []), ...Object.values(assets.assets.media || {}));
@@ -166,7 +233,7 @@ export function runEwsWeb(argv = process.argv.slice(2), { cwd = process.cwd() } 
   const publishedAssets = { pc: {}, mobile: {}, fonts: [], media: {} };
   for (const end of ['pc', 'mobile']) {
     for (const [id, rec] of Object.entries(assets.assets[end] || {})) {
-      const token = sanitizeFileToken(id.replace(':', '-'), `asset id ${id}`);
+      const token = sanitizeFileToken(String(id).replace(/[:;]/g, '-'), `asset id ${id}`);
       if (!token.ok) {
         writeProblems.push(token.problem);
         continue;
@@ -216,30 +283,42 @@ export function runEwsWeb(argv = process.argv.slice(2), { cwd = process.cwd() } 
     }
   }
 
+  const sliceGaps = sliceRenderCoverageGaps(model, publishedAssets);
+  const runtimeIdentity = runtimeIdentityFromDir(RUNTIME_SRC);
+  model.runtimeIdentity = runtimeIdentity;
   mkdirSync(outputPath(outDir, 'runtime'), { recursive: true });
   for (const entry of readdirSync(RUNTIME_SRC, { withFileTypes: true })) {
     if (!entry.isFile()) throw new Error('运行时目录仅允许普通文件');
-    cpSync(join(RUNTIME_SRC, entry.name), outputPath(outDir, 'runtime/' + entry.name));
   }
+  publishRuntimeDir(RUNTIME_SRC, outputPath(outDir, 'runtime'), runtimeIdentity);
   writeFileSync(outputPath(outDir, MARKER), 'etheria-ews\n');
   writeFileSync(outputPath(outDir, 'model.json'), `${JSON.stringify(model, null, 2)}\n`);
   writeFileSync(outputPath(outDir, 'provenance.json'), `${JSON.stringify({
     fingerprint: pack.fingerprint,
+    runtimeIdentity,
     sources: pack.sources,
     copy: copy.provenance,
     translationAccepted: copy.translationAccepted === true,
-    gaps: pack.gaps,
+    translationCoverage: model.translationCoverage,
+    translationNotices: copy.notices || [],
+    gaps: [...(pack.gaps || []), ...sliceGaps],
   }, null, 2)}\n`);
+  const devices = JSON.parse(readFileSync(join(RUNTIME_SRC, 'qa-devices.json'), 'utf8'));
   writeFileSync(outputPath(outDir, 'index.html'), documentHtml(model, {
     locale: model.defaultLocale,
     device: pack.ends.includes('pc') ? 'pc' : 'mobile',
+    devices,
+    runtimeIdentity,
   }));
   return {
-    ok: true,
+    ok: sliceGaps.length === 0,
     outDir,
     indexHtml: join(outDir, 'index.html'),
     fingerprint: pack.fingerprint,
-    problems: [],
+    translationAccepted: copy.translationAccepted === true,
+    translationCoverage: model.translationCoverage,
+    sliceGaps,
+    problems: sliceGaps.map((gap) => gap.end + '/' + gap.nodeId + ': slice-render-uncovered PNG ' + gap.png.width + 'x' + gap.png.height + '，需要 ' + gap.want.width + 'x' + gap.want.height),
   };
 }
 

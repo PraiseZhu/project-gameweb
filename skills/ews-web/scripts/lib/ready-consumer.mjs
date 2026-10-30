@@ -6,7 +6,7 @@ import { EMPTY_PLATFORM_SCOPE, platformTruthFromInventory, readyPlatformTruth } 
 import { loadReadyPack } from './handoff-contract.mjs';
 
 const CONSUME_SCHEMA = 'ews-ready-consume/v1';
-const UNSUPPORTED_PAINT = new Set(['VECTOR', 'BOOLEAN_OPERATION', 'STAR', 'REGULAR_POLYGON', 'LINE']);
+const UNSUPPORTED_PAINT = new Set(['BOOLEAN_OPERATION', 'STAR', 'REGULAR_POLYGON', 'LINE']);
 
 function collectPageTree(truth, platform) {
   const nodes = [];

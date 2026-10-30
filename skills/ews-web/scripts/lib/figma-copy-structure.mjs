@@ -31,6 +31,42 @@ export function cellLines(raw) {
     .filter((line) => line !== '');
 }
 
+function isOverflowNoteLine(line) {
+  const text = String(line || '').trim();
+  if (!text) return true;
+  if (/^\u3010/.test(text) && /\u3011\s*$/.test(text)) return true;
+  if (/^[\(（]/.test(text)) return true;
+  if (/^去掉/.test(text)) return true;
+  return false;
+}
+
+/** Parse "too long, can change to…" short forms from a table cell. Never invents text. */
+export function parseOverflowAlt(raw) {
+  const lines = cellLines(raw);
+  const marker = lines.findIndex((line) => /放不下/.test(line) && /改成/.test(line));
+  if (marker < 0) return [];
+  const longs = lines.slice(0, marker).filter((line) => !isOverflowNoteLine(line));
+  const shorts = lines.slice(marker + 1).filter((line) => !isOverflowNoteLine(line));
+  const pairs = [];
+  for (let i = 0; i < longs.length && i < shorts.length; i += 1) {
+    if (longs[i] && shorts[i] && longs[i] !== shorts[i]) pairs.push({ long: longs[i], short: shorts[i] });
+  }
+  return pairs;
+}
+
+export function overflowAltIndex(larkSnap) {
+  const map = new Map();
+  for (const row of Object.values(larkSnap?.rows || {})) {
+    if (!row || typeof row !== 'object') continue;
+    for (const [lang, cell] of Object.entries(row)) {
+      for (const pair of parseOverflowAlt(cell)) {
+        map.set(`${lang}\n${pair.long}`, pair.short);
+      }
+    }
+  }
+  return map;
+}
+
 const WHOLE_LINE_WRAPPERS = [
   ['\u3010', '\u3011'],
   ['[', ']'],
@@ -42,6 +78,15 @@ const WHOLE_LINE_WRAPPERS = [
  * If the TEXT layer itself has no matching wrapper, keep the inner words only.
  * Only a whole-line pair is stripped; inner punctuation stays.
  */
+export function preserveSourceLeadingAsterisks(sourceCharacters, adopted) {
+  const source = String(sourceCharacters ?? '');
+  const value = String(adopted ?? '');
+  const match = source.match(/^(\*+)([ \t\u3000]*)/);
+  if (!match || !value) return value;
+  if (/^\*+/.test(value.trimStart())) return value;
+  return `${match[1]}${match[2]}${value}`;
+}
+
 export function stripWholeLineWrappersIfSourceBare(sourceCharacters, adopted) {
   const source = String(sourceCharacters ?? '').trim();
   const value = String(adopted ?? '');
@@ -67,6 +112,24 @@ export function stripWholeLineWrappersIfSourceBare(sourceCharacters, adopted) {
       return stripTableSizeHint(line);
     })
     .join('\n');
+}
+
+const HEADING_JOINER = /[&＆]/;
+
+/** First segment of an A&B table cell. Empty unless the cell has a real tail. */
+export function joinedHeadingHead(rawZh) {
+  const raw = String(rawZh ?? '');
+  if (!HEADING_JOINER.test(raw)) return '';
+  const parts = raw.split(HEADING_JOINER).map((part) => normalizeCopy(part)).filter(Boolean);
+  if (parts.length < 2) return '';
+  return parts[0];
+}
+
+/** Unique A&B first-segment hits. Does not bind prefix of 全球总决赛选手名单. */
+export function uniqueJoinedHeadingHits(norm, table) {
+  const key = String(norm || '');
+  if (!key) return [];
+  return (table || []).filter((row) => joinedHeadingHead(row?.rawZh) === key);
 }
 
 export function lineBreakOf(raw) {

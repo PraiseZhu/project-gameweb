@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, relative } from 'node:path';
 import { isLegalImgLangAssetSet, resolveLocaleDeviceImage } from './image-language.mjs';
-import { sliceIdsOf } from './handoff-contract.mjs';
+import { paintSliceIdsOf } from './paint-slices.mjs';
 import { resolveInside, sanitizeFileToken } from './safe-fs.mjs';
 
 function asArray(value) {
@@ -94,7 +94,7 @@ export function validateAssets({
     const graph = doc?.attachments?.componentSets || [];
     const byDevice = { [end]: graph };
     const mapEnd = assetMap?.[end] || assetMap?.assets?.[end] || {};
-    const requiredIds = new Set(sliceIdsOf(doc || {}));
+    const requiredIds = new Set(paintSliceIdsOf(doc || {}));
 
     for (const set of graph) {
       if (!isLegalImgLangAssetSet(set)) continue;

@@ -58,7 +58,8 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../.."
 const TOOL_DIR = resolve(REPO_ROOT, "standards/figma-naming/tool");
 const YISE_DIR = resolve(REPO_ROOT, "skills/yise-web-ui");
 const TORCH_DIR = resolve(REPO_ROOT, "skills/torchlight-web");
-const CONSUMER_DIRS = new Set([YISE_DIR, TORCH_DIR]);
+const EWS_DIR = resolve(REPO_ROOT, "skills/ews-web");
+const CONSUMER_DIRS = new Set([YISE_DIR, TORCH_DIR, EWS_DIR]);
 const TMP_DIR = resolve(REPO_ROOT, "_tmp");
 
 function bashBlocksOf(text) {
@@ -126,7 +127,7 @@ function assertHandoffBashBlocksSelfCd(text, label) {
     }
     if (block.includes("figma:from-handoff")) {
       const cds = [...block.matchAll(/^\s*cd\s+(\S+)/gm)].map((match) => resolveFromRepo(match[1]));
-      assert.ok(cds.every((dir) => CONSUMER_DIRS.has(dir)), `${label} 吃包块只能 cd torchlight-web 或 yise-web-ui，收到 ${cds.join(", ")}`);
+      assert.ok(cds.every((dir) => CONSUMER_DIRS.has(dir)), `${label} 吃包块只能 cd torchlight-web、yise-web-ui 或 ews-web，收到 ${cds.join(", ")}`);
       assert.ok(cds.includes(TORCH_DIR) || cds.includes(YISE_DIR), `${label} 吃包块缺做页 consumer`);
     }
     const tmpArgs = [...block.matchAll(/(?:\s)((?:\.\.\/)+_tmp\/\S+)/g)].map((match) => match[1]);
@@ -150,7 +151,7 @@ test("SKILL.md 每个 bash 块从仓库根自己 cd，_tmp 解析到仓库根", 
     }
     if (block.includes("figma:from-handoff")) {
       const cds = [...block.matchAll(/^\s*cd\s+(\S+)/gm)].map((match) => resolveFromRepo(match[1]));
-      assert.ok(cds.every((dir) => CONSUMER_DIRS.has(dir)), `吃包块只能 cd torchlight-web 或 yise-web-ui，收到 ${cds.join(", ")}`);
+      assert.ok(cds.every((dir) => CONSUMER_DIRS.has(dir)), `吃包块只能 cd torchlight-web、yise-web-ui 或 ews-web，收到 ${cds.join(", ")}`);
       assert.ok(cds.includes(TORCH_DIR) && cds.includes(YISE_DIR), "eat-pack block must include torchlight-web and yise-web-ui");
     }
     const tmpArgs = [...block.matchAll(/(?:\s)((?:\.\.\/)+_tmp\/\S+)/g)].map((match) => match[1]);

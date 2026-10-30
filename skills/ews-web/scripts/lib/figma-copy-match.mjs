@@ -22,7 +22,7 @@
 
 import { normalizeCopy, editDistance, fuzzyThreshold } from './figma-copy-normalize.mjs';
 import { deriveContext, resolveContextualRow, validateCopyOverlay } from './figma-copy-context.mjs';
-import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferLocalCandidateNeighbor, inferSplitShareRow, splitLocaleCellByOwnLines, inferCellLineSpan, cellLines, lineBreakOf, stripWholeLineWrappersIfSourceBare } from './figma-copy-structure.mjs';
+import { findCellSplitGroups, inferRowFromNeighbors, inferLeftoverUniqueRow, inferAdjacentBoundRow, inferLocalCandidateNeighbor, inferSplitShareRow, splitLocaleCellByOwnLines, inferCellLineSpan, cellLines, lineBreakOf, stripWholeLineWrappersIfSourceBare, preserveSourceLeadingAsterisks, uniqueJoinedHeadingHits } from './figma-copy-structure.mjs';
 
 const LANGS_FALLBACK = ['zh-CN', 'en', 'ko', 'ja', 'zh-TW'];
 
@@ -192,7 +192,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
 
   const byNode = {};
   const _unread = [];
-  const tally = { exact: 0, normalized: 0, fuzzy: 0, ambiguous: 0, none: 0, cellSplit: 0, inferredNeighbor: 0, inferredLeftover: 0, inferredAdjacent: 0, inferredSplitShare: 0 };
+  const tally = { exact: 0, normalized: 0, fuzzy: 0, ambiguous: 0, none: 0, cellSplit: 0, joinedHeading: 0, inferredNeighbor: 0, inferredLeftover: 0, inferredAdjacent: 0, inferredSplitShare: 0 };
   const cellSplit = findCellSplitGroups(texts, table);
 
   function designationSpanFits(lineIndex, takeCount, cellCount) {
@@ -259,7 +259,10 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
         const leaf = larkLeaf(`/rows/${t.row}/${lang}`);
         translations[lang] = {
           ...leaf,
-          value: lockZhManualBreak(lang, sourceCharacters, stripWholeLineWrappersIfSourceBare(sourceCharacters, leaf && leaf.value != null ? leaf.value : v)),
+          value: preserveSourceLeadingAsterisks(
+            sourceCharacters,
+            lockZhManualBreak(lang, sourceCharacters, stripWholeLineWrappersIfSourceBare(sourceCharacters, leaf && leaf.value != null ? leaf.value : v)),
+          ),
         };
         continue;
       }
@@ -314,7 +317,10 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
       const leaf = larkLeaf(`/rows/${t.row}/${lang}`);
       translations[lang] = {
         ...leaf,
-        value: lockZhManualBreak(lang, sourceCharacters, stripWholeLineWrappersIfSourceBare(sourceCharacters, pieces.join('\n'))),
+        value: preserveSourceLeadingAsterisks(
+          sourceCharacters,
+          lockZhManualBreak(lang, sourceCharacters, stripWholeLineWrappersIfSourceBare(sourceCharacters, pieces.join('\n'))),
+        ),
         splitLine: lineIndex,
         splitSpan: span,
         splitPart: partIndex,
@@ -383,7 +389,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
           tableZhCN: __rawZh,
           translations: {},
           missingLangs: langs.slice(),
-          note: `人工指认第 ${__row} 行，但该格有多句而本层对不上整格/单句，禁止整格灌入。copy-designations 请补 lineIndex/takeCount。`,
+          note: `agent 指认第 ${__row} 行，但该格有多句而本层对不上整格/单句，禁止整格灌入。copy-designations 请补 lineIndex/takeCount。`,
         };
         _unread.push({
           ...base,
@@ -410,7 +416,7 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
         ...base,
         ...adopt({ row: __row, rawZh: __rawZh }, 'designated', { ...adoptSplit, sourceCharacters: raw }),
         ...(cellSplitOut ? { cellSplit: cellSplitOut } : {}),
-        note: `人工指认第 ${__row} 行（${__nodeRow.why || 'copy-designations'}）；值由 larkLeaf 机械取，非手填${Number.isInteger(splitMeta.lineIndex) ? `；拆格句序第 ${splitMeta.lineIndex + 1}/${splitMeta.lineCount} 句起共 ${splitMeta.takeCount || 1} 句` : ''}`,
+        note: `agent 指认第 ${__row} 行（${__nodeRow.why || 'copy-designations'}）；值由 larkLeaf 机械取，非手填${Number.isInteger(splitMeta.lineIndex) ? `；拆格句序第 ${splitMeta.lineIndex + 1}/${splitMeta.lineCount} 句起共 ${splitMeta.takeCount || 1} 句` : ''}`,
       };
       tally.exact += 1; // designated 计入 exact 桶（已解析）
       continue;
@@ -520,6 +526,38 @@ export function extractCopy({ figSnap, larkSnap, at, larkLeaf, texts, copyOverla
     if (hits.length === 1) {
       byNode[nodeId] = { ...base, ...adopt(hits[0], kind, { sourceCharacters: raw }) };
       tally[kind] += 1;
+      continue;
+    }
+
+    // 2b) unique A&B heading: Figma text is the first segment of exactly one
+    //     phase cell like 赛程信息&赛事奖励. Bind the FULL cell for foreign
+    //     locales; keep Figma characters for zh-CN. Not 截半句 (does not take
+    //     only half of the translation). Prefix without & stays unread.
+    const joinedHits = uniqueJoinedHeadingHits(norm, table);
+    if (joinedHits.length) {
+      const tuples = new Set(joinedHits.map((t) => JSON.stringify(translationTuple(larkSnap, at, t.row, langs))));
+      if (tuples.size === 1) {
+        byNode[nodeId] = {
+          ...base,
+          ...adopt(joinedHits[0], 'joined-heading', { sourceCharacters: raw }),
+          note: `稿上「${raw}」唯一对应表第 ${joinedHits[0].row} 行 A&B 整格「${joinedHits[0].rawZh}」；源语言跟稿，外语用整格译文`,
+        };
+        tally.joinedHeading += 1;
+        tally.exact += 1;
+        continue;
+      }
+      tally.ambiguous += 1;
+      byNode[nodeId] = {
+        ...base,
+        matchKind: 'ambiguous',
+        candidates: joinedHits.map((t) => ({ row: t.row, tableZhCN: t.rawZh })),
+      };
+      _unread.push({
+        ...base,
+        matchKind: 'ambiguous',
+        reason: `表里第 ${joinedHits.map((t) => t.row).join('、')} 行都以「${raw}」作 A&B 首段但译文不同，机器不替人选`,
+        candidates: joinedHits.map((t) => ({ row: t.row, tableZhCN: t.rawZh })),
+      });
       continue;
     }
 

@@ -5,8 +5,10 @@
  */
 import { createHash } from 'node:crypto';
 import { extractCopy, parsePhaseRows } from './figma-copy-match.mjs';
-import { cellLines } from './figma-copy-structure.mjs';
+import { cellLines, overflowAltIndex, preserveSourceLeadingAsterisks, stripWholeLineWrappersIfSourceBare } from './figma-copy-structure.mjs';
 import { deriveContext } from './figma-copy-context.mjs';
+import { normalizeCopy } from './figma-copy-normalize.mjs';
+import { completeNumberedCopies } from './numbered-copy.mjs';
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -89,9 +91,21 @@ function designationProblem(nodeId, designation, larkSnap, phaseRows, inventory 
   return declared.some((value) => !allowed.has(value)) ? `copy-designation:${nodeId}:characters-mismatch` : null;
 }
 
+function asDesignationBag(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  if (Object.hasOwn(input, 'designations') || Object.hasOwn(input, 'deliberatelyUnbound')) {
+    return {
+      designations: input.designations || {},
+      deliberatelyUnbound: input.deliberatelyUnbound || {},
+      splitGroups: input.splitGroups || {},
+    };
+  }
+  return { designations: input, deliberatelyUnbound: {} };
+}
+
 export function designationsToOverlay(designations, larkSnap = null, { phaseRows = null, inventory = null } = {}) {
-  const bag = designations?.designations ? designations : { designations };
-  if (!bag || (!bag.designations && !bag.deliberatelyUnbound)) return null;
+  const bag = asDesignationBag(designations);
+  if (!bag || (!Object.keys(bag.designations || {}).length && !Object.keys(bag.deliberatelyUnbound || {}).length)) return null;
   const nodeRow = {};
   const problems = [];
   for (const [nodeId, d] of Object.entries(bag.designations || {})) {
@@ -141,12 +155,25 @@ function walkTextNodes(list, source, out) {
   }
 }
 
+function flattenNodes(list, out = []) {
+  for (const node of list || []) {
+    out.push(node);
+    if (Array.isArray(node?.nodes)) flattenNodes(node.nodes, out);
+    if (Array.isArray(node?.variants)) {
+      for (const variant of node.variants) {
+        flattenNodes([variant, ...(variant.nodes || [])], out);
+      }
+    }
+  }
+  return out;
+}
+
 export function collectInventoryTexts(inventory) {
   const out = [];
   walkTextNodes(inventory?.nodes, 'page', out);
   walkTextNodes(inventory?.attachments?.modals, 'modal', out);
-  walkTextNodes(inventory?.attachments?.componentSets, 'component-set', out);
-  walkTextNodes(inventory?.attachments?.components, 'component', out);
+  // Live copy only. Component-set / component masters are definitions;
+  // painted instances already appear as page or modal TEXT.
   const seen = new Set();
   return out.filter((item) => {
     if (seen.has(item.nodeId)) return false;
@@ -156,7 +183,10 @@ export function collectInventoryTexts(inventory) {
 }
 
 function inventoryContexts(inventory) {
-  const nodes = (inventory?.nodes || []).map((node) => ({
+  const nodes = [
+    ...(inventory?.nodes || []),
+    ...flattenNodes(inventory?.attachments?.modals),
+  ].map((node) => ({
     id: String(node.id),
     name: String(node.name || ''),
     type: node.type || '',
@@ -202,7 +232,7 @@ function phaseLimitedSnapshot(larkSnap, phaseRows) {
 export function verifyDesignationCoverage({ designations, larkSnap, byNode = {}, platform = null } = {}) {
   const problems = [];
   const claimed = new Map();
-  const bag = designations?.designations ? designations : { designations };
+  const bag = asDesignationBag(designations) || { designations: {}, deliberatelyUnbound: {} };
   for (const [nodeId, d] of Object.entries(bag?.designations || {})) {
     if (!d || typeof d.row !== 'number') continue;
     const row = Number(d.row);
@@ -222,26 +252,32 @@ export function verifyDesignationCoverage({ designations, larkSnap, byNode = {},
     const groupKey = `${platform || '*'}::${row}::${group}`;
     if (!claimed.has(groupKey)) claimed.set(groupKey, []);
     const span = { nodeId, row, lineIndex: d.lineIndex, takeCount: take, lines: lines.slice(d.lineIndex, d.lineIndex + take) };
+    const expected = span.lines.join('\n');
+    const sliceNorm = normalizeCopy(expected);
+    const nodeNorm = normalizeCopy(byNode[nodeId]?.characters ?? '');
     for (const existing of claimed.get(groupKey)) {
       const overlap = d.lineIndex < existing.lineIndex + existing.takeCount
         && existing.lineIndex < d.lineIndex + take;
-      if (overlap) {
-        problems.push({
-          nodeId,
-          platform,
-          reason: 'duplicate-line-claim',
-          row,
-          lineIndex: d.lineIndex,
-          otherNodeId: existing.nodeId,
-          otherLineIndex: existing.lineIndex,
-        });
+      if (!overlap) continue;
+      const sameSpan = d.lineIndex === existing.lineIndex && take === existing.takeCount;
+      const otherNorm = normalizeCopy(byNode[existing.nodeId]?.characters ?? '');
+      if (sameSpan && sliceNorm && nodeNorm === sliceNorm && otherNorm === sliceNorm) {
+        continue;
       }
+      problems.push({
+        nodeId,
+        platform,
+        reason: 'duplicate-line-claim',
+        row,
+        lineIndex: d.lineIndex,
+        otherNodeId: existing.nodeId,
+        otherLineIndex: existing.lineIndex,
+      });
     }
     claimed.get(groupKey).push(span);
     const bound = byNode[nodeId];
     if (bound?.translations) {
       const adoptedZh = bound.translations['zh-CN']?.value ?? bound.zhCN ?? null;
-      const expected = span.lines.join('\n');
       if (adoptedZh != null && String(adoptedZh) !== expected) {
         problems.push({ nodeId, platform, reason: 'adopted-span-mismatch', expected, adoptedZh });
       }
@@ -282,7 +318,7 @@ function rereadLeaf(larkSnap, leaf, hash) {
 
 function verifyLocaleSpans({ designations, larkSnap, locales = [] }) {
   const problems = [];
-  const bag = designations?.designations ? designations : { designations };
+  const bag = asDesignationBag(designations) || { designations: {}, deliberatelyUnbound: {} };
   for (const [nodeId, d] of Object.entries(bag?.designations || {})) {
     if (!Number.isInteger(d?.lineIndex)) continue;
     const take = Number.isInteger(d.takeCount) && d.takeCount > 0 ? d.takeCount : 1;
@@ -308,7 +344,7 @@ function isBlankValue(value) {
 
 export function verifySplitGroups({ designations, larkSnap, locales = [] } = {}) {
   const problems = [];
-  const bag = designations?.designations ? designations : { designations };
+  const bag = asDesignationBag(designations) || { designations: {}, deliberatelyUnbound: {}, splitGroups: {} };
   const groups = bag?.splitGroups || designations?.splitGroups || {};
   const byRow = new Map();
   for (const [nodeId, d] of Object.entries(bag?.designations || {})) {
@@ -333,11 +369,19 @@ export function verifySplitGroups({ designations, larkSnap, locales = [] } = {})
         problems.push({ row, lang, reason: 'expected-line-count-invalid', expectedLineCount: expectedCount, lineCount: source.length });
         continue;
       }
+      const uniqueSpans = [];
+      const seenSpan = new Set();
+      for (const span of spans.slice().sort((a, b) => a.lineIndex - b.lineIndex)) {
+        const key = `${span.lineIndex}:${span.takeCount}`;
+        if (seenSpan.has(key)) continue;
+        seenSpan.add(key);
+        uniqueSpans.push(span);
+      }
+      // Identical chrome clones may all point at one slice (e.g. skip a note line).
+      // That is reuse, not a partition of the cell; do not demand the unclaimed lines.
+      if (uniqueSpans.length === 1) continue;
       const expected = source.slice(0, expectedCount);
-      const claimed = spans
-        .slice()
-        .sort((a, b) => a.lineIndex - b.lineIndex)
-        .flatMap((span) => source.slice(span.lineIndex, span.lineIndex + span.takeCount));
+      const claimed = uniqueSpans.flatMap((span) => source.slice(span.lineIndex, span.lineIndex + span.takeCount));
       const integrity = verifySplitIntegrity(expected, claimed);
       if (!integrity.ok) {
         problems.push(...integrity.problems.map((item) => ({ row, lang, ...item })));
@@ -415,7 +459,10 @@ export function consumeReadyCopy({
           if (Number.isInteger(split.lineIndex)) {
             const take = Number.isInteger(split.takeCount) && split.takeCount > 0 ? split.takeCount : 1;
             expected = cellLines(check.value).slice(split.lineIndex, split.lineIndex + take).join('\n');
+          } else {
+            expected = stripWholeLineWrappersIfSourceBare(entry.characters, check.value);
           }
+          expected = preserveSourceLeadingAsterisks(entry.characters, expected);
           if (summary.value !== undefined && String(summary.value) !== String(expected ?? '')) {
             coverage.problems.push({ nodeId, platform, lang, reason: 'value-tamper', expected, actual: summary.value });
           }
@@ -449,9 +496,22 @@ export function consumeReadyCopy({
       why: entry.why ?? entry.note ?? overlay?.nodeRow?.[nodeId]?.why ?? null,
     };
   }
+  const numbered = completeNumberedCopies(byNode, { locales: localeList });
+  for (const nodeId of numbered) for (const [lang, leaf] of Object.entries(byNode[nodeId].translations)) {
+    provenance.push({ source: { file: larkSource, sha256: originalHash, hashKind }, locator: leaf.locator, nodeId, platform, lang, value: leaf.value, matchKind: 'numbered-label', derived: leaf.derived });
+  }
+  const overflowAlts = overflowAltIndex(larkSnap);
+  for (const bound of Object.values(byNode)) {
+    for (const [lang, leaf] of Object.entries(bound.translations || {})) {
+      if (!leaf || leaf.value == null) continue;
+      const alt = overflowAlts.get(`${lang}\n${leaf.value}`);
+      if (alt) leaf.overflowAlt = alt;
+    }
+  }
 
   if (Array.isArray(locales) && locales.length) {
     for (const [nodeId, bound] of Object.entries(byNode)) {
+      if (bound.matchKind === 'deliberately-unbound') continue;
       for (const lang of locales) {
         if (isBlankValue(bound.translations?.[lang]?.value)) {
           coverage.problems.push({ nodeId, platform, lang, reason: 'missing-locale' });
@@ -459,7 +519,7 @@ export function consumeReadyCopy({
       }
     }
   }
-  const bag = designations?.designations ? designations : { designations };
+  const bag = asDesignationBag(designations) || { designations: {}, deliberatelyUnbound: {} };
   for (const [nodeId, d] of Object.entries(bag?.designations || {})) {
     if (!d || typeof d.row !== 'number') continue;
     for (const lang of localeList || []) {
@@ -469,29 +529,46 @@ export function consumeReadyCopy({
       }
     }
   }
-  const ok = coverage.problems.length === 0 && unread.length === 0;
+  const remainingUnread = unread.filter((item) => byNode[item.nodeId]?.matchKind !== 'numbered-label');
+  const authorizedKeep = remainingUnread.filter((item) => item.matchKind === 'deliberately-unbound');
+  const blockingUnread = remainingUnread.filter((item) => item.matchKind !== 'deliberately-unbound');
+  const ok = coverage.problems.length === 0 && blockingUnread.length === 0;
+  const translationAccepted = ok && authorizedKeep.length === 0;
   return {
     ok,
-    problems: [...coverage.problems, ...unread.map((item) => ({ reason: 'unresolved', ...item }))],
+    problems: [...coverage.problems, ...blockingUnread.map((item) => ({ reason: 'unresolved', ...item }))],
+    notices: authorizedKeep.map((item) => ({ ...item, reason: 'authorized-original' })),
     byNode,
-    unread,
+    unread: remainingUnread,
+    authorizedKeep,
     overlay,
     report: extracted.report || null,
     texts: texts.map((text) => ({ nodeId: text.nodeId, characters: text.characters, source: text.source })),
     source: { larkSource, hash: originalHash, hashKind },
     provenance,
     platform,
-    translationAccepted: ok,
+    translationAccepted,
   };
 }
 
 export function buildCopy({ inventories, larkSnapshot, designations = null, locales = null, larkSource = 'lark-copy.json', larkBytes = null } = {}) {
   const byPlatform = {};
   const unresolved = [];
+  const authorizedKeep = [];
+  const notices = [];
   const provenance = [];
   const problems = [];
   if (!larkSnapshot) {
-    return { ok: false, byPlatform, unresolved, provenance, problems: ['缺翻译表：仅源语言预览，翻译未验收'], translationAccepted: false };
+    return {
+      ok: false,
+      byPlatform,
+      unresolved,
+      authorizedKeep,
+      notices,
+      provenance,
+      problems: ['缺翻译表：仅源语言预览，翻译未验收'],
+      translationAccepted: false,
+    };
   }
   for (const [platform, inventory] of Object.entries(inventories || {})) {
     if (!inventory) continue;
@@ -507,16 +584,28 @@ export function buildCopy({ inventories, larkSnapshot, designations = null, loca
     });
     byPlatform[platform] = result;
     unresolved.push(...(result.unread || []).map((item) => ({ platform, ...item })));
+    authorizedKeep.push(...(result.authorizedKeep || []).map((item) => ({ platform, ...item })));
+    notices.push(...(result.notices || []).map((item) => ({ platform, ...item })));
     provenance.push(...(result.provenance || []));
     problems.push(...(result.problems || []));
   }
-  const translationAccepted = problems.length === 0 && unresolved.length === 0;
+  const blockingUnresolved = unresolved.filter((item) => item.matchKind !== 'deliberately-unbound');
+  const ok = problems.length === 0 && blockingUnresolved.length === 0;
+  const translationAccepted = ok && authorizedKeep.length === 0;
   return {
-    ok: translationAccepted,
+    ok,
     byPlatform,
     unresolved,
+    authorizedKeep,
+    notices,
     provenance,
     problems,
     translationAccepted,
+    larkSnap: larkSnapshot,
+    larkSource,
+    larkBytes,
+    cloneDesignations: Object.fromEntries(Object.keys(inventories || {}).map((platform) => [platform, designations?.[platform]?.cloneDesignations || {}])),
+    lineBreaks: Object.fromEntries(Object.keys(inventories || {}).map((platform) => [platform, designations?.[platform]?.lineBreaks || {}])),
+    fontGroups: Object.fromEntries(Object.keys(inventories || {}).map((platform) => [platform, designations?.[platform]?.fontGroups || []])),
   };
 }
