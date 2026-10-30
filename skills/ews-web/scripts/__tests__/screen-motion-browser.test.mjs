@@ -25,6 +25,89 @@ applyTestBrowserEnv();
 
 const SKILL_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
+function midWindowFrames(frames, minMs = 40, maxMs = 220) {
+  return (frames || []).filter((frame) => Number(frame.ms) >= minMs && Number(frame.ms) <= maxMs);
+}
+
+function windowHasMidOpacity(frames, { minMs = 40, maxMs = 220, lo = 0.05, hi = 0.95 } = {}) {
+  return midWindowFrames(frames, minMs, maxMs).some((frame) => {
+    const hero = frame.layers?.find((layer) => layer.for === 'hero');
+    const info = frame.layers?.find((layer) => layer.for === 'info');
+    return [hero, info].some((layer) => layer && layer.opacity > lo && layer.opacity < hi);
+  });
+}
+
+const SAMPLE_DEADLINE_MS = 2000;
+const SAMPLE_STABLE_FRAMES = 5;
+
+function windowHasMidTravel(frames, startY, endY, { minMs = 40, maxMs = 220, px = 8 } = {}) {
+  return midWindowFrames(frames, minMs, maxMs).some((frame) => (
+    Math.abs(frame.y - startY) > px && Math.abs(frame.y - endY) > px
+  ));
+}
+
+function motionSpanMs(frames, startValue, readValue, { eps = 0.5, stableFrames = SAMPLE_STABLE_FRAMES } = {}) {
+  let firstMove = null;
+  let firstStable = null;
+  let last = startValue;
+  let still = 0;
+  for (const frame of frames || []) {
+    const value = readValue(frame);
+    if (firstMove == null && Math.abs(value - startValue) > eps) firstMove = frame.ms;
+    still = Math.abs(value - last) < eps ? still + 1 : 0;
+    last = value;
+    if (firstMove != null && firstStable == null && still >= stableFrames) firstStable = frame.ms;
+  }
+  return { firstMove, firstStable };
+}
+
+test('mid-fade uses any in-window frame, not only the first', () => {
+  const lateFirst = [
+    { ms: 51.6, layers: [{ for: 'hero', opacity: 0.976 }, { for: 'info', opacity: 0.02 }] },
+    { ms: 80, layers: [{ for: 'hero', opacity: 0.5 }, { for: 'info', opacity: 0.5 }] },
+  ];
+  assert.equal(windowHasMidOpacity(lateFirst), true);
+  const allSettled = [
+    { ms: 50, layers: [{ for: 'hero', opacity: 0.976 }, { for: 'info', opacity: 0.02 }] },
+    { ms: 90, layers: [{ for: 'hero', opacity: 0.99 }, { for: 'info', opacity: 0.01 }] },
+  ];
+  assert.equal(windowHasMidOpacity(allSettled), false);
+  assert.equal(windowHasMidOpacity([]), false);
+});
+
+test('mid-travel uses any in-window frame, not only the first', () => {
+  const lateFirst = [
+    { ms: 51.6, y: 0 },
+    { ms: 80, y: -400 },
+    { ms: 400, y: -900 },
+  ];
+  assert.equal(windowHasMidTravel(lateFirst, 0, -900), true);
+  const allEnd = [
+    { ms: 50, y: -900 },
+    { ms: 90, y: -900 },
+  ];
+  assert.equal(windowHasMidTravel(allEnd, 0, -900), false);
+  assert.equal(windowHasMidTravel([], 0, -900), false);
+});
+
+test('motion span is first move to first stable, not click time', () => {
+  const frames = [
+    { ms: 200, y: 0 },
+    { ms: 250, y: -10 },
+    { ms: 400, y: -400 },
+    { ms: 700, y: -900 },
+    { ms: 716, y: -900 },
+    { ms: 732, y: -900 },
+    { ms: 748, y: -900 },
+    { ms: 764, y: -900 },
+    { ms: 780, y: -900 },
+  ];
+  const span = motionSpanMs(frames, 0, (frame) => frame.y, { stableFrames: 5 });
+  assert.equal(span.firstMove, 250);
+  assert.equal(span.firstStable, 780);
+  assert.equal(span.firstStable - span.firstMove, 530);
+});
+
 function buildPagedDemo(cardCount) {
   const root = mkdtempSync(join(tmpdir(), 'ews-motion-'));
   const both = appendPagedPlayers(pcInventory(), mobileInventory());
@@ -49,17 +132,23 @@ function buildPagedDemo(cardCount) {
 }
 
 async function sampleTrack(page, nextKey) {
-  return page.evaluate(async ({ key, duration }) => {
+  return page.evaluate(async ({ key, duration, deadlineMs, stableFrames }) => {
     const track = document.querySelector('.ews-track');
     const cs = getComputedStyle(track);
     const startY = new DOMMatrix(cs.transform).m42;
     const start = performance.now();
     const frames = [];
     const jumped = window.__ewsStop1.goTo(key);
-    while (performance.now() - start <= duration + 80) {
-      const y = new DOMMatrix(getComputedStyle(track).transform).m42;
-      frames.push({ ms: performance.now() - start, y });
+    let lastY = startY;
+    let still = 0;
+    while (true) {
       await new Promise((resolve) => requestAnimationFrame(resolve));
+      const ms = performance.now() - start;
+      const y = new DOMMatrix(getComputedStyle(track).transform).m42;
+      frames.push({ ms, y });
+      still = Math.abs(y - lastY) < 0.5 ? still + 1 : 0;
+      lastY = y;
+      if ((ms >= duration && still >= stableFrames) || ms >= deadlineMs) break;
     }
     return {
       jumped,
@@ -71,7 +160,12 @@ async function sampleTrack(page, nextKey) {
       endY: frames.at(-1)?.y,
       screen: window.__ewsStop1.getState().screen,
     };
-  }, { key: nextKey, duration: SCREEN_TRANSITION_MS });
+  }, {
+    key: nextKey,
+    duration: SCREEN_TRANSITION_MS,
+    deadlineMs: SAMPLE_DEADLINE_MS,
+    stableFrames: SAMPLE_STABLE_FRAMES,
+  });
 }
 
 test('static product view animates the screen track 300ms ease, not an instant jump', browserTestOptions({ timeout: 180000 }), async () => {
@@ -99,12 +193,14 @@ test('static product view animates the screen track 300ms ease, not an instant j
     const sample = await sampleTrack(page, keys[1]);
     assert.equal(sample.jumped.ok, true);
     assert.equal(sample.screen, keys[1]);
-    const mid = sample.frames.find((frame) => frame.ms >= 40 && frame.ms <= 220);
-    assert.ok(mid, `missing mid frames ${JSON.stringify(sample.frames.slice(0, 8))}`);
+    const midFrames = midWindowFrames(sample.frames);
+    assert.ok(midFrames.length, `missing mid frames ${JSON.stringify(sample.frames.slice(0, 8))}`);
     const travel = Math.abs(sample.endY - sample.startY);
     assert.ok(travel > sample.height - 8, JSON.stringify({ travel, height: sample.height, endY: sample.endY, startY: sample.startY }));
-    assert.ok(Math.abs(mid.y - sample.startY) > 8, `instant jump ${JSON.stringify(mid)}`);
-    assert.ok(Math.abs(mid.y - sample.endY) > 8, `finished too early ${JSON.stringify(mid)}`);
+    assert.ok(windowHasMidTravel(sample.frames, sample.startY, sample.endY), `no mid travel ${JSON.stringify(midFrames)}`);
+    const span = motionSpanMs(sample.frames, sample.startY, (frame) => frame.y);
+    assert.ok(span.firstMove != null && span.firstStable != null, `track missing move/stable ${JSON.stringify(span)}`);
+    assert.ok(span.firstStable - span.firstMove <= 3 * SCREEN_TRANSITION_MS, `track slower than 3x duration ${JSON.stringify(span)}`);
     const settled = sample.frames.find((frame) => frame.ms >= 280 && Math.abs(frame.y - sample.endY) < 2);
     assert.ok(settled, `did not settle near 300ms ${JSON.stringify(sample.frames.slice(-6))}`);
   } finally {
@@ -207,8 +303,12 @@ test('live IND swaps asset/width; static IND does not, while vertical motion sti
     const keys = await page.evaluate(() => [...document.querySelectorAll('[data-screen]')].map((el) => el.getAttribute('data-screen')));
     const sample = await sampleTrack(page, keys.at(-1));
     assert.equal(sample.jumped.ok, true);
-    const mid = sample.frames.find((frame) => frame.ms >= 40 && frame.ms <= 220);
-    assert.ok(mid && Math.abs(mid.y - sample.startY) > 8, 'static view lost vertical animation');
+    const midFrames = midWindowFrames(sample.frames);
+    assert.ok(midFrames.length, `missing mid frames ${JSON.stringify(sample.frames.slice(0, 8))}`);
+    assert.ok(windowHasMidTravel(sample.frames, sample.startY, sample.endY), `static view lost vertical animation ${JSON.stringify(midFrames)}`);
+    const span = motionSpanMs(sample.frames, sample.startY, (frame) => frame.y);
+    assert.ok(span.firstMove != null && span.firstStable != null, `static track missing move/stable ${JSON.stringify(span)}`);
+    assert.ok(span.firstStable - span.firstMove <= 3 * SCREEN_TRANSITION_MS, `static track slower than 3x duration ${JSON.stringify(span)}`);
   } finally {
     await session.close();
   }
@@ -276,7 +376,7 @@ test('top-nav layer opacity is a real 300ms mid-fade, not just a CSS string', br
     const page = await session.browser.newPage({ viewport: { width: 1440, height: 900 } });
     await page.goto(`${session.base}/index.html?product=1`, { waitUntil: 'networkidle' });
     await waitEwsBoot(page);
-    const sample = await page.evaluate(async (fadeMs) => {
+    const sample = await page.evaluate(async ({ fadeMs, deadlineMs, stableFrames }) => {
       const read = () => [...document.querySelectorAll('.ews-nav-layer')].map((el) => ({
         for: el.getAttribute('data-nav-for'),
         active: el.getAttribute('data-nav-active'),
@@ -288,17 +388,20 @@ test('top-nav layer opacity is a real 300ms mid-fade, not just a CSS string', br
       const t0 = performance.now();
       const jumped = window.__ewsStop1.goTo('info');
       const frames = [];
-      await new Promise((resolve) => {
-        const tick = () => {
-          const ms = performance.now() - t0;
-          frames.push({ ms, layers: read() });
-          if (ms >= fadeMs + 80) resolve();
-          else requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      });
+      let lastSig = '';
+      let still = 0;
+      while (true) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const ms = performance.now() - t0;
+        const layers = read();
+        frames.push({ ms, layers });
+        const sig = layers.map((layer) => `${layer.for}:${layer.opacity.toFixed(3)}`).join('|');
+        still = sig === lastSig ? still + 1 : 0;
+        lastSig = sig;
+        if ((ms >= fadeMs && still >= stableFrames) || ms >= deadlineMs) break;
+      }
       return { jumped, start, frames, fadeVar, css };
-    }, NAV_FADE_MS);
+    }, { fadeMs: NAV_FADE_MS, deadlineMs: SAMPLE_DEADLINE_MS, stableFrames: SAMPLE_STABLE_FRAMES });
     assert.equal(sample.jumped.ok, true);
     assert.equal(sample.fadeVar, '300ms');
     assert.match(sample.css, /opacity/);
@@ -307,12 +410,17 @@ test('top-nav layer opacity is a real 300ms mid-fade, not just a CSS string', br
     const startInfo = sample.start.find((layer) => layer.for === 'info');
     assert.ok(startHero && startHero.opacity > 0.95, JSON.stringify(sample.start));
     assert.ok(startInfo && startInfo.opacity < 0.05, JSON.stringify(sample.start));
-    const mid = sample.frames.find((frame) => frame.ms >= 40 && frame.ms <= 220);
-    assert.ok(mid, `missing mid frames ${JSON.stringify(sample.frames.slice(0, 8))}`);
-    const midHero = mid.layers.find((layer) => layer.for === 'hero');
-    const midInfo = mid.layers.find((layer) => layer.for === 'info');
-    const fading = [midHero, midInfo].some((layer) => layer && layer.opacity > 0.05 && layer.opacity < 0.95);
-    assert.ok(fading, `no mid opacity ${JSON.stringify(mid)}`);
+    const midFrames = midWindowFrames(sample.frames);
+    assert.ok(midFrames.length, `missing mid frames ${JSON.stringify(sample.frames.slice(0, 8))}`);
+    assert.ok(windowHasMidOpacity(sample.frames), `no mid opacity ${JSON.stringify(midFrames)}`);
+    const span = motionSpanMs(
+      sample.frames,
+      startHero.opacity,
+      (frame) => frame.layers.find((layer) => layer.for === 'hero')?.opacity ?? startHero.opacity,
+      { eps: 0.02 },
+    );
+    assert.ok(span.firstMove != null && span.firstStable != null, `nav missing move/stable ${JSON.stringify(span)}`);
+    assert.ok(span.firstStable - span.firstMove <= 3 * NAV_FADE_MS, `nav slower than 3x duration ${JSON.stringify(span)}`);
     const last = sample.frames.at(-1);
     const endHero = last.layers.find((layer) => layer.for === 'hero');
     const endInfo = last.layers.find((layer) => layer.for === 'info');
