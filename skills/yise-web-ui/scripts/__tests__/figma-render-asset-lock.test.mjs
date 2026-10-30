@@ -118,10 +118,13 @@ test('hscroll host drag uses pointer capture and converts vertical wheel to scro
   assert.match(renderer, /Rest state keeps clip none/);
   assert.match(renderer, /hscrollSurfacesOf/);
   assert.match(renderer, /hscrollSurfaceOf/);
-  assert.match(renderer, /setHscrollOffset\(drag\.surface, drag\.left - delta, drag\.host\)/);
-  assert.match(renderer, /setHscrollOffset\(surface, hscrollOffsetOf\(surface\) \+ delta, host\)/);
-  assert.match(renderer, /el\.style\.touchAction = 'pan-x'/);
-  assert.doesNotMatch(renderer, /el\.style\.touchAction = 'pan-y'/);
+  /* Screen deltas are converted to design px so the track follows 1:1. */
+  assert.match(renderer, /setHscrollOffset\(drag\.surface, drag\.left - delta \/ drag\.k, drag\.host\)/);
+  assert.match(renderer, /setHscrollOffset\(surface, hscrollOffsetOf\(surface\) \+ delta \/ hscrollScreenScale\(host\), host\)/);
+  /* JS drag owns the horizontal axis; pan-x hands it to the browser and
+     touch swipes end in pointercancel. Vertical stays native page scroll. */
+  assert.match(renderer, /el\.style\.touchAction = 'pan-y'/);
+  assert.doesNotMatch(renderer, /touchAction = [^;]*'pan-x'/);
   assert.match(renderer, /Native overflow-x[\s\S]*calendar left labels/s);
 });
 
@@ -253,7 +256,9 @@ test('owner-tree consumption: page/fixed roots keep paint order, placement origi
   assert.match(renderer, /layer\.setAttribute\('data-paint-source-key', key\)/);
   /* placement origin：子节点坐标相对真实 owner（parentId 优先，ownerPath 回退，stack 最后） */
   assert.match(renderer, /const directParentId = nodeParentId\(n\)/);
-  assert.match(renderer, /const coordinateOwnerBox = directParentRecord\?\.pageBox \|\| directParentRecord\?\.box/);
+  assert.match(renderer, /fxOriginForBox/);
+  assert.match(renderer, /coordinateOwnerBox \? \(coordinateOwnerBox\.x \?\? 0\) : paintOriginX/);
+  assert.doesNotMatch(renderer, /nodeUsesPageBox \? 0 : paintOriginX/);
   /* fixed overlay：sticky + 内部 zoom（owner 自身 zoom=1，相对定位不被重复缩放） */
   assert.match(renderer, /fixedStage\.style\.position = 'sticky'/);
   assert.match(renderer, /fixedStage\.style\.zoom = String\(k\)/);
@@ -286,7 +291,7 @@ test('fx-img follows the owner box instead of intrinsic pixels', () => {
 });
 
 test('render-bound slice prefers sliceExport.box over owner pageBox', () => {
-  assert.match(renderer, /const exportBox = geomReady\(slicePageBox\)/);
+  assert.match(renderer, /const exportBox = fxGeomReady\(slicePageBox\)/);
   assert.doesNotMatch(renderer, /const exportBox = \(ownerReady \? box : null\) \|\| slicePageBox/);
 });
 

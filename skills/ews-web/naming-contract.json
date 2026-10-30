@@ -1,0 +1,21 @@
+{
+  "targetSpecVersion": "v2.20 (2026-09-16)",
+  "rolesUsed": [
+    "bg",
+    "btn",
+    "dropmenu",
+    "dyn",
+    "fix",
+    "hot",
+    "img",
+    "ind",
+    "kv",
+    "mix",
+    "modal",
+    "ref",
+    "scroll",
+    "sec",
+    "switch",
+    "tab"
+  ]
+}

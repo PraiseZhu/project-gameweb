@@ -1,0 +1,23 @@
+{
+  "schema": "ews-config/v1",
+  "locales": [
+    "zh-CN",
+    "en"
+  ],
+  "defaultLocale": "zh-CN",
+  "screens": [
+    {
+      "key": "hero",
+      "pc": "100:2",
+      "mobile": "200:2"
+    }
+  ],
+  "footer": {
+    "pc": "100:12",
+    "mobile": "200:12"
+  },
+  "carousels": [],
+  "navigation": {},
+  "videos": {},
+  "fonts": []
+}

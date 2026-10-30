@@ -11,6 +11,16 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export const SCHEMA = 'gameweb-design-policy/v1';
+export const EWS_SCHEMA = 'ews-design-policy/v1';
+
+export const EWS_REGISTERED_KEYS = Object.freeze([
+  'schema',
+  'mobileMaxWidth',
+  'rootFontVw',
+  'wideAspectMin',
+  'wideRootFontVh',
+  'screenHeight',
+]);
 
 export const REGISTERED_KEYS = Object.freeze([
   'schema',
@@ -252,9 +262,38 @@ function assertTierRules(value) {
   });
 }
 
+function parseEwsPolicy(doc, path) {
+  const extra = Object.keys(doc).filter((key) => !EWS_REGISTERED_KEYS.includes(key));
+  if (extra.length) fail(`unregistered key: ${extra.join(', ')}`);
+  for (const key of EWS_REGISTERED_KEYS) {
+    if (!hasOwn(doc, key)) fail(`missing required key: ${key}`);
+  }
+  if (doc.schema !== EWS_SCHEMA) fail(`schema must be ${EWS_SCHEMA}, got ${doc.schema}`);
+  const mobileMaxWidth = assertNumber('mobileMaxWidth', doc.mobileMaxWidth, { integer: true, min: 1 });
+  const rootFontVw = assertNumber('rootFontVw', doc.rootFontVw, { min: 0 });
+  const wideAspectMin = assertNumber('wideAspectMin', doc.wideAspectMin, { min: 0 });
+  if (!(wideAspectMin > 0)) fail('wideAspectMin must be > 0');
+  const wideRootFontVh = assertNumber('wideRootFontVh', doc.wideRootFontVh, { min: 0 });
+  if (doc.screenHeight !== 'innerHeight') fail(`screenHeight must be innerHeight, got ${doc.screenHeight}`);
+  return Object.freeze({
+    schema: EWS_SCHEMA,
+    path,
+    mobileMaxWidth,
+    rootFontVw,
+    wideAspectMin,
+    wideRootFontVh,
+    screenHeight: 'innerHeight',
+  });
+}
+
 export function parseDesignPolicyMarkdown(markdown, { path = 'DESIGN.md' } = {}) {
   const raw = splitFrontMatter(markdown);
   const doc = parseYamlMapping(raw);
+  if (doc.schema === EWS_SCHEMA) return parseEwsPolicy(doc, path);
+  return parseGamewebPolicy(doc, path);
+}
+
+function parseGamewebPolicy(doc, path) {
   const extra = Object.keys(doc).filter((key) => !REGISTERED_KEYS.includes(key));
   if (extra.length) fail(`unregistered key: ${extra.join(', ')}`);
   for (const key of REQUIRED_KEYS) {

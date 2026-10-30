@@ -1,8 +1,9 @@
 ---
 name: design-policy
 description: >
-  解析伊瑟/火炬 DESIGN.md 文首 YAML（schema gameweb-design-policy/v1），
-  并对照做页实现做数字镜像。不是做页入口，没有用户触发词。
+  解析 DESIGN.md 文首 YAML：伊瑟/火炬 schema gameweb-design-policy/v1，
+  Etheria-ews schema ews-design-policy/v1。对照做页实现做数字镜像。
+  不是做页入口，没有用户触发词。
 disable-model-invocation: true
 ---
 
@@ -32,3 +33,15 @@ node standards/design-policy/tool/src/write-skill-policy.mjs skills/<pkg>/DESIGN
 ```
 
 出页闸仍直接 parse DESIGN.md 并对 generated 快照做镜像。
+
+## EWS 消费者（schema 分派）
+
+`ews-design-policy/v1` 只认六字段：`schema`、`mobileMaxWidth`、`rootFontVw`、`wideAspectMin`、`wideRootFontVh`、`screenHeight=innerHeight`。不要塞进 gameweb 的字号档位 / 弹窗透明度 / composition。`write-skill-policy.mjs` 调用接口不变。
+
+```bash
+node standards/design-policy/tool/src/write-skill-policy.mjs skills/ews-web/DESIGN.md skills/ews-web/assets/runtime/design-policy.generated.mjs
+cd skills/ews-web
+npm run policy-mirror
+```
+
+EWS 镜像必须拿 `ews-screen-runtime.mjs` 实际导出的数字，禁止 `implementationFromPolicy(policy)` 自己比自己。`DESIGN_POLICY_CONSUMER=torchlight-web` / `yise-web-ui` 不跑 EWS 用例。

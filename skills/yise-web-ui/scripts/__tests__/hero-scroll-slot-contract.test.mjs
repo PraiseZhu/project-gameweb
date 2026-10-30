@@ -11,8 +11,8 @@ function applyFixViewportPinFromRender() {
   const start = render.indexOf('const applyFixViewportPin =');
   assert.notEqual(start, -1, 'renderer must define applyFixViewportPin');
   const sliced = render.slice(start);
-  const end = sliced.indexOf('\n        const byId =');
-  assert.notEqual(end, -1, 'applyFixViewportPin must sit before byId');
+  const end = sliced.indexOf('\n      const paint =');
+  assert.notEqual(end, -1, 'applyFixViewportPin must sit next to paint');
   const fn = new Function(`${sliced.slice(0, end)}\nreturn applyFixViewportPin;`)();
   assert.equal(typeof fn, 'function');
   return fn;
@@ -79,6 +79,9 @@ test('renderer exposes the generic state contract and does not use a visual cove
   assert.match(render, /CONTENT_RELEASED/);
   assert.match(render, /data-hero-slot-role=\"hero\"/);
   assert.match(render, /Official first screen is a 100vh crop window/);
+  assert.match(render, /_heroSlotH/);
+  assert.match(render, /data-hero-slot-height/);
+  assert.match(render, /data-page-x-clip', 'design-width'/);
   assert.match(render, /data-hero-crop-window/);
   assert.match(render, /heroVisualPlane/);
   assert.match(render, /bg-tail/);

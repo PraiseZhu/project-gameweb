@@ -275,6 +275,27 @@ function intersectSectionOnSource(sourceBox, sectionBox) {
   return { x, y, w: right - x, h: bottom - y };
 }
 
+export function stop1PixelTargets({ consume, platform, adapter, inventory, demoDir } = {}) {
+  if (adapter && typeof adapter.resolveTargets === 'function') {
+    return adapter.resolveTargets({ consume, platform, inventory, demoDir });
+  }
+  return sectionsOfConsume(consume, platform);
+}
+
+export function stop1PixelViewport({ adapter, platform, pageBox, targets, target } = {}) {
+  if (adapter && typeof adapter.viewportForTarget === 'function') {
+    return adapter.viewportForTarget({ platform, pageBox, targets, target });
+  }
+  return productProbeViewport(platform, pageBox, targets);
+}
+
+export function stop1PixelPaintExports({ adapter, inventory, section } = {}) {
+  if (adapter && typeof adapter.sectionPaintExports === 'function') {
+    return adapter.sectionPaintExports(inventory, section);
+  }
+  return sectionPaintExports(inventory, section);
+}
+
 export function productProbeViewport(platform, pageBox, sections = []) {
   const shelf = boxOf(pageBox);
   const firstSection = asArray(sections).find((section) => boxOf(section?.pageBox || section?.box));
@@ -294,12 +315,12 @@ export function productProbeViewport(platform, pageBox, sections = []) {
   return { w: Math.round(width), h: height };
 }
 
-async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, scale }) {
+async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, scale, adapter }) {
   const absDemo = resolve(demoDir);
   if (!existsSync(join(absDemo, 'index.html'))) {
     throw new Error('demo index.html missing; cannot screenshot existing page');
   }
-  const viewport = productProbeViewport(platform, pageBox, sections);
+  const viewport = stop1PixelViewport({ adapter, platform, pageBox, targets: sections, target: sections[0] });
   const dsf = Number(scale);
   if (!(dsf > 0)) throw new Error(`invalid screenshot scale ${scale}`);
   const server = createSafeStaticServer(absDemo);
@@ -315,12 +336,16 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
       deviceScaleFactor: dsf,
     });
     await page.goto(`${base}/index.html?product=1`, { waitUntil: 'load', timeout: 120000 });
-    await page.waitForFunction(() => {
-      const frame = document.querySelector('.frame');
-      if (!frame) return false;
-      const r = frame.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && !!frame.querySelector('[data-node]');
-    }, null, { timeout: 120000 });
+    if (adapter && typeof adapter.waitReady === 'function') {
+      await adapter.waitReady(page);
+    } else {
+      await page.waitForFunction(() => {
+        const frame = document.querySelector('.frame');
+        if (!frame) return false;
+        const r = frame.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && !!frame.querySelector('[data-node]');
+      }, null, { timeout: 120000 });
+    }
     await page.evaluate(() => {
       if (window.__qa && typeof window.__qa.setPref === 'function') {
         window.__qa.setPref('lang', 'zh-CN');
@@ -333,6 +358,13 @@ async function screenshotSections({ demoDir, platform, pageBox, sections, PNG, s
     await page.evaluate(() => new Promise((resolveWait) => setTimeout(resolveWait, 250)));
 
     for (const section of sections) {
+      if (adapter && typeof adapter.captureTarget === 'function') {
+        const captured = await adapter.captureTarget({
+          page, target: section, platform, pageBox, scale, PNG, readPng,
+        });
+        shots[section.id] = captured;
+        continue;
+      }
       const secId = section.id;
       /* Later Figma sections still contain their own fix/顶部信息. The
          renderer lifts that layer into a page sticky overlay, so a
@@ -430,6 +462,8 @@ export async function runLiveStop1FigmaPixelProbe({
   handoffDir,
   threshold = DEFAULT_STOP1_PIXEL_THRESHOLD,
   refreshFigmaCache = false,
+  adapter = null,
+  skipMap: skipMapArg,
 } = {}) {
   const problems = [];
   const platformsOut = {};
@@ -442,12 +476,28 @@ export async function runLiveStop1FigmaPixelProbe({
   if (!platforms.length) throw new Error('handoff consume has no pc/mobile end');
   const token = requireFigmaToken(absHandoff);
   const { PNG, pixelmatch, odiff } = await loadPngApi(TOOL_ROOT);
-  const skipMap = parseStop1SkipJson();
+  const skipMap = skipMapArg !== undefined ? skipMapArg : parseStop1SkipJson();
 
   for (const platform of platforms) {
     const page = pageBoxOfConsume(consume, platform);
-    const sections = sectionsOfConsume(consume, platform);
     const inventory = loadHandoffInventory(absHandoff, platform);
+    let sections;
+    try {
+      sections = stop1PixelTargets({
+        consume, platform, adapter, inventory, demoDir: absDemo,
+      });
+    } catch (err) {
+      const message = `${platform}: ${errorMessage(err)}`;
+      problems.push(message);
+      platformsOut[platform] = { ok: false, problems: [message], sections: {} };
+      continue;
+    }
+    if (!asArray(sections).length) {
+      const message = `${platform}: zero pixel targets`;
+      problems.push(message);
+      platformsOut[platform] = { ok: false, problems: [message], sections: {} };
+      continue;
+    }
     const snapshotToken = handoffSnapshotToken({
       consume,
       inventories: [inventory],
@@ -473,7 +523,7 @@ export async function runLiveStop1FigmaPixelProbe({
         const width = Math.round(section.pageBox.w * scale);
         const height = Math.round(section.pageBox.h * scale);
         const baselinePng = new PNG({ width, height });
-        const paints = sectionPaintExports(inventory, section);
+        const paints = stop1PixelPaintExports({ adapter, inventory, section });
         if (!paints.length) throw new Error(`${section.id}: no section paint exports`);
         let cacheHit = false;
         for (const paint of paints) {
@@ -555,6 +605,7 @@ export async function runLiveStop1FigmaPixelProbe({
         sections,
         PNG,
         scale,
+        adapter,
       });
     } catch (err) {
       const message = errorMessage(err);

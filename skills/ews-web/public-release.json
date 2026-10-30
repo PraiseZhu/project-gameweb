@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "identity": "etheria-ews",
+  "displayName": "Etheria-ews",
+  "trigger": "ews出页",
+  "directory": "skills/ews-web",
+  "description": "Local release boundary for Etheria-ews. Trigger is ews出页. Directory remains skills/ews-web.",
+  "publishable": [
+    "SKILL.md",
+    "DESIGN.md",
+    "package.json",
+    "public-release.json",
+    "naming-contract.json",
+    "scripts/",
+    "docs/",
+    "assets/"
+  ],
+  "private": [
+    "demos/",
+    "artifacts/",
+    ".env",
+    "node_modules/"
+  ],
+  "privateReasons": {
+    "demos/": "Page-specific fixtures, generated trees, and season evidence.",
+    "artifacts/": "Local verification output, not Skill source.",
+    ".env": "Credentials and machine-local configuration.",
+    "node_modules/": "Installed dependencies are never release content."
+  },
+  "requiredAudit": [
+    "package.name=etheria-ews",
+    "SKILL.frontmatter.name=etheria-ews",
+    "SKILL.trigger=ews出页",
+    "displayName=Etheria-ews",
+    "no-credentials-or-machine-paths-in-publishable-files",
+    "private-boundary-is-explicit"
+  ]
+}

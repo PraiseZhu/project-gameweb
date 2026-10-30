@@ -38,7 +38,7 @@ import {
   runStop1FigmaPixelGate,
   STOP1_PIXEL_DIR,
 } from '../src/stop1-figma-pixel-gate.mjs';
-import { parseStop1SkipJson, productProbeViewport, tryReadCachePng, writeCachePng } from '../src/stop1-figma-pixel-probe.mjs';
+import { parseStop1SkipJson, productProbeViewport, stop1PixelPaintExports, stop1PixelTargets, stop1PixelViewport, tryReadCachePng, writeCachePng } from '../src/stop1-figma-pixel-probe.mjs';
 import { comparePngs } from '../src/png-compare.mjs';
 import { trustedSkillRoot } from '../src/resolve-playwright.mjs';
 
@@ -253,6 +253,47 @@ test('stop-1 assembles node exports and product=1', () => {
   assert.doesNotMatch(src, /inventory-static-gate=1/);
   assert.doesNotMatch(src, /const frameId = page.id/);
   assert.doesNotMatch(src, /alignDemoToBaseline/);
+});
+
+test('adapter resolveTargets/viewportForTarget override default, default numbers stay', () => {
+  const consume = {
+    ends: ['pc'],
+    pc: {
+      page: { pageBox: { x: 0, y: 0, w: 3840, h: 2143 } },
+      sections: [{ id: '1:1', pageBox: { x: 0, y: 0, w: 3840, h: 2143 } }],
+    },
+  };
+  const def = stop1PixelTargets({ consume, platform: 'pc' });
+  assert.equal(def[0].id, '1:1');
+  const adapted = stop1PixelTargets({
+    consume,
+    platform: 'pc',
+    adapter: {
+      resolveTargets: () => [{ id: 'footer', pageBox: { x: 0, y: 0, w: 1920, h: 80 } }],
+    },
+  });
+  assert.equal(adapted[0].id, 'footer');
+  const defView = stop1PixelViewport({
+    platform: 'pc',
+    pageBox: { w: 3840, h: 4286 },
+    targets: [{ pageBox: { w: 3840, h: 2143 } }],
+  });
+  assert.equal(defView.w, 3840);
+  assert.equal(defView.h, 4286);
+  const custom = stop1PixelViewport({
+    adapter: { viewportForTarget: () => ({ w: 1920, h: 1080 }) },
+    platform: 'pc',
+    pageBox: { w: 3840, h: 4286 },
+    targets: [{ pageBox: { w: 3840, h: 2143 } }],
+  });
+  assert.equal(custom.w, 1920);
+  assert.equal(custom.h, 1080);
+});
+
+test('empty skipMap does not inherit 949:6041; default map still skips it', () => {
+  assert.equal(isStop1PixelSkippedSection('mobile', '949:6041'), true);
+  assert.equal(isStop1PixelSkippedSection('mobile', '949:6041', {}), false);
+  assert.equal(isStop1PixelSkippedSection('mobile', '949:6041', { mobile: [] }), false);
 });
 
 test('product probe uses section column width instead of mobile shelf width', () => {
@@ -531,6 +572,36 @@ test('section paint exports drop untagged later fix clones and descendants', () 
   const later = sectionPaintExports(inventory, { id: 'sec-2', pageBox: { x: 0, y: 1000, w: 750, h: 1000 } });
   assert.deepEqual(first.map((row) => row.frameId), ['fix-first']);
   assert.deepEqual(later.map((row) => row.frameId), ['hero-2']);
+  const kept = sectionPaintExports(inventory, { id: 'sec-2', pageBox: { x: 0, y: 1000, w: 750, h: 1000 } }, { keepSectionOwnedFix: true });
+  assert.ok(kept.some((row) => row.frameId === 'fix-clone'));
+  assert.ok(kept.some((row) => row.frameId === 'hero-2'));
+  assert.equal(kept.some((row) => row.frameId === 'fix-first'), false);
+});
+
+test('adapter sectionPaintExports is opt-in; default probe path still drops later clones', () => {
+  const inventory = {
+    overlays: [
+      { id: 'fix-first', role: 'fix', label: '顶部信息' },
+      { id: 'fix-clone', role: 'fix', label: '顶部信息' },
+    ],
+    nodes: [
+      { id: 'fix-first', name: 'fix/顶部信息', parentId: 'sec-1', pageBox: { x: 0, y: 0, w: 900, h: 100 } },
+      { id: 'fix-clone', name: 'fix/顶部信息', parentId: 'sec-2', pageBox: { x: 0, y: 1200, w: 900, h: 100 } },
+      { id: 'hero-2', name: 'kv/hero', parentId: 'sec-2', pageBox: { x: 0, y: 1200, w: 750, h: 500 } },
+    ],
+  };
+  const section = { id: 'sec-2', pageBox: { x: 0, y: 1000, w: 750, h: 1000 } };
+  const def = stop1PixelPaintExports({ inventory, section });
+  assert.deepEqual(def.map((row) => row.frameId), ['hero-2']);
+  const adapted = stop1PixelPaintExports({
+    inventory,
+    section,
+    adapter: {
+      sectionPaintExports: (doc, target) => sectionPaintExports(doc, target, { keepSectionOwnedFix: true }),
+    },
+  });
+  assert.ok(adapted.some((row) => row.frameId === 'fix-clone'));
+  assert.ok(adapted.some((row) => row.frameId === 'hero-2'));
 });
 
 test('download-button lang instance blits EN master into the instance pageBox', () => {

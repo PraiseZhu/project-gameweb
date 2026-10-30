@@ -17,11 +17,12 @@ const REPO = join(HERE, '../../../..');
 const PARSE = join(HERE, '../src/parse-design-policy.mjs');
 const MIRROR = join(HERE, '../src/mirror-design-policy.mjs');
 const CONSUMER = process.env.DESIGN_POLICY_CONSUMER || '';
+const SKIP_EWS = Boolean(CONSUMER && CONSUMER !== 'ews-web');
 const ALL_SKILL_PACKS = ['skills/yise-web-ui', 'skills/torchlight-web'];
 const SKILL_PACKS = CONSUMER
   ? ALL_SKILL_PACKS.filter((rel) => rel === `skills/${CONSUMER}`)
   : ALL_SKILL_PACKS;
-if (CONSUMER && !SKILL_PACKS.length) throw new Error(`未知 DESIGN_POLICY_CONSUMER: ${CONSUMER}`);
+if (CONSUMER && CONSUMER !== 'ews-web' && !SKILL_PACKS.length) throw new Error(`未知 DESIGN_POLICY_CONSUMER: ${CONSUMER}`);
 
 function importRepo(rel) {
   return import(pathToFileURL(join(REPO, rel)).href);
@@ -130,7 +131,7 @@ test('CLI and library fail the same missing-key YAML', () => {
   assert.match(cli.stderr, /missing required key/);
 });
 
-test('real skill DESIGN.md mirrors against loaded modules and chrome source', async () => {
+test('real skill DESIGN.md mirrors against loaded modules and chrome source', { skip: SKILL_PACKS.length === 0 }, async () => {
   const { implementationSnapshotFromModules } = await import('../src/implementation-snapshot.mjs');
   const packs = [];
   for (const rel of SKILL_PACKS) {
@@ -243,6 +244,69 @@ test('generated snapshot drift against YAML is red', async () => {
     () => mirrorDesignPolicyFile(yisePath, implementationFromPolicy(drifted)),
     /shrinkSteps/,
   );
+});
+
+function ewsMarkdown() {
+  return `---
+schema: ews-design-policy/v1
+mobileMaxWidth: 750
+rootFontVw: 10
+wideAspectMin: 1.92
+wideRootFontVh: 19.2
+screenHeight: innerHeight
+---
+
+# body
+`;
+}
+
+test('ews matching implementation is green without gameweb fields', { skip: SKIP_EWS }, () => {
+  const policy = parseDesignPolicyMarkdown(ewsMarkdown());
+  const impl = implementationFromPolicy(policy);
+  assert.equal(impl.officialRootFontVw, undefined);
+  assert.equal(impl.chromeOfficialRootFontVw, undefined);
+  const result = mirrorDesignPolicy({ policy, implementation: impl });
+  assert.equal(result.ok, true);
+  assert.equal(result.schema, 'ews-design-policy/v1');
+});
+
+test('ews runtime 749 vs YAML 750 is red', { skip: SKIP_EWS }, () => {
+  const policy = parseDesignPolicyMarkdown(ewsMarkdown());
+  const impl = implementationFromPolicy(policy);
+  impl.mobileMaxWidth = 749;
+  assert.throws(() => mirrorDesignPolicy({ policy, implementation: impl }), /mobileMaxWidth 749 != 750/);
+});
+
+test('ews real DESIGN.md mirrors against screen-runtime exports, not policy-self', { skip: SKIP_EWS }, async () => {
+  const abs = join(REPO, 'skills/ews-web/DESIGN.md');
+  const runtime = await importRepo('skills/ews-web/assets/runtime/ews-screen-runtime.mjs');
+  const generated = await importRepo('skills/ews-web/assets/runtime/design-policy.generated.mjs');
+  const source = readFileSync(join(REPO, 'skills/ews-web/assets/runtime/ews-screen-runtime.mjs'), 'utf8');
+  assert.match(source, /DESIGN_POLICY/);
+  assert.doesNotMatch(source, /export const MOBILE_MAX_WIDTH = 750/);
+  assert.match(source, /innerHeight/);
+  assert.doesNotMatch(source, /--ews-screen-h.+100vh/);
+  const implementation = {
+    schema: generated.DESIGN_POLICY.schema,
+    mobileMaxWidth: runtime.MOBILE_MAX_WIDTH,
+    rootFontVw: runtime.ROOT_FONT_VW,
+    wideAspectMin: runtime.WIDE_ASPECT,
+    wideRootFontVh: runtime.WIDE_ROOT_FONT_VH,
+    screenHeight: runtime.SCREEN_HEIGHT,
+  };
+  const result = mirrorDesignPolicyFile(abs, implementation);
+  assert.equal(result.ok, true);
+  assert.equal(implementation.mobileMaxWidth, 750);
+  assert.equal(implementation.screenHeight, 'innerHeight');
+});
+
+test('ews-web does not copy parse/mirror source', { skip: SKIP_EWS }, () => {
+  for (const file of walkFiles(join(REPO, 'skills/ews-web'))) {
+    if (!file.endsWith('.mjs') && !file.endsWith('.js')) continue;
+    const text = readFileSync(file, 'utf8');
+    assert.equal(text.includes('function parseYamlMapping'), false, relative(REPO, file));
+    assert.equal(text.includes("err.code = 'DESIGN_POLICY_PARSE'"), false, relative(REPO, file));
+  }
 });
 
 test('skills do not copy parse/mirror source', () => {

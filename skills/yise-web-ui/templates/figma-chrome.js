@@ -699,7 +699,7 @@
     var width = window.innerWidth || document.documentElement.clientWidth || 0;
     var requested = platOfWidth(width);
     var platforms = (TRUTH && TRUTH.platforms) || {};
-    if (requested === 'mobile' && platforms.mobile) return 'mobile';
+    if (requested === 'mobile') return platforms.mobile ? 'mobile' : 'refuse-mobile';
     if (requested === 'pad' && platforms.pad) return 'pad';
     return 'pc';
   }
@@ -1111,10 +1111,15 @@
     if (PRODUCT_VIEW) {
       document.documentElement.style.setProperty('--fx-root-scale', '1');
       frame.setAttribute('data-overflow-x', 'hidden');
+      frame.style.contain = 'inline-size';
+      frame.setAttribute('data-page-x-contain', 'inline-size');
     } else {
+      frame.style.contain = '';
+      frame.removeAttribute('data-page-x-contain');
       frame.removeAttribute('data-overflow-x');
     }
-    frame.style.transform = 'scale(' + scale + ')';
+    frame.style.transform = scale === 1 ? 'none' : ('scale(' + scale + ')');
+    frame.style.touchAction = 'pan-y';
     /* wrap 是屏幕容器（bezel：1px border + 10px padding 四边）。全局 box-sizing:border-box，
        style.width 是边框盒宽 —— 必须加上 bezel 的 22px（左右各 1px border + 10px padding），
        不然 frame 会把 bezel 吃掉（内容区被压窄、frame 溢出 wrap 右缘，2026-08-05 实测 frame 比

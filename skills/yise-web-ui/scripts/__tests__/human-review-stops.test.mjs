@@ -20,6 +20,11 @@ function demo() {
   return mkdtempSync(join(tmpdir(), 'yise-human-review-'));
 }
 
+function seedFrozen(dir) {
+  mkdirSync(join(dir, 'frozen'), { recursive: true });
+  writeFileSync(join(dir, 'frozen', 'stop1.static.html'), '<html data-ops-interaction="0"><body>frozen stop1</body></html>');
+}
+
 test('red preview cannot present the first human stop', () => {
   const dir = demo();
   const red = presentStop(dir, 'static-and-translation', { previewOk: false });
@@ -33,6 +38,7 @@ test('first stop must be accepted before Interaction / Resize, second before Pac
   assert.equal(canStartLaterAxis(dir).ok, false);
   assert.equal(packAllowedAfterSecondStop(dir).ok, false);
 
+  seedFrozen(dir);
   const presented = presentStop(dir, 'static-and-translation', { previewOk: true });
   assert.equal(presented.ok, true);
   assert.equal(canStartLaterAxis(dir).ok, false);
@@ -59,6 +65,7 @@ test('human-review CLI fail-closes pack-allowed until stop 2 is accepted', () =>
   const dir = demo();
   const blocked = spawnSync(process.execPath, [CLI, 'pack-allowed', '--demo', dir], { encoding: 'utf8' });
   assert.equal(blocked.status, 2);
+  seedFrozen(dir);
   presentStop(dir, 'static-and-translation', { previewOk: true });
   acceptStop(dir, 'static-and-translation');
   presentStop(dir, 'interaction-and-resize', { previewOk: true });
@@ -87,6 +94,7 @@ test('human-review refuses a symlink marker instead of following it', (t) => {
   }));
   symlinkSync(join(outside, 'human-review.json'), join(dir, 'human-review.json'));
   assert.equal(packAllowedAfterSecondStop(dir).ok, false);
+  seedFrozen(dir);
   const blocked = presentStop(dir, 'static-and-translation', { previewOk: true });
   assert.equal(blocked.ok, false);
   assert.equal(blocked.reason, 'unsafe-human-review-file');

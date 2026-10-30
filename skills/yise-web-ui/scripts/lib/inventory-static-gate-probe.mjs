@@ -11,6 +11,7 @@ import { PNG } from 'pngjs';
 import { createSafeStaticServer } from './safe-server.mjs';
 import { isWholeFrameSliceNode } from '../../../../standards/figma-naming/spec/inventory.mjs';
 import { launchChromium } from './resolve-playwright.mjs';
+import { designBoxFromVisual, elementIsMeasurable, quantizeDesignPx } from './inventory-visual-box.mjs';
 
 const SKILL_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
@@ -90,6 +91,9 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
       viewport: { width: 1920, height: 1080 },
       deviceScaleFactor: 1,
     });
+    await page.addInitScript({
+      content: [quantizeDesignPx, designBoxFromVisual, elementIsMeasurable].map((fn) => fn.toString() + "\nglobalThis." + fn.name + " = " + fn.name + ";").join("\n"),
+    });
     await page.goto(`${base}/index.html?inventory-static-gate=1`, { waitUntil: 'load', timeout: 120000 });
     await page.waitForFunction(() => window.__qa && typeof window.__qa.resize === 'function', null, { timeout: 120000 });
     await page.evaluate(({ w, h, lang: nextLang, plat }) => {
@@ -137,37 +141,44 @@ async function measureDemo({ demoDir, handoffDir, platform, lang }) {
           const nodeId = el.getAttribute('data-node-id') || '';
           if (nodeId === 'page-scope' || nodeId === 'page-fixed-overlays') return false;
           if (el.classList.contains('fx-stage') && String(el.getAttribute('data-node-id') || '').startsWith('section-') === false) return false;
-          return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) !== 0 && r.width > 0 && r.height > 0;
+          return globalThis.elementIsMeasurable(cs, { w: r.width, h: r.height });
         });
         visible.sort((a, b) => {
           const stage = (el) => el.classList.contains('fx-stage') ? 0 : 1;
           const prefix = (el) => el.getAttribute('data-prefix') === 'sec' ? 1 : 2;
           return stage(a) - stage(b) || prefix(a) - prefix(b) || a.getBoundingClientRect().top - b.getBoundingClientRect().top;
         });
-        return visible[0] || null;
+        if (visible[0]) return visible[0];
+        const paint = frame.querySelector('[data-paint-root="' + cssEscape(id) + '"]');
+        if (!paint) return null;
+        const paintRect = paint.getBoundingClientRect();
+        const paintStyle = getComputedStyle(paint);
+        return globalThis.elementIsMeasurable(paintStyle, { w: paintRect.width, h: paintRect.height }) ? paint : null;
       };
       const boxOf = (el) => {
         if (!el) return null;
         const r = el.getBoundingClientRect();
-        return {
-          x: (r.left - origin.left) / scale,
-          y: (r.top - origin.top) / scale,
-          w: r.width / scale,
-          h: r.height / scale,
-        };
+        const cs = getComputedStyle(el);
+        if (!globalThis.elementIsMeasurable(cs, { w: r.width, h: r.height })) return null;
+        return globalThis.designBoxFromVisual(
+          { x: r.left, y: r.top, w: r.width, h: r.height },
+          { x: origin.left, y: origin.top },
+          scale,
+        );
       };
       const nodes = {};
       for (const id of ids) {
         const el = find(id);
         if (!el) continue;
         const box = boxOf(el);
+        if (!box) continue;
         const cs = getComputedStyle(el);
         const img = el.matches('img') ? el : el.querySelector('img');
         const fontSize = parseFloat(cs.fontSize);
         nodes[id] = {
           ...box,
           fontSize: Number.isFinite(fontSize) ? fontSize : null,
-          imgBox: img ? boxOf(img) : box,
+          imgBox: img ? (boxOf(img) || box) : box,
           bakedDescendants: el.getAttribute('data-asset-descendants') === 'baked',
         };
       }

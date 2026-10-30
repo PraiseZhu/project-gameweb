@@ -1,0 +1,24 @@
+{
+  "name": "etheria-ews",
+  "description": "Etheria-ews：精确触发词 ews出页。只吃 inventory/v2 ready 交接包，独立 Skill，不走伊瑟/火炬做页。",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test scripts/__tests__/*.test.mjs",
+    "release:audit": "node scripts/release-audit.mjs",
+    "ewsweb": "node scripts/ews-web.mjs",
+    "ews出页": "node scripts/ews-web.mjs",
+    "figma:from-handoff": "node scripts/figma-from-handoff.mjs",
+    "policy-mirror": "node scripts/policy-mirror.mjs",
+    "preview:first": "node scripts/preview-first.mjs",
+    "reconcile-page": "node scripts/reconcile-page.mjs",
+    "product-viewport": "node scripts/product-viewport.mjs",
+    "live-copy": "node scripts/live-copy.mjs",
+    "stop1-pixel": "node scripts/stop1-pixel.mjs",
+    "stop1": "node scripts/stop1.mjs",
+    "test:browser": "node scripts/test-browser.mjs"
+  }
+}

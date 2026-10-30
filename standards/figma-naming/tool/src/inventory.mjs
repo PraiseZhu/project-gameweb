@@ -1123,8 +1123,35 @@ export function allNodesOf(inv) {
   ];
 }
 
-/** A12：img+lang 组件集根与合法变体根是同一替换定义。 */
-function inventoryReplaceableDefinitionKey(node, byId) {
+/** Figma 实例后代 id：顶层 `I{instance};{master}`，嵌套 `{instance};{master}`。 */
+function instanceReferencedMasterId(nodeId, instanceId) {
+  if (typeof nodeId !== "string" || typeof instanceId !== "string" || !instanceId) return null;
+  const prefix = instanceId.startsWith("I") ? `${instanceId};` : `I${instanceId};`;
+  if (!nodeId.startsWith(prefix)) return null;
+  const rest = nodeId.slice(prefix.length);
+  if (!rest || rest.startsWith(";") || rest.endsWith(";")) return null;
+  return rest;
+}
+
+function nodeIsInsideDefinition(node, definitionId, byId) {
+  if (!node || !definitionId) return false;
+  if (node.id === definitionId) return true;
+  return ancestorsOf(node, byId).some((item) => item.id === definitionId);
+}
+
+/** 最近 INSTANCE 祖先 + 复合 id 能指到该 componentId 子树里的母版节点时，才算引用。 */
+function provenReplaceableMaster(node, byId) {
+  const instance = [...ancestorsOf(node, byId)].reverse().find((item) => item?.type === "INSTANCE");
+  if (!instance?.componentId) return null;
+  const masterId = instanceReferencedMasterId(node.id, instance.id);
+  if (!masterId) return null;
+  const master = byId.get(masterId);
+  if (!master) return null;
+  if (!nodeIsInsideDefinition(master, instance.componentId, byId)) return null;
+  return master;
+}
+
+function imgLangReplaceableKey(node, byId) {
   if (node?.type === "COMPONENT_SET" && parseName(node.name).prefix === "img") {
     return `img-lang-set:${node.id}`;
   }
@@ -1134,6 +1161,17 @@ function inventoryReplaceableDefinitionKey(node, byId) {
     if (set && parseName(set.name).prefix === "img" && LANG_CODE_SET.has(langValueOfVariant(node))) {
       return `img-lang-set:${set.id}`;
     }
+  }
+  return null;
+}
+
+/** A12：img+lang 组件集根与合法变体根是同一替换定义；已证明的实例后代引用母版身份。 */
+function inventoryReplaceableDefinitionKey(node, byId) {
+  const selfLang = imgLangReplaceableKey(node, byId);
+  if (selfLang) return selfLang;
+  const master = provenReplaceableMaster(node, byId);
+  if (master && master.replaceable === true && master.assetKey && master.assetKey === node.assetKey) {
+    return imgLangReplaceableKey(master, byId) || master.id;
   }
   return node?.id;
 }

@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { HUMAN_REVIEW_STOPS } from './workflows.mjs';
+import { assessFrozenStop1 } from '../freeze/stop1-ready.mjs';
 import { inspectPackPath, packRoot } from './pack-demo.mjs';
 
 export const HUMAN_REVIEW_SCHEMA = 'yise-human-review/v1';
@@ -72,8 +73,10 @@ function writeHumanReview(demoDir, record) {
 
 export function presentStop(demoDir, id, { previewOk = false } = {}) {
   if (!STOP_IDS.includes(id)) return { ok: false, reason: `unknown-stop:${id}` };
-  if (id === 'static-and-translation' && previewOk !== true) {
-    return { ok: false, reason: 'preview:first-red', presentPage: false };
+  if (id === 'static-and-translation') {
+    if (previewOk !== true) return { ok: false, reason: 'preview:first-red', presentPage: false };
+    const frozen = assessFrozenStop1(demoDir);
+    if (!frozen.ok) return { ok: false, presentPage: false, ...frozen };
   }
   const record = readHumanReview(demoDir);
   if (id === 'interaction-and-resize' && record.stops['static-and-translation'].accepted !== true) {
@@ -89,7 +92,7 @@ export function presentStop(demoDir, id, { previewOk = false } = {}) {
   try {
     const file = writeHumanReview(demoDir, record);
     const stop = HUMAN_REVIEW_STOPS.find((item) => item.id === id);
-    return { ok: true, id, file, prompt: stop?.prompt, presentPage: true, record };
+    return { ok: true, id, file, prompt: stop?.prompt, presentPage: true, humanFile: id === 'static-and-translation' ? 'frozen/stop1.static.html' : 'index.html', record };
   } catch (error) {
     return { ok: false, reason: 'unsafe-human-review-file', error: error.message, presentPage: false };
   }

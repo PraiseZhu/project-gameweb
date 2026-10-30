@@ -380,10 +380,14 @@ browserTest('browser calendar today/return swaps on hscroll and restores on clic
         hostId: host?.getAttribute('data-node'),
         text: (today?.textContent || '').trim(),
         offset: Number(surface?.getAttribute('data-hscroll-offset') || 0),
+        pending: today?.getAttribute('data-calendar-return'),
+        left: Number.parseFloat(today?.style.left || '0'),
       };
     });
     assert.equal(start.state, 'today');
     assert.equal(start.press, 'inert');
+    assert.equal(start.text, '04/10');
+    assert.equal(start.pending, 'pending-named-tab');
     assert.equal(start.hscroll, 'x');
     assert.equal(start.overflowX, 'hidden');
     assert.equal(start.action, 'next');
@@ -396,12 +400,16 @@ browserTest('browser calendar today/return swaps on hscroll and restores on clic
         press: today?.getAttribute('data-btn-press'),
         text: (today?.textContent || '').trim(),
         offset: Number(surface?.getAttribute('data-hscroll-offset') || 0),
+        pending: today?.getAttribute('data-calendar-return'),
+        left: Number.parseFloat(today?.style.left || '0'),
       };
     });
-    assert.equal(away.state, 'return-today');
-    assert.equal(away.press, 'true');
-    assert.equal(away.text, '返回');
+    assert.equal(away.state, 'today');
+    assert.equal(away.press, 'inert');
+    assert.equal(away.text, '04/10');
+    assert.equal(away.pending, 'pending-named-tab');
     assert.ok((away.offset || 0) > 0);
+    assert.ok(away.left < start.left);
     await click(page, 'today');
     const back = await page.evaluate(() => {
       const today = document.querySelector('[data-node="today"]');
@@ -413,8 +421,8 @@ browserTest('browser calendar today/return swaps on hscroll and restores on clic
       };
     });
     assert.equal(back.state, 'today');
-    assert.equal(back.offset, 0);
-    assert.match(back.text, /^\d{2}\/\d{2}$/);
+    assert.ok(back.offset > 0);
+    assert.equal(back.text, '04/10');
   } finally {
     await browser.close();
   }

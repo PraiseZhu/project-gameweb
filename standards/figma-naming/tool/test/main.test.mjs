@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import { build } from "esbuild";
+import { fileURLToPath } from "node:url";
 import { MARKS_KEY } from "../plugin/marks.mjs";
 import { ledgerFingerprint } from "../plugin/ledger-fingerprint.mjs";
 import {
@@ -14,7 +15,7 @@ const EXEMPTIONS_KEY = "naming-lint:exemptions";
 const EXEMPTIONS_META_KEY = "naming-lint:exemptions-meta";
 
 const bundle = await build({
-  entryPoints: [new URL("../plugin/main.mjs", import.meta.url).pathname],
+  entryPoints: [fileURLToPath(new URL("../plugin/main.mjs", import.meta.url))],
   bundle: true,
   format: "iife",
   platform: "browser",
@@ -28,7 +29,7 @@ const EMPTY_BUNDLED_FINGERPRINT = ledgerFingerprint(emptyLedger());
 
 async function buildMainForLabels(labelsRaw, { labelsSource } = {}) {
   const bundled = await build({
-    entryPoints: [new URL("../plugin/main.mjs", import.meta.url).pathname],
+    entryPoints: [fileURLToPath(new URL("../plugin/main.mjs", import.meta.url))],
     bundle: true,
     format: "iife",
     platform: "browser",
