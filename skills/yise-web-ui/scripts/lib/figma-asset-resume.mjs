@@ -59,6 +59,31 @@ export function decideAssetResume({
   return { resumePng, resumeWebp, reasons };
 }
 
+function normRel(value) {
+  return String(value || '').replace(/\\/g, '/');
+}
+
+/** When WebP is not trusted, qa-assets must use the verified PNG. */
+export function bindAssetDeliveryFile(rec, { trustedWebp, pngBytes } = {}) {
+  if (!rec || typeof rec !== 'object') return rec;
+  const pngFile = rec.pngFile || String(rec.file || '').replace(/\.webp$/i, '.png');
+  const webpFile = rec.webpFile;
+  const webpKey = normRel(webpFile);
+  const trusted = Boolean(webpFile) && trustedWebp && (
+    trustedWebp === true || (typeof trustedWebp.has === 'function' && trustedWebp.has(webpKey))
+  );
+  if (trusted) {
+    return { ...rec, file: webpFile, webpFile };
+  }
+  const next = { ...rec, file: pngFile };
+  delete next.webpFile;
+  delete next.webp;
+  if (next.pngSha256) next.sha256 = next.pngSha256;
+  const size = Number(pngBytes ?? rec.pngBytes);
+  if (Number.isFinite(size) && size >= 0) next.bytes = size;
+  return next;
+}
+
 
 export function partialOnlyRefusal({ designVersion, previousVersion, hasManifest } = {}) {
   if (!hasManifest) return null;

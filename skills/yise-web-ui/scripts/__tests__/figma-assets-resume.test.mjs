@@ -2,12 +2,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
-import { decideAssetResume } from '../lib/figma-asset-resume.mjs';
+import { bindAssetDeliveryFile, decideAssetResume } from '../lib/figma-asset-resume.mjs';
 import { pickSliceNodes } from '../lib/figma-slice-nodes.mjs';
 
 const script = fileURLToPath(new URL('../figma-assets.mjs', import.meta.url));
@@ -53,6 +53,26 @@ test('resume requires the same source version, png sha, and export geometry', ()
   const scaled = decision({ geometry: { ...geometry, exportScale: 0.5 } });
   assert.equal(scaled.resumePng, false);
   assert.ok(scaled.reasons.includes('export-scale-mismatch'));
+});
+
+test('untrusted webp falls back to the verified png path', () => {
+  const rec = {
+    file: 'assets/1-2.webp',
+    pngFile: 'assets/1-2.png',
+    pngSha256: 'png-sha',
+    sha256: 'webp-sha',
+    webpFile: 'assets/1-2.webp',
+    webp: { bytes: 10 },
+  };
+  const png = bindAssetDeliveryFile(rec, { trustedWebp: new Set(), pngBytes: 42 });
+  assert.equal(png.file, 'assets/1-2.png');
+  assert.equal(png.webpFile, undefined);
+  assert.equal(png.webp, undefined);
+  assert.equal(png.sha256, 'png-sha');
+  assert.equal(png.bytes, 42);
+  const trusted = bindAssetDeliveryFile(rec, { trustedWebp: new Set(['assets/1-2.webp']) });
+  assert.equal(trusted.file, 'assets/1-2.webp');
+  assert.equal(trusted.webpFile, 'assets/1-2.webp');
 });
 
 test('a changed png does not keep an old webp, and missing provenance does not resume', () => {
@@ -150,6 +170,26 @@ test('the same version and geometry can resume without a token', () => {
   const saved = JSON.parse(readFileSync(join(dir, 'assets-manifest.json'), 'utf8'));
   assert.equal(saved.designVersion, 'v1');
   assert.equal(saved.assets['1:2'].resumed, true);
+});
+
+test('resume without a trusted webp writes png into manifest and qa-assets', () => {
+  const { dir } = writeDemo('v1', (asset) => {
+    asset.file = 'assets/1-2.webp';
+    asset.webpFile = 'assets/1-2.webp';
+    asset.sha256 = 'stale-webp';
+  });
+  writeFileSync(join(dir, 'index.html'), '<html><body><script id="qa-assets" type="application/json">{}</script></body></html>');
+  const result = runResume(dir);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const saved = JSON.parse(readFileSync(join(dir, 'assets-manifest.json'), 'utf8'));
+  assert.equal(saved.assets['1:2'].file, 'assets/1-2.png');
+  assert.equal(saved.assets['1:2'].webpFile, undefined);
+  const pngBytes = readFileSync(join(dir, 'assets', '1-2.png')).length;
+  assert.equal(saved.assets['1:2'].bytes, pngBytes);
+  assert.equal(saved.totalBytes, pngBytes);
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  assert.match(html, /assets\/1-2\.png/);
+  assert.doesNotMatch(html, /assets\/1-2\.webp/);
 });
 
 test('same version with changed export geometry fails closed instead of reusing the png', () => {
@@ -291,4 +331,117 @@ test('--only with a missing designVersion fails closed and leaves both files unc
     assert.doesNotMatch(output, /FIGMA_TOKEN/);
     assertFilesUntouched(snap);
   }
+});
+
+function duplicateNodes() {
+  return [
+    { id: '1:2', type: 'RECTANGLE', name: 'img/a', box: { x: 0, y: 0, w: 8, h: 8 }, style: { fills: [{ type: 'SOLID', visible: true }] } },
+    { id: '3:4', type: 'RECTANGLE', name: 'img/b', box: { x: 0, y: 0, w: 8, h: 8 }, style: { fills: [{ type: 'SOLID', visible: true }] } },
+  ];
+}
+
+function pickGeo(nodes, id) {
+  const pick = pickSliceNodes({ sections: { 'sec:1': { nodes } } }).find((entry) => entry.nodeId === id);
+  return {
+    designSize: pick.w + 'x' + pick.h,
+    exportScale: 1,
+    pixelSize: '8x8',
+    exportBounds: pick.exportBounds,
+    exportBox: pick.exportBox || undefined,
+  };
+}
+
+function writeDuplicatePngDemo({ aliasWebpRel, aliasWebpBytes } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'asset-alias-'));
+  const buf = pngBuffer();
+  const sha = sha256(buf);
+  const nodes = duplicateNodes();
+  mkdirSync(join(dir, 'assets'));
+  writeFileSync(join(dir, 'assets', '1-2.png'), buf);
+  writeFileSync(join(dir, 'assets', '3-4.png'), buf);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({ figma: { fileKey: 'not-real', exportScale: 1 } }));
+  writeFileSync(join(dir, 'truth.json'), JSON.stringify({
+    design: { fileVersion: 'v1' },
+    sections: { 'sec:1': { nodes } },
+  }));
+  writeFileSync(join(dir, 'index.html'), '<html><body><script id="qa-assets" type="application/json">{}</script></body></html>');
+  const rec = (id, extra = {}) => ({
+    file: extra.file,
+    pngFile: `assets/${id.replace(':', '-')}.png`,
+    pngSha256: sha,
+    sha256: extra.sha256 || sha,
+    bytes: extra.bytes || buf.length,
+    name: id === '1:2' ? 'img/a' : 'img/b',
+    ...pickGeo(nodes, id),
+    ...extra,
+  });
+  writeFileSync(join(dir, 'assets-manifest.json'), JSON.stringify({
+    designVersion: 'v1',
+    assets: {
+      '3:4': rec('3:4', { file: aliasWebpRel, webpFile: aliasWebpRel, sha256: 'stale-alias', bytes: aliasWebpBytes ?? 9999 }),
+      '1:2': rec('1:2', { file: 'assets/1-2.webp', webpFile: 'assets/1-2.webp', sha256: 'stale-selected', bytes: 8888 }),
+    },
+  }));
+  return { dir, pngBytes: buf.length, sha };
+}
+
+test('--only resume does not inherit an untrusted alias webp', () => {
+  const { dir, pngBytes } = writeDuplicatePngDemo({ aliasWebpRel: 'assets/missing.webp', aliasWebpBytes: 9999 });
+  const result = runOnly(dir, ['--only', '1:2', '--resume']);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const saved = JSON.parse(readFileSync(join(dir, 'assets-manifest.json'), 'utf8'));
+  const selected = saved.assets['1:2'];
+  assert.notEqual(selected.file, 'assets/missing.webp');
+  assert.notEqual(selected.webpFile, 'assets/missing.webp');
+  if (selected.webpFile) {
+    assert.equal(existsSync(join(dir, selected.webpFile)), true);
+  } else {
+    assert.equal(selected.file, 'assets/1-2.png');
+    assert.equal(selected.bytes, pngBytes);
+  }
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  assert.doesNotMatch(html, /missing\.webp/);
+});
+
+test('--only resume still aliases when the source webp is trusted this run', () => {
+  const buf = pngBuffer();
+  const sha = sha256(buf);
+  const dir = mkdtempSync(join(tmpdir(), 'asset-alias-ok-'));
+  const nodes = duplicateNodes().reverse();
+  mkdirSync(join(dir, 'assets'));
+  writeFileSync(join(dir, 'assets', '1-2.png'), buf);
+  writeFileSync(join(dir, 'assets', '3-4.png'), buf);
+  const webpBytes = Buffer.from('webp-ok');
+  writeFileSync(join(dir, 'assets', '3-4.webp'), webpBytes);
+  writeFileSync(join(dir, 'spec.json'), JSON.stringify({ figma: { fileKey: 'not-real', exportScale: 1 } }));
+  writeFileSync(join(dir, 'truth.json'), JSON.stringify({
+    design: { fileVersion: 'v1' },
+    sections: { 'sec:1': { nodes } },
+  }));
+  writeFileSync(join(dir, 'index.html'), '<html><body><script id="qa-assets" type="application/json">{}</script></body></html>');
+  const rec = (id, extra) => ({
+    file: extra.file,
+    pngFile: `assets/${id.replace(':', '-')}.png`,
+    pngSha256: sha,
+    sha256: extra.sha256,
+    bytes: extra.bytes,
+    webpFile: extra.webpFile,
+    name: id === '3:4' ? 'img/b' : 'img/a',
+    ...pickGeo(nodes, id),
+  });
+  writeFileSync(join(dir, 'assets-manifest.json'), JSON.stringify({
+    designVersion: 'v1',
+    assets: {
+      '3:4': rec('3:4', { file: 'assets/3-4.webp', webpFile: 'assets/3-4.webp', sha256: sha256(webpBytes), bytes: webpBytes.length }),
+      '1:2': rec('1:2', { file: 'assets/1-2.webp', webpFile: 'assets/1-2.webp', sha256: 'stale-selected', bytes: 8888 }),
+    },
+  }));
+  const result = runOnly(dir, ['--only', '3:4,1:2', '--resume']);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const saved = JSON.parse(readFileSync(join(dir, 'assets-manifest.json'), 'utf8'));
+  assert.equal(saved.assets['3:4'].file, 'assets/3-4.webp');
+  assert.equal(saved.assets['1:2'].file, 'assets/3-4.webp');
+  assert.equal(saved.assets['1:2'].webpFile, 'assets/3-4.webp');
+  const html = readFileSync(join(dir, 'index.html'), 'utf8');
+  assert.match(html, /assets\/3-4\.webp/);
 });

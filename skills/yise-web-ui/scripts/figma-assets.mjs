@@ -40,14 +40,14 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 import { encodeWebpBatch, planWebpDelivery } from './lib/encode-webp.mjs';
 import { pickSliceNodes } from './lib/figma-slice-nodes.mjs';
 import { figmaLegalExport } from './lib/figma-export-budget.mjs';
-import { decideAssetResume, partialOnlyRefusal } from './lib/figma-asset-resume.mjs';
+import { bindAssetDeliveryFile, decideAssetResume, partialOnlyRefusal } from './lib/figma-asset-resume.mjs';
 
 export { pickSliceNodes, planWebpDelivery };
 
@@ -270,6 +270,14 @@ async function main() {
   let bytes = previous ? Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0) : 0;
   const failed = [];
   const clampedList = [];
+  const trustedWebp = new Set();
+  function bindDelivered(rec) {
+    const pngRel = rec?.pngFile || String(rec?.file || '').replace(/\.webp$/i, '.png');
+    const pngBytes = Number.isFinite(Number(rec?.pngBytes))
+      ? Number(rec.pngBytes)
+      : (pngRel && existsSync(join(demoDir, pngRel)) ? statSync(join(demoDir, pngRel)).size : undefined);
+    return bindAssetDeliveryFile(rec, { trustedWebp, pngBytes });
+  }
   if (a.resume) {
     for (const p of picks) {
       const pngPath = join(assetsDir, assetFileName(p.nodeId));
@@ -293,8 +301,10 @@ async function main() {
         },
       });
       if (!decision.resumePng) continue;
-      manifest[p.nodeId] = { ...prev, resumed: true };
-      bytes += Number(prev.bytes || 0);
+      const kept = { ...prev, resumed: true };
+      if (decision.resumeWebp && prev.webpFile) trustedWebp.add(String(prev.webpFile).replace(/\\/g, '/'));
+      manifest[p.nodeId] = bindDelivered(kept);
+      bytes += Number(manifest[p.nodeId].bytes || 0);
       resumeSet.add(p.nodeId);
       if (decision.resumeWebp) resumeWebpSet.add(p.nodeId);
     }
@@ -483,6 +493,7 @@ async function main() {
       const hit = bySrc.get(job.src.replace(/\\/g, '/')) || encoded.results?.find((r) => r.dest.replace(/\\/g, '/') === job.dest.replace(/\\/g, '/'));
       const reused = !hit && alreadyDest.has(job.dest.replace(/\\/g, '/'));
       if (!hit && !reused) continue;
+      trustedWebp.add(String(job.webpRel).replace(/\\/g, '/'));
       rec.file = job.webpRel;
       rec.webpFile = job.webpRel;
       const destBuf = readFileSync(job.dest);
@@ -497,6 +508,8 @@ async function main() {
       const src = recById(alias.duplicateOf);
       const dest = recById(alias.nodeId);
       if (!src || !dest || !src.webpFile) continue;
+      const aliasKey = String(src.webpFile).replace(/\\/g, '/');
+      if (!trustedWebp.has(aliasKey)) continue;
       dest.file = src.webpFile;
       dest.webpFile = src.webpFile;
       dest.sha256 = src.sha256;
@@ -506,6 +519,20 @@ async function main() {
     }
     bytes = Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0);
   }
+  const pickIds = new Set(picks.map((p) => p.nodeId));
+  for (const id of Object.keys(manifest)) {
+    const rec = manifest[id];
+    if (!rec) continue;
+    const key = rec.webpFile ? String(rec.webpFile).replace(/\\/g, '/') : '';
+    if (key && trustedWebp.has(key)) {
+      manifest[id] = bindDelivered(rec);
+      continue;
+    }
+    const missingWebp = Boolean(rec.webpFile) && !existsSync(join(demoDir, rec.webpFile));
+    const touched = resumeSet.has(id) || pickIds.has(id);
+    if (missingWebp || touched) manifest[id] = bindDelivered(rec);
+  }
+  bytes = Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0);
   out.webp = webp;
 
   const mergedNoUrl = previous ? (previous.noUrl || []).filter((x) => !onlySet.has(x.nodeId)).concat(noUrl) : noUrl;

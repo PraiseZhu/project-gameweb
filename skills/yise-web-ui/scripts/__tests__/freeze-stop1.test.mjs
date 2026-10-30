@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { freezeDemo, applyStop1Interaction } from '../freeze/freeze-demo.mjs';
+import { probeSymlinkCapability } from '../lib/runtime-capabilities.mjs';
 import { assessFrozenStop1, STOP1_BUDGET_BYTES } from '../freeze/stop1-ready.mjs';
 import { planAssetReplacements } from '../freeze/replaceable-assets.mjs';
 import { resolveChromePath } from '../freeze/chrome-path.mjs';
@@ -115,4 +116,58 @@ test('freezeDemo without demoDir does not freeze the current working directory',
   const result = freezeDemo({});
   assert.equal(result.ok, false);
   assert.equal(result.error, 'missing-demo-dir');
+});
+
+function linkDir(target, link, t) {
+  try {
+    symlinkSync(target, link, 'dir');
+    return true;
+  } catch {
+    try {
+      symlinkSync(target, link, 'junction');
+      return true;
+    } catch (error) {
+      t.skip(`无法创建目录 symlink（${error.code || error.message}）`);
+      return false;
+    }
+  }
+}
+
+test('parent-directory symlink into pack-external files is rejected', (t) => {
+  const capability = probeSymlinkCapability();
+  if (!capability.available) {
+    t.skip(`无法创建 symlink（${capability.code}）`);
+    return;
+  }
+  const parent = mkdtempSync(join(tmpdir(), 'yise-freeze-parent-link-'));
+  const outside = join(parent, 'outside');
+  const dir = join(parent, 'demo');
+  mkdirSync(outside);
+  mkdirSync(dir);
+  writeFileSync(join(outside, 'secret.png'), 'secret-bytes');
+  if (!linkDir(outside, join(dir, 'assets'), t)) return;
+  writeFileSync(join(dir, 'index.html'), '<html><body><img data-asset-purpose="kv" data-asset-platform="pc" data-asset-lang="zh-CN" src="assets/secret.png"></body></html>');
+  assert.throws(
+    () => freezeDemo({ demoDir: dir }),
+    /realpath escapes pack root|refuses symlink/,
+  );
+});
+
+test('frozen output path through a pack-external symlink is rejected', (t) => {
+  const capability = probeSymlinkCapability();
+  if (!capability.available) {
+    t.skip(`无法创建 symlink（${capability.code}）`);
+    return;
+  }
+  const parent = mkdtempSync(join(tmpdir(), 'yise-freeze-out-link-'));
+  const outside = join(parent, 'outside');
+  const dir = join(parent, 'demo');
+  mkdirSync(outside);
+  mkdirSync(dir);
+  writeFileSync(join(dir, 'index.html'), '<html><body>ok</body></html>');
+  if (!linkDir(outside, join(dir, 'frozen'), t)) return;
+  assert.throws(
+    () => freezeDemo({ demoDir: dir }),
+    /realpath escapes pack root|refuses symlink/,
+  );
 });
