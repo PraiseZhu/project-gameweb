@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession, waitEwsBoot } from '../lib/browser-session.mjs';
 import { documentHtml } from '../../assets/runtime/render.mjs';
 import { publishRuntimeDir, runtimeIdentityFromDir } from '../lib/runtime-identity.mjs';
 import { resolveDropmenus, resolveLanguageModalOptions } from '../lib/dropmenu.mjs';
 import { fontCheckCss } from '../../assets/runtime/locale-fonts.mjs';
+import { registerTestFonts } from './helpers/test-fonts.mjs';
 
 applyTestBrowserEnv();
 
@@ -21,13 +22,13 @@ const LOCALES = [
   ['ja', 'Noto Sans JP', '日本語'],
   ['ko', 'Noto Sans KR', '한국인'],
 ];
-const FONT_FILES = [
-  ['Noto Sans SC', 400, 'Noto-Sans-SC-400.ttf', 'truetype'],
-  ['Noto Sans HK', 400, 'Noto-Sans-HK-400.otf', 'opentype'],
-  ['Noto Sans', 400, 'Noto-Sans-400.ttf', 'truetype'],
-  ['Noto Sans JP', 400, 'Noto-Sans-JP-400.otf', 'opentype'],
-  ['Noto Sans KR', 400, 'Noto-Sans-KR-400.otf', 'opentype'],
-  ['Bebas Neue', 400, 'Bebas-Neue-400.ttf', 'truetype'],
+const FONT_SLOTS = [
+  { family: 'Noto Sans SC', weight: 400 },
+  { family: 'Noto Sans HK', weight: 400 },
+  { family: 'Noto Sans', weight: 400 },
+  { family: 'Noto Sans JP', weight: 400 },
+  { family: 'Noto Sans KR', weight: 400 },
+  { family: 'Bebas Neue', weight: 400 },
 ];
 
 function descendants(nodes, rootId) {
@@ -44,14 +45,6 @@ function descendants(nodes, rootId) {
   if (root) out.unshift(root);
   walk(rootId);
   return out;
-}
-
-function fontSrc(file) {
-  return [
-    fileURLToPath(new URL(`../../../../_tmp/out/ews-candidate-r19/fonts/${file}`, import.meta.url)),
-    fileURLToPath(new URL(`../../../../_tmp/out/ews-verify-r19/fonts/${file}`, import.meta.url)),
-    fileURLToPath(new URL(`../../../../_tmp/out/ews-candidate-r18/fonts/${file}`, import.meta.url)),
-  ].find((path) => existsSync(path));
 }
 
 function langRows() {
@@ -181,13 +174,7 @@ function buildDemo() {
   const out = mkdtempSync(join(tmpdir(), 'ews-font-paths-'));
   mkdirSync(join(out, 'fonts'), { recursive: true });
   mkdirSync(join(out, 'runtime'), { recursive: true });
-  const fonts = [];
-  for (const [family, weight, file, format] of FONT_FILES) {
-    const src = fontSrc(file);
-    if (!src) throw new Error(`missing fixture font ${file}`);
-    cpSync(src, join(out, `fonts/${file}`));
-    fonts.push({ family, weight, format, relative: `fonts/${file}`, url: `./fonts/${file}` });
-  }
+  const fonts = registerTestFonts(out, FONT_SLOTS);
   const model = {
     defaultLocale: 'zh-CN',
     locales: LOCALES.map(([code]) => code),
@@ -249,7 +236,7 @@ async function fontShot(page, family) {
   }, family);
 }
 
-test('five locales × PC dropdown / mobile modal / QA dropdown load computed fonts', { timeout: 180000 }, async () => {
+test('five locales × PC dropdown / mobile modal / QA dropdown load computed fonts', browserTestOptions({ timeout: 180000 }), async () => {
   const out = buildDemo();
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {

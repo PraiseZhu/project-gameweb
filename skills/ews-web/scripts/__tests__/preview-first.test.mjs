@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -81,7 +81,7 @@ test('browser-session does not name sibling skills', () => {
   assert.equal(source.includes('torchlight-web'), false);
 });
 
-test('preview:first synthetic demo is live green or chromium fail-closed', { timeout: 120000 }, async () => {
+test('preview:first synthetic demo is live green or chromium fail-closed', browserTestOptions({ timeout: 120000 }), async () => {
   const { handoff, out } = buildSyntheticDemo();
   const artifacts = join(out, 'artifacts', 'stop1');
   mkdirSync(artifacts, { recursive: true });

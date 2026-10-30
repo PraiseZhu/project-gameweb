@@ -4,7 +4,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession } from '../lib/browser-session.mjs';
 
 applyTestBrowserEnv();
@@ -63,8 +63,9 @@ async function fit(page, { locale, between, text = null, hint = false }) {
   }, { locale, between, text, hint });
 }
 
-test('translation fit: tighten tracking last, only when it saves a line, never past -0.04em; source untouched', async () => {
+test('translation fit: tighten tracking last, only when it saves a line, never past -0.04em; source untouched', browserTestOptions({ timeout: 60000 }), async () => {
   const s = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: buildDemo() });
+  assert.equal(s.ok, true, (s.problems || []).join('\n'));
   try {
     const page = await s.browser.newPage();
     await page.goto(`${s.base}/index.html`);

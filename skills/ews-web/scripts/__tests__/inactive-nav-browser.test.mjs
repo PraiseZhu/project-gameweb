@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {applyTestBrowserEnv} from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import {buildSyntheticDemo} from './helpers/build-demo.mjs';
 import {openBrowserSession} from '../lib/browser-session.mjs';
 applyTestBrowserEnv();
-test('invisible nav descendants cannot intercept clicks even with explicit pointer events', async()=>{
+test('invisible nav descendants cannot intercept clicks even with explicit pointer events', browserTestOptions(), async ()=>{
  const {out}=buildSyntheticDemo('ews-inactive-nav-');
  const session=await openBrowserSession({skillRoot:fileURLToPath(new URL('../..',import.meta.url)),demoDir:out});
  assert.equal(session.ok,true,JSON.stringify(session.problems));

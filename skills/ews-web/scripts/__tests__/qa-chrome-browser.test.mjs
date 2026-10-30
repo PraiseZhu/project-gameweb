@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { buildSyntheticDemo } from './helpers/build-demo.mjs';
 import { openBrowserSession, waitEwsBoot } from '../lib/browser-session.mjs';
 
@@ -30,7 +30,7 @@ async function shot(page) {
   }));
 }
 
-test('default index.html exposes full QA chrome; product=1 does not', { timeout: 180000 }, async () => {
+test('default index.html exposes full QA chrome; product=1 does not', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildSyntheticDemo('ews-qa-chrome-');
   const session = await openBrowserSession({
     skillRoot: fileURLToPath(new URL('../..', import.meta.url)),
@@ -127,7 +127,7 @@ test('default index.html exposes full QA chrome; product=1 does not', { timeout:
   }
 });
 
-test('QA fit uses stage size after cold hash restore for 4K/1920/phone', { timeout: 180000 }, async () => {
+test('QA fit uses stage size after cold hash restore for 4K/1920/phone', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildSyntheticDemo('ews-qa-fit-');
   const session = await openBrowserSession({
     skillRoot: fileURLToPath(new URL('../..', import.meta.url)),
@@ -196,7 +196,7 @@ test('QA fit uses stage size after cold hash restore for 4K/1920/phone', { timeo
   }
 });
 
-test('same Figma fingerprint with poisoned unversioned runtime still boots stamped graph', { timeout: 180000 }, async () => {
+test('same Figma fingerprint with poisoned unversioned runtime still boots stamped graph', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildSyntheticDemo('ews-runtime-cache-');
   const html = readFileSync(`${out}/index.html`, 'utf8');
   const identity = /boot\.mjs\?v=([^"']+)/.exec(html)?.[1];

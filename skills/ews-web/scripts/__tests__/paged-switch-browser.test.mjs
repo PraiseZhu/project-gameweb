@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession, waitEwsBoot } from '../lib/browser-session.mjs';
 import { SCREEN_TRANSITION_MS } from '../../assets/runtime/ews-screen-runtime.mjs';
 import { runEwsWeb } from '../ews-web.mjs';
@@ -61,7 +61,7 @@ async function waitScreen(page, key) {
   }, key, { timeout: SCREEN_TRANSITION_MS + 2000 });
 }
 
-test('live 8-card paged switch: dots/arrows/swipe flip pages, not the main screen; old carousel still works', { timeout: 180000 }, async () => {
+test('live 8-card paged switch: dots/arrows/swipe flip pages, not the main screen; old carousel still works', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(8);
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -140,7 +140,7 @@ test('live 8-card paged switch: dots/arrows/swipe flip pages, not the main scree
   }
 });
 
-test('live 1-card paged switch hides dots and arrows', { timeout: 180000 }, async () => {
+test('live 1-card paged switch hides dots and arrows', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(1);
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -174,7 +174,7 @@ test('live 1-card paged switch hides dots and arrows', { timeout: 180000 }, asyn
   }
 });
 
-test('live mobile paged switch without arrows: dots and swipe still flip pages', { timeout: 180000 }, async () => {
+test('live mobile paged switch without arrows: dots and swipe still flip pages', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(8, { pagerButtons: { pc: true, mobile: false } });
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -234,7 +234,7 @@ test('live mobile paged switch without arrows: dots and swipe still flip pages',
   }
 });
 
-test('pixel paged align keeps product 8 cards / 2 pages and stays on page 1', { timeout: 180000 }, async () => {
+test('pixel paged align keeps product 8 cards / 2 pages and stays on page 1', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(8);
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -289,7 +289,7 @@ function hiddenScrollbar(info) {
     || info.barWidth === '0px';
 }
 
-test('static product view pages secs but not component cards, and hides native paged scrollbar', { timeout: 180000 }, async () => {
+test('static product view pages secs but not component cards, and hides native paged scrollbar', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(8);
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -364,7 +364,7 @@ test('static product view pages secs but not component cards, and hides native p
   }
 });
 
-test('live interaction keeps legal swipe and still hides native paged scrollbar', { timeout: 180000 }, async () => {
+test('live interaction keeps legal swipe and still hides native paged scrollbar', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(8);
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -406,7 +406,7 @@ test('live interaction keeps legal swipe and still hides native paged scrollbar'
   }
 });
 
-test('4-page IND group stays inside the ready frame and does not copy the first gap', { timeout: 180000 }, async () => {
+test('4-page IND group stays inside the ready frame and does not copy the first gap', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(16);
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -451,7 +451,7 @@ test('4-page IND group stays inside the ready frame and does not copy the first 
   }
 });
 
-test('static product page index uses paged model count, not Figma 01/10', { timeout: 180000 }, async () => {
+test('static product page index uses paged model count, not Figma 01/10', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(8);
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -485,7 +485,7 @@ test('static product page index uses paged model count, not Figma 01/10', { time
 // Official Swiper (yise.xd.cn/esports/ews2025): inactive slides are opacity 0, so a dragged
 // neighbour stays invisible; commit crossfades (300ms ease-in-out) while the track snaps.
 // Loop wraps forward like a duplicate slide: last → first comes in from the right.
-test('paged pages crossfade on commit and loop wraps forward, not backwards', { timeout: 180000 }, async () => {
+test('paged pages crossfade on commit and loop wraps forward, not backwards', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(8, { loop: true });
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {

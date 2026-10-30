@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { buildSyntheticDemo } from './helpers/build-demo.mjs';
 import { runProductViewport, assertContentAlign } from '../product-viewport.mjs';
 import { viewportPlanFromPack } from '../lib/viewport-plan.mjs';
@@ -104,7 +104,7 @@ test('missing demo is red without skip', async () => {
   assert.equal(result.ok, false);
 });
 
-test('synthetic 390/1440/750/751/short product viewport is live or fail-closed', { timeout: 180000 }, async () => {
+test('synthetic 390/1440/750/751/short product viewport is live or fail-closed', browserTestOptions({ timeout: 180000 }), async () => {
   const { out, handoff } = buildSyntheticDemo('ews-product-');
   const result = await runProductViewport([
     '--demo', out,

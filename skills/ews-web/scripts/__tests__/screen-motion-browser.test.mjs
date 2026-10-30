@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession, waitEwsBoot } from '../lib/browser-session.mjs';
 import { documentHtml } from '../../assets/runtime/render.mjs';
 import { NAV_FADE_MS, SCREEN_TRANSITION_MS } from '../../assets/runtime/ews-screen-runtime.mjs';
@@ -74,7 +74,7 @@ async function sampleTrack(page, nextKey) {
   }, { key: nextKey, duration: SCREEN_TRANSITION_MS });
 }
 
-test('static product view animates the screen track 300ms ease, not an instant jump', { timeout: 180000 }, async () => {
+test('static product view animates the screen track 300ms ease, not an instant jump', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(8);
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -112,7 +112,7 @@ test('static product view animates the screen track 300ms ease, not an instant j
   }
 });
 
-test('live IND swaps asset/width; static IND does not, while vertical motion still runs', { timeout: 180000 }, async () => {
+test('live IND swaps asset/width; static IND does not, while vertical motion still runs', browserTestOptions({ timeout: 180000 }), async () => {
   const { out } = buildPagedDemo(8);
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {
@@ -265,7 +265,7 @@ function buildNavFadeDemo() {
   return root;
 }
 
-test('top-nav layer opacity is a real 300ms mid-fade, not just a CSS string', { timeout: 180000 }, async () => {
+test('top-nav layer opacity is a real 300ms mid-fade, not just a CSS string', browserTestOptions({ timeout: 180000 }), async () => {
   const out = buildNavFadeDemo();
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {

@@ -5,8 +5,18 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const problems = [];
 const require = createRequire(import.meta.url);
+
+/**
+ * Column-0 ESM specifiers, one statement per line (repo convention).
+ * Not seen: indented imports and a second import on the same line.
+ */
+export function collectModuleSpecifiers(source) {
+  const text = String(source ?? '').replace(/^\uFEFF/, '');
+  const fromRe = /^(?:import|export)\b[^;'"`=(]*?\bfrom\s*['"]([^'"]+)['"]/gm;
+  const sideRe = /^import\s*['"]([^'"]+)['"]/gm;
+  return [fromRe, sideRe].flatMap((re) => [...text.matchAll(re)].map((m) => m[1]));
+}
 
 function walk(rel) {
   const abs = rel ? join(ROOT, rel) : ROOT;
@@ -21,6 +31,8 @@ function walk(rel) {
   return out;
 }
 
+function auditRelease() {
+const problems = [];
 const manifest = JSON.parse(readFileSync(join(ROOT, 'public-release.json'), 'utf8'));
 if (manifest.identity !== 'etheria-ews') problems.push('manifest.identity 必须是 etheria-ews');
 if (manifest.displayName !== 'Etheria-ews') problems.push('manifest.displayName 必须是 Etheria-ews');
@@ -97,7 +109,7 @@ for (const rel of stop1BrowserTools) {
 for (const file of publishFiles) {
   if (!file.endsWith('.mjs')) continue;
   const text = readFileSync(join(ROOT, file), 'utf8');
-  const imports = [...text.matchAll(/from\s+['\"]([^'\"]+)['\"]/g)].map((m) => m[1]);
+  const imports = collectModuleSpecifiers(text);
   for (const spec of imports) {
     if (spec.startsWith('.')) {
       const target = relative(ROOT, resolve(ROOT, dirname(file), spec)).replaceAll('\\', '/');
@@ -118,3 +130,7 @@ if (problems.length) {
   process.exit(1);
 }
 console.log(`release:audit ok, publish files=${publishFiles.length}`);
+}
+
+const invoked = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (invoked) auditRelease();

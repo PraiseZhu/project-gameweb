@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession, waitEwsBoot } from '../lib/browser-session.mjs';
 import { documentHtml } from '../../assets/runtime/render.mjs';
 import { publishRuntimeDir, runtimeIdentityFromDir } from '../lib/runtime-identity.mjs';
 import { resolveVariantSwitches } from '../lib/variant-switch.mjs';
 import { bindPaintedCloneCopy } from '../lib/copy-bind-clones.mjs';
+import { registerTestFont } from './helpers/test-fonts.mjs';
 
 applyTestBrowserEnv();
 
@@ -100,20 +101,10 @@ function buildDemo() {
     pageBackgrounds: [],
     footer: null,
   };
-  const fontSrc = [
-    fileURLToPath(new URL('../../../../_tmp/out/ews-candidate-r19/fonts/Noto-Sans-JP-400.otf', import.meta.url)),
-    fileURLToPath(new URL('../../../../_tmp/out/ews-verify-r19/fonts/Noto-Sans-JP-400.otf', import.meta.url)),
-    fileURLToPath(new URL('../../../../_tmp/out/ews-verify-r18/fonts/Noto-Sans-JP-400.otf', import.meta.url)),
-  ].find((path) => existsSync(path));
-  if (!fontSrc) throw new Error('missing Noto Sans JP fixture font');
   const out = mkdtempSync(join(tmpdir(), 'ews-clone-copy-'));
   mkdirSync(join(out, 'fonts'), { recursive: true });
   mkdirSync(join(out, 'runtime'), { recursive: true });
-  const fonts = [];
-  if (fontSrc) {
-    cpSync(fontSrc, join(out, 'fonts/Noto-Sans-JP-400.otf'));
-    fonts.push({ family: 'Noto Sans JP', weight: 400, format: 'opentype', relative: 'fonts/Noto-Sans-JP-400.otf', url: './fonts/Noto-Sans-JP-400.otf' });
-  }
+  const fonts = [registerTestFont(out, { family: 'Noto Sans JP', weight: 400 })];
   const model = {
     defaultLocale: 'zh-CN',
     locales: LOCALES,
@@ -139,7 +130,7 @@ function buildDemo() {
   return out;
 }
 
-test('switching hidden variant after locale change paints translated text and locale font', { timeout: 180000 }, async () => {
+test('switching hidden variant after locale change paints translated text and locale font', browserTestOptions({ timeout: 180000 }), async () => {
   const out = buildDemo();
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {

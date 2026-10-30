@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession } from '../lib/browser-session.mjs';
 import { isModalCloseButton } from '../../assets/runtime/modal-close.mjs';
 import { renderPageHtml } from '../../assets/runtime/render.mjs';
@@ -103,7 +103,7 @@ test('hiding fix / img / deleting btn is red', () => {
   assert.ok(presenceDomProblems(hiddenImg, { id: 'img-1' }).some((item) => /不可见/.test(item)));
 });
 
-test('browser counterexample: hidden fix/img and missing btn are red', { timeout: 60000 }, async () => {
+test('browser counterexample: hidden fix/img and missing btn are red', browserTestOptions({ timeout: 60000 }), async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ews-presence-'));
   writeFileSync(join(dir, 'index.html'), `<!doctype html>
 <html><body>

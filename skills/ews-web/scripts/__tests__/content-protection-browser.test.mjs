@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession, waitEwsBoot } from '../lib/browser-session.mjs';
 import { documentHtml } from '../../assets/runtime/render.mjs';
 import { publishRuntimeDir, runtimeIdentityFromDir } from '../lib/runtime-identity.mjs';
@@ -67,7 +67,7 @@ function buildDemo() {
   return out;
 }
 
-test('product artwork blocks drag/select/contextmenu; QA chrome and clicks stay live', { timeout: 180000 }, async () => {
+test('product artwork blocks drag/select/contextmenu; QA chrome and clicks stay live', browserTestOptions({ timeout: 180000 }), async () => {
   const out = buildDemo();
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {

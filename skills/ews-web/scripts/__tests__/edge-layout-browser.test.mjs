@@ -1,11 +1,11 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
-import {applyTestBrowserEnv} from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import {buildSyntheticDemo} from './helpers/build-demo.mjs';
 import {openBrowserSession} from '../lib/browser-session.mjs';
 applyTestBrowserEnv();
-test('locale relayout preserves viewport bars and section-local edge art', {timeout:60000}, async()=>{
+test('locale relayout preserves viewport bars and section-local edge art', browserTestOptions({timeout:60000}), async()=>{
  const {out}=buildSyntheticDemo('ews-edge-layout-');
  const session=await openBrowserSession({skillRoot:fileURLToPath(new URL('../..',import.meta.url)),demoDir:out});
  assert.equal(session.ok,true);

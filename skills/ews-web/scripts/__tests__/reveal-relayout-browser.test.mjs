@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession, waitEwsBoot } from '../lib/browser-session.mjs';
 import { runEwsWeb } from '../ews-web.mjs';
 import {
@@ -45,7 +45,7 @@ function buildDemo() {
 
 // Variant layers / modals start [hidden]; text layout skips them. Revealing one must
 // re-run the translation layout, otherwise the shown layer keeps raw designed boxes.
-test('revealing a hidden subtree re-runs translation text layout', async () => {
+test('revealing a hidden subtree re-runs translation text layout', browserTestOptions(), async () => {
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: buildDemo() });
   assert.equal(session.ok, true, (session.problems || []).join('; '));
   try {

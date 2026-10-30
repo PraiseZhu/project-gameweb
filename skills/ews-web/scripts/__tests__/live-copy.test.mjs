@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession } from '../lib/browser-session.mjs';
 
 applyTestBrowserEnv();
@@ -1273,7 +1273,7 @@ test('missing relative demo file is red', () => {
   assert.ok(collectRelativeRefs('<img src="./gone.png">').includes('./gone.png'));
 });
 
-test('browser counterexample: extra lines and ancestor clip are red', { timeout: 60000 }, async () => {
+test('browser counterexample: extra lines and ancestor clip are red', browserTestOptions({ timeout: 60000 }), async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ews-live-layout-'));
   writeFileSync(join(dir, 'index.html'), `<!doctype html>
 <html><body>

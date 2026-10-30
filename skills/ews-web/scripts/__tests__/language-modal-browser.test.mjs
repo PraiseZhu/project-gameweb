@@ -1,19 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { openBrowserSession, waitEwsBoot } from '../lib/browser-session.mjs';
 import { documentHtml } from '../../assets/runtime/render.mjs';
 import { publishRuntimeDir, runtimeIdentityFromDir } from '../lib/runtime-identity.mjs';
 import { resolveLanguageModalOptions } from '../lib/dropmenu.mjs';
+import { registerTestFont } from './helpers/test-fonts.mjs';
 
 applyTestBrowserEnv();
 
 const SKILL_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const WORKTREE = dirname(dirname(SKILL_ROOT));
 
 function descendants(nodes, rootId) {
   const out = [];
@@ -117,29 +117,17 @@ function buildDemo() {
     pageBackgrounds: [],
     footer: null,
   };
-  const fontSrc = [
-    join(WORKTREE, '_tmp/out/ews-verify-r18/fonts/Noto-Sans-KR-400.otf'),
-    join(WORKTREE, '_tmp/out/ews-candidate-r18/fonts/Noto-Sans-KR-400.otf'),
-    join(WORKTREE, '_tmp/out/ews-verify-r17/fonts/Noto-Sans-KR-400.otf'),
-  ].find((path) => existsSync(path));
-  if (!fontSrc) throw new Error('missing Noto Sans KR fixture font');
   const out = mkdtempSync(join(tmpdir(), 'ews-lang-modal-'));
   mkdirSync(join(out, 'fonts'), { recursive: true });
   mkdirSync(join(out, 'runtime'), { recursive: true });
-  cpSync(fontSrc, join(out, 'fonts/Noto-Sans-KR-400.otf'));
+  const krFont = registerTestFont(out, { family: 'Noto Sans KR', weight: 400 });
   const model = {
     defaultLocale: 'zh-CN',
     locales: ['zh-CN', 'zh-TW', 'en', 'ja', 'ko'],
     fingerprint: 'lang-modal',
     screens: ['sec1'],
     assets: {
-      fonts: [{
-        family: 'Noto Sans KR',
-        weight: 400,
-        format: 'opentype',
-        relative: 'fonts/Noto-Sans-KR-400.otf',
-        url: './fonts/Noto-Sans-KR-400.otf',
-      }],
+      fonts: [krFont],
       pc: {},
       mobile: {},
     },
@@ -164,7 +152,7 @@ function buildDemo() {
   return out;
 }
 
-test('mobile language modal real click 한국인 switches to ko, closes, loads KR font', { timeout: 180000 }, async () => {
+test('mobile language modal real click 한국인 switches to ko, closes, loads KR font', browserTestOptions({ timeout: 180000 }), async () => {
   const out = buildDemo();
   const session = await openBrowserSession({ skillRoot: SKILL_ROOT, demoDir: out });
   if (!session.ok) {

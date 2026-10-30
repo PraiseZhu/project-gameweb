@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { applyTestBrowserEnv } from './helpers/browser-env.mjs';
+import { applyTestBrowserEnv, browserTestOptions } from './helpers/browser-env.mjs';
 import { buildSyntheticDemo } from './helpers/build-demo.mjs';
 import { waitEwsBoot, resolveStop1BrowserTools } from '../lib/browser-session.mjs';
 import { createCommentStore, createQaCommentsHarness } from './helpers/qa-comments-mock.mjs';
@@ -32,7 +32,7 @@ async function openList(page) {
   await panel.waitFor({ state: 'visible' });
 }
 
-test('generated QA page comments: CLI config, CRUD, isolation, mock share, retry', { timeout: 240000 }, async (t) => {
+test('generated QA page comments: CLI config, CRUD, isolation, mock share, retry', browserTestOptions({ timeout: 240000 }), async (t) => {
   const tools = resolveStop1BrowserTools(skillRoot);
   assert.equal(tools.ok, true, (tools.problems || []).join('\n'));
   const { launchChromium } = await import(pathToFileURL(tools.playwrightPath).href);
@@ -115,7 +115,7 @@ test('generated QA page comments: CLI config, CRUD, isolation, mock share, retry
       }
     });
 
-    await t.test('CLI commentApi reaches live __qaDemo', async () => {
+    await t.test('CLI commentApi reaches live __qaDemo', browserTestOptions(), async () => {
       const live = await livePage('cfg');
       try {
         const demo = await live.page.evaluate(() => ({
@@ -186,7 +186,7 @@ test('generated QA page comments: CLI config, CRUD, isolation, mock share, retry
       }
     });
 
-    await t.test('second browser context sees create via mock GET poll', async () => {
+    await t.test('second browser context sees create via mock GET poll', browserTestOptions(), async () => {
       const live = await livePage('share');
       try {
         await publish(live.page, '跨上下文同步');
@@ -207,7 +207,7 @@ test('generated QA page comments: CLI config, CRUD, isolation, mock share, retry
       }
     });
 
-    await t.test('503 stays queued across refresh then resumes', async () => {
+    await t.test('503 stays queued across refresh then resumes', browserTestOptions(), async () => {
       const id = pageId('retry503');
       const live = await livePage('retry503', { pageId: id, case: { status: 503 } });
       try {
@@ -233,7 +233,7 @@ test('generated QA page comments: CLI config, CRUD, isolation, mock share, retry
       }
     });
 
-    await t.test('401 pauses until 立即重试同步', async () => {
+    await t.test('401 pauses until 立即重试同步', browserTestOptions(), async () => {
       const id = pageId('retry401');
       const live = await livePage('retry401', { pageId: id, case: { status: 401 } });
       try {
