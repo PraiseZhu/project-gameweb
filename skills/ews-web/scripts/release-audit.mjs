@@ -73,6 +73,27 @@ for (const file of publishFiles) {
   }
 }
 
+const policyTools = [
+  '../../standards/design-policy/tool/src/parse-design-policy.mjs',
+  '../../standards/design-policy/tool/src/mirror-design-policy.mjs',
+  '../../standards/design-policy/tool/src/write-skill-policy.mjs',
+];
+for (const rel of policyTools) {
+  if (!existsSync(resolve(ROOT, rel))) {
+    problems.push(`停一政策闸需要仓内 ${rel}，缺失不得 skip`);
+  }
+}
+const stop1BrowserTools = [
+  '../../standards/stop1-figma-pixel/tool/src/safe-server.mjs',
+  '../../standards/stop1-figma-pixel/tool/src/resolve-playwright.mjs',
+  '../../standards/stop1-figma-pixel/tool/src/stop1-figma-pixel-probe.mjs',
+];
+for (const rel of stop1BrowserTools) {
+  if (!existsSync(resolve(ROOT, rel))) {
+    problems.push(`停一浏览器闸需要仓内 ${rel}，缺失不得 skip`);
+  }
+}
+
 for (const file of publishFiles) {
   if (!file.endsWith('.mjs')) continue;
   const text = readFileSync(join(ROOT, file), 'utf8');

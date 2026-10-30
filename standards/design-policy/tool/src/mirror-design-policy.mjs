@@ -6,7 +6,7 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parseDesignPolicyFile, parseDesignPolicyMarkdown } from './parse-design-policy.mjs';
+import { EWS_SCHEMA, parseDesignPolicyFile, parseDesignPolicyMarkdown } from './parse-design-policy.mjs';
 
 function fail(message, extra = {}) {
   const err = new Error(message);
@@ -65,7 +65,19 @@ function sameLocale(expected, actual, problems) {
   }
 }
 
+function ewsImplementationFromPolicy(policy) {
+  return {
+    schema: policy.schema,
+    mobileMaxWidth: policy.mobileMaxWidth,
+    rootFontVw: policy.rootFontVw,
+    wideAspectMin: policy.wideAspectMin,
+    wideRootFontVh: policy.wideRootFontVh,
+    screenHeight: policy.screenHeight,
+  };
+}
+
 export function implementationFromPolicy(policy) {
+  if (policy?.schema === EWS_SCHEMA) return ewsImplementationFromPolicy(policy);
   return {
     designWidths: { ...policy.designWidths },
     officialRootFontVw: policy.officialRootFontVw,
@@ -100,11 +112,25 @@ export function implementationFromPolicy(policy) {
   };
 }
 
+function mirrorEwsDesignPolicy({ policy, implementation, path }) {
+  const problems = [];
+  pushIfNumberDrift(problems, 'mobileMaxWidth', implementation.mobileMaxWidth, policy.mobileMaxWidth);
+  pushIfNumberDrift(problems, 'rootFontVw', implementation.rootFontVw, policy.rootFontVw);
+  pushIfNumberDrift(problems, 'wideAspectMin', implementation.wideAspectMin, policy.wideAspectMin);
+  pushIfNumberDrift(problems, 'wideRootFontVh', implementation.wideRootFontVh, policy.wideRootFontVh);
+  pushIfDrift(problems, 'screenHeight', implementation.screenHeight, policy.screenHeight);
+  if (problems.length) {
+    fail(`design-policy mirror red for ${path}: ${problems.join('; ')}`, { problems });
+  }
+  return { ok: true, path, schema: policy.schema };
+}
+
 export function mirrorDesignPolicy({ policy, implementation, path = 'DESIGN.md' } = {}) {
   if (!policy) fail(`missing policy for ${path}`);
   if (!implementation || typeof implementation !== 'object') {
     fail(`missing implementation snapshot for ${path}`);
   }
+  if (policy.schema === EWS_SCHEMA) return mirrorEwsDesignPolicy({ policy, implementation, path });
   const problems = [];
   const widths = implementation.designWidths || {};
   for (const key of ['mobile', 'pad', 'pc']) {

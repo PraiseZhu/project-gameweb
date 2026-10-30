@@ -62,11 +62,21 @@ export function needsSliceExport(node) {
   return false;
 }
 
+/** Page/modal trees need pageBox. Library variant envelopes (no scope, no parentId, no pageBox) do not. */
+export function requiresPageGeometry(node) {
+  if (!node || typeof node !== 'object') return false;
+  if (node.scope === 'page') return true;
+  if (node.parentId) return true;
+  if (isGeomBox(node.pageBox)) return true;
+  return false;
+}
+
 export function determinedReadyFieldProblems(node, { label = '' } = {}) {
   const problems = [];
   const prefix = label ? `${label} ${node.id}` : node.id;
-  if (!isGeomBox(node.pageBox)) problems.push(`${prefix} 缺 pageBox`);
-  if (!isGeomBox(node.parentBox)) problems.push(`${prefix} 缺 parentBox`);
+  const requireGeom = requiresPageGeometry(node);
+  if (requireGeom && !isGeomBox(node.pageBox)) problems.push(`${prefix} 缺 pageBox`);
+  if (requireGeom && !isGeomBox(node.parentBox)) problems.push(`${prefix} 缺 parentBox`);
   if (needsSliceExport(node) && !sliceExportMatches(node.sliceExport)) {
     problems.push(`${prefix} 切图必须按整框 pageBox 1 倍 png`);
   }
@@ -82,7 +92,7 @@ export function determinedReadyFieldProblems(node, { label = '' } = {}) {
     problems.push(`${prefix} 切图角色不得当排版字`);
   }
   if (node.role === 'fix' && node.pin !== 'viewport') problems.push(`${prefix} fix 必须钉视口`);
-  if (node.rotation == null) problems.push(`${prefix} 缺 rotation`);
+  if (requireGeom && node.rotation == null) problems.push(`${prefix} 缺 rotation`);
   if (node.role === 'copy') {
     for (const key of TEXT_REQUIRED) {
       if (node.text?.[key] == null) problems.push(`${prefix} 文字缺 ${key}`);

@@ -9,6 +9,7 @@ import { writeSkillPolicyModule } from '../src/write-skill-policy.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const CONSUMER = process.env.DESIGN_POLICY_CONSUMER || '';
+const SKIP_EWS = Boolean(CONSUMER && CONSUMER !== 'ews-web');
 
 function yiseYaml(extra = '') {
   return `---
@@ -263,6 +264,66 @@ test('tab indent is red', () => {
 test('missing file is red', () => {
   const dir = mkdtempSync(join(tmpdir(), 'design-policy-missing-'));
   throws(() => parseDesignPolicyFile(join(dir, 'DESIGN.md')), /cannot read DESIGN.md/);
+});
+
+function ewsYaml(extra = '') {
+  return `---
+schema: ews-design-policy/v1
+mobileMaxWidth: 750
+rootFontVw: 10
+wideAspectMin: 1.92
+wideRootFontVh: 19.2
+screenHeight: innerHeight
+${extra}---
+
+# body
+`;
+}
+
+test('parses ews DESIGN.md YAML six fields', { skip: SKIP_EWS }, () => {
+  const policy = parseDesignPolicyFile(join(REPO, 'skills/ews-web/DESIGN.md'));
+  assert.equal(policy.schema, 'ews-design-policy/v1');
+  assert.equal(policy.mobileMaxWidth, 750);
+  assert.equal(policy.rootFontVw, 10);
+  assert.equal(policy.wideAspectMin, 1.92);
+  assert.equal(policy.wideRootFontVh, 19.2);
+  assert.equal(policy.screenHeight, 'innerHeight');
+  assert.equal(policy.designWidths, undefined);
+  assert.equal(policy.officialRootFontVw, undefined);
+});
+
+test('ews fixture markdown parses the same six fields', { skip: SKIP_EWS }, () => {
+  const policy = parseDesignPolicyMarkdown(ewsYaml());
+  assert.equal(policy.schema, 'ews-design-policy/v1');
+  assert.equal(policy.mobileMaxWidth, 750);
+  assert.equal(policy.screenHeight, 'innerHeight');
+});
+
+test('ews missing required key is red', { skip: SKIP_EWS }, () => {
+  throws(() => parseDesignPolicyMarkdown(ewsYaml().replace('rootFontVw: 10\n', '')), /missing required key: rootFontVw/);
+});
+
+test('ews unregistered gameweb key is red', { skip: SKIP_EWS }, () => {
+  throws(() => parseDesignPolicyMarkdown(ewsYaml('officialRootFontVw: 10\n')), /unregistered key: officialRootFontVw/);
+});
+
+test('ews screenHeight must be innerHeight', { skip: SKIP_EWS }, () => {
+  throws(() => parseDesignPolicyMarkdown(ewsYaml().replace('screenHeight: innerHeight', 'screenHeight: 100vh')), /screenHeight must be innerHeight/);
+});
+
+test('gameweb yaml does not accept ews keys', () => {
+  throws(() => parseDesignPolicyMarkdown(yiseYaml('mobileMaxWidth: 750\n')), /unregistered key: mobileMaxWidth/);
+});
+
+test('writeSkillPolicyModule stores ews DESIGN.md repo-relative path', { skip: SKIP_EWS }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'design-policy-ews-write-'));
+  const out = join(dir, 'design-policy.generated.mjs');
+  writeSkillPolicyModule(join(REPO, 'skills/ews-web/DESIGN.md'), out, { repoRoot: REPO });
+  const generated = readFileSync(out, 'utf8');
+  assert.match(generated, /"schema": "ews-design-policy\/v1"/);
+  assert.match(generated, /"path": "skills\/ews-web\/DESIGN.md"/);
+  assert.match(generated, /"mobileMaxWidth": 750/);
+  assert.doesNotMatch(generated, /C:\\\\Users/);
 });
 
 test('__proto__ mapping cannot satisfy required keys', () => {

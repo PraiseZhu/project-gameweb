@@ -2,17 +2,38 @@
   --ews-screen-h: 100dvh;
   --ews-root-font: 10vw;
   --ews-design-w: 1920px;
+  --ews-design-root: 192px;
   --ews-content-h: 1080px;
   --ews-scale: 1;
+  --ews-world-y: 0px;
+  --ews-bleed-position: center center;
 }
 html, body {
   margin: 0;
   padding: 0;
+  overflow: hidden;
+  height: 100%;
 }
 .ews-root {
   font-size: var(--ews-root-font);
   position: relative;
   height: var(--ews-screen-h);
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.ews-root,
+.ews-root * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.ews-root img,
+.ews-root svg,
+.ews-root video,
+.ews-root canvas {
+  -webkit-user-drag: none;
 }
 .ews-lang-switch {
   position: fixed;
@@ -22,50 +43,225 @@ html, body {
   display: flex;
   gap: 8px;
 }
-.ews-nav {
-  position: fixed;
-  z-index: 40;
+html[data-ews-product="1"] .ews-lang-switch,
+.ews-root[data-product="1"] .ews-lang-switch,
+.ews-lang-switch[hidden],
+.ews-lang-switch[data-ews-product-chrome="hidden"] {
+  display: none !important;
+}
+.ews-dropmenu {
   pointer-events: auto;
+}
+.ews-dropmenu[data-dropmenu-state="on"] {
+  z-index: 30;
+}
+.ews-dropmenu-layer[hidden] {
+  display: none !important;
+}
+.ews-nav {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+.ews-nav-layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ews-nav-fade, 300ms) var(--ews-nav-fade-easing, ease-in-out);
+}
+.ews-nav-layer[data-nav-active="1"] {
+  opacity: 1;
+}
+.ews-nav-layer:not([data-nav-active="1"]),
+.ews-nav-layer:not([data-nav-active="1"]) * {
+  pointer-events: none !important;
+}
+.ews-nav-layer[data-nav-active="1"] [data-modal-open],
+.ews-nav-layer[data-nav-active="1"] [data-modal-close],
+.ews-nav-layer[data-nav-active="1"] [data-dropmenu="true"],
+.ews-nav-layer[data-nav-active="1"] [data-dropmenu-option],
+.ews-nav-layer[data-nav-active="1"] [data-paged-dot],
+.ews-nav-layer[data-nav-active="1"] [data-paged-prev],
+.ews-nav-layer[data-nav-active="1"] [data-paged-next] {
+  pointer-events: auto;
+}
+html[data-page-interaction="live"] .ews-nav-layer[data-nav-active="1"] [data-nav-screen],
+html[data-page-interaction="live"] .ews-nav-layer[data-nav-active="1"] [data-nav-pending],
+html[data-page-interaction="live"] .ews-nav-layer[data-nav-active="1"] [data-variant-value] {
+  pointer-events: auto;
+}
+html:not([data-page-interaction="live"]) .ews-nav-layer [data-nav-screen],
+html:not([data-page-interaction="live"]) .ews-nav-layer [data-nav-pending],
+html:not([data-page-interaction="live"]) .ews-nav-layer [data-variant-value] {
+  pointer-events: none;
+}
+/* Decorative image frames (including transparent pixels) must not cover controls.
+   Interaction belongs to their enclosing button/hotspot, when present. */
+.ews-node[data-role="img"],
+.ews-node[data-role="img"] img {
+  pointer-events: none;
+}
+[data-variant-switch] * {
+  pointer-events: none;
+}
+[data-variant-switch] [data-variant-value],
+[data-variant-switch] [data-variant-value] * {
+  pointer-events: auto;
+}
+[data-variant-switch] img,
+[data-variant-switch] [data-variant-value] img,
+[data-nav-screen] img,
+[data-nav-pending] img {
+  pointer-events: none;
+}
+.ews-stage {
+  position: relative;
+  z-index: 1;
+  height: var(--ews-screen-h);
+  overflow: hidden;
 }
 .ews-track {
   position: relative;
+  z-index: 1;
+  transition: transform 300ms ease;
+  will-change: transform;
 }
 .ews-page-backgrounds {
   position: absolute;
   inset: 0;
+  z-index: 0;
+  overflow: hidden;
   pointer-events: none;
-  transform: scale(var(--ews-scale));
-  transform-origin: 0 0;
+  transform: none;
+}
+.ews-page-backgrounds .ews-node {
+  position: absolute !important;
+  inset: 0 !important;
+  left: auto !important;
+  top: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+}
+.ews-page-backgrounds img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--ews-bleed-position);
 }
 .ews-screen,
 .ews-footer {
   height: var(--ews-screen-h);
   position: relative;
 }
+.ews-screen-bleed {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: transparent;
+}
+.ews-screen-bleed .ews-node {
+  position: absolute !important;
+  inset: 0 !important;
+  left: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+}
+.ews-screen-bleed img,
+.ews-screen-bleed .ews-node > img,
+.ews-screen-bleed .ews-node[data-role="img"] img,
+.ews-screen-bleed .ews-node[data-role="kv"] img,
+.ews-screen-bleed .ews-node[data-role="bg"] img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  object-position: var(--ews-bleed-position) !important;
+}
+.ews-screen-pins {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  transform: none;
+  overflow: hidden;
+}
+.ews-screen-pins > .ews-node {
+  pointer-events: none;
+}
+.ews-screen-pins [data-nav-screen],
+.ews-screen-pins [data-modal-open],
+.ews-screen-pins [data-modal-close],
+.ews-screen-pins [data-dropmenu="true"],
+.ews-screen-pins [data-dropmenu-option],
+.ews-screen-pins [data-paged-dot],
+.ews-screen-pins [data-paged-prev],
+.ews-screen-pins [data-paged-next],
+.ews-screen-pins [data-variant-value] {
+  pointer-events: auto;
+}
 .ews-screen-scroll {
+  position: relative;
+  z-index: 1;
   height: var(--ews-screen-h);
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  background: transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.ews-screen-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 .ews-screen-sizer {
-  width: calc(var(--ews-design-w) * var(--ews-scale));
-  height: calc(var(--ews-content-h) * var(--ews-scale));
+  margin-inline: auto;
+  width: calc(var(--ews-design-w) * var(--ews-world-scale, var(--ews-scale)));
+  min-height: 100%;
+  height: max(calc(var(--ews-content-h) * var(--ews-world-scale, var(--ews-scale))), 100%);
+  padding-bottom: var(--ews-scroll-end-pad, 0px);
+  box-sizing: content-box;
   position: relative;
+  background: transparent;
+}
+.ews-root[data-screen-scroll-mode="page"] .ews-screen-scroll {
+  overflow: hidden;
+  touch-action: none;
+}
+.ews-screen-foreground {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ews-foreground-canvas {
+  position: absolute;
+  transform-origin: 0 0;
+  pointer-events: none;
 }
 .ews-screen-world {
   position: absolute;
   left: 0;
-  top: 0;
+  top: var(--ews-world-y, 0px);
   width: var(--ews-design-w);
   height: var(--ews-content-h);
-  transform: scale(var(--ews-scale));
+  transform: scale(var(--ews-world-scale, var(--ews-scale)));
   transform-origin: 0 0;
 }
 .ews-node {
   position: absolute;
   box-sizing: border-box;
 }
+.ews-node > img,
 .ews-node[data-role="img"] img,
 .ews-node[data-role="kv"] img,
 .ews-node[data-role="bg"] img,
@@ -88,11 +284,189 @@ html, body {
   scroll-snap-align: start;
   min-height: 100%;
 }
+.ews-paged-viewport {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.ews-paged-viewport::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+html:not([data-page-interaction="live"]) .ews-carousel,
+html:not([data-page-interaction="live"]) .ews-paged-viewport {
+  overflow-x: hidden;
+  touch-action: pan-y;
+}
+html[data-page-interaction="live"] .ews-carousel,
+html[data-page-interaction="live"] .ews-paged-viewport {
+  overflow-x: auto;
+  touch-action: pan-x pan-y;
+}
+/* Paged switches are a transform track (official Swiper cssMode=false, 300ms ease).
+   No native horizontal scroll: it snaps to device pixels differently per page in the scaled world. */
+html:not([data-page-interaction="live"]) .ews-paged-viewport,
+html[data-page-interaction="live"] .ews-paged-viewport {
+  overflow: hidden;
+  scroll-snap-type: none;
+  touch-action: pan-y;
+}
+/* Official container overflow is visible: the dragged page can travel past the edge.
+   The switch box clips inline (static/pixel views), so live mode lifts that too. */
+html[data-page-interaction="live"] .ews-paged-switch {
+  overflow: visible !important;
+}
+html[data-page-interaction="live"] .ews-paged-viewport {
+  overflow: visible;
+  scroll-snap-type: none;
+  touch-action: pan-y;
+}
+.ews-paged-page {
+  position: relative;
+  flex: 0 0 100%;
+  min-height: 100%;
+  transform: translate3d(calc(var(--ews-paged-offset, 0%) + var(--ews-paged-shift, 0%)), 0, 0) translateX(var(--ews-paged-drag, 0px));
+  transition: transform 300ms ease, opacity 300ms ease-in-out;
+}
+/* Official Swiper slides: inactive opacity 0. The dragged neighbour stays invisible;
+   on commit the old page fades out (ghost) while the new one fades in. */
+.ews-paged-page[data-paged-active="0"] {
+  opacity: 0;
+}
+.ews-paged-page[data-paged-active="0"],
+.ews-paged-page[data-paged-active="0"] * {
+  pointer-events: none !important;
+}
+.ews-paged-viewport[data-paged-dragging="1"] > .ews-paged-page {
+  transition: none;
+}
+html[data-page-interaction="live"] .ews-paged-viewport {
+  cursor: grab;
+}
+html[data-page-interaction="live"] .ews-paged-viewport[data-paged-dragging="1"] {
+  cursor: grabbing;
+}
+.ews-paged-dots {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--ews-paged-dot-gap, 0px);
+  overflow: hidden;
+}
+.ews-paged-dot {
+  position: relative;
+  left: auto;
+  top: auto;
+  flex: 0 0 auto;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--ews-paged-dot-inactive-fill, transparent);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  width: var(--ews-paged-dot-inactive-w);
+  height: var(--ews-paged-dot-inactive-h);
+  transition: width 300ms ease-in-out, height 300ms ease-in-out, background-image 300ms ease-in-out;
+}
+.ews-paged-dot[aria-current="true"] {
+  width: var(--ews-paged-dot-active-w);
+  height: var(--ews-paged-dot-active-h);
+  background-color: var(--ews-paged-dot-active-fill, transparent);
+}
+html:not([data-page-interaction="live"]) .ews-paged-dot,
+html:not([data-page-interaction="live"]) [data-paged-prev],
+html:not([data-page-interaction="live"]) [data-paged-next],
+html:not([data-page-interaction="live"]) [data-dropmenu="true"],
+html:not([data-page-interaction="live"]) [data-modal-open]:not(.ews-modal),
+html:not([data-page-interaction="live"]) [data-nav-screen],
+html:not([data-page-interaction="live"]) [data-variant-value] {
+  pointer-events: none;
+  cursor: default;
+}
+[data-paged-prev][disabled]:not([data-paged-index-chrome]),
+[data-paged-next][disabled]:not([data-paged-index-chrome]),
+[data-paged-prev][aria-disabled="true"]:not([data-paged-index-chrome]),
+[data-paged-next][aria-disabled="true"]:not([data-paged-index-chrome]) {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: default;
+}
+[data-paged-index-chrome][disabled],
+[data-paged-index-chrome][aria-disabled="true"] {
+  pointer-events: none;
+  cursor: default;
+}
+.ews-variant-layer[hidden] {
+  display: none !important;
+}
+/* Live variant switches move like the official Swiper slides: both panels opaque and side
+   by side, track 300ms ease, clipped at the content window (--ews-vw-l/r, host-local px).
+   --ews-variant-x is registered so translate and the counter-moving clip animate together. */
+@property --ews-variant-x {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+[data-variant-live="1"],
+[data-variant-linked="1"] {
+  touch-action: pan-y;
+}
+.ews-variant-layer[data-variant-motion] {
+  transition: --ews-variant-x 300ms ease, opacity 300ms ease-in-out;
+}
+.ews-variant-layer[data-variant-motion] [data-variant-slide] {
+  translate: var(--ews-variant-x) 0;
+  clip-path: inset(-100000px max(0px, calc(var(--ews-part-r) + var(--ews-variant-x) - var(--ews-vw-r))) -100000px max(0px, calc(var(--ews-vw-l) - var(--ews-variant-x) - var(--ews-part-l))));
+}
+/* The panel riding along / leaving shows content only; the tab bar shows the new state. */
+.ews-variant-layer[data-variant-peer] [data-variant-chrome] {
+  visibility: hidden;
+}
+/* Mobile region content (linked panel + ghost copy): slides in its own box, clipped to it. */
+[data-variant-linked][data-variant-motion],
+[data-variant-ghost][data-variant-motion] {
+  transition: --ews-variant-x 300ms ease;
+  translate: var(--ews-variant-x) 0;
+  clip-path: inset(-100000px max(0px, var(--ews-variant-x)) -100000px max(0px, calc(0px - var(--ews-variant-x))));
+}
+.ews-variant-layer[data-variant-motion="still"],
+[data-variant-motion="still"] {
+  transition: none !important;
+}
+[data-nav-pending]:not([data-nav-href]) {
+  cursor: default;
+}
+.ews-paged-dots[hidden],
+.ews-paged-dots[data-paged-chrome="hidden"],
+[data-paged-prev][hidden],
+[data-paged-next][hidden] {
+  display: none !important;
+}
 .ews-modal-layer {
   position: fixed;
   inset: 0;
   z-index: 50;
   pointer-events: none;
+}
+html.ews-qa-shell .ews-nav,
+html.ews-qa-shell .ews-modal-layer {
+  position: absolute;
+  inset: 0;
+}
+.frame .ews-root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 .ews-modal-layer:has(.ews-modal:not([hidden])) {
   pointer-events: auto;
@@ -105,8 +479,51 @@ html, body {
   transform: scale(var(--ews-scale));
   transform-origin: 0 0;
 }
+.ews-modal * {
+  pointer-events: none;
+}
+.ews-modal [data-locale],
+.ews-modal [data-locale] *,
+.ews-modal [data-lang-option],
+.ews-modal [data-lang-option] *,
+.ews-modal [data-modal-close],
+.ews-modal [data-modal-close] *,
+.ews-modal [data-nav-screen],
+.ews-modal [data-nav-screen] *,
+.ews-modal [data-modal-open]:not(.ews-modal),
+.ews-modal [data-modal-open]:not(.ews-modal) *,
+.ews-modal [data-dropmenu="true"],
+.ews-modal [data-dropmenu-option] {
+  pointer-events: auto;
+}
+.ews-modal img,
+.ews-modal [data-locale] img,
+.ews-modal [data-lang-option] img,
+.ews-modal [data-modal-close] img,
+.ews-modal [data-nav-screen] img {
+  pointer-events: none;
+}
 .ews-fail {
   color: #b00020;
   font-family: ui-monospace, monospace;
   white-space: pre-wrap;
+}
+#ews-qa-host[hidden],
+#ews-qa-host[data-ews-qa="hidden-product"] {
+  display: none !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+.ews-qa {
+  position: fixed;
+  z-index: 80;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font: 12px/1.4 ui-sans-serif, system-ui, sans-serif;
 }
