@@ -530,7 +530,27 @@ async function main() {
     }
     const missingWebp = Boolean(rec.webpFile) && !existsSync(join(demoDir, rec.webpFile));
     const touched = resumeSet.has(id) || pickIds.has(id);
-    if (missingWebp || touched) manifest[id] = bindDelivered(rec);
+    if (touched) {
+      manifest[id] = bindDelivered(rec);
+      continue;
+    }
+    if (!missingWebp) continue;
+    const pngRel = rec.pngFile || String(rec.file || '').replace(/\.webp$/i, '.png');
+    const pngPath = pngRel ? join(demoDir, pngRel) : '';
+    if (!rec.pngSha256) {
+      failed.push({ nodeId: id, name: rec.name, why: 'missing-png-sha256' });
+      continue;
+    }
+    if (!pngPath || !existsSync(pngPath)) {
+      failed.push({ nodeId: id, name: rec.name, why: 'missing-png-bytes' });
+      continue;
+    }
+    const diskSha = createHash('sha256').update(readFileSync(pngPath)).digest('hex');
+    if (diskSha !== rec.pngSha256) {
+      failed.push({ nodeId: id, name: rec.name, why: 'png-sha-mismatch' });
+      continue;
+    }
+    manifest[id] = bindDelivered(rec);
   }
   bytes = Object.values(manifest).reduce((sum, rec) => sum + Number(rec.bytes || 0), 0);
   out.webp = webp;

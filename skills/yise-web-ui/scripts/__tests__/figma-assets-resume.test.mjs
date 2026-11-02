@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -444,4 +444,66 @@ test('--only resume still aliases when the source webp is trusted this run', () 
   assert.equal(saved.assets['1:2'].webpFile, 'assets/3-4.webp');
   const html = readFileSync(join(dir, 'index.html'), 'utf8');
   assert.match(html, /assets\/3-4\.webp/);
+});
+
+function stampLeftoverWebp(dir, extra = {}) {
+  const saved = JSON.parse(readFileSync(join(dir, 'assets-manifest.json'), 'utf8'));
+  Object.assign(saved.assets['3:4'], {
+    file: 'assets/3-4.webp',
+    webpFile: 'assets/3-4.webp',
+    sha256: 'stale-webp',
+    bytes: 9999,
+    ...extra,
+  });
+  writeFileSync(join(dir, 'assets-manifest.json'), JSON.stringify(saved));
+}
+
+test('--only leftover missing webp with matching png sha falls back', () => {
+  const snap = writeTwoNodeDemo({ truthVersion: 'v1', manifestVersion: 'v1' });
+  stampLeftoverWebp(snap.dir);
+  const result = runOnly(snap.dir, ['--only', '1:2', '--resume', '--no-webp']);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const saved = JSON.parse(readFileSync(join(snap.dir, 'assets-manifest.json'), 'utf8'));
+  assert.equal(saved.assets['3:4'].file, 'assets/3-4.png');
+  assert.equal(saved.assets['3:4'].webpFile, undefined);
+  assert.equal(saved.assets['3:4'].bytes, snap.nodes[1].buf.length);
+  assert.equal((JSON.parse(result.stdout).failed || []).length, 0);
+});
+
+test('--only leftover missing webp with png sha mismatch is failed', () => {
+  const snap = writeTwoNodeDemo({ truthVersion: 'v1', manifestVersion: 'v1' });
+  stampLeftoverWebp(snap.dir, { pngSha256: 'not-the-png' });
+  const result = runOnly(snap.dir, ['--only', '1:2', '--resume', '--no-webp']);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const out = JSON.parse(result.stdout);
+  assert.ok(out.failed.some((item) => item.nodeId === '3:4' && item.why === 'png-sha-mismatch'), JSON.stringify(out.failed));
+  const saved = JSON.parse(readFileSync(join(snap.dir, 'assets-manifest.json'), 'utf8'));
+  assert.equal(saved.assets['3:4'].file, 'assets/3-4.webp');
+  assert.notEqual(saved.assets['3:4'].file, 'assets/3-4.png');
+});
+
+test('--only leftover missing webp with missing png is failed', () => {
+  const snap = writeTwoNodeDemo({ truthVersion: 'v1', manifestVersion: 'v1' });
+  stampLeftoverWebp(snap.dir);
+  unlinkSync(snap.pngPaths['3:4']);
+  const result = runOnly(snap.dir, ['--only', '1:2', '--resume', '--no-webp']);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const out = JSON.parse(result.stdout);
+  assert.ok(out.failed.some((item) => item.nodeId === '3:4' && item.why === 'missing-png-bytes'), JSON.stringify(out.failed));
+  const saved = JSON.parse(readFileSync(join(snap.dir, 'assets-manifest.json'), 'utf8'));
+  assert.equal(saved.assets['3:4'].file, 'assets/3-4.webp');
+});
+
+test('--only leftover missing webp without png sha is failed', () => {
+  const snap = writeTwoNodeDemo({ truthVersion: 'v1', manifestVersion: 'v1' });
+  stampLeftoverWebp(snap.dir);
+  const manifest = JSON.parse(readFileSync(join(snap.dir, 'assets-manifest.json'), 'utf8'));
+  delete manifest.assets['3:4'].pngSha256;
+  writeFileSync(join(snap.dir, 'assets-manifest.json'), JSON.stringify(manifest));
+  const result = runOnly(snap.dir, ['--only', '1:2', '--resume', '--no-webp']);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  const out = JSON.parse(result.stdout);
+  assert.ok(out.failed.some((item) => item.nodeId === '3:4' && item.why === 'missing-png-sha256'), JSON.stringify(out.failed));
+  const saved = JSON.parse(readFileSync(join(snap.dir, 'assets-manifest.json'), 'utf8'));
+  assert.equal(saved.assets['3:4'].file, 'assets/3-4.webp');
 });
