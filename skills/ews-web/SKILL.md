@@ -39,6 +39,7 @@ npm run preview:first -- --demo <demo-dir> --handoff <handoff-dir>
 npm run reconcile-page -- --demo <demo-dir> --handoff <handoff-dir> --assets <asset-map.json> --config <ews-config.json>
 npm run live-copy -- --demo <demo-dir>
 npm run stop1 -- --demo <demo-dir> --handoff <handoff-dir> --assets <asset-map.json> --config <ews-config.json>
+npm run pack -- --demo <frozen-demo> --budget-mb 15
 npm test
 npm run release:audit
 npm run test:browser
@@ -50,7 +51,7 @@ npm run test:browser
 node standards/design-policy/tool/src/write-skill-policy.mjs skills/ews-web/DESIGN.md skills/ews-web/assets/runtime/design-policy.generated.mjs
 ```
 
-契约见 `docs/contracts.md` 与 `docs/identity.md`，视口/翻页政策见 `DESIGN.md`。停二清单见 `docs/stop2.md`。`figma:from-handoff` 成功只表示包可吃。`ewsweb` / `ews出页` 成功只表示写出可加载 `index.html`，不是停一完成。停一必须对**同一个** demo 跑 `npm run stop1`（含 live-copy 活字门）；全绿仅 `awaiting-user-review`，不自动确认。停二没有 `npm run stop2`：必须在停一同一冻结 demo、同一 hash 上用真实浏览器按 `docs/stop2.md` 操作。合成 fixture 绿不是本期赛季验收。
+契约见 `docs/contracts.md` 与 `docs/identity.md`，视口/翻页政策见 `DESIGN.md`。停二清单见 `docs/stop2.md`。`figma:from-handoff` 成功只表示包可吃。`ewsweb` / `ews出页` 成功只表示写出可加载 `index.html`，不是停一完成。停一必须对**同一个** demo 跑 `npm run stop1`（含 live-copy 活字门）；全绿仅 `awaiting-user-review`，不自动确认。停一 accepted 之后、停二开始前，对那份冻结 demo 跑 `npm run pack -- --demo <frozen-demo> --out <new-dir> --budget-mb 15`（同级 pack-work；不回写冻结输入；delivery ≤15MB，无例外；proof/report 在 served `--out` 外）。停二没有 `npm run stop2`：在 **Pack 成功后的 delivery** 上用真实浏览器按 `docs/stop2.md` 操作。Pack 会改 delivery 字节，停二身份是 Pack 产物 hash，不要求等于停一 `inputHash`。合成 fixture 绿不是本期赛季验收。
 
 ## 停一 / 停二 / 用户确认
 
@@ -58,7 +59,7 @@ node standards/design-policy/tool/src/write-skill-policy.mjs skills/ews-web/DESI
 
 - 停一：简中（zh-CN）。同一候选跑 npm run stop1，再按 docs/stop2.md 完成全部交互检查；给人 QA /index.html?interaction=1。机器绿仅 awaiting-user-review，不代替交互实测或用户签字。
 - 停二：繁中、英文、日文、韩文（zh-TW/en/ja/ko），每种语言完整重复静态与交互检查。静态偏差同样判红，不作为可忽略残余。
-- 停一获用户接受后才进停二。同一冻结 demo、同一 hash；页面字节改变则重跑停一、清掉旧停二签字。两停完成仍须用户明确确认才可替换正式预览。
+- 停一获用户接受后才 Pack，Pack 成功且 ≤15MB 才进停二。停一身份是冻结 demo 的停一 hash；停二身份是 Pack 产物 hash。不要因为 Pack 改了字节就重跑停一。Pack 之后若再改页面，才重跑停一并清掉旧停二签字。停二验收后的同一 Pack 副本直接交付，不再 Pack。两停完成仍须用户明确确认才可替换正式预览。
 - accepted 只记录用户明确接受；出页、测试和报告都不得自动签字。没有 npm run stop2 或 ewsweb -- accept|continue。具体清单与证据见 docs/stop2.md。
 
 ## 硬规则

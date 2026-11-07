@@ -20,6 +20,26 @@ function nodePrefix(name) {
   return slash > 0 ? raw.slice(0, slash).trim() : '';
 }
 
+export function detachedLabelWidth(node, byId) {
+  const parent = byId?.get(String(node?.parentId));
+  if (node?.text?.autoResize !== 'WIDTH_AND_HEIGHT' || parent?.type !== 'GROUP'
+    || node?.layout?.constraints?.horizontal !== 'SCALE' || !node.name) return 0;
+  const valid = b => b && ['x', 'y', 'w', 'h'].every(k => Number.isFinite(b[k])) && b.w > 0 && b.h > 0;
+  const b = node.pageBox;
+  if (!valid(b)) return 0;
+  const frames = [...byId.values()].filter(frame => {
+    if (frame.type !== 'FRAME' || frame.name !== node.name || frame.visible === false) return false;
+    const frameParent = byId.get(String(frame.parentId));
+    if (!parent.parentId || frameParent?.parentId !== parent.parentId || frame.parentId === node.parentId) return false;
+    const f = frame.pageBox;
+    return valid(f) && b.x >= f.x + f.w / 2 && b.y >= f.y
+      && b.x + b.w <= f.x + f.w && b.y + b.h <= f.y + f.h;
+  });
+  if (frames.length !== 1) return 0;
+  const f = frames[0].pageBox;
+  return b.x + b.w - (f.x + f.w / 2);
+}
+
 function nodeMarks(node) {
   const id = escapeText(node?.id || '');
   const name = String(node?.name || '');
@@ -792,8 +812,10 @@ function renderNode(node, ctx) {
         : ' class="ews-node"';
     const alt = (copied.overflowAlt ? ` data-overflow-alt="${escapeText(copied.overflowAlt)}"` : '')
       + (copied.breakHint ? ` data-break-hint="${copied.breakHint}"` : '');
-    const indexCss = indexItem ? 'text-align:center;' : '';
-    return `<div${miss} ${nodeMarks(node)} data-role="${escapeText(role || 'copy')}" data-interaction="${interaction}" data-copy-locator="${escapeText(copied.locator)}"${alt}${extra} style="${style}${indexCss}">${escapeText(shown)}</div>`;
+    const detachedWidth = detachedLabelWidth(node, byId);
+    const bounds = detachedWidth > 0 ? ` data-detached-label-width="${detachedWidth}"` : '';
+    const indexCss = (indexItem ? 'text-align:center;' : '');
+    return `<div${miss} ${nodeMarks(node)} data-role="${escapeText(role || 'copy')}" data-interaction="${interaction}" data-copy-locator="${escapeText(copied.locator)}"${alt}${extra}${bounds} style="${style}${indexCss}">${escapeText(shown)}</div>`;
   }
   const inner = children
     .filter((child) => !carousel.slideSet.has(child.id))
@@ -1004,7 +1026,7 @@ export function documentHtml(model, { locale, device, devices, runtimeIdentity }
   <title>Etheria-ews</title>
   <link rel="icon" href="${escapeText(faviconHref(model))}">
   <link rel="stylesheet" href="./runtime/ews.css?v=${bootV}">
-  <script>if(new URLSearchParams(location.search).get('product')==='1'){document.documentElement.setAttribute('data-ews-product','1');document.documentElement.setAttribute('data-product-view','1');}</script>
+  <script>const q=new URLSearchParams(location.search),p=String(q.get('product')||'').toLowerCase(),i=String(q.get('interaction')||'').toLowerCase();if(p==='1'||p==='true'||p==='yes'){document.documentElement.setAttribute('data-ews-product','1');document.documentElement.setAttribute('data-product-view','1');}else if(i==='1'||i==='true'||i==='yes'){document.documentElement.setAttribute('data-ews-qa-pending','1');}</script>
 </head>
 <body>
 <div id="ews-page-host">${body}</div>

@@ -19,6 +19,7 @@
     "live-copy": "node scripts/live-copy.mjs",
     "stop1-pixel": "node scripts/stop1-pixel.mjs",
     "stop1": "node scripts/stop1.mjs",
+    "pack": "node scripts/pack-demo.mjs",
     "test:browser": "node scripts/test-browser.mjs"
   }
 }
