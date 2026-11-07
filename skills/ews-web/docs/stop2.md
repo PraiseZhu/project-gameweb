@@ -2,7 +2,7 @@
 
 停一验简中（zh-CN）的静态、交互和自适应；停二对繁中（zh-TW）、英文（en）、日文（ja）、韩文（ko）逐种重复同一套完整检查。本文九项交互清单两停共用。
 
-本 Skill **没有** `npm run stop2`，也没有 `npm run ewsweb -- accept|continue`。停二入口是：停一同一冻结 demo、同一 hash 上，用真实浏览器按本文件清单操作，并写出报告。`npm test`、`test:browser`、合成 fixture、旧 `stop1.json` 绿报告，都不得冒充停二。
+本 Skill **没有** `npm run stop2`，也没有 `npm run ewsweb -- accept|continue`。停二入口是：停一 accepted 后对冻结 demo 跑 `npm run pack`，在 **Pack 成功的副本** 上用真实浏览器按本文件清单操作，并写出报告。`npm test`、`test:browser`、合成 fixture、旧 `stop1.json` 绿报告，都不得冒充停二。
 
 身份与入口登记见 `docs/identity.md`。出页契约见 `docs/contracts.md`。QA 壳见 `docs/qa-chrome.md`。视口数字见 `DESIGN.md`。官网映射见 `docs/official-responsive.md`。火炬对照见文末。
 
@@ -17,7 +17,8 @@
 | `freeze-stop-1` | 停一前冻结 | 拷同一 demo 字节到冻结目录，使用交互 URL | 否。冻失败不许打开停一 |
 | `wait-stop-1` | 等人核简中静态 + 交互 + 自适应 | 给人 HTTP QA `/index.html?interaction=1` | 是。只写 presented。`stop1.json` 此时是 `awaiting-user-review` |
 | `accept`（停一） | 人核签字 | 人说继续后才把停一 `accepted=true` | 签字命令不是出页、不是 stop1 重跑 |
-| `freeze-stop-2` | 停二前冻结 | 同一 hash；present 用可点页。冻失败错误码按 `freeze-stop-2-red` 处理 | 否。不许打开停二 |
+| `pack` | 停一 accepted 后压缩交付 | `npm run pack -- --demo <frozen-demo> --out <new-dir> --budget-mb 15`。同级 pack-work，不回写冻结输入；served ≤15MB 且不含 proof/report 才继续 | 否。Pack 红不许打开停二 |
+| `freeze-stop-2` | 停二前冻结 Pack 产物 | 记录 Pack 产物 hash；present 用可点页。冻失败错误码按 `freeze-stop-2-red` 处理 | 否。不许打开停二 |
 | `wait-stop-2` | 等人核四种译文静态 + 交互 + 自适应 | 给人 HTTP QA `/index.html?interaction=1`；九项清单另用产品 URL 实操 | 是。只写 presented |
 | `accept`（停二） | 人核签字 | 人说继续后 `accepted=true`，报告 `awaiting-user-confirm` | 不是 Pack、不是替换预览 |
 | `done` | 用户确认本期完成 | 用户明确确认 | 才可换正式预览 |
@@ -29,27 +30,27 @@
 - **accept**：只在 `wait-stop-1` / `wait-stop-2` 用。出页、停一编排、冻结、报告撰写都不得签字。
 - **continue**：停一未 accepted 不得进停二；停二未 accepted 不得 done。continue **永不写 accepted**。
 
-本 Skill **没有** `later-axes` 相：没有独立 Interaction / Resize Skill，没有 `later-axes-probe.mjs`。停一 accepted 之后直接 freeze-stop-2 → wait-stop-2。停一视口门对 modal 的抽检是 probed，不是停二人核。
+本 Skill **没有** `later-axes` 相：没有独立 Interaction / Resize Skill，没有 `later-axes-probe.mjs`。停一 accepted 之后先 Pack，再 freeze-stop-2 → wait-stop-2。停一视口门对 modal 的抽检是 probed，不是停二人核。
 
-本 Skill **没有** `pack` 相：没有 15MB 交付压缩、没有 `pack:demo`。停二 accepted 之后等人确认即 `done`。
+本 Skill 在停一 accepted 后、停二开始前运行 `npm run pack`；Pack 成功且 served folder ≤15MB 后才进入停二。停二 accepted 后不重新 Pack，等用户验收即 `done`。
 
 ## 冻结（freeze-stop-1 / freeze-stop-2）
 
 - 冻结的是**页面字节**（`index.html` / `model.json` / runtime / assets），不是另做一套静态 HTML 四包。
 - freeze-stop-1：简中静态与交互共用同一页；给人 ?interaction=1，默认 inert 另做回归。
-- freeze-stop-2：同一 hash，`interaction=true` 口径，给人 `?interaction=1`。hash 变了 = 新停一，必须重跑 stop1。
+- freeze-stop-2：冻结 **Pack 产物**，`interaction=true` 口径，给人 `?interaction=1`。停二身份是 Pack 后的页面 hash，不等于停一 `inputHash`。Pack 之后若再改页面，才重跑停一。
 - 验收期间冻结目录不可覆盖。冻失败（缺 index、hash 对不上、拷贝不完整）= `freeze-stop-*-red`，不许 present。
 - 机器闸仍打实时 `?product=1`；**不要把 `?product=1` 当给人入口**。
 
 ## 前置（缺一则不得开停二）
 
-1. **同一冻结 demo**：目录就是停一刚绿的那份，验收期间不得覆盖、不得边写边验。
-2. **同一 hash**：至少核 `index.html` SHA-256、`model.json` SHA-256、`runtimeIdentity`（`boot.mjs?v=`）、Figma `fingerprint`。必须与该 demo `artifacts/stop1/stop1.json` 的 `inputHash` / `fingerprint` 一致；`stalePrevious` 必须为 `false`。停一必须用冻结目录当 `--demo` / `--artifacts` 当场跑；禁止把 candidate 的 `stop1.json` 拷进冻结目录顶替。`stalePrevious=true` 表示 artifacts 里旧报告的 `inputHash` 对不上当前页，或报告是从别的目录拷来的——先清空该冻结目录 `artifacts/stop1/` 再重跑停一，不要改页面。
-3. **停一已签字**：`stop1.json` 必须 `ok=true`、`status=awaiting-user-review`、`stalePrevious=false`；并且人核记录里停一 `accepted=true`（人已说继续）。仅机器绿、未签字，不得 freeze-stop-2 / present 停二。
+1. **停一冻结 demo**：停一刚绿的那份，验收期间不得覆盖、不得边写边验。
+2. **Pack 产物**：停一 `accepted=true` 之后，对那份冻结 demo 跑 `npm run pack -- --demo <frozen-demo> --budget-mb 15`。成功且 ≤15MB 才开停二。停二核 Pack 产物的 `index.html` SHA-256、`model.json.gz` SHA-256、`runtimeIdentity`（`boot.mjs?v=`）、Figma `fingerprint`。不要要求这些等于停一 `inputHash`。停一当时必须用冻结目录当 `--demo` / `--artifacts` 当场跑；禁止把 candidate 的 `stop1.json` 拷进冻结目录顶替。`stalePrevious=true` 表示 artifacts 里旧报告的 `inputHash` 对不上停一页——先清空该冻结目录 `artifacts/stop1/` 再重跑停一，不要改页面。
+3. **停一已签字**：`stop1.json` 必须 `ok=true`、`status=awaiting-user-review`、`stalePrevious=false`；并且人核记录里停一 `accepted=true`（人已说继续）。仅机器绿、未签字，不得 freeze-stop-2 / present 停二。没有脚本读取 `accepted` 来拦截 `npm run pack` 或浏览器打开；这是流程约束，不是 CLI 硬闸。
 4. **HTTP 打开**：用仓内 safe-server 或等价静态服务。禁止 `file://`。硬刷新，确认 `boot.mjs?v=` 等于当前 `runtimeIdentity`。URL fragment 不是缓存键。
 5. **真实浏览器**：Chromium（停一同一套 Playwright / `CHROME_PATH` 即可）。必须人手或自动化**真实点击 / 拖动 / resize / 触摸**，不得注入 `__ewsStop1` 代替用户入口（诊断探针可并行，不能当通过证据）。
 
-hash 对不上：停二直接 `blocked`，先冻结或重生停一，不要在半成品上做交互。
+Pack 失败、超 15MB、或 freeze-stop-2 对不上 Pack 产物 hash：停二直接 `blocked`。不要在半成品上做交互。
 
 ## URL / query
 
@@ -239,12 +240,12 @@ hash 对不上：停二直接 `blocked`，先冻结或重生停一，不要在�
 | freeze `interaction:true` | freeze-stop-1 | 冻失败不许打开停一 |
 | `accept` / `continue` | 同语义，**无**同名 CLI | accepted 只在人说继续后写；continue 不签字 |
 | 相 `later-axes` + `later-axes-probe.mjs` | **不适用** | EWS 无 Interaction/Resize Skill |
-| freeze `interaction:true` / `freeze-stop-2-red` | freeze-stop-2 | 同一 hash；冻失败不许打开停二 |
+| freeze `interaction:true` / `freeze-stop-2-red` | freeze-stop-2 | Pack 产物 hash；冻失败不许打开停二 |
 | 停 id `interaction-and-resize` | 停 id `interaction-and-adaptive` | 四种译文静态 + 交互 + 自适应（750/拉伸/根字号） |
 | 相 `wait-stop-2` | `wait-stop-2` | 给人 `?interaction=1` |
 | `human-review.json` | `artifacts/stop2/human-review.json` schema `ews-human-review/v1` | 两停 presented/accepted |
 | `stop2-modal-pixel` / `artifacts/stop2-pixel/` | `artifacts/stop2/modal/` 开关锁截图 | 只要交互证据 |
-| 相 `pack` / 15MB / `pack:demo` | **不适用** | 停二 accepted 后等人确认即 done |
+| 相 `pack` / 15MB / `pack:demo` | 停一 accepted 后执行 | Pack 成功且 ≤15MB 才能进入停二；停二后不重新 Pack |
 | 机器只写 presented/probed | 相同 | 禁止 skip-human-review |
 
 明确不适用（不要搬）：
@@ -257,3 +258,6 @@ hash 对不上：停二直接 `blocked`，先冻结或重生停一，不要在�
 - `resize-acceptance.json`、机器写拉伸验收
 - `fonts:register`、15MB Pack、`figma-indicator-*`
 - 停一给人路径改成 `?product=1`（两边都规定不要）
+# Pack gate before stop 2
+
+Stop 1 accepted 后，必须先对同一冻结 demo 运行 npm run pack -- --demo <demo-dir> --budget-mb 15。Pack 成功并且 ≤15MB 后才能进入 stop 2；字体、数字文本、font-size 或 @font-face family/weight 任一变化都 blocked。Stop 2 使用 Pack 成功后的副本，stop 2 结束后不再重新 Pack。

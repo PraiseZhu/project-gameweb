@@ -527,3 +527,4 @@ html.ews-qa-shell .ews-modal-layer {
   align-items: center;
   font: 12px/1.4 ui-sans-serif, system-ui, sans-serif;
 }
+html[data-ews-qa-pending="1"] #ews-page-host{visibility:hidden}
