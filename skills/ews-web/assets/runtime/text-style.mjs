@@ -515,12 +515,28 @@ function pinDesignedConstraint(el, axis, size) {
   }
 }
 
+// Detached labels may sit in a GROUP beside their named FRAME. Only recognize
+// a unique containing frame in the same group. Reserve its right half and keep
+// the designed right inset; never enlarge the frame or alter source text.
+export function detachedLabelSlot(el) {
+  const width = Number(el?.getAttribute?.('data-detached-label-width'));
+  return width > 0 && Number.isFinite(width) ? { width } : null;
+}
+
+function pinDetachedLabel(el, designed) {
+  if (!detachedLabelSlot(el)) return;
+  const w = Number(el.offsetWidth) || Number.parseFloat(el.style.width);
+  if (w > 0) el.style.left = `${designed.left + designed.w - w}px`;
+}
+
 export function translationSlotWidth(el) {
   const parent = el?.parentElement;
   const parentSizing = String(parent?.getAttribute?.('data-layout-h') || '').toUpperCase();
   const parentPageW = Number(parent?.getAttribute?.('data-page-w')) || Number.parseFloat(parent?.style?.width) || 0;
   const designedW = Number(el?.getAttribute?.('data-designed-w')) || Number(el?.getAttribute?.('data-page-w')) || Number.parseFloat(el?.style?.width) || 0;
   const maxW = Number(el?.getAttribute?.('data-max-width')) || Number(parent?.getAttribute?.('data-max-width')) || 0;
+  const detached = detachedLabelSlot(el);
+  if (detached) return maxW > 0 ? Math.min(detached.width, maxW) : detached.width;
   if (parentSizing === 'FIXED' && parentPageW > 0) {
     return maxW > 0 ? Math.min(parentPageW, maxW) : parentPageW;
   }
@@ -576,6 +592,7 @@ function applyNowrapFit(el, designed, { lockMinWidth = true, translation = false
   if (designed.h > 0) el.style.height = `${designed.h}px`;
   if (isCenterHugText(el)) pinCenterHugTextX(el, designed);
   applyHugFillTextAlign(el, { wrapped: false, translation });
+  if (translation) pinDetachedLabel(el, designed);
 }
 
 const LATIN_TOKEN = /[A-Za-z0-9][A-Za-z0-9''’.-]*/g;
@@ -721,6 +738,9 @@ function layoutToVisual(el, layoutPx, axis) {
 }
 
 function measuredOverflow(el, slot, capH) {
+  // Measure at the final anchored position; otherwise the unshifted longer
+  // translation can appear clipped before the fit has moved it inside its frame.
+  pinDetachedLabel(el, rememberDesigned(el));
   const sw = Number(el.scrollWidth) || 0;
   const sh = Number(el.offsetHeight) || Number(el.scrollHeight) || 0;
   if ((slot > 0 && sw > slot + 1) || (capH > 0 && sh > capH + 1)) return true;
@@ -899,6 +919,7 @@ export function applyLocaleTextLayout(root, locale, sourceLocale) {
       continue;
     }
     if (fitTranslationNode(el)) applied.push(el.getAttribute('data-node-id'));
+    pinDetachedLabel(el, designed);
   }
   return applied;
 }
@@ -1206,6 +1227,16 @@ export function applyTranslationLayout(root, locale, sourceLocale) {
   applyAutoLayout(root);
   applyHugLayout(root);
   applyAutoLayout(root);
+  // The first pass also restores and lays out ancestors. Refit detached labels
+  // against that final geometry rather than transient source boxes.
+  if (!isFigmaSourceLocale(locale, sourceLocale || root)) {
+    for (const el of root.querySelectorAll('[data-detached-label-width]')) {
+      if (el.closest('[hidden]') || el.getAttribute('data-copy-unbound') === '1' || el.getAttribute('data-missing-locale') === '1') continue;
+      fitTranslationNode(el);
+      pinDetachedLabel(el, rememberDesigned(el));
+    }
+    unifyLocaleGroupFonts(root, locale, sourceLocale);
+  }
   return applied;
 }
 

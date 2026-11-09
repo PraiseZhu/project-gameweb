@@ -494,6 +494,7 @@ if (product) {
       pageHost.setAttribute('aria-hidden', 'true');
     }
     bootQaChrome(window.__qaDemo);
+    document.documentElement.removeAttribute('data-ews-qa-pending');
     if (pageHost) pageHost.replaceChildren();
   } catch (err) {
     document.documentElement.setAttribute('data-ews-qa', 'boot-failed');

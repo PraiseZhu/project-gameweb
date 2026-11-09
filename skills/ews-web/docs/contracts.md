@@ -61,9 +61,9 @@ asset-map 路径相对 map 目录；校验全部 slice ids、sha256、PNG 尺寸
 
 停二是交互 + 自适应验收，细则 `docs/stop2.md`。状态机结构（相、accept/continue 分离、冻结后再 present）对齐火炬编排，**不** import 火炬、**不**增加 `npm run stop2` / `ewsweb -- accept|continue`。
 
-- 相：`need-ready-pack` → `main-static`（`ews出页` + `stop1`）→ freeze-stop-1 → `wait-stop-1` → 人说继续后 accept 停一 → freeze-stop-2 → `wait-stop-2` → 人说继续后 accept 停二 → 用户确认 `done`。没有 `later-axes`，没有 `pack`。
+- 相：`need-ready-pack` → `main-static`（`ews出页` + `stop1`）→ freeze-stop-1 → `wait-stop-1` → 人说继续后 accept 停一 → **Pack（≤15MB）** → freeze-stop-2 → `wait-stop-2` → 人说继续后 accept 停二 → 用户确认 `done`。没有 `later-axes`。
 - 机器只写 presented / 闸门绿。accepted 只能人说继续后写。continue 永不签字。重 present 停一必须清停二签字。
-- 前置：`stop1.json` `ok=true`、`awaiting-user-review`、`stalePrevious=false`；停一 `accepted=true`；`index.html` / `model.json` SHA-256、`runtimeIdentity`、`fingerprint` 与停一 `inputHash` 一致。freeze-stop-2 失败按 `freeze-stop-2-red`，不许打开停二。HTTP 打开，禁止 `file://`。给人看 QA `/index.html` 与 `/index.html?interaction=1`，不要把 `?product=1` 当给人入口。
+- 前置：`stop1.json` `ok=true`、`awaiting-user-review`、`stalePrevious=false`；停一 `accepted=true`；随后 Pack 成功且 served folder ≤15MB。freeze-stop-2 用 **Pack 产物** 的 `index.html` / `model.json.gz` / `runtimeIdentity` / Figma `fingerprint` 作停二身份，不要求这些字节仍等于停一 `inputHash`。freeze-stop-2 失败按 `freeze-stop-2-red`，不许打开停二。HTTP 打开，禁止 `file://`。给人看 QA `/index.html` 与 `/index.html?interaction=1`，不要把 `?product=1` 当给人入口。
 - URL：QA `/index.html`；QA 交互 `/index.html?interaction=1`；产品静态 `/index.html?product=1`；产品交互 `/index.html?product=1&interaction=1`。停二禁用 `inventory-static-gate=1`。
 - 必测：默认 inert、`interaction=1` 启用、菜单、弹窗、翻页/IND/横滑、QA 设备与 PC 拉伸、跨 750 重挂、自适应背景/根字号、短屏滚动与翻屏/触摸/动画锁。
 - 通过：九项 PASS 才清单 `ok=true`，相停在 `wait-stop-2` / 报告 `awaiting-user-confirm`。人签字后才 accepted。产物 `<demo>/artifacts/stop2/stop2.md`、`human-review.json`（`ews-human-review/v1`，停 id `static` 与 `interaction-and-adaptive`）、`modal/`、`resize/`。不要 `artifacts/stop2-pixel/`。
