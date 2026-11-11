@@ -15,7 +15,7 @@
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, statSync, readdirSync } from "node:fs";
-import { resolve, dirname, normalize, extname } from "node:path";
+import { resolve, dirname, normalize, extname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isSourceInventoryFile, persistReviewedInventory } from "../src/review-save.mjs";
 import { unnamedRequiresDraft } from "../src/inventory.mjs";
@@ -60,14 +60,14 @@ function send(res, code, body, type = "text/plain; charset=utf-8") {
 function safePath(urlPath, dataRoot = root) {
   const rel = decodeURIComponent(urlPath.split("?")[0]).replace(/^\/+/, "");
   const full = normalize(resolve(dataRoot, rel));
-  if (full !== dataRoot && !full.startsWith(dataRoot + "/")) return null;
+  if (full !== dataRoot && !full.startsWith(dataRoot + sep)) return null;
   return full;
 }
 
 function readSourceInventory(dataRoot, file) {
   if (!isSourceInventoryFile(file || "")) return { error: "bad file" };
   const full = resolve(dataRoot, file);
-  if (full !== dataRoot && !full.startsWith(`${dataRoot}/`)) return { error: "bad file" };
+  if (full !== dataRoot && !full.startsWith(dataRoot + sep)) return { error: "bad file" };
   if (!existsSync(full) || !statSync(full).isFile()) return { error: "missing file" };
   let doc;
   try {
@@ -123,7 +123,7 @@ export function createInventoryReviewServer({ dataRoot = root, committedPage = C
       return send(res, code, JSON.stringify({ ok: false, error: source.error }), "application/json; charset=utf-8");
     }
     const fbPath = resolve(dataRoot, file.replace(/\.json$/, "-feedback.json"));
-    if (!fbPath.startsWith(dataRoot + "/")) return send(res, 400, "bad file");
+    if (!fbPath.startsWith(dataRoot + sep)) return send(res, 400, "bad file");
     const line = `${JSON.stringify(record)}\n`;
     const existed = existsSync(fbPath);
     writeFileSync(fbPath, line, { flag: "a" });

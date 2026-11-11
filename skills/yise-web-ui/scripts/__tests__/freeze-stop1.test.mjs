@@ -6,7 +6,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { freezeDemo, applyStop1Interaction } from '../freeze/freeze-demo.mjs';
-import { probeSymlinkCapability } from '../lib/runtime-capabilities.mjs';
 import { assessFrozenStop1, STOP1_BUDGET_BYTES } from '../freeze/stop1-ready.mjs';
 import { planAssetReplacements } from '../freeze/replaceable-assets.mjs';
 import { resolveChromePath } from '../freeze/chrome-path.mjs';
@@ -134,11 +133,6 @@ function linkDir(target, link, t) {
 }
 
 test('parent-directory symlink into pack-external files is rejected', (t) => {
-  const capability = probeSymlinkCapability();
-  if (!capability.available) {
-    t.skip(`无法创建 symlink（${capability.code}）`);
-    return;
-  }
   const parent = mkdtempSync(join(tmpdir(), 'yise-freeze-parent-link-'));
   const outside = join(parent, 'outside');
   const dir = join(parent, 'demo');
@@ -154,11 +148,6 @@ test('parent-directory symlink into pack-external files is rejected', (t) => {
 });
 
 test('frozen output path through a pack-external symlink is rejected', (t) => {
-  const capability = probeSymlinkCapability();
-  if (!capability.available) {
-    t.skip(`无法创建 symlink（${capability.code}）`);
-    return;
-  }
   const parent = mkdtempSync(join(tmpdir(), 'yise-freeze-out-link-'));
   const outside = join(parent, 'outside');
   const dir = join(parent, 'demo');
