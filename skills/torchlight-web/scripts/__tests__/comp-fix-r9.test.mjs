@@ -37,7 +37,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkDemoNoSymlinks, hashFile, safeJsonForScript } from '../lib/fs-utils.mjs';
-import { probeSymlinkCapability } from '../lib/runtime-capabilities.mjs';
+import { probeSymlinkCapability, probePlaywrightCapability, playwrightBrowserSkipMessage } from '../lib/runtime-capabilities.mjs';
 import { findDemoSymlinks } from '../lib/repo-glob.mjs';
 import {
   entryKind, listFilesRel, makeObservationSnapshot, snapshotManifestDiff,
@@ -52,7 +52,6 @@ const OBSERVE = join(ROOT, 'scripts/lib/observe.mjs');
 const FSUTILS = join(ROOT, 'scripts/lib/fs-utils.mjs');
 const MODULE_ROOT = process.env.QA_HIFI_MODULE_ROOT;
 const env = () => (MODULE_ROOT ? { QA_HIFI_MODULE_ROOT: MODULE_ROOT } : {});
-const NEEDS_BROWSER = '需要真 playwright(产品仓 node_modules)——浏览器门不跑就走不到快照/观察绑定之后';
 
 function run(script, args, opts = {}) {
   return spawnSync(process.execPath, [script, ...args], {
@@ -396,12 +395,19 @@ test('r9 阳性对照(不 skip): 正常 demo 的 symlink 门零命中,快照照�
   assert.deepEqual(snapshotManifestDiff(snap, dir).all, [], '快照与磁盘应逐条全等');
 });
 
-test('r9 阳性对照(实跑): 正常 demo 仍能全绿通过 verify', (t) => {
-  if (!MODULE_ROOT) return t.skip(NEEDS_BROWSER);
+test('r9 阳性对照(实跑): 正常 demo 通过快照与渲染门，薄覆盖仍为 limited', (t) => {
+  const browser = probePlaywrightCapability(ROOT);
+  if (!browser.available) return t.skip(playwrightBrowserSkipMessage(browser));
   const dir = writeDemo({ name: 'positive-run', bindWidth: true });
   const v = run(VERIFY, ['--demo', dir], { env: env() });
-  assert.equal(v.status, 0, `正常 demo 被 r9 改动弄坏了:${v.stdout}${v.stderr}`);
+  assert.equal(v.status, 2, `薄覆盖不能冒充完整验收:${v.stdout}${v.stderr}`);
   const rep = readJson(join(dir, 'report.json'));
+  assert.equal(rep.ok, false);
+  assert.equal(rep.outcome.status, 'limited');
+  assert.equal(rep.outcome.productPrComplete, false);
+  assert.equal(rep.gateB.status, 'limited');
+  assert.equal(rep.gateC.status, 'limited');
+  assert.equal(rep.gateA.pass, true);
   assert.equal(rep.gateD.pass, true);
   assert.equal(rep.gateA.snapshotDrift, 'none');
   assert.equal(rep.gateA.observeBinding, 'bound');
