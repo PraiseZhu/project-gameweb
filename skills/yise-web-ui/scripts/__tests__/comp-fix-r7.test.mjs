@@ -786,7 +786,12 @@ test('条目 4 阳性对照(实跑): 快照不误杀带子目录/中文名/相�
 // ============================================================================
 
 test('条目 6 实测前提(实跑真 tailwind): --content 是逗号分隔多值串，含逗号的路径无法承载', (t) => {
-  if (!MODULE_ROOT) return t.skip('需要 skill 侧真 tailwind CLI');
+  let bin;
+  try { bin = createRequire(import.meta.url).resolve('tailwindcss/lib/cli.js'); }
+  catch (error) {
+    if (error.code !== 'MODULE_NOT_FOUND') throw error;
+    return t.skip('需要 skill 侧真 tailwind CLI');
+  }
   /* 这条钉住「为什么必须拒逗号」的实测事实本身:直接调 tailwind CLI,把含逗号的文件与一个
      普通文件 join 成一个 --content 串 —— 含逗号那个文件的 class 不会进 CSS(静默漏扫)。
      若某天 CLI 支持了引号/重复 --content,这条测试会红,届时可以重新评估是否放开。 */
@@ -796,8 +801,7 @@ test('条目 6 实测前提(实跑真 tailwind): --content 是逗号分隔多值
   writeFileSync(join(repo, 'src/a,b.tsx'), 'export const c = "bg-teal-500";\n');
   writeFileSync(join(repo, 'src/plain.tsx'), 'export const d = "bg-amber-500";\n');
   writeFileSync(join(repo, 'in.css'), '@tailwind utilities;\n');
-  const bin = join(ROOT, 'node_modules/.bin/tailwindcss');
-  const r = spawnSync(bin, ['-c', join(repo, 'tailwind.config.js'), '-i', join(repo, 'in.css'),
+  const r = spawnSync(process.execPath, [bin, '-c', join(repo, 'tailwind.config.js'), '-i', join(repo, 'in.css'),
     '-o', join(repo, 'out.css'), '--content', `${join(repo, 'src/a,b.tsx')},${join(repo, 'src/plain.tsx')}`],
   { cwd: repo, encoding: 'utf8' });
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);

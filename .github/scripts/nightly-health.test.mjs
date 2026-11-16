@@ -439,6 +439,26 @@ test('任意 exclude 失败公开测试必须红', () => {
   assert.match(`${res.stdout}\n${res.stderr}`, /排除项缺原因|排除项类别不受控|bad\.test\.mjs/);
 });
 
+test('lister accepts underscore private tests using native path separators', () => {
+  const root = makeRoot();
+  try {
+    const pkg = join(root, 'skills', 'private-tests');
+    writePkg(pkg, { test: 'node --test test/*.test.mjs' });
+    writePublicTest(pkg);
+    mkdirSync(join(pkg, 'scripts'), { recursive: true });
+    writeFileSync(join(pkg, 'test', '_private.test.mjs'), 'import test from "node:test"; test("private", () => {});');
+    writeFileSync(join(pkg, 'scripts', 'test-public.mjs'), [
+      'console.log("test/ok.test.mjs");',
+      'console.log("# exclude test/_private.test.mjs :: demo: underscore private");',
+    ].join('\n'));
+    const res = runList(root);
+    assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
+    assert.match(res.stdout, /private-tests.*npm test \+ file proof/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('trusted TAP spawn uses a 32MB maxBuffer and names ENOBUFS', () => {
   const src = readFileSync(SCRIPT, 'utf8');
   assert.equal(TRUSTED_TAP_MAX_BUFFER, 32 * 1024 * 1024);

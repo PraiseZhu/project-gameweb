@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -14,6 +14,35 @@ import { writeReviewTargets } from "../scripts/build-review-targets.mjs";
 const TOOL = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PAGE = resolve(TOOL, "inventory-review/index.html");
 const SERVE = resolve(TOOL, "scripts/serve-inventory-review.mjs");
+
+test("核对页路径检查允许根内文件但拒绝同名前缀目录逃逸", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "review-path-"));
+  const dataRoot = join(dir, "data");
+  const sibling = join(dir, "data-sibling");
+  mkdirSync(dataRoot);
+  mkdirSync(sibling);
+  writeFileSync(join(dataRoot, "inside.txt"), "inside");
+  writeFileSync(join(sibling, "outside.txt"), "outside");
+  const server = createInventoryReviewServer({ dataRoot });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const inside = await fetch(`${origin}/inside.txt`);
+    assert.equal(inside.status, 200);
+    assert.equal(await inside.text(), "inside");
+    const outside = await fetch(`${origin}/%2e%2e%2fdata-sibling%2foutside.txt`);
+    assert.equal(outside.status, 403);
+    const nativeEscape = await fetch(`${origin}/..%5cdata-sibling%5coutside.txt`);
+    assert.notEqual(nativeEscape.status, 200);
+    for (const file of ["../inventory-outside.json", "..\\inventory-outside.json"]) {
+      assert.throws(() => persistReviewedInventory(dataRoot, file, {}), { code: "bad-file" });
+    }
+  } finally {
+    await new Promise((resolveClose) => server.close(resolveClose));
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test("核对页 UI 必须进仓，不许只活在 _tmp", () => {
   assert.equal(existsSync(PAGE), true, `缺少 ${PAGE}`);

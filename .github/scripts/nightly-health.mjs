@@ -10,7 +10,7 @@
 //   全仓结果不能当作火炬独立通过；火炬固定链路用 --skill torchlight-web。
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative as pathRelative, resolve } from 'node:path';
+import { basename, dirname, join, relative as pathRelative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -503,7 +503,7 @@ function listPublicTests(packageDir) {
       if (!abs.endsWith('.test.mjs') || !existsSync(abs) || !statSync(abs).isFile() || !realInside(packageDir, abs)) {
         return { error: `test-public --list 排除项不合法 ${line}` };
       }
-      const name = abs.split('/').pop();
+      const name = basename(abs);
       const relPath = relative(packageDir, abs);
       const demoOwned = owned.demo.has(relPath);
       const brokenOwned = owned.broken.get(relPath);

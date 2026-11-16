@@ -1,4 +1,4 @@
-import { basename, resolve } from "node:path";
+import { basename, resolve, sep } from "node:path";
 import { writeFilesAtomically } from "./atomic-writeback.mjs";
 import { rebuildInventoryIndexes, renderHumanSummary } from "./inventory.mjs";
 
@@ -27,7 +27,7 @@ export function persistReviewedInventory(root, file, inv) {
   const base = resolve(root);
   const reviewedPath = resolve(base, file.replace(/\.json$/, ".reviewed.json"));
   const txtPath = reviewedPath.replace(/\.json$/, ".txt");
-  if (!reviewedPath.startsWith(`${base}/`) || !txtPath.startsWith(`${base}/`)) {
+  if (!reviewedPath.startsWith(`${base}${sep}`) || !txtPath.startsWith(`${base}${sep}`)) {
     const error = new Error("bad file");
     error.code = "bad-file";
     throw error;

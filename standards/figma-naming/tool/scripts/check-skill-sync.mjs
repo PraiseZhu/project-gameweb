@@ -195,7 +195,7 @@ export function resolveSkillRoles(skillDir, skillName) {
     if (!source.includes(`${WORDLIST_EXPORT}`)) continue;
     const extracted = extractRoleKind(source);
     if (!extracted) continue;
-    files.push(file.slice(skillDir.length + 1));
+    files.push(file.slice(skillDir.length + 1).replaceAll("\\", "/"));
     for (const role of extracted) roles.add(role);
   }
   if (files.length === 0) {
