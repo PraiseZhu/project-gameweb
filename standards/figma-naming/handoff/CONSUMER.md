@@ -1,5 +1,9 @@
 # 做页怎么吃交接包
 
+## 新 one-page 契约
+
+新包为 handoff/onepage-v1，包内清单为 inventory/onepage-v1。见[正式合同与消费责任](../spec/onepage-naming.md)。用 tool/src/onepage/handoff.mjs 的 acceptOnePagePack 检查版本、能力和摘要后，消费者只读已解析的数据/目标/状态/动效关系。可选 `fonts` 是用途 title/body/number 到资源名的映射（可按 cn/tw/en/jp/kr 分列）以及资源索引（file、weights、format、source、license、digest，可变字体可有 axes）；未写则与旧包一致，编译器不下载字文件。卡片分页 `perPage` 为正整数或 `{pc,mobile}`。`devTodo` 只列已声明 `open-link` 且 `url` 为 `null` 的入口（`kind: "link-url-pending"`，来源 `figma:name:@link` 或 `config.bindings:action`），由 H 汇总进开发待办；url 已填或不完整 links 项不收，无动作的 btn/hot 仍阻断。节点诊断带所属 `section`（无所属屏为 `null`）。img 排除文字导出、bg/kv 整图、默认/空状态与减少动画等能力必须真正实现。当前两套游戏 Skill 未接入，旧验包入口会因 schema 不同而拒绝；不得改 schema、删能力或只读旧字段绕过。下文仅适用于旧 ready 包。
+
 本仓做页只吃 ready 包。真稿，不另造清单。清单只答这一稿画了什么；拉伸/外文字号听做页包里的 `DESIGN.md`。未规范稿流程已废弃，不打 green-draft、不写回判断包。已规范命名稿：稿上有的每一端 `inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`）。只有 PC 或只有手机时只传那一端。交接包只装箱信息，不导 png。做页按清单 `sliceExport` 自己导图，不猜图层名、不按节点框重导。
 
 ## 已规范稿打出包
@@ -60,7 +64,14 @@ TEXT 默认可改字；一旦 `role` 是 `img/` `bg/` `kv/` 就按切图，不�
 文字必带 `fontFamily` `fontWeight` `fontSize`，再用 `lineHeightPercent`、`paragraphSpacing`、外层 min/max。换不出百分比才留 `lineHeight` 像素。Figma REST 不给字文件。吃包时对照 `fonts/registry.json`：稿里的 family 不在登记册 → 不出 HTML，红停并给出 `fonts:register`。登记一次后，`figma:html-from-handoff` 每次自动拷进 demo、写入 `#qa-fonts`。不许拿系统黑体顶上。
 
 实例相对母版的改动在 `instanceOverrides`。布局约束原样带 Figma 字段，含 `layoutPositioning`。
-PC/手机同一模块看 `sameModules`：按前缀+名字一对一配对；`btn/` `hot/` 还带 `langs`，门不一致标单端。对不上标 `pc-only` / `mobile-only`。配对上的各用各端 `pageBox`，不能拿 PC 坐标摆手机。
+PC/手机同一模块看 `sameModules`：先按 `sec` 编号限定对应屏，再在屏内按前缀+名字唯一配对，包含 `grp/`。普通 Frame/Group 的名称和嵌套层数不参与匹配；脚本沿 `parentId` 查找所属屏。两端同编号须表示同一逻辑屏；分屏说明文字可以不同。
+
+- `paired` 保存唯一对应的 `pcId` / `mobileId`；分屏的 `key` 为 `sec/2`，屏内模块例如 `sec/2::grp/奖励说明`。`role` 是独立字段，不能从复合 key 的首段猜角色。
+- 确实位于所有 `sec/` 外的节点使用页级范围，key 保留 `前缀/名称`；不与屏内同名节点混配。`btn/` / `hot/` 的 `langs` 仍参与匹配。
+- `unmatched` 保留当前范围内没有另一端候选的节点（`pc-only` / `mobile-only`），不据此猜测是否设计遗漏。只提供一端时保留所有该端候选，不要求补另一端。
+- 两端都有清单时，同一范围同名多候选不按顺序配，也不伪装成单端；写入 `ambiguous`（`key`、`role`、`reason`、`pcIds`、`mobileIds`）。重复屏编号、无有效屏编号或父链缺失/循环同样显式报告。包内 `warning` 与 README 提示这些问题；保留源清单的 ready 不代表对应关系已完整，消费侧不得自行补配。
+
+配对上的模块各用各端 `pageBox`，不能拿 PC 坐标摆手机，也不因对应而强制共用素材。已有交接包不会自动更新；重新打包才应用上述配对规则。
 判断过程、截图不进清单。
 
 ## 有问题怎么开 issue

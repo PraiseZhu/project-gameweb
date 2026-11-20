@@ -105,6 +105,30 @@ test("handoff：replaceable/assetKey 进 consume 与 fingerprint", () => {
   assert.notEqual(withMark, without);
 });
 
+test("handoff：可选 auto-one_page workflow 元信息可随包保留", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-workflow-"));
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  writeFileSync(join(dir, "pc.json"), JSON.stringify(pc));
+  writeFileSync(join(dir, "mobile.json"), JSON.stringify(mobile));
+  const pack = writeHandoffPack({
+    pcPath: join(dir, "pc.json"),
+    mobilePath: join(dir, "mobile.json"),
+    pcDoc: pc,
+    mobileDoc: mobile,
+    kind: "ready",
+    outDir: join(dir, "out"),
+    workflow: { name: "auto-one_page", scopeRef: "scope-v1", sourceQualificationRef: "source-qualified-v1" },
+  });
+  assert.deepEqual(pack.manifest.workflow, {
+    name: "auto-one_page",
+    scopeRef: "scope-v1",
+    sourceQualificationRef: "source-qualified-v1",
+  });
+  const validated = validateHandoffPack(join(dir, "out"));
+  assert.equal(validated.ok, true, validated.problems.join("\n"));
+});
+
 test("handoff：成对 ready 可打包", () => {
   const result = validateHandoffPair(sample("1:1"), sample("2:2"));
   assert.equal(result.ok, true, result.problems.join("\n"));
@@ -1035,6 +1059,35 @@ test("sameModules：两端 langs 门不一致不配成同一模块", () => {
   assert.equal(result.paired.some((row) => row.pcId === "pc-age" || row.mobileId === "mo-age"), false);
   assert.ok(result.unmatched.some((row) => row.id === "pc-age" && row.end === "pc-only"));
   assert.ok(result.unmatched.some((row) => row.id === "mo-age" && row.end === "mobile-only"));
+});
+
+test("handoff：模块配对歧义写入 manifest 和 README，不生成错误配对", () => {
+  const dir = mkdtempSync(join(tmpdir(), "handoff-pairing-ambiguity-"));
+  const pc = sample("1:1");
+  const mobile = sample("2:2");
+  for (const [doc, id] of [[pc, "pc-a"], [pc, "pc-b"], [mobile, "mo-a"]]) {
+    doc.nodes.push(stampReadyFields({
+      id, type: "FRAME", status: "determined", role: "grp",
+      name: "grp/奖励说明", label: "奖励说明", behavior: "group", via: "prefix",
+      parentId: `${doc.requestedNodeId}-sec`, box: { x: 0, y: 0, w: 100, h: 100 },
+    }));
+  }
+  for (const doc of [pc, mobile]) {
+    rebuildInventoryIndexes(doc);
+    fixtureJudgment(doc);
+  }
+  const pcPath = join(dir, "pc.json");
+  const mobilePath = join(dir, "mobile.json");
+  writeFileSync(pcPath, JSON.stringify(pc));
+  writeFileSync(mobilePath, JSON.stringify(mobile));
+  const outDir = join(dir, "out");
+  writeHandoffPack({ pcPath, mobilePath, pcDoc: pc, mobileDoc: mobile, kind: "ready", outDir });
+  const manifest = JSON.parse(readFileSync(join(outDir, "manifest.json"), "utf8"));
+  assert.match(manifest.warning, /对应不明确/);
+  assert.equal(manifest.sameModules.paired.some((row) => row.role === "grp"), false);
+  assert.deepEqual(manifest.sameModules.ambiguous[0].pcIds, ["pc-a", "pc-b"]);
+  assert.ok(readFileSync(join(outDir, "README.md"), "utf8").includes("sec/1::grp/奖励说明"));
+  assert.equal(validateHandoffPack(outDir).ok, true);
 });
 
 test("handoff：consume.determined 带上 langs，无门则为 null", () => {

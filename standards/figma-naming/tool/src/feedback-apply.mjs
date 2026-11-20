@@ -7,7 +7,7 @@
 import { applyCrossEndClassSync, applyDraftGoldMorphology, isTextGroupImgExempt } from "./gold-morphology.mjs";
 import { stampJudgment } from "./judgment.mjs";
 
-const ROLE_PREFIX = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
+const ROLE_PREFIX = /^(bg|btn|dyn|fix|grp|item|hot|img|ind|kv|list|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
 
 export function rawName(name) {
   return String(name ?? "").replace(ROLE_PREFIX, "").trim();

@@ -56,6 +56,11 @@ test("假定文档的版本号与 ASSUMPTIONS_VERSION 一致", () => {
 
 /* ── §1 / §2 前缀与参数 ─────────────────────────────────── */
 
+test("前缀总数为 19，与正文速查入口一致", () => {
+  assert.equal(PREFIX_NAMES.length, 19);
+  assert.match(DOC, /全部 19 个前缀/);
+});
+
 test("前缀总表与 PREFIXES 完全一致", () => {
   const docSet = new Set();
   for (const l of LINES) {

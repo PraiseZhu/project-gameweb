@@ -1,9 +1,32 @@
 # 设计稿命名规范
 
-> 版本 **v2.20**（2026-09-16）。本文件是本项目判定命名对错的**唯一事实来源**。
+适用范围：本文为旧游戏链的命名规则；显式新 one-page 入口使用[one-page 命名与绑定规范](onepage-naming.md)。新旧契约分别版本化，不删除本文 mix 或改旧稿。
+
+> 版本 **v2.23**（2026-11-18）。本文件是本项目判定命名对错的**唯一事实来源**。
 > 同目录 `spec.mjs` 是它的机器可读镜像，`tool/test/spec-drift.test.mjs` 锁住两者一致（前缀表、参数表、前缀语法参数、§4.2 两道排除闸门、§6 规则清单、§7 名字形态、版本号）。
 > 规则的 `why` / `fix` 文案属于实现侧解释，在 `src/rules.mjs` 里维护，不在本文件锁定范围内。
 > 判定后果所依赖的下游假定见 [`consumer-assumptions.md`](consumer-assumptions.md)。
+
+---
+
+## 先查这里：功能 → 命名 → 场景
+
+阅读入口更新于 **2026-11-18**；规则语义为 v2.23。日常命名先用速查资料，精确判据再看后面的完整条文。
+
+- **想快速上手：** [图文速查文档](naming-guide.md)，包含全部 19 个前缀、全部参数、8 组场景与交稿自查。
+- **想按功能或名字搜索：** [打开可搜索图文版](naming-guide.html)，输入“弹窗”“图片”“@lang”等关键词。
+
+| 你现在要解决的事 | 从哪里查 |
+|---|---|
+| 页面分屏、固定导航、参考说明 | [sec](naming-guide.md#prefix-sec) · [fix](naming-guide.md#prefix-fix) · [ref](naming-guide.md#prefix-ref) |
+| 装饰图、美术字、大底图、视差分层 | [img](naming-guide.md#prefix-img) · [bg](naming-guide.md#prefix-bg) · [kv](naming-guide.md#prefix-kv) |
+| 点击、透明热区、弹窗、开合菜单 | [btn](naming-guide.md#prefix-btn) · [hot](naming-guide.md#prefix-hot) · [modal](naming-guide.md#prefix-modal) · [dropmenu](naming-guide.md#prefix-dropmenu) |
+| 倒计时、图文日历、连续滑动 | [dyn](naming-guide.md#prefix-dyn) · [mix](naming-guide.md#prefix-mix) · [scroll](naming-guide.md#prefix-scroll) |
+| 轮播、页签切换、进度圆点 | [switch](naming-guide.md#prefix-switch) · [tab](naming-guide.md#prefix-tab) · [ind](naming-guide.md#prefix-ind) |
+| 多语言换图、换按钮、入口显隐 | [图文版场景 F](naming-guide.html#scene-f) · [场景 G](naming-guide.html#scene-g)；三种写法不要混用 |
+| 整图可替换、图文保留可编辑结构 | [图文版场景 H](naming-guide.html#scene-h) |
+
+以下 §0–§7 是现行完整规则；§8 只作历史追溯，不要把已被后续版本覆盖的旧条款当成现行写法。
 
 ---
 
@@ -32,6 +55,11 @@
 |---|---|---|
 | `sec/` | 屏幕分区 | 在体检根子树内搜集；无识别前缀的纯布局 `frame` / `group` 透明；名称须以编号开头，如 `sec/1-首屏` |
 | `fix/` | 视口固定悬浮层（侧边导航、返回顶部） | 不参与分区流；可选 `@from=N`：滚到分区 N 及以下才出现 |
+| `grp/` | 有独立语义的通用模块容器 | 只标需要被页面结构、布局、关系或验收单独识别的容器；纯排版包装、遮罩和技术 wrapper 不标；具体模块类型明确时优先使用具体类型 |
+| `list/` | 同类条目集合 | 子项应使用 item/；需要机器可读的 Auto Layout 或等价排布声明；普通排列不标 |
+| `item/` | list/ 下面的重复条目 | 只作为 list/ 的直接条目边界使用；内部继续使用现有角色前缀 |
+
+卡片不作为独立前缀。独立的一块图文内容使用 grp/ 作为模块边界；列表中的卡片使用 list/ 下的 item/。卡片的背景、圆角、边框、内边距和尺寸从设计稿字段读取，不因为视觉上像卡片而新增命名类型。
 | `ref/` | 说明性参考稿（滚动示意、状态说明） | **整个子树忽略**：不检查、不报警 |
 
 ### 视觉类（命名即切图意图）

@@ -8,6 +8,8 @@
     "figma-naming-lint": "bin/cli.mjs"
   },
   "scripts": {
+    "onepage:rules": "node scripts/gen-onepage-rules.mjs",
+    "onepage:inventory": "node bin/onepage.mjs",
     "lint": "node bin/cli.mjs",
     "inventory": "node bin/inventory.mjs",
     "test": "node --test test/*.test.mjs && node scripts/check-skill-sync.mjs",

@@ -1,0 +1,14 @@
+{
+  "name": "gameweb-one-page-standard-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "one-page标准流程：独立于具体游戏项目的流程讨论与规范入口，尚未实现页面生成",
+  "scripts": {
+    "inventory": "node ../figma-naming/tool/bin/onepage.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

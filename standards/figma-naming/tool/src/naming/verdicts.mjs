@@ -27,7 +27,7 @@ export const VERDICT_KINDS = new Set([
 
 const PREFIXES = new Set([
   "sec", "fix", "ref", "img", "bg", "kv", "btn", "hot",
-  "modal", "dropmenu", "dyn", "mix", "scroll", "switch", "tab", "ind",
+  "modal", "dropmenu", "dyn", "mix", "scroll", "switch", "tab", "ind", "list", "item",
 ]);
 
 /**

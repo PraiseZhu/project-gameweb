@@ -28,6 +28,9 @@ export function decideLocalSync({ hasSecrets, currentSha, stampedSha }) {
 const PREFIX_TIPS = {
   sec: "必须带编号，如 sec/1-首屏。中间可隔无前缀容器，不要分区套分区",
   fix: "侧边导航、回顶。不参与分区流。可选 @from=N：滚到第 N 屏及以下才出现",
+  grp: "有独立语义的通用模块容器；纯排版包装、遮罩和技术 wrapper 不标",
+  list: "同类条目集合；子项使用 item/，必须有 Auto Layout 或等价排布声明",
+  item: "list/ 下面的重复条目；内部继续按现有角色命名",
   ref: "整棵子树忽略，里面怎么命名都不检查",
   img: "普通文字不要加这个。整图可替换写 img/[replaceable]用途名。按语言换图 → 看「按语言换图」",
   bg: "—",
@@ -47,6 +50,9 @@ const PREFIX_TIPS = {
 const PREFIX_WHEN = {
   sec: "一屏 / 一个分区",
   fix: "钉在视口上的层",
+  grp: "有独立语义的模块容器",
+  list: "同类条目集合",
+  item: "列表重复条目",
   ref: "参考稿、示意稿",
   img: "装饰图、美术字标题",
   bg: "大面积底图",

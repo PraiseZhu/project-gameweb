@@ -1,0 +1,739 @@
+{
+  "schema": "one-page/source-integration/v1",
+  "date": "2026-11-20",
+  "document": "delivery-and-acceptance.md",
+  "sources": [
+    {
+      "id": "premises",
+      "path": "docs/web-page-spec/README.md",
+      "sha256": "9e1cc4929abe8aed1613ab3b319e242585b9729f6c6c299428700da7058031b8",
+      "selectionHeading": "已拍板的前提（2026-11-11）",
+      "category": "共识与后续修订",
+      "units": [
+        {
+          "id": "premises-001",
+          "title": "已拍板的前提（2026-11-11）",
+          "startLine": 55,
+          "endLine": 71,
+          "sourceSha256": "26fb5cbad08954c3f4ba433411fec4e86e006e0751e34753c40ac5824c9e345b",
+          "renderedSha256": "c460843fafb085ebdc57afdeee7d1c30b00ebc098d231455510a10e09c34c5e0"
+        }
+      ]
+    },
+    {
+      "id": "fixed",
+      "path": "docs/web-page-spec/html-standard-checklist.md",
+      "sha256": "c235c879fce3f0f78eddb2fbc2fb96499ac3df37a96f4055805702a85751c29e",
+      "selectionHeading": null,
+      "category": "已定成品要求；暂定建议及历史状态按原标注",
+      "units": [
+        {
+          "id": "fixed-001",
+          "title": "1. 设计侧 HTML 最终交付规范 v1（完整正文，已定稿）",
+          "startLine": 1,
+          "endLine": 7,
+          "sourceSha256": "2b67ae3759da9351ca692e9f08ebbacaf67e6ea87e155f32c8141a7754052d28",
+          "renderedSha256": "6c50eca1f0008a148534aed511b4b6b6b8431b6afeda3eefb24c97b99a4a117a"
+        },
+        {
+          "id": "fixed-002",
+          "title": "1. 基准与边界",
+          "startLine": 8,
+          "endLine": 18,
+          "sourceSha256": "e11242d32079d8f7d1601d136938cf9088ad50d57aef1db37ae1db1442628379",
+          "renderedSha256": "e8fa7a2ab8e9979a582a48f693fee131c8277f70aa9281fd492759f585d174e7"
+        },
+        {
+          "id": "fixed-003",
+          "title": "1.1 适用范围与缺失处理",
+          "startLine": 19,
+          "endLine": 26,
+          "sourceSha256": "9183b810c0bdfc2ea3af04834d15518bc719006a2bf137be49637aa3307a21ef",
+          "renderedSha256": "21a2e507a6ac2130ce10e62068b5bfa1d027f5c6035d44dc4606b032a2400b28"
+        },
+        {
+          "id": "fixed-004",
+          "title": "2. 交付物与静态 DOM",
+          "startLine": 27,
+          "endLine": 38,
+          "sourceSha256": "3984bb759b70cf6218bea41c5b08321b873feb5f52e0962afec533da8170e7f0",
+          "renderedSha256": "ae8087dcbcb6881f5fbc88f367887ffbeb6cc54020d17919dcbc43a1bb5ea351"
+        },
+        {
+          "id": "fixed-005",
+          "title": "2.1 可直接部署的含义",
+          "startLine": 39,
+          "endLine": 48,
+          "sourceSha256": "e1fadf73e94d9abfcfc7d683957bf6c3ea858891ebbeb9b9a4462f4cf062abf9",
+          "renderedSha256": "d43e4dadaebffcbe2ed8a53616e575bd68ba3c2bd264633a917a3abae6868f8f"
+        },
+        {
+          "id": "fixed-006",
+          "title": "3. 页面结构与文字",
+          "startLine": 49,
+          "endLine": 61,
+          "sourceSha256": "9189e9e7d8e0e9eb0921e2a0880a68cf3a5a1079cef0cf8a191cc26c9a86dc1e",
+          "renderedSha256": "aac472105fa5f930da686d5c807934f0707b8e7e371302c794b7daafa24bafff"
+        },
+        {
+          "id": "fixed-007",
+          "title": "3.1 结构、排布与层级细则",
+          "startLine": 62,
+          "endLine": 69,
+          "sourceSha256": "deb06d92d167f821a0470e41ec5283d266d651a3bbbf6b8b47bf61ef57847ac0",
+          "renderedSha256": "61f08b47f3b1e9182b9a5b562345347d4c226cfc9d5373592b6c40f5e47e8a03"
+        },
+        {
+          "id": "fixed-008",
+          "title": "3.2 网页文字、底图与盖层",
+          "startLine": 70,
+          "endLine": 79,
+          "sourceSha256": "e043dc69ec6d3eabf21b655e2f7ed662bc08844e786f495d29d51f4fa078566a",
+          "renderedSha256": "e0388a69bf31c54f6482e0f2ffa9879632eb4c7946f79d8d716beaa64209d173"
+        },
+        {
+          "id": "fixed-009",
+          "title": "4. CSS、JS 与配置组织",
+          "startLine": 80,
+          "endLine": 91,
+          "sourceSha256": "a05182d71aa2b2351dc818402c95a8cd45294dca829d5d55c02a186301a2cecf",
+          "renderedSha256": "7e510bce0b9643c6a532b3064ff6930cba3d1a3b07b821eae05246bd8e292595"
+        },
+        {
+          "id": "fixed-010",
+          "title": "4.1 代码组织细则",
+          "startLine": 92,
+          "endLine": 102,
+          "sourceSha256": "08002345472d4eac5d7c490b94e993186de8a2ec566bb934fadac5f6b74b279b",
+          "renderedSha256": "ece81f1663927a32fd4788c47b8bbcb2400fa140f997c775f441940319a1cf18"
+        },
+        {
+          "id": "fixed-011",
+          "title": "5. 布局与适配数据",
+          "startLine": 103,
+          "endLine": 123,
+          "sourceSha256": "d48780cfc9121cf5ccde8401cd530ccf2b0d1ad4db9b8cc53ec0ec4df94c836a",
+          "renderedSha256": "efb8f2a4e98a0cf7f915a00d609b748649da886539877d222613e14d07dad224"
+        },
+        {
+          "id": "fixed-012",
+          "title": "5.1 固定数值补全与适用范围",
+          "startLine": 124,
+          "endLine": 131,
+          "sourceSha256": "cdb8f3a67cac6a008305b03198e46a1a2bfc3356d41c90e43d23aef6a7680f3a",
+          "renderedSha256": "694f074527e1699a058c5b068b597f3033a853d47d2ed88677ec21fa6409cd46"
+        },
+        {
+          "id": "fixed-013",
+          "title": "6. 实际语言、字体、素材",
+          "startLine": 132,
+          "endLine": 147,
+          "sourceSha256": "a5c446b1304e189dca02f148fdac5a32d63091dfbcbe292b8b1bcd0f5a7c9133",
+          "renderedSha256": "fff5013cffa71454be235298eea24e2352871b5b8eda8e5767ea0a1feac5b3f6"
+        },
+        {
+          "id": "fixed-014",
+          "title": "6.1 语言与字体细则",
+          "startLine": 148,
+          "endLine": 157,
+          "sourceSha256": "85b0b289fce299123431b8458a9a92cba58bbefe42b86b6efe06c0013245141d",
+          "renderedSha256": "4d222f5551b16071c7fdcceecc156f60d71d62eb565ffff1dc67d24c8f971f65"
+        },
+        {
+          "id": "fixed-015",
+          "title": "6.2 位图、SVG 和 manifest 的成品要求",
+          "startLine": 158,
+          "endLine": 167,
+          "sourceSha256": "203827a32d16e0f6480d7df62d1fd690b4478a4c0025d73f8bcd9a863aadeeae",
+          "renderedSha256": "592c9064df23f4425deb1b85ba72cb9cccd99b89c5ebda22ff107c5f745545ba"
+        },
+        {
+          "id": "fixed-016",
+          "title": "6.3 暂定视频和体积建议的计量",
+          "startLine": 168,
+          "endLine": 175,
+          "sourceSha256": "081c681cdf95ce2a1af4f89ec2f164425445812f9266b69638c947e45a55bc71",
+          "renderedSha256": "0cc2c989f1e113c25174ec5d4cb1a7b30082c0cb679df7ed0bf5ea765bc2e563"
+        },
+        {
+          "id": "fixed-017",
+          "title": "7. 数据展示与公共组件接入口",
+          "startLine": 176,
+          "endLine": 188,
+          "sourceSha256": "6dab52f0e8511ab5bacfc48cb22250bd492a1dcfbfbf6c55c82727ba772e15b3",
+          "renderedSha256": "106a34626b6a77ea65e2edf2975b9ffb4a2958e952683679026b75788ecf0ea6"
+        },
+        {
+          "id": "fixed-018",
+          "title": "7.1 数据读取、缺省与显隐",
+          "startLine": 189,
+          "endLine": 199,
+          "sourceSha256": "c95a8f58ce9da3bca7345d71d843475b20069b7ce6cfba6ff38a6c488e62cef4",
+          "renderedSha256": "469b447aee255083a6e58c569ebf9ac22dbe0c7cc632ed9fe9d89179f66f2f6c"
+        },
+        {
+          "id": "fixed-019",
+          "title": "7.2 三个默认接入口",
+          "startLine": 200,
+          "endLine": 211,
+          "sourceSha256": "b3692fa4106d535f9ca5a013d73f6b226432e75fd18911c35a6e3c5536e831f5",
+          "renderedSha256": "29f20fb68e18af8f932699596cb96b5f0c5954afb7e8fe6ef9fbad60f99b0308"
+        },
+        {
+          "id": "fixed-020",
+          "title": "8. 页面行为标准（只规定效果）",
+          "startLine": 212,
+          "endLine": 227,
+          "sourceSha256": "2e7ef41c9ba34cbfc2b9f2e4b3901ce50aaaa2bb29df66f6ea052492dd6d5fd1",
+          "renderedSha256": "974c110f8de80b9db372fa2c9f04c3da5c5b67451ed3ca1114fe7b3049464f55"
+        },
+        {
+          "id": "fixed-021",
+          "title": "8.1 整页切屏与输入规则",
+          "startLine": 228,
+          "endLine": 239,
+          "sourceSha256": "ea01fea65ce8bd26146718c961d821d65f4b51f6b1cbc4c99fa5cb2c3db33803",
+          "renderedSha256": "f519e05403cfd407dbf9a92973e9f06c390a935899d99dec229a5fc02c99ff13"
+        },
+        {
+          "id": "fixed-022",
+          "title": "8.2 导航、TAB、轮播、弹层细则",
+          "startLine": 240,
+          "endLine": 251,
+          "sourceSha256": "b4204bbfb6d8b2b0ad31a73abb54ed3f0ef92cd1bd4c0ca7b503207092e7e5c8",
+          "renderedSha256": "4a50268eb5dcda2a6fa690e5452bc84cc7148f44f0d7d3490f3d8f4e1bd647ca"
+        },
+        {
+          "id": "fixed-023",
+          "title": "9. 已确认的交互与动效数据",
+          "startLine": 252,
+          "endLine": 281,
+          "sourceSha256": "b4fa20441e22f2eb194ffb3ae25886eac58c16c94d47056190137579fdfb37ed",
+          "renderedSha256": "19961a204310b546ae9f8366c2b97a7765e19f1155d82e41534b228c0daf4726"
+        },
+        {
+          "id": "fixed-024",
+          "title": "9.1 动效对象与播放约束",
+          "startLine": 282,
+          "endLine": 292,
+          "sourceSha256": "4caa177791d8f791d177a805b0d78ef74c8fd8978a2e9198d616d7281d8d27ad",
+          "renderedSha256": "f6a09b391bbb49dbe944be0dbe084a24a64c8df21c881a2abcefc57e6750a167"
+        },
+        {
+          "id": "fixed-025",
+          "title": "9.2 已定动效细节补全",
+          "startLine": 293,
+          "endLine": 318,
+          "sourceSha256": "58ab3b36f4ccf9b1ff30861cbd3c2dc5d1cfe639265a01b429a739b57211f2f2",
+          "renderedSha256": "7eaf8d6da1ae2a4b79c56e55723d0a8f3a47ef168aea0e1a78d0a716bc9da44f"
+        },
+        {
+          "id": "fixed-026",
+          "title": "9.3 首次与返回首屏的时序",
+          "startLine": 319,
+          "endLine": 324,
+          "sourceSha256": "91f2ac598a49e461360fc3d591ce78da0dab67409241072c2b6e647b7146e31e",
+          "renderedSha256": "82fc361ade746764e18db97dbcc5935b05e82805196edced0d2da161088c398e"
+        },
+        {
+          "id": "fixed-027",
+          "title": "10. 加载、失败表现与内容保护",
+          "startLine": 325,
+          "endLine": 336,
+          "sourceSha256": "2ce0e9ed53ee31043807dbcd3c725bc7abd812b3ed30fde1c111839023e286fb",
+          "renderedSha256": "a6c6960bb0e28b4499e8156660c33d906d14ae9ddcb424c3ca2c1eb9a0d1dc40"
+        },
+        {
+          "id": "fixed-028",
+          "title": "10.1 加载、失败与保护细则",
+          "startLine": 337,
+          "endLine": 346,
+          "sourceSha256": "c9aea68a31affb1ab336ec9ad02d848899870576988c95fa468efe63243e55e4",
+          "renderedSha256": "b0703a3f536a9d427d34c86de09950c63fd6cfff4e4bf9c5ed691315511dc45e"
+        },
+        {
+          "id": "fixed-029",
+          "title": "11. 交付验收的合格条件",
+          "startLine": 347,
+          "endLine": 357,
+          "sourceSha256": "aac29a2ef53c668d648709dc99a15782262760dfb6d8161b25eced3ac9fbe940",
+          "renderedSha256": "af9d609ba5f71db8847c9e7ac80e4b2b146dc84d2bc0cf9f3dad1e1c1643002e"
+        },
+        {
+          "id": "fixed-030",
+          "title": "11.1 合格条件与证据边界",
+          "startLine": 358,
+          "endLine": 377,
+          "sourceSha256": "b9909efd561a61a8c43f693aed1f9d0b6076b330146ecf64cc12bba7dd550294",
+          "renderedSha256": "7192189604f1a967294f48dd8a03700d13a282a05f42844e4eca57cb821d683e"
+        },
+        {
+          "id": "fixed-031",
+          "title": "12. 开发接手后的内容，不纳入设计制作任务",
+          "startLine": 378,
+          "endLine": 387,
+          "sourceSha256": "0b71fe55f2376cf3b94e459a759e0ae60fb551f9bf23e034d64d30d05089a7e8",
+          "renderedSha256": "c7e7e0123eb53d37cace7df3b957520211e62e27e9f4002488ca0c6948296824"
+        },
+        {
+          "id": "fixed-032",
+          "title": "13. 已定边界与后续验证",
+          "startLine": 388,
+          "endLine": 397,
+          "sourceSha256": "d42b51a4bd3fcd7f9015828de798e785c33adec3900715a6a79ea354c63ca64b",
+          "renderedSha256": "51194e4418bdb14f94040df4597e1f2eb69cd41ed04b744c91f504fc5292c9f5"
+        },
+        {
+          "id": "fixed-033",
+          "title": "14. 流程另册与本文件维护",
+          "startLine": 398,
+          "endLine": 404,
+          "sourceSha256": "aa3e1fbfa57941d39fd1bfc68ae972f36993054f9594f1720400ec2c9ccacd38",
+          "renderedSha256": "fdceb3f58c5fde095d86a442c73c0514282c41e5d197410525bf7cc1e783dedf"
+        }
+      ]
+    },
+    {
+      "id": "workflow",
+      "path": "docs/web-page-spec/gameweb-workflow-discussion.md",
+      "sha256": "2dddd36fa0d340fcc807ffd9a9ab99b9201f8653606aa19a95b9a507a4013d55",
+      "selectionHeading": null,
+      "category": "流程待讨论；其中已定方向与未决做法分开保留",
+      "units": [
+        {
+          "id": "workflow-001",
+          "title": "2. Gameweb 后续流程跟进与待讨论要点（完整汇总）",
+          "startLine": 1,
+          "endLine": 12,
+          "sourceSha256": "d6a71888ce93646d9b3dcb38251f39bfa2f8254806848794cf4515f3eedb2b26",
+          "renderedSha256": "dd025321c34c93868173ca11017caa443a8a7dd94b9885ac123228f399067f0e"
+        },
+        {
+          "id": "workflow-002",
+          "title": "0. 已经定下的边界，不重复讨论",
+          "startLine": 13,
+          "endLine": 23,
+          "sourceSha256": "80ec92f4107f102602aaf3380e12053fc23a50f6474c183156708927fe5f2e7d",
+          "renderedSha256": "7b02f21b1fe6ba88bb4453b18e43245f29b8ef681d9af9ebf4b283bf6bf0acf6"
+        },
+        {
+          "id": "workflow-003",
+          "title": "1. 命名、清单和交互信息（F1～F9、F12～F15）",
+          "startLine": 24,
+          "endLine": 25,
+          "sourceSha256": "905434fc6524c3b370d5480785b0d68b4bf9f9e7b21c2184e0fc554c9ff5fbd9",
+          "renderedSha256": "a1fae8927ab0f6df1ea1e11b2faf3cbb2ea99dbe40ab247f443655e368771d73"
+        },
+        {
+          "id": "workflow-004",
+          "title": "F1 模块身份与交互信息补齐",
+          "startLine": 26,
+          "endLine": 43,
+          "sourceSha256": "eeece98124e8426c074495fac3af421aa055feb046ec6d0f30f4b3f6b4e6b5a0",
+          "renderedSha256": "cd34f7abe2822adf0e0ecaa0628cdb7a399675d0358b811c064b2f15814fecb9"
+        },
+        {
+          "id": "workflow-005",
+          "title": "F2 重复项的明确标识",
+          "startLine": 44,
+          "endLine": 49,
+          "sourceSha256": "9b0eff6dc2061b15030cc9f141a44b7a1f53c917d6c2ab1b9c616ff0cb1a7463",
+          "renderedSha256": "b0036a04ace3e826aec7e87c217a49e2a4740b95236192a8f2685dedc5fa95f4"
+        },
+        {
+          "id": "workflow-006",
+          "title": "F3 PC 与手机的对应关系",
+          "startLine": 50,
+          "endLine": 55,
+          "sourceSha256": "f4ebad95ce2ad2540bc4ee00c290692bb5cfe41075f3fa97be83e5d0865b2c1c",
+          "renderedSha256": "c90593ba5056768ba68dc536ffa99cecdfb77be14e60b00892c54692c6332369"
+        },
+        {
+          "id": "workflow-007",
+          "title": "F4 命名、清单与做页的改动归属",
+          "startLine": 56,
+          "endLine": 63,
+          "sourceSha256": "34b2f707f5bbfcd9998fc13b5b27f85b12e545e9bcbdda33374deac9efc8543d",
+          "renderedSha256": "34ef678ed3eaa6184050053cad85843d0f5b6c1bd05737d884ef53f390f123a7"
+        },
+        {
+          "id": "workflow-008",
+          "title": "F5 自动布局信息补齐",
+          "startLine": 64,
+          "endLine": 70,
+          "sourceSha256": "c8c8ca3dc6886290a4090f9e3e55a9e7ca12c655afd232b8a5556057a7530fae",
+          "renderedSha256": "99721b31dda45b7a202cde27d3942b90588f7ea05e7ba31730e425c48c0317ed"
+        },
+        {
+          "id": "workflow-009",
+          "title": "F6 接口内容标记与字段合同",
+          "startLine": 71,
+          "endLine": 78,
+          "sourceSha256": "1dff92c2e73fa08f321686ac8d10a77b5c3e874283f4b514ad2f968ca5ea9490",
+          "renderedSha256": "4d320127ae138ce74db5cba75166cd8bebe07558200969d3105dc69ee67ef1cf"
+        },
+        {
+          "id": "workflow-010",
+          "title": "F7 前景装饰的统一标识",
+          "startLine": 79,
+          "endLine": 84,
+          "sourceSha256": "05c7e331a924b487273a69b3f6b10e977959bc0c55b29b8a0057649bfd08fe1b",
+          "renderedSha256": "48d4bf9cf66baaa1829a33b83527c02c59108ce50d720eadc20d5a18f8149dcc"
+        },
+        {
+          "id": "workflow-011",
+          "title": "F8 把命名校验接进出清单",
+          "startLine": 85,
+          "endLine": 91,
+          "sourceSha256": "605f06196c5035dec17a4070aed0fcfe17a0cd30d190becb242b37f3639f36a3",
+          "renderedSha256": "4cac7001db7fc0ade1f6e82169398fff9d47e17c639bd922b3c748b811926a8e"
+        },
+        {
+          "id": "workflow-012",
+          "title": "F9 核对页只读与错误回改",
+          "startLine": 92,
+          "endLine": 97,
+          "sourceSha256": "b649f3ea8d9cd8916034c237071a3a2f17e34b9a1f9ed7a724cfef6185e61ec6",
+          "renderedSha256": "63bc3b975e167f15fbf255b9132f3d4836541d54b4ee4a4794538b6290fe7338"
+        },
+        {
+          "id": "workflow-013",
+          "title": "F12 下一屏按钮的标识",
+          "startLine": 98,
+          "endLine": 103,
+          "sourceSha256": "c164ee7f1bac529fcbd6fe1e46ca135bdacbe1058843bdb59e91d1218d678d55",
+          "renderedSha256": "11e7eb3622ec33a24ef6561efc3e7783899bfc4cfdb7b70ea877108674c45480"
+        },
+        {
+          "id": "workflow-014",
+          "title": "F13 两种轮播的结构与圆点",
+          "startLine": 104,
+          "endLine": 110,
+          "sourceSha256": "34061f43735ee121bf02af165923eae9f89ae188637948e7a03f29e19285a113",
+          "renderedSha256": "a8a2245d3efb078b671dd449f01db3f5e58d5b3d8203f0caca7afde4cc8ce7fd"
+        },
+        {
+          "id": "workflow-015",
+          "title": "F14 页码标识",
+          "startLine": 111,
+          "endLine": 116,
+          "sourceSha256": "ca54d24b37ff45bc143d7f89f14541b1f7238b645a4beaa7f39da3b0e6c773ad",
+          "renderedSha256": "fdf61cfe9d8a83a013da808a10c30737e925ca8da0ea683f6344070c4544c5e2"
+        },
+        {
+          "id": "workflow-016",
+          "title": "F15 空状态与列表的关系",
+          "startLine": 117,
+          "endLine": 122,
+          "sourceSha256": "47d51844122e39a2f792a15a5a3facac27fe669d676f4b13350a4f8fbc714c38",
+          "renderedSha256": "59b16d92d00ddd87403df579b7d93b42e9cca11da50e37fffddb6e47e4bea270"
+        },
+        {
+          "id": "workflow-017",
+          "title": "2. 生成、预览和设置入口（F10、F11、F16～F18）",
+          "startLine": 123,
+          "endLine": 124,
+          "sourceSha256": "54f2bf98ab57810f06a569370f8022070857a4ff7a928c1d311b810968b5d9cb",
+          "renderedSha256": "b3599c35f863971868f3efd100b84b37b28a421a6d9a40459a7087b51d10e166"
+        },
+        {
+          "id": "workflow-018",
+          "title": "F10 三个公共组件接入口怎样生成",
+          "startLine": 125,
+          "endLine": 131,
+          "sourceSha256": "4c30d881e4cb7600bd57dc85557f2adb2b5ddcebd2cdf6cda332a8fbf398bc55",
+          "renderedSha256": "c2070375f02e1d297eddae6042371eebc758429a998c56ded52d573c467a66ea"
+        },
+        {
+          "id": "workflow-019",
+          "title": "F11 QA 设备预设",
+          "startLine": 132,
+          "endLine": 137,
+          "sourceSha256": "7a77e81f0291c2151eb3d3ea56e0a307cfcbb180a40566b1f88c1a48180f0130",
+          "renderedSha256": "bc9603188c232732eb9c3a37b5bd514c150d661658e7bfd3c9bf7eb2ea213277"
+        },
+        {
+          "id": "workflow-020",
+          "title": "F16 实际语言范围与独立页面输出",
+          "startLine": 138,
+          "endLine": 144,
+          "sourceSha256": "4e31b01e038fd08b37426a47737d8c1e19d08492aa86b2378c5ba3931371610a",
+          "renderedSha256": "b10ebe303dd863bc197417086ef7a3cd7ad21358b693cbc45b9b376ae4f112ec"
+        },
+        {
+          "id": "workflow-021",
+          "title": "F17 字体声明与字体资源",
+          "startLine": 145,
+          "endLine": 150,
+          "sourceSha256": "c566d3a8ade5477cb4d43dc7866f2a44524e706e687d7ddf6920aa4cfb0ab529",
+          "renderedSha256": "51779f5e170e4b9e62203013246f9eaa2d57a1acfa0d2ab2062eb33f70691d1d"
+        },
+        {
+          "id": "workflow-022",
+          "title": "F18 设置动效",
+          "startLine": 151,
+          "endLine": 157,
+          "sourceSha256": "a76dd12be5992c9e5ae15591a5b03be01f82b9172426d1ec8ad01e27b20c01dd",
+          "renderedSha256": "d73cd7fa20706fa53617b62c59a27910be3092357324194eac45a467a5f1d687"
+        },
+        {
+          "id": "workflow-023",
+          "title": "3. 校准与验证（C1～C5）",
+          "startLine": 158,
+          "endLine": 159,
+          "sourceSha256": "bc54c2b2681ff53564fd6be1239406589a37a5d58e75b282a7a8a3c08437b2a2",
+          "renderedSha256": "d5808fa1d1ba1a668667de84aee250afdc376325d7cf3df77b73dc618366f37f"
+        },
+        {
+          "id": "workflow-024",
+          "title": "C1 底图／盖层位置验证",
+          "startLine": 160,
+          "endLine": 165,
+          "sourceSha256": "d5ecd8f5ebc32f48486fc4461b428ea96b8846929cf3a4871680f69b1badea04",
+          "renderedSha256": "9f7a6c0b9373a134f21327a89eeb4915ad0befb829dd564baef139576ca57090"
+        },
+        {
+          "id": "workflow-025",
+          "title": "C2 后台默认值过期",
+          "startLine": 166,
+          "endLine": 172,
+          "sourceSha256": "786b364f12b7b3ad349d16a4e90a6ff36f33dc1b9b768e36522dfc7e94384ceb",
+          "renderedSha256": "735678f85b699aad5b0f0711c514f38eff748550abeb10bcb7f2a47267db7ae6"
+        },
+        {
+          "id": "workflow-026",
+          "title": "C3 前景层级差异验证",
+          "startLine": 173,
+          "endLine": 178,
+          "sourceSha256": "b1ce61af9111afc26e9ac1b5f1d6d53ac4340d9ce29c8b47c291876f9acebcb5",
+          "renderedSha256": "6c85d7881140cdd9e93564e9fefe0288fa86e4624da25f715ccf6204dc13d63e"
+        },
+        {
+          "id": "workflow-027",
+          "title": "C4 素材画质、格式与编码验证",
+          "startLine": 179,
+          "endLine": 187,
+          "sourceSha256": "10416bf960c8b3d56bcdd043d71e358bb58a5e345cb12d9f24f09a4c1e8fc8a4",
+          "renderedSha256": "e88a7158bf65ef58fafc4702a05b51674cb29b8342664bada53447a722df12c2"
+        },
+        {
+          "id": "workflow-028",
+          "title": "C5 整页检查、像素门与总校准",
+          "startLine": 188,
+          "endLine": 197,
+          "sourceSha256": "6468f0bb649902256243cc8b75cc479a9e22e12ebafeb24c78074ee848240dd3",
+          "renderedSha256": "12be05cfb494dc51515a580d96278906cede3457a8aede0aacb707cf7095b040"
+        },
+        {
+          "id": "workflow-029",
+          "title": "4. 从已定标准归纳的落地衔接问题（D1～D8）",
+          "startLine": 198,
+          "endLine": 201,
+          "sourceSha256": "ba49e2e697d73ba6fb1443051b2a55ac432d55e07e519272f578e47fc217b7a2",
+          "renderedSha256": "b60cba347f54b7be7061f62b460f1f1801178723f2f0eeb6e2500021fa4896d6"
+        },
+        {
+          "id": "workflow-030",
+          "title": "D1 从 ready 清单到静态 DOM 的生成路径",
+          "startLine": 202,
+          "endLine": 211,
+          "sourceSha256": "2b2449986f05bcffe85f5497c26c3baf4462044fb934ffcd2c5413da7dacdda5",
+          "renderedSha256": "978c8ad60e162914fb7d55637fb5e90311b2b47275dd4a26db88e1ce23417748"
+        },
+        {
+          "id": "workflow-031",
+          "title": "D2 样式、class 与层级生成",
+          "startLine": 212,
+          "endLine": 219,
+          "sourceSha256": "210e1acb8a6fab187a837a9a49f4c9e0f3a54bea7078ce1a09557b388b2b682b",
+          "renderedSha256": "726557873f5334fa4178f6252e61492d67ee39e173e72a5dae944c291cfd8683"
+        },
+        {
+          "id": "workflow-032",
+          "title": "D3 数据读取和集中配置生成",
+          "startLine": 220,
+          "endLine": 227,
+          "sourceSha256": "2723571e84027639a8713d9316c32f71282abc421fda2a6a41814478108d6469",
+          "renderedSha256": "390883be83865ff46889de5c7dadfe184f9c65b974a833ab3f145cf496d3e47a"
+        },
+        {
+          "id": "workflow-033",
+          "title": "D4 切图分层、复用与追溯生成",
+          "startLine": 228,
+          "endLine": 235,
+          "sourceSha256": "73b18ee2830156207fbeb0fbc7d245b7728d0313320c0267b8bec029a36ebf94",
+          "renderedSha256": "951d06124f2ffd110a0dc06e360bdfe5d04e5a76ab3c245d1319fa5d061e8595"
+        },
+        {
+          "id": "workflow-034",
+          "title": "D5 已定交互与动效的实现衔接",
+          "startLine": 236,
+          "endLine": 244,
+          "sourceSha256": "9a133305acbd5109cfa648304d54dd03e5a6749291e84bfaabe501186db7f3bb",
+          "renderedSha256": "4992b0fb5bd3e48dc28d1d13b9ad0129948c16746a996630e0a9628946bbd47d"
+        },
+        {
+          "id": "workflow-035",
+          "title": "D6 验收执行、反馈与复验",
+          "startLine": 245,
+          "endLine": 252,
+          "sourceSha256": "c4c4e8da0a14e88671a03774ded5008f7495fc22ae650951b7f5dc640370e679",
+          "renderedSha256": "6eca9fc6a380c6371a32e903cf7ee64cfb0d8dc4d8badfa659fa7b119614d081"
+        },
+        {
+          "id": "workflow-036",
+          "title": "D7 最终页面包与 QA 分离",
+          "startLine": 253,
+          "endLine": 260,
+          "sourceSha256": "668bd77479ef09d2e49f417a52e57001ed4d45dac4b2deb40d29ee24b7aa2ea0",
+          "renderedSha256": "be1c7df7e02da0854fdbc192edb426b8a509fd8e128516e617f9d38445a59086"
+        },
+        {
+          "id": "workflow-037",
+          "title": "D8 流程范围、分工与交接",
+          "startLine": 261,
+          "endLine": 268,
+          "sourceSha256": "0b776c8864fc6e84d5469201b1535bc2aff8510b2a2395c244b8baaf49eb8a2f",
+          "renderedSha256": "9c74230891c089bdad4e6b4e90b78b9bdc0406a810ce4f0e83df86c83658714b"
+        },
+        {
+          "id": "workflow-038",
+          "title": "5. 完整性索引与边界",
+          "startLine": 269,
+          "endLine": 285,
+          "sourceSha256": "ed813d15e0b1330500014aa29df226b17229dcdaf9540928b4a59f4ea57b92f8",
+          "renderedSha256": "7797fb53a7a4c5058f1da6601d3ccab4aee00232d13f2c783144baa535422701"
+        }
+      ]
+    },
+    {
+      "id": "materials",
+      "path": "docs/web-page-spec/developer-handoff.md",
+      "sha256": "837c57138d9a0175b7e54318cc9fd65ce7aef693465c12701d7c7a6c9a322a04",
+      "selectionHeading": null,
+      "category": "制作资料要求；附录为已定差异对照，不是额外资料请求",
+      "units": [
+        {
+          "id": "materials-001",
+          "title": "3. Gameweb 制作前：开发资料交付说明与核对要求",
+          "startLine": 1,
+          "endLine": 6,
+          "sourceSha256": "47917a263b89f2221595063adb8982489f28ed32e8c9cd18500d40d5e6a4ac49",
+          "renderedSha256": "a34d57b7c26a904b1ed31a302875d7e270a168d9a7c07401b7681c24f9e8fde0"
+        },
+        {
+          "id": "materials-002",
+          "title": "1. 先看这次交接是为了什么",
+          "startLine": 7,
+          "endLine": 20,
+          "sourceSha256": "47272a3436cf85d2d2bef785b0987159d0a6c6e7dc901a66e01417b665a96401",
+          "renderedSha256": "0324c8bcd5749376563480e29ca52ba3ffb4eac5ed7c468536d07c28885f2721"
+        },
+        {
+          "id": "materials-003",
+          "title": "2. 开发要提供什么，我们为什么要、怎样用",
+          "startLine": 21,
+          "endLine": 22,
+          "sourceSha256": "1cb8b5cd7af2e10676881e4e8ebaff0b75837818b92cdf43a73596c70888493a",
+          "renderedSha256": "7b689790594ff02f3fa642d925b21cdc1e4dcf8daa916655c86fac8a5c8a26b8"
+        },
+        {
+          "id": "materials-004",
+          "title": "2.1 Onepage 制作 Skill——弄清开发做这种页面的原始规则",
+          "startLine": 23,
+          "endLine": 49,
+          "sourceSha256": "3570882b00358c04e620f888f72102034323322d30b7e31086c28eaead2551d5",
+          "renderedSha256": "dd1f5efc695b3a19be3007194187d5d46bfc0310ce98db6f46665d6ff0766542"
+        },
+        {
+          "id": "materials-005",
+          "title": "2.2 制作页面直接用的模板、动效和资源——让 Gameweb 有可用的制作材料",
+          "startLine": 50,
+          "endLine": 83,
+          "sourceSha256": "e32100550c102215b849099eaa01956b46348d50565a334903a4cebe3a04adfe",
+          "renderedSha256": "57b5cd49fc496e3bd40efed02f744e782ed53df8e7b8260ac6b4d2c6949cff0b"
+        },
+        {
+          "id": "materials-006",
+          "title": "2.3 页面字段说明和 JSON 样例——让 Gameweb 知道数据怎样变成页面内容",
+          "startLine": 84,
+          "endLine": 122,
+          "sourceSha256": "375df52b83d5b531698ff7011837a01e7ea706841393e650c7d624732efd2835",
+          "renderedSha256": "bbd5f2f50867905c7ab70b7a370f6388e2d1a3c2e56ca219eef3cfe761d954fe"
+        },
+        {
+          "id": "materials-007",
+          "title": "2.4 已有制作和验收方法／要求——让 Gameweb 按同样的尺度取数和检查",
+          "startLine": 123,
+          "endLine": 151,
+          "sourceSha256": "fbd3853d710dca3be41b70f64262d1021f838dae32a2008b2a862c3d4f58165a",
+          "renderedSha256": "4f1caa09bdd149eeac2e1df93eb5ee72e43ab5c9c634d32af1a810e5f028fd07"
+        },
+        {
+          "id": "materials-008",
+          "title": "3. 提供方式与接收核对",
+          "startLine": 152,
+          "endLine": 153,
+          "sourceSha256": "0318c2a5d8033e3098c8125d71a8ff59c6763305b7cb4abca037e1eb88f9ae59",
+          "renderedSha256": "05cf85c5c04bc76677fcca03a7f33f1fafe57d7e179f41e3a3d5b2a9974ee1a0"
+        },
+        {
+          "id": "materials-009",
+          "title": "3.1 开发怎样交，接手人怎样收",
+          "startLine": 154,
+          "endLine": 164,
+          "sourceSha256": "c5d5a87af342b66e81f84039df13df8d1b8547ef03baca1b4b146ec9d4f633d4",
+          "renderedSha256": "f76ff300c3783025fc7085575d09fc047b5c031166164486564e4465a1014949"
+        },
+        {
+          "id": "materials-010",
+          "title": "3.2 按什么结论接收",
+          "startLine": 165,
+          "endLine": 174,
+          "sourceSha256": "71c282017d74265f54c9399f9a4a0521b15cf726a229f3f5279e0261a192eca0",
+          "renderedSha256": "4173c9ad69e05f6c5bfad13931787350a32debf198e8ae2fa56beb9721993834"
+        },
+        {
+          "id": "materials-011",
+          "title": "4. 接手后怎样消化这些资料",
+          "startLine": 175,
+          "endLine": 185,
+          "sourceSha256": "afd522557a4d267a4981d0162bb4f07ca97a4eb21914bedb0a3e3c627f231c8c",
+          "renderedSha256": "1cad66bf2277c6d560216c71b1b611a32a0ffd93bc3acbdb441f6270026625c7"
+        },
+        {
+          "id": "materials-012",
+          "title": "5. 哪些东西不在本次交接请求里",
+          "startLine": 186,
+          "endLine": 191,
+          "sourceSha256": "667a19fcc8a3045b0371629fc604bd6c251b7e966c95a5b5f0e31c9627b465a5",
+          "renderedSha256": "aca61df30f74ae59e61231184257a8b62e8ba545941baac075f9ebb5f0e1fe35"
+        },
+        {
+          "id": "materials-013",
+          "title": "附录 A：与开发 HTML 一致的部分",
+          "startLine": 192,
+          "endLine": 210,
+          "sourceSha256": "47e734aab7b92ba8bfe76e5edc7ced20b1c1698d0ac7aaf28bd652b6f505f6d1",
+          "renderedSha256": "692b2d4860467f3a24df18aa09f7ffd7879fab6098f29ca85906bab33e5444a3"
+        },
+        {
+          "id": "materials-014",
+          "title": "附录 B：v1 相对样本的已确认变化",
+          "startLine": 211,
+          "endLine": 241,
+          "sourceSha256": "b66550996c8f133fad546de7215fd54fa6e864bdc1e7cd9073b39e5020861c53",
+          "renderedSha256": "cfbce7cef22fc613b0f7781b50966ca36ef6d270a1e14996ff44e09be92da299"
+        },
+        {
+          "id": "materials-015",
+          "title": "本次文档交接状态",
+          "startLine": 242,
+          "endLine": 246,
+          "sourceSha256": "1babbb5db6445da7536ec8f766a027d36ba3bff1b4f403db2ee4a0ceac841a83",
+          "renderedSha256": "c0a9b68bfa66aca9622b10cfe9e6534327406799fd8687ad2d9e9e141cfef7d7"
+        }
+      ]
+    }
+  ]
+}

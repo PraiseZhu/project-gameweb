@@ -7,7 +7,7 @@
  * 住在 spec/：人读正文和机器表同一层。tool/ 与 skills/ 都读这里，不必下到工具目录。
  * 本文件保持零 Node 依赖，以便 Figma 插件打包。
  */
-export const SPEC_VERSION = "v2.20 (2026-09-16)";
+export const SPEC_VERSION = "v2.23 (2026-11-18)";
 /** 相对 figma-naming/ 根的展示路径 */
 export const SPEC_DOC = "spec/naming-spec.md";
 
@@ -32,6 +32,15 @@ export const PREFIXES = {
   },
   fix: {
     group: "结构", desc: "视口固定悬浮层", params: ["from"], structural: true,
+  },
+  grp: {
+    group: "结构", desc: "有独立语义的通用模块容器", params: [], structural: true,
+  },
+  list: {
+    group: "复合", desc: "同类条目集合（需要 item/ 子项和排布声明）", params: [], structural: true,
+  },
+  item: {
+    group: "复合", desc: "list/ 下面的重复条目", params: [], structural: true,
   },
   ref: {
     group: "结构", desc: "说明性参考稿（整个子树忽略）", params: [],

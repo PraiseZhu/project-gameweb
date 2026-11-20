@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { componentSetSignature } from "./structural-signature.mjs";
 
-const ROLE_PREFIX = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
+const ROLE_PREFIX = /^(bg|btn|dyn|fix|grp|item|hot|img|ind|kv|list|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
 
 // Catalog construction still needs a stable slug/body. Matching below never
 // reads this value: original names and aliases are not a scoring channel.
