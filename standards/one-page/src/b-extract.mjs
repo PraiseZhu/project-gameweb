@@ -3,21 +3,18 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
 import { StoppedError, isStoppedError, stoppedResult } from './stopped.mjs';
-import { canonicalJson } from './canonical.mjs';
-import { verifyScopeRecord } from './scope-record.mjs';
 import { parsePageUrl } from './parse-page-url.mjs';
 import {
   buildStageRecord,
   checkEntry,
   buildExtractRecord,
+  loadCurrentA,
   readJsonFileDigest,
 } from './stage-record.mjs';
 import {
   hasRunPointer,
   resolveExistingRunDir,
   assertRunIdentity,
-  latestScopePath,
-  findStagePathByOutputVersion,
   nextStageRound,
   writeJsonFile,
 } from './run-dir.mjs';
@@ -25,7 +22,7 @@ import { fetchFigmaSnapshot, DEFAULT_TIMEOUT_MS } from './figma-access.mjs';
 import { parseArgv, prepareEnv } from './a-scope.mjs';
 import { assertDesignSets } from './design-sets.mjs';
 import { pairEnds } from './same-modules.mjs';
-import { problemFromIssue, problemFromStopped, problemsFromPairing } from './problems.mjs';
+import { dedupeProblems, problemFromStopped, problemsFromInventories } from './problems.mjs';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_RUN_ROOT = resolve(PACKAGE_ROOT, '../..');
@@ -107,53 +104,17 @@ function allocB1Dir(dir) {
 }
 
 function loadLatestA(dir) {
-  const scopePath = latestScopePath(dir);
-  if (!scopePath) {
-    throw new StoppedError('a-missing', '运行目录没有 A 的范围记录。请先完成范围确认。');
+  const current = loadCurrentA(dir);
+  if (!current.ok) {
+    const reason = current.reason;
+    const tampered = /已被改动|确认信息|完整性摘要|不是合法 JSON/.test(reason);
+    const missing = /没有当前范围|没有与当前范围记录精确对应/.test(reason);
+    throw new StoppedError(
+      tampered ? 'a-tampered' : missing ? 'a-missing' : 'a-entry',
+      reason,
+    );
   }
-  let scope;
-  try {
-    scope = JSON.parse(readFileSync(scopePath, 'utf8'));
-  } catch {
-    throw new StoppedError('a-tampered', '范围记录不是合法 JSON。');
-  }
-  const scopeOk = verifyScopeRecord(scope);
-  if (!scopeOk.ok) {
-    throw new StoppedError('a-tampered', scopeOk.reason);
-  }
-  const stagePath = findStagePathByOutputVersion(dir, 'A', scope.scopeVersion);
-  if (!stagePath) {
-    throw new StoppedError('a-missing', '运行目录没有对应的 A 环节记录。请先完成范围确认。');
-  }
-  const gate = checkEntry(stagePath, {
-    expectedStage: 'A',
-    expectedOutputVersion: scope.scopeVersion,
-    expectedOutputKind: 'scope',
-  });
-  if (!gate.ok) {
-    const tampered = /已被改动|确认信息|完整性摘要/.test(gate.reason);
-    throw new StoppedError(tampered ? 'a-tampered' : 'a-entry', gate.reason);
-  }
-  return { scope, scopePath, stage: gate.record, stagePath };
-}
-
-function dedupeProblems(items) {
-  const seen = new Set();
-  const out = [];
-  for (const item of items) {
-    const key = canonicalJson({
-      end: item.end,
-      section: item.section,
-      nodeId: item.nodeId,
-      object: item.object,
-      missing: item.missing,
-      returnTo: item.returnTo,
-    });
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return out;
+  return current;
 }
 
 export async function runBExtract(options = {}) {
@@ -263,9 +224,6 @@ async function runBExtractInner(options) {
       if (issues.some((issue) => issue.code === 'SNAPSHOT' || issue.code === 'CONFIG')) {
         extractFailed = true;
       }
-      for (const issue of issues) {
-        ctx.problems.push(problemFromIssue(set.end, issue));
-      }
     }
 
     ctx.pairing = pairEnds({
@@ -273,18 +231,25 @@ async function runBExtractInner(options) {
       pc: ctx.inventories.pc ?? null,
       mobile: ctx.inventories.mobile ?? null,
     });
-    ctx.problems.push(...problemsFromPairing(ctx.pairing));
     ctx.result = extractFailed ? 'fail' : 'pass';
   } catch (err) {
     if (!isStoppedError(err)) throw err;
     ctx.stopped = err;
     ctx.result = 'stopped';
-    ctx.problems.push(problemFromStopped(err, {
-      nodeId: err.nodeId ?? ctx.snapshot?.document?.id ?? ctx.scope?.nodeId ?? null,
-    }));
   }
 
-  ctx.problems = dedupeProblems(ctx.problems);
+  const emptyPairing = { paired: [], trueSingleEnd: [], unmatchedDual: [], ambiguous: [] };
+  const derived = problemsFromInventories(ctx.inventories, ctx.pairing ?? emptyPairing);
+  if (ctx.stopped) {
+    ctx.problems = dedupeProblems([
+      problemFromStopped(ctx.stopped, {
+        nodeId: ctx.stopped.nodeId ?? ctx.snapshot?.document?.id ?? ctx.scope?.nodeId ?? null,
+      }),
+      ...derived,
+    ]);
+  } else {
+    ctx.problems = derived;
+  }
   const written = writeBOutputs({ dir, ctx, secret, runId: existing.runId });
   if (ctx.stopped) {
     return {

@@ -1,3 +1,5 @@
+import { canonicalJson } from './canonical.mjs';
+
 const B2_CODES = new Set([
   'ACTION_MISSING',
   'ACTION_CONFIG',
@@ -157,4 +159,55 @@ export function assertProblemShape(item) {
     && typeof item.missing === 'string'
     && typeof item.impact === 'string'
     && RETURN_TO.includes(item.returnTo);
+}
+
+function validProblemEnd(end) {
+  return end == null || end === 'pc' || end === 'mobile';
+}
+
+function validProblemSection(section) {
+  return section == null || (Number.isSafeInteger(section) && section >= 0);
+}
+
+function validProblemNodeId(nodeId) {
+  return nodeId == null || (typeof nodeId === 'string' && nodeId.trim() !== '');
+}
+
+export function assertProblemDomain(item) {
+  return assertProblemShape(item)
+    && validProblemEnd(item.end)
+    && validProblemSection(item.section)
+    && validProblemNodeId(item.nodeId);
+}
+
+export function dedupeProblems(items) {
+  const seen = new Set();
+  const out = [];
+  for (const item of items || []) {
+    const key = canonicalJson({
+      end: item.end,
+      section: item.section,
+      nodeId: item.nodeId,
+      object: item.object,
+      missing: item.missing,
+      returnTo: item.returnTo,
+    });
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+export function problemsFromInventories(inventories, pairing) {
+  const out = [];
+  for (const end of ['pc', 'mobile']) {
+    const inv = inventories?.[end];
+    if (!inv) continue;
+    for (const issue of inv.issues || []) {
+      out.push(problemFromIssue(end, issue));
+    }
+  }
+  out.push(...problemsFromPairing(pairing));
+  return dedupeProblems(out);
 }

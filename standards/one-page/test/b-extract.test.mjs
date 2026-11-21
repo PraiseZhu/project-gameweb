@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 import { canonicalJson, sha256Hex } from '../src/canonical.mjs';
 import { runAScope } from '../src/a-scope.mjs';
 import { runBExtract, main } from '../src/b-extract.mjs';
-import { buildStageRecord, buildExtractRecord, checkEntry } from '../src/stage-record.mjs';
-import { buildScopeRecord } from '../src/scope-record.mjs';
+import { buildStageRecord, buildExtractRecord, checkEntry, loadCurrentA } from '../src/stage-record.mjs';
+import { buildScopeRecord, computeRecordDigest } from '../src/scope-record.mjs';
 import { INVENTORY_SCHEMA } from '../../figma-naming/spec/inventory.mjs';
 import { pairEnds } from '../src/same-modules.mjs';
 import { assertProblemShape, RETURN_TO } from '../src/problems.mjs';
@@ -86,6 +86,17 @@ function namedMobile(modules = [frame('20:3', 'grp/奖励说明'), frame('20:4',
   return frame('20:1', 'cn_mobile', [
     frame('20:2', 'sec/1-首页', modules, { absoluteBoundingBox: box(0, 0, 390, 844) }),
   ], { absoluteBoundingBox: box(0, 2000, 390, 844) });
+}
+
+function quietPc() {
+  return frame('10:1', 'cn_pc', [
+    frame('10:2', 'sec/1-首页', [
+      frame('10:3', 'title/标题'),
+    ], { absoluteBoundingBox: box(0, 0, 1920, 1080) }),
+    frame('10:5', 'sec/2-内容', [
+      frame('10:6', 'grp/说明'),
+    ], { absoluteBoundingBox: box(0, 1080, 1920, 1080) }),
+  ], { absoluteBoundingBox: box(0, 0, 1920, 2160) });
 }
 
 function fetchOf(body) {
@@ -791,38 +802,6 @@ test('checkEntry：当前 A 缺失/被改/不通过则拒绝旧抽取', async ()
 
 test('checkEntry：材料内容错误且自洽重算哈希后仍拒绝', () => {
   const shapeCases = [
-    ['problems 为 null', (m) => {
-      writeFileSync(m.artifacts.problems.path, 'null\n');
-      m.artifacts.problems.digest = sha256Hex(null);
-    }, /problems/],
-    ['problems 为对象', (m) => {
-      const value = { bad: true };
-      writeFileSync(m.artifacts.problems.path, `${canonicalJson(value)}\n`);
-      m.artifacts.problems.digest = sha256Hex(value);
-    }, /problems/],
-    ['problems 条目缺 returnTo', (m) => {
-      const value = [{ end: 'pc', section: 1, nodeId: '1:1', object: 'x', missing: 'y', impact: 'z' }];
-      writeFileSync(m.artifacts.problems.path, `${canonicalJson(value)}\n`);
-      m.artifacts.problems.digest = sha256Hex(value);
-    }, /problems/],
-    ['pairing 缺数组', (m) => {
-      const value = { paired: [], trueSingleEnd: [], unmatchedDual: [], ambiguous: null };
-      writeFileSync(m.artifacts.pairing.path, `${canonicalJson(value)}\n`);
-      m.artifacts.pairing.digest = sha256Hex(value);
-    }, /pairing/],
-    ['pairing.paired 缺 pcId', (m) => {
-      const value = {
-        paired: [{ key: 'sec/1', mobileId: 'm1' }],
-        trueSingleEnd: [], unmatchedDual: [], ambiguous: [],
-      };
-      writeFileSync(m.artifacts.pairing.path, `${canonicalJson(value)}\n`);
-      m.artifacts.pairing.digest = sha256Hex(value);
-    }, /pairing/],
-    ['inventory 缺 schema', (m) => {
-      const value = { ok: false, status: 'blocked', page: { id: '10:1' }, nodes: [] };
-      writeFileSync(m.artifacts.inventories.pc.path, `${canonicalJson(value)}\n`);
-      m.artifacts.inventories.pc.digest = sha256Hex(value);
-    }, /inventory/],
     ['snapshot 缺 document', (m) => {
       const value = { fileKey: FILE_ID, nodeId: '1:2', fileVersion: 'fv1' };
       writeFileSync(m.artifacts.snapshot.path, `${canonicalJson(value)}\n`);
@@ -851,5 +830,327 @@ test('checkEntry：材料内容错误且自洽重算哈希后仍拒绝', () => {
     const gate = checkB(written.stagePath, written.version);
     assert.equal(gate.ok, false, label);
     assert.match(gate.reason, re, `${label}: ${gate.reason}`);
+  }
+});
+
+function refreshArtifact(item) {
+  if (!item) return item;
+  return { ...item, digest: sha256Hex(JSON.parse(readFileSync(item.path, 'utf8'))) };
+}
+
+function rehashExtractChain(extractPath, stagePath, patch = {}) {
+  const extract = JSON.parse(readFileSync(extractPath, 'utf8'));
+  const arts = extract.artifacts;
+  arts.scope = refreshArtifact(arts.scope);
+  arts.snapshot = refreshArtifact(arts.snapshot);
+  arts.config = refreshArtifact(arts.config);
+  arts.problems = refreshArtifact(arts.problems);
+  arts.pairing = refreshArtifact(arts.pairing);
+  arts.inventories = {
+    pc: refreshArtifact(arts.inventories.pc),
+    mobile: refreshArtifact(arts.inventories.mobile),
+  };
+  const rebuilt = buildExtractRecord({
+    scopeVersion: extract.scopeVersion,
+    fileVersion: extract.fileVersion,
+    ends: patch.ends ?? extract.ends,
+    result: patch.result ?? extract.result,
+    artifacts: patch.artifacts ?? arts,
+  });
+  writeFileSync(extractPath, `${canonicalJson(rebuilt)}\n`);
+  const stage = JSON.parse(readFileSync(stagePath, 'utf8'));
+  const { version, ...body } = stage;
+  body.output = {
+    ...body.output,
+    version: rebuilt.version,
+    digest: rebuilt.recordDigest,
+    path: extractPath,
+  };
+  body.inputs = (patch.inputs ?? body.inputs).map((inp) => {
+    if (inp.kind === 'snapshot') {
+      const snap = JSON.parse(readFileSync(inp.path, 'utf8'));
+      return { ...inp, digest: sha256Hex(snap), version: String(snap.fileVersion) };
+    }
+    if (inp.kind === 'scope') {
+      const scope = JSON.parse(readFileSync(inp.path, 'utf8'));
+      return { ...inp, digest: scope.recordDigest, version: scope.scopeVersion };
+    }
+    return inp;
+  });
+  const next = buildStageRecord(body);
+  writeFileSync(stagePath, `${canonicalJson(next)}\n`);
+  return { extract: rebuilt, stage: next };
+}
+
+function mutateJson(filePath, fn) {
+  const value = JSON.parse(readFileSync(filePath, 'utf8'));
+  const next = fn(value) ?? value;
+  writeFileSync(filePath, `${canonicalJson(next)}\n`);
+  return next;
+}
+
+async function passBaseline(opts = {}) {
+  const confirmed = await confirmA(opts);
+  const result = await runB(confirmed);
+  assert.equal(result.ok, true, result.message);
+  const extract = readJson(result.extractPath);
+  const gate = checkB(result.stagePath, extract.version);
+  assert.equal(gate.ok, true, gate.reason);
+  return { confirmed, result, extract };
+}
+
+function rejectAfter(extractPath, stagePath, re, label) {
+  const extract = readJson(extractPath);
+  const gate = checkB(stagePath, extract.version);
+  assert.equal(gate.ok, false, label);
+  assert.match(gate.reason, re, `${label}: ${gate.reason}`);
+  return gate;
+}
+
+test('矩阵：空问题正例来自真实无问题抽取', async () => {
+  const { extract, result } = await passBaseline({ body: canvasBody([quietPc()]) });
+  const problems = readJson(extract.artifacts.problems.path);
+  assert.deepEqual(problems, []);
+  assert.equal(checkB(result.stagePath, extract.version).ok, true);
+});
+
+test('矩阵：同 scopeVersion 不同 digest/path 两入口都拒绝且不回退', async () => {
+  const { confirmed, result, extract } = await passBaseline({ body: canvasBody([namedPc()]) });
+  const v1 = extract.version;
+  assert.equal(loadCurrentA(confirmed.runDir).ok, true);
+
+  const scopeV1 = readJson(confirmed.scopePath);
+  const { recordDigest, ...rest } = scopeV1;
+  const scopeV2 = { ...rest, recordDigest: computeRecordDigest(rest) };
+  writeFileSync(join(confirmed.runDir, 'scope.v2.json'), `${canonicalJson(scopeV2)}\n`);
+  const staleDigest = checkB(result.stagePath, v1);
+  assert.equal(staleDigest.ok, false);
+  assert.match(staleDigest.reason, /未精确对应最新范围记录/);
+  assert.equal(loadCurrentA(confirmed.runDir).ok, false);
+  const rerunDigest = await runB(confirmed);
+  assert.equal(rerunDigest.ok, false);
+  assert.equal(rerunDigest.code, 'a-entry');
+
+  rmSync(join(confirmed.runDir, 'scope.v2.json'));
+  copyFileSync(confirmed.scopePath, join(confirmed.runDir, 'scope.v2.json'));
+  const stalePath = checkB(result.stagePath, v1);
+  assert.equal(stalePath.ok, false);
+  assert.match(stalePath.reason, /未精确对应最新范围记录/);
+  assert.equal(loadCurrentA(confirmed.runDir).ok, false);
+  const rerunPath = await runB(confirmed);
+  assert.equal(rerunPath.ok, false);
+  assert.equal(rerunPath.code, 'a-entry');
+  assert.equal(existsSync(result.extractPath), true);
+});
+
+test('矩阵：最新 A 坏/缺/fail 不回退旧 pass', async () => {
+  const { confirmed, result } = await passBaseline({ body: canvasBody([namedPc()]) });
+  const v1 = readJson(result.extractPath).version;
+  const originalA = readFileSync(confirmed.stagePath, 'utf8');
+  const a1Path = confirmed.stagePath;
+
+  const broken = JSON.parse(originalA);
+  broken.result = 'fail';
+  writeFileSync(join(confirmed.runDir, 'stage-A-broken.json'), `${canonicalJson(broken)}\n`);
+  assert.equal(checkB(result.stagePath, v1).ok, true, '无关损坏文件不应遮住精确匹配的当前 A');
+
+  writeFileSync(a1Path, `${canonicalJson(broken)}\n`);
+  const damaged = checkB(result.stagePath, v1);
+  assert.equal(damaged.ok, false);
+  assert.match(damaged.reason, /已被改动/);
+  assert.equal(loadCurrentA(confirmed.runDir).ok, false);
+  writeFileSync(a1Path, originalA);
+
+  rewriteStage(a1Path, (body) => {
+    body.result = 'fail';
+    return body;
+  });
+  const failed = checkB(result.stagePath, v1);
+  assert.equal(failed.ok, false);
+  assert.match(failed.reason, /未精确对应最新范围记录/);
+  const rerunFail = await runB(confirmed);
+  assert.equal(rerunFail.ok, false);
+  assert.equal(rerunFail.code, 'a-entry');
+  writeFileSync(a1Path, originalA);
+  rmSync(join(confirmed.runDir, 'stage-A-broken.json'), { force: true });
+
+  for (const name of readdirSync(confirmed.runDir)) {
+    if (name.startsWith('stage-A-') && name.endsWith('.json')) {
+      rmSync(join(confirmed.runDir, name));
+    }
+  }
+  const missing = checkB(result.stagePath, v1);
+  assert.equal(missing.ok, false);
+  assert.match(missing.reason, /没有与当前范围记录精确对应/);
+  const rerunMissing = await runBExtract({
+    runRoot: tmp,
+    runDir: confirmed.runDir,
+    tokenValue: STUB,
+    fetchImpl: fetchOf(canvasBody([namedPc()])),
+  });
+  assert.equal(rerunMissing.ok, false);
+  assert.equal(rerunMissing.code, 'a-missing');
+});
+
+test('矩阵：真实产物单变异后全链重算仍语义拒绝', async () => {
+  const rows = [
+    {
+      name: 'ends 与真实选端不一致',
+      setup: 'pc',
+      mutate: (b) => {
+        const extract = readJson(b.result.extractPath);
+        extract.artifacts.inventories.mobile = extract.artifacts.inventories.pc;
+        extract.artifacts.inventories.pc = null;
+        writeFileSync(b.result.extractPath, `${canonicalJson(extract)}\n`);
+        rehashExtractChain(b.result.extractPath, b.result.stagePath, { ends: ['mobile'] });
+      },
+      re: /端别与范围\/快照所选设计集不一致/,
+    },
+    {
+      name: '凭空多出未选端 inventory',
+      setup: 'pc',
+      mutate: (b) => {
+        const extract = readJson(b.result.extractPath);
+        const dest = join(b.confirmed.runDir, 'b1.r1', 'inventory-mobile.json');
+        copyFileSync(extract.artifacts.inventories.pc.path, dest);
+        extract.artifacts.inventories.mobile = { path: dest, digest: sha256Hex(readJson(dest)) };
+        writeFileSync(b.result.extractPath, `${canonicalJson(extract)}\n`);
+        rehashExtractChain(b.result.extractPath, b.result.stagePath);
+      },
+      re: /未选端不得有 mobile inventory/,
+    },
+    {
+      name: '未知第三输入',
+      setup: 'pc',
+      mutate: (b) => {
+        const extract = readJson(b.result.extractPath);
+        const stage = readJson(b.result.stagePath);
+        const { version, ...body } = stage;
+        body.inputs = [
+          ...body.inputs,
+          {
+            kind: 'config',
+            version: '1',
+            path: extract.artifacts.config.path,
+            digest: extract.artifacts.config.digest,
+          },
+        ];
+        writeFileSync(b.result.stagePath, `${canonicalJson(buildStageRecord(body))}\n`);
+      },
+      re: /未知输入/,
+    },
+    {
+      name: 'snapshot document.id 错',
+      setup: 'pc',
+      mutate: (b) => {
+        mutateJson(b.extract.artifacts.snapshot.path, (snap) => {
+          snap.document.id = '999:999';
+          return snap;
+        });
+        rehashExtractChain(b.result.extractPath, b.result.stagePath);
+      },
+      re: /document\.id/,
+    },
+    {
+      name: 'snapshot document 为 FRAME',
+      setup: 'pc',
+      mutate: (b) => {
+        mutateJson(b.extract.artifacts.snapshot.path, (snap) => {
+          snap.document.type = 'FRAME';
+          return snap;
+        });
+        rehashExtractChain(b.result.extractPath, b.result.stagePath);
+      },
+      re: /CANVAS/,
+    },
+    {
+      name: 'inventory/v2',
+      setup: 'pc',
+      mutate: (b) => {
+        mutateJson(b.extract.artifacts.inventories.pc.path, (inv) => {
+          inv.schema = INVENTORY_SCHEMA;
+          return inv;
+        });
+        rehashExtractChain(b.result.extractPath, b.result.stagePath);
+      },
+      re: /onepage-v1/,
+    },
+    {
+      name: 'inventory requestedNodeId 错端',
+      setup: 'dual',
+      mutate: (b) => {
+        const mobileId = readJson(b.extract.artifacts.inventories.mobile.path).requestedNodeId;
+        mutateJson(b.extract.artifacts.inventories.pc.path, (inv) => {
+          inv.requestedNodeId = mobileId;
+          return inv;
+        });
+        rehashExtractChain(b.result.extractPath, b.result.stagePath);
+      },
+      re: /requestedNodeId/,
+    },
+    {
+      name: 'pairing 错 end',
+      setup: 'pc',
+      mutate: (b) => {
+        mutateJson(b.extract.artifacts.pairing.path, (pairing) => {
+          const row = pairing.trueSingleEnd[0] || pairing.unmatchedDual[0];
+          assert.ok(row, '单端基线应有 trueSingleEnd');
+          row.end = 'tablet';
+          return pairing;
+        });
+        rehashExtractChain(b.result.extractPath, b.result.stagePath);
+      },
+      re: /pairing/,
+    },
+    {
+      name: 'pairing 引用不存在节点',
+      setup: 'dual',
+      mutate: (b) => {
+        mutateJson(b.extract.artifacts.pairing.path, (pairing) => {
+          assert.ok(pairing.paired[0], '双端基线应有 paired');
+          pairing.paired[0].pcId = 'missing:id';
+          return pairing;
+        });
+        rehashExtractChain(b.result.extractPath, b.result.stagePath);
+      },
+      re: /pairing/,
+    },
+    {
+      name: 'problem 类型不合法',
+      setup: 'pc',
+      mutate: (b) => {
+        mutateJson(b.extract.artifacts.problems.path, (problems) => {
+          assert.ok(problems[0], '含按钮的基线应有问题');
+          problems[0].end = 'tablet';
+          return problems;
+        });
+        rehashExtractChain(b.result.extractPath, b.result.stagePath);
+      },
+      re: /位置或类型不合法/,
+    },
+    {
+      name: 'problem 合法端错配',
+      setup: 'pc',
+      mutate: (b) => {
+        mutateJson(b.extract.artifacts.problems.path, (problems) => {
+          assert.ok(problems[0], '含按钮的基线应有问题');
+          problems[0].end = problems[0].end === 'mobile' ? 'pc' : 'mobile';
+          return problems;
+        });
+        rehashExtractChain(b.result.extractPath, b.result.stagePath);
+      },
+      re: /problems 与当前清单和配对派生结果不一致/,
+    },
+  ];
+
+  for (const row of rows) {
+    const baseline = await passBaseline({
+      platform: row.setup === 'dual' ? 'pc+mobile' : 'pc',
+      body: row.setup === 'dual'
+        ? canvasBody([namedPc(), namedMobile()])
+        : canvasBody([namedPc()]),
+    });
+    row.mutate(baseline);
+    rejectAfter(baseline.result.extractPath, baseline.result.stagePath, row.re, row.name);
   }
 });

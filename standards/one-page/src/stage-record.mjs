@@ -1,11 +1,15 @@
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
-import { sha256Hex } from './canonical.mjs';
+import { canonicalJson, sha256Hex } from './canonical.mjs';
 import { verifyScopeRecord } from './scope-record.mjs';
-import { latestScopePath, findStagePathByOutputVersion } from './run-dir.mjs';
-import { assertProblemShape } from './problems.mjs';
-import { INVENTORY_SCHEMA as V2_INVENTORY_SCHEMA } from '../../figma-naming/spec/inventory.mjs';
-import { INVENTORY_SCHEMA as ONEPAGE_INVENTORY_SCHEMA } from '../../figma-naming/spec/onepage.mjs';
+import { latestScopePath } from './run-dir.mjs';
+import { assertProblemDomain, problemsFromInventories } from './problems.mjs';
+import { assertDesignSets } from './design-sets.mjs';
+import { pairEnds } from './same-modules.mjs';
+import {
+  CONTRACT_VERSION as ONEPAGE_CONTRACT_VERSION,
+  INVENTORY_SCHEMA as ONEPAGE_INVENTORY_SCHEMA,
+} from '../../figma-naming/spec/onepage.mjs';
 
 const STAGES = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
 const RESULTS = new Set(['pass', 'fail', 'stopped']);
@@ -200,11 +204,22 @@ function verifyPassExtractContract(output, record, inRun, inRound) {
     if (!check.ok) return check;
   }
 
-  const inputs = Array.isArray(record.inputs) ? record.inputs : [];
-  const scopeInput = uniqueKindInput(inputs, 'scope', '范围');
+  if (!Number.isInteger(record.round) || record.round < 1) {
+    return { ok: false, reason: '环节记录 round 必须是从 1 起的整数' };
+  }
+  if (!Array.isArray(record.inputs)) {
+    return { ok: false, reason: '环节记录 inputs 必须是数组' };
+  }
+  if (record.inputs.some((item) => item && item.kind !== 'scope' && item.kind !== 'snapshot')) {
+    return { ok: false, reason: '环节记录含未知输入' };
+  }
+  const scopeInput = uniqueKindInput(record.inputs, 'scope', '范围');
   if (!scopeInput.ok) return scopeInput;
-  const snapInput = uniqueKindInput(inputs, 'snapshot', '快照');
+  const snapInput = uniqueKindInput(record.inputs, 'snapshot', '快照');
   if (!snapInput.ok) return snapInput;
+  if (record.inputs.length !== 2) {
+    return { ok: false, reason: '环节记录输入必须恰好是范围与快照' };
+  }
   if (scopeInput.item.version !== output.scopeVersion) {
     return { ok: false, reason: '抽取成果范围版本与环节输入不一致' };
   }
@@ -261,37 +276,108 @@ function verifyInputMatchesArtifact(input, artifact, label, digestKind) {
   return { ok: true, file };
 }
 
-function verifyCurrentA(runDir, output, scopeFile, scopePath) {
-  const latestPath = latestScopePath(runDir);
-  if (!latestPath) return { ok: false, reason: '运行目录没有当前范围记录' };
+function listAStagePaths(dir) {
+  return readdirSync(dir)
+    .filter((name) => name.startsWith('stage-A-') && name.endsWith('.json'))
+    .map((name) => join(dir, name));
+}
+
+function aStageMatchesCurrent(record, latest, latestReal) {
+  if (!record || record.stage !== 'A' || record.result !== 'pass') return false;
+  if (record.output?.kind !== 'scope') return false;
+  if (record.output?.version !== latest.scopeVersion) return false;
+  if (record.output?.digest !== latest.recordDigest) return false;
+  if (!record.output?.path) return false;
+  try {
+    return realpathSync(resolve(record.output.path)) === latestReal;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 当前 A：最新 scope.vN 必须自洽；对应 A pass 必须精确绑 scopeVersion、recordDigest 与真实路径。
+ * 损坏/缺/不通过的最新记录不回退旧候选。loadLatestA 与 checkEntry 共用。
+ */
+export function loadCurrentA(dir) {
+  const scopePath = latestScopePath(dir);
+  if (!scopePath) return { ok: false, reason: '运行目录没有当前范围记录' };
   let latest;
   try {
-    latest = JSON.parse(readFileSync(latestPath, 'utf8'));
+    latest = JSON.parse(readFileSync(scopePath, 'utf8'));
   } catch {
     return { ok: false, reason: '当前范围记录不是合法 JSON' };
   }
   const latestOk = verifyScopeRecord(latest);
-  if (!latestOk.ok) return latestOk;
-  if (latest.scopeVersion !== output.scopeVersion) {
+  if (!latestOk.ok) return { ok: false, reason: latestOk.reason };
+  let latestReal;
+  try {
+    latestReal = realpathSync(scopePath);
+  } catch {
+    return { ok: false, reason: '当前范围记录路径无法解析' };
+  }
+
+  const versionHits = [];
+  const exact = [];
+  for (const stagePath of listAStagePaths(dir)) {
+    let record;
+    try {
+      record = JSON.parse(readFileSync(stagePath, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (record.output?.version !== latest.scopeVersion) continue;
+    const verified = verifyStageRecord(record);
+    versionHits.push({ stagePath, record, verified });
+    if (!verified.ok) continue;
+    if (aStageMatchesCurrent(record, latest, latestReal)) {
+      exact.push({ stagePath, record });
+    }
+  }
+
+  if (exact.length === 1) {
+    const gate = checkEntry(exact[0].stagePath, {
+      expectedStage: 'A',
+      expectedOutputVersion: latest.scopeVersion,
+      expectedOutputKind: 'scope',
+    });
+    if (!gate.ok) {
+      return { ok: false, reason: `当前 A 环节不能作为抽取依据：${gate.reason}` };
+    }
+    return {
+      ok: true,
+      scope: latest,
+      scopePath,
+      stage: gate.record,
+      stagePath: exact[0].stagePath,
+    };
+  }
+  if (exact.length > 1) {
+    return { ok: false, reason: '当前范围对应多个 A 环节' };
+  }
+  if (versionHits.some((hit) => hit.verified.ok)) {
+    return { ok: false, reason: '当前 A 环节不能作为抽取依据：未精确对应最新范围记录' };
+  }
+  if (versionHits.length) {
+    const first = versionHits.find((hit) => !hit.verified.ok);
+    return { ok: false, reason: first.verified.reason };
+  }
+  return { ok: false, reason: '没有与当前范围记录精确对应的 A 环节' };
+}
+
+function verifyCurrentA(runDir, output, scopeFile, scopePath) {
+  const current = loadCurrentA(runDir);
+  if (!current.ok) return current;
+  if (current.scope.scopeVersion !== output.scopeVersion) {
     return { ok: false, reason: '抽取成果不是当前最新范围' };
   }
-  if (!sameResolvedFile(scopePath, latestPath)) {
+  if (!sameResolvedFile(scopePath, current.scopePath)) {
     return { ok: false, reason: '抽取成果范围文件不是当前最新范围记录' };
   }
-  const aStagePath = findStagePathByOutputVersion(runDir, 'A', latest.scopeVersion);
-  if (!aStagePath) return { ok: false, reason: '没有对应的 A 环节记录' };
-  const aGate = checkEntry(aStagePath, {
-    expectedStage: 'A',
-    expectedOutputVersion: latest.scopeVersion,
-    expectedOutputKind: 'scope',
-  });
-  if (!aGate.ok) {
-    return { ok: false, reason: `当前 A 环节不能作为抽取依据：${aGate.reason}` };
-  }
-  if (scopeFile.fileKey !== latest.fileKey || scopeFile.nodeId !== latest.nodeId) {
+  if (scopeFile.fileKey !== current.scope.fileKey || scopeFile.nodeId !== current.scope.nodeId) {
     return { ok: false, reason: '范围记录身份与当前确认范围不一致' };
   }
-  return { ok: true, latest, aStagePath };
+  return current;
 }
 
 function verifySnapshotShape(snap, scope, fileVersion) {
@@ -310,27 +396,60 @@ function verifySnapshotShape(snap, scope, fileVersion) {
   if (String(snap.fileVersion) !== String(fileVersion) || String(snap.fileVersion) !== String(scope.fileVersion)) {
     return { ok: false, reason: '快照文件版本与范围/成果不一致' };
   }
+  if (snap.document.id !== scope.nodeId) {
+    return { ok: false, reason: '快照 document.id 与范围 nodeId 不一致' };
+  }
+  if (snap.document.type !== 'CANVAS') {
+    return { ok: false, reason: '快照 document 必须是 CANVAS' };
+  }
   return { ok: true };
 }
 
-function verifyInventoryShape(inv, label) {
+function verifyInventoryContract(inv, label, { scope, snapshot, set }) {
   if (!inv || typeof inv !== 'object' || Array.isArray(inv)) {
     return { ok: false, reason: `${label} 必须是对象` };
   }
-  if (inv.schema !== ONEPAGE_INVENTORY_SCHEMA && inv.schema !== V2_INVENTORY_SCHEMA) {
-    return { ok: false, reason: `${label} schema 不是编译器清单` };
+  if (inv.schema !== ONEPAGE_INVENTORY_SCHEMA) {
+    return { ok: false, reason: `${label} schema 不是 inventory/onepage-v1` };
+  }
+  if (inv.contract !== ONEPAGE_CONTRACT_VERSION || inv.specVersion !== ONEPAGE_CONTRACT_VERSION) {
+    return { ok: false, reason: `${label} contract/specVersion 不是 onepage-naming/v1` };
   }
   if (typeof inv.ok !== 'boolean') {
     return { ok: false, reason: `${label} 缺 ok` };
   }
-  if (!nonemptyText(inv.status)) {
-    return { ok: false, reason: `${label} 缺 status` };
+  if (inv.status !== 'ready' && inv.status !== 'blocked') {
+    return { ok: false, reason: `${label} status 必须是 ready 或 blocked` };
+  }
+  if (inv.ok !== (inv.status === 'ready')) {
+    return { ok: false, reason: `${label} ok 与 status 不一致` };
+  }
+  if (inv.fileKey !== scope.fileKey) {
+    return { ok: false, reason: `${label} fileKey 与范围不一致` };
+  }
+  if (inv.requestedNodeId !== set.id) {
+    return { ok: false, reason: `${label} requestedNodeId 与所选设计集不一致` };
   }
   if (!inv.page || typeof inv.page !== 'object' || Array.isArray(inv.page) || !nonemptyText(inv.page.id)) {
     return { ok: false, reason: `${label} 缺 page` };
   }
+  if (inv.page.id !== set.id) {
+    return { ok: false, reason: `${label} page 不是所选设计集` };
+  }
+  if (!inv.scope || typeof inv.scope !== 'object' || Array.isArray(inv.scope)) {
+    return { ok: false, reason: `${label} 缺 scope` };
+  }
+  if (inv.scope.snapshotRootId !== snapshot.document.id) {
+    return { ok: false, reason: `${label} snapshotRootId 与快照根不一致` };
+  }
+  if (inv.scope.pageId !== inv.page.id) {
+    return { ok: false, reason: `${label} pageId 与 page 不一致` };
+  }
   if (!Array.isArray(inv.nodes)) {
     return { ok: false, reason: `${label} nodes 必须是数组` };
+  }
+  if (!Array.isArray(inv.issues)) {
+    return { ok: false, reason: `${label} issues 必须是数组` };
   }
   return { ok: true };
 }
@@ -340,8 +459,8 @@ function verifyProblemsShape(problems) {
     return { ok: false, reason: 'problems 必须是数组' };
   }
   for (const item of problems) {
-    if (!item || typeof item !== 'object' || Array.isArray(item) || !assertProblemShape(item)) {
-      return { ok: false, reason: 'problems 条目不完整' };
+    if (!item || typeof item !== 'object' || Array.isArray(item) || !assertProblemDomain(item)) {
+      return { ok: false, reason: 'problems 条目位置或类型不合法' };
     }
   }
   return { ok: true };
@@ -373,6 +492,70 @@ function verifyPairingShape(pairing) {
       || !nonemptyText(row.reason) || !Array.isArray(row.pcIds) || !Array.isArray(row.mobileIds)) {
       return { ok: false, reason: 'pairing.ambiguous 条目不完整' };
     }
+  }
+  return { ok: true };
+}
+
+function sameCanonical(left, right) {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function selectedEndsOf(design) {
+  return design.selected.map((set) => set.end);
+}
+
+function sameEndSet(left, right) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((end) => right.includes(end));
+}
+
+function verifyProducerMaterials({ output, scope, snapshot, config, problems, pairing, inventoriesByEnd }) {
+  if (config == null || typeof config !== 'object' || Array.isArray(config)) {
+    return { ok: false, reason: 'config 必须是 JSON 对象' };
+  }
+  let design;
+  try {
+    design = assertDesignSets(snapshot.document, scope.platform);
+  } catch (err) {
+    return { ok: false, reason: err?.message || '设计集合无法识别' };
+  }
+  const selectedEnds = selectedEndsOf(design);
+  if (!sameEndSet(output.ends, selectedEnds)) {
+    return { ok: false, reason: '抽取成果端别与范围/快照所选设计集不一致' };
+  }
+  const inventories = { pc: null, mobile: null };
+  for (const end of EXTRACT_ENDS) {
+    const needed = selectedEnds.includes(end);
+    const inv = inventoriesByEnd[end];
+    if (needed && inv == null) {
+      return { ok: false, reason: `抽取成果缺 ${end} inventory` };
+    }
+    if (!needed && inv != null) {
+      return { ok: false, reason: `未选端不得有 ${end} inventory` };
+    }
+    if (!needed) continue;
+    const set = design.selected.find((item) => item.end === end);
+    const invOk = verifyInventoryContract(inv, `${end} inventory`, { scope, snapshot, set });
+    if (!invOk.ok) return invOk;
+    inventories[end] = inv;
+  }
+  const expectedPairing = pairEnds({
+    platform: scope.platform,
+    pc: inventories.pc,
+    mobile: inventories.mobile,
+  });
+  const pairingOk = verifyPairingShape(pairing);
+  if (!pairingOk.ok) return pairingOk;
+  if (!sameCanonical(pairing, expectedPairing)) {
+    return { ok: false, reason: 'pairing 与当前端清单派生结果不一致' };
+  }
+  const problemsOk = verifyProblemsShape(problems);
+  if (!problemsOk.ok) return problemsOk;
+  const expectedProblems = problemsFromInventories(inventories, expectedPairing);
+  if (!sameCanonical(problems, expectedProblems)) {
+    return { ok: false, reason: 'problems 与当前清单和配对派生结果不一致' };
   }
   return { ok: true };
 }
@@ -462,28 +645,29 @@ function verifyBExtractOutputInner(output, record, recordPath) {
 
   const configFile = readJsonSafe(arts.config.path, 'config');
   if (!configFile.ok) return configFile;
-  if (!configFile.value || typeof configFile.value !== 'object' || Array.isArray(configFile.value)) {
-    return { ok: false, reason: 'config 必须是 JSON 对象' };
-  }
-
   const problemsFile = readJsonSafe(arts.problems.path, 'problems');
   if (!problemsFile.ok) return problemsFile;
-  const problemsOk = verifyProblemsShape(problemsFile.value);
-  if (!problemsOk.ok) return problemsOk;
-
   const pairingFile = readJsonSafe(arts.pairing.path, 'pairing');
   if (!pairingFile.ok) return pairingFile;
-  const pairingOk = verifyPairingShape(pairingFile.value);
-  if (!pairingOk.ok) return pairingOk;
 
-  for (const end of output.ends) {
-    const invArt = arts.inventories[end];
-    const invFile = readJsonSafe(invArt.path, `${end} inventory`);
+  const inventoriesByEnd = { pc: null, mobile: null };
+  for (const end of EXTRACT_ENDS) {
+    const item = arts.inventories[end];
+    if (item == null) continue;
+    const invFile = readJsonSafe(item.path, `${end} inventory`);
     if (!invFile.ok) return invFile;
-    const invOk = verifyInventoryShape(invFile.value, `${end} inventory`);
-    if (!invOk.ok) return invOk;
+    inventoriesByEnd[end] = invFile.value;
   }
-  return { ok: true };
+
+  return verifyProducerMaterials({
+    output,
+    scope: scopeBind.file,
+    snapshot: snapBind.file,
+    config: configFile.value,
+    problems: problemsFile.value,
+    pairing: pairingFile.value,
+    inventoriesByEnd,
+  });
 }
 
 function verifyScopeOutput(output, record, expectedOutputVersion) {
