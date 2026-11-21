@@ -46,6 +46,37 @@ async function readJson(res, signal) {
   return Promise.race([res.json(), waitForAbort(signal)]);
 }
 
+function canvasFromNodes(data, nodeId) {
+  const document = data.nodes?.[nodeId]?.document;
+  if (!document) {
+    throw new StoppedError(
+      'http-404',
+      'Figma 文件或节点不存在。请核对链接里的 fileKey 与 node-id 是否仍有效。',
+    );
+  }
+  if (document.type === 'FRAME') {
+    throw new StoppedError(
+      'not-canvas',
+      '这个 node 是 Frame，不是页面（CANVAS）。请改给 Figma 左侧页面链接，不要用画布里的 Frame。本命令不会自动上找页面。',
+    );
+  }
+  if (document.type !== 'CANVAS') {
+    throw new StoppedError(
+      'not-canvas',
+      `这个 node 是 ${document.type}，不是页面（CANVAS）。请改给 Figma 左侧页面链接。本命令不会自动上找页面。`,
+    );
+  }
+  if (data.version == null || String(data.version) === '') {
+    throw new StoppedError('no-version', 'Figma 没有返回文件 version。请稍后重试。');
+  }
+  return {
+    fileVersion: String(data.version),
+    nodeType: document.type,
+    nodeName: document.name ?? '',
+    document,
+  };
+}
+
 async function figmaGet(path, { fetchImpl, timeoutMs, tokenValue }) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
@@ -111,31 +142,23 @@ export async function probeFigmaPage({
   const secret = readToken(tokenValue);
   const path = `/v1/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(nodeId)}&depth=1`;
   const data = await figmaGet(path, { fetchImpl, timeoutMs, tokenValue: secret });
-  const document = data.nodes?.[nodeId]?.document;
-  if (!document) {
-    throw new StoppedError(
-      'http-404',
-      'Figma 文件或节点不存在。请核对链接里的 fileKey 与 node-id 是否仍有效。',
-    );
-  }
-  if (document.type === 'FRAME') {
-    throw new StoppedError(
-      'not-canvas',
-      '这个 node 是 Frame，不是页面（CANVAS）。请改给 Figma 左侧页面链接，不要用画布里的 Frame。本命令不会自动上找页面。',
-    );
-  }
-  if (document.type !== 'CANVAS') {
-    throw new StoppedError(
-      'not-canvas',
-      `这个 node 是 ${document.type}，不是页面（CANVAS）。请改给 Figma 左侧页面链接。本命令不会自动上找页面。`,
-    );
-  }
-  if (data.version == null || String(data.version) === '') {
-    throw new StoppedError('no-version', 'Figma 没有返回文件 version。请稍后重试。');
-  }
+  const canvas = canvasFromNodes(data, nodeId);
   return {
-    fileVersion: String(data.version),
-    nodeType: document.type,
-    nodeName: document.name ?? '',
+    fileVersion: canvas.fileVersion,
+    nodeType: canvas.nodeType,
+    nodeName: canvas.nodeName,
   };
+}
+
+export async function fetchFigmaSnapshot({
+  fileKey,
+  nodeId,
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  tokenValue,
+} = {}) {
+  const secret = readToken(tokenValue);
+  const path = `/v1/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(nodeId)}&geometry=paths`;
+  const data = await figmaGet(path, { fetchImpl, timeoutMs, tokenValue: secret });
+  return canvasFromNodes(data, nodeId);
 }

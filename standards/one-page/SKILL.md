@@ -63,9 +63,29 @@ A 停止并报告原因（不算通过、不写范围记录）当：
 
 A 不改 HTML v1、不选出页方法、不定义 B 交接包字段。
 
+## B1. 来源核对与事实抽取
+
+B 只读 A 已确认的运行目录。开工前用 `checkEntry` 核 A：`expectedStage='A'`，`expectedOutputVersion` 为该目录最新范围记录的 `scopeVersion`。不通过就停，不猜、不取第一个候选。
+
+```bash
+npm --prefix standards/one-page run b:extract -- --run-dir "<A 的运行目录>"
+```
+
+新任务不要省略 `--run-dir`。token 同样走 `standards/figma-naming/tool/.env` 的 `FIGMA_ACCESS_TOKEN`，可用 `--env-file` 指向该文件；token 不得写入任何记录或日志。
+
+完成标准：
+
+1. 按范围记录重新取快照。`fileVersion` 与范围记录不一致 → 停并退回 A。快照写入运行目录。
+2. 页面内设计集合按出清单同一规则识别（`pc` / `mobile` / `cn_pc` / `cn_mobile`）。非规范稿、设计集合不唯一、范围端别不在稿上 → 各自停止并说明。
+3. 读取仓库根 `projects/<fileKey前8位>-<nodeId>/config.json`（不存在当空配置），复制快照进运行目录，调用 `compileOnePage` 抽取事实。双端按 sec 范围与唯一名称配对：已配对 / 真单端 / 歧义分开记录；双端未匹配不自动当单端。
+4. 清单与问题清单写入运行目录的 `b1.rN/`（N 为 B 轮次，同一运行目录重跑不覆盖旧轮）。问题每条含端、屏号、节点 ID、对象、缺什么、影响、退回去向（A／设计稿／B2）。
+5. 写 B 环节记录：`stage=B`，inputs 含 A 的范围版本与快照版本，`result` 为 pass／fail／stopped。C／B3 用 `checkEntry` 读这份记录，必须传 `expectedStage='B'` 与这份输出版本。
+
+B1 不出交接包（归 B3）。不写回 Figma，不新增命名前缀。项目配置与运行记录不进 git。
+
 ## Record keeping
 
-范围记录和 A～H 统一环节记录写在仓库根 `runs/`（不进 git）。token 不得出现在记录或日志里。B 起用 `checkEntry` 做开工前检查。
+范围记录和 A～H 统一环节记录写在仓库根 `runs/`（不进 git）。项目配置在 `projects/`（不进 git）。token 不得出现在记录或日志里。B 起用 `checkEntry` 做开工前检查。
 
 ## Fixed-chain boundary
 
