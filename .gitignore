@@ -56,3 +56,6 @@ skills/*/evolution/cases/
 # === Not public (2026-11-20, #152) ===
 standards/figma-naming/spec/naming-guide.png
 standards/one-page/artifacts/
+
+# === one-page 运行记录（公开仓，一律不提交）===
+runs/
