@@ -43,6 +43,9 @@ npm run release:audit
 | `.env`、`test/.tmp/` | 凭证与临时产物 |
 | `test-private/` | 依赖真稿 `.cache/` 快照的回归测试，断言值就是真稿的 findings 计数 |
 | `evolution/` | 模块目录、结构签名证据切片与沉淀规则，含未发布稿切片 |
+| `scripts/build-naming-guide.py` | 命名速查生成脚本，不公开 |
+| `tool/_tmp/` | 命名速查本地截图与临时产物；截图保留不删 |
+| `spec/naming-guide.png` | 命名速查配图，不公开 |
 
 私有清单里每一条都必须在 `public-release.json` 的 `privateReasons` 里写明理由；缺一条 audit 就报错。反过来，仓库根下**既不在 publishable 也不在 private** 的东西同样报错——边界必须显式覆盖每一项，不允许出现「没人管」的路径。
 

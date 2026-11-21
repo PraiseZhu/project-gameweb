@@ -6,6 +6,8 @@
 
 本仓只接收已规范设计稿。旧未规范稿入口 project-unnamed-inventory 在本机不存在（2026-10-19 核验）；当前未确认替代入口，请先完成命名规范再使用本仓流程。
 
+独立分组：[one-page标准流程](standards/one-page/README.md)。以已定 HTML v1 为目标重新梳理制作与交付流程，独立于现有游戏项目；当前处于流程讨论阶段，尚未实现新的做页入口。下述链路仍指现有游戏项目。
+
 ## 链路
 
 已规范货架（带 `node-id`）→ `出清单` 抽 ready 清单并打交接包 → 做页 skill 出 HTML → `preview:first` / 清单对账 / 政策镜像 / 产品视口 / 像素门必须绿 → 给人 QA 页，Main 静态停下来等人验收。
@@ -26,7 +28,8 @@ Project Gameweb/
 │   ├── yise-web-ui/       # 伊瑟。触发词 yisewebui / 伊瑟网页还原
 │   └── torchlight-web/    # 火炬之光。触发词 torchlightweb / 火炬网页还原
 └── standards/             # 被多个 skill 引用的规范与工具链
-    ├── figma-naming/      # 图层命名规范（当前 v2.20）+ inventory/v2 ready 抽取
+    ├── one-page/          # one-page标准流程：独立分组，当前为讨论与规范入口
+    ├── figma-naming/      # 图层命名规范（当前 v2.23）+ inventory/v2 ready 抽取
     ├── skill-shared/      # 伊瑟/火炬公共文件清单与漂移检查
     ├── design-policy/     # DESIGN.md YAML 解析与做页数字镜像
     └── stop1-figma-pixel/ # 停 1 像素门真源

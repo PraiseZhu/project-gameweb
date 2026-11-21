@@ -209,7 +209,7 @@ const root=find(d,"pc");
 console.log(renderTerminal(lint(root),{frameName:root.name},{color:false,maxPerCode:2}));})()'
 ```
 
-当前 raw lint（规范现行 v2.8 · 假定 A-v1.6；基线数字仍按 v2.7 / A-v1.5 快照，不应用豁免）：
+截至 2026-08-07 的 raw lint 快照（当时规范 v2.8 · 假定 A-v1.6；基线数字按 v2.7 / A-v1.5，不应用豁免；现行规范为 v2.23，以 spec/spec.mjs 的 SPEC_VERSION 为准）：
 
 | 体检根 | 层数 | 报警 | 必须改 / 必须回答 / 核实 | 动作 | 选根警告 |
 |---|---|---|---|---|---|

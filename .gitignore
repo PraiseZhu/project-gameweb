@@ -52,3 +52,7 @@ _tmp/
 skills/*/evolution/cases/
 
 # === Tip: 大数据目录建议加 .nosync 后缀 ===
+
+# === Not public (2026-11-20, #152) ===
+standards/figma-naming/spec/naming-guide.png
+standards/one-page/artifacts/

@@ -6,7 +6,7 @@
  * shape and size class remain the same.
  */
 
-const ROLE_PREFIX = /^(bg|btn|dyn|fix|hot|img|ind|kv|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
+const ROLE_PREFIX = /^(bg|btn|dyn|fix|grp|item|hot|img|ind|kv|list|mix|modal|ref|scroll|sec|switch|tab|copy)\//;
 const STATE_OPTION_RE = /^(highlight|normal|disable|disabled|selected|unselected|active|inactive|选中|未选|禁用|默认)$/i;
 
 export const SIZE_BUCKETS = Object.freeze([

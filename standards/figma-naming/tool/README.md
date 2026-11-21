@@ -1,8 +1,10 @@
 # figma-naming-lint · 命名规范与做页前清单
 
+新 one-page 请看[命名/绑定合同及配置示例](../../figma-naming/spec/onepage-naming.md)：npm run onepage:inventory 接受已有 Figma 快照和项目统一配置，成功输出 handoff/onepage-v1。默认 inventory 命令和以下体检说明继续服务旧契约。新入口不联网、不导图、不生成页面；完整测试含新旧回归。
+
 给一个 Figma 稿链接，可做两件事：把已规范命名稿编成做页前的 `inventory/v2` ready 清单，或对稿件出**图层命名体检报告**。做页前交接是当前主入口；命名体检是独立的既有工具。
 
-规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.20），规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后 GitHub Actions `feishu-naming-doc` 会尝试重铺并对账；未配置 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 时跳过发布，改由本机 `sync-local` 铺（密钥放本机）。不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
+规范正文在 [`../spec/naming-spec.md`](../spec/naming-spec.md)（当前 v2.23），规则的严重度、后果、修法见 [`docs/RULES.md`](docs/RULES.md)（由 `npm run rules` 从 `src/rules.mjs` 生成，不要手改）。设计师飞书页由 `npm run feishu:doc` 从机器表生成。合进 `main` 后 GitHub Actions `feishu-naming-doc` 会尝试重铺并对账；未配置 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 时跳过发布，改由本机 `sync-local` 铺（密钥放本机）。不要手改正文。文档：https://xd.feishu.cn/docx/XtXudyWuToo4i0xTF0TckunbngL
 
 ## 判什么、不判什么
 
@@ -82,7 +84,7 @@ report/naming-report.md     # 人看：按处置分档（必须改 / 必须回�
 report/naming-report.json   # 机器看：findings 数组（含 disposition / basis / instance）+ 体检根自检 + stats
 ```
 
-终端同时打摘要（下面是 v2.1 历史样例，当时还有已退役的 `N-SEC-NOT-TOPLEVEL`；现行规则与数字以规范 v2.8 和真稿基线为准）：
+终端同时打摘要（下面是 v2.1 历史样例，当时还有已退役的 `N-SEC-NOT-TOPLEVEL`；现行规则以规范 v2.23（spec/spec.mjs 的 SPEC_VERSION）为准，下表数字为历史快照）：
 
 ```
 figma-naming-lint · pc 3840×17241 · 规范 v2.1 (2026-08-04) · 假定 A-v1.1 (2026-08-04)

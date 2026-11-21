@@ -16,6 +16,9 @@ export const INVENTORY_ROLES = [...Object.keys(PREFIXES), COPY_ROLE];
 
 export const ROLE_BEHAVIOR = {
   sec: "section",
+  grp: "group",
+  list: "collection",
+  item: "item",
   fix: "overlay",
   ref: "ignore",
   img: "slice",
@@ -60,9 +63,9 @@ export const REPLACEABLE_FIELDS = Object.freeze(["replaceable", "assetKey"]);
 
 const WHOLE_FRAME_SLICE_NAME = /^(?:img|bg|kv)(?:\/|$)/i;
 
-/** 跨端同一模块：只认 determined 前缀 + 剥前缀后的名字，不认图层 id。 */
+/** 跨端模块候选：由 handoff 按所属 sec 限定范围后唯一匹配，节点 id 只记录结果。 */
 export const CROSS_END_MODULE_ROLES = Object.freeze([
-  "sec", "fix", "bg", "kv", "scroll", "switch", "tab", "ind", "mix", "dyn", "modal", "dropmenu", "btn", "hot",
+  "sec", "fix", "grp", "bg", "kv", "scroll", "switch", "tab", "ind", "mix", "dyn", "modal", "dropmenu", "btn", "hot",
 ]);
 
 /** TEXT 必带：字体类型、粗细、字号。判断过程 / 截图不进清单。 */

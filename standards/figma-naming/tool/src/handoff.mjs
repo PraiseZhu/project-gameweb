@@ -15,6 +15,20 @@ import { auditLikeCli } from "../scripts/check-draft-asset-completeness.mjs";
 import { allNodesOf, auditDeclaredStructure } from "./inventory.mjs";
 
 export const HANDOFF_SCHEMA = "handoff/v1";
+export const AUTO_ONE_PAGE_WORKFLOW = "auto-one_page";
+
+function validateWorkflowMetadata(workflow) {
+  if (workflow == null) return [];
+  const problems = [];
+  if (typeof workflow !== "object" || Array.isArray(workflow)) {
+    problems.push("manifest.workflow 必须是对象");
+    return problems;
+  }
+  if (workflow.name !== AUTO_ONE_PAGE_WORKFLOW) problems.push("manifest.workflow.name 必须是 " + AUTO_ONE_PAGE_WORKFLOW);
+  if (typeof workflow.scopeRef !== "string" || !workflow.scopeRef.trim()) problems.push("manifest.workflow.scopeRef 必须是非空字符串");
+  if (typeof workflow.sourceQualificationRef !== "string" || !workflow.sourceQualificationRef.trim()) problems.push("manifest.workflow.sourceQualificationRef 必须是非空字符串");
+  return problems;
+}
 const GREEN_DRAFT_REDIRECT =
   "本仓只打 ready 交接包。未规范稿流程已废弃，不打 green-draft / 判断包写回";
 
@@ -110,41 +124,92 @@ function moduleKeyOf(node) {
   return langs ? `${node.role}/${label}@lang=${langs}` : `${node.role}/${label}`;
 }
 
+function sectionNumberOf(node) {
+  const label = String(node.label ?? "").trim() || String(node.name ?? "").replace(/^[^/]+\//, "").trim();
+  const digits = /^(\d+)/.exec(label)?.[1];
+  const number = digits == null ? null : Number(digits);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function moduleSectionOf(node, byId, sectionCounts, pageId) {
+  const seen = new Set();
+  let current = node;
+  while (current) {
+    if (seen.has(current.id)) return { number: null, problem: "parent-cycle" };
+    seen.add(current.id);
+    if (current.role === "sec") {
+      const number = sectionNumberOf(current);
+      if (number == null || current.status !== "determined") return { number: null, problem: "invalid-section" };
+      return { number, problem: sectionCounts.get(number) > 1 ? "duplicate-section" : null };
+    }
+    const parentId = current.parentId;
+    if (parentId == null) return { number: null, problem: null };
+    current = byId.get(parentId);
+    // The selected page can itself be a sec: inspect it before treating it as the boundary.
+    if (!current && parentId === pageId) return { number: null, problem: null };
+    if (!current) return { number: null, problem: "missing-parent" };
+  }
+  return { number: null, problem: null };
+}
+
 function collectModuleCandidates(doc) {
+  const nodes = doc?.nodes || [];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const sectionCounts = new Map();
+  for (const node of nodes) {
+    if (node.status !== "determined" || node.role !== "sec") continue;
+    const number = sectionNumberOf(node);
+    if (number != null) sectionCounts.set(number, (sectionCounts.get(number) || 0) + 1);
+  }
   const byKey = new Map();
-  for (const node of doc?.nodes || []) {
-    const key = moduleKeyOf(node);
-    if (!key) continue;
-    const list = byKey.get(key) || [];
-    list.push(node);
-    byKey.set(key, list);
+  for (const node of nodes) {
+    const nameKey = moduleKeyOf(node);
+    if (!nameKey) continue;
+    const section = moduleSectionOf(node, byId, sectionCounts, doc?.page?.id);
+    // A sec is identified by its number; ordinary wrappers never enter the key.
+    const key = section.number == null ? nameKey
+      : node.role === "sec" ? `sec/${section.number}` : `sec/${section.number}::${nameKey}`;
+    const group = byKey.get(key) || { role: node.role, nodes: [], problem: null };
+    group.nodes.push(node);
+    group.problem ||= section.problem;
+    byKey.set(key, group);
   }
   return byKey;
 }
 
-/** PC/mobile 同一模块：前缀+名字一对一。重复或对不上标单端，不猜图层 id。 */
+/** 先按 sec 编号限定范围，再唯一匹配前缀+名称；屏外使用页级范围，歧义单列。 */
 export function sameModulesOf(pcDoc, mobileDoc) {
   const pcMap = collectModuleCandidates(pcDoc);
   const mobileMap = collectModuleCandidates(mobileDoc);
   const keys = [...new Set([...pcMap.keys(), ...mobileMap.keys()])].sort();
   const paired = [];
   const unmatched = [];
+  const ambiguous = [];
+  const hasBothEnds = Boolean(pcDoc && mobileDoc);
   for (const key of keys) {
-    const pcNodes = pcMap.get(key) || [];
-    const mobileNodes = mobileMap.get(key) || [];
-    const n = Math.min(pcNodes.length, mobileNodes.length);
-    for (let i = 0; i < n; i += 1) {
-      paired.push({
-        key,
-        role: key.split("/")[0],
-        pcId: pcNodes[i].id,
-        mobileId: mobileNodes[i].id,
+    const pcGroup = pcMap.get(key);
+    const mobileGroup = mobileMap.get(key);
+    const pcNodes = pcGroup?.nodes || [];
+    const mobileNodes = mobileGroup?.nodes || [];
+    const role = (pcGroup || mobileGroup).role;
+    const problem = pcGroup?.problem || mobileGroup?.problem;
+    if (problem || (hasBothEnds && (pcNodes.length > 1 || mobileNodes.length > 1))) {
+      ambiguous.push({
+        key, role, reason: problem || "duplicate-module",
+        pcIds: pcNodes.map((node) => node.id), mobileIds: mobileNodes.map((node) => node.id),
       });
+      continue;
     }
-    for (const node of pcNodes.slice(n)) unmatched.push({ key, end: "pc-only", id: node.id });
-    for (const node of mobileNodes.slice(n)) unmatched.push({ key, end: "mobile-only", id: node.id });
+    if (pcNodes.length === 1 && mobileNodes.length === 1) {
+      paired.push({
+        key, role, pcId: pcNodes[0].id, mobileId: mobileNodes[0].id,
+      });
+      continue;
+    }
+    for (const node of pcNodes) unmatched.push({ key, end: "pc-only", id: node.id });
+    for (const node of mobileNodes) unmatched.push({ key, end: "mobile-only", id: node.id });
   }
-  return { paired, unmatched };
+  return { paired, unmatched, ambiguous };
 }
 
 function consumeFingerprintOf(doc) {
@@ -373,11 +438,12 @@ export function validateHandoffPack(dirPath) {
     return { ok: false, problems: [`交接目录缺 manifest.json：${full}`] };
   }
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const workflowProblems = validateWorkflowMetadata(manifest.workflow);
   const pcLoaded = loadPackInventory(full, "inventory-pc.json");
   const mobileLoaded = loadPackInventory(full, "inventory-mobile.json");
   const pcDoc = pcLoaded.doc;
   const mobileDoc = mobileLoaded.doc;
-  const problems = [];
+  const problems = [...workflowProblems];
   if (manifest.schema !== HANDOFF_SCHEMA) {
     problems.push(`manifest.schema 必须是 ${HANDOFF_SCHEMA}，收到 ${manifest.schema ?? "(空)"}`);
   }
@@ -517,9 +583,10 @@ export function validateHandoffPair(pcDoc, mobileDoc, {
   };
 }
 
-export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets = {} }) {
+export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets = {}, workflow = null }) {
   const fingerprint = fingerprintInventories(pcDoc, mobileDoc);
   const ends = endsOfDocs(pcDoc, mobileDoc);
+  const sameModules = sameModulesOf(pcDoc, mobileDoc);
   const assetPlan = {};
   if (pcDoc) assetPlan.pc = assets.pc ?? slicePlanOf(pcDoc);
   if (mobileDoc) assetPlan.mobile = assets.mobile ?? slicePlanOf(mobileDoc);
@@ -531,7 +598,10 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
     ends,
     fileKey: pcDoc?.fileKey ?? mobileDoc?.fileKey ?? null,
     createdAt: new Date().toISOString(),
-    warning: null,
+    warning: sameModules.ambiguous.length
+      ? `双端模块对应不明确：${sameModules.ambiguous.length} 组未自动配对，详见 sameModules.ambiguous 和包内 README。`
+      : null,
+    ...(workflow ? { workflow } : {}),
     pages: {
       pc: pageRecord(pcPath, pcDoc),
       mobile: pageRecord(mobilePath, mobileDoc),
@@ -540,7 +610,7 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
       pc: pcDoc ? consumeSlice(pcDoc) : null,
       mobile: mobileDoc ? consumeSlice(mobileDoc) : null,
     },
-    sameModules: sameModulesOf(pcDoc, mobileDoc),
+    sameModules,
     assets: assetPlan,
     rules: {
       unknownNoInteraction: true,
@@ -562,7 +632,7 @@ export function buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, asse
 }
 
 export function writeHandoffPack({
-  pcPath, mobilePath, pcDoc, mobileDoc, kind, outDir, assetsPc, assetsMobile, packedAssets = false, referenceDoc = null,
+  pcPath, mobilePath, pcDoc, mobileDoc, kind, outDir, assetsPc, assetsMobile, packedAssets = false, referenceDoc = null, workflow = null,
 }) {
   if (kind === "green-draft") {
     throw new Error(GREEN_DRAFT_REDIRECT);
@@ -583,7 +653,7 @@ export function writeHandoffPack({
   const assets = {};
   if (pcDoc) assets.pc = slicePlanOf(pcDoc);
   if (mobileDoc) assets.mobile = slicePlanOf(mobileDoc);
-  const manifest = buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets });
+  const manifest = buildManifest({ pcPath, mobilePath, pcDoc, mobileDoc, kind, assets, workflow });
   mkdirSync(outDir, { recursive: true });
   const pcOut = pcDoc ? join(outDir, "inventory-pc.json") : null;
   const mobileOut = mobileDoc ? join(outDir, "inventory-mobile.json") : null;
@@ -598,12 +668,19 @@ function packReadme(manifest, outDir) {
   const ends = Array.isArray(manifest.ends) ? manifest.ends.join(" / ") : "（未声明）";
   const pcId = manifest.pages?.pc?.requestedNodeId ?? "（本包无 PC）";
   const mobileId = manifest.pages?.mobile?.requestedNodeId ?? "（本包无 mobile）";
+  const pairingIssues = manifest.sameModules?.ambiguous || [];
+  const pairingNotice = pairingIssues.length ? [
+    "双端对应待明确（不得按顺序或外观补配）：",
+    ...pairingIssues.map((issue) =>
+      `- ${issue.key}：${issue.reason}；PC ${issue.pcIds.join(", ") || "无候选"}；mobile ${issue.mobileIds.join(", ") || "无候选"}`),
+  ].join("\n") : "";
   return `# 做页交接包 ${manifest.fingerprint}
 
 - 种类：${manifest.kind}${manifest.ready ? "（可称 ready）" : ""}
 - 端：${ends}
 - PC：${pcId}
 - mobile：${mobileId}
+${pairingNotice}
 
 做页只读本目录：
 - \`manifest.json\` 的 \`ends\` 与已有的 \`consume.pc\` / \`consume.mobile\`（determined 接线，unknown 只画）

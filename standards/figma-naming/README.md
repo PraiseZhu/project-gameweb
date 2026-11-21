@@ -1,5 +1,7 @@
 # figma-naming — 图层命名规范与做页前清单
 
+新 one-page 契约使用[正式命名与绑定规范](spec/onepage-naming.md)和独立 onepage:inventory 入口：19 个前缀及四类通用声明编译为 inventory/onepage-v1 / handoff/onepage-v1。它是本地信息交接工具，页面生成器尚未接入。下面的旧流程、在线速查与 mix 兼容保持原契约，不把新包交给旧游戏入口。
+
 设计稿图层怎么命名，以及把**已规范命名稿**编成做页前 `inventory/v2` ready 清单。
 体检命令和 Figma 插件仍在，但不是本轮交接入口。
 
@@ -7,7 +9,8 @@
 
 | 你是 | 看这里 |
 |---|---|
-| 设计师 —— 我该怎么给图层起名 | [`spec/naming-spec.md`](spec/naming-spec.md) |
+| 设计师 —— 按功能找命名，按命名看用法 | [图文速查](spec/naming-guide.md) · [可搜索图文版](spec/naming-guide.html) |
+| 需要精确判据、错误码或历史依据 | [完整规范](spec/naming-spec.md) |
 | 要把已规范命名稿交给做页 | 触发词 `出清单` → [`SKILL.md`](SKILL.md)；命令细节见 [`tool/README.md`](tool/README.md) 的「做页前交接：inventory/v2」 |
 | 想体检自己的稿 | [`tool/README.md`](tool/README.md) 的「命名体检快速开始」 |
 | 要改判定逻辑 | [`tool/CLAUDE.md`](tool/CLAUDE.md) |
@@ -19,7 +22,10 @@
 ```
 figma-naming/
 ├── spec/     规范层 —— 人读正文 + 机器表
-│   ├── naming-spec.md            前缀总表、@参数、判定边界（当前 v2.20）
+│   ├── naming-spec.md            前缀总表、@参数、判定边界（当前 v2.23）
+│   ├── naming-guide.md           设计师速查：功能索引、命名卡片、场景、自查
+│   ├── naming-guide.html         可搜索的图文版，兼容手机阅读
+│   ├── naming-guide.png          同一内容导出的高清长图
 │   ├── consumer-assumptions.md   规则「不改会怎样」所依赖的下游假定（A-v1.18）
 │   ├── spec.mjs                  机器可读镜像（插件 / 体检 / skill 都读这里）
 │   └── inventory.mjs             inventory/v2 取值表
