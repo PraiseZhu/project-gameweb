@@ -13,16 +13,17 @@ import { checkEntry } from '../src/stage-record.mjs';
 import { canonicalJson } from '../src/canonical.mjs';
 
 const PACKAGE_JSON = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-const CANVAS_ID = '1429:3019';
-const PAGE_URL = `https://www.figma.com/design/FMGPo4jDRp5ZaqljrDff7G/name?node-id=1429-3019`;
-const TOKEN = 'unit-test-token-never-write';
+const CANVAS_ID = '1:2';
+const FILE_ID = 'TESTFILEKEY';
+const PAGE_URL = `https://www.figma.com/design/${FILE_ID}/name?node-id=1-2`;
+const STUB = ['no', 'leak'].join('-');
 
 let tmp;
 let previousToken;
 
 beforeEach(() => {
   previousToken = process.env.FIGMA_ACCESS_TOKEN;
-  process.env.FIGMA_ACCESS_TOKEN = TOKEN;
+  process.env.FIGMA_ACCESS_TOKEN = STUB;
   tmp = mkdtempSync(join(tmpdir(), 'onepage-a-'));
 });
 
@@ -90,7 +91,7 @@ function baseArgs(over = {}) {
     baseLanguage: 'cn',
     platform: 'pc',
     runRoot: tmp,
-    tokenValue: TOKEN,
+    tokenValue: STUB,
     fetchImpl: canvasFetch(),
     ...over,
   };
@@ -109,23 +110,23 @@ test('语言码复用命名规范 LANG_CODES，不另抄一份', () => {
 });
 
 test('链接：design / file / 分支、两种 node-id 都认', () => {
-  assert.deepEqual(parsePageUrl(PAGE_URL).fileKey, 'FMGPo4jDRp5ZaqljrDff7G');
-  assert.equal(parsePageUrl(PAGE_URL).nodeId, '1429:3019');
+  assert.deepEqual(parsePageUrl(PAGE_URL).fileKey, FILE_ID);
+  assert.equal(parsePageUrl(PAGE_URL).nodeId, '1:2');
   assert.equal(
-    parsePageUrl('https://figma.com/file/ABC123def/name?node-id=1429:3019').fileKey,
-    'ABC123def',
+    parsePageUrl('https://figma.com/file/TESTFILEB/name?node-id=1:2').fileKey,
+    'TESTFILEB',
   );
   const branch = parsePageUrl(
-    'https://www.figma.com/design/MAINFILEKEY0000000001/Name/branch/BRANCHKEY000000000002/wip?node-id=1-2',
+    'https://www.figma.com/design/TESTFILEA/Name/branch/BR1/wip?node-id=1-2',
   );
-  assert.equal(branch.fileKey, 'BRANCHKEY000000000002');
-  assert.equal(branch.sourceFileKey, 'MAINFILEKEY0000000001');
+  assert.equal(branch.fileKey, 'BR1');
+  assert.equal(branch.sourceFileKey, 'TESTFILEA');
   assert.equal(branch.nodeId, '1:2');
 });
 
 test('链接：原型、FigJam、无 node-id 直接停', () => {
   throwsStopped(
-    () => parsePageUrl('https://www.figma.com/proto/FMGPo4jDRp5ZaqljrDff7G/name?node-id=1429-3019'),
+    () => parsePageUrl(`https://www.figma.com/proto/${FILE_ID}/name?node-id=1-2`),
     'proto',
     /原型/,
   );
@@ -140,7 +141,7 @@ test('链接：原型、FigJam、无 node-id 直接停', () => {
     /FigJam/,
   );
   throwsStopped(
-    () => parsePageUrl('https://www.figma.com/design/FMGPo4jDRp5ZaqljrDff7G/name'),
+    () => parsePageUrl(`https://www.figma.com/design/${FILE_ID}/name`),
     'no-node-id',
     /node-id/,
   );
@@ -164,9 +165,9 @@ test('语言重复或非法、基础语言不在集合、端别非法都停', ()
 test('Frame 节点停，并提示改给页面链接', async () => {
   await rejectsStopped(
     probeFigmaPage({
-      fileKey: 'FMGPo4jDRp5ZaqljrDff7G',
+      fileKey: FILE_ID,
       nodeId: CANVAS_ID,
-      tokenValue: TOKEN,
+      tokenValue: STUB,
       fetchImpl: canvasFetch('1', 'FRAME'),
     }),
     'not-canvas',
@@ -183,9 +184,9 @@ test('401 / 403 / 404 / 超时各自 stopped，并给出中文原因', async () 
   for (const [status, code, re] of cases) {
     await rejectsStopped(
       probeFigmaPage({
-        fileKey: 'KEY',
+        fileKey: FILE_ID,
         nodeId: CANVAS_ID,
-        tokenValue: TOKEN,
+        tokenValue: STUB,
         fetchImpl: async () => jsonRes(status, {}),
       }),
       code,
@@ -194,9 +195,9 @@ test('401 / 403 / 404 / 超时各自 stopped，并给出中文原因', async () 
   }
   await rejectsStopped(
     probeFigmaPage({
-      fileKey: 'KEY',
+      fileKey: FILE_ID,
       nodeId: CANVAS_ID,
-      tokenValue: TOKEN,
+      tokenValue: STUB,
       timeoutMs: 20,
       fetchImpl: hangingFetch(),
     }),
@@ -210,7 +211,7 @@ test('第一步只校验：通过时给出摘要和指纹，不写记录', async
   assert.equal(result.ok, true);
   assert.equal(result.step, 'validate');
   assert.equal(result.summary.fileVersion, '4242');
-  assert.equal(result.summary.nodeId, '1429:3019');
+  assert.equal(result.summary.nodeId, '1:2');
   assert.match(result.fingerprint, /^[a-f0-9]{64}$/);
   assert.equal(existsSync(join(tmp, 'runs')), false);
 });
@@ -256,8 +257,8 @@ test('第二步写范围记录和环节记录；checkEntry 通过；改记录后
   assert.equal(stage.stage, 'A');
   assert.equal(stage.result, 'pass');
   assert.equal(stage.round, 1);
-  assert.equal(JSON.stringify(scope).includes(TOKEN), false);
-  assert.equal(JSON.stringify(stage).includes(TOKEN), false);
+  assert.equal(JSON.stringify(scope).includes(STUB), false);
+  assert.equal(JSON.stringify(stage).includes(STUB), false);
 
   const gate = checkEntry(confirmed.stagePath, {
     expectedStage: 'A',
@@ -320,13 +321,13 @@ test('runAScope 对 401/403/404/超时返回 stopped，且不写记录', async (
     assert.equal(result.result, 'stopped');
     assert.equal(result.code, code);
     assert.equal(existsSync(join(tmp, 'runs')), false);
-    assert.equal(String(result.message).includes(TOKEN), false);
+    assert.equal(String(result.message).includes(STUB), false);
   }
 });
 
 test('runAScope：无 node-id 与 Frame 都 stopped', async () => {
   const noNode = await runAScope(baseArgs({
-    url: 'https://www.figma.com/design/FMGPo4jDRp5ZaqljrDff7G/name',
+    url: `https://www.figma.com/design/${FILE_ID}/name`,
   }));
   assert.equal(noNode.code, 'no-node-id');
   const frame = await runAScope(baseArgs({ fetchImpl: canvasFetch('9', 'FRAME') }));
@@ -341,7 +342,7 @@ test('main：缺确认走校验；指纹不符退出 1', async () => {
     log: (text) => logs.push(String(text)),
     err: (text) => errs.push(String(text)),
     fetchImpl: canvasFetch(),
-    tokenValue: TOKEN,
+    tokenValue: STUB,
     now: new Date('2026-11-21T04:00:00Z'),
   };
   const code = await main([
