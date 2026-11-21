@@ -6,20 +6,30 @@ import { StoppedError, isStoppedError, stoppedResult } from './stopped.mjs';
 import { parsePageUrl } from './parse-page-url.mjs';
 import { parseLanguages, parseBaseLanguage, parsePlatform } from './validate-inputs.mjs';
 import { probeFigmaPage, DEFAULT_TIMEOUT_MS } from './figma-access.mjs';
-import { formatRunDate, resolveRunDir, nextStageRound, writeJsonFile } from './run-dir.mjs';
-import { buildScopeRecord } from './scope-record.mjs';
+import {
+  formatRunDate,
+  allocRunDir,
+  resolveExistingRunDir,
+  nextStageRound,
+  nextScopeSerial,
+  findScopeByVersion,
+  writeJsonFile,
+} from './run-dir.mjs';
+import { buildScopeRecord, computeScopeVersion } from './scope-record.mjs';
 import { buildStageRecord } from './stage-record.mjs';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_ENV_DIR = resolve(PACKAGE_ROOT, '../figma-naming/tool');
 export const DEFAULT_RUN_ROOT = resolve(PACKAGE_ROOT, '../..');
+export const SHOWN_FP_MIN = 12;
 
 export const USAGE = `用法：
   npm --prefix standards/one-page run a:scope -- --url <Figma页面链接> --languages cn,tw --base-language cn --platform pc|mobile|pc+mobile
-  npm --prefix standards/one-page run a:scope -- --url <链接> --languages ... --base-language ... --platform ... --shown-fp <指纹前缀> --confirm-quote <原话> --confirm-source <来源>
+  npm --prefix standards/one-page run a:scope -- --url <链接> --languages ... --base-language ... --platform ... --shown-fp <至少12位小写十六进制前缀> --confirm-quote <原话> --confirm-source <来源> --run-dir <第一步返回的目录>
 
-第一步只校验，打印摘要和摘要指纹，不写记录。
-第二步必须同时带 --shown-fp、--confirm-quote、--confirm-source 才写范围记录和环节记录。
+第一步只校验，打印摘要、完整指纹和展示用前 12 位，并生成运行目录；不写范围记录。
+第二步必须同时带 --shown-fp（至少 12 位小写十六进制前缀）、--confirm-quote、--confirm-source、--run-dir（或 --run-id）才写记录。
+同一运行目录重复确认同一范围版本会拒绝，不覆盖旧文件。
 
 可选：--env-file <path>  --run-root <dir>  --timeout-ms <n>`;
 
@@ -77,8 +87,9 @@ function toCamel(key) {
   return key.replace(/-([a-z])/g, (_, ch) => ch.toUpperCase());
 }
 
-export function formatSummaryText(summary, fingerprint) {
-  return [
+export function formatSummaryText(summary, fingerprint, extras = {}) {
+  const prefix = fingerprint.slice(0, SHOWN_FP_MIN);
+  const lines = [
     '范围摘要',
     `链接：${summary.link}`,
     `fileKey：${summary.fileKey}`,
@@ -88,7 +99,10 @@ export function formatSummaryText(summary, fingerprint) {
     `baseLanguage：${summary.baseLanguage}`,
     `platform：${summary.platform}`,
     `摘要指纹：${fingerprint}`,
-  ].join('\n');
+    `展示用前缀：${prefix}`,
+  ];
+  if (extras.runDir) lines.push(`运行目录：${extras.runDir}`);
+  return lines.join('\n');
 }
 
 function assertNoSecret(value, secret) {
@@ -114,6 +128,22 @@ function confirmIntent({ shownFp, confirmQuote, confirmSource }) {
   return { mode: 'confirm', shownFp: fp, confirmQuote: quote, confirmSource: source };
 }
 
+export function assertShownFp(shownFp, fingerprint) {
+  const fp = String(shownFp).toLowerCase();
+  if (!/^[a-f0-9]+$/.test(fp) || fp.length < SHOWN_FP_MIN) {
+    throw new StoppedError(
+      'fingerprint-invalid',
+      `--shown-fp 必须是至少 ${SHOWN_FP_MIN} 位小写十六进制，且为当前摘要指纹的前缀。`,
+    );
+  }
+  if (!fingerprint.startsWith(fp)) {
+    throw new StoppedError(
+      'fingerprint-mismatch',
+      '摘要指纹与当前校验结果不符。请重新跑第一步，把看到的指纹前缀传给 --shown-fp 后再确认。',
+    );
+  }
+}
+
 export async function runAScope(options = {}) {
   try {
     return await runAScopeInner(options);
@@ -129,6 +159,18 @@ async function runAScopeInner(options) {
   const baseLanguage = parseBaseLanguage(options.baseLanguage, languages);
   const platform = parsePlatform(options.platform);
   const intent = confirmIntent(options);
+  const runRoot = options.runRoot ?? DEFAULT_RUN_ROOT;
+  const now = options.now ?? new Date();
+
+  if (intent.mode === 'confirm') {
+    if (!/^[a-f0-9]+$/.test(intent.shownFp.toLowerCase()) || intent.shownFp.length < SHOWN_FP_MIN) {
+      throw new StoppedError(
+        'fingerprint-invalid',
+        `--shown-fp 必须是至少 ${SHOWN_FP_MIN} 位小写十六进制，且为当前摘要指纹的前缀。`,
+      );
+    }
+    resolveExistingRunDir(runRoot, { runDir: options.runDir, runId: options.runId });
+  }
 
   const timeoutMs = options.timeoutMs == null ? DEFAULT_TIMEOUT_MS : Number(options.timeoutMs);
   const probe = options.probe ?? ((args) => probeFigmaPage({
@@ -148,47 +190,51 @@ async function runAScopeInner(options) {
     baseLanguage,
     platform,
   };
-  const fingerprint = buildScopeRecord(summary, {
-    confirmQuote: '',
-    confirmSource: '',
-    confirmedAt: '',
-  }).scopeVersion;
+  const fingerprint = computeScopeVersion(summary);
+  const fingerprintPrefix = fingerprint.slice(0, SHOWN_FP_MIN);
 
   if (intent.mode === 'validate') {
+    const allocated = allocRunDir(runRoot, {
+      date: formatRunDate(now),
+      fileKey: parsed.fileKey,
+      nodeId: parsed.nodeId,
+      suffix: options.runSuffix,
+      makeSuffix: options.makeSuffix,
+    });
     return {
       ok: true,
       step: 'validate',
       result: 'pass',
       summary,
       fingerprint,
-      message: '校验通过。请向用户展示摘要和摘要指纹，明确确认后再写记录。',
+      fingerprintPrefix,
+      runDir: allocated.dir,
+      runId: allocated.runId,
+      message: '校验通过。请向用户展示摘要和展示用前缀，明确确认后带 --run-dir 再写记录。',
     };
   }
 
-  if (!fingerprint.startsWith(intent.shownFp.toLowerCase())) {
-    throw new StoppedError(
-      'fingerprint-mismatch',
-      '摘要指纹与当前校验结果不符。请重新跑第一步，把看到的指纹传给 --shown-fp 后再确认。',
-    );
-  }
+  assertShownFp(intent.shownFp, fingerprint);
+  const existing = resolveExistingRunDir(runRoot, { runDir: options.runDir, runId: options.runId });
+  const dir = existing.dir;
 
-  const runRoot = options.runRoot ?? DEFAULT_RUN_ROOT;
-  const now = options.now ?? new Date();
-  const dir = resolveRunDir(runRoot, {
-    date: formatRunDate(now),
-    fileKey: parsed.fileKey,
-    nodeId: parsed.nodeId,
-  });
   const confirmedAt = now.toISOString();
   const scopeRecord = buildScopeRecord(summary, {
     confirmQuote: intent.confirmQuote,
     confirmSource: intent.confirmSource,
     confirmedAt,
   });
+  if (findScopeByVersion(dir, scopeRecord.scopeVersion)) {
+    throw new StoppedError(
+      'scope-exists',
+      '同一运行目录已有该范围版本的记录，未覆盖。若要改范围请确认新内容；若要重开请重新跑第一步拿到新目录。',
+    );
+  }
   const secret = options.tokenValue || process.env.FIGMA_ACCESS_TOKEN || '';
   assertNoSecret(scopeRecord, secret);
 
-  const scopePath = join(dir, `scope-${scopeRecord.scopeVersion}.json`);
+  const serial = nextScopeSerial(dir);
+  const scopePath = join(dir, `scope.v${serial}.json`);
   writeJsonFile(scopePath, scopeRecord);
 
   const round = nextStageRound(dir, 'A');
@@ -200,6 +246,7 @@ async function runAScopeInner(options) {
       kind: 'scope',
       version: scopeRecord.scopeVersion,
       path: resolve(scopePath),
+      digest: scopeRecord.recordDigest,
     },
     result: 'pass',
     problems: [],
@@ -216,11 +263,14 @@ async function runAScopeInner(options) {
     result: 'pass',
     summary,
     fingerprint,
+    fingerprintPrefix,
     scopeVersion: scopeRecord.scopeVersion,
+    recordDigest: scopeRecord.recordDigest,
     stageVersion: stageDraft.version,
     scopePath: resolve(scopePath),
     stagePath: resolve(stagePath),
     runDir: dir,
+    runId: existing.runId,
     message: '已写入范围记录和 A 环节记录。',
   };
 }
@@ -255,16 +305,20 @@ export async function main(argv, extras = {}) {
     confirmQuote: args.confirmQuote,
     confirmSource: args.confirmSource,
     runRoot: args.runRoot,
+    runDir: args.runDir,
+    runId: args.runId,
     timeoutMs: args.timeoutMs,
     fetchImpl: extras.fetchImpl,
     probe: extras.probe,
     tokenValue: extras.tokenValue,
     now: extras.now,
+    runSuffix: extras.runSuffix,
+    makeSuffix: extras.makeSuffix,
   });
   const errOut = extras.err ?? console.error;
   const out = extras.log ?? console.log;
   if (result.ok && result.step === 'validate') {
-    errOut(formatSummaryText(result.summary, result.fingerprint));
+    errOut(formatSummaryText(result.summary, result.fingerprint, { runDir: result.runDir }));
   } else if (result.ok) {
     errOut(`${result.message}\n${result.scopePath}\n${result.stagePath}`);
   } else {

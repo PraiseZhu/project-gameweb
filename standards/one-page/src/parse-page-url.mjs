@@ -11,6 +11,11 @@ export function normalizeNodeId(raw) {
   return NODE_ID.test(colon) ? colon : null;
 }
 
+export function canonicalPageLink({ kind, sourceFileKey, branchKey, nodeIdPath }) {
+  const branch = branchKey ? `/branch/${branchKey}` : '';
+  return `https://www.figma.com/${kind}/${sourceFileKey}${branch}/?node-id=${nodeIdPath}`;
+}
+
 export function parsePageUrl(raw) {
   if (raw == null || String(raw).trim() === '') {
     throw new StoppedError(
@@ -18,10 +23,10 @@ export function parsePageUrl(raw) {
       '没有 Figma 页面链接。请提供带 node-id 的 figma.com/design 或 /file 页面链接。',
     );
   }
-  const link = String(raw).trim();
+  const rawLink = String(raw).trim();
   let url;
   try {
-    url = new URL(link);
+    url = new URL(rawLink);
   } catch {
     throw new StoppedError(
       'invalid-url',
@@ -76,9 +81,10 @@ export function parsePageUrl(raw) {
   }
 
   let fileKey = sourceFileKey;
+  let branchKey = null;
   const branchAt = parts.findIndex((part) => part.toLowerCase() === 'branch');
   if (branchAt >= 0) {
-    const branchKey = parts[branchAt + 1];
+    branchKey = parts[branchAt + 1];
     if (!branchKey || !FILE_KEY.test(branchKey)) {
       throw new StoppedError('invalid-url', '分支链接缺少有效的 /branch/<key>。');
     }
@@ -100,11 +106,14 @@ export function parsePageUrl(raw) {
     );
   }
 
+  const nodeIdPath = nodeId.replace(/:/g, '-');
   return {
-    link,
+    link: canonicalPageLink({ kind, sourceFileKey, branchKey, nodeIdPath }),
     fileKey,
     sourceFileKey,
+    branchKey,
+    kind,
     nodeId,
-    nodeIdPath: nodeId.replace(/:/g, '-'),
+    nodeIdPath,
   };
 }

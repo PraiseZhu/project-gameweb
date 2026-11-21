@@ -16,7 +16,9 @@ const PACKAGE_JSON = JSON.parse(readFileSync(new URL('../package.json', import.m
 const CANVAS_ID = '1:2';
 const FILE_ID = 'TESTFILEKEY';
 const PAGE_URL = `https://www.figma.com/design/${FILE_ID}/name?node-id=1-2`;
+const CANONICAL_URL = `https://www.figma.com/design/${FILE_ID}/?node-id=1-2`;
 const STUB = ['no', 'leak'].join('-');
+const EXTRA = 'extra1';
 
 let tmp;
 let previousToken;
@@ -84,6 +86,14 @@ function hangingFetch() {
   });
 }
 
+function hangingJsonFetch() {
+  return async () => ({
+    ok: true,
+    status: 200,
+    json: () => new Promise(() => {}),
+  });
+}
+
 function baseArgs(over = {}) {
   return {
     url: PAGE_URL,
@@ -95,6 +105,16 @@ function baseArgs(over = {}) {
     fetchImpl: canvasFetch(),
     ...over,
   };
+}
+
+async function confirmFrom(first, over = {}) {
+  return runAScope(baseArgs({
+    shownFp: first.fingerprintPrefix,
+    confirmQuote: '确认，按这个范围做',
+    confirmSource: 'cindy-card',
+    runDir: first.runDir,
+    ...over,
+  }));
 }
 
 test('package.json 提供 a:scope 入口', () => {
@@ -109,12 +129,14 @@ test('语言码复用命名规范 LANG_CODES，不另抄一份', () => {
   assert.equal(src.includes("['cn', 'tw', 'en', 'jp', 'kr']"), false);
 });
 
-test('链接：design / file / 分支、两种 node-id 都认', () => {
-  assert.deepEqual(parsePageUrl(PAGE_URL).fileKey, FILE_ID);
-  assert.equal(parsePageUrl(PAGE_URL).nodeId, '1:2');
+test('链接：design / file / 分支、两种 node-id 都认，并规范化', () => {
+  const parsed = parsePageUrl(PAGE_URL);
+  assert.equal(parsed.fileKey, FILE_ID);
+  assert.equal(parsed.nodeId, '1:2');
+  assert.equal(parsed.link, CANONICAL_URL);
   assert.equal(
-    parsePageUrl('https://figma.com/file/TESTFILEB/name?node-id=1:2').fileKey,
-    'TESTFILEB',
+    parsePageUrl('https://figma.com/file/TESTFILEB/name?node-id=1:2').link,
+    'https://www.figma.com/file/TESTFILEB/?node-id=1-2',
   );
   const branch = parsePageUrl(
     'https://www.figma.com/design/TESTFILEA/Name/branch/BR1/wip?node-id=1-2',
@@ -122,6 +144,7 @@ test('链接：design / file / 分支、两种 node-id 都认', () => {
   assert.equal(branch.fileKey, 'BR1');
   assert.equal(branch.sourceFileKey, 'TESTFILEA');
   assert.equal(branch.nodeId, '1:2');
+  assert.equal(branch.link, 'https://www.figma.com/design/TESTFILEA/branch/BR1/?node-id=1-2');
 });
 
 test('链接：原型、FigJam、无 node-id 直接停', () => {
@@ -145,6 +168,21 @@ test('链接：原型、FigJam、无 node-id 直接停', () => {
     'no-node-id',
     /node-id/,
   );
+});
+
+test('带多余 query 的链接：摘要和记录都不含 extra1', async () => {
+  const dirty = `${PAGE_URL}&t=${EXTRA}`;
+  const parsed = parsePageUrl(dirty);
+  assert.equal(parsed.link.includes(EXTRA), false);
+  const first = await runAScope(baseArgs({ url: dirty }));
+  assert.equal(first.summary.link, CANONICAL_URL);
+  assert.equal(JSON.stringify(first).includes(EXTRA), false);
+  const confirmed = await confirmFrom(first, { url: dirty });
+  assert.equal(confirmed.ok, true);
+  const scope = JSON.parse(readFileSync(confirmed.scopePath, 'utf8'));
+  assert.equal(scope.link, CANONICAL_URL);
+  assert.equal(JSON.stringify(scope).includes(EXTRA), false);
+  assert.equal(JSON.stringify(confirmed).includes(EXTRA), false);
 });
 
 test('语言重复或非法、基础语言不在集合、端别非法都停', () => {
@@ -206,47 +244,95 @@ test('401 / 403 / 404 / 超时各自 stopped，并给出中文原因', async () 
   );
 });
 
-test('第一步只校验：通过时给出摘要和指纹，不写记录', async () => {
+test('fetch 已返回但 json() 永不完成 → timeout', async () => {
+  await rejectsStopped(
+    probeFigmaPage({
+      fileKey: FILE_ID,
+      nodeId: CANVAS_ID,
+      tokenValue: STUB,
+      timeoutMs: 20,
+      fetchImpl: hangingJsonFetch(),
+    }),
+    'timeout',
+    /超时/,
+  );
+});
+
+test('第一步只校验：通过时给出摘要、指纹前缀和运行目录，不写范围记录', async () => {
   const result = await runAScope(baseArgs());
   assert.equal(result.ok, true);
   assert.equal(result.step, 'validate');
   assert.equal(result.summary.fileVersion, '4242');
   assert.equal(result.summary.nodeId, '1:2');
+  assert.equal(result.summary.link, CANONICAL_URL);
   assert.match(result.fingerprint, /^[a-f0-9]{64}$/);
-  assert.equal(existsSync(join(tmp, 'runs')), false);
+  assert.equal(result.fingerprintPrefix, result.fingerprint.slice(0, 12));
+  assert.equal(result.fingerprintPrefix.length, 12);
+  assert.equal(existsSync(result.runDir), true);
+  assert.equal(readdirSync(result.runDir).some((name) => name.startsWith('scope.')), false);
 });
 
 test('缺确认或只带部分确认旗标：拒绝写记录', async () => {
   const missing = await runAScope(baseArgs({ shownFp: 'abc', confirmQuote: '确认' }));
   assert.equal(missing.ok, false);
   assert.equal(missing.code, 'need-confirm');
-  assert.equal(existsSync(join(tmp, 'runs')), false);
 
   const none = await runAScope(baseArgs());
   assert.equal(none.ok, true);
   assert.equal(none.step, 'validate');
 });
 
-test('指纹不符拒绝写记录', async () => {
+test('指纹 1 位、11 位、含非 hex 均拒绝；12 位正确前缀与 64 位完整通过', async () => {
+  const first = await runAScope(baseArgs());
+  const one = await confirmFrom(first, { shownFp: 'a' });
+  assert.equal(one.code, 'fingerprint-invalid');
+  const eleven = await confirmFrom(first, { shownFp: first.fingerprint.slice(0, 11) });
+  assert.equal(eleven.code, 'fingerprint-invalid');
+  const nonHex = await confirmFrom(first, { shownFp: 'zzzzzzzzzzzz' });
+  assert.equal(nonHex.code, 'fingerprint-invalid');
+  const twelve = await confirmFrom(first, { shownFp: first.fingerprint.slice(0, 12) });
+  assert.equal(twelve.ok, true);
+  const other = await runAScope(baseArgs({ languages: 'cn,tw', baseLanguage: 'cn' }));
+  const full = await confirmFrom(other, {
+    languages: 'cn,tw',
+    baseLanguage: 'cn',
+    shownFp: other.fingerprint,
+    runDir: other.runDir,
+  });
+  assert.equal(full.ok, true);
+  assert.equal(full.fingerprint, other.fingerprint);
+});
+
+test('12 位十六进制但不是当前指纹前缀：拒绝写记录', async () => {
+  const first = await runAScope(baseArgs());
+  const result = await confirmFrom(first, { shownFp: 'aaaaaaaaaaaa' });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'fingerprint-mismatch');
+  assert.equal(readdirSync(first.runDir).some((name) => name.startsWith('scope.')), false);
+});
+
+test('第二步不带运行目录被拒', async () => {
   const first = await runAScope(baseArgs());
   const result = await runAScope(baseArgs({
-    shownFp: 'deadbeef',
-    confirmQuote: '确认按这个范围做',
+    shownFp: first.fingerprintPrefix,
+    confirmQuote: '确认',
     confirmSource: 'chat',
   }));
   assert.equal(result.ok, false);
-  assert.equal(result.code, 'fingerprint-mismatch');
-  assert.equal(existsSync(join(tmp, 'runs')), false);
-  assert.ok(!first.fingerprint.startsWith('deadbeef'));
+  assert.equal(result.code, 'need-run-dir');
+});
+
+test('同页同日两次第一步得到不同目录', async () => {
+  const a = await runAScope(baseArgs({ now: new Date('2026-11-21T04:00:00Z') }));
+  const b = await runAScope(baseArgs({ now: new Date('2026-11-21T04:00:00Z') }));
+  assert.notEqual(a.runDir, b.runDir);
+  assert.equal(existsSync(a.runDir), true);
+  assert.equal(existsSync(b.runDir), true);
 });
 
 test('第二步写范围记录和环节记录；checkEntry 通过；改记录后拒绝', async () => {
   const first = await runAScope(baseArgs());
-  const confirmed = await runAScope(baseArgs({
-    shownFp: first.fingerprint.slice(0, 12),
-    confirmQuote: '确认，按这个范围做',
-    confirmSource: 'cindy-card',
-  }));
+  const confirmed = await confirmFrom(first);
   assert.equal(confirmed.ok, true);
   assert.equal(confirmed.step, 'confirm');
   assert.equal(confirmed.scopeVersion, first.fingerprint);
@@ -254,11 +340,14 @@ test('第二步写范围记录和环节记录；checkEntry 通过；改记录后
   const stage = JSON.parse(readFileSync(confirmed.stagePath, 'utf8'));
   assert.equal(scope.fileVersion, '4242');
   assert.equal(scope.confirmQuote, '确认，按这个范围做');
+  assert.equal(scope.link, CANONICAL_URL);
   assert.equal(stage.stage, 'A');
   assert.equal(stage.result, 'pass');
   assert.equal(stage.round, 1);
+  assert.equal(stage.output.digest, scope.recordDigest);
   assert.equal(JSON.stringify(scope).includes(STUB), false);
   assert.equal(JSON.stringify(stage).includes(STUB), false);
+  assert.match(confirmed.scopePath, /scope\.v1\.json$/);
 
   const gate = checkEntry(confirmed.stagePath, {
     expectedStage: 'A',
@@ -276,33 +365,80 @@ test('第二步写范围记录和环节记录；checkEntry 通过；改记录后
   assert.match(rejected.reason, /已被改动|不是 pass/);
 });
 
-test('同一运行目录改范围会出新版本并保留旧版', async () => {
+test('checkEntry 缺参数或旧版本对不上新期望都拒绝', async () => {
   const first = await runAScope(baseArgs());
-  const v1 = await runAScope(baseArgs({
-    shownFp: first.fingerprint,
+  const confirmed = await confirmFrom(first);
+  const missingStage = checkEntry(confirmed.stagePath, { expectedOutputVersion: confirmed.scopeVersion });
+  assert.equal(missingStage.ok, false);
+  assert.match(missingStage.reason, /expectedStage/);
+  const missingVer = checkEntry(confirmed.stagePath, { expectedStage: 'A' });
+  assert.equal(missingVer.ok, false);
+  assert.match(missingVer.reason, /expectedOutputVersion/);
+  const stale = checkEntry(confirmed.stagePath, {
+    expectedStage: 'A',
+    expectedOutputVersion: '0'.repeat(64),
+  });
+  assert.equal(stale.ok, false);
+  assert.match(stale.reason, /输出版本/);
+});
+
+test('改 confirmQuote / confirmSource / confirmedAt 任一，checkEntry 拒绝', async () => {
+  const first = await runAScope(baseArgs());
+  const confirmed = await confirmFrom(first);
+  const original = readFileSync(confirmed.scopePath, 'utf8');
+  const fields = ['confirmQuote', 'confirmSource', 'confirmedAt'];
+  for (const field of fields) {
+    writeFileSync(confirmed.scopePath, original);
+    const scope = JSON.parse(original);
+    scope[field] = `${scope[field]}-x`;
+    writeFileSync(confirmed.scopePath, `${canonicalJson(scope)}\n`);
+    const rejected = checkEntry(confirmed.stagePath, {
+      expectedStage: 'A',
+      expectedOutputVersion: confirmed.scopeVersion,
+    });
+    assert.equal(rejected.ok, false, field);
+    assert.match(rejected.reason, /确认信息|完整性摘要|已被改动/);
+  }
+});
+
+test('同一运行目录改范围会出新版本并保留旧版；重复确认同一版本拒绝', async () => {
+  const first = await runAScope(baseArgs());
+  const v1 = await confirmFrom(first, {
     confirmQuote: '先做中文',
     confirmSource: 'chat',
     now: new Date('2026-11-21T04:00:00Z'),
-  }));
+  });
+  const v1Text = readFileSync(v1.scopePath, 'utf8');
+  const again = await confirmFrom(first, {
+    confirmQuote: '再确认一次',
+    confirmSource: 'chat',
+    now: new Date('2026-11-21T04:01:00Z'),
+  });
+  assert.equal(again.code, 'scope-exists');
+  assert.equal(readFileSync(v1.scopePath, 'utf8'), v1Text);
+
   const second = await runAScope(baseArgs({ languages: 'cn,tw', baseLanguage: 'cn' }));
-  const v2 = await runAScope(baseArgs({
+  const v2 = await confirmFrom(second, {
     languages: 'cn,tw',
     baseLanguage: 'cn',
     shownFp: second.fingerprint,
     confirmQuote: '加上繁中',
     confirmSource: 'chat',
+    runDir: v1.runDir,
     now: new Date('2026-11-21T04:00:00Z'),
-  }));
+  });
   assert.equal(v1.runDir, v2.runDir);
   assert.notEqual(v1.scopeVersion, v2.scopeVersion);
   assert.equal(existsSync(v1.scopePath), true);
   assert.equal(existsSync(v2.scopePath), true);
+  assert.equal(readFileSync(v1.scopePath, 'utf8'), v1Text);
+  assert.match(v2.scopePath, /scope\.v2\.json$/);
   const names = readdirSync(v1.runDir);
-  assert.equal(names.filter((name) => name.startsWith('scope-')).length, 2);
+  assert.equal(names.filter((name) => /^scope\.v\d+\.json$/.test(name)).length, 2);
   assert.equal(names.filter((name) => name.startsWith('stage-A-')).length, 2);
 });
 
-test('runAScope 对 401/403/404/超时返回 stopped，且不写记录', async () => {
+test('runAScope 对 401/403/404/超时返回 stopped，且不写范围记录', async () => {
   const cases = [
     [async () => jsonRes(401, {}), 'http-401'],
     [async () => jsonRes(403, {}), 'http-403'],
@@ -313,14 +449,10 @@ test('runAScope 对 401/403/404/超时返回 stopped，且不写记录', async (
     const result = await runAScope(baseArgs({
       fetchImpl,
       timeoutMs: 20,
-      shownFp: 'aa',
-      confirmQuote: '确认',
-      confirmSource: 'chat',
     }));
     assert.equal(result.ok, false);
     assert.equal(result.result, 'stopped');
     assert.equal(result.code, code);
-    assert.equal(existsSync(join(tmp, 'runs')), false);
     assert.equal(String(result.message).includes(STUB), false);
   }
 });
@@ -355,7 +487,8 @@ test('main：缺确认走校验；指纹不符退出 1', async () => {
   assert.equal(code, 0);
   const parsed = JSON.parse(logs.at(-1));
   assert.equal(parsed.step, 'validate');
-  assert.match(errs.join('\n'), /摘要指纹/);
+  assert.match(errs.join('\n'), /展示用前缀/);
+  assert.equal(parsed.summary.link.includes('name'), false);
 
   const bad = await main([
     '--url', PAGE_URL,
@@ -363,10 +496,10 @@ test('main：缺确认走校验；指纹不符退出 1', async () => {
     '--base-language', 'cn',
     '--platform', 'pc',
     '--run-root', tmp,
-    '--shown-fp', 'ffffffff',
+    '--run-dir', parsed.runDir,
+    '--shown-fp', 'ffffffffffff',
     '--confirm-quote', '确认',
     '--confirm-source', 'chat',
   ], extras);
   assert.equal(bad, 1);
-  assert.equal(existsSync(join(tmp, 'runs')), false);
 });

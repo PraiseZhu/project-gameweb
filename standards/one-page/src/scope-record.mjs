@@ -24,15 +24,22 @@ export function computeScopeVersion(fields) {
   return sha256Hex(scopeContent(fields));
 }
 
+export function computeRecordDigest(record) {
+  if (!record || typeof record !== 'object') return '';
+  const { recordDigest, ...rest } = record;
+  return sha256Hex(rest);
+}
+
 export function buildScopeRecord(fields, { confirmQuote, confirmSource, confirmedAt }) {
   const content = scopeContent(fields);
-  return {
+  const record = {
     ...content,
     scopeVersion: sha256Hex(content),
     confirmedAt,
     confirmQuote,
     confirmSource,
   };
+  return { ...record, recordDigest: sha256Hex(record) };
 }
 
 export function verifyScopeRecord(record) {
@@ -43,5 +50,9 @@ export function verifyScopeRecord(record) {
   if (record.scopeVersion !== expected) {
     return { ok: false, reason: '范围记录已被改动，版本号对不上' };
   }
-  return { ok: true, version: expected };
+  const digest = computeRecordDigest(record);
+  if (record.recordDigest !== digest) {
+    return { ok: false, reason: '范围记录确认信息已被改动' };
+  }
+  return { ok: true, version: expected, digest };
 }
