@@ -3,13 +3,19 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
 import { StoppedError, isStoppedError, stoppedResult } from './stopped.mjs';
-import { sha256Hex, canonicalJson } from './canonical.mjs';
+import { canonicalJson } from './canonical.mjs';
 import { verifyScopeRecord } from './scope-record.mjs';
-import { buildStageRecord, checkEntry } from './stage-record.mjs';
+import { parsePageUrl } from './parse-page-url.mjs';
+import {
+  buildStageRecord,
+  checkEntry,
+  buildExtractRecord,
+  readJsonFileDigest,
+} from './stage-record.mjs';
 import {
   hasRunPointer,
   resolveExistingRunDir,
-  readRunIdentity,
+  assertRunIdentity,
   latestScopePath,
   findStagePathByOutputVersion,
   nextStageRound,
@@ -122,6 +128,7 @@ function loadLatestA(dir) {
   const gate = checkEntry(stagePath, {
     expectedStage: 'A',
     expectedOutputVersion: scope.scopeVersion,
+    expectedOutputKind: 'scope',
   });
   if (!gate.ok) {
     const tampered = /已被改动|确认信息|完整性摘要/.test(gate.reason);
@@ -203,13 +210,20 @@ async function runBExtractInner(options) {
     ctx.scope = a.scope;
     ctx.scopePath = a.scopePath;
     ctx.aStagePath = a.stagePath;
-    const identity = readRunIdentity(dir);
-    if (identity.fileKey !== a.scope.fileKey || identity.nodeId !== a.scope.nodeId) {
-      throw new StoppedError(
-        'run-dir-mismatch',
-        '运行目录不属于当前稿件（fileKey/nodeId 与范围记录不一致）。',
-      );
+    let parsedLink;
+    try {
+      parsedLink = parsePageUrl(a.scope.link);
+    } catch {
+      throw new StoppedError('a-tampered', '范围记录的链接无法解析。');
     }
+    if (parsedLink.fileKey !== a.scope.fileKey || parsedLink.nodeId !== a.scope.nodeId) {
+      throw new StoppedError('a-tampered', '范围记录的链接与 fileKey/nodeId 不一致。');
+    }
+    assertRunIdentity(dir, {
+      fileKey: a.scope.fileKey,
+      nodeId: a.scope.nodeId,
+      branchKey: parsedLink.branchKey ?? null,
+    });
 
     const snapshot = await fetchSnapshot({
       fileKey: a.scope.fileKey,
@@ -317,21 +331,28 @@ function writeBOutputs({ dir, ctx, secret, runId }) {
   writeJsonFile(problemsPath, ctx.problems);
   writeJsonFile(pairingPath, ctx.pairing);
 
-  const extractBody = {
+  const artifact = (filePath) => (
+    filePath
+      ? { path: resolve(filePath), digest: readJsonFileDigest(filePath) }
+      : null
+  );
+  const extractRecord = buildExtractRecord({
     scopeVersion: ctx.scope?.scopeVersion ?? null,
     fileVersion: ctx.snapshot?.fileVersion ?? ctx.scope?.fileVersion ?? null,
     ends: ctx.selected.map((set) => set.end),
-    inventories: {
-      pc: ctx.inventories.pc ? join(outDir, 'inventory-pc.json') : null,
-      mobile: ctx.inventories.mobile ? join(outDir, 'inventory-mobile.json') : null,
-    },
-    problemsPath,
-    pairingPath,
-    snapshotPath: ctx.snapshotPath,
-    configPath: ctx.configPath,
     result: ctx.result,
-  };
-  const extractRecord = { ...extractBody, version: sha256Hex(extractBody) };
+    artifacts: {
+      scope: artifact(ctx.scopePath),
+      snapshot: artifact(ctx.snapshotPath),
+      config: artifact(ctx.configPath),
+      inventories: {
+        pc: ctx.inventories.pc ? artifact(join(outDir, 'inventory-pc.json')) : null,
+        mobile: ctx.inventories.mobile ? artifact(join(outDir, 'inventory-mobile.json')) : null,
+      },
+      problems: artifact(problemsPath),
+      pairing: artifact(pairingPath),
+    },
+  });
   assertNoSecret(extractRecord, secret);
   writeJsonFile(extractPath, extractRecord);
 
@@ -360,7 +381,7 @@ function writeBOutputs({ dir, ctx, secret, runId }) {
       kind: 'b-extract',
       version: extractRecord.version,
       path: resolve(extractPath),
-      digest: sha256Hex(ctx.problems),
+      digest: extractRecord.recordDigest,
     },
     result: ctx.result,
     problems: ctx.problems,

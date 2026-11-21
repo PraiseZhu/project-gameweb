@@ -452,6 +452,7 @@ test('第二步写范围记录和环节记录；checkEntry 通过；改记录后
   const gate = checkEntry(confirmed.stagePath, {
     expectedStage: 'A',
     expectedOutputVersion: confirmed.scopeVersion,
+    expectedOutputKind: 'scope',
   });
   assert.equal(gate.ok, true);
 
@@ -460,6 +461,7 @@ test('第二步写范围记录和环节记录；checkEntry 通过；改记录后
   const rejected = checkEntry(confirmed.stagePath, {
     expectedStage: 'A',
     expectedOutputVersion: confirmed.scopeVersion,
+    expectedOutputKind: 'scope',
   });
   assert.equal(rejected.ok, false);
   assert.match(rejected.reason, /已被改动|不是 pass/);
@@ -468,15 +470,22 @@ test('第二步写范围记录和环节记录；checkEntry 通过；改记录后
 test('checkEntry 缺参数或旧版本对不上新期望都拒绝', async () => {
   const first = await runAScope(baseArgs());
   const confirmed = await confirmFrom(first);
-  const missingStage = checkEntry(confirmed.stagePath, { expectedOutputVersion: confirmed.scopeVersion });
+  const missingStage = checkEntry(confirmed.stagePath, { expectedOutputVersion: confirmed.scopeVersion, expectedOutputKind: 'scope' });
   assert.equal(missingStage.ok, false);
   assert.match(missingStage.reason, /expectedStage/);
-  const missingVer = checkEntry(confirmed.stagePath, { expectedStage: 'A' });
+  const missingVer = checkEntry(confirmed.stagePath, { expectedStage: 'A', expectedOutputKind: 'scope' });
   assert.equal(missingVer.ok, false);
   assert.match(missingVer.reason, /expectedOutputVersion/);
+  const missingKind = checkEntry(confirmed.stagePath, {
+    expectedStage: 'A',
+    expectedOutputVersion: confirmed.scopeVersion,
+  });
+  assert.equal(missingKind.ok, false);
+  assert.match(missingKind.reason, /expectedOutputKind/);
   const stale = checkEntry(confirmed.stagePath, {
     expectedStage: 'A',
     expectedOutputVersion: '0'.repeat(64),
+    expectedOutputKind: 'scope',
   });
   assert.equal(stale.ok, false);
   assert.match(stale.reason, /输出版本/);
@@ -495,6 +504,7 @@ test('改 confirmQuote / confirmSource / confirmedAt 任一，checkEntry 拒绝'
     const rejected = checkEntry(confirmed.stagePath, {
       expectedStage: 'A',
       expectedOutputVersion: confirmed.scopeVersion,
+      expectedOutputKind: 'scope',
     });
     assert.equal(rejected.ok, false, field);
     assert.match(rejected.reason, /确认信息|完整性摘要|已被改动/);
