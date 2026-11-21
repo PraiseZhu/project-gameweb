@@ -7,6 +7,8 @@ import { canonicalJson, sha256Hex } from '../src/canonical.mjs';
 import { runAScope } from '../src/a-scope.mjs';
 import { runBExtract, main } from '../src/b-extract.mjs';
 import { buildStageRecord, buildExtractRecord, checkEntry } from '../src/stage-record.mjs';
+import { buildScopeRecord } from '../src/scope-record.mjs';
+import { INVENTORY_SCHEMA } from '../../figma-naming/spec/inventory.mjs';
 import { pairEnds } from '../src/same-modules.mjs';
 import { assertProblemShape, RETURN_TO } from '../src/problems.mjs';
 import { sameModulesOf } from '../../figma-naming/tool/src/handoff.mjs';
@@ -90,22 +92,26 @@ function fetchOf(body) {
   return async () => jsonRes(200, body);
 }
 
-async function confirmA({ platform = 'pc', body, runRoot = tmp, url = PAGE_URL } = {}) {
+async function confirmA({
+  platform = 'pc', body, runRoot = tmp, url = PAGE_URL,
+  languages = 'cn', baseLanguage = 'cn', runDir,
+} = {}) {
   const fetchImpl = fetchOf(body);
   const first = await runAScope({
     url,
-    languages: 'cn',
-    baseLanguage: 'cn',
+    languages,
+    baseLanguage,
     platform,
     runRoot,
     tokenValue: STUB,
     fetchImpl,
+    ...(runDir ? { runDir } : {}),
   });
   assert.equal(first.ok, true, first.message);
   const confirmed = await runAScope({
     url,
-    languages: 'cn',
-    baseLanguage: 'cn',
+    languages,
+    baseLanguage,
     platform,
     runRoot,
     tokenValue: STUB,
@@ -592,23 +598,60 @@ function writeExtractStage(root, {
 function completeMaterials(root, { ends = ['pc'] } = {}) {
   const roundDir = join(root, 'b1.r1');
   mkdirSync(roundDir, { recursive: true });
-  const scope = stubFile(join(root, 'scope.v1.json'), { scopeVersion: 'scopever1', fileVersion: 'fv1' });
-  const snapshot = stubFile(join(roundDir, 'snapshot-fv1.json'), { fileVersion: 'fv1' });
+  const platform = ends.includes('pc') && ends.includes('mobile') ? 'pc+mobile' : ends[0];
+  const scopeRec = buildScopeRecord({
+    link: `https://www.figma.com/design/${FILE_ID}/?node-id=1-2`,
+    fileKey: FILE_ID,
+    nodeId: '1:2',
+    fileVersion: 'fv1',
+    languages: ['cn'],
+    baseLanguage: 'cn',
+    platform,
+  }, { confirmQuote: '确认', confirmSource: 'test', confirmedAt: '2026-11-21T00:00:00.000Z' });
+  const scope = stubFile(join(root, 'scope.v1.json'), scopeRec);
+  const aStage = buildStageRecord({
+    stage: 'A',
+    round: 1,
+    inputs: [],
+    output: {
+      kind: 'scope',
+      version: scopeRec.scopeVersion,
+      path: scope.path,
+      digest: scopeRec.recordDigest,
+    },
+    result: 'pass',
+  });
+  stubFile(join(root, `stage-A-${aStage.version}.json`), aStage);
+  const snapshot = stubFile(join(roundDir, 'snapshot-fv1.json'), {
+    fileKey: FILE_ID,
+    nodeId: '1:2',
+    fileVersion: 'fv1',
+    document: { id: '1:2', type: 'CANVAS', name: '页', children: [] },
+  });
   const config = stubFile(join(roundDir, 'config.snapshot.json'), {});
   const problems = stubFile(join(roundDir, 'problems.json'), []);
   const pairing = stubFile(join(roundDir, 'pairing.json'), {
     paired: [], unmatchedDual: [], ambiguous: [], trueSingleEnd: [],
   });
+  const inv = (id, name) => stubFile(join(roundDir, `inventory-${name}.json`), {
+    schema: INVENTORY_SCHEMA,
+    ok: false,
+    status: 'blocked',
+    page: { id, name },
+    nodes: [],
+  });
   const inventories = {
-    pc: ends.includes('pc') ? stubFile(join(roundDir, 'inventory-pc.json'), { status: 'blocked' }) : null,
-    mobile: ends.includes('mobile') ? stubFile(join(roundDir, 'inventory-mobile.json'), { status: 'blocked' }) : null,
+    pc: ends.includes('pc') ? inv('10:1', 'pc') : null,
+    mobile: ends.includes('mobile') ? inv('20:1', 'mobile') : null,
   };
   return {
     artifacts: { scope, snapshot, config, problems, pairing, inventories },
     inputs: [
-      { kind: 'scope', version: 'scopever1', path: scope.path, digest: scope.digest },
-      { kind: 'snapshot', version: 'fv1', path: snapshot.path },
+      { kind: 'scope', version: scopeRec.scopeVersion, path: scope.path, digest: scopeRec.recordDigest },
+      { kind: 'snapshot', version: 'fv1', path: snapshot.path, digest: snapshot.digest },
     ],
+    scopeVersion: scopeRec.scopeVersion,
+    fileVersion: 'fv1',
   };
 }
 
@@ -689,4 +732,124 @@ test('checkEntry：合法单端/双端通过；未选端可缺；stopped 不得�
   });
   assert.equal(stoppedGate.ok, false);
   assert.match(stoppedGate.reason, /不是 pass/);
+});
+
+test('checkEntry：同一 run 更新 A 后旧 B1 拒绝，重跑后新结果通过', async () => {
+  const body = canvasBody([namedPc()]);
+  const a1 = await confirmA({ body, languages: 'cn' });
+  const b1 = await runB(a1);
+  const v1 = readJson(b1.extractPath).version;
+  assert.equal(checkB(b1.stagePath, v1).ok, true);
+  const a2 = await confirmA({
+    body,
+    languages: 'cn,tw',
+    baseLanguage: 'cn',
+    runDir: a1.runDir,
+  });
+  assert.equal(a2.ok, true, a2.message);
+  assert.match(a2.scopePath, /scope\.v2\.json$/);
+  const stale = checkB(b1.stagePath, v1);
+  assert.equal(stale.ok, false);
+  assert.match(stale.reason, /当前最新范围/);
+  assert.equal(existsSync(b1.extractPath), true);
+  const b2 = await runB(a2);
+  assert.equal(b2.ok, true, b2.message);
+  assert.equal(checkB(b2.stagePath, readJson(b2.extractPath).version).ok, true);
+  assert.equal(existsSync(b1.extractPath), true);
+  assert.match(b2.extractPath, /b1\.r2\//);
+});
+
+test('checkEntry：当前 A 缺失/被改/不通过则拒绝旧抽取', async () => {
+  const confirmed = await confirmA({ body: canvasBody([namedPc()]) });
+  const result = await runB(confirmed);
+  const version = readJson(result.extractPath).version;
+  const aStage = confirmed.stagePath;
+  const originalA = readFileSync(aStage, 'utf8');
+
+  const tampered = JSON.parse(originalA);
+  tampered.result = 'fail';
+  writeFileSync(aStage, `${canonicalJson(tampered)}\n`);
+  const badHash = checkB(result.stagePath, version);
+  assert.equal(badHash.ok, false);
+  writeFileSync(aStage, originalA);
+
+  const failA = rewriteStage(aStage, (body) => {
+    body.result = 'fail';
+    return body;
+  });
+  const notPass = checkB(result.stagePath, version);
+  assert.equal(notPass.ok, false);
+  assert.match(notPass.reason, /A 环节|不是 pass/);
+  writeFileSync(aStage, originalA);
+  void failA;
+
+  rmSync(aStage);
+  const missingA = checkB(result.stagePath, version);
+  assert.equal(missingA.ok, false);
+  assert.match(missingA.reason, /A 环节/);
+});
+
+test('checkEntry：材料内容错误且自洽重算哈希后仍拒绝', () => {
+  const shapeCases = [
+    ['problems 为 null', (m) => {
+      writeFileSync(m.artifacts.problems.path, 'null\n');
+      m.artifacts.problems.digest = sha256Hex(null);
+    }, /problems/],
+    ['problems 为对象', (m) => {
+      const value = { bad: true };
+      writeFileSync(m.artifacts.problems.path, `${canonicalJson(value)}\n`);
+      m.artifacts.problems.digest = sha256Hex(value);
+    }, /problems/],
+    ['problems 条目缺 returnTo', (m) => {
+      const value = [{ end: 'pc', section: 1, nodeId: '1:1', object: 'x', missing: 'y', impact: 'z' }];
+      writeFileSync(m.artifacts.problems.path, `${canonicalJson(value)}\n`);
+      m.artifacts.problems.digest = sha256Hex(value);
+    }, /problems/],
+    ['pairing 缺数组', (m) => {
+      const value = { paired: [], trueSingleEnd: [], unmatchedDual: [], ambiguous: null };
+      writeFileSync(m.artifacts.pairing.path, `${canonicalJson(value)}\n`);
+      m.artifacts.pairing.digest = sha256Hex(value);
+    }, /pairing/],
+    ['pairing.paired 缺 pcId', (m) => {
+      const value = {
+        paired: [{ key: 'sec/1', mobileId: 'm1' }],
+        trueSingleEnd: [], unmatchedDual: [], ambiguous: [],
+      };
+      writeFileSync(m.artifacts.pairing.path, `${canonicalJson(value)}\n`);
+      m.artifacts.pairing.digest = sha256Hex(value);
+    }, /pairing/],
+    ['inventory 缺 schema', (m) => {
+      const value = { ok: false, status: 'blocked', page: { id: '10:1' }, nodes: [] };
+      writeFileSync(m.artifacts.inventories.pc.path, `${canonicalJson(value)}\n`);
+      m.artifacts.inventories.pc.digest = sha256Hex(value);
+    }, /inventory/],
+    ['snapshot 缺 document', (m) => {
+      const value = { fileKey: FILE_ID, nodeId: '1:2', fileVersion: 'fv1' };
+      writeFileSync(m.artifacts.snapshot.path, `${canonicalJson(value)}\n`);
+      m.artifacts.snapshot.digest = sha256Hex(value);
+      m.inputs = m.inputs.map((item) => (
+        item.kind === 'snapshot' ? { ...item, digest: m.artifacts.snapshot.digest } : item
+      ));
+    }, /document/],
+    ['config 为数组', (m) => {
+      const value = [];
+      writeFileSync(m.artifacts.config.path, `${canonicalJson(value)}\n`);
+      m.artifacts.config.digest = sha256Hex(value);
+    }, /config/],
+    ['snapshot 输入 digest 为空', (m) => {
+      m.inputs = m.inputs.map((item) => item.kind === 'snapshot' ? { ...item, digest: '' } : item);
+    }, /快照输入不完整/],
+    ['范围输入 path 与材料不一致', (m) => {
+      m.inputs = m.inputs.map((item) => item.kind === 'scope' ? { ...item, path: m.artifacts.snapshot.path } : item);
+    }, /路径与材料不一致/],
+  ];
+  for (const [label, mutate, re] of shapeCases) {
+    const root = mkdtempSync(join(tmp, 'shape-'));
+    const base = { ends: ['pc'], ...completeMaterials(root, { ends: ['pc'] }) };
+    mutate(base);
+    const written = writeExtractStage(root, base);
+    const gate = checkB(written.stagePath, written.version);
+    assert.equal(gate.ok, false, label);
+    assert.match(gate.reason, re, `${label}: ${gate.reason}`);
+  }
 });

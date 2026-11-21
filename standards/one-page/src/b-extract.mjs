@@ -366,11 +366,12 @@ function writeBOutputs({ dir, ctx, secret, runId }) {
       digest: ctx.scope.recordDigest,
     });
   }
-  if (ctx.snapshot) {
+  if (ctx.snapshot && ctx.snapshotPath) {
     inputs.push({
       kind: 'snapshot',
       version: ctx.snapshot.fileVersion,
-      path: ctx.snapshotPath ? resolve(ctx.snapshotPath) : null,
+      path: resolve(ctx.snapshotPath),
+      digest: readJsonFileDigest(ctx.snapshotPath),
     });
   }
   const stageDraft = buildStageRecord({

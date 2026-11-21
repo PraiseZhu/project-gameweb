@@ -79,7 +79,7 @@ npm --prefix standards/one-page run b:extract -- --run-dir "<A 的运行目录>"
 2. 页面内设计集合按出清单同一规则识别（`pc` / `mobile` / `cn_pc` / `cn_mobile`）。非规范稿、设计集合不唯一、范围端别不在稿上 → 各自停止并说明。
 3. 读取仓库根 `projects/<fileKey前8位>-<nodeId>/config.json`（不存在当空配置），复制快照进运行目录，调用 `compileOnePage` 抽取事实。双端按 sec 范围与唯一名称配对：已配对 / 真单端 / 歧义分开记录；双端未匹配不自动当单端。
 4. 清单与问题清单写入运行目录的 `b1.rN/`（N 为 B 轮次，同一运行目录重跑不覆盖旧轮）。问题每条含端、屏号、节点 ID、对象、缺什么、影响、退回去向（A／设计稿／B2）。
-5. 写 B 环节记录：`stage=B`，`output.kind='b-extract'`，inputs 含 A 的范围版本与快照版本，`result` 为 pass／fail／stopped。抽取清单绑定范围、快照、配置、各端 inventory、problems、pairing 的内容摘要；`checkEntry` 重算摘要并拒绝被改、被换路径、符号链接、越界或缺文件。
+5. 写 B 环节记录：`stage=B`，`output.kind='b-extract'`，inputs 含唯一完整的 A 范围引用与快照引用（path/version/digest），`result` 为 pass／fail／stopped。抽取清单绑定范围、快照、配置、各端 inventory、problems、pairing 的内容摘要。`checkEntry` 重算摘要，核当前最新范围及其 A 环节 pass，并校验材料最小形状。拒绝被改、被换路径、成果文件自身是符号链接、解析后越出本 run／错轮、缺文件或内容形状错误。父目录别名若 realpath 仍在本轮且摘要有效，不单独当越界。范围输入的 digest 用范围记录 `recordDigest`；快照/清单等材料 digest 用整份 JSON 的 canonical sha256，二者不要混比。
 
 `b-extract` 只表示 B1 抽取子步骤完成，供后续 B 内部（B2）读取。它不是完整 B，也不是 C 的开工证据。C 必须等未来 B3 最终交接产物（尚未实现；当前没有 `b-handoff`，对该 kind 调用 `checkEntry` 会拒绝）。后续入口必须同时传 `expectedStage`、`expectedOutputKind` 与输出版本；缺类型或未知 kind 一律失败。两端清单 blocked 可以让 B1 抽取步骤成功，但不等于整体 B ready。
 
