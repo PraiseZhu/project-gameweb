@@ -9,7 +9,8 @@ import { probeFigmaPage, DEFAULT_TIMEOUT_MS } from './figma-access.mjs';
 import {
   formatRunDate,
   allocRunDir,
-  resolveExistingRunDir,
+  hasRunPointer,
+  openExistingRunDir,
   nextStageRound,
   nextScopeSerial,
   findScopeByVersion,
@@ -27,8 +28,8 @@ export const USAGE = `用法：
   npm --prefix standards/one-page run a:scope -- --url <Figma页面链接> --languages cn,tw --base-language cn --platform pc|mobile|pc+mobile
   npm --prefix standards/one-page run a:scope -- --url <链接> --languages ... --base-language ... --platform ... --shown-fp <至少12位小写十六进制前缀> --confirm-quote <原话> --confirm-source <来源> --run-dir <第一步返回的目录>
 
-第一步只校验，打印摘要、完整指纹和展示用前 12 位，并生成运行目录；不写范围记录。
-第二步必须同时带 --shown-fp（至少 12 位小写十六进制前缀）、--confirm-quote、--confirm-source、--run-dir（或 --run-id）才写记录。
+第一步未传 --run-dir 时生成新运行目录并写入身份文件；传入 --run-dir 表示沿用原任务，须与当前稿件身份一致。
+第二步必须同时带 --shown-fp（至少 12 位、仅小写十六进制前缀）、--confirm-quote、--confirm-source、--run-dir（或 --run-id），并校验目录身份。
 同一运行目录重复确认同一范围版本会拒绝，不覆盖旧文件。
 
 可选：--env-file <path>  --run-root <dir>  --timeout-ms <n>`;
@@ -128,15 +129,19 @@ function confirmIntent({ shownFp, confirmQuote, confirmSource }) {
   return { mode: 'confirm', shownFp: fp, confirmQuote: quote, confirmSource: source };
 }
 
-export function assertShownFp(shownFp, fingerprint) {
-  const fp = String(shownFp).toLowerCase();
+export function assertShownFpFormat(shownFp) {
+  const fp = String(shownFp);
   if (!/^[a-f0-9]+$/.test(fp) || fp.length < SHOWN_FP_MIN) {
     throw new StoppedError(
       'fingerprint-invalid',
-      `--shown-fp 必须是至少 ${SHOWN_FP_MIN} 位小写十六进制，且为当前摘要指纹的前缀。`,
+      `--shown-fp 必须是至少 ${SHOWN_FP_MIN} 位小写十六进制（不含大写），且为当前摘要指纹的前缀。`,
     );
   }
-  if (!fingerprint.startsWith(fp)) {
+}
+
+export function assertShownFp(shownFp, fingerprint) {
+  assertShownFpFormat(shownFp);
+  if (!fingerprint.startsWith(String(shownFp))) {
     throw new StoppedError(
       'fingerprint-mismatch',
       '摘要指纹与当前校验结果不符。请重新跑第一步，把看到的指纹前缀传给 --shown-fp 后再确认。',
@@ -163,13 +168,22 @@ async function runAScopeInner(options) {
   const now = options.now ?? new Date();
 
   if (intent.mode === 'confirm') {
-    if (!/^[a-f0-9]+$/.test(intent.shownFp.toLowerCase()) || intent.shownFp.length < SHOWN_FP_MIN) {
-      throw new StoppedError(
-        'fingerprint-invalid',
-        `--shown-fp 必须是至少 ${SHOWN_FP_MIN} 位小写十六进制，且为当前摘要指纹的前缀。`,
-      );
-    }
-    resolveExistingRunDir(runRoot, { runDir: options.runDir, runId: options.runId });
+    assertShownFpFormat(intent.shownFp);
+  }
+
+  const identity = {
+    fileKey: parsed.fileKey,
+    nodeId: parsed.nodeId,
+    branchKey: parsed.branchKey ?? null,
+  };
+  let existing = null;
+  if (hasRunPointer(options)) {
+    existing = openExistingRunDir(runRoot, options, identity);
+  } else if (intent.mode === 'confirm') {
+    throw new StoppedError(
+      'need-run-dir',
+      '写记录必须带 --run-dir（第一步返回的目录）或 --run-id。未写入范围记录。',
+    );
   }
 
   const timeoutMs = options.timeoutMs == null ? DEFAULT_TIMEOUT_MS : Number(options.timeoutMs);
@@ -194,12 +208,14 @@ async function runAScopeInner(options) {
   const fingerprintPrefix = fingerprint.slice(0, SHOWN_FP_MIN);
 
   if (intent.mode === 'validate') {
-    const allocated = allocRunDir(runRoot, {
+    const allocated = existing ?? allocRunDir(runRoot, {
       date: formatRunDate(now),
       fileKey: parsed.fileKey,
       nodeId: parsed.nodeId,
+      branchKey: parsed.branchKey,
       suffix: options.runSuffix,
       makeSuffix: options.makeSuffix,
+      createdAt: now.toISOString(),
     });
     return {
       ok: true,
@@ -215,7 +231,6 @@ async function runAScopeInner(options) {
   }
 
   assertShownFp(intent.shownFp, fingerprint);
-  const existing = resolveExistingRunDir(runRoot, { runDir: options.runDir, runId: options.runId });
   const dir = existing.dir;
 
   const confirmedAt = now.toISOString();

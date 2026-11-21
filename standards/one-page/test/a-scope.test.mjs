@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
@@ -17,6 +17,7 @@ const CANVAS_ID = '1:2';
 const FILE_ID = 'TESTFILEKEY';
 const PAGE_URL = `https://www.figma.com/design/${FILE_ID}/name?node-id=1-2`;
 const CANONICAL_URL = `https://www.figma.com/design/${FILE_ID}/?node-id=1-2`;
+const PAGE_B = 'https://www.figma.com/design/TESTFILEB/name?node-id=3-4';
 const STUB = ['no', 'leak'].join('-');
 const EXTRA = 'extra1';
 
@@ -74,6 +75,10 @@ function canvasBody(version = '4242', type = 'CANVAS', nodeId = CANVAS_ID) {
 
 function canvasFetch(version = '4242', type = 'CANVAS') {
   return async () => jsonRes(200, canvasBody(version, type));
+}
+
+function canvasFetchFor(nodeId, version = '4242', type = 'CANVAS') {
+  return async () => jsonRes(200, canvasBody(version, type, nodeId));
 }
 
 function hangingFetch() {
@@ -282,7 +287,7 @@ test('缺确认或只带部分确认旗标：拒绝写记录', async () => {
   assert.equal(none.step, 'validate');
 });
 
-test('指纹 1 位、11 位、含非 hex 均拒绝；12 位正确前缀与 64 位完整通过', async () => {
+test('指纹 1 位、11 位、含非 hex、含大写均拒绝；12 位正确前缀与 64 位完整通过', async () => {
   const first = await runAScope(baseArgs());
   const one = await confirmFrom(first, { shownFp: 'a' });
   assert.equal(one.code, 'fingerprint-invalid');
@@ -290,6 +295,8 @@ test('指纹 1 位、11 位、含非 hex 均拒绝；12 位正确前缀与 64 �
   assert.equal(eleven.code, 'fingerprint-invalid');
   const nonHex = await confirmFrom(first, { shownFp: 'zzzzzzzzzzzz' });
   assert.equal(nonHex.code, 'fingerprint-invalid');
+  const upper = await confirmFrom(first, { shownFp: 'ABCDEFABCDEF' });
+  assert.equal(upper.code, 'fingerprint-invalid');
   const twelve = await confirmFrom(first, { shownFp: first.fingerprint.slice(0, 12) });
   assert.equal(twelve.ok, true);
   const other = await runAScope(baseArgs({ languages: 'cn,tw', baseLanguage: 'cn' }));
@@ -328,6 +335,73 @@ test('同页同日两次第一步得到不同目录', async () => {
   assert.notEqual(a.runDir, b.runDir);
   assert.equal(existsSync(a.runDir), true);
   assert.equal(existsSync(b.runDir), true);
+});
+
+test('B 指纹配 A 目录：拒绝且 A 目录无新文件', async () => {
+  const pageA = await runAScope(baseArgs());
+  const confirmedA = await confirmFrom(pageA);
+  assert.equal(confirmedA.ok, true);
+  const before = readdirSync(pageA.runDir).sort().join(',');
+  const pageB = await runAScope(baseArgs({
+    url: PAGE_B,
+    fetchImpl: canvasFetchFor('3:4'),
+  }));
+  const mixed = await confirmFrom(pageB, {
+    url: PAGE_B,
+    fetchImpl: canvasFetchFor('3:4'),
+    runDir: pageA.runDir,
+  });
+  assert.equal(mixed.ok, false);
+  assert.equal(mixed.code, 'run-dir-mismatch');
+  assert.equal(readdirSync(pageA.runDir).sort().join(','), before);
+});
+
+test('第一步传入已有目录则复用，不新建', async () => {
+  const first = await runAScope(baseArgs());
+  const again = await runAScope(baseArgs({ runDir: first.runDir }));
+  assert.equal(again.ok, true);
+  assert.equal(again.step, 'validate');
+  assert.equal(again.runDir, first.runDir);
+  assert.equal(readdirSync(join(tmp, 'runs')).length, 1);
+});
+
+test('传入 runs 根或无身份文件目录：拒绝', async () => {
+  const first = await runAScope(baseArgs());
+  const root = await confirmFrom(first, { runDir: join(tmp, 'runs') });
+  assert.equal(root.code, 'need-run-dir');
+  const empty = join(tmp, 'runs', 'empty-dir');
+  mkdirSync(empty);
+  const missing = await confirmFrom(first, { runDir: empty });
+  assert.equal(missing.code, 'run-dir-mismatch');
+  const outside = mkdtempSync(join(tmpdir(), 'onepage-out-'));
+  const link = join(tmp, 'runs', 'escape');
+  symlinkSync(outside, link);
+  const escaped = await confirmFrom(first, { runDir: link });
+  assert.equal(escaped.code, 'need-run-dir');
+  rmSync(outside, { recursive: true, force: true });
+});
+
+test('同任务改范围：第一步带 --run-dir 再第二步，写出 scope.v2 且仍在原目录', async () => {
+  const first = await runAScope(baseArgs());
+  const v1 = await confirmFrom(first, { confirmQuote: '先做中文', confirmSource: 'chat' });
+  const reused = await runAScope(baseArgs({
+    languages: 'cn,tw',
+    baseLanguage: 'cn',
+    runDir: first.runDir,
+  }));
+  assert.equal(reused.runDir, first.runDir);
+  const v2 = await confirmFrom(reused, {
+    languages: 'cn,tw',
+    baseLanguage: 'cn',
+    shownFp: reused.fingerprint,
+    confirmQuote: '加上繁中',
+    confirmSource: 'chat',
+    runDir: first.runDir,
+  });
+  assert.equal(v2.ok, true);
+  assert.equal(v2.runDir, first.runDir);
+  assert.match(v2.scopePath, /scope\.v2\.json$/);
+  assert.equal(existsSync(v1.scopePath), true);
 });
 
 test('第二步写范围记录和环节记录；checkEntry 通过；改记录后拒绝', async () => {

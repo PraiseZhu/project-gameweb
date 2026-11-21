@@ -1,8 +1,10 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve, sep } from 'node:path';
 import { canonicalJson } from './canonical.mjs';
 import { StoppedError } from './stopped.mjs';
+
+export const RUN_IDENTITY_FILE = 'run.json';
 
 export function formatRunDate(now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -23,7 +25,58 @@ function defaultSuffix() {
   return randomBytes(4).toString('hex');
 }
 
-export function allocRunDir(runRoot, { date, fileKey, nodeId, suffix, makeSuffix } = {}) {
+export function hasRunPointer({ runDir, runId } = {}) {
+  const hasDir = runDir != null && String(runDir) !== '' && runDir !== true;
+  const hasId = runId != null && String(runId) !== '' && runId !== true;
+  return hasDir || hasId;
+}
+
+export function writeRunIdentity(dir, identity) {
+  writeJsonFile(join(dir, RUN_IDENTITY_FILE), {
+    fileKey: identity.fileKey,
+    nodeId: identity.nodeId,
+    branchKey: identity.branchKey ?? null,
+    createdAt: identity.createdAt,
+    runId: identity.runId ?? basename(dir),
+  });
+}
+
+export function readRunIdentity(dir) {
+  const filePath = join(dir, RUN_IDENTITY_FILE);
+  if (!existsSync(filePath)) {
+    throw new StoppedError('run-dir-mismatch', '运行目录缺少身份文件 run.json。');
+  }
+  let record;
+  try {
+    record = JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch {
+    throw new StoppedError('run-dir-mismatch', '运行目录身份文件无法读取。');
+  }
+  return record;
+}
+
+export function assertRunIdentity(dir, current) {
+  const got = readRunIdentity(dir);
+  const wantBranch = current.branchKey ?? null;
+  const gotBranch = got.branchKey ?? null;
+  if (got.fileKey !== current.fileKey || got.nodeId !== current.nodeId || gotBranch !== wantBranch) {
+    throw new StoppedError(
+      'run-dir-mismatch',
+      '运行目录不属于当前稿件（fileKey/nodeId/分支不一致）。未写入记录。',
+    );
+  }
+  return got;
+}
+
+export function allocRunDir(runRoot, {
+  date,
+  fileKey,
+  nodeId,
+  branchKey,
+  suffix,
+  makeSuffix,
+  createdAt,
+} = {}) {
   const runsRoot = resolve(runRoot, 'runs');
   mkdirSync(runsRoot, { recursive: true });
   for (let i = 0; i < 8; i += 1) {
@@ -37,30 +90,51 @@ export function allocRunDir(runRoot, { date, fileKey, nodeId, suffix, makeSuffix
       continue;
     }
     mkdirSync(dir);
-    return { dir, runId: name };
+    const real = realpathSync(dir);
+    writeRunIdentity(real, {
+      fileKey,
+      nodeId,
+      branchKey: branchKey ?? null,
+      createdAt: createdAt ?? new Date().toISOString(),
+      runId: name,
+    });
+    return { dir: real, runId: name };
   }
   throw new StoppedError('exists', '无法分配唯一运行目录，请重试。');
 }
 
 export function resolveExistingRunDir(runRoot, { runDir, runId } = {}) {
-  const hasDir = runDir != null && String(runDir) !== '' && runDir !== true;
-  const hasId = runId != null && String(runId) !== '' && runId !== true;
-  if (!hasDir && !hasId) {
+  if (!hasRunPointer({ runDir, runId })) {
     throw new StoppedError(
       'need-run-dir',
-      '写记录必须带 --run-dir（第一步返回的目录）或 --run-id。未写入范围记录。',
+      '必须带 --run-dir（第一步返回的目录）或 --run-id。未写入范围记录。',
     );
   }
   const runsRoot = resolve(runRoot, 'runs');
-  const dir = hasDir ? resolve(String(runDir)) : join(runsRoot, String(runId));
-  const prefix = `${runsRoot}${sep}`;
-  if (dir !== runsRoot && !dir.startsWith(prefix)) {
-    throw new StoppedError('need-run-dir', '运行目录必须在仓库 runs/ 下。');
-  }
-  if (!existsSync(dir)) {
+  if (!existsSync(runsRoot)) {
     throw new StoppedError('need-run-dir', '运行目录不存在。请使用第一步返回的 --run-dir。');
   }
-  return { dir, runId: basename(dir) };
+  const runsReal = realpathSync(runsRoot);
+  const hasDir = runDir != null && String(runDir) !== '' && runDir !== true;
+  const requested = hasDir ? resolve(String(runDir)) : join(runsRoot, String(runId));
+  if (!existsSync(requested)) {
+    throw new StoppedError('need-run-dir', '运行目录不存在。请使用第一步返回的 --run-dir。');
+  }
+  const real = realpathSync(requested);
+  if (real === runsReal) {
+    throw new StoppedError('need-run-dir', '不能使用 runs/ 根目录作为运行目录。');
+  }
+  const prefix = `${runsReal}${sep}`;
+  if (!real.startsWith(prefix)) {
+    throw new StoppedError('need-run-dir', '运行目录必须在仓库 runs/ 下。');
+  }
+  return { dir: real, runId: basename(real) };
+}
+
+export function openExistingRunDir(runRoot, pointer, current) {
+  const existing = resolveExistingRunDir(runRoot, pointer);
+  assertRunIdentity(existing.dir, current);
+  return existing;
 }
 
 export function nextStageRound(dir, stage) {
