@@ -42,7 +42,7 @@ npm --prefix standards/one-page run a:scope -- --url "<链接>" --languages <...
 
 非 Cindy 界面改为逐项文字询问，校验、指纹、确认原话、运行目录规则不变。指纹不足 12 位、含大写或非十六进制、与当前摘要不符、缺少确认旗标、缺少 --run-dir、或目录身份与当前稿件不一致，均拒绝写记录。
 
-token 走 `standards/figma-naming/tool/.env` 的 `FIGMA_ACCESS_TOKEN`，可用 `--env-file` 指向该文件；token 不得写入任何记录或日志。运行目录：仓库根 `runs/<日期>-<fileKey前8位>-<nodeId>-<短随机>/`（已 gitignore），内含 `run.json` 身份。新任务由第一步生成目录；改范围时第一步和第二步都带同一 `--run-dir`。不得使用 `runs/` 根目录、没有身份文件的目录或 `runs/` 之外的路径。改范围：同一运行目录写 `scope.v2.json` 等新文件，旧文件不覆盖。同一范围版本重复确认会拒绝，不覆盖原记录。换稿：不带 `--run-dir` 重新跑第一步拿新目录。
+token 走 `standards/figma-naming/tool/.env` 的 `FIGMA_ACCESS_TOKEN`，可用 `--env-file` 指向该文件；token 不得写入任何记录或日志。运行目录：仓库根 `runs/<日期>-<fileKey前8位>-<nodeId>-<短随机>/`（已 gitignore），内含 `run.json` 身份。新任务由第一步生成目录；改范围时第一步和第二步都带同一 `--run-dir`。不得使用 `runs/` 根目录、没有身份文件的目录、`runs/` 之外的路径，或把 `runs/` 本身做成符号链接。改范围：同一运行目录写 `scope.v2.json` 等新文件，旧文件不覆盖。同一范围版本重复确认会拒绝，不覆盖原记录。换稿：不带 `--run-dir` 重新跑第一步拿新目录。
 
 ### A 停止条件
 

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve, sep } from 'node:path';
 import { canonicalJson } from './canonical.mjs';
 import { StoppedError } from './stopped.mjs';
@@ -23,6 +23,25 @@ export function runDirName({ date, fileKey, nodeId, suffix }) {
 
 function defaultSuffix() {
   return randomBytes(4).toString('hex');
+}
+
+export function assertRunsRoot(runRoot, { create = false } = {}) {
+  const runsPath = resolve(runRoot, 'runs');
+  if (!existsSync(runsPath)) {
+    if (!create) {
+      throw new StoppedError('need-run-dir', '运行目录不存在。请使用第一步返回的 --run-dir。');
+    }
+    mkdirSync(runsPath, { recursive: true });
+  }
+  if (lstatSync(runsPath).isSymbolicLink()) {
+    throw new StoppedError('runs-root-symlink', 'runs/ 不能是符号链接。');
+  }
+  const expected = join(realpathSync(runRoot), 'runs');
+  const runsReal = realpathSync(runsPath);
+  if (runsReal !== expected) {
+    throw new StoppedError('runs-root-symlink', 'runs/ 不能是符号链接。');
+  }
+  return { runsPath, runsReal };
 }
 
 export function hasRunPointer({ runDir, runId } = {}) {
@@ -77,8 +96,7 @@ export function allocRunDir(runRoot, {
   makeSuffix,
   createdAt,
 } = {}) {
-  const runsRoot = resolve(runRoot, 'runs');
-  mkdirSync(runsRoot, { recursive: true });
+  const { runsPath: runsRoot } = assertRunsRoot(runRoot, { create: true });
   for (let i = 0; i < 8; i += 1) {
     const id = suffix ?? (makeSuffix ? makeSuffix() : defaultSuffix());
     const name = runDirName({ date, fileKey, nodeId, suffix: id });
@@ -110,11 +128,7 @@ export function resolveExistingRunDir(runRoot, { runDir, runId } = {}) {
       '必须带 --run-dir（第一步返回的目录）或 --run-id。未写入范围记录。',
     );
   }
-  const runsRoot = resolve(runRoot, 'runs');
-  if (!existsSync(runsRoot)) {
-    throw new StoppedError('need-run-dir', '运行目录不存在。请使用第一步返回的 --run-dir。');
-  }
-  const runsReal = realpathSync(runsRoot);
+  const { runsPath: runsRoot, runsReal } = assertRunsRoot(runRoot);
   const hasDir = runDir != null && String(runDir) !== '' && runDir !== true;
   const requested = hasDir ? resolve(String(runDir)) : join(runsRoot, String(runId));
   if (!existsSync(requested)) {

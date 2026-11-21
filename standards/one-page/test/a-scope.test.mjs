@@ -9,6 +9,7 @@ import { parseLanguages, parseBaseLanguage, parsePlatform } from '../src/validat
 import { probeFigmaPage } from '../src/figma-access.mjs';
 import { StoppedError } from '../src/stopped.mjs';
 import { main, runAScope } from '../src/a-scope.mjs';
+import { allocRunDir, resolveExistingRunDir } from '../src/run-dir.mjs';
 import { checkEntry } from '../src/stage-record.mjs';
 import { canonicalJson } from '../src/canonical.mjs';
 
@@ -378,6 +379,31 @@ test('传入 runs 根或无身份文件目录：拒绝', async () => {
   symlinkSync(outside, link);
   const escaped = await confirmFrom(first, { runDir: link });
   assert.equal(escaped.code, 'need-run-dir');
+  rmSync(outside, { recursive: true, force: true });
+});
+
+test('runs 根为指向外部的符号链接：分配和复用都拒绝，外部无新文件', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'onepage-repo-'));
+  const outside = mkdtempSync(join(tmpdir(), 'onepage-ext-'));
+  writeFileSync(join(outside, 'keep.txt'), 'keep');
+  const before = readdirSync(outside).sort().join(',');
+  symlinkSync(outside, join(repo, 'runs'));
+  throwsStopped(
+    () => allocRunDir(repo, {
+      date: '2026-11-21',
+      fileKey: FILE_ID,
+      nodeId: CANVAS_ID,
+    }),
+    'runs-root-symlink',
+    /不能是符号链接/,
+  );
+  throwsStopped(
+    () => resolveExistingRunDir(repo, { runDir: join(repo, 'runs', 'any') }),
+    'runs-root-symlink',
+    /不能是符号链接/,
+  );
+  assert.equal(readdirSync(outside).sort().join(','), before);
+  rmSync(repo, { recursive: true, force: true });
   rmSync(outside, { recursive: true, force: true });
 });
 
