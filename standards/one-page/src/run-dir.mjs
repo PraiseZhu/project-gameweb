@@ -184,6 +184,35 @@ export function findScopeByVersion(dir, scopeVersion) {
   return null;
 }
 
+export function latestScopePath(dir) {
+  let best = null;
+  let max = 0;
+  for (const filePath of listScopePaths(dir)) {
+    const match = /scope\.v(\d+)\.json$/.exec(filePath);
+    const serial = match ? Number(match[1]) : 0;
+    if (serial > max) {
+      max = serial;
+      best = filePath;
+    }
+  }
+  return best;
+}
+
+export function findStagePathByOutputVersion(dir, stage, outputVersion) {
+  const prefix = `stage-${stage}-`;
+  for (const name of readdirSync(dir)) {
+    if (!name.startsWith(prefix) || !name.endsWith('.json')) continue;
+    const filePath = join(dir, name);
+    try {
+      const record = JSON.parse(readFileSync(filePath, 'utf8'));
+      if (record.stage === stage && record.output?.version === outputVersion) return filePath;
+    } catch {
+      /* skip unreadable */
+    }
+  }
+  return null;
+}
+
 export function writeJsonFile(filePath, value) {
   if (existsSync(filePath)) {
     throw new StoppedError('exists', '记录文件已存在，未覆盖。');

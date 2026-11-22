@@ -59,13 +59,35 @@ A 停止并报告原因（不算通过、不写范围记录）当：
 
 ### A 通过条件
 
-页面链接可访问且 node 为 CANVAS，四项输入自洽，已展示摘要和至少 12 位指纹前缀，用户已明确确认，范围记录与 A 环节记录已写入第一步的运行目录。B 开工前用 `standards/one-page/src/stage-record.mjs` 的 `checkEntry` 核对这些记录，必须传入 `expectedStage` 与 `expectedOutputVersion`：`stage=A`、`result=pass`、输出版本一致、范围记录 `recordDigest` 一致、文件未被改。
+页面链接可访问且 node 为 CANVAS，四项输入自洽，已展示摘要和至少 12 位指纹前缀，用户已明确确认，范围记录与 A 环节记录已写入第一步的运行目录。B 开工前用 `standards/one-page/src/stage-record.mjs` 的 `loadCurrentA` / `checkEntry` 核对这些记录，必须传入 `expectedStage`、`expectedOutputVersion` 与 `expectedOutputKind`：最新 `scope.vN` 自洽；对应 A 环节 `stage=A`、`result=pass`、`kind=scope`、`output.version` 等于最新 `scopeVersion`、`output.digest` 等于最新 `recordDigest`、`output.path` 与最新范围文件同一真实路径。确认字段不计入 `scopeVersion`；同版本不同确认摘要或复制到新路径的最新范围，不能借用旧 A。损坏、缺失或不通过的最新 A 不得回退旧候选。
 
 A 不改 HTML v1、不选出页方法、不定义 B 交接包字段。
 
+## B1. 来源核对与事实抽取
+
+B 只读 A 已确认的运行目录。开工前用 `checkEntry` 核 A：`expectedStage='A'`，`expectedOutputKind='scope'`，`expectedOutputVersion` 为该目录最新范围记录的 `scopeVersion`。不通过就停，不猜、不取第一个候选。运行身份除 fileKey/nodeId 外还核 `branchKey`：以范围记录里受摘要保护的规范化链接解析出的分支为准，不拿 `run.json` 自己的值自证。旧范围记录没有单独 `branchKey` 字段；无 `/branch/` 的链接视为空分支。
+
+```bash
+npm --prefix standards/one-page run b:extract -- --run-dir "<A 的运行目录>"
+```
+
+新任务不要省略 `--run-dir`。token 同样走 `standards/figma-naming/tool/.env` 的 `FIGMA_ACCESS_TOKEN`，可用 `--env-file` 指向该文件；token 不得写入任何记录或日志。
+
+完成标准：
+
+1. 按范围记录重新取快照。`fileVersion` 与范围记录不一致 → 停并退回 A。快照写入运行目录。
+2. 页面内设计集合按出清单同一规则识别（`pc` / `mobile` / `cn_pc` / `cn_mobile`）。非规范稿、设计集合不唯一、范围端别不在稿上 → 各自停止并说明。
+3. 读取仓库根 `projects/<fileKey前8位>-<nodeId>/config.json`（不存在当空配置），复制快照进运行目录，调用 `compileOnePage` 抽取事实。双端按 sec 范围与唯一名称配对：已配对 / 真单端 / 歧义分开记录；双端未匹配不自动当单端。
+4. 清单与问题清单写入运行目录的 `b1.rN/`（N 为 B 轮次，同一运行目录重跑不覆盖旧轮）。问题每条含端、屏号、节点 ID、对象、缺什么、影响、退回去向（A／设计稿／B2）。
+5. 写 B 环节记录：`stage=B`，正整数 `round`，`output.kind='b-extract'`，inputs 恰好一项范围与一项快照（path/version/digest，不得缺、重复或夹带未知 kind），`result` 为 pass／fail／stopped。抽取清单绑定范围、快照、配置、各端 inventory、problems、pairing 的内容摘要。`checkEntry` 重算摘要，核当前最新范围及其精确对应的 A 环节 pass，并按生产者合同校验材料：快照 `document.id` 等于范围 `nodeId` 且 `type=CANVAS`；清单 schema 仅 `inventory/onepage-v1`，`contract`/`specVersion` 为 `onepage-naming/v1`，允许 blocked；端别由范围 platform 与快照设计集重算，未选端不得有 inventory；pairing 与 `pairEnds` 一致，problems 与清单 issues／配对派生一致。拒绝被改、被换路径、成果文件自身是符号链接、解析后越出本 run／错轮、缺文件或内容形状错误。父目录别名若 realpath 仍在本轮且摘要有效，不单独当越界。范围输入的 digest 用范围记录 `recordDigest`；快照/清单等材料 digest 用整份 JSON 的 canonical sha256，二者不要混比。
+
+`b-extract` 只表示 B1 抽取子步骤完成，供后续 B 内部（B2）读取。它不是完整 B，也不是 C 的开工证据。C 必须等未来 B3 最终交接产物（尚未实现；当前没有 `b-handoff`，对该 kind 调用 `checkEntry` 会拒绝）。后续入口必须同时传 `expectedStage`、`expectedOutputKind` 与输出版本；缺类型或未知 kind 一律失败。两端清单 blocked 可以让 B1 抽取步骤成功，但不等于整体 B ready。
+
+B1 不出交接包（归 B3）。不写回 Figma，不新增命名前缀。项目配置与运行记录不进 git。
+
 ## Record keeping
 
-范围记录和 A～H 统一环节记录写在仓库根 `runs/`（不进 git）。token 不得出现在记录或日志里。B 起用 `checkEntry` 做开工前检查。
+范围记录和 A～H 统一环节记录写在仓库根 `runs/`（不进 git）。项目配置在 `projects/`（不进 git）。token 不得出现在记录或日志里。B 起用 `checkEntry` 做开工前检查。
 
 ## Fixed-chain boundary
 
