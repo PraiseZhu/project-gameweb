@@ -376,7 +376,8 @@ test('传入 runs 根或无身份文件目录：拒绝', async () => {
   assert.equal(missing.code, 'run-dir-mismatch');
   const outside = mkdtempSync(join(tmpdir(), 'onepage-out-'));
   const link = join(tmp, 'runs', 'escape');
-  symlinkSync(outside, link);
+  // Windows directory symlinks require privileges; junctions preserve the escape fixture.
+  symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
   const escaped = await confirmFrom(first, { runDir: link });
   assert.equal(escaped.code, 'need-run-dir');
   rmSync(outside, { recursive: true, force: true });
@@ -387,7 +388,8 @@ test('runs 根为指向外部的符号链接：分配和复用都拒绝，外部
   const outside = mkdtempSync(join(tmpdir(), 'onepage-ext-'));
   writeFileSync(join(outside, 'keep.txt'), 'keep');
   const before = readdirSync(outside).sort().join(',');
-  symlinkSync(outside, join(repo, 'runs'));
+  // Exercise the same runs-root rejection without Windows symlink privileges.
+  symlinkSync(outside, join(repo, 'runs'), process.platform === 'win32' ? 'junction' : 'dir');
   throwsStopped(
     () => allocRunDir(repo, {
       date: '2026-11-21',
