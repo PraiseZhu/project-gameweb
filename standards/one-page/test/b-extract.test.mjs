@@ -10,7 +10,7 @@ import { buildStageRecord, buildExtractRecord, checkEntry, loadCurrentA } from '
 import { buildScopeRecord, computeRecordDigest } from '../src/scope-record.mjs';
 import { INVENTORY_SCHEMA } from '../../figma-naming/spec/inventory.mjs';
 import { pairEnds } from '../src/same-modules.mjs';
-import { assertProblemShape, RETURN_TO } from '../src/problems.mjs';
+import { assertProblemShape, RETURN_TO, problemsFromInventories } from '../src/problems.mjs';
 import { sameModulesOf } from '../../figma-naming/tool/src/handoff.mjs';
 
 const PACKAGE_JSON = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -912,6 +912,117 @@ test('矩阵：空问题正例来自真实无问题抽取', async () => {
   const problems = readJson(extract.artifacts.problems.path);
   assert.deepEqual(problems, []);
   assert.equal(checkB(result.stagePath, extract.version).ok, true);
+});
+
+function shelfPc() {
+  const inner = namedPc();
+  inner.id = 'inner-page';
+  return frame('design-set', 'cn_pc', [
+    inner, frame('shelf-spacer', 'ref/参考'),
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `definition-${i}`, name: `定义${i}`, type: 'COMPONENT', children: [] })),
+  ]);
+}
+
+test('复审P1：真实 producer 解析内层页面后 checkEntry 放行', async () => {
+  const confirmed = await confirmA({ body: canvasBody([shelfPc()]) });
+  const result = await runB(confirmed);
+  assert.equal(result.ok, true, result.message);
+  const extract = readJson(result.extractPath);
+  const inv = readJson(extract.artifacts.inventories.pc.path);
+  assert.equal(inv.requestedNodeId, 'design-set');
+  assert.equal(inv.page.id, 'inner-page');
+  assert.equal(inv.scope.pageId, 'inner-page');
+  assert.equal(inv.scope.shelfId, 'design-set');
+  const checked = checkB(result.stagePath, extract.version);
+  assert.equal(checked.ok, true, checked.reason);
+});
+
+test('复审P1：重算后的错误 page 与 shelf 关系仍被拒绝', async () => {
+  for (const [label, mutate, reason] of [
+    ['外层冒充内页', (inv) => { inv.page.id = inv.requestedNodeId; inv.scope.pageId = inv.page.id; }, /page/],
+    ['错误 pageId', (inv) => { inv.scope.pageId = 'wrong'; }, /pageId/],
+    ['祖先冒充父货架', (inv) => { inv.scope.shelfId = CANVAS_ID; }, /shelfId/],
+    ['缺少父货架', (inv) => { inv.scope.shelfId = null; }, /shelfId/],
+  ]) {
+    const b = await passBaseline({ body: canvasBody([shelfPc()]) });
+    mutateJson(b.extract.artifacts.inventories.pc.path, mutate);
+    rehashExtractChain(b.result.extractPath, b.result.stagePath);
+    rejectAfter(b.result.extractPath, b.result.stagePath, reason, label);
+  }
+});
+
+function rewriteProblemsFromInventories(b, syncStage = true) {
+  const inventories = Object.fromEntries(['pc', 'mobile'].map((end) => [end,
+    b.extract.artifacts.inventories[end] ? readJson(b.extract.artifacts.inventories[end].path) : null]));
+  const problems = problemsFromInventories(inventories, readJson(b.extract.artifacts.pairing.path));
+  writeFileSync(b.extract.artifacts.problems.path, canonicalJson(problems));
+  if (syncStage) {
+    const { version, ...stage } = readJson(b.result.stagePath);
+    stage.problems = problems;
+    writeFileSync(b.result.stagePath, canonicalJson(buildStageRecord(stage)));
+  }
+  rehashExtractChain(b.result.extractPath, b.result.stagePath);
+}
+
+test('复审P2：无效诊断即使重算全部摘要和问题也拒绝', async () => {
+  const mutations = [
+    ['空对象', () => ({})],
+    ['空code', (i) => ({ ...i, code: '' })],
+    ['错误message', (i) => ({ ...i, message: 1 })],
+    ['空message', (i) => ({ ...i, message: '  ' })],
+    ['缺nodeId', ({ nodeId, ...i }) => i],
+    ['空nodeId', (i) => ({ ...i, nodeId: '' })],
+    ['非法scope', (i) => ({ ...i, scope: {} })],
+    ['缺scope', ({ scope, ...i }) => i],
+    ['非法name', (i) => ({ ...i, name: 1 })],
+    ['缺name', ({ name, ...i }) => i],
+    ['负section', (i) => ({ ...i, section: -1 })],
+    ['字符串section', (i) => ({ ...i, section: '1' })],
+    ['无节点却有节点定位', (i) => ({ ...i, nodeId: null })],
+  ];
+  for (const [label, mutate] of mutations) {
+    const b = await passBaseline({ body: canvasBody([namedPc()]) });
+    mutateJson(b.extract.artifacts.inventories.pc.path, (inv) => {
+      assert.ok(inv.issues.length);
+      inv.issues = [mutate(inv.issues[0])];
+    });
+    rewriteProblemsFromInventories(b);
+    rejectAfter(b.result.extractPath, b.result.stagePath, /issues.*诊断/, label);
+  }
+});
+
+test('复审P2：B环节问题必须和 sidecar 一致', async () => {
+  const b = await passBaseline({ body: canvasBody([namedPc()]) });
+  const { version, ...stage } = readJson(b.result.stagePath);
+  assert.ok(stage.problems.length);
+  stage.problems = [];
+  writeFileSync(b.result.stagePath, canonicalJson(buildStageRecord(stage)));
+  rejectAfter(b.result.extractPath, b.result.stagePath, /环节.*problems|问题.*一致/, 'stage.problems 被清空');
+});
+
+test('复审P2：真实配置级诊断和 blocked inventory 仍能完成 B1', async () => {
+  const confirmed = await confirmA({ body: canvasBody([quietPc()]) });
+  const configDir = join(tmp, 'projects', `${FILE_ID.slice(0, 8)}-1-2`);
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(configDir, 'config.json'), canonicalJson({ fonts: {} }));
+  const result = await runB(confirmed);
+  assert.equal(result.ok, true, result.message);
+  const extract = readJson(result.extractPath);
+  const inv = readJson(extract.artifacts.inventories.pc.path);
+  assert.equal(inv.status, 'blocked');
+  assert.ok(inv.issues.some((i) => i.nodeId === null && i.scope === null && i.name === null
+    && !Object.hasOwn(i, 'section')));
+  const checked = checkB(result.stagePath, extract.version);
+  assert.equal(checked.ok, true, checked.reason);
+});
+
+test('复审P2：诊断条目必须是对象', async () => {
+  for (const issue of [null, [], 1, 'diagnostic']) {
+    const b = await passBaseline({ body: canvasBody([namedPc()]) });
+    mutateJson(b.extract.artifacts.inventories.pc.path, (inv) => { inv.issues = [issue]; });
+    rehashExtractChain(b.result.extractPath, b.result.stagePath);
+    rejectAfter(b.result.extractPath, b.result.stagePath, /issues.*诊断/, String(issue));
+  }
 });
 
 test('矩阵：同 scopeVersion 不同 digest/path 两入口都拒绝且不回退', async () => {

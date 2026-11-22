@@ -6,6 +6,7 @@ import { latestScopePath } from './run-dir.mjs';
 import { assertProblemDomain, problemsFromInventories } from './problems.mjs';
 import { assertDesignSets } from './design-sets.mjs';
 import { pairEnds } from './same-modules.mjs';
+import { findNode, resolvePageRoot } from '../../figma-naming/tool/src/inventory.mjs';
 import {
   CONTRACT_VERSION as ONEPAGE_CONTRACT_VERSION,
   INVENTORY_SCHEMA as ONEPAGE_INVENTORY_SCHEMA,
@@ -433,8 +434,9 @@ function verifyInventoryContract(inv, label, { scope, snapshot, set }) {
   if (!inv.page || typeof inv.page !== 'object' || Array.isArray(inv.page) || !nonemptyText(inv.page.id)) {
     return { ok: false, reason: `${label} 缺 page` };
   }
-  if (inv.page.id !== set.id) {
-    return { ok: false, reason: `${label} page 不是所选设计集` };
+  const resolved = resolvePageRoot(snapshot.document, set.id);
+  if (!resolved.page || inv.page.id !== resolved.page.id) {
+    return { ok: false, reason: `${label} page 不是所选设计集解析出的页面` };
   }
   if (!inv.scope || typeof inv.scope !== 'object' || Array.isArray(inv.scope)) {
     return { ok: false, reason: `${label} 缺 scope` };
@@ -445,13 +447,37 @@ function verifyInventoryContract(inv, label, { scope, snapshot, set }) {
   if (inv.scope.pageId !== inv.page.id) {
     return { ok: false, reason: `${label} pageId 与 page 不一致` };
   }
+  // The compiler records the page's immediate parent, not necessarily the
+  // requested design set (which may itself wrap a shelf or an inner page).
+  const shelf = nonemptyText(inv.scope.shelfId) ? findNode(snapshot.document, inv.scope.shelfId) : null;
+  if (resolved.page === snapshot.document
+    ? inv.scope.shelfId !== null
+    : !shelf?.children?.includes(resolved.page)) {
+    return { ok: false, reason: `${label} shelfId 不是解析页面的直接父货架` };
+  }
   if (!Array.isArray(inv.nodes)) {
     return { ok: false, reason: `${label} nodes 必须是数组` };
   }
   if (!Array.isArray(inv.issues)) {
     return { ok: false, reason: `${label} issues 必须是数组` };
   }
+  if (!inv.issues.every(validCompilerDiagnostic)) {
+    return { ok: false, reason: `${label} issues 诊断字段不符合 compiler 合同` };
+  }
   return { ok: true };
+}
+
+/** Match diagnostic()'s node-level/config-level records before deriving problems. */
+function validCompilerDiagnostic(issue) {
+  const text = (value) => typeof value === 'string' && value.trim() !== '';
+  if (!issue || typeof issue !== 'object' || Array.isArray(issue)
+    || !text(issue.code) || !text(issue.message)) return false;
+  if (issue.nodeId === null) {
+    return issue.scope === null && issue.name === null && !Object.hasOwn(issue, 'section');
+  }
+  return text(issue.nodeId) && text(issue.scope) && typeof issue.name === 'string'
+    && Object.hasOwn(issue, 'section')
+    && (issue.section === null || (Number.isSafeInteger(issue.section) && issue.section >= 0));
 }
 
 function verifyProblemsShape(problems) {
@@ -659,7 +685,7 @@ function verifyBExtractOutputInner(output, record, recordPath) {
     inventoriesByEnd[end] = invFile.value;
   }
 
-  return verifyProducerMaterials({
+  const materials = verifyProducerMaterials({
     output,
     scope: scopeBind.file,
     snapshot: snapBind.file,
@@ -668,6 +694,11 @@ function verifyBExtractOutputInner(output, record, recordPath) {
     pairing: pairingFile.value,
     inventoriesByEnd,
   });
+  if (!materials.ok) return materials;
+  if (!sameCanonical(record.problems, problemsFile.value)) {
+    return { ok: false, reason: 'B 环节 problems 与问题文件不一致' };
+  }
+  return materials;
 }
 
 function verifyScopeOutput(output, record, expectedOutputVersion) {
