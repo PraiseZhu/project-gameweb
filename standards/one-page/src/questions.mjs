@@ -89,7 +89,7 @@ function groupButtons(inventories) {
     for (const node of productNodes(inv)) {
       if (!['btn', 'hot'].includes(node.role)) continue;
       if (declaredAction(node)) continue;
-      const key = `${node.role}/${node.label}`;
+      const key = node.componentId ? `component:${node.componentId}` : `name:${node.role}/${node.label}`;
       if (!groups.has(key)) {
         groups.set(key, {
           componentKey: key,

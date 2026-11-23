@@ -50,9 +50,37 @@ function readUIntBase128(buf, offset) {
   throw new Error('invalid UIntBase128');
 }
 
+const UNICODE_MAX = 0x10ffff;
+
+class Coverage {
+  constructor() {
+    this.ranges = [];
+  }
+
+  add(cp) {
+    this.addRange(cp, cp);
+  }
+
+  addRange(start, end) {
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return;
+    const from = Math.max(0, start);
+    const to = Math.min(UNICODE_MAX, end);
+    if (from > to) return;
+    this.ranges.push([from, to]);
+  }
+
+  has(cp) {
+    for (const [from, to] of this.ranges) {
+      if (cp >= from && cp <= to) return true;
+    }
+    return false;
+  }
+}
+
 function parseCmapTable(cmap) {
   if (cmap.length < 4) throw new Error('cmap 表过短');
   const numTables = u16(cmap, 2);
+  if (4 + numTables * 8 > cmap.length) throw new Error('cmap 记录越界');
   let chosen = null;
   let score = -1;
   for (let i = 0; i < numTables; i += 1) {
@@ -60,6 +88,7 @@ function parseCmapTable(cmap) {
     const platform = u16(cmap, rec);
     const encoding = u16(cmap, rec + 2);
     const offset = u32(cmap, rec + 4);
+    if (offset + 2 > cmap.length) continue;
     const rank = platform === 3 && encoding === 10 ? 4
       : platform === 0 && encoding === 4 ? 3
         : platform === 3 && encoding === 1 ? 2
@@ -70,28 +99,35 @@ function parseCmapTable(cmap) {
       chosen = offset;
     }
   }
-  if (chosen == null) throw new Error('cmap 没有可用编码表');
+  if (chosen == null || chosen + 2 > cmap.length) throw new Error('cmap 没有可用编码表');
   const format = u16(cmap, chosen);
-  const codes = new Set();
-  if (format === 4) parseFormat4(cmap, chosen, codes);
-  else if (format === 12) parseFormat12(cmap, chosen, codes);
-  else if (format === 6) parseFormat6(cmap, chosen, codes);
+  const coverage = new Coverage();
+  if (format === 4) parseFormat4(cmap, chosen, coverage);
+  else if (format === 12) parseFormat12(cmap, chosen, coverage);
+  else if (format === 6) parseFormat6(cmap, chosen, coverage);
   else throw new Error(`不支持的 cmap format ${format}`);
-  return codes;
+  return coverage;
 }
 
-function parseFormat4(buf, offset, codes) {
+function parseFormat4(buf, offset, coverage) {
+  if (offset + 14 > buf.length) throw new Error('cmap format 4 过短');
   const length = u16(buf, offset + 2);
-  const segCount = u16(buf, offset + 6) / 2;
+  if (length < 16 || offset + length > buf.length) throw new Error('cmap format 4 长度非法');
+  const segCountX2 = u16(buf, offset + 6);
+  if (segCountX2 % 2 !== 0) throw new Error('cmap format 4 segCount 非法');
+  const segCount = segCountX2 / 2;
+  if (segCount < 1) throw new Error('cmap format 4 segCount 非法');
   const endOff = offset + 14;
   const startOff = endOff + segCount * 2 + 2;
   const deltaOff = startOff + segCount * 2;
   const rangeOff = deltaOff + segCount * 2;
+  if (rangeOff + segCount * 2 > offset + length) throw new Error('cmap format 4 段表越界');
   for (let i = 0; i < segCount; i += 1) {
     const end = u16(buf, endOff + i * 2);
     const start = u16(buf, startOff + i * 2);
     const delta = u16(buf, deltaOff + i * 2);
     const range = u16(buf, rangeOff + i * 2);
+    if (start > end) throw new Error('cmap format 4 码位范围非法');
     for (let c = start; c <= end; c += 1) {
       let glyph;
       if (range === 0) glyph = (c + delta) & 0xffff;
@@ -101,42 +137,53 @@ function parseFormat4(buf, offset, codes) {
         const g = u16(buf, glyphOff);
         glyph = g === 0 ? 0 : (g + delta) & 0xffff;
       }
-      if (glyph !== 0 && c !== 0xffff) codes.add(c);
+      if (glyph !== 0 && c !== 0xffff) coverage.add(c);
     }
   }
 }
 
-function parseFormat12(buf, offset, codes) {
+function parseFormat12(buf, offset, coverage) {
+  if (offset + 16 > buf.length) throw new Error('cmap format 12 过短');
+  const length = u32(buf, offset + 4);
+  if (length < 16 || offset + length > buf.length) throw new Error('cmap format 12 长度非法');
   const nGroups = u32(buf, offset + 12);
+  if (nGroups > Math.floor((length - 16) / 12)) throw new Error('cmap format 12 组数越界');
   let p = offset + 16;
   for (let i = 0; i < nGroups; i += 1) {
     const start = u32(buf, p);
     const end = u32(buf, p + 4);
     const glyphStart = u32(buf, p + 8);
-    for (let c = start; c <= end; c += 1) {
-      if (glyphStart + (c - start) !== 0) codes.add(c);
-    }
+    if (start > end || end > UNICODE_MAX) throw new Error('cmap format 12 码位范围非法');
+    if (glyphStart !== 0) coverage.addRange(start, end);
+    else if (start < end) coverage.addRange(start + 1, end);
     p += 12;
   }
 }
 
-function parseFormat6(buf, offset, codes) {
+function parseFormat6(buf, offset, coverage) {
+  if (offset + 10 > buf.length) throw new Error('cmap format 6 过短');
+  const length = u16(buf, offset + 2);
   const first = u16(buf, offset + 6);
   const count = u16(buf, offset + 8);
+  if (length < 10 + count * 2 || offset + 10 + count * 2 > buf.length) {
+    throw new Error('cmap format 6 长度非法');
+  }
   for (let i = 0; i < count; i += 1) {
-    if (u16(buf, offset + 10 + i * 2) !== 0) codes.add(first + i);
+    if (u16(buf, offset + 10 + i * 2) !== 0) coverage.add(first + i);
   }
 }
 
 function tablesFromSfnt(buf) {
+  if (buf.length < 12) throw new Error('字体文件过短');
   const numTables = u16(buf, 4);
+  if (12 + numTables * 16 > buf.length) throw new Error('字体表目录越界');
   const tables = new Map();
   for (let i = 0; i < numTables; i += 1) {
     const rec = 12 + i * 16;
-    tables.set(tagAt(buf, rec), {
-      offset: u32(buf, rec + 8),
-      length: u32(buf, rec + 12),
-    });
+    const offset = u32(buf, rec + 8);
+    const length = u32(buf, rec + 12);
+    if (offset + length > buf.length) throw new Error('字体表越界');
+    tables.set(tagAt(buf, rec), { offset, length });
   }
   return tables;
 }

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve as pathResolve } from 'node:path';
 import { LANG_CODES } from './validate-inputs.mjs';
 import { missingGlyphs, fontHasWeight } from './cmap.mjs';
 import {
@@ -59,11 +59,42 @@ export function projectConfigDir(runRoot, fileKey, nodeId) {
   return join(runRoot, 'projects', `${key8}-${node}`);
 }
 
+export function resolveFontFile(resource, configDir) {
+  if (!resource?.file) return { ok: false, missing: '缺少字体文件路径' };
+  if (isAbsolute(resource.file)) {
+    return { ok: false, missing: '字体路径必须相对项目配置目录' };
+  }
+  if (!configDir) return { ok: false, missing: '没有项目配置目录' };
+  let realDir;
+  try {
+    realDir = realpathSync(configDir);
+  } catch (err) {
+    return { ok: false, missing: `无法解析项目配置目录：${err.message}` };
+  }
+  const intended = pathResolve(realDir, resource.file);
+  const rel = relative(realDir, intended);
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) {
+    return { ok: false, missing: '字体文件不在项目配置目录内' };
+  }
+  if (!existsSync(intended)) {
+    return { ok: false, missing: `找不到字体文件 ${resource.file}` };
+  }
+  let realFile;
+  try {
+    realFile = realpathSync(intended);
+  } catch (err) {
+    return { ok: false, missing: `无法解析字体路径：${err.message}` };
+  }
+  const inside = relative(realDir, realFile);
+  if (!inside || inside.startsWith('..') || isAbsolute(inside)) {
+    return { ok: false, missing: '字体文件不在项目配置目录内' };
+  }
+  return { ok: true, path: realFile };
+}
+
 export function resourceFilePath(resource, configDir) {
-  if (!resource?.file) return null;
-  if (isAbsolute(resource.file)) return resource.file;
-  if (!configDir) return null;
-  return join(configDir, resource.file);
+  const resolved = resolveFontFile(resource, configDir);
+  return resolved.ok ? resolved.path : null;
 }
 
 export function sha256File(buffer) {
@@ -163,17 +194,18 @@ export function checkFontFiles({
           locations: face.locations,
         });
       }
-      const filePath = resourceFilePath(resource, configDir);
-      if (!filePath || !existsSync(filePath)) {
+      const resolved = resolveFontFile(resource, configDir);
+      if (!resolved.ok) {
         blockers.push({
           code: 'FONT_FILE',
           object: key,
           lang,
-          missing: `找不到字体文件 ${resource.file}`,
+          missing: resolved.missing,
           locations: face.locations,
         });
         continue;
       }
+      const filePath = resolved.path;
       let buffer;
       try {
         buffer = readFileSync(filePath);

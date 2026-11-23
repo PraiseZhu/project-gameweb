@@ -13,6 +13,8 @@ import { checkEntry } from '../src/stage-record.mjs';
 import { sameSentence, identifyLanguageColumns, detectBatches, matchTranslations } from '../src/translations.mjs';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
 import { autoMotions } from '../src/motion-auto.mjs';
+import { resolveFontFile } from '../src/fonts-b2.mjs';
+import { missingGlyphs } from '../src/cmap.mjs';
 
 
 const PACKAGE_JSON = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -280,19 +282,20 @@ test('段落标题只认整行唯一非空单元格，能对上快照中文行',
     ['标题'],
     [null, '规则说明', 'Rules & Regulations', 'ルール説明'],
   ];
-  const batches = detectBatches(values);
-  const titles = batches.map((row) => row.title);
-  assert.equal(titles.includes('SS6.4 11/04 追加翻译'), true);
-  assert.equal(titles.includes('SS7.1 12/02 官网累充'), true);
-  assert.equal(titles.includes('以下为全球活动宣传内容翻译_DDL03/27'), true);
-  assert.equal(titles.includes('标题'), true);
-  assert.equal(titles.includes('活动进度查询'), false);
-  assert.equal(titles.includes('官网充值'), false);
   const columns = [
     { index: 1, lang: 'cn' },
     { index: 2, lang: 'en' },
     { index: 3, lang: 'jp' },
   ];
+  const batches = detectBatches(values, columns);
+  const titles = batches.map((row) => row.title);
+  assert.equal(titles.includes('SS6.4 11/04 追加翻译'), true);
+  assert.equal(titles.includes('SS7.1 12/02 官网累充'), true);
+  assert.equal(titles.includes('以下为全球活动宣传内容翻译_DDL03/27'), false);
+  assert.equal(titles.includes('标题'), true);
+  assert.equal(titles.includes('活动进度查询'), false);
+  assert.equal(titles.includes('官网充值'), false);
+  assert.equal(detectBatches([['简中', '英语'], ['单行中文源', '']], [{ index: 0, lang: 'cn' }, { index: 1, lang: 'en' }]).some((row) => row.title === '单行中文源'), false);
   const matched = matchTranslations({
     values,
     columns,
@@ -564,6 +567,137 @@ test('配置级 TARGET 报工具问题且不 pass', async () => {
   assert.notEqual(result.result, 'pass');
 });
 
+test('FONT_CONFIG 与非法链接配置不能 pass',
+  async () => {
+    const confirmed = await confirmA({ body: canvasBody([namedPc([
+      frame('10:3', 'title/标题'),
+      frame('10:4', 'btn/下一屏@sec=next'),
+      frame('10:7', 'btn/官网@link=site'),
+    ])]) });
+    await runB1(confirmed);
+    const configDir = join(tmp, 'projects', `${FILE_ID.slice(0, 8)}-1-2`);
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, 'config.json'), `${canonicalJson({
+      links: { site: {} },
+      fonts: {
+        unexpected: true,
+        faces: { 'FakeSans/400': { en: 'latin' } },
+        resources: {
+          latin: {
+            file: 'latin.ttf', weights: [400], format: 'ttf',
+            source: 'test', license: 'OFL', digest: 'sha256:ab',
+          },
+        },
+      },
+    })}\n`);
+    const result = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB });
+    const problems = readJson(result.problemsPath);
+    assert.equal(result.result, 'needs-input');
+    assert.equal(problems.some((row) => row.code === 'FONT_CONFIG'), true, JSON.stringify(problems));
+    assert.equal(problems.some((row) => row.code === 'LINK_CONFIG' && row.returnTo === '工具'), true, JSON.stringify(problems));
+  });
+
+test('同名不同主组件分别出卡',
+  async () => {
+    const confirmed = await confirmA({ body: canvasBody([namedPc([
+      frame('10:3', 'title/标题'),
+      frame('10:7', 'btn/购买', [], { type: 'INSTANCE', componentId: 'main-a' }),
+      frame('10:8', 'btn/购买', [], { type: 'INSTANCE', componentId: 'main-b' }),
+      frame('10:4', 'btn/下一屏@sec=next'),
+    ])]) });
+    await runB1(confirmed);
+    const result = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB });
+    const cards = readJson(result.questionsPath).filter((row) => row.type === 'button-action' && row.object.includes('购买'));
+    assert.equal(cards.length, 2, JSON.stringify(cards.map((row) => row.componentKey)));
+    assert.equal(cards.some((row) => row.componentKey === 'component:main-a'), true);
+    assert.equal(cards.some((row) => row.componentKey === 'component:main-b'), true);
+  });
+
+test('B1 更新后旧 B2 答案必须先重跑 supplement',
+  async () => {
+    const confirmed = await confirmA({ body: canvasBody([namedPc([
+      frame('10:3', 'title/标题'),
+      text('10:9', '价格', '价格 12 元'),
+      frame('10:4', 'btn/下一屏@sec=next'),
+    ])]) });
+    await runB1(confirmed);
+    const first = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB });
+    const card = readJson(first.questionsPath).find((row) => row.type === 'data-static-or-dynamic');
+    await runBAnswer({
+      runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB, now: '2026-11-22T00:00:00.000Z',
+      answersValue: { answers: [{ id: card.id, fingerprint: card.fingerprint, value: { dynamic: [] } }] },
+    });
+    const updated = canvasBody([namedPc([
+      frame('10:3', 'title/标题'),
+      text('10:9', '价格', '价格 15 元'),
+      frame('10:4', 'btn/下一屏@sec=next'),
+    ])]);
+    const b1b = await runB1(confirmed, { fetchImpl: fetchOf(updated) });
+    assert.equal(b1b.ok, true, b1b.message);
+    const stale = await runBAnswer({
+      runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB,
+      answersValue: { answers: [{ id: card.id, fingerprint: card.fingerprint, value: { dynamic: [] } }] },
+    });
+    assert.equal(stale.result, 'stopped');
+    assert.equal(stale.code, 'b2-stale');
+  });
+
+test('无效译文列确认阻断且不能当成空译文',
+  async () => {
+    const confirmed = await confirmA({
+      languages: 'cn,en', baseLanguage: 'cn',
+      body: canvasBody([namedPc([
+        frame('10:3', 'title/标题'),
+        text('10:9', '标题字', '标题A'),
+        frame('10:4', 'btn/下一屏@sec=next'),
+      ])]),
+    });
+    await runB1(confirmed);
+    const snap = join(tmp, 'sheet-bad-cols.json');
+    writeFileSync(snap, `${JSON.stringify({ values: [[null, '简中', '英语'], [null, '标题A', 'Title A']] })}\n`);
+    const configDir = join(tmp, 'projects', `${FILE_ID.slice(0, 8)}-1-2`);
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, 'config.json'), `${canonicalJson({
+      meta: { l10n: { columns: [{ index: 1, lang: 'en' }] } },
+    })}\n`);
+    const result = await runBSupplement({
+      runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB, l10nSnapshot: snap,
+    });
+    assert.notEqual(result.result, 'pass');
+    const problems = readJson(result.problemsPath);
+    assert.equal(problems.some((row) => row.code === 'L10N_CONFIG' && row.returnTo === '工具'), true, JSON.stringify(problems));
+    const translations = readJson(result.translationsPath);
+    assert.equal((translations.matched || []).length, 0);
+  });
+
+test('欢迎与欢迎。不是同一句', () => {
+  assert.equal(sameSentence('欢迎', '欢迎。'), false);
+  assert.equal(sameSentence('  ·欢迎\n', '欢迎'), true);
+});
+
+test('CONFIG_KEY 归工具',
+  async () => {
+    const confirmed = await confirmA({ body: canvasBody([namedPc([
+      frame('10:3', 'title/标题'),
+      frame('10:4', 'btn/下一屏@sec=next'),
+    ])]) });
+    await runB1(confirmed);
+    const configDir = join(tmp, 'projects', `${FILE_ID.slice(0, 8)}-1-2`);
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, 'config.json'), `${canonicalJson({ extra: {} })}\n`);
+    const result = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB });
+    const problems = readJson(result.problemsPath);
+    assert.equal(problems.some((row) => row.code === 'CONFIG_KEY' && row.returnTo === '工具'), true, JSON.stringify(problems));
+    assert.notEqual(result.result, 'pass');
+  });
+
+test('字体路径拒绝绝对路径和越出配置目录', () => {
+  const configDir = join(tmp, 'projects', 'safe');
+  mkdirSync(configDir, { recursive: true });
+  assert.equal(resolveFontFile({ file: '/tmp/x.ttf' }, configDir).ok, false);
+  assert.match(resolveFontFile({ file: '../../outside/font.ttf' }, configDir).missing, /不在项目配置目录/);
+});
+
 test('main 缺 run-dir 退出 1', async () => {
   const errs = [];
   const code = await supplementMain([], { log() {}, err: (text) => errs.push(String(text)), tokenValue: STUB });
@@ -639,4 +773,3 @@ function buildTinyTtf(chars) {
   const rec = Buffer.concat([Buffer.from('cmap'), u32(0), u32(12 + 16), u32(cmap.length)]);
   return Buffer.concat([header, rec, cmap]);
 }
-

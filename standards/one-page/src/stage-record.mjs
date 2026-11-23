@@ -745,6 +745,31 @@ export function verifySupplementRecord(record) {
   return { ok: true, version: record.version, digest: record.recordDigest };
 }
 
+export function loadLatestSupplement(dir) {
+  const hits = [];
+  for (const name of readdirSync(dir)) {
+    if (!name.startsWith('stage-B-') || !name.endsWith('.json')) continue;
+    const stagePath = join(dir, name);
+    let record;
+    try {
+      record = JSON.parse(readFileSync(stagePath, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (record.stage !== 'B' || record.output?.kind !== 'b-supplement') continue;
+    const verified = verifyStageRecord(record);
+    if (!verified.ok) continue;
+    hits.push({ stagePath, record, round: record.round });
+  }
+  if (!hits.length) return { ok: false, reason: '没有可用的 B2 环节记录。请先跑 b:supplement。' };
+  hits.sort((a, b) => b.round - a.round);
+  const best = hits[0];
+  if (hits.filter((item) => item.round === best.round).length > 1) {
+    return { ok: false, reason: '当前 B2 环节不唯一' };
+  }
+  return { ok: true, ...best };
+}
+
 export function loadCurrentB1(dir) {
   const hits = [];
   for (const name of readdirSync(dir)) {

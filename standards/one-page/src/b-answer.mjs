@@ -1,13 +1,14 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StoppedError, isStoppedError, stoppedResult } from './stopped.mjs';
 import { hasRunPointer, resolveExistingRunDir } from './run-dir.mjs';
 import { parseArgv, prepareEnv } from './a-scope.mjs';
 import { loadProjectConfig, writeProjectConfigAtomic } from './project-config.mjs';
-import { loadCurrentB1 } from './stage-record.mjs';
+import { jsonContentDigest, loadCurrentB1, loadLatestSupplement } from './stage-record.mjs';
 import { runBSupplement } from './b-supplement.mjs';
 import { applyAnswers } from './apply-answers.mjs';
+import { collectB2 } from './b-collect.mjs';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_RUN_ROOT = resolve(PACKAGE_ROOT, '../..');
@@ -28,23 +29,37 @@ function stoppedB2(err) {
   return result;
 }
 
-function latestQuestions(dir) {
-  const b1 = loadCurrentB1(dir);
-  if (!b1.ok) throw new StoppedError(b1.reason.includes('改动') ? 'b1-tampered' : 'b1-missing', b1.reason);
-  let best = 0;
-  let file = null;
-  for (const name of readdirSync(dir)) {
-    const match = /^b2\.r(\d+)$/.exec(name);
-    if (!match) continue;
-    const n = Number(match[1]);
-    const q = join(dir, name, 'questions.json');
-    if (n >= best && existsSync(q)) {
-      best = n;
-      file = q;
-    }
+function loadL10n(path) {
+  if (!path) return null;
+  if (!existsSync(path)) throw new StoppedError('l10n-missing', `译文快照不存在：${path}`);
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    throw new StoppedError('l10n-invalid', '译文快照不是合法 JSON');
   }
-  if (!file) throw new StoppedError('b2-missing', '没有 B2 卡片文件。请先跑 b:supplement。');
-  return JSON.parse(readFileSync(file, 'utf8'));
+}
+
+function inputOf(record, kind) {
+  return (record.inputs || []).find((item) => item && item.kind === kind) || null;
+}
+
+function assertFreshSupplement({ dir, b1, config, l10n }) {
+  const latest = loadLatestSupplement(dir);
+  if (!latest.ok) throw new StoppedError('b2-missing', latest.reason);
+  const b1Input = inputOf(latest.record, 'b-extract');
+  if (!b1Input || b1Input.digest !== b1.extract.recordDigest) {
+    throw new StoppedError('b2-stale', 'B1 已更新，请先重跑 b:supplement 再回答。');
+  }
+  const configInput = inputOf(latest.record, 'config');
+  if (!configInput || configInput.digest !== jsonContentDigest(config)) {
+    throw new StoppedError('b2-stale', '项目配置已变，请先重跑 b:supplement 再回答。');
+  }
+  const l10nInput = inputOf(latest.record, 'l10n-snapshot');
+  const l10nDigest = l10n ? jsonContentDigest(l10n) : null;
+  if (Boolean(l10nInput) !== Boolean(l10nDigest) || (l10nInput && l10nInput.digest !== l10nDigest)) {
+    throw new StoppedError('b2-stale', '译文快照已变，请先重跑 b:supplement 再回答。');
+  }
+  return latest;
 }
 
 function loadAnswers(filePath) {
@@ -73,12 +88,24 @@ async function runBAnswerInner(options) {
     throw new StoppedError('need-run-dir', '必须带 --run-dir 或 --run-id。');
   }
   const existing = resolveExistingRunDir(runRoot, options);
-  const questions = options.questions || latestQuestions(existing.dir);
   const rawAnswers = options.answersValue ?? loadAnswers(options.answers);
   const b1 = loadCurrentB1(existing.dir);
   if (!b1.ok) throw new StoppedError(b1.reason.includes('改动') ? 'b1-tampered' : 'b1-missing', b1.reason);
   const scope = JSON.parse(readFileSync(b1.extract.artifacts.scope.path, 'utf8'));
+  const snapshot = JSON.parse(readFileSync(b1.extract.artifacts.snapshot.path, 'utf8'));
   const loaded = loadProjectConfig(runRoot, scope.fileKey, scope.nodeId);
+  const l10n = options.l10nSnapshot
+    ? loadL10n(options.l10nSnapshot)
+    : (existsSync(join(existing.dir, 'l10n-snapshot.json')) ? loadL10n(join(existing.dir, 'l10n-snapshot.json')) : null);
+  assertFreshSupplement({ dir: existing.dir, b1, config: loaded.config, l10n });
+  const collected = collectB2({
+    snapshot,
+    scope,
+    config: loaded.config,
+    l10nSnapshot: l10n,
+    configDir: dirname(loaded.path),
+  });
+  const questions = options.questions || collected.questions;
   const inventories = {};
   for (const end of ['pc', 'mobile']) {
     const item = b1.extract.artifacts.inventories?.[end];

@@ -10,7 +10,6 @@ const B2_CODES = new Set([
   'ACTION_LINK_SOURCE',
   'ACTION_STATE',
   'ACTION_CONTROL',
-  'LINK_CONFIG',
   'LINK_URL',
   'STATE_MAPPING',
   'STATE_DESIGN',
@@ -42,6 +41,15 @@ const B2_CODES = new Set([
   'config-invalid',
 ]);
 
+const TOOL_CODES = new Set([
+  'CONFIG_KEY',
+  'CONFIG_TYPE',
+  'LINK_CONFIG',
+  'TARGET',
+  'TARGET_SCOPE',
+  'L10N_CONFIG',
+]);
+
 const A_CODES = new Set([
   'a-missing',
   'a-tampered',
@@ -70,6 +78,7 @@ export const RETURN_TO = Object.freeze(['A', '设计稿', 'B2', '工具']);
 
 export function returnToFor(code) {
   if (A_CODES.has(code)) return 'A';
+  if (TOOL_CODES.has(code)) return '工具';
   if (B2_CODES.has(code)) return 'B2';
   return '设计稿';
 }

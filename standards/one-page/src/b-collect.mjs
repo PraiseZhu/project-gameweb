@@ -65,7 +65,7 @@ function autoLinks(inventories, config) {
     for (const node of productNodes(inv)) {
       const key = node.params?.link;
       if (!key) continue;
-      if (!Object.hasOwn(links, key) || !object(links[key]) || !Object.hasOwn(links[key], 'url')) {
+      if (!Object.hasOwn(links, key)) {
         links[key] = { url: null };
         added.push(key);
       }
@@ -168,6 +168,27 @@ function recompile(snapshot, config, platform) {
   return { design, inventories, pairing, problems: problemsFromInventories(inventories, pairing) };
 }
 
+function findLiveNode(inventories, nodeId) {
+  for (const inv of Object.values(inventories || {})) {
+    const hit = (inv?.nodes || []).find((node) => node.id === nodeId);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function answerIdentityChanged(row, inventories) {
+  for (const loc of row.locations || []) {
+    if (!loc?.nodeId) continue;
+    const node = findLiveNode(inventories, loc.nodeId);
+    if (!node) continue;
+    if (loc.characters != null && textCharacters(node) !== loc.characters) return true;
+    const liveName = String(node.name || '').split('@')[0];
+    const storedName = String(loc.name || '').split('@')[0];
+    if (storedName && liveName && storedName !== liveName) return true;
+  }
+  return false;
+}
+
 function markStaleAnswers(meta, inventories) {
   const live = new Set();
   for (const inv of Object.values(inventories || {})) {
@@ -177,34 +198,56 @@ function markStaleAnswers(meta, inventories) {
   }
   const answers = { ...(meta.answers || {}) };
   const stale = [];
+  const staticCopy = { ...(meta.staticCopy || {}) };
+  const dynamicNeeded = { ...(meta.dynamicNeeded || {}) };
   for (const [key, row] of Object.entries(answers)) {
     const ids = (row.locations || []).map((item) => item.nodeId).filter(Boolean);
     if (!ids.length) continue;
-    if (ids.every((id) => !live.has(id))) {
+    const gone = ids.every((id) => !live.has(id));
+    if (gone || answerIdentityChanged(row, inventories)) {
       answers[key] = { ...row, status: 'stale' };
       stale.push({ key, object: row.object ?? key });
+      for (const loc of row.locations || []) {
+        if (loc.ref) {
+          delete staticCopy[loc.ref];
+          delete dynamicNeeded[loc.ref];
+        }
+        if (loc.nodeId) {
+          delete staticCopy[loc.nodeId];
+          delete dynamicNeeded[loc.nodeId];
+        }
+      }
     }
   }
-  return { answers, stale };
+  return { answers, stale, staticCopy, dynamicNeeded };
 }
 
 function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
   const questions = [];
+  const problems = [];
   const translations = { matched: [], pending: [], choices: [], source: null };
   if (!snapshot) {
     if ((languages || []).some((lang) => lang !== 'cn')) {
       translations.pending = texts.map((item) => ({ ...item, status: 'pending', reason: 'no-snapshot' }));
     }
-    return { questions, translations };
+    return { questions, translations, problems };
   }
   const unwrapped = unwrapSnapshot(snapshot);
   if (!unwrapped) {
     translations.pending = texts.map((item) => ({ ...item, status: 'pending', reason: 'bad-snapshot' }));
-    return { questions, translations };
+    return { questions, translations, problems };
   }
   translations.source = unwrapped.source || null;
   const identified = identifyLanguageColumns(unwrapped.values, meta.l10n);
   if (!identified.ok) {
+    if (identified.reason) {
+      problems.push(problem({
+        object: '翻译表语言列',
+        missing: identified.reason,
+        code: 'L10N_CONFIG',
+        returnTo: '工具',
+      }));
+    }
     questions.push({
       type: 'l10n-columns',
       object: '翻译表语言列',
@@ -226,10 +269,9 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
       splitAllowed: false,
       fingerprint: sha256Hex({ type: 'l10n-columns', headers: unwrapped.values[0] }),
     });
-    return { questions, translations };
+    return { questions, translations, problems };
   }
-  const cn = identified.columns.find((col) => col.lang === 'cn');
-  const batches = detectBatches(unwrapped.values);
+  const batches = detectBatches(unwrapped.values, identified.columns);
   const selected = meta.l10n?.batches;
   if (batches.length > 1 && (!Array.isArray(selected) || !selected.length)) {
     questions.push({
@@ -243,7 +285,7 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
       splitAllowed: false,
       fingerprint: sha256Hex({ type: 'l10n-batches', batches }),
     });
-    return { questions, translations };
+    return { questions, translations, problems };
   }
   const selectedIds = Array.isArray(selected) && selected.length ? selected : batches.map((batch) => batch.id);
   const matched = matchTranslations({
@@ -253,6 +295,15 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
     selectedBatchIds: selectedIds,
     texts,
   });
+  if (!matched.ok) {
+    problems.push(problem({
+      object: '译文匹配',
+      missing: matched.reason || '译文匹配失败',
+      code: 'L10N_CONFIG',
+      returnTo: '工具',
+    }));
+    return { questions, translations, problems };
+  }
   const chosen = meta.l10n?.choices || {};
   for (const item of matched.choices || []) {
     const key = `l10n-choice:${item.end}:${item.nodeId}`;
@@ -284,7 +335,7 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
   translations.columns = identified.columns;
   translations.batches = batches;
   translations.selectedBatchIds = selectedIds;
-  return { questions, translations };
+  return { questions, translations, problems };
 }
 
 function textsByLangFrom(translations) {
@@ -331,7 +382,12 @@ export function collectB2({
   const meta = metaOf(working);
   const stale = markStaleAnswers(meta, compiled.inventories);
   if (stale.stale.length) {
-    working.meta = { ...meta, answers: stale.answers };
+    working.meta = {
+      ...meta,
+      answers: stale.answers,
+      staticCopy: stale.staticCopy,
+      dynamicNeeded: stale.dynamicNeeded,
+    };
     if (working.bindings) {
       for (const row of stale.stale) {
         const answer = stale.answers[row.key];
@@ -342,7 +398,12 @@ export function collectB2({
     }
     compiled = recompile(snapshot, working, scope.platform);
   } else if (Object.keys(meta).length) {
-    working.meta = { ...meta, answers: stale.answers };
+    working.meta = {
+      ...meta,
+      answers: stale.answers,
+      staticCopy: stale.staticCopy ?? meta.staticCopy,
+      dynamicNeeded: stale.dynamicNeeded ?? meta.dynamicNeeded,
+    };
   }
 
   const splitKeys = new Set(meta.splitKeys || []);
@@ -367,8 +428,8 @@ export function collectB2({
     : [];
   const data = buildDataHintQuestions(compiled.inventories, {
     confirmedRefs: new Set([
-      ...Object.keys(meta.staticCopy || {}),
-      ...Object.keys(meta.dynamicNeeded || {}),
+      ...Object.keys(liveMeta.staticCopy || {}),
+      ...Object.keys(liveMeta.dynamicNeeded || {}),
     ]),
   });
   const fonts = buildFontQuestions(compiled.inventories, {
@@ -406,7 +467,7 @@ export function collectB2({
   const questions = numberCards(rawQuestions);
 
   const designProblems = [
-    ...compiled.problems.filter((item) => item.returnTo === '设计稿' && !(item.nodeId == null && /^TARGET/.test(item.code || ''))),
+    ...compiled.problems.filter((item) => item.returnTo === '设计稿'),
     ...langVariants.map((item) => problem({
       end: item.locations?.[0]?.end ?? null,
       section: item.locations?.[0]?.section ?? null,
@@ -416,7 +477,7 @@ export function collectB2({
       code: item.code,
       returnTo: '设计稿',
     })),
-    ...Object.values(meta.dynamicNeeded || {}).map((item) => problem({
+    ...Object.values(liveMeta.dynamicNeeded || {}).map((item) => problem({
       end: item.end ?? null,
       section: item.section ?? null,
       nodeId: item.nodeId ?? null,
@@ -445,16 +506,21 @@ export function collectB2({
     })),
   ];
 
-  const toolProblems = compiled.problems.filter((item) => item.nodeId == null && /^TARGET/.test(item.code || '')).map((item) => problem({
-    end: null,
-    section: null,
-    nodeId: null,
-    object: item.object || 'TARGET',
-    missing: `配置 bindings 解析失败：${item.missing}`,
-    impact: '工具写入的配置指向了稿上不存在或不唯一的对象，不能当设计稿问题，也不能静默跳过',
-    code: 'TARGET',
-    returnTo: '工具',
-  }));
+  const toolProblems = [
+    ...compiled.problems.filter((item) => item.returnTo === '工具').map((item) => problem({
+      end: item.end ?? null,
+      section: item.section ?? null,
+      nodeId: item.nodeId ?? null,
+      object: item.object || item.code,
+      missing: item.nodeId == null && /^TARGET/.test(item.code || '')
+        ? `配置 bindings 解析失败：${item.missing}`
+        : item.missing,
+      impact: item.impact,
+      code: item.code,
+      returnTo: '工具',
+    })),
+    ...(l10n.problems || []),
+  ];
 
   const todos = [];
   todos.push(...aggregateLinkTodos(compiled.inventories));
@@ -495,13 +561,27 @@ export function collectB2({
     returnTo: 'B2',
   }));
 
-  const hasCards = questions.length > 0;
-  const hasFontBlock = fontBlockers.length > 0;
-  const hasDesign = designProblems.length > 0;
-  const leftoverMotion = compiled.problems.filter((item) => /^MOTION_/.test(item.code || ''));
+  const b2Problems = [
+    ...compiled.problems.filter((item) => {
+      if (item.returnTo !== 'B2') return false;
+      if (item.code === 'PAGINATION' && (!(carousel.questions || []).length || structureIds.has(item.nodeId))) return false;
+      if (item.code === 'RELATION_MISSING' && (structureIds.has(item.nodeId) || (item.nodeId && !pageClickIds.has(item.nodeId)))) return false;
+      if (item.code === 'ACTION_MISSING' && item.nodeId && !pageClickIds.has(item.nodeId)) return false;
+      return true;
+    }),
+    ...fontBlocking,
+  ];
+  const problems = [
+    ...b2Problems,
+    ...designProblems,
+    ...toolProblems,
+  ];
+  const hasB2Block = problems.some((item) => item.returnTo === 'B2');
+  const hasToolBlock = problems.some((item) => item.returnTo === '工具');
+  const hasDesign = problems.some((item) => item.returnTo === '设计稿');
   let result = 'pass';
-  if (hasCards || hasFontBlock || leftoverMotion.length) result = 'needs-input';
-  else if (hasDesign || toolProblems.length) result = 'fail';
+  if (questions.length > 0 || hasB2Block) result = 'needs-input';
+  else if (hasToolBlock || hasDesign) result = 'fail';
 
   return {
     workingConfig: working,
@@ -510,18 +590,7 @@ export function collectB2({
     questions,
     translations: l10n.translations,
     todos,
-    problems: [
-      ...compiled.problems.filter((item) => {
-        if (item.returnTo !== 'B2') return false;
-        if (item.code === 'PAGINATION' && (!(carousel.questions || []).length || structureIds.has(item.nodeId))) return false;
-        if (item.code === 'RELATION_MISSING' && (structureIds.has(item.nodeId) || (item.nodeId && !pageClickIds.has(item.nodeId)))) return false;
-        if (item.code === 'ACTION_MISSING' && item.nodeId && !pageClickIds.has(item.nodeId)) return false;
-        return true;
-      }),
-      ...fontBlocking,
-      ...designProblems,
-      ...toolProblems,
-    ],
+    problems,
     result,
     auto: { links: linkPatch.added, motions: motionPatch.applied },
     stale: stale.stale,

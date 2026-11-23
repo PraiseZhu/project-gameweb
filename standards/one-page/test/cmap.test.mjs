@@ -93,6 +93,16 @@ test('WOFF2 brotli cmap 可解压', () => {
   assert.deepEqual(missingGlyphs(buf, 'A!'), ['!']);
 });
 
+test('畸形 format12 码位范围报错而不是展开', () => {
+  const group = Buffer.concat([u32(0), u32(0xffffffff), u32(1)]);
+  const body = Buffer.concat([
+    u16(12), u16(0), u32(16 + 12), u32(0), u32(1), group,
+  ]);
+  const buf = sfntWithCmap(wrapCmapTable(body));
+  assert.throws(() => readCmapCodes(buf), /码位范围非法|组数越界|长度非法/);
+  assert.throws(() => missingGlyphs(buf, 'A'));
+});
+
 test('字重检查认 weights 与可变轴', () => {
   assert.equal(fontHasWeight({ weights: [400, 700] }, 700), true);
   assert.equal(fontHasWeight({ weights: [400] }, 700), false);

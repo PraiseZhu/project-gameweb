@@ -10,8 +10,7 @@ const HEADER_ALIASES = [
   { lang: 'kr', tests: [/^(韩语|韓語|韩文|韓文|한국어|kr|ko|korean)/i] },
 ];
 
-const LEADING_MARKS = /^[\s"'“”‘’·•※＊*【】\[\]（）()「」『』—\-–~～、，。！？：；]+/;
-const TRAILING_MARKS = /[\s"'“”‘’·•※＊*【】\[\]（）()「」『』—\-–~～、，。！？：；]+$/;
+const LEADING_MARKS = /^[\s"'“”‘’·•※＊*【】\[\]（）()「」『』—\-–~～]+/;
 
 export function normalizeSentence(text) {
   return String(text ?? '')
@@ -20,7 +19,6 @@ export function normalizeSentence(text) {
     .map((line) => line.replace(/\s+/g, ' ').trim())
     .join('\n')
     .replace(LEADING_MARKS, '')
-    .replace(TRAILING_MARKS, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -33,6 +31,33 @@ export function sentenceMatchBasis(source, cell) {
   if (source === cell) return 'exact';
   if (sameSentence(source, cell)) return 'whitespace-or-leading-marks';
   return null;
+}
+
+export function validateConfirmedColumns(header, confirmed) {
+  if (!Array.isArray(confirmed) || !confirmed.length) {
+    return { ok: false, reason: '译文列确认不能为空' };
+  }
+  const seen = new Set();
+  const columns = [];
+  for (const col of confirmed) {
+    const index = col?.index;
+    if (!Number.isInteger(index) || index < 0 || index >= header.length) {
+      return { ok: false, reason: `列索引不存在：${index}` };
+    }
+    if (seen.has(index)) return { ok: false, reason: `列索引重复：${index}` };
+    seen.add(index);
+    if (!LANG_CODE_SET.has(col.lang)) {
+      return { ok: false, reason: `语言码不合法：${col.lang}` };
+    }
+    columns.push({
+      index,
+      lang: col.lang,
+      header: header[index] != null ? String(header[index]) : col.header,
+    });
+  }
+  const cnCount = columns.filter((col) => col.lang === 'cn').length;
+  if (cnCount !== 1) return { ok: false, reason: '必须有且只有一个 cn 源列' };
+  return { ok: true, columns };
 }
 
 function headerLang(cell) {
@@ -87,12 +112,18 @@ export function identifyLanguageColumns(values, confirmed = null) {
     .map(([lang, cols]) => ({ lang, columns: cols }));
 
   if (confirmed?.columns) {
-    const columns = confirmed.columns.map((col) => ({
-      index: col.index,
-      lang: col.lang,
-      header: header[col.index] != null ? String(header[col.index]) : col.header,
-    }));
-    return { ok: true, columns, unknown: [], duplicates: [] };
+    const validated = validateConfirmedColumns(header, confirmed.columns);
+    if (!validated.ok) {
+      return {
+        ok: false,
+        need: 'l10n-columns',
+        reason: validated.reason,
+        columns: detected,
+        unknown,
+        duplicates,
+      };
+    }
+    return { ok: true, columns: validated.columns, unknown: [], duplicates: [] };
   }
 
   if (unknown.length || duplicates.length) {
@@ -113,7 +144,11 @@ function rowText(row, index) {
   return String(cell);
 }
 
-export function detectBatches(values) {
+export function detectBatches(values, languageColumns = []) {
+  const langIndexes = (languageColumns || []).map((col) => col.index).filter((index) => Number.isInteger(index));
+  if (!langIndexes.length) {
+    return [{ id: 'batch-1', title: '全文', start: 1, end: values.length - 1 }];
+  }
   const titles = [];
   for (let i = 1; i < values.length; i += 1) {
     const nonempty = [];
@@ -122,7 +157,8 @@ export function detectBatches(values) {
       const text = rowText(row, j).trim();
       if (text) nonempty.push(text);
     }
-    if (nonempty.length === 1) titles.push({ row: i, title: nonempty[0] });
+    const langEmpty = langIndexes.every((index) => !rowText(row, index).trim());
+    if (langEmpty && nonempty.length === 1) titles.push({ row: i, title: nonempty[0] });
   }
   if (!titles.length) {
     return [{ id: 'batch-1', title: '全文', start: 1, end: values.length - 1 }];
