@@ -11,11 +11,12 @@ import {
   CONTRACT_VERSION as ONEPAGE_CONTRACT_VERSION,
   INVENTORY_SCHEMA as ONEPAGE_INVENTORY_SCHEMA,
 } from '../../figma-naming/spec/onepage.mjs';
+import { collectB2 } from './b-collect.mjs';
 
 const STAGES = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
-const RESULTS = new Set(['pass', 'fail', 'stopped']);
+const RESULTS = new Set(['pass', 'fail', 'stopped', 'needs-input']);
 /** 已知成果类型。未知 kind 一律拒绝，不默认成功。b-handoff 留给 B3，本环不实现。 */
-export const KNOWN_OUTPUT_KINDS = Object.freeze(['scope', 'b-extract']);
+export const KNOWN_OUTPUT_KINDS = Object.freeze(['scope', 'b-extract', 'b-supplement']);
 
 export function stageRecordBody(fields) {
   return {
@@ -35,7 +36,7 @@ export function buildStageRecord(fields) {
     throw new Error(`stage 必须是 A～H，收到 ${fields.stage}`);
   }
   if (!RESULTS.has(fields.result)) {
-    throw new Error(`result 必须是 pass|fail|stopped，收到 ${fields.result}`);
+    throw new Error(`result 必须是 pass|fail|stopped|needs-input，收到 ${fields.result}`);
   }
   if (!Number.isInteger(fields.round) || fields.round < 1) {
     throw new Error('round 必须是从 1 起的整数');
@@ -701,6 +702,160 @@ function verifyBExtractOutputInner(output, record, recordPath) {
   return materials;
 }
 
+function assertInsideB2Dir(runDir, filePath) {
+  const file = assertInsideRunDir(runDir, filePath);
+  if (!file.ok) return file;
+  if (!/[/\\]b2\.r\d+[/\\]/.test(file.realFile)) {
+    return { ok: false, reason: '成果不在本轮 B2 目录' };
+  }
+  return file;
+}
+
+export function supplementRecordBody(fields) {
+  return {
+    kind: 'b-supplement',
+    b1Version: fields.b1Version ?? null,
+    fileVersion: fields.fileVersion ?? null,
+    result: fields.result,
+    artifacts: fields.artifacts,
+  };
+}
+
+export function buildSupplementRecord(fields) {
+  const body = supplementRecordBody(fields);
+  const withVersion = { ...body, version: sha256Hex(body) };
+  return { ...withVersion, recordDigest: sha256Hex(withVersion) };
+}
+
+export function verifySupplementRecord(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    return { ok: false, reason: '补充成果不是对象' };
+  }
+  const { recordDigest, ...withVersion } = record;
+  if (record.recordDigest !== sha256Hex(withVersion)) {
+    return { ok: false, reason: '补充成果完整性摘要对不上' };
+  }
+  const { version, ...body } = withVersion;
+  if (record.version !== sha256Hex(body)) {
+    return { ok: false, reason: '补充成果已被改动，版本号对不上' };
+  }
+  if (record.kind !== 'b-supplement') {
+    return { ok: false, reason: '补充成果 kind 不是 b-supplement' };
+  }
+  return { ok: true, version: record.version, digest: record.recordDigest };
+}
+
+export function loadCurrentB1(dir) {
+  const hits = [];
+  for (const name of readdirSync(dir)) {
+    if (!name.startsWith('stage-B-') || !name.endsWith('.json')) continue;
+    const stagePath = join(dir, name);
+    let record;
+    try {
+      record = JSON.parse(readFileSync(stagePath, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (record.stage !== 'B' || record.output?.kind !== 'b-extract') continue;
+    const gate = checkEntry(stagePath, {
+      expectedStage: 'B',
+      expectedOutputKind: 'b-extract',
+      expectedOutputVersion: record.output?.version,
+    });
+    if (gate.ok) hits.push({ stagePath, record: gate.record, round: record.round });
+  }
+  if (!hits.length) return { ok: false, reason: '没有可用的 B1 环节记录' };
+  hits.sort((a, b) => b.round - a.round);
+  const best = hits[0];
+  if (hits.filter((item) => item.round === best.round).length > 1) {
+    return { ok: false, reason: '当前 B1 环节不唯一' };
+  }
+  let extract;
+  try {
+    extract = JSON.parse(readFileSync(best.record.output.path, 'utf8'));
+  } catch {
+    return { ok: false, reason: 'B1 抽取成果不是合法 JSON' };
+  }
+  return { ok: true, ...best, extract };
+}
+
+function verifyBSupplementOutput(output, record, recordPath) {
+  try {
+    return verifyBSupplementOutputInner(output, record, recordPath);
+  } catch {
+    return { ok: false, reason: '补充成果无法校验' };
+  }
+}
+
+function verifyBSupplementOutputInner(output, record, recordPath) {
+  const verified = verifySupplementRecord(output);
+  if (!verified.ok) return verified;
+  if (record.output.digest !== output.recordDigest) {
+    return { ok: false, reason: '补充成果完整性摘要与环节记录声明不一致' };
+  }
+  if (output.version !== record.output.version) {
+    return { ok: false, reason: '补充版本与环节记录声明不一致' };
+  }
+  const runDir = dirname(resolve(recordPath));
+  const placed = assertInsideB2Dir(runDir, record.output.path);
+  if (!placed.ok) return placed;
+  const inB2 = (filePath) => assertInsideB2Dir(runDir, filePath);
+  const arts = output.artifacts;
+  if (!arts || typeof arts !== 'object' || Array.isArray(arts)) {
+    return { ok: false, reason: '补充成果缺 artifacts' };
+  }
+  for (const label of ['b1', 'questions', 'translations', 'todos', 'config', 'problems']) {
+    const check = verifyArtifact(arts[label], label === 'b1' ? (filePath) => assertInsideRunDir(runDir, filePath) : inB2, label);
+    if (!check.ok) return check;
+  }
+  if (arts.l10n != null) {
+    const l10nOk = verifyArtifact(arts.l10n, inB2, 'l10n');
+    if (!l10nOk.ok) return l10nOk;
+  }
+  const current = loadCurrentB1(runDir);
+  if (!current.ok) return current;
+  if (current.extract.version !== output.b1Version) {
+    return { ok: false, reason: '补充成果不是当前最新 B1' };
+  }
+  const snapshot = readJsonSafe(current.extract.artifacts.snapshot.path, '快照');
+  if (!snapshot.ok) return snapshot;
+  const scope = readJsonSafe(current.extract.artifacts.scope.path, '范围');
+  if (!scope.ok) return scope;
+  const config = readJsonSafe(arts.config.path, 'config');
+  if (!config.ok) return config;
+  const questions = readJsonSafe(arts.questions.path, 'questions');
+  if (!questions.ok) return questions;
+  const translations = readJsonSafe(arts.translations.path, 'translations');
+  if (!translations.ok) return translations;
+  const todos = readJsonSafe(arts.todos.path, 'todos');
+  if (!todos.ok) return todos;
+  const l10n = arts.l10n ? readJsonSafe(arts.l10n.path, 'l10n') : { ok: true, value: null };
+  if (!l10n.ok) return l10n;
+  const runRoot = dirname(dirname(runDir));
+  const configDir = join(
+    runRoot,
+    'projects',
+    `${String(scope.value.fileKey).slice(0, 8)}-${String(scope.value.nodeId).replace(/:/g, '-')}`,
+  );
+  const collected = collectB2({
+    snapshot: snapshot.value,
+    scope: scope.value,
+    config: config.value,
+    l10nSnapshot: l10n.value,
+    configDir,
+  });
+  if (collected.result !== output.result || collected.result !== record.result) {
+    return { ok: false, reason: '补充成果结果与当前配置复查不一致' };
+  }
+  if (!sameCanonical(collected.questions, questions.value)) {
+    return { ok: false, reason: 'questions 与当前 B1/配置派生结果不一致' };
+  }
+  if (!sameCanonical(collected.todos, todos.value)) {
+    return { ok: false, reason: 'todos 与当前派生结果不一致' };
+  }
+  return { ok: true };
+}
+
 function verifyScopeOutput(output, record, expectedOutputVersion) {
   const scopeOk = verifyScopeRecord(output);
   if (!scopeOk.ok) return scopeOk;
@@ -785,6 +940,9 @@ export function checkEntry(recordPath, options = {}) {
   } else if (expectedOutputKind === 'b-extract') {
     const extractOk = verifyBExtractOutput(output, record, recordPath);
     if (!extractOk.ok) return extractOk;
+  } else if (expectedOutputKind === 'b-supplement') {
+    const supplementOk = verifyBSupplementOutput(output, record, recordPath);
+    if (!supplementOk.ok) return supplementOk;
   } else {
     return { ok: false, reason: `未知成果类型：${expectedOutputKind}` };
   }

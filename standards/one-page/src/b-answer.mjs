@@ -1,0 +1,146 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { StoppedError, isStoppedError, stoppedResult } from './stopped.mjs';
+import { hasRunPointer, resolveExistingRunDir } from './run-dir.mjs';
+import { parseArgv, prepareEnv } from './a-scope.mjs';
+import { loadProjectConfig, writeProjectConfigAtomic } from './project-config.mjs';
+import { loadCurrentB1 } from './stage-record.mjs';
+import { runBSupplement } from './b-supplement.mjs';
+import { applyAnswers } from './apply-answers.mjs';
+
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+export const DEFAULT_RUN_ROOT = resolve(PACKAGE_ROOT, '../..');
+
+export const USAGE = `用法：
+  npm --prefix standards/one-page run b:answer -- --run-dir <目录> --answers <答案文件>
+
+校验卡片编号和内容指纹，写入项目配置后再复查一轮 B2。用户不手写 JSON，由 Agent 根据 Cindy 卡片整理答案文件。`;
+
+function asText(value) {
+  if (value == null || value === true || value === false) return '';
+  return String(value);
+}
+
+function stoppedB2(err) {
+  const result = stoppedResult(err);
+  if (!isStoppedError(err)) result.message = 'B2 写回答失败，已停止。';
+  return result;
+}
+
+function latestQuestions(dir) {
+  const b1 = loadCurrentB1(dir);
+  if (!b1.ok) throw new StoppedError(b1.reason.includes('改动') ? 'b1-tampered' : 'b1-missing', b1.reason);
+  let best = 0;
+  let file = null;
+  for (const name of readdirSync(dir)) {
+    const match = /^b2\.r(\d+)$/.exec(name);
+    if (!match) continue;
+    const n = Number(match[1]);
+    const q = join(dir, name, 'questions.json');
+    if (n >= best && existsSync(q)) {
+      best = n;
+      file = q;
+    }
+  }
+  if (!file) throw new StoppedError('b2-missing', '没有 B2 卡片文件。请先跑 b:supplement。');
+  return JSON.parse(readFileSync(file, 'utf8'));
+}
+
+function loadAnswers(filePath) {
+  if (!filePath) throw new StoppedError('answers-missing', '必须带 --answers <文件>。');
+  const full = resolve(filePath);
+  if (!existsSync(full)) throw new StoppedError('answers-missing', `答案文件不存在：${full}`);
+  try {
+    return JSON.parse(readFileSync(full, 'utf8'));
+  } catch {
+    throw new StoppedError('answer-invalid', '答案文件不是合法 JSON');
+  }
+}
+
+export async function runBAnswer(options = {}) {
+  try {
+    return await runBAnswerInner(options);
+  } catch (err) {
+    if (isStoppedError(err)) return stoppedB2(err);
+    throw err;
+  }
+}
+
+async function runBAnswerInner(options) {
+  const runRoot = options.runRoot ?? DEFAULT_RUN_ROOT;
+  if (!hasRunPointer(options)) {
+    throw new StoppedError('need-run-dir', '必须带 --run-dir 或 --run-id。');
+  }
+  const existing = resolveExistingRunDir(runRoot, options);
+  const questions = options.questions || latestQuestions(existing.dir);
+  const rawAnswers = options.answersValue ?? loadAnswers(options.answers);
+  const b1 = loadCurrentB1(existing.dir);
+  if (!b1.ok) throw new StoppedError(b1.reason.includes('改动') ? 'b1-tampered' : 'b1-missing', b1.reason);
+  const scope = JSON.parse(readFileSync(b1.extract.artifacts.scope.path, 'utf8'));
+  const loaded = loadProjectConfig(runRoot, scope.fileKey, scope.nodeId);
+  const inventories = {};
+  for (const end of ['pc', 'mobile']) {
+    const item = b1.extract.artifacts.inventories?.[end];
+    if (item?.path) inventories[end] = JSON.parse(readFileSync(item.path, 'utf8'));
+  }
+  const next = applyAnswers({
+    config: loaded.config,
+    questions,
+    answers: rawAnswers,
+    inventories,
+    now: options.now,
+  });
+  writeProjectConfigAtomic(loaded.path, next);
+  const result = await runBSupplement({
+    runRoot,
+    runDir: existing.dir,
+    runId: existing.runId,
+    l10nSnapshot: options.l10nSnapshot,
+    tokenValue: options.tokenValue,
+  });
+  return {
+    ...result,
+    answered: true,
+    configPath: loaded.path,
+  };
+}
+
+export async function main(argv, extras = {}) {
+  let args;
+  try {
+    args = parseArgv(argv);
+  } catch (err) {
+    const result = stoppedB2(err);
+    (extras.err ?? console.error)(result.message);
+    (extras.log ?? console.log)(JSON.stringify(result, null, 2));
+    return 1;
+  }
+  if (args.help) {
+    (extras.log ?? console.log)(USAGE);
+    return 0;
+  }
+  try {
+    prepareEnv({ envFile: args.envFile, envDir: extras.envDir });
+  } catch (err) {
+    const result = stoppedB2(err);
+    (extras.err ?? console.error)(result.message);
+    (extras.log ?? console.log)(JSON.stringify(result, null, 2));
+    return 1;
+  }
+  const result = await runBAnswer({
+    runRoot: args.runRoot,
+    runDir: args.runDir,
+    runId: args.runId,
+    answers: args.answers,
+    l10nSnapshot: args.l10nSnapshot,
+    tokenValue: extras.tokenValue,
+  });
+  (extras.err ?? console.error)(result.message);
+  const printable = { ...result };
+  if (asText(extras.tokenValue) && JSON.stringify(printable).includes(String(extras.tokenValue))) {
+    throw new Error('internal: refused to print secret');
+  }
+  (extras.log ?? console.log)(JSON.stringify(printable, null, 2));
+  return result.result === 'stopped' ? 1 : 0;
+}

@@ -30,9 +30,9 @@
 
 part 枚举：foreground、pager、empty、page-current、page-total。
 
-配置顶层：bindings、actions、links、motions、fonts。fonts 可选；不写则与旧配置完全一致。
+配置顶层：bindings、actions、links、motions、fonts、meta。fonts 可选；不写则与旧配置完全一致。meta 仅保存 B2 回答痕迹，编译器不解释。
 
-文字用途：title、body、number（标题/正文/数字）。可按 cn/tw/en/jp/kr 声明。
+fonts.faces 键为「中文字体名/字重」，值按 cn/tw/en/jp/kr 映射到 resources 资源名。
 
 cards 分页 perPage 为正整数，或 {pc,mobile} 分端正整数；旧单值继续有效。
 

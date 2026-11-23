@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { buildInventory, allNodesOf, rebuildInventoryIndexes } from '../inventory.mjs';
 import { parseOnePageName } from './names.mjs';
 import { parseDataPath, joinDataPath, valuesAtPath } from './paths.mjs';
-import { CONTRACT_VERSION, INVENTORY_SCHEMA, CAPABILITIES, ACTION_TYPES, ROLE_BEHAVIOR, diagnostic, nodeSectionNumber, CONFIG_KEYS, FONT_ROLES, FONT_RESOURCE_REQUIRED, LANG_CODES, PAGINATION_ENDS } from '../../../spec/onepage.mjs';
+import { CONTRACT_VERSION, INVENTORY_SCHEMA, CAPABILITIES, ACTION_TYPES, ROLE_BEHAVIOR, diagnostic, nodeSectionNumber, CONFIG_KEYS, FONT_RESOURCE_REQUIRED, LANG_CODES, PAGINATION_ENDS } from '../../../spec/onepage.mjs';
 
 const own = (obj, key) => obj != null && Object.hasOwn(obj, key) ? obj[key] : undefined;
 const object = x => x != null && typeof x === 'object' && !Array.isArray(x);
@@ -44,19 +44,31 @@ function validateFonts(fonts, fail) {
     return;
   }
   for (const key of Object.keys(fonts)) {
-    if (!['roles', 'resources'].includes(key)) fail('FONT_CONFIG', null, `未知配置 fonts.${key}`);
+    if (!['faces', 'resources'].includes(key)) fail('FONT_CONFIG', null, `未知配置 fonts.${key}`);
   }
-  if (!object(fonts.roles)) fail('FONT_CONFIG', null, 'fonts.roles 必须是对象');
+  if (!object(fonts.faces)) fail('FONT_CONFIG', null, 'fonts.faces 必须是对象');
   if (!object(fonts.resources)) fail('FONT_CONFIG', null, 'fonts.resources 必须是对象');
-  if (!object(fonts.roles) || !object(fonts.resources)) return;
+  if (!object(fonts.faces) || !object(fonts.resources)) return;
   const resourceIds = new Set(Object.keys(fonts.resources));
-  if (!Object.keys(fonts.roles).length) fail('FONT_CONFIG', null, 'fonts.roles 不能为空');
+  if (!Object.keys(fonts.faces).length) fail('FONT_CONFIG', null, 'fonts.faces 不能为空');
   if (!resourceIds.size) fail('FONT_CONFIG', null, 'fonts.resources 不能为空');
-  for (const [role, mapping] of Object.entries(fonts.roles)) {
-    if (!FONT_ROLES.includes(role)) {
-      fail('FONT_CONFIG', null, `未知文字用途 ${role}`);
+  for (const [face, mapping] of Object.entries(fonts.faces)) {
+    const slash = String(face).lastIndexOf('/');
+    const weight = Number(String(face).slice(slash + 1));
+    if (slash <= 0 || !Number.isSafeInteger(weight) || weight < 1) {
+      fail('FONT_CONFIG', null, 'fonts.faces 键须为字体名/字重');
       continue;
     }
+    if (!object(mapping) || !Object.keys(mapping).length) {
+      fail('FONT_CONFIG', null, 'fonts.faces 映射必须是按语言的对象');
+      continue;
+    }
+    for (const [lang, ref] of Object.entries(mapping)) {
+      if (!LANG_CODE_SET.has(lang)) fail('FONT_CONFIG', null, 'fonts.faces 语言码非法');
+      else if (!nonempty(ref)) fail('FONT_CONFIG', null, 'fonts.faces 语言映射必须是字体资源名');
+      else if (!resourceIds.has(ref)) fail('FONT_CONFIG', null, 'fonts.faces 引用了未登记资源');
+    }
+    continue;
     const refs = [];
     if (nonempty(mapping)) refs.push(mapping);
     else if (object(mapping)) {
@@ -180,6 +192,14 @@ export function compileOnePage(document, options = {}) {
   const scopeKey = n => section(n)?.id ?? n.scope;
   const resolve = (reference, origin, roles = null) => {
     if (!nonempty(reference)) { fail('TARGET', origin, '目标引用必须是非空字符串'); return null; }
+    if (reference.startsWith('node:')) {
+      const node = byId.get(reference.slice(5));
+      if (!product(node) || (roles && !roles.includes(node.role))) {
+        fail('TARGET', origin, `${reference} 需要唯一且类型正确的对象，命中 ${product(node) ? 1 : 0}`);
+        return null;
+      }
+      return node;
+    }
     let candidates = nodes.filter(product), local = reference;
     const split = reference.split('::');
     if (split.length === 2) {
@@ -195,13 +215,29 @@ export function compileOnePage(document, options = {}) {
     if (candidates.length !== 1 || (roles && !roles.includes(candidates[0]?.role))) { fail('TARGET', origin, `${reference} 需要唯一且类型正确的对象，命中 ${candidates.length}`); return null; }
     return candidates[0];
   };
+  const resolveBindingTargets = (reference) => {
+    if (!nonempty(reference)) return [];
+    if (reference.startsWith('node:')) {
+      const node = byId.get(reference.slice(5));
+      return product(node) ? [node] : [];
+    }
+    if (reference.startsWith('component:')) {
+      const id = reference.slice(10);
+      return nodes.filter((n) => product(n) && n.componentId === id);
+    }
+    const one = resolve(reference, null);
+    return one ? [one] : [];
+  };
   const settings = new Map();
   for (const [ref, value] of Object.entries(config.bindings || {})) {
-    const target = resolve(ref, null); if (!target) continue;
-    if (!object(value)) { fail('BINDING_CONFIG', target, '对象配置必须是对象'); continue; }
-    if (settings.has(target.id)) fail('BINDING_DUPLICATE', target, '多个配置引用同一对象');
-    for (const k of Object.keys(value)) if (!BINDING_KEYS.includes(k)) fail('BINDING_KEY', target, `未知对象配置 ${k}`);
-    settings.set(target.id, value);
+    const targets = resolveBindingTargets(ref);
+    if (!targets.length) continue;
+    if (!object(value)) { fail('BINDING_CONFIG', targets[0], '对象配置必须是对象'); continue; }
+    for (const k of Object.keys(value)) if (!BINDING_KEYS.includes(k)) fail('BINDING_KEY', targets[0], `未知对象配置 ${k}`);
+    for (const target of targets) {
+      if (settings.has(target.id)) fail('BINDING_DUPLICATE', target, '多个配置引用同一对象');
+      settings.set(target.id, value);
+    }
   }
   const cfg = n => settings.get(n.id) || {};
   const merge = (a,b,n,what) => {
@@ -474,6 +510,16 @@ function compileRelations({ inv,nodes,ancestors,descendants,sectionNodes,section
   inv.devTodo = devTodo;
 }
 
+const NESTED_STANDARD = {
+  'section-fade': ['section-title', 'content-left', 'cards-center', 'foreground-crystal', 'carousel-track', 'menu-fade'],
+  'first-screen': ['foreground-crystal', 'content-left', 'cards-center', 'carousel-track', 'menu-fade'],
+  'carousel-track': ['content-left', 'cards-center'],
+};
+
+function nestedStandardAllowed(outers, childRule) {
+  return outers.every((parent) => (NESTED_STANDARD[parent.motion.rule] || []).includes(childRule));
+}
+
 function compileMotion({ nodes,ancestors,children,section,sectionNumber,resolve,cfg,merge,fail },config) {
   for (const n of nodes.filter(product)) {
     const c = cfg(n), key = merge(n.params?.motion,c.motion,n,'motion');
@@ -498,6 +544,6 @@ function compileMotion({ nodes,ancestors,children,section,sectionNumber,resolve,
   for (const n of nodes.filter(n => n.motion)) {
     const outer = ancestors(n).filter(a => a.motion);
     if (outer.length && n.motion.composition !== 'nested-standard') fail('MOTION_OVERLAP',n,'父子动效重复作用，缺明确组合规则');
-    if (outer.length && (outer.some(a => a.motion.rule !== 'first-screen') || n.motion.rule !== 'foreground-crystal')) fail('MOTION_COMPOSITION',n,'当前标准未覆盖此父子动效组合');
+    if (outer.length && !nestedStandardAllowed(outer, n.motion.rule)) fail('MOTION_COMPOSITION',n,'当前标准未覆盖此父子动效组合');
   }
 }

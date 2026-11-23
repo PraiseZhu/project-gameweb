@@ -24,6 +24,11 @@ const B2_CODES = new Set([
   'MOTION_CONTRACT',
   'MOTION_PARAMETER',
   'FONT_CONFIG',
+  'FONT_UNSET',
+  'FONT_WEIGHT',
+  'FONT_FILE',
+  'FONT_DIGEST',
+  'FONT_GLYPH',
   'SLOT_MAPPING',
   'SLOT_DEFAULT',
   'SLOT_DECLARATION',
@@ -61,7 +66,7 @@ const IMPACT = {
   'config-invalid': '项目配置坏了，不能按空配置继续抽取',
 };
 
-export const RETURN_TO = Object.freeze(['A', '设计稿', 'B2']);
+export const RETURN_TO = Object.freeze(['A', '设计稿', 'B2', '工具']);
 
 export function returnToFor(code) {
   if (A_CODES.has(code)) return 'A';

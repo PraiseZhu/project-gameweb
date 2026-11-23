@@ -71,7 +71,7 @@ B 只读 A 已确认的运行目录。开工前用 `checkEntry` 核 A：`expecte
 npm --prefix standards/one-page run b:extract -- --run-dir "<A 的运行目录>"
 ```
 
-新任务不要省略 `--run-dir`。token 同样走 `standards/figma-naming/tool/.env` 的 `FIGMA_ACCESS_TOKEN`，可用 `--env-file` 指向该文件；token 不得写入任何记录或日志。
+新任务不要省略 `--run-dir`。token 同样走 `standards/figma-naming/tool/.env` 的 `FIGMA_ACCESS_TOKEN`，可用 `--env-file` 指向该文件；token 不得写入任何记录或日志。真稿节点树较大时 B1 取快照可能超过默认 20s，加 `--timeout-ms 180000`（不改代码默认值）。
 
 完成标准：
 
@@ -84,6 +84,33 @@ npm --prefix standards/one-page run b:extract -- --run-dir "<A 的运行目录>"
 `b-extract` 只表示 B1 抽取子步骤完成，供后续 B 内部（B2）读取。它不是完整 B，也不是 C 的开工证据。C 必须等未来 B3 最终交接产物（尚未实现；当前没有 `b-handoff`，对该 kind 调用 `checkEntry` 会拒绝）。后续入口必须同时传 `expectedStage`、`expectedOutputKind` 与输出版本；缺类型或未知 kind 一律失败。两端清单 blocked 可以让 B1 抽取步骤成功，但不等于整体 B ready。
 
 B1 不出交接包（归 B3）。不写回 Figma，不新增命名前缀。项目配置与运行记录不进 git。
+
+## B2. 补充说明收集
+
+B2 读最新有效 B1（`checkEntry`：`expectedStage='B'`，`expectedOutputKind='b-extract'`）。稿上已写清的自动采用；其余合并成 Cindy 卡片。用户点选确认后由 Agent 整理答案文件，用户不手写 JSON。卡片未点确认不算数。
+
+```bash
+npm --prefix standards/one-page run b:supplement -- --run-dir "<A 的运行目录>" --l10n-snapshot "<运行目录内的表快照>"
+```
+
+Agent 用已连接的 XD Feishu 账号只读需求方页签，把原始表格与来源信息存进运行目录快照；工具只读这份快照，不联网、不改表。
+
+Cindy 卡片按 `b2.rN/questions.json` 展示：类型、对象名、出现位置、选项、建议写法。用户确认后：
+
+```bash
+npm --prefix standards/one-page run b:answer -- --run-dir "<同一运行目录>" --answers "<Agent 整理的答案文件>"
+```
+
+`b:answer` 校验卡片编号与内容指纹，原子写入 `projects/<fileKey前8位>-<nodeId>/config.json`（记录来源卡片与时间），再复查一轮。过期指纹拒绝；稿上已删对象的旧答案标失效。
+
+完成标准：
+
+1. 输出 `questions.json`、`translations.json`、`todos.json` 与 B 环节记录。`output.kind='b-supplement'`。结果 `needs-input`（卡片未答完或外语字体未定/缺字/缺字重）、`pass`（阻断项清零，可交 B3）、`stopped`（B1 缺失或被改）。稿件问题退回设计稿，结果 `fail`，不交 B3。
+2. 缺译、外链 `url=null`、链接名中英混用进 `todos.json`，不阻断。
+3. 动效按编译器内置 MOTIONS 按元素类型自动套用，标准分层组合写 `composition=nested-standard`，不出卡；识别不唯一或组合未定的进 `todos.json`（动效未套用），不阻断。字体文件按 `fonts.resources[].file` 相对项目配置目录读取，核 digest、字重和缺字，缺失即阻断。数据未标 `@field` 但含数字/日期/金额的出「写死/会变」卡；会变须退回设计补 `@field`，不能用配置代替。
+4. 不出交接包、不导出素材、不写回 Figma、不新增依赖。
+
+B3 开工前检查读 `kind=b-supplement` 且 `result=pass` 的 B 环节记录。
 
 ## Record keeping
 
