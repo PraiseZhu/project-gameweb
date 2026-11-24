@@ -30,7 +30,7 @@ import {
   linkKeysInInventories,
   linkKeyStyle,
 } from './inventory-walk.mjs';
-import { sha256Hex } from './canonical.mjs';
+import { canonicalJson, sha256Hex } from './canonical.mjs';
 
 const TYPE_ORDER = [
   'l10n-columns',
@@ -59,7 +59,10 @@ function answeredKeysFromMeta(meta, type) {
 }
 
 function autoLinks(inventories, config) {
-  const links = { ...(config.links || {}) };
+  if (Object.hasOwn(config || {}, 'links') && !object(config.links)) {
+    return { links: config.links, added: [] };
+  }
+  const links = object(config?.links) ? { ...config.links } : {};
   const added = [];
   for (const inv of Object.values(inventories || {})) {
     for (const node of productNodes(inv)) {
@@ -222,11 +225,22 @@ function markStaleAnswers(meta, inventories) {
   return { answers, stale, staticCopy, dynamicNeeded };
 }
 
+function reconcileDynamicNeeded(dynamicNeeded, inventories) {
+  const next = { ...(dynamicNeeded || {}) };
+  for (const [key, row] of Object.entries(next)) {
+    const node = findLiveNode(inventories, row?.nodeId);
+    if (!node) continue;
+    const params = node.params || node.declaration?.params || {};
+    if (typeof params.field === 'string' && params.field.trim()) delete next[key];
+  }
+  return next;
+}
+
 function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
   const questions = [];
   const problems = [];
   const translations = { matched: [], pending: [], choices: [], source: null };
-  if (!snapshot) {
+  if (snapshot == null) {
     if ((languages || []).some((lang) => lang !== 'cn')) {
       translations.pending = texts.map((item) => ({ ...item, status: 'pending', reason: 'no-snapshot' }));
     }
@@ -234,7 +248,12 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
   }
   const unwrapped = unwrapSnapshot(snapshot);
   if (!unwrapped) {
-    translations.pending = texts.map((item) => ({ ...item, status: 'pending', reason: 'bad-snapshot' }));
+    problems.push(problem({
+      object: '译文快照',
+      missing: '已提供的译文快照无法解析为表格（需要 values 或 table.values）',
+      code: 'L10N_CONFIG',
+      returnTo: '工具',
+    }));
     return { questions, translations, problems };
   }
   translations.source = unwrapped.source || null;
@@ -273,17 +292,25 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
   }
   const batches = detectBatches(unwrapped.values, identified.columns);
   const selected = meta.l10n?.batches;
-  if (batches.length > 1 && (!Array.isArray(selected) || !selected.length)) {
+  const titleBatches = batches.filter((batch) => Number.isInteger(batch.row));
+  const needsPick = titleBatches.some((batch) => batch.maybeBody) || titleBatches.length > 1;
+  if (needsPick && (!Array.isArray(selected) || !selected.length)) {
     questions.push({
       type: 'l10n-batches',
       object: '翻译表段落',
       componentKey: 'l10n-batches',
       locations: [],
-      options: batches.map((batch) => ({ id: batch.id, label: batch.title, start: batch.start, end: batch.end })),
+      options: titleBatches.map((batch) => ({
+        id: batch.id,
+        label: batch.maybeBody ? `${batch.title}（也可能是未翻译的正文）` : batch.title,
+        start: batch.start,
+        end: batch.end,
+        maybeBody: Boolean(batch.maybeBody),
+      })),
       suggested: null,
-      prompt: '这个页签有多批内容，请勾选本次要用的段落。',
+      prompt: '请勾选本次用作段落标题的行。源列里只有一格字的行也可能是还没翻译的正文；没勾选的仍按正文对翻译。',
       splitAllowed: false,
-      fingerprint: sha256Hex({ type: 'l10n-batches', batches }),
+      fingerprint: sha256Hex({ type: 'l10n-batches', batches: titleBatches }),
     });
     return { questions, translations, problems };
   }
@@ -307,13 +334,15 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
   const chosen = meta.l10n?.choices || {};
   for (const item of matched.choices || []) {
     const key = `l10n-choice:${item.end}:${item.nodeId}`;
-    if (chosen[key]) {
+    const saved = chosen[key];
+    const still = saved && (item.options || []).find((opt) => canonicalJson(opt.byLang) === canonicalJson(saved.byLang));
+    if (still) {
       matched.matched.push({
         ...item,
         status: 'matched',
-        byLang: chosen[key].byLang,
-        basis: chosen[key].basis,
-        rows: chosen[key].rows,
+        byLang: still.byLang,
+        basis: still.basis || saved.basis,
+        rows: still.rows || saved.rows,
       });
       continue;
     }
@@ -366,7 +395,7 @@ export function collectB2({
 
   const first = recompile(snapshot, working, scope.platform);
   const linkPatch = autoLinks(first.inventories, working);
-  if (linkPatch.added.length) working.links = linkPatch.links;
+  if (linkPatch.added.length && object(linkPatch.links)) working.links = linkPatch.links;
   const motionPatch = autoMotions(first.inventories, working);
   if (motionPatch.applied.length) {
     working.motions = motionPatch.motions;
@@ -406,6 +435,8 @@ export function collectB2({
     };
   }
 
+  if (!working.meta) working.meta = { ...meta };
+  working.meta.dynamicNeeded = reconcileDynamicNeeded(working.meta.dynamicNeeded || {}, compiled.inventories);
   const splitKeys = new Set(meta.splitKeys || []);
   const liveMeta = working.meta || {};
   const button = buildButtonQuestions(compiled.inventories, {
@@ -451,7 +482,7 @@ export function collectB2({
     baseLanguage: scope.baseLanguage,
     fonts: working.fonts,
     configDir,
-    textsByLang: textsByLangFrom(l10n.translations),
+    translations: l10n.translations,
   });
   const fontBlockers = fontCheck.blockers;
   const langVariants = missingLangVariants(compiled.inventories, scope.languages);

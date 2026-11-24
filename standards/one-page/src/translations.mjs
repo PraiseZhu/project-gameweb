@@ -144,40 +144,65 @@ function rowText(row, index) {
   return String(cell);
 }
 
-export function detectBatches(values, languageColumns = []) {
-  const langIndexes = (languageColumns || []).map((col) => col.index).filter((index) => Number.isInteger(index));
-  if (!langIndexes.length) {
-    return [{ id: 'batch-1', title: '全文', start: 1, end: values.length - 1 }];
-  }
+export function findBatchCandidates(values, languageColumns = []) {
+  const langCols = languageColumns || [];
+  const langIndexes = langCols.map((col) => col.index).filter((index) => Number.isInteger(index));
+  const cnIndexes = new Set(langCols.filter((col) => col.lang === 'cn').map((col) => col.index));
+  const langSet = new Set(langIndexes);
+  if (!langIndexes.length) return [];
   const titles = [];
   for (let i = 1; i < values.length; i += 1) {
     const nonempty = [];
     const row = values[i] || [];
     for (let j = 0; j < row.length; j += 1) {
       const text = rowText(row, j).trim();
-      if (text) nonempty.push(text);
+      if (text) nonempty.push({ index: j, text });
     }
-    const langEmpty = langIndexes.every((index) => !rowText(row, index).trim());
-    if (langEmpty && nonempty.length === 1) titles.push({ row: i, title: nonempty[0] });
+    if (nonempty.length !== 1) continue;
+    const cell = nonempty[0];
+    if (!langSet.has(cell.index)) {
+      titles.push({ row: i, title: cell.text, maybeBody: false });
+    } else if (cnIndexes.has(cell.index)) {
+      titles.push({ row: i, title: cell.text, maybeBody: true });
+    }
   }
+  return titles;
+}
+
+export function detectBatches(values, languageColumns = []) {
+  const titles = findBatchCandidates(values, languageColumns);
   if (!titles.length) {
-    return [{ id: 'batch-1', title: '全文', start: 1, end: values.length - 1 }];
+    return [{ id: 'batch-1', title: '全文', start: 1, end: values.length - 1, row: null, maybeBody: false }];
   }
   return titles.map((item, index) => ({
     id: `batch-${index + 1}`,
     title: item.title,
+    row: item.row,
+    maybeBody: item.maybeBody,
     start: item.row,
     end: (titles[index + 1]?.row ?? values.length) - 1,
   }));
 }
 
-function selectedRows(values, batches, selectedIds) {
-  const wanted = new Set(selectedIds);
-  const ranges = batches.filter((batch) => wanted.has(batch.id));
+export function rowsForSelectedBatches(values, batches, selectedIds) {
+  const wanted = new Set(selectedIds || []);
+  const selected = (batches || [])
+    .filter((batch) => wanted.has(batch.id) && Number.isInteger(batch.row))
+    .sort((a, b) => a.row - b.row);
+  const skip = new Set(selected.map((batch) => batch.row));
   const rows = [];
-  for (const batch of ranges) {
-    for (let i = batch.start; i <= batch.end && i < values.length; i += 1) {
-      rows.push({ row: i, batchId: batch.id, cells: values[i] || [] });
+  if (!selected.length) {
+    for (let i = 1; i < values.length; i += 1) {
+      rows.push({ row: i, batchId: 'batch-1', cells: values[i] || [] });
+    }
+    return rows;
+  }
+  for (let i = 0; i < selected.length; i += 1) {
+    const from = i === 0 ? 1 : selected[i].row + 1;
+    const to = (selected[i + 1]?.row ?? values.length) - 1;
+    for (let row = from; row <= to && row < values.length; row += 1) {
+      if (skip.has(row)) continue;
+      rows.push({ row, batchId: selected[i].id, cells: values[row] || [] });
     }
   }
   return rows;
@@ -224,7 +249,7 @@ export function matchTranslations({
   if (!cnCol) {
     return { ok: false, reason: '没有中文列' };
   }
-  const rows = selectedRows(values, batches, selectedBatchIds);
+  const rows = rowsForSelectedBatches(values, batches, selectedBatchIds);
   const matched = [];
   const pending = [];
   const choices = [];

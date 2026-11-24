@@ -173,10 +173,13 @@ export function applyAnswers({ config, questions, answers, inventories, now }) {
   }
   const style = linkKeyStyle(linkKeysInInventories(inventories)).style;
   const at = now || new Date().toISOString();
+  const seenIds = new Set();
   for (const row of list) {
     asObject(row, '答案');
+    if (seenIds.has(row.id)) throw new StoppedError('answer-invalid', `答案 ${row.id} 重复`);
+    seenIds.add(row.id);
     const card = cardById(questions, row.id);
-    if (!card) throw new StoppedError('answer-unknown', `没有这张卡片：${row.id}`);
+    if (!card) throw new StoppedError('answer-invalid', `没有这张卡片：${row.id}`);
     if (row.fingerprint !== card.fingerprint) {
       throw new StoppedError('answer-stale', `卡片 ${row.id} 的内容指纹已过期，请用最新一轮卡片重新回答。`);
     }
@@ -212,6 +215,13 @@ export function applyAnswers({ config, questions, answers, inventories, now }) {
       remember(next.meta, card, value, at);
     } else if (card.type === 'l10n-batches') {
       if (!Array.isArray(value.batches)) throw new StoppedError('answer-invalid', `${card.id} 需要 batches`);
+      const allowed = new Set((card.options || []).map((opt) => opt.id));
+      const seen = new Set();
+      for (const id of value.batches) {
+        if (!allowed.has(id)) throw new StoppedError('answer-invalid', `${card.id} 含未知段落 ${id}`);
+        if (seen.has(id)) throw new StoppedError('answer-invalid', `${card.id} 段落重复`);
+        seen.add(id);
+      }
       next.meta.l10n.batches = value.batches;
       remember(next.meta, card, value, at);
     } else if (card.type === 'l10n-choice') {
@@ -224,9 +234,27 @@ export function applyAnswers({ config, questions, answers, inventories, now }) {
       const items = Array.isArray(card.items) && card.items.length
         ? card.items
         : [{ id: 'item-1', bindKey: card.locations?.[0]?.ref || card.locations?.[0]?.nodeId, locations: card.locations, suggested: card.suggested, object: card.object }];
-      const picked = Array.isArray(value.dynamic)
-        ? value.dynamic
-        : value.choice === 'dynamic' ? items.map((item) => item.id) : [];
+      const itemIds = items.map((item) => item.id);
+      let picked;
+      if (Array.isArray(value.dynamic)) {
+        const seenDyn = new Set();
+        for (const id of value.dynamic) {
+          if (typeof id !== 'string' || !itemIds.includes(id)) {
+            throw new StoppedError('answer-invalid', `${card.id} dynamic 必须是当前卡片条目 ID 的唯一子集`);
+          }
+          if (seenDyn.has(id)) {
+            throw new StoppedError('answer-invalid', `${card.id} dynamic ID 重复`);
+          }
+          seenDyn.add(id);
+        }
+        picked = value.dynamic;
+      } else if (value.choice === 'dynamic') {
+        picked = itemIds;
+      } else if (value.choice === 'static' || value.dynamic == null) {
+        picked = [];
+      } else {
+        throw new StoppedError('answer-invalid', `${card.id} dynamic 必须是当前卡片条目 ID 数组`);
+      }
       const dynamicIds = new Set(picked);
       for (const item of items) {
         const key = item.bindKey || item.locations?.[0]?.ref || item.nodeId || item.id;

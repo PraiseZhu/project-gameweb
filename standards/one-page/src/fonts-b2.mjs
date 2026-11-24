@@ -144,12 +144,19 @@ export function buildFontQuestions(inventories, {
   return { questions, blockers, faces, foreign };
 }
 
+function localizedTextForFace(face, lang, translations) {
+  const matched = translations?.matched || [];
+  const byNode = new Map(matched.map((row) => [row.nodeId, row]));
+  return face.locations.map((loc) => byNode.get(loc.nodeId)?.byLang?.[lang] || '').join('');
+}
+
 export function checkFontFiles({
   inventories,
   languages,
   baseLanguage = 'cn',
   fonts = {},
   configDir = null,
+  translations = null,
   textsByLang = {},
 }) {
   const blockers = [];
@@ -239,7 +246,9 @@ export function checkFontFiles({
           locations: face.locations,
         });
       }
-      const needed = textsByLang[lang] || face.locations.map((item) => item.characters).join('');
+      const needed = localizedTextForFace(face, lang, translations)
+        || face.locations.map((item) => item.characters || '').join('');
+      if (!needed) continue;
       let missing;
       try {
         missing = missingGlyphs(buffer, needed);

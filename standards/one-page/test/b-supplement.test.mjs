@@ -10,7 +10,7 @@ import { runBExtract } from '../src/b-extract.mjs';
 import { runBSupplement, main as supplementMain } from '../src/b-supplement.mjs';
 import { runBAnswer } from '../src/b-answer.mjs';
 import { checkEntry } from '../src/stage-record.mjs';
-import { sameSentence, identifyLanguageColumns, detectBatches, matchTranslations } from '../src/translations.mjs';
+import { sameSentence, identifyLanguageColumns, detectBatches, findBatchCandidates, matchTranslations } from '../src/translations.mjs';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
 import { autoMotions } from '../src/motion-auto.mjs';
 import { resolveFontFile } from '../src/fonts-b2.mjs';
@@ -281,6 +281,7 @@ test('段落标题只认整行唯一非空单元格，能对上快照中文行',
     ['SS7.1 12/02 官网累充'],
     ['标题'],
     [null, '规则说明', 'Rules & Regulations', 'ルール説明'],
+    [null, '', 'English only'],
   ];
   const columns = [
     { index: 1, lang: 'cn' },
@@ -291,11 +292,23 @@ test('段落标题只认整行唯一非空单元格，能对上快照中文行',
   const titles = batches.map((row) => row.title);
   assert.equal(titles.includes('SS6.4 11/04 追加翻译'), true);
   assert.equal(titles.includes('SS7.1 12/02 官网累充'), true);
-  assert.equal(titles.includes('以下为全球活动宣传内容翻译_DDL03/27'), false);
+  assert.equal(titles.includes('以下为全球活动宣传内容翻译_DDL03/27'), true);
   assert.equal(titles.includes('标题'), true);
   assert.equal(titles.includes('活动进度查询'), false);
   assert.equal(titles.includes('官网充值'), false);
-  assert.equal(detectBatches([['简中', '英语'], ['单行中文源', '']], [{ index: 0, lang: 'cn' }, { index: 1, lang: 'en' }]).some((row) => row.title === '单行中文源'), false);
+  assert.equal(titles.includes('English only'), false);
+  const maybe = findBatchCandidates(values, columns).find((row) => row.title.includes('以下为全球'));
+  assert.equal(maybe?.maybeBody, true);
+  const unselected = matchTranslations({
+    values,
+    columns,
+    batches,
+    selectedBatchIds: batches.filter((row) => row.title !== '以下为全球活动宣传内容翻译_DDL03/27').map((row) => row.id),
+    texts: [
+      { end: 'pc', nodeId: 't3', section: 1, name: '段题', characters: '以下为全球活动宣传内容翻译_DDL03/27' },
+    ],
+  });
+  assert.equal(unselected.pending.some((row) => row.nodeId === 't3') || unselected.matched.some((row) => row.nodeId === 't3'), true);
   const matched = matchTranslations({
     values,
     columns,
@@ -592,8 +605,8 @@ test('FONT_CONFIG 与非法链接配置不能 pass',
     })}\n`);
     const result = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB });
     const problems = readJson(result.problemsPath);
-    assert.equal(result.result, 'needs-input');
-    assert.equal(problems.some((row) => row.code === 'FONT_CONFIG'), true, JSON.stringify(problems));
+    assert.notEqual(result.result, 'pass');
+    assert.equal(problems.some((row) => row.code === 'FONT_CONFIG' && row.returnTo === '工具'), true, JSON.stringify(problems));
     assert.equal(problems.some((row) => row.code === 'LINK_CONFIG' && row.returnTo === '工具'), true, JSON.stringify(problems));
   });
 
@@ -690,6 +703,120 @@ test('CONFIG_KEY 归工具',
     assert.equal(problems.some((row) => row.code === 'CONFIG_KEY' && row.returnTo === '工具'), true, JSON.stringify(problems));
     assert.notEqual(result.result, 'pass');
   });
+
+test('links 根容器非法时工具阻断且不写回空对象', async () => {
+  const confirmed = await confirmA({ body: canvasBody([namedPc([
+    frame('10:3', 'title/标题'),
+    frame('10:7', 'btn/官网@link=site'),
+  ])]) });
+  await runB1(confirmed);
+  const configDir = join(tmp, 'projects', `${FILE_ID.slice(0, 8)}-1-2`);
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(configDir, 'config.json'), `${canonicalJson({ links: null })}\n`);
+  const result = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB });
+  assert.notEqual(result.result, 'pass');
+  const stage = readJson(result.stagePath);
+  assert.notEqual(stage.result, 'pass');
+  const gate = checkEntry(result.stagePath, {
+    expectedStage: 'B', expectedOutputKind: 'b-supplement', expectedOutputVersion: stage.output.version,
+  });
+  assert.equal(gate.ok, false);
+  const saved = readJson(join(configDir, 'config.json'));
+  assert.equal(saved.links, null);
+  assert.equal(readJson(result.problemsPath).some((row) => row.code === 'CONFIG_TYPE' && row.returnTo === '工具'), true);
+});
+
+test('已提供但结构无效的译文快照阻断', async () => {
+  const confirmed = await confirmA({
+    languages: 'cn,en', baseLanguage: 'cn',
+    body: canvasBody([namedPc([
+      frame('10:3', 'title/标题'),
+      text('10:9', '标题字', '标题A'),
+      frame('10:4', 'btn/下一屏@sec=next'),
+    ])]),
+  });
+  await runB1(confirmed);
+  const snap = join(tmp, 'bad-sheet.json');
+  writeFileSync(snap, `${JSON.stringify({ not: 'a table' })}\n`);
+  const result = await runBSupplement({
+    runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB, l10nSnapshot: snap,
+  });
+  assert.notEqual(result.result, 'pass');
+  const stage = readJson(result.stagePath);
+  assert.notEqual(stage.result, 'pass');
+  assert.equal(checkEntry(result.stagePath, {
+    expectedStage: 'B', expectedOutputKind: 'b-supplement', expectedOutputVersion: stage.output.version,
+  }).ok, false);
+  assert.equal(readJson(result.problemsPath).some((row) => row.code === 'L10N_CONFIG' && row.returnTo === '工具'), true);
+});
+
+test('同句多译旧选择内容变了就作废并重新出卡', async () => {
+  const confirmed = await confirmA({
+    languages: 'cn,en', baseLanguage: 'cn',
+    body: canvasBody([namedPc([
+      frame('10:3', 'title/标题'),
+      { id: '10:9', name: '欢迎', type: 'TEXT', characters: '欢迎', absoluteBoundingBox: box(0, 0, 80, 20) },
+      frame('10:4', 'btn/下一屏@sec=next'),
+    ])]),
+  });
+  await runB1(confirmed);
+  const snap = join(tmp, 'choice-sheet.json');
+  writeFileSync(snap, `${JSON.stringify({ values: [['简中', '英语'], ['欢迎', 'Hello'], ['欢迎', 'Hi']] })}\n`);
+  const first = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB, l10nSnapshot: snap });
+  const card = readJson(first.questionsPath).find((row) => row.type === 'l10n-choice');
+  assert.ok(card, JSON.stringify(readJson(first.questionsPath).map((row) => row.type)));
+  await runBAnswer({
+    runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB, now: '2026-11-22T00:00:00.000Z',
+    l10nSnapshot: snap,
+    answersValue: { answers: [{ id: card.id, fingerprint: card.fingerprint, value: { choice: 'opt-0' } }] },
+  });
+  writeFileSync(snap, `${JSON.stringify({ values: [['简中', '英语'], ['欢迎', 'Hello updated'], ['欢迎', 'Hi']] })}\n`);
+  const refreshed = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB, l10nSnapshot: snap });
+  assert.equal(readJson(refreshed.questionsPath).some((row) => row.type === 'l10n-choice'), true);
+  const matched = readJson(refreshed.translationsPath).matched || [];
+  assert.equal(matched.some((row) => row.byLang?.en === 'Hello'), false);
+});
+
+test('无效 dynamic ID 拒绝写入', async () => {
+  const confirmed = await confirmA({ body: canvasBody([namedPc([
+    frame('10:3', 'title/标题'),
+    text('10:9', '价格', '价格 12 元'),
+    frame('10:4', 'btn/下一屏@sec=next'),
+  ])]) });
+  await runB1(confirmed);
+  const first = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB });
+  const card = readJson(first.questionsPath).find((row) => row.type === 'data-static-or-dynamic');
+  const bad = await runBAnswer({
+    runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB,
+    answersValue: { answers: [{ id: card.id, fingerprint: card.fingerprint, value: { dynamic: ['no-such-item'] } }] },
+  });
+  assert.equal(bad.result, 'stopped');
+  assert.equal(bad.code, 'answer-invalid');
+});
+
+test('选会变后补 @field 再跑不再 FIELD_DECLARATION', async () => {
+  const confirmed = await confirmA({ body: canvasBody([namedPc([
+    frame('10:3', 'title/标题'),
+    text('10:9', '今日充值', '价格 12 元'),
+    frame('10:4', 'btn/下一屏@sec=next'),
+  ])]) });
+  await runB1(confirmed);
+  const first = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB });
+  const card = readJson(first.questionsPath).find((row) => row.type === 'data-static-or-dynamic');
+  await runBAnswer({
+    runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB, now: '2026-11-22T00:00:00.000Z',
+    answersValue: { answers: [{ id: card.id, fingerprint: card.fingerprint, value: { dynamic: ['item-1'] } }] },
+  });
+  const updated = canvasBody([namedPc([
+    frame('10:3', 'title/标题'),
+    text('10:9', '今日充值@field=todayAmount', '价格 12 元'),
+    frame('10:4', 'btn/下一屏@sec=next'),
+  ])]);
+  const b1b = await runB1(confirmed, { fetchImpl: fetchOf(updated) });
+  assert.equal(b1b.ok, true, b1b.message);
+  const after = await runBSupplement({ runRoot: tmp, runDir: confirmed.runDir, tokenValue: STUB });
+  assert.equal(readJson(after.problemsPath).some((row) => row.code === 'FIELD_DECLARATION'), false, JSON.stringify(readJson(after.problemsPath)));
+});
 
 test('字体路径拒绝绝对路径和越出配置目录', () => {
   const configDir = join(tmp, 'projects', 'safe');
