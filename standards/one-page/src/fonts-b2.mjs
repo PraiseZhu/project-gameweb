@@ -144,10 +144,13 @@ export function buildFontQuestions(inventories, {
   return { questions, blockers, faces, foreign };
 }
 
-function localizedTextForFace(face, lang, translations) {
+function localizedPartsForFace(face, lang, translations) {
   const matched = translations?.matched || [];
   const byNode = new Map(matched.map((row) => [row.nodeId, row]));
-  return face.locations.map((loc) => byNode.get(loc.nodeId)?.byLang?.[lang] || '').join('');
+  return face.locations.map((loc) => ({
+    loc,
+    text: byNode.get(loc.nodeId)?.byLang?.[lang] || '',
+  }));
 }
 
 export function checkFontFiles({
@@ -246,8 +249,9 @@ export function checkFontFiles({
           locations: face.locations,
         });
       }
-      const needed = localizedTextForFace(face, lang, translations)
-        || face.locations.map((item) => item.characters || '').join('');
+      const parts = localizedPartsForFace(face, lang, translations);
+      const localized = parts.map((row) => row.text).join('');
+      const needed = localized || face.locations.map((item) => item.characters || '').join('');
       if (!needed) continue;
       let missing;
       try {
@@ -263,14 +267,16 @@ export function checkFontFiles({
         continue;
       }
       if (missing.length) {
-        const hits = face.locations.filter((item) => missing.some((ch) => item.characters.includes(ch)));
+        const hits = localized
+          ? parts.filter((row) => missing.some((ch) => row.text.includes(ch))).map((row) => row.loc)
+          : face.locations.filter((item) => missing.some((ch) => (item.characters || '').includes(ch)));
         blockers.push({
           code: 'FONT_GLYPH',
           object: key,
           lang,
           missing: `缺字：${missing.join(' ')}`,
           glyphs: missing,
-          locations: hits.length ? hits : face.locations,
+          locations: hits.length ? hits : (localized ? parts.filter((row) => row.text).map((row) => row.loc) : face.locations),
         });
       }
     }

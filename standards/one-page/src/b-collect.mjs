@@ -236,6 +236,17 @@ function reconcileDynamicNeeded(dynamicNeeded, inventories) {
   return next;
 }
 
+function rememberedBatchSelection(meta, fingerprint) {
+  for (const row of Object.values(meta?.answers || {})) {
+    if (row?.status === 'stale') continue;
+    if (row.type !== 'l10n-batches') continue;
+    if (row.fingerprint !== fingerprint) continue;
+    if (!Array.isArray(row.value?.batches)) continue;
+    return row.value.batches;
+  }
+  return null;
+}
+
 function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
   const questions = [];
   const problems = [];
@@ -291,10 +302,11 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
     return { questions, translations, problems };
   }
   const batches = detectBatches(unwrapped.values, identified.columns);
-  const selected = meta.l10n?.batches;
   const titleBatches = batches.filter((batch) => Number.isInteger(batch.row));
   const needsPick = titleBatches.some((batch) => batch.maybeBody) || titleBatches.length > 1;
-  if (needsPick && (!Array.isArray(selected) || !selected.length)) {
+  const batchFingerprint = sha256Hex({ type: 'l10n-batches', batches: titleBatches });
+  const rememberedBatches = rememberedBatchSelection(meta, batchFingerprint);
+  if (needsPick && rememberedBatches == null) {
     questions.push({
       type: 'l10n-batches',
       object: '翻译表段落',
@@ -310,11 +322,13 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
       suggested: null,
       prompt: '请勾选本次用作段落标题的行。源列里只有一格字的行也可能是还没翻译的正文；没勾选的仍按正文对翻译。',
       splitAllowed: false,
-      fingerprint: sha256Hex({ type: 'l10n-batches', batches: titleBatches }),
+      fingerprint: batchFingerprint,
     });
     return { questions, translations, problems };
   }
-  const selectedIds = Array.isArray(selected) && selected.length ? selected : batches.map((batch) => batch.id);
+  const selectedIds = rememberedBatches != null
+    ? rememberedBatches
+    : batches.map((batch) => batch.id);
   const matched = matchTranslations({
     values: unwrapped.values,
     columns: identified.columns,

@@ -13,7 +13,9 @@ import { checkEntry } from '../src/stage-record.mjs';
 import { sameSentence, identifyLanguageColumns, detectBatches, findBatchCandidates, matchTranslations } from '../src/translations.mjs';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
 import { autoMotions } from '../src/motion-auto.mjs';
-import { resolveFontFile } from '../src/fonts-b2.mjs';
+import { collectB2 } from '../src/b-collect.mjs';
+import { applyAnswers } from '../src/apply-answers.mjs';
+import { resolveFontFile, checkFontFiles, sha256File } from '../src/fonts-b2.mjs';
 import { missingGlyphs } from '../src/cmap.mjs';
 
 
@@ -326,6 +328,113 @@ test('段落标题只认整行唯一非空单元格，能对上快照中文行',
   assert.equal(a.byLang.jp, 'イベント進捗確認');
   assert.equal(b.byLang.en, 'Official Top-Up Website');
   assert.equal(b.basis, 'whitespace-or-leading-marks');
+});
+
+function collectSnapshot(copy) {
+  return {
+    fileKey: FILE_ID,
+    fileVersion: VERSION,
+    document: {
+      id: CANVAS_ID,
+      name: '规范页',
+      type: 'CANVAS',
+      children: [namedPc([
+        frame('10:3', 'title/标题'),
+        { id: '10:9', name: '致谢', type: 'TEXT', characters: copy, absoluteBoundingBox: box(0, 0, 80, 20) },
+        frame('10:4', 'btn/下一屏@sec=next'),
+      ])],
+    },
+  };
+}
+
+test('段落选择绑定当前候选指纹，旧 batch-N 不能套到新表', () => {
+  const snapshot = collectSnapshot('谢谢');
+  const scope = { platform: 'pc', languages: ['cn', 'en'], baseLanguage: 'cn' };
+  const first = collectB2({
+    snapshot, scope, config: {},
+    l10nSnapshot: { values: [['简中', '英语'], ['批次A', ''], ['谢谢', 'Thank you'], ['批次B', ''], ['其他', 'Other']] },
+  });
+  const card = first.questions.find((row) => row.type === 'l10n-batches');
+  assert.ok(card);
+  const answered = applyAnswers({
+    config: {}, questions: first.questions,
+    answers: { answers: [{ id: card.id, fingerprint: card.fingerprint, value: { batches: ['batch-1'] } }] },
+  });
+  const reused = collectB2({
+    snapshot, scope, config: answered,
+    l10nSnapshot: { values: [['简中', '英语'], ['批次A', ''], ['谢谢', 'Thank you'], ['批次B', ''], ['其他', 'Other']] },
+  });
+  assert.equal(reused.questions.some((row) => row.type === 'l10n-batches'), false);
+  assert.equal(reused.translations.matched.find((row) => row.nodeId === '10:9')?.byLang?.en, 'Thank you');
+
+  const changed = collectB2({
+    snapshot, scope, config: answered,
+    l10nSnapshot: { values: [['简中', '英语'], ['批次X', ''], ['谢谢', 'Gracias'], ['批次Y', ''], ['其他', 'Other']] },
+  });
+  assert.equal(changed.questions.some((row) => row.type === 'l10n-batches'), true);
+  assert.equal((changed.translations.matched || []).some((row) => row.byLang?.en === 'Gracias'), false);
+
+  const noFingerprint = collectB2({
+    snapshot, scope, config: { meta: { l10n: { batches: ['batch-1'] } } },
+    l10nSnapshot: { values: [['简中', '英语'], ['批次X', ''], ['谢谢', 'Gracias'], ['批次Y', ''], ['其他', 'Other']] },
+  });
+  assert.equal(noFingerprint.questions.some((row) => row.type === 'l10n-batches'), true);
+});
+
+test('段落卡未答、全不选、部分选三态', () => {
+  const snapshot = collectSnapshot('疑似正文');
+  const scope = { platform: 'pc', languages: ['cn', 'en'], baseLanguage: 'cn' };
+  const sheet = { values: [['简中', '英语'], ['疑似正文', ''], ['其他内容', 'Other']] };
+  const first = collectB2({ snapshot, scope, config: {}, l10nSnapshot: sheet });
+  const card = first.questions.find((row) => row.type === 'l10n-batches');
+  assert.ok(card, '未答应出卡');
+
+  const none = applyAnswers({
+    config: {}, questions: first.questions,
+    answers: { answers: [{ id: card.id, fingerprint: card.fingerprint, value: { batches: [] } }] },
+  });
+  const afterNone = collectB2({ snapshot, scope, config: none, l10nSnapshot: sheet });
+  assert.equal(afterNone.questions.some((row) => row.type === 'l10n-batches'), false);
+  assert.equal(afterNone.translations.pending.some((row) => row.characters === '疑似正文')
+    || afterNone.translations.matched.some((row) => row.characters === '疑似正文'), true);
+
+  const some = applyAnswers({
+    config: {}, questions: first.questions,
+    answers: { answers: [{ id: card.id, fingerprint: card.fingerprint, value: { batches: ['batch-1'] } }] },
+  });
+  const afterSome = collectB2({ snapshot, scope, config: some, l10nSnapshot: sheet });
+  assert.equal(afterSome.questions.some((row) => row.type === 'l10n-batches'), false);
+});
+
+test('同 face 缺字只标实际缺字的节点', () => {
+  const configDir = join(tmp, 'font-loc');
+  mkdirSync(configDir, { recursive: true });
+  const onlyC = buildTinyTtf('C');
+  writeFileSync(join(configDir, 'c.ttf'), onlyC);
+  const inv = {
+    nodes: [
+      { id: 'ta', name: 'copy/A', type: 'TEXT', status: 'determined', role: 'copy', parentId: null, text: { characters: '源甲', fontFamily: 'SourceA', fontWeight: 400 } },
+      { id: 'tc', name: 'copy/C', type: 'TEXT', status: 'determined', role: 'copy', parentId: null, text: { characters: '源丙', fontFamily: 'SourceA', fontWeight: 400 } },
+      { id: 'tb', name: 'copy/B', type: 'TEXT', status: 'determined', role: 'copy', parentId: null, text: { characters: '源乙', fontFamily: 'SourceB', fontWeight: 400 } },
+    ],
+  };
+  const onlyB = buildTinyTtf('B');
+  writeFileSync(join(configDir, 'b.ttf'), onlyB);
+  const fonts = {
+    faces: { 'SourceA/400': { en: 'resC' }, 'SourceB/400': { en: 'resB' } },
+    resources: {
+      resC: { file: 'c.ttf', weights: [400], format: 'ttf', source: 't', license: 'OFL', digest: `sha256:${sha256File(onlyC)}` },
+      resB: { file: 'b.ttf', weights: [400], format: 'ttf', source: 't', license: 'OFL', digest: `sha256:${sha256File(onlyB)}` },
+    },
+  };
+  const result = checkFontFiles({
+    inventories: { pc: inv }, languages: ['cn', 'en'], baseLanguage: 'cn', fonts, configDir,
+    translations: { matched: [{ nodeId: 'ta', byLang: { en: 'A' } }, { nodeId: 'tc', byLang: { en: 'C' } }, { nodeId: 'tb', byLang: { en: 'B' } }] },
+  });
+  const glyphA = result.blockers.find((row) => row.code === 'FONT_GLYPH' && row.object === 'SourceA/400');
+  assert.ok(glyphA, JSON.stringify(result.blockers));
+  assert.deepEqual(glyphA.locations.map((loc) => loc.nodeId), ['ta']);
+  assert.equal(result.blockers.some((row) => row.code === 'FONT_GLYPH' && row.object === 'SourceB/400'), false);
 });
 
 test('字体未定阻断；缺文件/digest/字重/缺字都阻断', async () => {
