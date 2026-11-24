@@ -191,33 +191,58 @@ export function rowsForSelectedBatches(values, batches, selectedIds) {
     .sort((a, b) => a.row - b.row);
   const skip = new Set(selected.map((batch) => batch.row));
   const rows = [];
+  const seen = new Set();
+  const pushRow = (row, batchId) => {
+    if (seen.has(row) || skip.has(row) || row < 1 || row >= values.length) return;
+    seen.add(row);
+    rows.push({ row, batchId, cells: values[row] || [] });
+  };
   if (!selected.length) {
-    for (let i = 1; i < values.length; i += 1) {
-      rows.push({ row: i, batchId: 'batch-1', cells: values[i] || [] });
-    }
+    for (let i = 1; i < values.length; i += 1) pushRow(i, 'batch-1');
     return rows;
   }
-  for (let i = 0; i < selected.length; i += 1) {
-    const from = i === 0 ? 1 : selected[i].row + 1;
-    const to = (selected[i + 1]?.row ?? values.length) - 1;
-    for (let row = from; row <= to && row < values.length; row += 1) {
-      if (skip.has(row)) continue;
-      rows.push({ row, batchId: selected[i].id, cells: values[row] || [] });
-    }
+  for (const batch of selected) {
+    const from = batch.row + 1;
+    const to = batch.end;
+    for (let row = from; row <= to && row < values.length; row += 1) pushRow(row, batch.id);
   }
-  return rows;
+  for (const batch of batches || []) {
+    if (!Number.isInteger(batch.row) || wanted.has(batch.id) || !batch.maybeBody) continue;
+    pushRow(batch.row, batch.id);
+  }
+  return rows.sort((a, b) => a.row - b.row);
 }
 
-function translationsForSource(source, rows, columns, cnIndex) {
+export function targetLanguagesOf(languages = [], baseLanguage = 'cn') {
+  const base = baseLanguage || 'cn';
+  return [...languages].filter((lang) => lang && lang !== base);
+}
+
+export function classifyCompleteness(byLang, targetLanguages = []) {
+  const targets = [...targetLanguages];
+  const filtered = {};
+  for (const lang of targets) {
+    const text = byLang?.[lang];
+    if (typeof text === 'string' && text.trim()) filtered[lang] = text;
+  }
+  const missingLanguages = targets.filter((lang) => !Object.hasOwn(filtered, lang));
+  if (!targets.length) return { kind: 'complete', byLang: {}, missingLanguages: [] };
+  if (!missingLanguages.length) return { kind: 'complete', byLang: filtered, missingLanguages: [] };
+  if (Object.keys(filtered).length) return { kind: 'partial', byLang: filtered, missingLanguages };
+  return { kind: 'empty', byLang: {}, missingLanguages: targets };
+}
+
+function translationsForSource(source, rows, columns, cnIndex, targetLanguages) {
   const exact = [];
   const normalized = [];
+  const targets = new Set(targetLanguages || []);
   for (const row of rows) {
     const cn = rowText(row.cells, cnIndex);
     const basis = sentenceMatchBasis(source, cn);
     if (!basis) continue;
     const byLang = {};
     for (const col of columns) {
-      if (col.lang === 'cn') continue;
+      if (col.lang === 'cn' || !targets.has(col.lang)) continue;
       const text = rowText(row.cells, col.index);
       if (text.trim()) byLang[col.lang] = text;
     }
@@ -238,28 +263,68 @@ function uniqueByLangMaps(hits) {
   return [...seen.values()];
 }
 
+function applyClassified(item, hit, targetLanguages, matched, pending) {
+  const classified = classifyCompleteness(hit?.byLang || {}, targetLanguages);
+  if (classified.kind === 'complete') {
+    matched.push({
+      ...item,
+      status: 'matched',
+      byLang: classified.byLang,
+      missingLanguages: [],
+      basis: hit?.basis,
+      rows: hit?.rows,
+    });
+    return classified;
+  }
+  if (classified.kind === 'partial') {
+    matched.push({
+      ...item,
+      status: 'matched',
+      byLang: classified.byLang,
+      missingLanguages: classified.missingLanguages,
+      basis: hit?.basis,
+      rows: hit?.rows,
+    });
+  }
+  pending.push({
+    ...item,
+    status: 'pending',
+    byLang: classified.byLang,
+    missingLanguages: classified.missingLanguages,
+    basis: hit?.basis,
+    rows: hit?.rows,
+  });
+  return classified;
+}
+
 export function matchTranslations({
   values,
   columns,
   batches,
   selectedBatchIds,
   texts,
+  targetLanguages,
 }) {
   const cnCol = columns.find((col) => col.lang === 'cn');
   if (!cnCol) {
     return { ok: false, reason: '没有中文列' };
   }
+  const targets = Array.isArray(targetLanguages)
+    ? targetLanguages
+    : (columns || []).map((col) => col.lang).filter((lang) => lang && lang !== 'cn');
   const rows = rowsForSelectedBatches(values, batches, selectedBatchIds);
   const matched = [];
   const pending = [];
   const choices = [];
   for (const item of texts) {
-    const hits = translationsForSource(item.characters, rows, columns, cnCol.index);
+    const hits = translationsForSource(item.characters, rows, columns, cnCol.index, targets);
     const pool = [...hits.exact, ...hits.normalized];
     if (!pool.length) {
       pending.push({
         ...item,
         status: 'pending',
+        byLang: {},
+        missingLanguages: [...targets],
       });
       continue;
     }
@@ -267,21 +332,23 @@ export function matchTranslations({
     if (groups.length > 1) {
       choices.push({
         ...item,
-        options: groups.map((group) => ({
-          byLang: group[0].byLang,
-          basis: group[0].basis,
-          rows: group.map((hit) => hit.row),
-        })),
+        options: groups.map((group) => {
+          const classified = classifyCompleteness(group[0].byLang, targets);
+          return {
+            byLang: classified.byLang,
+            missingLanguages: classified.missingLanguages,
+            basis: group[0].basis,
+            rows: group.map((hit) => hit.row),
+          };
+        }),
       });
       continue;
     }
-    matched.push({
-      ...item,
-      status: 'matched',
+    applyClassified(item, {
       byLang: groups[0][0].byLang,
       basis: groups[0][0].basis,
       rows: groups[0].map((hit) => hit.row),
-    });
+    }, targets, matched, pending);
   }
   return { ok: true, matched, pending, choices };
 }

@@ -20,6 +20,8 @@ import {
   identifyLanguageColumns,
   detectBatches,
   matchTranslations,
+  targetLanguagesOf,
+  classifyCompleteness,
 } from './translations.mjs';
 import {
   productNodes,
@@ -117,6 +119,36 @@ export function aggregateLinkTodos(inventories) {
     }
   }
   return [...groups.values()].sort((a, b) => String(a.key).localeCompare(String(b.key)));
+}
+
+function pendingTranslationTodos(pending, targetLanguages) {
+  const order = [...(targetLanguages || [])];
+  const byNode = new Map();
+  for (const row of pending || []) {
+    const langs = row.missingLanguages || order;
+    if (!langs.length) continue;
+    const key = `${row.end ?? ''}:${row.nodeId ?? ''}`;
+    if (!byNode.has(key)) {
+      byNode.set(key, {
+        kind: 'pending-translation',
+        blocking: false,
+        end: row.end ?? null,
+        section: row.section ?? null,
+        nodeId: row.nodeId ?? null,
+        name: row.name,
+        characters: row.characters,
+        missingLanguages: [],
+      });
+    }
+    const acc = byNode.get(key);
+    for (const lang of langs) {
+      if (!acc.missingLanguages.includes(lang)) acc.missingLanguages.push(lang);
+    }
+  }
+  return [...byNode.values()].map((row) => ({
+    ...row,
+    missingLanguages: order.length ? order.filter((lang) => row.missingLanguages.includes(lang)) : row.missingLanguages,
+  }));
 }
 
 function collectCopyTexts(inventories) {
@@ -247,13 +279,21 @@ function rememberedBatchSelection(meta, fingerprint) {
   return null;
 }
 
-function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
+function l10nCardsAndResult({ snapshot, meta, texts, languages, baseLanguage = 'cn' }) {
   const questions = [];
   const problems = [];
-  const translations = { matched: [], pending: [], choices: [], source: null };
+  const translations = { matched: [], pending: [], choices: [], source: null, targetLanguages: [] };
+  const targetLanguages = targetLanguagesOf(languages, baseLanguage);
+  translations.targetLanguages = targetLanguages;
   if (snapshot == null) {
-    if ((languages || []).some((lang) => lang !== 'cn')) {
-      translations.pending = texts.map((item) => ({ ...item, status: 'pending', reason: 'no-snapshot' }));
+    if (targetLanguages.length) {
+      translations.pending = texts.map((item) => ({
+        ...item,
+        status: 'pending',
+        reason: 'no-snapshot',
+        byLang: {},
+        missingLanguages: [...targetLanguages],
+      }));
     }
     return { questions, translations, problems };
   }
@@ -335,6 +375,7 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
     batches,
     selectedBatchIds: selectedIds,
     texts,
+    targetLanguages,
   });
   if (!matched.ok) {
     problems.push(problem({
@@ -351,13 +392,27 @@ function l10nCardsAndResult({ snapshot, meta, texts, languages }) {
     const saved = chosen[key];
     const still = saved && (item.options || []).find((opt) => canonicalJson(opt.byLang) === canonicalJson(saved.byLang));
     if (still) {
-      matched.matched.push({
-        ...item,
-        status: 'matched',
-        byLang: still.byLang,
-        basis: still.basis || saved.basis,
-        rows: still.rows || saved.rows,
-      });
+      const classified = classifyCompleteness(still.byLang, targetLanguages);
+      if (classified.kind === 'complete' || classified.kind === 'partial') {
+        matched.matched.push({
+          ...item,
+          status: 'matched',
+          byLang: classified.byLang,
+          missingLanguages: classified.missingLanguages,
+          basis: still.basis || saved.basis,
+          rows: still.rows || saved.rows,
+        });
+      }
+      if (classified.missingLanguages.length) {
+        matched.pending.push({
+          ...item,
+          status: 'pending',
+          byLang: classified.byLang,
+          missingLanguages: classified.missingLanguages,
+          basis: still.basis || saved.basis,
+          rows: still.rows || saved.rows,
+        });
+      }
       continue;
     }
     questions.push({
@@ -489,6 +544,7 @@ export function collectB2({
     meta: liveMeta,
     texts,
     languages: scope.languages,
+    baseLanguage: scope.baseLanguage,
   });
   const fontCheck = checkFontFiles({
     inventories: compiled.inventories,
@@ -569,17 +625,7 @@ export function collectB2({
 
   const todos = [];
   todos.push(...aggregateLinkTodos(compiled.inventories));
-  for (const row of l10n.translations.pending || []) {
-    todos.push({
-      kind: 'pending-translation',
-      blocking: false,
-      end: row.end,
-      section: row.section,
-      nodeId: row.nodeId,
-      name: row.name,
-      characters: row.characters,
-    });
-  }
+  todos.push(...pendingTranslationTodos(l10n.translations.pending, l10n.translations.targetLanguages));
   const style = linkKeyStyle(linkKeysInInventories(compiled.inventories));
   if (style.mixed) {
     todos.push({

@@ -395,8 +395,16 @@ test('段落卡未答、全不选、部分选三态', () => {
   });
   const afterNone = collectB2({ snapshot, scope, config: none, l10nSnapshot: sheet });
   assert.equal(afterNone.questions.some((row) => row.type === 'l10n-batches'), false);
-  assert.equal(afterNone.translations.pending.some((row) => row.characters === '疑似正文')
-    || afterNone.translations.matched.some((row) => row.characters === '疑似正文'), true);
+  const pendingNone = afterNone.translations.pending.find((row) => row.characters === '疑似正文');
+  assert.ok(pendingNone);
+  assert.deepEqual(pendingNone.missingLanguages, ['en']);
+  assert.equal((afterNone.translations.matched || []).some((row) => row.characters === '疑似正文' && !Object.keys(row.byLang || {}).length), false);
+  const todoNone = afterNone.todos.find((row) => row.kind === 'pending-translation' && row.nodeId === '10:9');
+  assert.ok(todoNone);
+  assert.equal(todoNone.blocking, false);
+  assert.deepEqual(todoNone.missingLanguages, ['en']);
+  assert.equal(todoNone.end, 'pc');
+  assert.equal(todoNone.section, 1);
 
   const some = applyAnswers({
     config: {}, questions: first.questions,
