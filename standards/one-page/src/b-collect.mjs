@@ -14,7 +14,10 @@ import {
   buildFontQuestions,
   checkFontFiles,
   missingLangVariants,
+  autoReuseFonts,
+  buildFontAudit,
 } from './fonts-b2.mjs';
+import { buildDataContractResult } from './data-contract.mjs';
 import {
   unwrapSnapshot,
   identifyLanguageColumns,
@@ -44,6 +47,7 @@ const TYPE_ORDER = [
   'tab',
   'font-map',
   'data-static-or-dynamic',
+  'data-contract-exception',
 ];
 
 function metaOf(config) {
@@ -532,6 +536,13 @@ export function collectB2({
       ...Object.keys(liveMeta.dynamicNeeded || {}),
     ]),
   });
+  working.fonts = autoReuseFonts(
+    working.fonts,
+    compiled.inventories,
+    configDir,
+    scope.languages,
+    scope.baseLanguage,
+  );
   const fonts = buildFontQuestions(compiled.inventories, {
     languages: scope.languages,
     baseLanguage: scope.baseLanguage,
@@ -554,7 +565,31 @@ export function collectB2({
     configDir,
     translations: l10n.translations,
   });
+  const dataContract = buildDataContractResult({
+    inventories: compiled.inventories,
+    config: working,
+    languages: scope.languages,
+    baseLanguage: scope.baseLanguage,
+  });
   const fontBlockers = fontCheck.blockers;
+  const fontDesign = fontBlockers.filter((item) => item.returnTo === '设计稿').map((item) => problem({
+    end: item.locations?.[0]?.end ?? null,
+    section: item.locations?.[0]?.section ?? null,
+    nodeId: item.locations?.[0]?.nodeId ?? null,
+    object: item.object,
+    missing: item.missing,
+    code: item.code,
+    returnTo: '设计稿',
+  }));
+  const fontBlocking = fontBlockers.filter((item) => item.returnTo !== '设计稿').map((item) => problem({
+    end: item.locations?.[0]?.end ?? null,
+    section: item.locations?.[0]?.section ?? null,
+    nodeId: item.locations?.[0]?.nodeId ?? null,
+    object: item.object,
+    missing: item.missing,
+    code: item.code,
+    returnTo: 'B2',
+  }));
   const langVariants = missingLangVariants(compiled.inventories, scope.languages);
 
   const rawQuestions = sortQuestions([
@@ -564,6 +599,7 @@ export function collectB2({
     ...(tabs.questions || tabs),
     ...fonts.questions,
     ...data,
+    ...dataContract.questions,
   ]);
   const questions = numberCards(rawQuestions);
 
@@ -596,6 +632,16 @@ export function collectB2({
       code: item.object?.startsWith('tab/') ? 'RELATION_MISSING' : 'PAGINATION',
       returnTo: '设计稿',
     })),
+    ...fontDesign,
+    ...dataContract.problems.map((item) => problem({
+      end: item.locations?.[0]?.end ?? null,
+      section: item.locations?.[0]?.section ?? null,
+      nodeId: item.locations?.[0]?.nodeId ?? null,
+      object: item.object,
+      missing: item.missing,
+      code: item.code,
+      returnTo: '设计稿',
+    })),
     ...orphanPagination.map((item) => problem({
       end: item.end ?? null,
       section: item.section ?? null,
@@ -621,6 +667,12 @@ export function collectB2({
       returnTo: '工具',
     })),
     ...(l10n.problems || []),
+    ...(dataContract.dataCheck.status === 'fail' ? [problem({
+      object: '数据样例检查',
+      missing: (dataContract.dataCheck.issues || []).map((item) => item.message).join('; ') || '样例与字段合同不一致',
+      code: 'DATA_CHECK',
+      returnTo: '工具',
+    })] : []),
   ];
 
   const todos = [];
@@ -641,16 +693,6 @@ export function collectB2({
   for (const row of motionPatch.skipped || []) {
     todos.push(row);
   }
-
-  const fontBlocking = fontBlockers.map((item) => problem({
-    end: item.locations?.[0]?.end ?? null,
-    section: item.locations?.[0]?.section ?? null,
-    nodeId: item.locations?.[0]?.nodeId ?? null,
-    object: item.object,
-    missing: item.missing,
-    code: item.code,
-    returnTo: 'B2',
-  }));
 
   const b2Problems = [
     ...compiled.problems.filter((item) => {
@@ -688,5 +730,15 @@ export function collectB2({
     fontBlockers,
     fontInputs: fontCheck.fontInputs,
     designProblems,
+    fontAudit: buildFontAudit({
+      scope,
+      fonts: working.fonts,
+      fontCheck,
+      languages: scope.languages,
+      baseLanguage: scope.baseLanguage,
+    }),
+    dataContract: dataContract.contract,
+    sampleIndex: dataContract.sampleIndex,
+    dataCheck: dataContract.dataCheck,
   };
 }

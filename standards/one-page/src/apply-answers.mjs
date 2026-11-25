@@ -276,6 +276,21 @@ export function applyAnswers({ config, questions, answers, inventories, now }) {
         }
       }
       remember(next.meta, card, value, at);
+    } else if (card.type === 'data-contract-exception') {
+      const choice = value.choice || value.missing;
+      if (!['design-default', 'pending'].includes(choice)) {
+        throw new StoppedError('answer-invalid', `${card.id} 需要 design-default 或 pending`);
+      }
+      if (!next.dataContract || typeof next.dataContract !== 'object' || Array.isArray(next.dataContract)) {
+        next.dataContract = {};
+      }
+      if (!next.dataContract.exceptions || typeof next.dataContract.exceptions !== 'object') {
+        next.dataContract.exceptions = {};
+      }
+      const path = card.path || value.path;
+      if (!path) throw new StoppedError('answer-invalid', `${card.id} 需要 path`);
+      next.dataContract.exceptions[path] = { missing: choice };
+      remember(next.meta, card, { choice, path }, at);
     } else {
       throw new StoppedError('answer-invalid', `未知卡片类型 ${card.type}`);
     }

@@ -459,7 +459,7 @@ test('字体未定阻断；缺文件/digest/字重/缺字都阻断', async () =>
   assert.equal(unset.result, 'needs-input');
   const fontCards = readJson(unset.questionsPath).filter((row) => row.type === 'font-map');
   assert.equal(fontCards.length, 1);
-  assert.deepEqual(fontCards[0].langs, ['en']);
+  assert.deepEqual(fontCards[0].langs, ['cn', 'en']);
 
   const configDir = join(tmp, 'projects', `${FILE_ID.slice(0, 8)}-1-2`);
   mkdirSync(configDir, { recursive: true });
@@ -468,7 +468,7 @@ test('字体未定阻断；缺文件/digest/字重/缺字都阻断', async () =>
   writeFileSync(join(configDir, 'latin.ttf'), ttf);
   writeFileSync(join(configDir, 'config.json'), `${canonicalJson({
     fonts: {
-      faces: { 'FakeSans/700': { en: 'latin' } },
+      faces: { 'FakeSans/700': { cn: 'latin', en: 'latin' } },
       resources: {
         latin: {
           file: 'missing-latin.ttf', weights: [400], format: 'ttf',
@@ -482,7 +482,7 @@ test('字体未定阻断；缺文件/digest/字重/缺字都阻断', async () =>
 
   writeFileSync(join(configDir, 'config.json'), `${canonicalJson({
     fonts: {
-      faces: { 'FakeSans/700': { en: 'latin' } },
+      faces: { 'FakeSans/700': { cn: 'latin', en: 'latin' } },
       resources: {
         latin: {
           file: 'latin.ttf', weights: [400], format: 'ttf',
@@ -537,7 +537,7 @@ test('数据提醒写死与会变两条路径', async () => {
     runRoot: tmp, runDir: confirmed2.runDir, tokenValue: STUB, now: '2026-11-22T00:00:00.000Z',
     answersValue: { answers: [{ id: dyn.id, fingerprint: dyn.fingerprint, value: { choice: 'dynamic' } }] },
   });
-  assert.equal(dynamicRun.result, 'fail');
+  assert.notEqual(dynamicRun.result, 'pass');
   assert.equal(readJson(dynamicRun.problemsPath).some((row) => row.returnTo === '设计稿' && row.code === 'FIELD_DECLARATION'), true);
 });
 

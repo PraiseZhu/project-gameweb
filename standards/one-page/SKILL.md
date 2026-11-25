@@ -105,9 +105,9 @@ npm --prefix standards/one-page run b:answer -- --run-dir "<同一运行目录>"
 
 完成标准：
 
-1. 输出 `questions.json`、`translations.json`、`todos.json` 与 B 环节记录。`output.kind='b-supplement'`。结果 `needs-input`（卡片未答完或外语字体未定/缺字/缺字重）、`pass`（阻断项清零，可交 B3）、`stopped`（B1 缺失或被改）。稿件问题退回设计稿，结果 `fail`，不交 B3。
+1. 输出 `questions.json`、`translations.json`、`todos.json`、`font-audit.json`、`data-contract.json`、`data-samples.json`、`data-check.json` 与 B 环节记录。`output.kind='b-supplement'`，带 `completionContract=b2-input-completion/v1`。结果 `needs-input`（卡片未答完或网页字体未定/缺字/缺字重/身份不符）、`pass`（阻断项清零，可交 B3）、`stopped`（B1 缺失或被改）。稿件问题退回设计稿，结果 `fail`，不交 B3。缺补缺合同的旧 pass 不能冒充新合同通过。
 2. 缺译、外链 `url=null`、链接名中英混用进 `todos.json`，不阻断。
-3. 动效按编译器内置 MOTIONS 按元素类型自动套用，标准分层组合写 `composition=nested-standard`，不出卡；识别不唯一或组合未定的进 `todos.json`（动效未套用），不阻断。字体文件按 `fonts.resources[].file` 相对项目配置目录读取，核 digest、字重和缺字，缺失即阻断。数据未标 `@field` 但含数字/日期/金额的出「写死/会变」卡；会变须退回设计补 `@field`，不能用配置代替。
+3. 动效按编译器内置 MOTIONS 按元素类型自动套用，标准分层组合写 `composition=nested-standard`，不出卡；识别不唯一或组合未定的进 `todos.json`（动效未套用），不阻断。字体核验覆盖基础语言与外语，含 img 内 live 文字、混合样式和隐藏产品状态；bg/kv 例外。按文件真实身份/字重/字形核验，不信配置自报。数据字段说明与样例自动汇总；无动态数据记 n_a。数据未标 `@field` 但含数字/日期/金额的出「写死/会变」卡；会变须退回设计补 `@field`，不能用配置代替。
 4. 不出交接包、不导出素材、不写回 Figma、不新增依赖。
 
 B3 开工前检查读 `kind=b-supplement` 且 `result=pass` 的 B 环节记录。

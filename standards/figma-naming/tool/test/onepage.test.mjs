@@ -208,7 +208,7 @@ test('正式词表和生成速查与机器表同源，动效均有明确出处',
   for(const name of PREFIX_NAMES) assert(spec.includes('| '+name+'/ |'),name);
   for(const [rule,value] of Object.entries(MOTIONS)) assert(spec.includes('| '+rule+' | '+value.standard+' |'),rule);
   assert.equal(readFileSync(new URL('../docs/ONEPAGE-RULES.md',import.meta.url),'utf8'),renderOnePageRules());
-  assert(spec.includes('可选字典为 bindings、actions、links、motions、fonts、meta'));
+  assert(spec.includes('可选字典为 bindings、actions、links、motions、fonts、meta、dataContract'));
   assert(spec.includes('perPage 为正整数，或只含 pc/mobile'));
   assert(spec.includes('devTodo'));
   assert(spec.includes('figma:name:@link'));

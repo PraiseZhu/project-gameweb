@@ -119,6 +119,28 @@ function validateFonts(fonts, fail) {
     }
   }
 }
+function validateDataContract(dataContract, fail) {
+  for (const key of Object.keys(dataContract)) {
+    if (!['exceptions'].includes(key)) fail('DATA_CONTRACT', null, `未知配置 dataContract.${key}`);
+  }
+  if (dataContract.exceptions !== undefined) {
+    if (!object(dataContract.exceptions)) fail('DATA_CONTRACT', null, 'dataContract.exceptions 必须是对象');
+    else {
+      for (const [path, row] of Object.entries(dataContract.exceptions)) {
+        if (!nonempty(path)) fail('DATA_CONTRACT', null, 'dataContract.exceptions 键不能为空');
+        if (!object(row)) fail('DATA_CONTRACT', null, `dataContract.exceptions.${path} 必须是对象`);
+        else {
+          for (const field of Object.keys(row)) {
+            if (!['missing'].includes(field)) fail('DATA_CONTRACT', null, `dataContract.exceptions.${path} 未知字段 ${field}`);
+          }
+          if (row.missing !== undefined && !['design-default', 'pending'].includes(row.missing)) {
+            fail('DATA_CONTRACT', null, `dataContract.exceptions.${path}.missing 只能是 design-default 或 pending`);
+          }
+        }
+      }
+    }
+  }
+}
 export const MOTIONS = {
   'section-fade': { standard: '8.1', roles: ['sec'], units: ['whole'], triggers: ['section-change'] },
   'section-title': { standard: '9.2', roles: ['title'], units: ['whole'], triggers: ['section-enter'] },
@@ -140,6 +162,7 @@ export function compileOnePage(document, options = {}) {
   for (const k of Object.keys(config)) if (!CONFIG_KEYS.includes(k)) fail('CONFIG_KEY', null, `未知配置 ${k}`);
   for (const k of CONFIG_KEYS) if (config[k] !== undefined && !object(config[k])) fail('CONFIG_TYPE', null, `${k} 必须是对象`);
   if (object(config.fonts)) validateFonts(config.fonts, fail);
+  if (object(config.dataContract)) validateDataContract(config.dataContract, fail);
   const raw = new Map(), parsed = new Map(), seen = new Set();
   const safeTree = source => {
     if (!source || !nonempty(source.id) || seen.has(source.id)) throw new Error('快照节点必须有唯一字符串 id');
