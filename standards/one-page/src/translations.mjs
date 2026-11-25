@@ -186,8 +186,9 @@ export function detectBatches(values, languageColumns = []) {
 
 export function rowsForSelectedBatches(values, batches, selectedIds) {
   const wanted = new Set(selectedIds || []);
-  const selected = (batches || [])
-    .filter((batch) => wanted.has(batch.id) && Number.isInteger(batch.row))
+  const titleBatches = (batches || []).filter((batch) => Number.isInteger(batch.row));
+  const selected = titleBatches
+    .filter((batch) => wanted.has(batch.id))
     .sort((a, b) => a.row - b.row);
   const skip = new Set(selected.map((batch) => batch.row));
   const rows = [];
@@ -197,6 +198,17 @@ export function rowsForSelectedBatches(values, batches, selectedIds) {
     seen.add(row);
     rows.push({ row, batchId, cells: values[row] || [] });
   };
+  const pushMaybeBodyRows = () => {
+    for (const batch of titleBatches) {
+      if (wanted.has(batch.id) || !batch.maybeBody) continue;
+      pushRow(batch.row, batch.id);
+    }
+  };
+  const explicitEmpty = Array.isArray(selectedIds) && selectedIds.length === 0 && titleBatches.length > 0;
+  if (explicitEmpty) {
+    pushMaybeBodyRows();
+    return rows.sort((a, b) => a.row - b.row);
+  }
   if (!selected.length) {
     for (let i = 1; i < values.length; i += 1) pushRow(i, 'batch-1');
     return rows;
@@ -206,10 +218,7 @@ export function rowsForSelectedBatches(values, batches, selectedIds) {
     const to = batch.end;
     for (let row = from; row <= to && row < values.length; row += 1) pushRow(row, batch.id);
   }
-  for (const batch of batches || []) {
-    if (!Number.isInteger(batch.row) || wanted.has(batch.id) || !batch.maybeBody) continue;
-    pushRow(batch.row, batch.id);
-  }
+  pushMaybeBodyRows();
   return rows.sort((a, b) => a.row - b.row);
 }
 

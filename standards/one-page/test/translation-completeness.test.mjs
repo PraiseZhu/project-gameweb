@@ -140,6 +140,73 @@ test('同句多译选不完整选项保留已译并列缺译待办', () => {
   assert.deepEqual(todoOf(second).missingLanguages, ['jp']);
 });
 
+function confirmEmptyBatches(languages, sheet, copy = '欢迎') {
+  const first = run(languages, sheet, {}, copy);
+  const card = first.questions.find((row) => row.type === 'l10n-batches');
+  assert.ok(card, '应先出段落卡');
+  const config = applyAnswers({
+    config: {}, questions: first.questions,
+    answers: { answers: [{ id: card.id, fingerprint: card.fingerprint, value: { batches: [] } }] },
+  });
+  return run(languages, sheet, config, copy);
+}
+
+test('单段显式空选择不得采用未选段 Hello A', () => {
+  const result = confirmEmptyBatches(['cn', 'en'], { values: [['简中', '英语'], ['批次A', ''], ['欢迎', 'Hello A']] });
+  assert.equal(result.questions.some((row) => row.type === 'l10n-choice'), false);
+  assert.equal((result.translations.matched || []).some((row) => row.nodeId === '10:9'), false);
+  const pending = result.translations.pending.find((row) => row.nodeId === '10:9');
+  assert.deepEqual(pending.missingLanguages, ['en']);
+  const todo = todoOf(result);
+  assert.equal(todo.blocking, false);
+  assert.equal(todo.end, 'pc');
+  assert.equal(todo.section, 1);
+  assert.equal(todo.nodeId, '10:9');
+  assert.deepEqual(todo.missingLanguages, ['en']);
+});
+
+test('多段显式空选择不得把 Hello A/B 送进 matched 或 choice', () => {
+  const result = confirmEmptyBatches(['cn', 'en'], { values: [
+    ['简中', '英语'],
+    ['欢迎', ''],
+    ['批次A', ''],
+    ['欢迎', 'Hello A'],
+    ['批次B', ''],
+    ['欢迎', 'Hello B'],
+  ] });
+  assert.equal(result.questions.some((row) => row.type === 'l10n-choice'), false);
+  const hit = (result.translations.matched || []).find((row) => row.nodeId === '10:9');
+  assert.equal(hit, undefined);
+  assert.equal(JSON.stringify(result.translations.matched || []).includes('Hello A'), false);
+  assert.equal(JSON.stringify(result.translations.matched || []).includes('Hello B'), false);
+  const pending = result.translations.pending.find((row) => row.nodeId === '10:9');
+  assert.deepEqual(pending.missingLanguages, ['en']);
+  const todo = todoOf(result);
+  assert.equal(todo.blocking, false);
+  assert.equal(todo.end, 'pc');
+  assert.equal(todo.section, 1);
+  assert.deepEqual(todo.missingLanguages, ['en']);
+});
+
+test('无候选全文仍读取整表', () => {
+  const result = run(['cn', 'en'], { values: [['简中', '英语'], ['欢迎', 'Hello Full']] });
+  assert.equal(result.questions.some((row) => row.type === 'l10n-batches'), false);
+  const hit = result.translations.matched.find((row) => row.nodeId === '10:9');
+  assert.equal(hit.byLang.en, 'Hello Full');
+  assert.equal(todoOf(result), undefined);
+});
+
+test('显式空选择只保留 maybeBody 单行当正文', () => {
+  const result = confirmEmptyBatches(['cn', 'en'], { values: [['简中', '英语'], ['欢迎', ''], ['其他内容', 'Other']] });
+  const pending = result.translations.pending.find((row) => row.nodeId === '10:9');
+  assert.deepEqual(pending.missingLanguages, ['en']);
+  assert.equal((result.translations.matched || []).some((row) => (row.byLang || {}).en === 'Other'), false);
+  const todo = todoOf(result);
+  assert.equal(todo.blocking, false);
+  assert.equal(todo.nodeId, '10:9');
+  assert.deepEqual(todo.missingLanguages, ['en']);
+});
+
 test('只选后续批次时前序批次不得造成多译', () => {
   const sheet = { values: [
     ['简中', '英语'],
