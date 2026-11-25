@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
 import { assertDesignSets } from './design-sets.mjs';
 import { pairEnds } from './same-modules.mjs';
@@ -508,6 +509,12 @@ export function collectB2({
     };
   }
 
+  const reusedFonts = autoReuseFonts(working.fonts, compiled.inventories, configDir, scope.languages, scope.baseLanguage);
+  if (!isDeepStrictEqual(reusedFonts, working.fonts)) {
+    working.fonts = reusedFonts;
+    compiled = recompile(snapshot, working, scope.platform);
+  }
+
   if (!working.meta) working.meta = { ...meta };
   working.meta.dynamicNeeded = reconcileDynamicNeeded(working.meta.dynamicNeeded || {}, compiled.inventories);
   const splitKeys = new Set(meta.splitKeys || []);
@@ -536,13 +543,6 @@ export function collectB2({
       ...Object.keys(liveMeta.dynamicNeeded || {}),
     ]),
   });
-  working.fonts = autoReuseFonts(
-    working.fonts,
-    compiled.inventories,
-    configDir,
-    scope.languages,
-    scope.baseLanguage,
-  );
   const fonts = buildFontQuestions(compiled.inventories, {
     languages: scope.languages,
     baseLanguage: scope.baseLanguage,

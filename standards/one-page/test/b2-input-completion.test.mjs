@@ -12,6 +12,13 @@ import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs'
 
 function u16(n) { return Buffer.from([(n >> 8) & 0xff, n & 0xff]); }
 function u32(n) { return Buffer.from([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]); }
+
+function maxpTable(numGlyphs = 2048) {
+  const buf = Buffer.alloc(32);
+  buf.writeUInt32BE(0x00010000, 0);
+  buf.writeUInt16BE(numGlyphs, 4);
+  return buf;
+}
 function buildTinyTtf(chars) {
   const codes = [...chars].map((ch) => ch.codePointAt(0)).sort((a, b) => a - b);
   const segs = codes.map((cp) => ({ start: cp, end: cp }));
@@ -22,13 +29,18 @@ function buildTinyTtf(chars) {
     u16(segCount * 2), u16(2), u16(0), u16(segCount * 2 - 2),
     Buffer.concat(segs.map((s) => u16(s.end))), u16(0),
     Buffer.concat(segs.map((s) => u16(s.start))),
-    Buffer.concat(segs.map((s) => u16(1))),
+    // delta 按段计算：(cp + delta) % 0x10000 落在 1..N（有效字形索引），0xffff 哨兵段任意
+    Buffer.concat(segs.map((s) => u16(s.start === 0xffff ? 1 : (0x10000 + 1 - s.start) % 0x10000))),
     Buffer.alloc(segCount * 2),
   ]);
   const cmap = Buffer.concat([u16(0), u16(1), u16(3), u16(1), u32(12), body]);
-  const header = Buffer.concat([u32(0x00010000), u16(1), u16(16), u16(0), u16(0)]);
-  const rec = Buffer.concat([Buffer.from('cmap'), u32(0), u32(12 + 16), u32(cmap.length)]);
-  return Buffer.concat([header, rec, cmap]);
+  const maxp = maxpTable();
+  const header = Buffer.concat([u32(0x00010000), u16(2), u16(32), u16(1), u16(0)]);
+  const rec = Buffer.concat([
+    Buffer.from('cmap'), u32(0), u32(12 + 32), u32(cmap.length),
+    Buffer.from('maxp'), u32(0), u32(12 + 32 + cmap.length), u32(maxp.length),
+  ]);
+  return Buffer.concat([header, rec, cmap, maxp]);
 }
 
 const box = { x: 0, y: 0, width: 80, height: 20 };
@@ -204,4 +216,216 @@ test('未知 dataContract 键走工具 CONFIG', () => {
     id: '1:2', name: '页', type: 'CANVAS', children: [frame('10:1', 'cn_pc', [frame('10:2', 'sec/1-首页', [text('10:9', 't', 'hi')])])],
   }, { config: { dataContract: { nope: true } } });
   assert.equal(inv.issues.some((row) => row.code === 'DATA_CONTRACT'), true);
+});
+
+// ---- repair round1: F2/F3 regressions ----
+
+function listFixture(config = {}, docExtra = {}) {
+  const list = { id: '20:1', name: 'list/奖励列表@data=list:rewards', type: 'FRAME', layoutMode: 'VERTICAL', absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 }, children: [
+    { id: '20:2', name: 'item/条目@template', type: 'FRAME', absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 60 }, children: [
+      { id: '20:3', name: '名称@field=name', type: 'TEXT', characters: '金币', absoluteBoundingBox: box, style: { fontFamily: 'FakeSans', fontWeight: 400 } },
+      { id: '20:4', name: 'img/图标@field=image', type: 'FRAME', absoluteBoundingBox: box, children: [] },
+    ] },
+  ] };
+  const inner = config.paginate
+    ? [{ id: '20:9', name: 'switch/轮播', type: 'FRAME', absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 }, children: [list] }]
+    : [list];
+  const cfg = config.paginate
+    ? { bindings: { 'switch/轮播': { pagination: { kind: 'cards', list: 'list/奖励列表', perPage: 2 } } } }
+    : (config.compileConfig || {});
+  const doc = {
+    id: '1:2', name: '规范页', type: 'CANVAS', children: [
+      frame('10:1', 'cn_pc', [
+        frame('10:2', 'sec/1-奖励', inner),
+      ]),
+    ],
+    ...docExtra,
+  };
+  return compileOnePage(doc, { config: cfg });
+}
+
+test('列表样例按模板字段填充，success-full/list-one/list-many/last-page-short 全过', () => {
+  const compiled = listFixture({ paginate: true });
+  assert.equal(compiled.ok, true, JSON.stringify(compiled.issues));
+  const built = buildDataContractResult({ inventories: { pc: compiled }, config: {}, languages: ['cn'], baseLanguage: 'cn' });
+  const ids = built.sampleIndex.samples.map((row) => row.id);
+  assert.ok(ids.includes('list-one'));
+  assert.ok(ids.includes('list-many'));
+  assert.ok(ids.includes('last-page-short'));
+  assert.equal(built.dataCheck.status, 'pass', JSON.stringify(built.dataCheck.issues));
+  const many = built.sampleIndex.samples.find((row) => row.id === 'list-many');
+  assert.equal(many.data.rewards.length, 3, 'perPage 2 的多页样例应是 3 条');
+  assert.equal(typeof many.data.rewards[0].name, 'string');
+  assert.equal(typeof many.data.rewards[0].image, 'string');
+  const short = built.sampleIndex.samples.find((row) => row.id === 'last-page-short');
+  assert.equal(short.data.rewards.length, 3, '末页不足：perPage+1 条');
+});
+
+test('合同字段保留 template/perPage/state mapping 与槽位 mapping', () => {
+  const compiled = listFixture({ paginate: true });
+  const built = buildDataContractResult({ inventories: { pc: compiled }, config: {}, languages: ['cn'], baseLanguage: 'cn' });
+  const list = built.contract.fields.find((row) => row.bindingKind === 'list');
+  assert.ok(list.template?.id, 'template 引用必须可解析');
+  assert.deepEqual(list.perPage, { pc: 2 });
+});
+
+test('R293 局部缺字段与空串不误红，错误类型仍拒绝', () => {
+  const compiled = listFixture();
+  const built = buildDataContractResult({ inventories: { pc: compiled }, config: {}, languages: ['cn'], baseLanguage: 'cn' });
+  assert.equal(built.dataCheck.status, 'pass', JSON.stringify(built.dataCheck.issues));
+  const partial = built.sampleIndex.samples.find((row) => row.id === 'partial-missing');
+  assert.equal(partial.expected, 'partial-default');
+  const bad = built.sampleIndex.samples.find((row) => row.id === 'bad-type');
+  assert.ok(bad, '需要 bad-type 样例');
+});
+
+function slotsFixture(config = {}) {
+  const doc = {
+    id: '1:2', name: '规范页', type: 'CANVAS', children: [
+      frame('10:1', 'cn_pc', [
+        frame('10:2', 'sec/1-槽位', [
+          { id: '30:1', name: 'list/槽位组@data=slots:navs', type: 'FRAME', absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 60 }, children: [
+            { id: '30:2', name: 'item/首槽', type: 'FRAME', absoluteBoundingBox: box, children: [
+              { id: '30:3', name: '文字@field=label', type: 'TEXT', characters: '首页', absoluteBoundingBox: box, style: { fontFamily: 'FakeSans', fontWeight: 400 } },
+            ] },
+            { id: '30:4', name: 'item/次槽', type: 'FRAME', absoluteBoundingBox: box, children: [] },
+          ] },
+        ]),
+      ]),
+    ],
+  };
+  return compileOnePage(doc, {
+    config: {
+      bindings: { 'list/槽位组': { slotMapping: { kind: 'array-order' }, ...(config.bindingsExtra || {}) } },
+      ...(config.extra || {}),
+    },
+  });
+}
+
+test('缺槽位规则先问；例外答案重新编译后解除 SLOT_DEFAULT 并进入合同', () => {
+  const blocked = compileOnePage({
+    id: '1:2', name: '规范页', type: 'CANVAS', children: [
+      frame('10:1', 'cn_pc', [
+        frame('10:2', 'sec/1-槽位', [
+          { id: '30:1', name: 'list/槽位组@data=slots:navs', type: 'FRAME', absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 60 }, children: [
+            { id: '30:2', name: 'item/首槽', type: 'FRAME', absoluteBoundingBox: box, children: [] },
+          ] },
+        ]),
+      ]),
+    ],
+  }, { config: { bindings: { 'list/槽位组': { slotMapping: { kind: 'array-order' } } } } });
+  assert.equal(blocked.issues.some((row) => row.code === 'SLOT_DEFAULT'), true);
+
+  const answered = compileOnePage({
+    id: '1:2', name: '规范页', type: 'CANVAS', children: [
+      frame('10:1', 'cn_pc', [
+        frame('10:2', 'sec/1-槽位', [
+          { id: '30:1', name: 'list/槽位组@data=slots:navs', type: 'FRAME', absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 60 }, children: [
+            { id: '30:2', name: 'item/首槽', type: 'FRAME', absoluteBoundingBox: box, children: [] },
+          ] },
+        ]),
+      ]),
+    ],
+  }, {
+    config: {
+      bindings: { 'list/槽位组': { slotMapping: { kind: 'array-order' } } },
+      dataContract: { exceptions: { navs: { missing: 'pending' } } },
+    },
+  });
+  assert.equal(answered.issues.some((row) => row.code === 'SLOT_DEFAULT'), false, JSON.stringify(answered.issues));
+  const slotsNode = answered.nodes.find((n) => n.dataBinding?.kind === 'slots');
+  assert.equal(slotsNode.dataBinding.missing, 'pending');
+  const built = buildDataContractResult({
+    inventories: { pc: answered },
+    config: { dataContract: { exceptions: { navs: { missing: 'pending' } } } },
+    languages: ['cn'],
+    baseLanguage: 'cn',
+  });
+  assert.equal(built.questions.length, 0, '已答例外不再问');
+  assert.equal(built.dataCheck.status, 'pass', JSON.stringify(built.dataCheck.issues));
+  const contractRow = built.contract.fields.find((row) => row.bindingKind === 'slots');
+  assert.equal(contractRow.missing, 'pending');
+});
+
+test('bindings.missing 与例外冲突时显式报错而非静默覆盖', () => {
+  const inv = compileOnePage({
+    id: '1:2', name: '规范页', type: 'CANVAS', children: [
+      frame('10:1', 'cn_pc', [
+        frame('10:2', 'sec/1-槽位', [
+          { id: '30:1', name: 'list/槽位组@data=slots:navs', type: 'FRAME', absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 60 }, children: [
+            { id: '30:2', name: 'item/首槽', type: 'FRAME', absoluteBoundingBox: box, children: [] },
+          ] },
+        ]),
+      ]),
+    ],
+  }, {
+    config: {
+      bindings: { 'list/槽位组': { slotMapping: { kind: 'array-order' }, missing: 'design-default' } },
+      dataContract: { exceptions: { navs: { missing: 'pending' } } },
+    },
+  });
+  assert.equal(inv.issues.some((row) => row.code === 'DATA_CONTRACT' && /冲突/.test(row.message)), true);
+});
+
+test('按语言分组的条目缺当前语言：样例生成且不误红，合同标 hide-item', () => {
+  const doc = {
+    id: '1:2', name: '规范页', type: 'CANVAS', children: [
+      frame('10:1', 'cn_pc', [
+        frame('10:2', 'sec/1-新闻', [
+          { id: '40:1', name: 'list/新闻列表@data=list:news', type: 'FRAME', layoutMode: 'VERTICAL', absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 300 }, children: [
+            { id: '40:2', name: 'item/条目@template', type: 'FRAME', absoluteBoundingBox: box, children: [
+              { id: '40:3', name: '标题@field=title.cn', type: 'TEXT', characters: '新闻', absoluteBoundingBox: box, style: { fontFamily: 'FakeSans', fontWeight: 400 } },
+            ] },
+          ] },
+        ]),
+      ]),
+    ],
+  };
+  const compiled = compileOnePage(doc, { config: {} });
+  const built = buildDataContractResult({ inventories: { pc: compiled }, config: {}, languages: ['cn'], baseLanguage: 'cn' });
+  const leaf = built.contract.fields.find((row) => row.bindingKind === 'field');
+  assert.equal(leaf.language, 'by-language');
+  assert.equal(leaf.languageMissing, 'hide-item');
+  const sample = built.sampleIndex.samples.find((row) => row.id === 'missing-current-language');
+  assert.ok(sample, '需要缺当前语言样例');
+  assert.equal(built.dataCheck.status, 'pass', JSON.stringify(built.dataCheck.issues));
+});
+
+test('槽位键映射样例带键且通过校验', () => {
+  const inv = compileOnePage({
+    id: '1:2', name: '规范页', type: 'CANVAS', children: [
+      frame('10:1', 'cn_pc', [
+        frame('10:2', 'sec/1-槽位', [
+          { id: '30:1', name: 'list/槽位组@data=slots:navs', type: 'FRAME', absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 60 }, children: [
+            { id: '30:2', name: 'item/首槽', type: 'FRAME', absoluteBoundingBox: box, children: [
+              { id: '30:3', name: '文字@field=label', type: 'TEXT', characters: '首页', absoluteBoundingBox: box, style: { fontFamily: 'FakeSans', fontWeight: 400 } },
+            ] },
+            { id: '30:4', name: 'item/次槽', type: 'FRAME', absoluteBoundingBox: box, children: [
+              { id: '30:5', name: '文字@field=label', type: 'TEXT', characters: '商城', absoluteBoundingBox: box, style: { fontFamily: 'FakeSans', fontWeight: 400 } },
+            ] },
+          ] },
+        ]),
+      ]),
+    ],
+  }, {
+    config: {
+      bindings: {
+        'list/槽位组': {
+          slotMapping: { kind: 'key', field: 'id', keys: ['home', 'shop'] },
+          missing: 'design-default',
+        },
+      },
+    },
+  });
+  assert.equal(inv.ok, true, JSON.stringify(inv.issues));
+  const built = buildDataContractResult({ inventories: { pc: inv }, config: {}, languages: ['cn'], baseLanguage: 'cn' });
+  assert.equal(built.dataCheck.status, 'pass', JSON.stringify(built.dataCheck.issues));
+  const full = built.sampleIndex.samples.find((row) => row.id === 'success-full');
+  assert.ok(Array.isArray(full.data.navs) && full.data.navs.length === 2);
+  assert.equal(full.data.navs[0].id, 'home');
+  assert.equal(full.data.navs[1].id, 'shop');
+  assert.equal(typeof full.data.navs[0].label, 'string');
+  const contractRow = built.contract.fields.find((row) => row.bindingKind === 'slots');
+  assert.deepEqual(contractRow.mapping?.keys, ['home', 'shop']);
+  assert.equal(contractRow.slots.length, 2);
 });

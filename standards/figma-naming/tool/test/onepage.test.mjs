@@ -190,7 +190,10 @@ test('固定槽位按指定键读取，少值保留默认，不串到其它槽�
   const config={bindings:{'sec/2::list/槽':{slotMapping:{kind:'key',field:'id',keys:['a','b']},missing:'design-default'}}};
   good(compile([slots],config,{rows:[{id:'b',right:'R'},{id:'a',left:'L'}]}));
   good(compile([slots],config,{rows:[{id:'a',left:'L'}]}));
-  assert(has(compile([slots],config,{rows:[{id:'a',right:'R'}]}),'DATA_VALUE'));
+  // R293：槽位缺该字段的值沿默认（不红）；有值但类型错仍拒绝，键未知/重复仍拒绝
+  good(compile([slots],config,{rows:[{id:'a',right:'R'}]}));
+  assert(has(compile([slots],config,{rows:[{id:'a',left:{no:1}}]}),'DATA_VALUE'));
+  assert(has(compile([slots],config,{rows:[{id:'x',left:'L'}]}),'DATA_VALUE'));
 });
 test('恶意原型键和损坏包可报告，不抛出未处理异常',()=>{
   for(const s of ['img/a@part=constructor','constructor/a','img/a@part=__proto__']) assert(parseOnePageName(s).problems.length);

@@ -201,21 +201,29 @@ export function uniqueMatchingResource(resources, face, configDir) {
   return hits.length === 1 ? hits[0] : null;
 }
 
+// 配置写入三态：缺失(absent)可自动补 / 已有合法值保留 /
+// 显式坏 shape(字符串、数组、非对象 faces/resources)原样保留交 compiler 出 FONT_CONFIG。
+// 只有资源恰好唯一有效命中才写；未命中/歧义不造空 face、不改配置形状。
 export function autoReuseFonts(fonts, inventories, configDir, languages, baseLanguage = 'cn') {
-  const next = structuredClone(fonts || {});
-  if (!next.faces) next.faces = {};
-  if (!next.resources) next.resources = {};
+  if (!fonts || typeof fonts !== 'object' || Array.isArray(fonts)) return fonts;
+  const next = structuredClone(fonts);
+  if (next.faces == null) return next; // 无 faces 容器不造（absent 保持 absent）
+  if (typeof next.faces !== 'object' || Array.isArray(next.faces)) return next; // 坏容器不覆盖
+  if (next.resources == null || typeof next.resources !== 'object' || Array.isArray(next.resources)) return next;
   const collected = collectFaces(inventories);
   const langs = listTargetLangs(languages, baseLanguage);
   for (const face of collected.faces) {
     const key = faceKey(face.family, face.weight);
-    if (!next.faces[key] || typeof next.faces[key] !== 'object') next.faces[key] = {};
+    const hasFace = Object.hasOwn(next.faces, key);
+    const existing = hasFace ? next.faces[key] : null;
+    // 显式坏 shape（字符串/数组/null）不覆盖，交 compiler FONT_CONFIG
+    if (hasFace && (!existing || typeof existing !== 'object' || Array.isArray(existing))) continue;
+    const writes = langs.filter((lang) => !hasFace || !Object.hasOwn(existing, lang));
+    if (!writes.length) continue;
     const unique = uniqueMatchingResource(next.resources, face, configDir);
-    if (!unique) continue;
-    for (const lang of langs) {
-      if (typeof next.faces[key][lang] === 'string' && next.faces[key][lang].trim()) continue;
-      next.faces[key][lang] = unique;
-    }
+    if (!unique) continue; // 未命中/歧义命中：不造空 face、不改配置
+    if (!hasFace) next.faces[key] = {};
+    for (const lang of writes) next.faces[key][lang] = unique;
   }
   return next;
 }
@@ -272,9 +280,49 @@ function localizedPartsForFace(face, lang, translations, baseLanguage) {
   });
 }
 
-function sourceLicenseOk(resource) {
-  return typeof resource?.source === 'string' && resource.source.trim()
+// licenseReview 最小合同（不作法律判断、不扫描）：
+// - 对象形：{ status: 'pending'|'confirmed', evidence: 非空字符串（来源/确认依据引用）, note?: string }
+// - 字符串形兼容视为 pending（未决文本）
+// - confirmed 必须 evidence 非空才算确认；裸 licenseConfirmed=true 不得放行；
+//   licenseConfirmed 仅在 licenseReview.status==='confirmed' 且 evidence 非空时是多余但无害的。
+// - 无 licenseReview 且 source/license 非空 → 维持旧行为放行（不扩大人签）。
+export function licenseReviewSummary(resource) {
+  const review = resource?.licenseReview;
+  if (review == null || review === '') return null;
+  if (typeof review === 'string') return { status: 'pending', evidence: null, text: review };
+  if (typeof review === 'object') {
+    return {
+      status: review.status === 'confirmed' ? 'confirmed' : 'pending',
+      evidence: typeof review.evidence === 'string' && review.evidence.trim() ? review.evidence : null,
+      note: typeof review.note === 'string' ? review.note : null,
+    };
+  }
+  return { status: 'pending', evidence: null, text: String(review) };
+}
+
+function licenseReviewNote(resource, ref) {
+  const summary = licenseReviewSummary(resource);
+  if (!summary) return null;
+  if (summary.status === 'confirmed' && summary.evidence) return null;
+  if (summary.status === 'confirmed') {
+    return `许可确认缺少确认依据（资源 ${ref}）：status=confirmed 但 evidence 为空，不得放行`;
+  }
+  let text = summary.text || summary.note || '';
+  if (text.length > 80) text = `${text.slice(0, 80)}…`;
+  return `许可再分发待确认（资源 ${ref}），需明确确认证据（licenseReview: status=pending${text ? ` ${text}` : ''}）`;
+}
+
+function sourceLicenseOk(resource, ref) {
+  const base = typeof resource?.source === 'string' && resource.source.trim()
     && typeof resource?.license === 'string' && resource.license.trim();
+  if (!base) return { ok: false, note: `缺来源或许可说明（资源 ${ref}）` };
+  const pending = licenseReviewNote(resource, ref);
+  if (pending) return { ok: false, note: pending };
+  // 裸 licenseConfirmed=true 而没有 licenseReview 的 confirmed+evidence：不得放行
+  if (resource?.licenseConfirmed === true && !licenseReviewSummary(resource)) {
+    return { ok: false, note: `许可确认缺少确认依据（资源 ${ref}）：裸 licenseConfirmed=true 不是证据，需 licenseReview.status=confirmed 且 evidence 非空` };
+  }
+  return { ok: true };
 }
 
 export function checkFontFiles({
@@ -331,12 +379,13 @@ export function checkFontFiles({
         });
         continue;
       }
-      if (!sourceLicenseOk(resource)) {
+      const licenseCheck = sourceLicenseOk(resource, ref);
+      if (!licenseCheck.ok) {
         blockers.push({
           code: 'FONT_SOURCE',
           object: key,
           lang,
-          missing: `缺来源或许可说明（资源 ${ref}）`,
+          missing: licenseCheck.note,
           locations: face.locations,
         });
       }
@@ -387,6 +436,18 @@ export function checkFontFiles({
       }
       const identity = inspectFontBytes(buffer);
       identities.set(ref, identity);
+      // 声明 format 与真实容器魔数核对：容器格式不一致一律阻断。
+      if (typeof resource.format === 'string' && resource.format.trim() && identity.container) {
+        if (resource.format.trim().toLowerCase() !== identity.container) {
+          blockers.push({
+            code: 'FONT_FORMAT',
+            object: key,
+            lang,
+            missing: `声明 format=${resource.format} 与文件真实容器格式 ${identity.container} 不符（资源 ${ref}）`,
+            locations: face.locations,
+          });
+        }
+      }
       if (identity.packed) {
         blockers.push({
           code: 'FONT_FILE',
@@ -414,6 +475,15 @@ export function checkFontFiles({
           locations: face.locations,
         });
       }
+      if (identity.fvarCorrupt) {
+        blockers.push({
+          code: 'FONT_IDENTITY',
+          object: key,
+          lang,
+          missing: `fvar 表损坏，轴信息不可信（资源 ${ref}）`,
+          locations: face.locations,
+        });
+      }
       if (!fileCoversWeight(identity, face.weight)) {
         blockers.push({
           code: 'FONT_WEIGHT',
@@ -425,7 +495,8 @@ export function checkFontFiles({
       }
       const parts = localizedPartsForFace(face, lang, translations, baseLanguage);
       const needed = parts.map((row) => row.text).join('');
-      if (!needed) continue;
+      // 空文字只跳字形覆盖，不跳 cmap/容器/maxp 的必需结构核验：
+      // missingGlyphs 即便空文本也先完整解析 cmap，结构坏一律 FONT_FILE。
       let missing;
       try {
         missing = missingGlyphs(buffer, needed);
@@ -439,6 +510,7 @@ export function checkFontFiles({
         });
         continue;
       }
+      if (!needed) continue;
       if (missing.length) {
         const hits = parts.filter((row) => missing.some((ch) => row.text.includes(ch))).map((row) => row.loc);
         blockers.push({
@@ -470,12 +542,18 @@ export function buildFontAudit({
     for (const lang of listTargetLangs(languages, baseLanguage)) {
       const ref = mapping[lang] || null;
       const identity = ref ? fontCheck.identities?.get(ref) : null;
+      const license = ref ? licenseReviewSummary(fonts?.resources?.[ref]) : null;
       langs[lang] = {
         resource: ref,
         family: identity?.family || null,
         weight: identity?.weight ?? null,
         axes: identity?.axes || {},
         digest: identity?.sha256 || null,
+        // 许可状态摘要，使 checkEntry 能复算（status/evidence 有无，不带全文）
+        licenseReview: license ? {
+          status: license.status,
+          hasEvidence: Boolean(license.evidence),
+        } : null,
       };
     }
     return {

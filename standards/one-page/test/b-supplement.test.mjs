@@ -999,6 +999,13 @@ function u16(n) {
 function u32(n) {
   return Buffer.from([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]);
 }
+
+function maxpTable(numGlyphs = 2048) {
+  const buf = Buffer.alloc(32);
+  buf.writeUInt32BE(0x00010000, 0);
+  buf.writeUInt16BE(numGlyphs, 4);
+  return buf;
+}
 function buildTinyTtf(chars) {
   const codes = [...chars].map((ch) => ch.codePointAt(0)).sort((a, b) => a - b);
   const segs = codes.map((cp) => ({ start: cp, end: cp }));
@@ -1009,11 +1016,16 @@ function buildTinyTtf(chars) {
     u16(segCount * 2), u16(2), u16(0), u16(segCount * 2 - 2),
     Buffer.concat(segs.map((s) => u16(s.end))), u16(0),
     Buffer.concat(segs.map((s) => u16(s.start))),
-    Buffer.concat(segs.map((s) => u16(1))),
+    // delta 按段计算：(cp + delta) % 0x10000 落在 1..N（有效字形索引），0xffff 哨兵段任意
+    Buffer.concat(segs.map((s) => u16(s.start === 0xffff ? 1 : (0x10000 + 1 - s.start) % 0x10000))),
     Buffer.alloc(segCount * 2),
   ]);
   const cmap = Buffer.concat([u16(0), u16(1), u16(3), u16(1), u32(12), body]);
-  const header = Buffer.concat([u32(0x00010000), u16(1), u16(16), u16(0), u16(0)]);
-  const rec = Buffer.concat([Buffer.from('cmap'), u32(0), u32(12 + 16), u32(cmap.length)]);
-  return Buffer.concat([header, rec, cmap]);
+  const maxp = maxpTable();
+  const header = Buffer.concat([u32(0x00010000), u16(2), u16(32), u16(1), u16(0)]);
+  const rec = Buffer.concat([
+    Buffer.from('cmap'), u32(0), u32(12 + 32), u32(cmap.length),
+    Buffer.from('maxp'), u32(0), u32(12 + 32 + cmap.length), u32(maxp.length),
+  ]);
+  return Buffer.concat([header, rec, cmap, maxp]);
 }

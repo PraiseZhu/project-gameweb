@@ -12,7 +12,31 @@ const refOf = n => ({ id: n.id, scope: n.scope });
 const keyOf = n => `${n.role}/${n.label}`;
 const BINDING_KEYS = ['state', 'fieldTarget', 'slotMapping', 'missing', 'layout', 'pagination', 'motionRequired', 'motion', 'for', 'action', 'functionContract'];
 const LANG_CODE_SET = new Set(LANG_CODES);
-const FONT_RESOURCE_KEYS = [...FONT_RESOURCE_REQUIRED, 'axes'];
+const FONT_RESOURCE_KEYS = [...FONT_RESOURCE_REQUIRED, 'axes', 'licenseReview', 'licenseConfirmed'];
+const LICENSE_REVIEW_KEYS = ['status', 'evidence', 'note'];
+
+function validateLicenseReview(id, review, fail) {
+  if (typeof review === 'string') return; // 字符串形式兼容视为 pending（未决文本）
+  if (!object(review)) {
+    fail('FONT_CONFIG', null, `fonts.resources.${id}.licenseReview 必须是对象或字符串`);
+    return;
+  }
+  for (const key of Object.keys(review)) {
+    if (!LICENSE_REVIEW_KEYS.includes(key)) fail('FONT_CONFIG', null, `fonts.resources.${id}.licenseReview 未知字段 ${key}`);
+  }
+  if (!['pending', 'confirmed'].includes(review.status)) {
+    fail('FONT_CONFIG', null, `fonts.resources.${id}.licenseReview.status 只能是 pending 或 confirmed`);
+  }
+  if (review.evidence !== undefined && !nonempty(review.evidence)) {
+    fail('FONT_CONFIG', null, `fonts.resources.${id}.licenseReview.evidence 必须是非空字符串`);
+  }
+  if (review.note !== undefined && typeof review.note !== 'string') {
+    fail('FONT_CONFIG', null, `fonts.resources.${id}.licenseReview.note 必须是字符串`);
+  }
+  if (review.status === 'confirmed' && !nonempty(review.evidence)) {
+    fail('FONT_CONFIG', null, `fonts.resources.${id}.licenseReview confirmed 必须有非空 evidence 确认依据`);
+  }
+}
 
 function positiveInt(value) {
   return Number.isSafeInteger(value) && value >= 1;
@@ -100,6 +124,10 @@ function validateFonts(fonts, fail) {
       } else if (!nonempty(resource[field])) {
         fail('FONT_CONFIG', null, `fonts.resources.${id} 缺 ${field}`);
       }
+    }
+    if (resource.licenseReview !== undefined) validateLicenseReview(id, resource.licenseReview, fail);
+    if (resource.licenseConfirmed !== undefined && typeof resource.licenseConfirmed !== 'boolean') {
+      fail('FONT_CONFIG', null, `fonts.resources.${id}.licenseConfirmed 必须是布尔`);
     }
     if (resource.axes !== undefined) {
       if (!object(resource.axes) || !Object.keys(resource.axes).length) {
@@ -276,7 +304,7 @@ export function compileOnePage(document, options = {}) {
     const owner = [...raw.values()].find(x => x.type === 'COMPONENT_SET' && x.children?.some(y => y.id === def?.id));
     return owner?.componentPropertyDefinitions?.[property]?.variantOptions || def?.componentPropertyDefinitions?.[property]?.variantOptions || [];
   };
-  const env = { inv, nodes, byId, raw, ancestors, children, descendants, section, sectionNumber, sectionNodes, resolve, cfg, merge, fail, stateOptions };
+  const env = { inv, nodes, byId, raw, ancestors, children, descendants, section, sectionNumber, sectionNodes, resolve, cfg, merge, fail, stateOptions, config };
   compileData(env); compileRelations(env, config); compileMotion(env, config);
   for (const n of nodes.filter(product)) {
     const c=cfg(n);
@@ -296,7 +324,7 @@ export function compileOnePage(document, options = {}) {
   return inv;
 }
 
-function compileData({ inv, nodes, byId, raw, ancestors, children, cfg, merge, fail, stateOptions }) {
+function compileData({ inv, nodes, byId, raw, ancestors, children, cfg, merge, fail, stateOptions, config }) {
   const contexts = new Map(); inv.bindings = [];
   for (const n of nodes) {
     const parent = byId.get(n.parentId);
@@ -332,8 +360,21 @@ function compileData({ inv, nodes, byId, raw, ancestors, children, cfg, merge, f
       }
       if (kind === 'slots') {
         if (!items.length || !['array-order','key'].includes(c.slotMapping?.kind)) fail('SLOT_MAPPING', n, '固定槽位需要明确数组顺序或键映射');
-        if (!['design-default','pending'].includes(c.missing)) fail('SLOT_DEFAULT', n, '固定槽位需要缺值规则');
-        n.dataBinding.slots = items.map(refOf); n.dataBinding.mapping = c.slotMapping; n.dataBinding.missing = c.missing;
+        const display = (tokens) => (tokens || []).map((token) => {
+          if (token && typeof token === 'object') {
+            if (token.itemOf) return '*';
+            if (token.slotOf) return token.key != null ? `slot:${token.key}` : `slot:${token.index}`;
+            return JSON.stringify(token);
+          }
+          return String(token);
+        }).join('.');
+        const exception = resolved ? own(config.dataContract?.exceptions, display(resolved)) : undefined;
+        if (c.missing !== undefined && exception?.missing !== undefined && c.missing !== exception.missing) {
+          fail('DATA_CONTRACT', n, `固定槽位缺值规则的命名配置与 dataContract.exceptions 冲突`);
+        }
+        const missingRule = c.missing ?? exception?.missing;
+        if (!['design-default','pending'].includes(missingRule)) fail('SLOT_DEFAULT', n, '固定槽位需要缺值规则');
+        n.dataBinding.slots = items.map(refOf); n.dataBinding.mapping = c.slotMapping; n.dataBinding.missing = missingRule;
         if (c.slotMapping?.kind === 'key') {
           const keys = c.slotMapping.keys;
           if (!Array.isArray(keys) || keys.length !== items.length || keys.some(x => !nonempty(x)) || new Set(keys).size !== keys.length || !nonempty(c.slotMapping.field)) fail('SLOT_MAPPING', n, '键映射需要字段和逐槽唯一键');
@@ -398,10 +439,22 @@ export function validateOnePageData(inv, data, { state = 'success' } = {}) {
     for (const [kind,b] of Object.entries(n.bindings || {})) {
       if (!b.path) continue;
       for (const value of valuesAtPath(data,b.path)) {
-        if (kind === 'show' && typeof value !== 'boolean') fail(n,'show 字段必须是布尔值');
-        if (kind === 'field' && b.target === 'text' && !['string','number'].includes(typeof value)) fail(n,'文字字段必须是文字或数字');
-        if (kind === 'field' && ['image','link'].includes(b.target) && typeof value !== 'string') fail(n,'图片/链接字段必须是字符串');
-        if (kind === 'state' && !Object.hasOwn(b.mapping?.values || {},String(value))) fail(n,'数据状态没有映射');
+        // R293 局部缺值：缺失/空值沿该字段已有默认，有值仍校验真实类型
+        if (kind === 'show') {
+          if (value == null) continue;
+          if (typeof value !== 'boolean') fail(n,'show 字段必须是布尔值');
+          continue;
+        }
+        if (kind === 'field') {
+          if (value === undefined || value === null || value === '') continue;
+          if (b.target === 'text' && !['string','number'].includes(typeof value)) fail(n,'文字字段必须是文字或数字');
+          if (['image','link'].includes(b.target) && typeof value !== 'string') fail(n,'图片/链接字段必须是字符串');
+          continue;
+        }
+        if (kind === 'state') {
+          if (value == null) continue;
+          if (!Object.hasOwn(b.mapping?.values || {},String(value))) fail(n,'数据状态没有映射');
+        }
       }
     }
   }

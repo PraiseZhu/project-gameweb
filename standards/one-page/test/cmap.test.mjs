@@ -22,7 +22,8 @@ function cmapFormat4(codepoints) {
   const segCount = segs.length;
   const endCodes = Buffer.concat(segs.map((s) => u16(s.end)));
   const startCodes = Buffer.concat(segs.map((s) => u16(s.start)));
-  const deltas = Buffer.concat(segs.map((s) => u16(s.empty ? 1 : 1)));
+  // delta 按段计算：(cp + delta) % 0x10000 必须落在 1..numGlyphs-1，0xffff 哨兵段任意
+  const deltas = Buffer.concat(segs.map((s) => u16(s.empty ? 1 : (0x10000 + 1 - s.start) % 0x10000)));
   const ranges = Buffer.alloc(segCount * 2);
   const length = 16 + segCount * 8;
   return Buffer.concat([
@@ -32,16 +33,25 @@ function cmapFormat4(codepoints) {
   ]);
 }
 
+function maxpTable(numGlyphs = 1024) {
+  const buf = Buffer.alloc(32);
+  buf.writeUInt32BE(0x00010000, 0);
+  buf.writeUInt16BE(numGlyphs, 4);
+  return buf;
+}
+
 function sfntWithCmap(cmap) {
-  const numTables = 1;
+  const maxp = maxpTable();
+  const numTables = 2;
   const header = Buffer.concat([
-    u32(0x00010000), u16(numTables), u16(16), u16(0), u16(0),
+    u32(0x00010000), u16(numTables), u16(32), u16(1), u16(0),
   ]);
-  const offset = 12 + 16;
+  const offset = 12 + 32;
   const rec = Buffer.concat([
     Buffer.from('cmap'), u32(0), u32(offset), u32(cmap.length),
+    Buffer.from('maxp'), u32(0), u32(offset + cmap.length), u32(maxp.length),
   ]);
-  return Buffer.concat([header, rec, cmap]);
+  return Buffer.concat([header, rec, cmap, maxp]);
 }
 
 function wrapCmapTable(body) {
@@ -52,6 +62,20 @@ function buildTtf(chars) {
   const codes = [...chars].map((ch) => ch.codePointAt(0));
   return sfntWithCmap(wrapCmapTable(cmapFormat4(codes)));
 }
+
+test('format 6：允许最后一个 BMP 码位，拒绝数组跨入补充平面', () => {
+  const atBmpLimit = Buffer.concat([u16(6), u16(12), u16(0), u16(0xffff), u16(1), u16(1)]);
+  assert.equal(readCmapCodes(sfntWithCmap(wrapCmapTable(atBmpLimit))).has(0xffff), true);
+  const overflow = Buffer.concat([u16(6), u16(14), u16(0), u16(0xffff), u16(2), u16(1), u16(2)]);
+  assert.throws(() => readCmapCodes(sfntWithCmap(wrapCmapTable(overflow))), /format 6.*码位/);
+});
+
+test('format 6：拒绝声明包含父表内尾随字节的旁路长度', () => {
+  const body = Buffer.concat([u16(6), u16(12), u16(0), u16(0x41), u16(1), u16(1), u16(0)]);
+  assert.equal(readCmapCodes(sfntWithCmap(wrapCmapTable(body))).has(0x41), true);
+  body.writeUInt16BE(14, 2);
+  assert.throws(() => readCmapCodes(sfntWithCmap(wrapCmapTable(body))), /format 6.*长度/);
+});
 
 test('TTF cmap 能读出字符并报告缺字', () => {
   const buf = buildTtf('AB中');
@@ -65,30 +89,44 @@ test('TTF cmap 能读出字符并报告缺字', () => {
 test('WOFF 压缩 cmap 可解压', () => {
   const raw = wrapCmapTable(cmapFormat4([65, 66]));
   const compressed = deflateSync(raw);
+  const maxp = maxpTable();
   const header = Buffer.alloc(44);
   header.write('wOFF', 0);
-  header.writeUInt16BE(1, 12);
+  header.writeUInt32BE(0x00010000, 4);
+  header.writeUInt16BE(2, 12);
   const rec = Buffer.concat([
     Buffer.from('cmap'),
-    u32(44 + 20),
+    u32(44 + 40),
     u32(compressed.length),
     u32(raw.length),
     u32(0),
+    Buffer.from('maxp'),
+    u32(44 + 40 + compressed.length),
+    u32(maxp.length),
+    u32(maxp.length),
+    u32(0),
   ]);
-  const buf = Buffer.concat([header, rec, compressed]);
+  const buf = Buffer.concat([header, rec, compressed, maxp]);
+  buf.writeUInt32BE(buf.length, 8);
   assert.equal(readCmapCodes(buf).has(65), true);
 });
 
 test('WOFF2 brotli cmap 可解压', () => {
   const raw = wrapCmapTable(cmapFormat4([65]));
-  const packed = brotliCompressSync(raw);
+  const maxp = maxpTable();
+  const packed = brotliCompressSync(Buffer.concat([raw, maxp]));
   const header = Buffer.alloc(48);
   header.write('wOF2', 0);
-  header.writeUInt16BE(1, 12);
+  header.writeUInt32BE(0x00010000, 4);
+  header.writeUInt16BE(2, 12);
   header.writeUInt32BE(packed.length, 20);
-  const flags = Buffer.from([0]);
-  const origLen = Buffer.from([raw.length]);
-  const buf = Buffer.concat([header, flags, origLen, packed]);
+  // cmap idx0 flags=0x00；maxp idx4 flags=0x04；各自 origLength（无变换不写 transformLength）
+  const dir = Buffer.concat([
+    Buffer.from([0x00]), Buffer.from([raw.length]),
+    Buffer.from([0x04]), Buffer.from([maxp.length]),
+  ]);
+  const buf = Buffer.concat([header, dir, packed]);
+  buf.writeUInt32BE(buf.length, 8);
   assert.equal(readCmapCodes(buf).has(65), true);
   assert.deepEqual(missingGlyphs(buf, 'A!'), ['!']);
 });

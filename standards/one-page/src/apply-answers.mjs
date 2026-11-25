@@ -115,7 +115,10 @@ function applyTab(config, card, value) {
 
 function putFontResource(config, resourceId, spec, cardId) {
   const required = ['file', 'weights', 'format', 'source', 'license', 'digest'];
-  if (!config.fonts.resources[resourceId]) {
+  // licenseReview/licenseConfirmed 随资源保留/更新：已存在资源再次回答也要更新，
+  // 答案里没带这两个字段时保留原值（不允许因重复回答被静默丢弃）。
+  const existing = config.fonts.resources[resourceId];
+  if (!existing) {
     for (const field of required) {
       if (spec[field] == null) throw new StoppedError('answer-invalid', `${cardId} 缺字体资源字段 ${field}`);
     }
@@ -127,8 +130,13 @@ function putFontResource(config, resourceId, spec, cardId) {
       license: spec.license,
       digest: spec.digest,
       ...(spec.axes ? { axes: spec.axes } : {}),
+      ...(spec.licenseReview != null ? { licenseReview: spec.licenseReview } : {}),
+      ...(spec.licenseConfirmed != null ? { licenseConfirmed: spec.licenseConfirmed } : {}),
     };
+    return;
   }
+  if (spec.licenseReview != null) existing.licenseReview = spec.licenseReview;
+  if (spec.licenseConfirmed != null) existing.licenseConfirmed = spec.licenseConfirmed;
 }
 
 function applyFont(config, card, value) {
