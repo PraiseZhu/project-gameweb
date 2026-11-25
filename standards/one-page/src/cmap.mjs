@@ -1,15 +1,4 @@
-import { inflateSync, brotliDecompressSync } from 'node:zlib';
-
-const WOFF2_TAGS = [
-  'cmap', 'head', 'hhea', 'hmtx', 'maxp', 'name', 'OS/2', 'post',
-  'cvt ', 'fpgm', 'glyf', 'loca', 'prep', 'CFF ', 'VORG', 'EBDT',
-  'EBLC', 'gasp', 'hdmx', 'kern', 'LTSH', 'PCLT', 'VDMX', 'vhea',
-  'vmtx', 'BASE', 'GDEF', 'GPOS', 'GSUB', 'EBSC', 'JSTF', 'MATH',
-  'CBDT', 'CBLC', 'COLR', 'CPAL', 'SVG ', 'sbix', 'acnt', 'avar',
-  'bdat', 'bloc', 'bsln', 'cvar', 'fdsc', 'feat', 'fmtx', 'fvar',
-  'gvar', 'hsty', 'just', 'kern', 'lcar', 'mort', 'morx', 'opbd',
-  'prop', 'trak', 'Zapf', 'Silf', 'Glat', 'Gloc', 'Feat',
-];
+import { inspectFontStructure } from './font-inspect.mjs';
 
 function u8(buf, i) {
   return buf[i];
@@ -31,49 +20,33 @@ function slice(buf, start, length) {
   return buf.subarray(start, start + length);
 }
 
-function read255UInt16(buf, offset) {
-  const code = buf[offset];
-  if (code === 253) return { value: u16(buf, offset + 1), size: 3 };
-  if (code === 254) return { value: buf[offset + 1] + 253, size: 2 };
-  if (code === 255) return { value: buf[offset + 1] + 506, size: 2 };
-  return { value: code, size: 1 };
-}
-
-function readUIntBase128(buf, offset) {
-  let value = 0;
-  for (let i = 0; i < 5; i += 1) {
-    const b = buf[offset + i];
-    if (i === 0 && b === 0x80) throw new Error('invalid UIntBase128');
-    value = (value * 128) + (b & 0x7f);
-    if ((b & 0x80) === 0) return { value, size: i + 1 };
-  }
-  throw new Error('invalid UIntBase128');
-}
-
 const UNICODE_MAX = 0x10ffff;
 
+// Coverage 存码位 → 最终 glyph ID。覆盖必须是有字形存在性的映射：
+// 0 是缺字（不算覆盖），非零还须 < maxp.numGlyphs。ranges 用 [from, to, baseGid, step]：
+// 查询时 gid = baseGid + (cp - from) * step（delta 型 step 恒为 0 且 baseGid 直接存终值不适用，
+// 因此 format4/12 展开为逐码位映射，对 BMP 映射规模可控）。
 class Coverage {
   constructor() {
-    this.ranges = [];
+    this.map = new Map();
   }
 
-  add(cp) {
-    this.addRange(cp, cp);
+  add(cp, gid) {
+    this.map.set(cp, gid);
   }
 
-  addRange(start, end) {
+  addRange(start, end, baseGid) {
     if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return;
     const from = Math.max(0, start);
     const to = Math.min(UNICODE_MAX, end);
-    if (from > to) return;
-    this.ranges.push([from, to]);
+    for (let cp = from; cp <= to; cp += 1) {
+      this.map.set(cp, baseGid + (cp - start));
+    }
   }
 
   has(cp) {
-    for (const [from, to] of this.ranges) {
-      if (cp >= from && cp <= to) return true;
-    }
-    return false;
+    const gid = this.map.get(cp);
+    return typeof gid === 'number' && gid > 0;
   }
 }
 
@@ -128,16 +101,25 @@ function parseFormat4(buf, offset, coverage) {
     const delta = u16(buf, deltaOff + i * 2);
     const range = u16(buf, rangeOff + i * 2);
     if (start > end) throw new Error('cmap format 4 码位范围非法');
+    const subEnd = offset + length;
+    // 非零 idRangeOffset 必须落在 glyphIdArray 区（段表之后）且 2 字节对齐；
+    // 指回段表/奇数偏移按结构损坏拒，不静默跳过。
+    if (range !== 0) {
+      const glyphArrayStart = rangeOff + segCount * 2;
+      const base = rangeOff + i * 2 + range;
+      if (base < glyphArrayStart || base % 2 !== 0) throw new Error('cmap format 4 idRangeOffset 未落在 glyphIdArray');
+      if (base + (end - start) * 2 + 1 >= subEnd) throw new Error('cmap format 4 glyphIdArray 越界');
+    }
     for (let c = start; c <= end; c += 1) {
       let glyph;
       if (range === 0) glyph = (c + delta) & 0xffff;
       else {
         const glyphOff = rangeOff + i * 2 + range + (c - start) * 2;
-        if (glyphOff + 1 >= offset + length) continue;
+        if (glyphOff + 1 >= subEnd) continue;
         const g = u16(buf, glyphOff);
         glyph = g === 0 ? 0 : (g + delta) & 0xffff;
       }
-      if (glyph !== 0 && c !== 0xffff) coverage.add(c);
+      if (c !== 0xffff) coverage.add(c, glyph);
     }
   }
 }
@@ -154,8 +136,7 @@ function parseFormat12(buf, offset, coverage) {
     const end = u32(buf, p + 4);
     const glyphStart = u32(buf, p + 8);
     if (start > end || end > UNICODE_MAX) throw new Error('cmap format 12 码位范围非法');
-    if (glyphStart !== 0) coverage.addRange(start, end);
-    else if (start < end) coverage.addRange(start + 1, end);
+    coverage.addRange(start, end, glyphStart);
     p += 12;
   }
 }
@@ -165,105 +146,50 @@ function parseFormat6(buf, offset, coverage) {
   const length = u16(buf, offset + 2);
   const first = u16(buf, offset + 6);
   const count = u16(buf, offset + 8);
-  if (length < 10 + count * 2 || offset + 10 + count * 2 > buf.length) {
+  if (length !== 10 + count * 2 || offset + length > buf.length) {
     throw new Error('cmap format 6 长度非法');
   }
+  if (first + count > 0x10000) throw new Error('cmap format 6 码位范围非法');
   for (let i = 0; i < count; i += 1) {
-    if (u16(buf, offset + 10 + i * 2) !== 0) coverage.add(first + i);
+    coverage.add(first + i, u16(buf, offset + 10 + i * 2));
   }
 }
 
-function tablesFromSfnt(buf) {
-  if (buf.length < 12) throw new Error('字体文件过短');
-  const numTables = u16(buf, 4);
-  if (12 + numTables * 16 > buf.length) throw new Error('字体表目录越界');
-  const tables = new Map();
-  for (let i = 0; i < numTables; i += 1) {
-    const rec = 12 + i * 16;
-    const offset = u32(buf, rec + 8);
-    const length = u32(buf, rec + 12);
-    if (offset + length > buf.length) throw new Error('字体表越界');
-    tables.set(tagAt(buf, rec), { offset, length });
+/** maxp.numGlyphs：GTT/TTF u32 版本 0x00010000，OTTO/CFF u16 版本 0x0000 */
+function numGlyphsOf(sfnt, table) {
+  if (!table || table.length < 6 || table.offset + table.length > sfnt.length) {
+    throw new Error('maxp 缺失或损坏，无法核验有效字形索引');
   }
-  return tables;
+  return u16(sfnt, table.offset + 4);
 }
 
-function cmapFromSfnt(buf) {
-  const tables = tablesFromSfnt(buf);
-  const cmap = tables.get('cmap');
+/**
+ * cmap 解析唯一入口：与身份/字重共用 inspectFontStructure 的容器与目录结果。
+ * maxp 缺失/损坏、必需 cmap 缺失/结构损坏一律抛错（fail closed），
+ * 不静默成功也不跳过必需结构。
+ */
+function parseCmapFromSfnt(sfnt, tables) {
+  const cmap = tables.cmap;
   if (!cmap) throw new Error('字体缺少 cmap');
-  return parseCmapTable(slice(buf, cmap.offset, cmap.length));
-}
-
-function cmapFromWoff(buf) {
-  if (tagAt(buf, 0) !== 'wOFF') throw new Error('不是 WOFF');
-  const numTables = u16(buf, 12);
-  let p = 44;
-  for (let i = 0; i < numTables; i += 1) {
-    const tag = tagAt(buf, p);
-    const offset = u32(buf, p + 4);
-    const compLength = u32(buf, p + 8);
-    const origLength = u32(buf, p + 12);
-    p += 20;
-    if (tag !== 'cmap') continue;
-    const raw = slice(buf, offset, compLength);
-    const data = compLength < origLength ? inflateSync(raw) : Buffer.from(raw);
-    if (data.length !== origLength) throw new Error('WOFF cmap 解压长度不符');
-    return parseCmapTable(data);
+  if (cmap.offset + cmap.length > sfnt.length) throw new Error('cmap 表越界');
+  const numGlyphs = numGlyphsOf(sfnt, tables.maxp);
+  const coverage = parseCmapTable(sfnt.subarray(cmap.offset, cmap.offset + cmap.length));
+  // 有效字形索引核验：GID 必须 < numGlyphs；0 是缺字；越界一律视为缺字（不信任表内容覆盖）
+  const validated = new Coverage();
+  for (const [cp, gid] of coverage.map) {
+    if (gid > 0 && gid < numGlyphs) validated.add(cp, gid);
   }
-  throw new Error('WOFF 缺少 cmap');
-}
-
-function cmapFromWoff2(buf) {
-  if (tagAt(buf, 0) !== 'wOF2') throw new Error('不是 WOFF2');
-  const numTables = u16(buf, 12);
-  const totalCompressedSize = u32(buf, 20);
-  let p = 48;
-  const directory = [];
-  for (let i = 0; i < numTables; i += 1) {
-    const flags = u8(buf, p);
-    p += 1;
-    const tagIndex = flags & 63;
-    let tag;
-    if (tagIndex === 63) {
-      tag = tagAt(buf, p);
-      p += 4;
-    } else {
-      tag = WOFF2_TAGS[tagIndex];
-      if (!tag) throw new Error(`未知 WOFF2 表 ${tagIndex}`);
-    }
-    const orig = readUIntBase128(buf, p);
-    p += orig.size;
-    const transform = flags >> 6;
-    let transformLength = orig.value;
-    const defaultTransform = (tag === 'glyf' || tag === 'loca') ? 1 : 0;
-    if (transform !== defaultTransform || (transform !== 0 && tag !== 'glyf' && tag !== 'loca')) {
-      const tr = readUIntBase128(buf, p);
-      p += tr.size;
-      transformLength = tr.value;
-    }
-    directory.push({ tag, length: transformLength });
-  }
-  const compressed = slice(buf, p, totalCompressedSize);
-  const unpacked = brotliDecompressSync(compressed);
-  let off = 0;
-  for (const table of directory) {
-    if (table.tag === 'cmap') {
-      return parseCmapTable(slice(unpacked, off, table.length));
-    }
-    off += table.length;
-    if (table.length % 4) off += 4 - (table.length % 4);
-  }
-  throw new Error('WOFF2 缺少 cmap');
+  return validated;
 }
 
 export function readCmapCodes(buffer) {
   const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-  if (buf.length < 12) throw new Error('字体文件过短');
-  const sig = tagAt(buf, 0);
-  if (sig === 'wOFF') return cmapFromWoff(buf);
-  if (sig === 'wOF2') return cmapFromWoff2(buf);
-  return cmapFromSfnt(buf);
+  const structure = inspectFontStructure(buf);
+  if (!structure.ok || !structure.tables) {
+    throw new Error(structure.note || '字体容器或目录损坏，无法核验字符表');
+  }
+  // 打包字体的临时解包视图与裸 sfnt 走同一解析；packed 阻断由 checkFontFiles 表达。
+  return parseCmapFromSfnt(structure.sfnt, structure.tables);
 }
 
 export function missingGlyphs(buffer, text) {

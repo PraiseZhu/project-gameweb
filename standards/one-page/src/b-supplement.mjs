@@ -179,6 +179,10 @@ function writeB2Outputs({ dir, runId, allocated, materials, collected, config, l
   const todosPath = join(outDir, 'todos.json');
   const configPath = join(outDir, 'config.snapshot.json');
   const problemsPath = join(outDir, 'problems.json');
+  const fontAuditPath = join(outDir, 'font-audit.json');
+  const dataContractPath = join(outDir, 'data-contract.json');
+  const sampleIndexPath = join(outDir, 'data-samples.json');
+  const dataCheckPath = join(outDir, 'data-check.json');
   const supplementPath = join(outDir, 'b-supplement.json');
   let l10nPath = null;
   assertNoSecret(collected.questions, secret);
@@ -190,6 +194,10 @@ function writeB2Outputs({ dir, runId, allocated, materials, collected, config, l
   writeJsonFile(todosPath, collected.todos);
   writeJsonFile(configPath, config);
   writeJsonFile(problemsPath, collected.problems);
+  writeJsonFile(fontAuditPath, collected.fontAudit);
+  writeJsonFile(dataContractPath, collected.dataContract);
+  writeJsonFile(sampleIndexPath, collected.sampleIndex);
+  writeJsonFile(dataCheckPath, collected.dataCheck);
   if (l10n) {
     l10nPath = join(outDir, 'l10n-snapshot.json');
     writeRawJson(l10nPath, l10n);
@@ -206,7 +214,12 @@ function writeB2Outputs({ dir, runId, allocated, materials, collected, config, l
       config: artifact(configPath),
       problems: artifact(problemsPath),
       l10n: l10nPath ? artifact(l10nPath) : null,
+      fontAudit: artifact(fontAuditPath),
+      dataContract: artifact(dataContractPath),
+      sampleIndex: artifact(sampleIndexPath),
+      dataCheck: artifact(dataCheckPath),
     },
+    completionContract: 'b2-input-completion/v1',
   });
   assertNoSecret(supplement, secret);
   writeJsonFile(supplementPath, supplement);

@@ -22,6 +22,7 @@ export const QUESTION_TYPES = Object.freeze([
   'l10n-batches',
   'l10n-choice',
   'data-static-or-dynamic',
+  'data-contract-exception',
 ]);
 
 function locationOf(end, node, byId) {

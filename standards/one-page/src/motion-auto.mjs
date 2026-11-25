@@ -113,6 +113,29 @@ export function autoMotions(inventories, existing = {}) {
   const skipped = [];
   const chosen = new Map();
 
+  // 幂等关键：上一轮规范化/显式输入已生效的动效必须先登记进 chosen，
+  // 与本轮新推导的动效走同一套覆盖/嵌套组合规则；否则第二次规范化时
+  // 父级覆盖关系丢失，子节点会被二次补动效（MOTION_OVERLAP/COMPOSITION 漂移）。
+  // 无效规则不登记（编译器会照报 MOTION_RULE/CONTRACT），也不为其补新动效。
+  for (const end of ['pc', 'mobile']) {
+    const inv = inventories[end];
+    if (!inv) continue;
+    const byId = nodeById(inv);
+    for (const node of productNodes(inv)) {
+      if (!node.motion) continue;
+      if (!MOTIONS[node.motion.rule]) continue;
+      chosen.set(node.id, {
+        rule: node.motion.rule,
+        preexisting: true,
+        end,
+        node,
+        section: sectionNumberOf(node, byId),
+        object: `${node.role}/${node.label}`,
+        byId,
+      });
+    }
+  }
+
   for (const end of ['pc', 'mobile']) {
     const inv = inventories[end];
     if (!inv) continue;
@@ -165,6 +188,7 @@ export function autoMotions(inventories, existing = {}) {
     const extra = { unit: row.unit, trigger: row.trigger };
     if (row.device) extra.device = row.device;
     if (row.count) extra.count = row.count;
+    if (row.preexisting) continue;
     if (parentChosen.length) {
       const bad = parentChosen.find((parent) => !nestedOk(parent.rule, row.rule));
       if (bad) {
@@ -183,7 +207,13 @@ export function autoMotions(inventories, existing = {}) {
       }
       extra.composition = 'nested-standard';
     }
-    const ref = identityBindingKey(row.node, { split: true }) || identityBindingKey(row.node);
+    // 复用既有配置键：同一节点若用户已用 loose name / sec 范围键写过 bindings（如分页），
+    // 动效必须并进同一条，不能另起 node:<id> 复制键——否则编译器视为多个配置引用同一对象。
+    const canonical = identityBindingKey(row.node, { split: true }) || identityBindingKey(row.node);
+    const loose = `${row.node.role}/${row.node.label}`;
+    const scoped = Number.isSafeInteger(row.section) ? `sec/${row.section}::${loose}` : null;
+    const candidates = [canonical, scoped, loose, `component:${row.node.componentId}`].filter(Boolean);
+    const ref = candidates.find((key) => Object.hasOwn(bindings, key)) || canonical;
     if (bindings[ref]?.motion) continue;
     const key = uniqueMotionKey(row.rule, row.node);
     if (!motions[key]) motions[key] = motionEntry(row.rule, extra);

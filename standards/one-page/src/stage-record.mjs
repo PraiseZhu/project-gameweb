@@ -717,6 +717,7 @@ export function supplementRecordBody(fields) {
     b1Version: fields.b1Version ?? null,
     fileVersion: fields.fileVersion ?? null,
     result: fields.result,
+    completionContract: fields.completionContract || 'b2-input-completion/v1',
     artifacts: fields.artifacts,
   };
 }
@@ -829,8 +830,15 @@ function verifyBSupplementOutputInner(output, record, recordPath) {
   if (!arts || typeof arts !== 'object' || Array.isArray(arts)) {
     return { ok: false, reason: '补充成果缺 artifacts' };
   }
+  if (output.completionContract !== 'b2-input-completion/v1') {
+    return { ok: false, reason: '缺补缺合同版本，旧 pass 不能冒充新合同通过' };
+  }
   for (const label of ['b1', 'questions', 'translations', 'todos', 'config', 'problems']) {
     const check = verifyArtifact(arts[label], label === 'b1' ? (filePath) => assertInsideRunDir(runDir, filePath) : inB2, label);
+    if (!check.ok) return check;
+  }
+  for (const label of ['fontAudit', 'dataContract', 'sampleIndex', 'dataCheck']) {
+    const check = verifyArtifact(arts[label], inB2, label);
     if (!check.ok) return check;
   }
   if (arts.l10n != null) {
@@ -877,6 +885,26 @@ function verifyBSupplementOutputInner(output, record, recordPath) {
   }
   if (!sameCanonical(collected.todos, todos.value)) {
     return { ok: false, reason: 'todos 与当前派生结果不一致' };
+  }
+  const fontAudit = readJsonSafe(arts.fontAudit.path, 'fontAudit');
+  if (!fontAudit.ok) return fontAudit;
+  if (!sameCanonical(collected.fontAudit, fontAudit.value)) {
+    return { ok: false, reason: 'font-audit 与当前核验结果不一致' };
+  }
+  const dataContract = readJsonSafe(arts.dataContract.path, 'dataContract');
+  if (!dataContract.ok) return dataContract;
+  if (!sameCanonical(collected.dataContract, dataContract.value)) {
+    return { ok: false, reason: 'data-contract 与当前汇总不一致' };
+  }
+  const sampleIndex = readJsonSafe(arts.sampleIndex.path, 'sampleIndex');
+  if (!sampleIndex.ok) return sampleIndex;
+  if (!sameCanonical(collected.sampleIndex, sampleIndex.value)) {
+    return { ok: false, reason: 'data-samples 与当前样例不一致' };
+  }
+  const dataCheck = readJsonSafe(arts.dataCheck.path, 'dataCheck');
+  if (!dataCheck.ok) return dataCheck;
+  if (!sameCanonical(collected.dataCheck, dataCheck.value)) {
+    return { ok: false, reason: 'data-check 与当前检查不一致' };
   }
   return { ok: true };
 }

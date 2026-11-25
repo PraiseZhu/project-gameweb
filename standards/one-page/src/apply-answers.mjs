@@ -115,7 +115,10 @@ function applyTab(config, card, value) {
 
 function putFontResource(config, resourceId, spec, cardId) {
   const required = ['file', 'weights', 'format', 'source', 'license', 'digest'];
-  if (!config.fonts.resources[resourceId]) {
+  // licenseReview/licenseConfirmed 随资源保留/更新：已存在资源再次回答也要更新，
+  // 答案里没带这两个字段时保留原值（不允许因重复回答被静默丢弃）。
+  const existing = config.fonts.resources[resourceId];
+  if (!existing) {
     for (const field of required) {
       if (spec[field] == null) throw new StoppedError('answer-invalid', `${cardId} 缺字体资源字段 ${field}`);
     }
@@ -127,8 +130,13 @@ function putFontResource(config, resourceId, spec, cardId) {
       license: spec.license,
       digest: spec.digest,
       ...(spec.axes ? { axes: spec.axes } : {}),
+      ...(spec.licenseReview != null ? { licenseReview: spec.licenseReview } : {}),
+      ...(spec.licenseConfirmed != null ? { licenseConfirmed: spec.licenseConfirmed } : {}),
     };
+    return;
   }
+  if (spec.licenseReview != null) existing.licenseReview = spec.licenseReview;
+  if (spec.licenseConfirmed != null) existing.licenseConfirmed = spec.licenseConfirmed;
 }
 
 function applyFont(config, card, value) {
@@ -276,6 +284,21 @@ export function applyAnswers({ config, questions, answers, inventories, now }) {
         }
       }
       remember(next.meta, card, value, at);
+    } else if (card.type === 'data-contract-exception') {
+      const choice = value.choice || value.missing;
+      if (!['design-default', 'pending'].includes(choice)) {
+        throw new StoppedError('answer-invalid', `${card.id} 需要 design-default 或 pending`);
+      }
+      if (!next.dataContract || typeof next.dataContract !== 'object' || Array.isArray(next.dataContract)) {
+        next.dataContract = {};
+      }
+      if (!next.dataContract.exceptions || typeof next.dataContract.exceptions !== 'object') {
+        next.dataContract.exceptions = {};
+      }
+      const path = card.path || value.path;
+      if (!path) throw new StoppedError('answer-invalid', `${card.id} 需要 path`);
+      next.dataContract.exceptions[path] = { missing: choice };
+      remember(next.meta, card, { choice, path }, at);
     } else {
       throw new StoppedError('answer-invalid', `未知卡片类型 ${card.type}`);
     }

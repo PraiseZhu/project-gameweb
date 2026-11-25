@@ -167,7 +167,7 @@ grp/没有奖励@part=empty@for=switch/奖励轮播
 
 ## 项目统一配置格式
 
-配置可选字典为 bindings、actions、links、motions、fonts、meta，合并在项目已有配置入口的同一对象。不写 fonts 时行为与旧配置完全一致。meta 只保存 B2 回答痕迹（来源卡片、时间、失效标记、译文列/段落确认），编译器不解释。bindings 的键为唯一对象引用：跨屏写 sec/2::switch/奖励轮播；B2 写入的身份键为 component:<主组件ID>（覆盖该主组件全部实例）或 node:<节点ID>（单实例）。身份键找不到对象时跳过、不报 TARGET。不能手写另一份 ID/几何树。未定义键、错挂配置、冲突或缺目标均阻断。字段、开关和数据类型仍须在设计稿声明。
+配置可选字典为 bindings、actions、links、motions、fonts、meta、dataContract，合并在项目已有配置入口的同一对象。不写 fonts 时行为与旧配置完全一致。dataContract 只保存 B2 字段说明的必要例外，不替代稿上 @show/@data/@field/@state。meta 只保存 B2 回答痕迹（来源卡片、时间、失效标记、译文列/段落确认），编译器不解释。bindings 的键为唯一对象引用：跨屏写 sec/2::switch/奖励轮播；B2 写入的身份键为 component:<主组件ID>（覆盖该主组件全部实例）或 node:<节点ID>（单实例）。身份键找不到对象时跳过、不报 TARGET。不能手写另一份 ID/几何树。未定义键、错挂配置、冲突或缺目标均阻断。字段、开关和数据类型仍须在设计稿声明。
 
 示例（不是通用默认配置，不存在示例对象会报错）：
 

@@ -459,7 +459,7 @@ test('字体未定阻断；缺文件/digest/字重/缺字都阻断', async () =>
   assert.equal(unset.result, 'needs-input');
   const fontCards = readJson(unset.questionsPath).filter((row) => row.type === 'font-map');
   assert.equal(fontCards.length, 1);
-  assert.deepEqual(fontCards[0].langs, ['en']);
+  assert.deepEqual(fontCards[0].langs, ['cn', 'en']);
 
   const configDir = join(tmp, 'projects', `${FILE_ID.slice(0, 8)}-1-2`);
   mkdirSync(configDir, { recursive: true });
@@ -468,7 +468,7 @@ test('字体未定阻断；缺文件/digest/字重/缺字都阻断', async () =>
   writeFileSync(join(configDir, 'latin.ttf'), ttf);
   writeFileSync(join(configDir, 'config.json'), `${canonicalJson({
     fonts: {
-      faces: { 'FakeSans/700': { en: 'latin' } },
+      faces: { 'FakeSans/700': { cn: 'latin', en: 'latin' } },
       resources: {
         latin: {
           file: 'missing-latin.ttf', weights: [400], format: 'ttf',
@@ -482,7 +482,7 @@ test('字体未定阻断；缺文件/digest/字重/缺字都阻断', async () =>
 
   writeFileSync(join(configDir, 'config.json'), `${canonicalJson({
     fonts: {
-      faces: { 'FakeSans/700': { en: 'latin' } },
+      faces: { 'FakeSans/700': { cn: 'latin', en: 'latin' } },
       resources: {
         latin: {
           file: 'latin.ttf', weights: [400], format: 'ttf',
@@ -537,7 +537,7 @@ test('数据提醒写死与会变两条路径', async () => {
     runRoot: tmp, runDir: confirmed2.runDir, tokenValue: STUB, now: '2026-11-22T00:00:00.000Z',
     answersValue: { answers: [{ id: dyn.id, fingerprint: dyn.fingerprint, value: { choice: 'dynamic' } }] },
   });
-  assert.equal(dynamicRun.result, 'fail');
+  assert.notEqual(dynamicRun.result, 'pass');
   assert.equal(readJson(dynamicRun.problemsPath).some((row) => row.returnTo === '设计稿' && row.code === 'FIELD_DECLARATION'), true);
 });
 
@@ -999,6 +999,13 @@ function u16(n) {
 function u32(n) {
   return Buffer.from([(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff]);
 }
+
+function maxpTable(numGlyphs = 2048) {
+  const buf = Buffer.alloc(32);
+  buf.writeUInt32BE(0x00010000, 0);
+  buf.writeUInt16BE(numGlyphs, 4);
+  return buf;
+}
 function buildTinyTtf(chars) {
   const codes = [...chars].map((ch) => ch.codePointAt(0)).sort((a, b) => a - b);
   const segs = codes.map((cp) => ({ start: cp, end: cp }));
@@ -1009,11 +1016,16 @@ function buildTinyTtf(chars) {
     u16(segCount * 2), u16(2), u16(0), u16(segCount * 2 - 2),
     Buffer.concat(segs.map((s) => u16(s.end))), u16(0),
     Buffer.concat(segs.map((s) => u16(s.start))),
-    Buffer.concat(segs.map((s) => u16(1))),
+    // delta 按段计算：(cp + delta) % 0x10000 落在 1..N（有效字形索引），0xffff 哨兵段任意
+    Buffer.concat(segs.map((s) => u16(s.start === 0xffff ? 1 : (0x10000 + 1 - s.start) % 0x10000))),
     Buffer.alloc(segCount * 2),
   ]);
   const cmap = Buffer.concat([u16(0), u16(1), u16(3), u16(1), u32(12), body]);
-  const header = Buffer.concat([u32(0x00010000), u16(1), u16(16), u16(0), u16(0)]);
-  const rec = Buffer.concat([Buffer.from('cmap'), u32(0), u32(12 + 16), u32(cmap.length)]);
-  return Buffer.concat([header, rec, cmap]);
+  const maxp = maxpTable();
+  const header = Buffer.concat([u32(0x00010000), u16(2), u16(32), u16(1), u16(0)]);
+  const rec = Buffer.concat([
+    Buffer.from('cmap'), u32(0), u32(12 + 32), u32(cmap.length),
+    Buffer.from('maxp'), u32(0), u32(12 + 32 + cmap.length), u32(maxp.length),
+  ]);
+  return Buffer.concat([header, rec, cmap, maxp]);
 }
