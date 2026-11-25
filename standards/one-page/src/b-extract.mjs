@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
@@ -23,6 +23,7 @@ import { parseArgv, prepareEnv } from './a-scope.mjs';
 import { assertDesignSets } from './design-sets.mjs';
 import { pairEnds } from './same-modules.mjs';
 import { dedupeProblems, problemFromStopped, problemsFromInventories } from './problems.mjs';
+import { loadProjectConfig } from './project-config.mjs';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_RUN_ROOT = resolve(PACKAGE_ROOT, '../..');
@@ -61,33 +62,6 @@ function writeRawJson(filePath, value) {
     throw new StoppedError('exists', '记录文件已存在，未覆盖。');
   }
   writeFileSync(filePath, `${JSON.stringify(value)}\n`, { encoding: 'utf8', flag: 'wx' });
-}
-
-function projectConfigPath(runRoot, fileKey, nodeId) {
-  const key8 = String(fileKey).slice(0, 8);
-  const node = String(nodeId).replace(/:/g, '-');
-  return join(runRoot, 'projects', `${key8}-${node}`, 'config.json');
-}
-
-function loadProjectConfig(runRoot, fileKey, nodeId) {
-  const full = projectConfigPath(runRoot, fileKey, nodeId);
-  if (!existsSync(full)) return { config: {}, path: full, existed: false };
-  let raw;
-  try {
-    raw = JSON.parse(readFileSync(full, 'utf8'));
-  } catch {
-    throw new StoppedError(
-      'config-invalid',
-      `项目配置不是合法 JSON：${full}。不存在才按空配置运行，坏文件不能当成空配置。`,
-    );
-  }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new StoppedError(
-      'config-invalid',
-      `项目配置必须是 JSON 对象：${full}。`,
-    );
-  }
-  return { config: raw, path: full, existed: true };
 }
 
 function allocB1Dir(dir) {

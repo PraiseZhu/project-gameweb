@@ -22,9 +22,7 @@ export const NEW_PARAMS = Object.freeze(['part', 'show', 'data', 'field', 'state
 export const PARAM_NAMES = Object.freeze([...LEGACY_PARAMS, ...NEW_PARAMS]);
 export const FLAGS = Object.freeze(['x', 'y', 'template']);
 export const FIXED_ASSETS = Object.freeze(['bg', 'kv']);
-export const CONFIG_KEYS = Object.freeze(['bindings', 'actions', 'links', 'motions', 'fonts']);
-export const FONT_ROLES = Object.freeze(['title', 'body', 'number']);
-export const FONT_ROLE_LABELS = Object.freeze({ title: '标题', body: '正文', number: '数字' });
+export const CONFIG_KEYS = Object.freeze(['bindings', 'actions', 'links', 'motions', 'fonts', 'meta']);
 export const FONT_RESOURCE_REQUIRED = Object.freeze(['file', 'weights', 'format', 'source', 'license', 'digest']);
 export const PAGINATION_ENDS = Object.freeze(['pc', 'mobile']);
 export { LANG_CODES };

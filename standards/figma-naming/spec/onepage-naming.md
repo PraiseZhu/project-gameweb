@@ -167,7 +167,7 @@ grp/没有奖励@part=empty@for=switch/奖励轮播
 
 ## 项目统一配置格式
 
-配置可选字典为 bindings、actions、links、motions、fonts，合并在项目已有配置入口的同一对象。不写 fonts 时行为与旧配置完全一致。bindings 的键为唯一对象引用，跨屏写 sec/2::switch/奖励轮播。不能手写另一份 ID/几何树。未定义键、错挂配置、冲突或缺目标均阻断。字段、开关和数据类型仍须在设计稿声明。
+配置可选字典为 bindings、actions、links、motions、fonts、meta，合并在项目已有配置入口的同一对象。不写 fonts 时行为与旧配置完全一致。meta 只保存 B2 回答痕迹（来源卡片、时间、失效标记、译文列/段落确认），编译器不解释。bindings 的键为唯一对象引用：跨屏写 sec/2::switch/奖励轮播；B2 写入的身份键为 component:<主组件ID>（覆盖该主组件全部实例）或 node:<节点ID>（单实例）。身份键找不到对象时跳过、不报 TARGET。不能手写另一份 ID/几何树。未定义键、错挂配置、冲突或缺目标均阻断。字段、开关和数据类型仍须在设计稿声明。
 
 示例（不是通用默认配置，不存在示例对象会报错）：
 
@@ -196,40 +196,30 @@ grp/没有奖励@part=empty@for=switch/奖励轮播
 
 - slotMapping.kind=key 时还须 field（键字段路径）、keys（按设计槽位顺序逐槽唯一键）；missing 为 design-default 或已约定的 pending，超量/重复/未知键都拒绝。
 - pagination.kind=panels 时列 panels 对象引用数组；cards 须有内部 list 和设计明确的 perPage。perPage 为正整数，或只含 pc/mobile 的对象且各端为正整数；旧的单值写法继续有效。页数由消费端据实际数据计算。
-- 可选 fonts：roles 把文字用途 title/body/number（标题/正文/数字）映射到 resources 里的资源名；映射可以是单一资源名，或按精确小写五码 cn/tw/en/jp/kr 分列。resources 每项必填 file、weights（正整数数组）、format、source、license、digest；可变字体可加 axes（各轴 min/max）。未知键、缺字段、错误类型或引用未登记资源均阻断。编译器只校验并原样写入清单，不下载、不加载、不核对磁盘文件是否存在。示例：
+- 可选 fonts：faces 按稿上实际中文字体「字体名/字重」映射到各语言资源名；不再使用 title/body/number 三类用途。每种中文字体×每种外语对应一次。resources 每项必填 file、weights（正整数数组）、format、source、license、digest；可变字体可加 axes（各轴 min/max）。未知键、缺字段、错误类型或引用未登记资源均阻断。编译器只校验并原样写入清单，不下载、不加载、不核对磁盘文件是否存在；缺字/缺字重由 B2 读文件检查。示例：
 
     {
       "fonts": {
-        "roles": {
-          "title": { "cn": "SourceHanSans", "en": "Inter" },
-          "body": "SourceHanSans",
-          "number": "DIN"
+        "faces": {
+          "Source Han Sans/700": { "cn": "SourceHanSans", "en": "Inter", "jp": "SourceHanSans" }
         },
         "resources": {
           "SourceHanSans": {
-            "file": "SourceHanSansSC-Regular.otf",
-            "weights": [400, 700],
+            "file": "SourceHanSansSC-Bold.otf",
+            "weights": [700],
             "format": "otf",
             "source": "Adobe",
             "license": "SIL OFL 1.1",
-            "digest": "sha256:example"
+            "digest": "sha256:not-a-real-digest"
           },
           "Inter": {
-            "file": "Inter-Variable.ttf",
-            "weights": [400, 700],
+            "file": "Inter-Bold.ttf",
+            "weights": [700],
             "axes": { "wght": { "min": 100, "max": 900 } },
             "format": "ttf",
             "source": "RSMS",
             "license": "SIL OFL 1.1",
-            "digest": "sha256:example"
-          },
-          "DIN": {
-            "file": "DIN-Bold.otf",
-            "weights": [700],
-            "format": "otf",
-            "source": "项目字库",
-            "license": "项目授权",
-            "digest": "sha256:example"
+            "digest": "sha256:not-a-real-digest"
           }
         }
       }

@@ -8,6 +8,8 @@
     "inventory": "node ../figma-naming/tool/bin/onepage.mjs",
     "a:scope": "node bin/a-scope.mjs",
     "b:extract": "node bin/b-extract.mjs",
+    "b:supplement": "node bin/b-supplement.mjs",
+    "b:answer": "node bin/b-answer.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {

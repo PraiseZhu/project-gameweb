@@ -100,6 +100,24 @@ test('next是可见屏相对动作，数字sec目标和冲突受校验',()=>{
   assert(has(compile([node('bad','btn/未知@action=missing')]),'ACTION_CONFIG'));
   assert(has(compile([node('bad','btn/脚本@action=x')],{actions:{x:{type:'eval',value:'evil'}}}),'ACTION_TYPE'));
 });
+test('bindings 支持 component/node 身份键；找不到对象不报 TARGET',()=>{
+  const claim=node('comp-claim','领取',[],{type:'COMPONENT'});
+  const set=node('set','grp/领取组件',[claim],{type:'COMPONENT_SET'});
+  const a=node('a','btn/领取',[],{type:'INSTANCE',componentId:'comp-claim'});
+  const b=node('b','btn/领取',[],{type:'INSTANCE',componentId:'comp-claim'});
+  const doc=node('page','cn_pc',[node('s1','sec/1-首页'),node('s2','sec/2-奖励',[a,b]),set]);
+  const inv=compileOnePage(doc,{requestedNodeId:'page',config:{bindings:{'component:comp-claim':{action:{type:'next-section'}}}}});
+  good(inv);
+  assert.equal(get(inv,'a').action.type,'next-section');
+  assert.equal(get(inv,'b').action.type,'next-section');
+  const one=compile([node('a','btn/领取'),node('b','btn/其它')],{bindings:{'node:a':{action:{type:'next-section'}}}});
+  assert.equal(get(one,'a').action.type,'next-section');
+  assert.equal(get(one,'b').action,null);
+  assert(has(one,'ACTION_MISSING'));
+  const missing=compile([node('title','title/标题')],{bindings:{'component:gone':{action:{type:'next-section'}},'node:missing':{action:{type:'next-section'}}}});
+  good(missing);
+  assert.equal(missing.issues.some((row)=>row.code==='TARGET'),false);
+});
 test('配置支持一对多，ref不能成为目标，for不生成动作',()=>{
   const inv=compile([node('a','grp/A'),node('b','grp/B'),node('button','btn/显示@action=both')],{actions:{both:{type:'show-target',targets:['grp/A','grp/B']}}}); good(inv);
   assert.equal(get(inv,'button').action.targets.length,2);
@@ -128,6 +146,21 @@ test('动效引用已定规则；正文、缺参数、数值覆盖、父子重�
   const group=node('g','grp/组@motion=content',[node('title','title/标题@motion=title')]);
   assert(has(compile([group],{motions:{title:motion,content:{rule:'content-left',unit:'whole',trigger:'section-enter',source:'9.2'}}}),'MOTION_OVERLAP'));
   assert(has(compile([node('title','title/标题')],{bindings:{'sec/2::title/标题':{motionRequired:true}}}),'MOTION_MISSING'));
+});
+test('标准分层组合 nested-standard 通过编译；未定组合仍 COMPOSITION',()=>{
+  const fade={rule:'section-fade',unit:'whole',trigger:'section-change',source:'8.1'};
+  const title={rule:'section-title',unit:'whole',trigger:'section-enter',source:'9.2',composition:'nested-standard'};
+  const content={rule:'content-left',unit:'whole',trigger:'section-enter',source:'9.2',composition:'nested-standard'};
+  good(compile([
+    node('title','title/标题@motion=title'),
+    node('g','grp/说明@motion=content'),
+  ],{motions:{fade,title,content},bindings:{
+    'sec/2-奖励':{motion:'fade'},
+    'sec/2::title/标题':{motion:'title'},
+    'sec/2::grp/说明':{motion:'content'},
+  }}));
+  const inside=node('g','grp/组@motion=content',[node('title','title/标题@motion=title')]);
+  assert(has(compile([inside],{motions:{title,content}}),'MOTION_COMPOSITION'));
 });
 test('新包与旧入口隔离，消费者缺能力或包被改写必须拒绝',()=>{
   const inv=compile([node('title','title/标题')]); good(inv); const pack=createOnePagePack(inv);
@@ -175,7 +208,7 @@ test('正式词表和生成速查与机器表同源，动效均有明确出处',
   for(const name of PREFIX_NAMES) assert(spec.includes('| '+name+'/ |'),name);
   for(const [rule,value] of Object.entries(MOTIONS)) assert(spec.includes('| '+rule+' | '+value.standard+' |'),rule);
   assert.equal(readFileSync(new URL('../docs/ONEPAGE-RULES.md',import.meta.url),'utf8'),renderOnePageRules());
-  assert(spec.includes('可选字典为 bindings、actions、links、motions、fonts'));
+  assert(spec.includes('可选字典为 bindings、actions、links、motions、fonts、meta'));
   assert(spec.includes('perPage 为正整数，或只含 pc/mobile'));
   assert(spec.includes('devTodo'));
   assert(spec.includes('figma:name:@link'));
@@ -186,7 +219,7 @@ const fontResource = (name, extra = {}) => ({
   source: 'foundry', license: 'OFL', digest: `sha256:${name}`, ...extra,
 });
 const validFonts = () => ({
-  roles: { title: { cn: 'Sans', en: 'Sans' }, body: 'Sans', number: 'Digit' },
+  faces: { 'Sans/700': { cn: 'Sans', en: 'Sans' }, 'Digit/700': { cn: 'Digit' } },
   resources: { Sans: fontResource('Sans', { axes: { wght: { min: 100, max: 900 } } }), Digit: fontResource('Digit', { weights: [700] }) },
 });
 
@@ -213,17 +246,17 @@ test('fonts 缺必填字段、错误类型、未知键均阻断', () => {
   assert(has(compile([node('title', 'title/标题')], { fonts: badWeights }), 'FONT_CONFIG'));
   const unknownTop = { ...validFonts(), extra: {} };
   assert(has(compile([node('title', 'title/标题')], { fonts: unknownTop }), 'FONT_CONFIG'));
-  const unknownRole = validFonts();
-  unknownRole.roles.heading = 'Sans';
-  assert(has(compile([node('title', 'title/标题')], { fonts: unknownRole }), 'FONT_CONFIG'));
+  const unknownFace = validFonts();
+  unknownFace.faces.heading = { cn: 'Sans' };
+  assert(has(compile([node('title', 'title/标题')], { fonts: unknownFace }), 'FONT_CONFIG'));
   const unknownField = validFonts();
   unknownField.resources.Sans.path = 'x';
   assert(has(compile([node('title', 'title/标题')], { fonts: unknownField }), 'FONT_CONFIG'));
   const missingResource = validFonts();
-  missingResource.roles.body = 'Missing';
+  missingResource.faces['Sans/700'].en = 'Missing';
   assert(has(compile([node('title', 'title/标题')], { fonts: missingResource }), 'FONT_CONFIG'));
   const badLang = validFonts();
-  badLang.roles.title = { 'zh-CN': 'Sans' };
+  badLang.faces['Sans/700'] = { 'zh-CN': 'Sans' };
   assert(has(compile([node('title', 'title/标题')], { fonts: badLang }), 'FONT_CONFIG'));
   assert(has(compile([node('title', 'title/标题')], { fonts: validFonts(), extra: {} }), 'CONFIG_KEY'));
 });
