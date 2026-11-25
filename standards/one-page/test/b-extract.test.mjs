@@ -512,7 +512,7 @@ test('checkEntry：缺成果类型、未知 kind、冒充 b-handoff 都拒绝', 
   assert.equal(missingKind.ok, false);
   assert.match(missingKind.reason, /expectedOutputKind/);
 
-  const unknown = checkB(result.stagePath, extract.version, 'b-handoff');
+  const unknown = checkB(result.stagePath, extract.version, 'unknown-handoff');
   assert.equal(unknown.ok, false);
   assert.match(unknown.reason, /成果类型不符|未知成果类型/);
 
@@ -526,7 +526,7 @@ test('checkEntry：缺成果类型、未知 kind、冒充 b-handoff 都拒绝', 
     expectedOutputKind: 'b-handoff',
   });
   assert.equal(asHandoff.ok, false);
-  assert.match(asHandoff.reason, /未知成果类型/);
+  assert.match(asHandoff.reason, /必须外传/);
 
   const stillExtract = checkB(result.stagePath, extract.version, 'b-extract');
   assert.equal(stillExtract.ok, false);

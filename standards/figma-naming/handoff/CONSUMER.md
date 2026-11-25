@@ -2,7 +2,9 @@
 
 ## 新 one-page 契约
 
-新包为 handoff/onepage-v1，包内清单为 inventory/onepage-v1。见[正式合同与消费责任](../spec/onepage-naming.md)。用 tool/src/onepage/handoff.mjs 的 acceptOnePagePack 检查版本、能力和摘要后，消费者只读已解析的数据/目标/状态/动效关系。可选 `fonts` 是用途 title/body/number 到资源名的映射（可按 cn/tw/en/jp/kr 分列）以及资源索引（file、weights、format、source、license、digest，可变字体可有 axes）；未写则与旧包一致，编译器不下载字文件。卡片分页 `perPage` 为正整数或 `{pc,mobile}`。`devTodo` 只列已声明 `open-link` 且 `url` 为 `null` 的入口（`kind: "link-url-pending"`，来源 `figma:name:@link` 或 `config.bindings:action`），由 H 汇总进开发待办；url 已填或不完整 links 项不收，无动作的 btn/hot 仍阻断。节点诊断带所属 `section`（无所属屏为 `null`）。img 排除文字导出、bg/kv 整图、默认/空状态与减少动画等能力必须真正实现。当前两套游戏 Skill 未接入，旧验包入口会因 schema 不同而拒绝；不得改 schema、删能力或只读旧字段绕过。下文仅适用于旧 ready 包。
+B3 的目录包是 `onepage-b-handoff/v1`。先按 [B3 出包与收包](../../one-page/README.md#b3-出包与收包) 独立核对外传版本、范围和能力，再消费 `production/` 与 `resources/fonts/`。每端仍使用 `handoff/onepage-v1` 包裹 `inventory/onepage-v1`，复用 `acceptOnePagePack`；单端内核通过不代表目录包通过。
+
+见[正式合同与消费责任](../spec/onepage-naming.md)。`fonts.faces` 用稿上家族与字重作键（如 `Noto Sans SC/400`），按实际语言指向 `fonts.resources` 的资源；`file` 相对包根，保留原格式、字重、来源、许可、摘要，可变字体可带轴。无用字则无字体映射。消费者只使用已解析的数据、目标、状态和动效；卡片分页 `perPage` 为正整数或 `{pc,mobile}`。缺译和显式已声明的待填外链按定位进待办，不替无动作的按钮补猜。测试样例只供同版本 QA，不进成品。当前两套游戏 Skill 未接入；不得改 schema、删能力或只读旧字段绕过。下文仅适用于旧 ready 包。
 
 本仓做页只吃 ready 包。真稿，不另造清单。清单只答这一稿画了什么；拉伸/外文字号听做页包里的 `DESIGN.md`。未规范稿流程已废弃，不打 green-draft、不写回判断包。已规范命名稿：稿上有的每一端 `inventory` 出 `ready` → `handoff:pack`（不要 `--allow-green-draft`）。只有 PC 或只有手机时只传那一端。交接包只装箱信息，不导 png。做页按清单 `sliceExport` 自己导图，不猜图层名、不按节点框重导。
 

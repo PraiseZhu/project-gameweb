@@ -10,6 +10,8 @@
     "b:extract": "node bin/b-extract.mjs",
     "b:supplement": "node bin/b-supplement.mjs",
     "b:answer": "node bin/b-answer.mjs",
+    "b:handoff": "node bin/b-handoff.mjs",
+    "handoff:check": "node bin/handoff-check.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "engines": {
