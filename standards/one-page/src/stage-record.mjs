@@ -13,10 +13,11 @@ import {
 } from '../../figma-naming/spec/onepage.mjs';
 import { collectB2 } from './b-collect.mjs';
 import { checkHandoff } from './handoff-check.mjs';
+import { checkDelta } from './delta-check.mjs';
 
 const STAGES = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
 const RESULTS = new Set(['pass', 'fail', 'stopped', 'needs-input']);
-export const KNOWN_OUTPUT_KINDS = Object.freeze(['scope', 'b-extract', 'b-supplement', 'b-handoff']);
+export const KNOWN_OUTPUT_KINDS = Object.freeze(['scope', 'b-extract', 'b-supplement', 'b-handoff', 'b-delta-handoff']);
 
 export function stageRecordBody(fields) {
   return {
@@ -805,15 +806,15 @@ export function loadCurrentB1(dir) {
   return { ok: true, ...best, extract };
 }
 
-function verifyBSupplementOutput(output, record, recordPath) {
+function verifyBSupplementOutput(output, record, recordPath, fontDiscovery) {
   try {
-    return verifyBSupplementOutputInner(output, record, recordPath);
+    return verifyBSupplementOutputInner(output, record, recordPath, fontDiscovery);
   } catch {
     return { ok: false, reason: '补充成果无法校验' };
   }
 }
 
-function verifyBSupplementOutputInner(output, record, recordPath) {
+function verifyBSupplementOutputInner(output, record, recordPath, fontDiscovery) {
   const verified = verifySupplementRecord(output);
   if (!verified.ok) return verified;
   if (record.output.digest !== output.recordDigest) {
@@ -876,6 +877,7 @@ function verifyBSupplementOutputInner(output, record, recordPath) {
     config: config.value,
     l10nSnapshot: l10n.value,
     configDir,
+    fontDiscovery,
   });
   if (collected.result !== output.result || collected.result !== record.result) {
     return { ok: false, reason: '补充成果结果与当前配置复查不一致' };
@@ -959,7 +961,10 @@ export function checkEntry(recordPath, options = {}) {
   if (record.stage !== expectedStage) {
     return { ok: false, reason: `环节不符：记录是 ${record.stage}，期望 ${expectedStage}` };
   }
-  if (record.result !== 'pass') {
+  const inspectB2NeedsInput = options.inspectB2NeedsInput === true
+    && expectedOutputKind === 'b-supplement' && record.result === 'needs-input'
+    && Array.isArray(record.problems) && record.problems.every((problem) => problem?.returnTo === 'B2');
+  if (record.result !== 'pass' && !inspectB2NeedsInput) {
     return { ok: false, reason: `上一环结果不是 pass（${record.result}）` };
   }
   if (record.output?.version !== expectedOutputVersion) {
@@ -970,6 +975,19 @@ export function checkEntry(recordPath, options = {}) {
   }
   if (!KNOWN_OUTPUT_KINDS.includes(expectedOutputKind)) {
     return { ok: false, reason: `未知成果类型：${expectedOutputKind}` };
+  }
+
+  if (expectedOutputKind === 'b-delta-handoff') {
+    const checked = checkDelta({
+      pack: dirname(resolve(recordPath)),
+      expectVersion: expectedOutputVersion,
+      scopeVersion: options.scopeVersion,
+      basePackVersion: options.basePackVersion,
+    });
+    if (!checked.ok) return { ok: false, reason: checked.message };
+    return checked.stage.version === record.version
+      ? { ok: true, record, manifest: checked.manifest }
+      : { ok: false, reason: '环节记录不属于该 B4 变化包' };
   }
 
   if (expectedOutputKind === 'b-handoff') {
@@ -1007,8 +1025,11 @@ export function checkEntry(recordPath, options = {}) {
     const extractOk = verifyBExtractOutput(output, record, recordPath);
     if (!extractOk.ok) return extractOk;
   } else if (expectedOutputKind === 'b-supplement') {
-    const supplementOk = verifyBSupplementOutput(output, record, recordPath);
+    const supplementOk = verifyBSupplementOutput(output, record, recordPath, options.fontDiscovery);
     if (!supplementOk.ok) return supplementOk;
+    if (inspectB2NeedsInput) {
+      return { ok: false, result: 'needs-input', reason: 'B2 仍有必需信息待补问', questions: supplementOk.collected.questions };
+    }
     return { ok: true, record, output, collected: supplementOk.collected };
   } else {
     return { ok: false, reason: `未知成果类型：${expectedOutputKind}` };
