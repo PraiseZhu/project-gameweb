@@ -64,7 +64,7 @@ node standards/one-page/scripts/check-integration.mjs
 npm --prefix standards/one-page test
 ```
 
-当前入口：[auto-one_page](SKILL.md)。A、B1、B2、B3、B4 和 C1 有独立命令；尚未执行 C2～H，也未因此完成新真稿全链验收。
+当前入口：[auto-one_page](SKILL.md)。A、B1、B2、B3、B4、C1 已有独立命令。C2 的本地生成和验包入口见下文；这不代表新真稿或 C3～H 已验收。上文 2026-11-20 的状态是方案历史快照。
 
 ## B2 三级找字
 
@@ -102,3 +102,14 @@ C1 先验证外传的 B3 版本、范围和消费契约，再按同一 Figma 版
 - 符合矢量子集的节点保留 SVG；不符时记录原因并保留完整无损 PNG。展示用 WebP 由现有 Python 3 / Pillow 编码：任何一个像素的 Alpha 小于 255 就走无损并复验每个 RGBA 字节；全不透明则走有损，并记录通道平均绝对误差。固定 quality=90、method=6，不缩放或裁切，解码后复验格式及尺寸。编码器不可用则停止。
 - 只复制 B3 索引中本语实际使用的字体及许可到 css/font/。额外保留的历史资料按 original/、backup/、history/ 分类放入独立的 H23 输入目录，支持中文和空格。清单的 source 原样记录相对源路径，path 使用按源路径生成的安全包内文件名；原字节保留，不改之前发布的轮次。单视频超过 15 MB 或素材与字体文件合计超过 120 MB 只告警，不删改素材。
 - 每轮先独立验暂存包、再原子发布到 c1.rN/。assets/manifest.json 使用 onepage-c-assets/v1，记录摘要、来源、尺寸与 POSIX 相对路径。迁移后用 checkEntry 对包内 stage-record.json 传 expectedStage=C、expectedOutputKind=c-assets、外部预期输出版本及 scopeVersion，无需原 B3、字体库、Figma 或编码器。C1 不生成页面。
+
+## C2 基础语言原生页
+
+    npm --prefix standards/one-page run c:generate -- --pack <B3包> --expect-version <B3版本> --scope-version <范围版本> --consumer-contract <外部合同JSON> --assets-pack <C1包> --assets-version <C1版本> --assets-sha256 <C1清单SHA-256> --run-dir <runs/运行目录>
+
+- 从交接方独立取得预期值，不读取待验包反填参数。B3 核验通过且 C1 确实绑定同一 B3、范围和基础语言，才制作；本命令只读本地包，不请求 Figma／飞书，不复制 QA 样例。仅部署 `page/`，其中 `js/config.js` 是开发配置入口。`c2-build-meta.json` 和 `stage-record.json` 位于成品外，绑定源版本、节点和每个交付文件的摘要。
+- 成品与追溯一起原子发布到 `c2.rN/`。迁移整个轮次后，用 `checkEntry` 对包内 `stage-record.json` 传 `expectedStage=C`、`expectedOutputKind=c-page-generate`、外传 `expectedOutputVersion` 与 `scopeVersion`；不需要 B3/C1 原目录。轮号不参与内容版本。
+- B2 的逐 TAB 补问收集同端面板、来源和选中方式：使用该 TAB 已计划导出的素材节点，或明确填滑动条、无独立选中图。声明写入现有项目配置的 dataContract.c2，绑定设计文件版本与已确认范围（含基础语言）。范围变化后须重新回答当前卡；仅当 B2 核实没有适用对象，才自动移除过期声明。B3 输出核验后的声明；C2 仅从已验 B3 读取，按端、节点及视觉指纹与 C1 对账。同图按文件摘要判断。没有相关功能的旧包可以照常使用；有 TAB 却缺明确关系时不猜。
+- 组件字段同样经过 B2 补问。当前支持叶节点的 text-content 接收器、scalar 形态，以及 string、number、boolean 的非空类型集合。缺值保留初始展示，非法值阻断响应投递，不执行自由文本合同。
+- 已明确母版、唯一状态轴及变体内容时，C2 可制作开合菜单与数据／动作驱动的状态；缺特定变体、实例覆盖对应关系或组件接收器时按对象阻断。不能把阻断当作该需求通过。
+- 浏览器回归需现有 `ego-browser`：`ONEPAGE_C2_BROWSER=1 node --test standards/one-page/test/c-page-generate.test.mjs`。合成夹具和本地静态测试只证明已测场景，不代表真实设计还原、开发组件、正式接口或 C3/C4 已验收。

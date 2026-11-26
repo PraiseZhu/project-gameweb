@@ -21,6 +21,7 @@ import {
   formatFontGap,
 } from './fonts-b2.mjs';
 import { buildDataContractResult } from './data-contract.mjs';
+import { compiledC2Declarations } from './c2-contract.mjs';
 import {
   unwrapSnapshot,
   identifyLanguageColumns,
@@ -48,10 +49,12 @@ const TYPE_ORDER = [
   'button-action',
   'carousel',
   'tab',
+  'tab-panel',
   'font-map',
   'font-candidates',
   'data-static-or-dynamic',
   'data-contract-exception',
+  'component-input',
 ];
 
 function metaOf(config) {
@@ -196,10 +199,15 @@ function sortQuestions(items) {
 function recompile(snapshot, config, platform) {
   const design = assertDesignSets(snapshot.document, platform);
   const inventories = {};
+  const compilerConfig = { ...config };
+  if (Object.hasOwn(config.dataContract ?? {}, 'c2')) {
+    compilerConfig.dataContract = { ...config.dataContract };
+    delete compilerConfig.dataContract.c2;
+  }
   for (const set of design.selected) {
     inventories[set.end] = compileOnePage(snapshot.document, {
       requestedNodeId: set.id,
-      config,
+      config: compilerConfig,
       fileKey: snapshot.fileKey,
     });
   }
@@ -576,11 +584,18 @@ export function collectB2({
     configDir,
     translations: l10n.translations,
   });
+  let c2 = compiledC2Declarations(compiled.inventories, working, scope);
+  if (c2.expired && !c2.hasObjects && c2.faults.length === 1 && Object.values(compiled.inventories).length > 0
+    && Object.values(compiled.inventories).every((inventory) => inventory.ok)) {
+    delete working.dataContract.c2;
+    c2 = compiledC2Declarations(compiled.inventories, working, scope);
+  }
   const dataContract = buildDataContractResult({
     inventories: compiled.inventories,
     config: working,
     languages: scope.languages,
     baseLanguage: scope.baseLanguage,
+    c2: c2.contract,
   });
   const fontBlockers = [...fontCheck.blockers.map((item) => {
     const missing = item.code === 'FONT_UNSET' && discovery.missing.find((row) => row.key === item.object && row.lang === item.lang);
@@ -611,6 +626,7 @@ export function collectB2({
     ...button.questions,
     ...(carousel.questions || carousel),
     ...(tabs.questions || tabs),
+    ...c2.questions,
     ...discovery.questions,
     ...fonts.questions,
     ...data,
@@ -710,6 +726,7 @@ export function collectB2({
   }
 
   const b2Problems = [
+    ...c2.faults.map((item) => problem({ end: item.end, nodeId: item.nodeId, object: 'C2 制作声明', missing: item.message, code: 'C2_DECLARATION', returnTo: 'B2' })),
     ...compiled.problems.filter((item) => {
       if (item.returnTo !== 'B2') return false;
       if (item.code === 'PAGINATION' && (!(carousel.questions || []).length || structureIds.has(item.nodeId))) return false;

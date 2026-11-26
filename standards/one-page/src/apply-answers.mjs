@@ -1,4 +1,5 @@
 import { StoppedError } from './stopped.mjs';
+import { componentInputValid, sameC2Scope, tabSelectionValid } from './c2-contract.mjs';
 import { suggestLinkKey, linkKeyStyle, linkKeysInInventories } from './inventory-walk.mjs';
 import { basename } from 'node:path';
 import { assignLibraryFont, faceKey, FONT_CONTEXT, rejectionKey, verifyCandidate, verifyManualFont } from './fonts-b2.mjs';
@@ -113,6 +114,28 @@ function applyTab(config, card, value) {
     if (!ref) continue;
     config.bindings[ref] = { ...(config.bindings[ref] || {}), for: target };
   }
+}
+
+function applyC2Declaration(config, card, value) {
+  const { end, nodeId } = card.locations[0];
+  const previous = config.dataContract?.c2;
+  const current = sameC2Scope(previous, card) ? previous : { scopeVersion: card.scopeVersion, fileVersion: card.fileVersion, tabs: [], componentInputs: [] };
+  if (card.type === 'tab-panel') {
+    const { panelId, source, selection } = value;
+    if (!card.panelIds.includes(panelId) || typeof source !== 'string' || !source.trim() || source.length > 500
+      || !tabSelectionValid(selection, card.artworkIds)) {
+      throw new StoppedError('answer-invalid', '需要已列出的逐 TAB 面板与明确选中图方式及来源');
+    }
+    if (current.tabs.some((row) => row.end === end && (row.tabId === nodeId
+      || row.switchId === card.switchId && (row.panelId === panelId || row.selection.kind !== selection.kind)))) {
+      throw new StoppedError('answer-invalid', 'H29 逐 TAB 关系与同版已确认的面板或选中图方式冲突');
+    }
+    current.tabs.push({ end, tabId:nodeId, switchId:card.switchId, panelId, source, selection });
+  } else {
+    if (!componentInputValid(value)) throw new StoppedError('answer-invalid', '需要受支持的组件接收器和值约束');
+    current.componentInputs.push({ end, nodeId, ...value });
+  }
+  config.dataContract = { ...config.dataContract, c2: current };
 }
 
 function putFontResource(config, resourceId, spec, cardId) {
@@ -288,6 +311,9 @@ export function applyAnswers({ config, questions, answers, inventories, now }) {
       remember(next.meta, card, value, at);
     } else if (card.type === 'tab') {
       applyTab(next, card, value);
+      remember(next.meta, card, value, at);
+    } else if (['tab-panel','component-input'].includes(card.type)) {
+      applyC2Declaration(next, card, value);
       remember(next.meta, card, value, at);
     } else if (card.type === 'font-map') {
       applyFont(next, card, value);
