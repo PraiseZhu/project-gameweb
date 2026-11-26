@@ -1,6 +1,8 @@
 import { StoppedError } from './stopped.mjs';
 import { suggestLinkKey, linkKeyStyle, linkKeysInInventories } from './inventory-walk.mjs';
-import { faceKey } from './fonts-b2.mjs';
+import { basename } from 'node:path';
+import { assignLibraryFont, faceKey, FONT_CONTEXT, rejectionKey, verifyCandidate, verifyManualFont } from './fonts-b2.mjs';
+import { confirmedLicenseText, copyProjectFont, registerFonts } from './font-library.mjs';
 
 function asObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -166,6 +168,78 @@ function applyFont(config, card, value) {
   putFontResource(config, resourceId, value, card.id);
 }
 
+function fontError(message) {
+  return new StoppedError('answer-invalid', message);
+}
+
+function approveFont(queue, context, asset, { license, evidence, source, needs }) {
+  if (!confirmedLicenseText(license)
+    || typeof evidence !== 'string' || !evidence.trim()) throw fontError('须明确确认字体可商用并允许网页再分发，提供许可说明及依据');
+  queue.push({ context, asset, license, evidence, source, needs });
+}
+
+function applyCandidates(config, card, value, queue) {
+  const context = card[FONT_CONTEXT];
+  if (!context) throw fontError('须使用当前 B2 重新生成的字体候选卡');
+  const { confirmed = [], rejected = [] } = value;
+  if (!Array.isArray(confirmed) || !Array.isArray(rejected) || !(confirmed.length || rejected.length)) throw fontError('需要 confirmed 或 rejected 数组');
+  const seen = new Set();
+  const mappings = new Set();
+  const choose = (id) => {
+    const option = card.options.find((item) => item.id === id);
+    if (!option || seen.has(id)) throw fontError('候选 ID 不存在或重复');
+    seen.add(id);
+    return option;
+  };
+  for (const id of rejected) {
+    const option = choose(id);
+    config.meta.fontRejections ??= {};
+    for (const need of option.matches) config.meta.fontRejections[rejectionKey(option, need)] = true;
+  }
+  for (const selection of confirmed) {
+    asObject(selection, '字体确认');
+    const option = choose(selection.id);
+    const needs = selection.mappings === undefined ? option.matches : (
+      Array.isArray(selection.mappings) ? selection.mappings.map((mapping) => option.matches.find((need) => need.key === mapping?.key && need.lang === mapping?.lang)) : []
+    );
+    if (!needs.length || needs.some((need) => !need)) throw fontError('候选确认只接受当前卡片上的家族/字重及语言');
+    for (const need of needs) {
+      const mapping = JSON.stringify([need.key, need.lang]);
+      if (mappings.has(mapping) || Object.hasOwn(config.fonts?.faces?.[need.key] || {}, need.lang)) throw fontError('确认的候选不能重叠或覆盖已有字体映射');
+      mappings.add(mapping);
+    }
+    const asset = verifyCandidate(option);
+    approveFont(queue, context, asset, { ...selection, source: '本机扫描：' + basename(asset.path), needs });
+  }
+}
+
+function registerManual(config, card, value, queue) {
+  if (!card[FONT_CONTEXT] || !card.fontNeeds) return;
+  const context = card[FONT_CONTEXT];
+  if (value.mappings && Object.keys(value.mappings).some((lang) => !card.fontNeeds.some((need) => need.lang === lang))) {
+    throw fontError('手工字体只允许回答当前卡片待补的语言');
+  }
+  for (const need of card.fontNeeds) {
+    if (value.mappings && !Object.hasOwn(value.mappings, need.lang)) continue;
+    const resource = config.fonts.resources[config.fonts.faces[need.key]?.[need.lang]];
+    if (resource?.licenseReview?.status !== 'confirmed') throw fontError('新提供的字体须明确确认可商用与网页再分发，确认前保持待答');
+    const asset = verifyManualFont(resource, context.configDir, [need]);
+    approveFont(queue, context, asset, { ...resource, evidence: resource.licenseReview.evidence, needs: [need] });
+  }
+}
+
+function persistFonts(next, queue, at) {
+  if (!queue.length) return;
+  const { configDir, libraryDir } = queue[0].context;
+  if (queue.some(({ context }) => context.configDir !== configDir || context.libraryDir !== libraryDir)) throw fontError('字体答案不属于同一个页面');
+  const entries = registerFonts(libraryDir, queue, at);
+  next.fonts ??= { faces: {}, resources: {} };
+  for (const approved of queue) {
+    copyProjectFont(configDir, approved.asset);
+    for (const need of approved.needs) assignLibraryFont(next.fonts, need, approved.asset, entries.get(approved.asset.identity.sha256));
+  }
+}
+
 export function applyAnswers({ config, questions, answers, inventories, now }) {
   const next = structuredClone(config || {});
   if (!next.meta) next.meta = {};
@@ -182,6 +256,7 @@ export function applyAnswers({ config, questions, answers, inventories, now }) {
   const style = linkKeyStyle(linkKeysInInventories(inventories)).style;
   const at = now || new Date().toISOString();
   const seenIds = new Set();
+  const fontApprovals = [];
   for (const row of list) {
     asObject(row, '答案');
     if (seenIds.has(row.id)) throw new StoppedError('answer-invalid', `答案 ${row.id} 重复`);
@@ -216,6 +291,12 @@ export function applyAnswers({ config, questions, answers, inventories, now }) {
       remember(next.meta, card, value, at);
     } else if (card.type === 'font-map') {
       applyFont(next, card, value);
+      try { registerManual(next, card, value, fontApprovals); }
+      catch (error) { throw fontError(error.message); }
+      remember(next.meta, card, value, at);
+    } else if (card.type === 'font-candidates') {
+      try { applyCandidates(next, card, value, fontApprovals); }
+      catch (error) { throw fontError(error.message); }
       remember(next.meta, card, value, at);
     } else if (card.type === 'l10n-columns') {
       if (!Array.isArray(value.columns)) throw new StoppedError('answer-invalid', `${card.id} 需要 columns`);
@@ -303,5 +384,7 @@ export function applyAnswers({ config, questions, answers, inventories, now }) {
       throw new StoppedError('answer-invalid', `未知卡片类型 ${card.type}`);
     }
   }
+  try { persistFonts(next, fontApprovals, at); }
+  catch (error) { throw fontError(error.message); }
   return next;
 }

@@ -9,10 +9,14 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 import { runAScope } from '../src/a-scope.mjs';
 import { runBExtract } from '../src/b-extract.mjs';
-import { runBSupplement } from '../src/b-supplement.mjs';
-import { runBAnswer } from '../src/b-answer.mjs';
+import { runBSupplement as runBSupplementRaw } from '../src/b-supplement.mjs';
+import { runBAnswer as runBAnswerRaw } from '../src/b-answer.mjs';
 import { checkEntry } from '../src/stage-record.mjs';
 import { canonicalJson } from '../src/canonical.mjs';
+
+const ISOLATED_FONT_DISCOVERY = Object.freeze({ directories: [] });
+const runBSupplement = (options = {}) => runBSupplementRaw({ fontDiscovery: ISOLATED_FONT_DISCOVERY, ...options });
+const runBAnswer = (options = {}) => runBAnswerRaw({ fontDiscovery: ISOLATED_FONT_DISCOVERY, ...options });
 
 const CANVAS_ID = '1:2';
 const FILE_ID = 'TESTFILEKEY';
@@ -196,6 +200,7 @@ test('黄金全链：数据丰富双端稿 pass 且 checkEntry 三次复查稳�
     resourceId: 'fake',
     file: 'fake.ttf', weights: [400], format: 'ttf',
     source: 'test-foundry', license: 'OFL', digest,
+    licenseReview: { status: 'confirmed', evidence: '黄金样本许可确认：可商用且允许随网页再分发' },
   };
 
   // supplement → answer 循环直到 pass（真实 producer 同一条链）

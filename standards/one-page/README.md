@@ -66,6 +66,14 @@ npm --prefix standards/one-page test
 
 当前入口：[auto-one_page](SKILL.md)。A、B1、B2 和 B3 有独立命令；B4、C～H 不由这些命令执行，也未因此完成新真稿全链验收。
 
+## B2 三级找字
+
+- 已存在的项目字体映射保留并照常校验。待补项先读运行根目录的 `fonts-library/`，复查唯一真实身份、原文件摘要、字重/轴、许可和当前文案字形；只有全部通过才直接复用。
+- 公共库未命中才扫本机。macOS 默认扫 `~/Library/Fonts`（含子目录）与 `/Library/Fonts`；Windows 扫系统的 `Fonts`。可用 `ONEPAGE_FONT_DIRS` 按操作系统路径分隔符指定替代目录（macOS 用冒号、Windows 用分号；空值禁扫），或由调用方传 `fontDiscovery.directories`。只读本地，不下载，不读 TTC。
+- 单页扫描结果合并为一张 `font-candidates` 卡。红标表示系统、限制或未知许可，不代表可用。用 `b:answer` 回答当前卡的 ID 和指纹；`confirmed` 每项包含 `{ id, license, evidence }`，也可用 `mappings: [{ key, lang }]` 仅确认卡内部分字重/语言；`rejected` 是拒绝的候选 ID 数组。只有确认允许商用并允许网页再分发才入库；拒绝或未答不交付。
+- 无候选的条目按语言列出处和缺字。手工补件用相对项目配置目录的原文件，并在 `font-map` 的资源中提交 `licenseReview: { status: "confirmed", evidence }`，或改稿替换。不做近似替代。
+- `fonts-library/registry.json` 与字体原件、许可说明一起保存；扫描缓存仅用于索引，不能给字体放行。项目内另存一份按摘要命名的完整原件供 B3 打包；B3 包迁移后无需公共库或原扫描目录。若进程中断遗留 `.registry-lock`，先确认没有写入者，再按授权处置，不手改登记绕过许可或摘要失败。
+
 ## B3 出包与收包
 
 ```bash

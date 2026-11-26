@@ -17,6 +17,8 @@ import {
   missingLangVariants,
   autoReuseFonts,
   buildFontAudit,
+  discoverFonts,
+  formatFontGap,
 } from './fonts-b2.mjs';
 import { buildDataContractResult } from './data-contract.mjs';
 import {
@@ -47,6 +49,7 @@ const TYPE_ORDER = [
   'carousel',
   'tab',
   'font-map',
+  'font-candidates',
   'data-static-or-dynamic',
   'data-contract-exception',
 ];
@@ -457,6 +460,7 @@ export function collectB2({
   config,
   l10nSnapshot = null,
   configDir = null,
+  fontDiscovery,
 } = {}) {
   const working = structuredClone(config || {});
   if (working.bindings) {
@@ -543,12 +547,6 @@ export function collectB2({
       ...Object.keys(liveMeta.dynamicNeeded || {}),
     ]),
   });
-  const fonts = buildFontQuestions(compiled.inventories, {
-    languages: scope.languages,
-    baseLanguage: scope.baseLanguage,
-    fonts: working.fonts,
-    answeredFaces: answeredKeysFromMeta(liveMeta, 'font-map'),
-  });
   const texts = collectCopyTexts(compiled.inventories);
   const l10n = l10nCardsAndResult({
     snapshot: l10nSnapshot,
@@ -556,6 +554,19 @@ export function collectB2({
     texts,
     languages: scope.languages,
     baseLanguage: scope.baseLanguage,
+  });
+  const discovery = discoverFonts({ inventories: compiled.inventories, languages: scope.languages, baseLanguage: scope.baseLanguage, configDir, fontDiscovery,
+    fonts: working.fonts, translations: l10n.translations, rejected: liveMeta.fontRejections });
+  if (!isDeepStrictEqual(discovery.fonts, working.fonts)) {
+    working.fonts = discovery.fonts;
+    compiled = recompile(snapshot, working, scope.platform);
+  }
+  const fonts = buildFontQuestions(compiled.inventories, {
+    languages: scope.languages,
+    baseLanguage: scope.baseLanguage,
+    fonts: working.fonts,
+    answeredFaces: answeredKeysFromMeta(liveMeta, 'font-map'),
+    discovery,
   });
   const fontCheck = checkFontFiles({
     inventories: compiled.inventories,
@@ -571,7 +582,10 @@ export function collectB2({
     languages: scope.languages,
     baseLanguage: scope.baseLanguage,
   });
-  const fontBlockers = fontCheck.blockers;
+  const fontBlockers = [...fontCheck.blockers.map((item) => {
+    const missing = item.code === 'FONT_UNSET' && discovery.missing.find((row) => row.key === item.object && row.lang === item.lang);
+    return missing ? { ...item, ...missing, missing: formatFontGap(missing) } : item;
+  }), ...discovery.blockers];
   const fontDesign = fontBlockers.filter((item) => item.returnTo === '设计稿').map((item) => problem({
     end: item.locations?.[0]?.end ?? null,
     section: item.locations?.[0]?.section ?? null,
@@ -597,6 +611,7 @@ export function collectB2({
     ...button.questions,
     ...(carousel.questions || carousel),
     ...(tabs.questions || tabs),
+    ...discovery.questions,
     ...fonts.questions,
     ...data,
     ...dataContract.questions,

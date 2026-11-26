@@ -138,6 +138,7 @@ async function runBSupplementInner(options) {
     config: loaded.config,
     l10nSnapshot: l10n,
     configDir: dirname(loaded.path),
+    fontDiscovery: options.fontDiscovery,
   });
 
   if (configsDiffer(loaded.config, collected.workingConfig)) {
@@ -311,6 +312,7 @@ export async function main(argv, extras = {}) {
     runId: args.runId,
     l10nSnapshot: args.l10nSnapshot,
     tokenValue: extras.tokenValue,
+    fontDiscovery: extras.fontDiscovery,
   });
   const errOut = extras.err ?? console.error;
   const out = extras.log ?? console.log;
