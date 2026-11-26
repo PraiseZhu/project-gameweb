@@ -13,7 +13,8 @@
     "b:handoff": "node bin/b-handoff.mjs",
     "handoff:check": "node bin/handoff-check.mjs",
     "test": "node --test test/*.test.mjs",
-    "b:delta": "node bin/b-delta.mjs"
+    "b:delta": "node bin/b-delta.mjs",
+    "c:assets": "node bin/c-assets.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -193,7 +193,7 @@ function checkContents(payloads, manifest, consumer) {
   return verifyFontFiles(config, read(PACK_FILES.fonts), payloads, scope.languages, nodesByEnd);
 }
 
-export function checkHandoff({ pack, expectVersion, scopeVersion, consumerContract } = {}, { beforePublish = false } = {}) {
+export function checkHandoff({ pack, expectVersion, scopeVersion, consumerContract } = {}, { beforePublish = false, includePayloads = false } = {}) {
   try {
     requireAt(isDigest(expectVersion) && isDigest(scopeVersion), '调用参数', '必须外传完整预期包版本和范围版本');
     const consumer = typeof consumerContract === 'string' ? JSON.parse(readFileSync(consumerContract, 'utf8')) : consumerContract;
@@ -240,7 +240,7 @@ export function checkHandoff({ pack, expectVersion, scopeVersion, consumerContra
         && same(stage.output, { kind: 'b-handoff', version, path: 'manifest.json', digest: manifestSha256 })
         && same(stage.inputs, stageInputs(upstream)), STAGE_FILE, '缺已验包的 B3 环节记录或绑定不一致');
     }
-    return { ok: true, version, scopeVersion, manifestSha256, stage, ends };
+    return { ok: true, version, scopeVersion, manifestSha256, stage, ends, ...(includePayloads ? { manifest, payloads } : {}) };
   } catch (error) {
     const location = error.location ?? '交接包';
     return { ok: false, location, responsibility: location === 'consumer-contract' || location === '调用参数' ? 'C 收包入口' : 'B3',

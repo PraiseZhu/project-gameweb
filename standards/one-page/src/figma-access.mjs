@@ -77,7 +77,7 @@ function canvasFromNodes(data, nodeId) {
   };
 }
 
-async function figmaGet(path, { fetchImpl, timeoutMs, tokenValue }) {
+async function figmaGet(path, { fetchImpl, timeoutMs, tokenValue, redirect }) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
@@ -86,6 +86,7 @@ async function figmaGet(path, { fetchImpl, timeoutMs, tokenValue }) {
       res = await fetchImpl(`${API}${path}`, {
         headers: { 'X-Figma-Token': tokenValue },
         signal: ac.signal,
+        redirect,
       });
     } catch (err) {
       if (ac.signal.aborted || err?.name === 'AbortError') {
@@ -156,9 +157,32 @@ export async function fetchFigmaSnapshot({
   fetchImpl = globalThis.fetch,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   tokenValue,
+  fileVersion,
 } = {}) {
   const secret = readToken(tokenValue);
   const path = `/v1/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(nodeId)}&geometry=paths`;
-  const data = await figmaGet(path, { fetchImpl, timeoutMs, tokenValue: secret });
+  const query = fileVersion ? '&version=' + encodeURIComponent(fileVersion) : '';
+  const data = await figmaGet(path + query, { fetchImpl, timeoutMs, tokenValue: secret, redirect: fileVersion ? 'error' : undefined });
   return canvasFromNodes(data, nodeId);
+}
+
+export async function fetchFigmaRender({ fileKey, fileVersion, nodeId, format, absoluteBounds,
+  fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS, tokenValue }) {
+  const secret = readToken(tokenValue);
+  const query = new URLSearchParams({ ids: nodeId, version: fileVersion, format, scale: '1',
+    contents_only: 'true', use_absolute_bounds: String(absoluteBounds), svg_outline_text: 'true' });
+  const data = await figmaGet('/v1/images/' + encodeURIComponent(fileKey) + '?' + query,
+    { fetchImpl, timeoutMs, tokenValue: secret, redirect: 'error' });
+  const address = data?.images?.[nodeId];
+  const url = typeof address === 'string' && URL.canParse(address) ? new URL(address) : null;
+  if (data?.err || url?.protocol !== 'https:' || url.username || url.password) {
+    throw new StoppedError('render-missing', 'Figma 没有返回有效的素材导出地址。');
+  }
+  try {
+    const response = await fetchImpl(url.href, { signal: AbortSignal.timeout(timeoutMs), redirect: 'error' });
+    if (!response.ok) throw new Error();
+    return Buffer.from(await response.arrayBuffer());
+  } catch {
+    throw new StoppedError('render-download', '无法下载 Figma 导出素材。');
+  }
 }
