@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { runAScope } from '../src/a-scope.mjs';
 import { runBExtract } from '../src/b-extract.mjs';
-import { runBSupplement } from '../src/b-supplement.mjs';
+import { runBSupplement as runBSupplementRaw } from '../src/b-supplement.mjs';
+import { runBAnswer as runBAnswerRaw } from '../src/b-answer.mjs';
 import { projectConfigPath, writeProjectConfigAtomic } from '../src/project-config.mjs';
 import { byteDigest, checkHandoff, endFile, HANDOFF_CONSUMER, PACK_FILES, STAGE_FILE } from '../src/handoff-check.mjs';
 import { checkEntry, buildStageRecord } from '../src/stage-record.mjs';
@@ -15,34 +16,43 @@ import { sha256Hex } from '../src/canonical.mjs';
 import { indexVisualFingerprints } from '../src/visual-fingerprint.mjs';
 import { validateOnePageData } from '../../figma-naming/tool/src/onepage/compile.mjs';
 
+const ISOLATED_FONT_DISCOVERY = Object.freeze({ directories: [] });
+const runBSupplement = (options = {}) => runBSupplementRaw({ fontDiscovery: ISOLATED_FONT_DISCOVERY, ...options });
+const runBAnswer = (options = {}) => runBAnswerRaw({ fontDiscovery: ISOLATED_FONT_DISCOVERY, ...options });
+
 const fileKey = 'TESTFILEKEY';
 const tokenValue = 'b3-fixture-token';
 const nodeId = '1:2';
+const ttfFont = { family: 'Noto Sans SC', format: 'ttf', characters: '首页', license: 'SIL OFL 1.1',
+  url: new URL('../../../skills/torchlight-web/fonts/NotoSansSC-VF.ttf', import.meta.url) };
+const staticOtf = { family: 'One Page Fixture', format: 'otf', characters: '首页金币A', license: 'Public domain geometric fixtures for testing.',
+  url: new URL('./fixtures/fonts/one-page-static.otf', import.meta.url) };
 const json = (path) => JSON.parse(readFileSync(path));
 const write = (path, value) => writeFileSync(path, JSON.stringify(value) + '\n');
 const bin = (name) => fileURLToPath(new URL('../bin/' + name + '.mjs', import.meta.url));
-const cli = (name, args) => JSON.parse(execFileSync(process.execPath, [bin(name), ...args], { encoding: 'utf8' }));
+const cli = (name, args) => JSON.parse(execFileSync(process.execPath, [bin(name), ...args], { encoding: 'utf8', env: { ...process.env, ONEPAGE_FONT_DIRS: '' } }));
 
 function frame(id, name, children = [], props = {}) {
   return { id, name, type: 'FRAME', absoluteBoundingBox: { x: 0, y: 0, width: 800, height: 600 }, children, ...props };
 }
 
-function design(end, index, dynamic, localized) {
+function design(end, index, dynamic, localized, { family, characters }) {
   const list = frame(index + ':8', 'list/奖励列表@data=list:rewards', [frame(index + ':9', 'item/条目@template', [
     frame(index + ':10', '标题@field=title.cn', [], { type: 'TEXT', characters: '金币', style: { fontFamily: 'Noto Sans SC', fontWeight: 400 } }),
   ])], { layoutMode: 'VERTICAL' });
   return frame(index + ':1', 'cn_' + end, [frame(index + ':2', 'sec/1-首页', [
     frame(index + ':3', 'img/背景', [], { fills: [{ type: 'IMAGE', imageRef: 'golden-image' }] }),
-    frame(index + ':4', '文案', [], { type: 'TEXT', characters: '首页', style: { fontFamily: 'Noto Sans SC', fontWeight: 400 } }),
+    frame(index + ':4', '文案', [], { type: 'TEXT', characters, style: { fontFamily: family, fontWeight: 400 } }),
     frame(index + ':5', 'btn/活动@link=event'),
     ...(localized ? [frame(index + ':6', '英文栏目', [], { type: 'TEXT', characters: 'NEWS', style: { fontFamily: 'Bebas Neue', fontWeight: 400 } })] : []),
     ...(dynamic ? [frame(index + ':7', 'switch/轮播', [list]), frame(index + ':11', 'grp/状态@show=enabled', [], { visible: false })] : []),
   ])]);
 }
 
-async function golden(root, { platform = 'pc', languages = 'cn', dynamic = false, translations = null } = {}) {
+async function golden(root, { platform = 'pc', languages = 'cn', dynamic = false, translations = null, discoveryFont = null } = {}) {
   const localized = languages !== 'cn';
-  const document = { id: nodeId, name: '规范页', type: 'CANVAS', children: [design('pc', 10, dynamic, localized), ...(platform === 'pc+mobile' ? [design('mobile', 20, dynamic, localized)] : [])] };
+  const fontFixture = discoveryFont || ttfFont;
+  const document = { id: nodeId, name: '规范页', type: 'CANVAS', children: [design('pc', 10, dynamic, localized, fontFixture), ...(platform === 'pc+mobile' ? [design('mobile', 20, dynamic, localized, fontFixture)] : [])] };
   const body = { version: '1234', nodes: { [nodeId]: { document } } };
   const fetchImpl = async () => ({ ok: true, json: async () => body });
   const options = { url: 'https://www.figma.com/design/TESTFILEKEY/name?node-id=1-2', languages, baseLanguage: 'cn', platform, runRoot: root, tokenValue, fetchImpl };
@@ -53,10 +63,102 @@ async function golden(root, { platform = 'pc', languages = 'cn', dynamic = false
   assert.equal(scope.ok, true, scope.message);
   const b1 = await runBExtract({ runRoot: root, runDir, tokenValue, fetchImpl });
   assert.equal(b1.ok, true, JSON.stringify(b1.problems));
-  const font = readFileSync(new URL('../../../skills/torchlight-web/fonts/NotoSansSC-VF.ttf', import.meta.url));
+  const font = readFileSync(fontFixture.url);
   const configPath = projectConfigPath(root, fileKey, nodeId);
   const fontPath = join(configPath, '..', 'gold.ttf');
   const digest = byteDigest(font);
+  if (discoveryFont) {
+    const { family, format, license, characters } = discoveryFont;
+    const evidence = '测试确认原件可商用并可随网页再分发';
+    const library = join(root, 'fonts-library');
+    const directory = join(root, 'scan', 'EagleApp');
+    mkdirSync(directory, { recursive: true });
+    const origin = join(directory, 'not-the-family-name.' + format);
+    writeFileSync(origin, font);
+    const previous = process.env.ONEPAGE_FONT_DIRS;
+    process.env.ONEPAGE_FONT_DIRS = join(root, 'scan');
+    try {
+      const before = await runBSupplement({ runRoot: root, runDir, tokenValue, fontDiscovery: { directories: [join(root, 'scan')] } });
+      assert.equal(before.result, 'needs-input');
+      const [card] = json(before.questionsPath).filter((item) => item.type === 'font-candidates');
+      assert.ok(card);
+      assert.deepEqual(card.options.map(({ id }) => id), [digest]);
+      const { identity } = card.options[0];
+      assert.equal(identity.family, family);
+      assert.equal(identity.container, format);
+      if (format === 'otf') {
+        assert.equal(identity.variable, false);
+        assert.equal(identity.weight, 400);
+      }
+      for (const name of ['registry.json', 'files', 'licenses']) assert.equal(existsSync(join(library, name)), false);
+      const answersValue = [{ id: card.id, fingerprint: card.fingerprint, value: {
+        confirmed: [{ id: digest, license, evidence }],
+      } }];
+      const answered = await runBAnswer({ runRoot: root, runDir, tokenValue, answersValue, fontDiscovery: { directories: [join(root, 'scan')] } });
+      assert.equal(answered.ok, true, JSON.stringify(answered));
+      const { version, entries } = json(join(library, 'registry.json'));
+      assert.equal(version, 1);
+      assert.equal(entries.length, 1);
+      const [entry] = entries;
+      assert.equal(entry.sha256, digest);
+      assert.deepEqual(entry.identity, identity);
+      assert.equal(entry.licenseStatus, 'commercial-confirmed');
+      assert.equal(entry.license, license);
+      assert.equal(entry.evidence, evidence);
+      const original = join(library, entry.file);
+      const permission = join(library, entry.licenseFile);
+      assert.deepEqual(readdirSync(join(library, 'files')).map((name) => 'files/' + name), [entry.file]);
+      assert.deepEqual(readdirSync(join(library, 'licenses')).map((name) => 'licenses/' + name), [entry.licenseFile]);
+      assert.equal(existsSync(join(library, '.registry-lock')), false);
+      assert.ok(lstatSync(original).isFile());
+      assert.notEqual(lstatSync(original).ino, lstatSync(origin).ino);
+      assert.deepEqual(readFileSync(original), font);
+      assert.equal(readFileSync(permission, 'utf8'), license);
+      renameSync(join(root, 'scan'), join(root, 'disconnected-scan'));
+      assert.equal(existsSync(origin), false);
+      process.env.ONEPAGE_FONT_DIRS = '';
+      const localCopies = join(configPath, '..', '.font-library');
+      renameSync(localCopies, join(root, 'disconnected-project-fonts'));
+      writeProjectConfigAtomic(configPath, {});
+      if (format === 'otf') {
+        for (const [path, originalBytes, changedBytes] of [
+          [original, font, Buffer.concat([font, Buffer.from([0])])],
+          [permission, Buffer.from(license), Buffer.from('仅限内部使用')],
+        ]) {
+          writeFileSync(path, changedBytes);
+          try {
+            const refused = await runBSupplement({ runRoot: root, runDir, tokenValue, fontDiscovery: { directories: [] } });
+            assert.equal(refused.result, 'needs-input');
+            assert.ok(json(refused.problemsPath).some(({ code }) => code === 'FONT_UNSET'));
+            assert.ok(json(refused.questionsPath).every(({ type }) => type !== 'font-candidates'));
+            assert.equal(existsSync(localCopies), false);
+          } finally {
+            writeFileSync(path, originalBytes);
+          }
+        }
+      }
+      const b2 = await runBSupplement({ runRoot: root, runDir, tokenValue, fontDiscovery: { directories: [] } });
+      assert.equal(b2.ok, true, JSON.stringify(b2));
+      assert.equal(b2.result, 'pass');
+      assert.deepEqual(json(b2.questionsPath), []);
+      const supplement = json(b2.supplementPath);
+      const { faces, problems } = json(supplement.artifacts.fontAudit.path);
+      assert.deepEqual(problems, []);
+      assert.equal(faces.length, 1);
+      assert.equal(faces[0].key, family + '/400');
+      assert.ok(faces[0].locations.some((location) => location.characters === characters));
+      assert.deepEqual(faces[0].langs.cn, { family, weight: identity.weight, axes: identity.axes, digest,
+        resource: 'library-' + digest, licenseReview: { status: 'confirmed', hasEvidence: true } });
+      const [fontInput] = json(b2.stagePath).inputs.filter(({ kind }) => kind === 'font-file');
+      assert.equal(fontInput.digest, digest);
+      assert.deepEqual(readFileSync(fontInput.path), font);
+      assert.equal(lstatSync(fontInput.path).isFile(), true);
+      return { runDir, configPath, font, digest, evidence, b2Version: supplement.version };
+    } finally {
+      if (previous === undefined) delete process.env.ONEPAGE_FONT_DIRS;
+      else process.env.ONEPAGE_FONT_DIRS = previous;
+    }
+  }
   const foreign = readFileSync(new URL('../../../skills/yise-web-ui/fonts/BebasNeue-Regular.woff2', import.meta.url));
   const foreignDigest = byteDigest(foreign);
   const faceMap = (resource) => Object.fromEntries(languages.split(',').map((lang) => [lang, resource]));
@@ -147,6 +249,33 @@ test('双端黄金：完整/部分/全缺译、字体、成对外链、分页和
   }
 });
 
+test('TTF 与真实静态 CFF OTF 从扫描确认到 Level 1/B2，并断开生产端独立验 B3', async (context) => {
+  const root = temp(context);
+  const contract = join(root, 'consumer.json');
+  write(contract, HANDOFF_CONSUMER);
+  for (const discoveryFont of [ttfFont, staticOtf]) {
+    const { format, license } = discoveryFont;
+    const producer = join(root, 'producer-' + format);
+    const input = await golden(producer, { discoveryFont });
+    const result = cli('b-handoff', buildArgs(input));
+    const isolated = join(root, 'isolated-' + format);
+    cpSync(result.pack, isolated, { recursive: true });
+    renameSync(producer, join(root, 'disconnected-producer-and-library-' + format));
+    assert.equal(existsSync(producer), false);
+    const checked = cli('handoff-check', ['--pack', isolated, '--expect-version', result.version, '--scope-version', result.scopeVersion, '--consumer-contract', contract]);
+    assert.equal(checked.ok, true);
+    assert.equal(checked.manifestSha256, result.manifestSha256);
+    assert.equal(verify(result, { pack: isolated }).ok, true);
+    const [resource] = Object.values(json(join(isolated, PACK_FILES.fonts)).resources);
+    assert.equal(resource.license, license);
+    assert.deepEqual(resource.licenseReview, { status: 'confirmed', evidence: input.evidence });
+    assert.equal(resource.sha256, input.digest);
+    assert.equal(resource.path, 'resources/fonts/' + input.digest + '.' + format);
+    assert.deepEqual(readFileSync(join(isolated, resource.path)), input.font);
+    context.diagnostic(format + ': L2 确认及登记、断开扫描源和旧项目副本、L1 原件复用及 B2 pass、迁移后 B3 独立验包；sha256=' + input.digest);
+  }
+});
+
 test('接收侧拒绝缺文件、改字节、坏引用、路径逃逸、错版错范围及未知消费者', async (context) => {
   const root = temp(context);
   const result = cli('b-handoff', buildArgs(await golden(join(root, 'source'))));
@@ -201,7 +330,7 @@ test('发布端拒绝错 B2、损坏 A/B1/B2、更新 B2 失败和孤儿轮，�
   assert.equal(again.version, result.version);
   assert.equal(again.manifestSha256, result.manifestSha256);
   const reject = (version, pattern) => {
-    const checked = spawnSync(process.execPath, [bin('b-handoff'), ...buildArgs({ runDir, b2Version: version })], { encoding: 'utf8' });
+    const checked = spawnSync(process.execPath, [bin('b-handoff'), ...buildArgs({ runDir, b2Version: version })], { encoding: 'utf8', env: { ...process.env, ONEPAGE_FONT_DIRS: '' } });
     assert.equal(checked.status, 1, checked.stdout + checked.stderr);
     assert.match(JSON.parse(checked.stdout).message, pattern);
     assert.equal(readdirSync(runDir).filter((name) => /^b3\.r/.test(name)).length, 2);
@@ -226,7 +355,7 @@ test('发布端拒绝错 B2、损坏 A/B1/B2、更新 B2 失败和孤儿轮，�
 test('构建并发不串包，已有锁或半写目录不冒充发布', async (context) => {
   const input = await golden(join(temp(context), 'source'));
   const instances = Array.from({ length: 4 }, () => new Promise((done, reject) => {
-    const child = spawn(process.execPath, [bin('b-handoff'), ...buildArgs(input)]);
+    const child = spawn(process.execPath, [bin('b-handoff'), ...buildArgs(input)], { env: { ...process.env, ONEPAGE_FONT_DIRS: '' } });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.on('error', reject);
@@ -242,7 +371,7 @@ test('构建并发不串包，已有锁或半写目录不冒充发布', async (c
   const scratch = join(input.runDir, '.b3-writing-interrupted');
   mkdirSync(scratch);
   assert.equal(verify(good[0], { pack: scratch }).ok, false);
-  assert.equal(spawnSync(process.execPath, [bin('b-handoff'), ...buildArgs(input)]).status, 1);
+  assert.equal(spawnSync(process.execPath, [bin('b-handoff'), ...buildArgs(input)], { env: { ...process.env, ONEPAGE_FONT_DIRS: '' } }).status, 1);
   assert.equal(readdirSync(input.runDir).filter((name) => /^b3\.r/.test(name)).length, good.length);
 });
 
@@ -254,7 +383,7 @@ test('中途改动合法 JSON 的字节仍算漂移，不发布且不覆盖', as
     + '  const result = write(path, ...args);\n'
     + "  if (path.endsWith('/manifest.json')) fs.appendFileSync(" + JSON.stringify(input.configPath) + ", '\\n');\n"
     + '  return result;\n}; syncBuiltinESMExports();';
-  const child = spawnSync(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(preload), bin('b-handoff'), ...buildArgs(input)], { encoding: 'utf8' });
+  const child = spawnSync(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(preload), bin('b-handoff'), ...buildArgs(input)], { encoding: 'utf8', env: { ...process.env, ONEPAGE_FONT_DIRS: '' } });
   assert.equal(child.status, 1, child.stdout + child.stderr);
   const rejected = JSON.parse(child.stdout);
   assert.match(rejected.message, /发生漂移/);

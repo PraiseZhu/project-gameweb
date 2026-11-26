@@ -60,3 +60,4 @@ standards/one-page/artifacts/
 # === one-page 运行记录与项目配置（公开仓，一律不提交）===
 runs/
 projects/
+/fonts-library/

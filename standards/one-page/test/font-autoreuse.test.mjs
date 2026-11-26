@@ -9,11 +9,15 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, test } from 'node:test';
 import { runAScope } from '../src/a-scope.mjs';
 import { runBExtract } from '../src/b-extract.mjs';
-import { runBSupplement } from '../src/b-supplement.mjs';
-import { runBAnswer } from '../src/b-answer.mjs';
+import { runBSupplement as runBSupplementRaw } from '../src/b-supplement.mjs';
+import { runBAnswer as runBAnswerRaw } from '../src/b-answer.mjs';
 import { checkEntry } from '../src/stage-record.mjs';
 import { canonicalJson } from '../src/canonical.mjs';
 import { autoReuseFonts } from '../src/fonts-b2.mjs';
+
+const ISOLATED_FONT_DISCOVERY = Object.freeze({ directories: [] });
+const runBSupplement = (options = {}) => runBSupplementRaw({ fontDiscovery: ISOLATED_FONT_DISCOVERY, ...options });
+const runBAnswer = (options = {}) => runBAnswerRaw({ fontDiscovery: ISOLATED_FONT_DISCOVERY, ...options });
 
 const WT = resolve(import.meta.dirname, '../../..');
 const NOTO_BYTES = readFileSync(join(WT, 'skills/torchlight-web/fonts/NotoSansSC-VF.ttf'));

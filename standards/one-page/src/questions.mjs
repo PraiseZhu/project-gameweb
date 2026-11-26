@@ -18,6 +18,7 @@ export const QUESTION_TYPES = Object.freeze([
   'carousel',
   'tab',
   'font-map',
+  'font-candidates',
   'l10n-columns',
   'l10n-batches',
   'l10n-choice',
@@ -55,6 +56,7 @@ export function fingerprintOf(card) {
     options: card.options ?? [],
     suggested: card.suggested ?? null,
     prompt: card.prompt ?? null,
+    ...(card.fontNeeds ? { fontNeeds: card.fontNeeds } : {}),
   });
 }
 

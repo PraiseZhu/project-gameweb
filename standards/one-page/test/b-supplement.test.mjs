@@ -7,8 +7,8 @@ import { afterEach, beforeEach, test } from 'node:test';
 import { canonicalJson } from '../src/canonical.mjs';
 import { runAScope } from '../src/a-scope.mjs';
 import { runBExtract } from '../src/b-extract.mjs';
-import { runBSupplement, main as supplementMain } from '../src/b-supplement.mjs';
-import { runBAnswer } from '../src/b-answer.mjs';
+import { runBSupplement as runBSupplementRaw, main as supplementMain } from '../src/b-supplement.mjs';
+import { runBAnswer as runBAnswerRaw } from '../src/b-answer.mjs';
 import { checkEntry } from '../src/stage-record.mjs';
 import { sameSentence, identifyLanguageColumns, detectBatches, findBatchCandidates, matchTranslations } from '../src/translations.mjs';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
@@ -17,6 +17,10 @@ import { collectB2 } from '../src/b-collect.mjs';
 import { applyAnswers } from '../src/apply-answers.mjs';
 import { resolveFontFile, checkFontFiles, sha256File } from '../src/fonts-b2.mjs';
 import { missingGlyphs } from '../src/cmap.mjs';
+
+const ISOLATED_FONT_DISCOVERY = Object.freeze({ directories: [] });
+const runBSupplement = (options = {}) => runBSupplementRaw({ fontDiscovery: ISOLATED_FONT_DISCOVERY, ...options });
+const runBAnswer = (options = {}) => runBAnswerRaw({ fontDiscovery: ISOLATED_FONT_DISCOVERY, ...options });
 
 
 const PACKAGE_JSON = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));

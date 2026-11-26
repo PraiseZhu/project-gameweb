@@ -104,6 +104,7 @@ async function runBAnswerInner(options) {
     config: loaded.config,
     l10nSnapshot: l10n,
     configDir: dirname(loaded.path),
+    fontDiscovery: options.fontDiscovery,
   });
   const questions = options.questions || collected.questions;
   const inventories = {};
@@ -125,6 +126,7 @@ async function runBAnswerInner(options) {
     runId: existing.runId,
     l10nSnapshot: options.l10nSnapshot,
     tokenValue: options.tokenValue,
+    fontDiscovery: options.fontDiscovery,
   });
   return {
     ...result,
@@ -162,6 +164,7 @@ export async function main(argv, extras = {}) {
     answers: args.answers,
     l10nSnapshot: args.l10nSnapshot,
     tokenValue: extras.tokenValue,
+    fontDiscovery: extras.fontDiscovery,
   });
   (extras.err ?? console.error)(result.message);
   const printable = { ...result };

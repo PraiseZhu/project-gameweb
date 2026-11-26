@@ -17,6 +17,14 @@ import {
 } from './inventory-walk.mjs';
 import { fingerprintOf } from './questions.mjs';
 import { sha256Hex } from './canonical.mjs';
+import { isDeepStrictEqual } from 'node:util';
+import { copyProjectFont, licenseRisk, projectFontPath, readFontAsset, readFontLibrary, readRegularFontFile } from './font-library.mjs';
+import { scanFonts, scanLicense } from './font-scanner.mjs';
+
+export const FONT_CONTEXT = Symbol('font-discovery-context');
+const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const libraryId = (sha) => 'library-' + sha;
+const managedFont = (ref) => typeof ref === 'string' && /^library-[a-f0-9]{64}$/.test(ref);
 
 export function faceKey(family, weight) {
   return `${family}/${weight}`;
@@ -184,6 +192,7 @@ export function listTargetLangs(languages, baseLanguage = 'cn') {
 export function uniqueMatchingResource(resources, face, configDir) {
   const hits = [];
   for (const [id, resource] of Object.entries(resources || {})) {
+    if (managedFont(id)) continue;
     const resolved = resolveFontFile(resource, configDir);
     if (!resolved.ok) continue;
     let buffer;
@@ -233,6 +242,7 @@ export function buildFontQuestions(inventories, {
   baseLanguage = 'cn',
   fonts = {},
   answeredFaces = new Set(),
+  discovery,
 } = {}) {
   const langs = listTargetLangs(languages, baseLanguage);
   const foreign = langs.filter((lang) => lang !== (baseLanguage || 'cn'));
@@ -247,6 +257,7 @@ export function buildFontQuestions(inventories, {
     const missingLangs = langs.filter((lang) => {
       const answeredKey = `${key}::${lang}`;
       if (answeredFaces.has(answeredKey)) return false;
+      if (discovery?.questions.some((card) => card.options.some((option) => option.matches.some((need) => need.key === key && need.lang === lang)))) return false;
       return !(typeof current[lang] === 'string' && current[lang].trim());
     });
     if (!missingLangs.length) continue;
@@ -265,6 +276,12 @@ export function buildFontQuestions(inventories, {
       family: face.family,
       weight: face.weight,
     };
+    const fontNeeds = discovery?.missing.filter((need) => need.key === key && missingLangs.includes(need.lang));
+    if (fontNeeds?.length) {
+      body.fontNeeds = fontNeeds;
+      body.prompt = fontNeeds.map(formatFontGap).join('\n');
+      body[FONT_CONTEXT] = discovery.context;
+    }
     questions.push({ ...body, fingerprint: fingerprintOf(body) });
   }
   return { questions, blockers, faces, foreign, styleGaps: collected.styleGaps };
@@ -278,6 +295,187 @@ function localizedPartsForFace(face, lang, translations, baseLanguage) {
     if (isBase) return { loc, text: loc.characters || '' };
     return { loc, text: byNode.get(loc.nodeId)?.byLang?.[lang] || '' };
   });
+}
+
+function identityMatches(identity, need) {
+  return (identity?.family?.trim?.() === need.family || identity?.fullName === need.family || identity?.postscript === need.family)
+    && fileCoversWeight(identity, need.weight);
+}
+
+function coverageGaps(asset, need) {
+  return need.glyphs.filter((glyph) => !asset.coverage.has(glyph.codePointAt(0)));
+}
+
+function makeNeed(face, lang, translations, baseLanguage) {
+  const parts = localizedPartsForFace(face, lang, translations, baseLanguage);
+  const glyphs = [...new Set(parts.flatMap(({ text }) => [...text]).filter((glyph) => ![' ', '\r', '\n'].includes(glyph)))];
+  return { key: faceKey(face.family, face.weight), family: face.family, weight: Number(face.weight), lang, glyphs,
+    locations: parts.map(({ loc, text }) => ({ ...loc, characters: text })) };
+}
+
+export function formatFontGap(need) {
+  const where = need.locations.map((loc) => loc.end + '/' + (loc.section ?? '-') + '/' + loc.name + '(' + loc.nodeId + ')');
+  return 'Level 3 · ' + need.family + ' / ' + need.weight + '（wght=' + need.weight + '）· ' + need.lang + ' · ' + where.join('、')
+    + ' · 缺失字符：' + (need.glyphs.map((glyph) => JSON.stringify(glyph)).join(' ') || '无待核字符，仍缺真实原件') + '。请提供原文件及许可，或改稿替换。';
+}
+
+function matchesFromLibrary(entries, need) {
+  return entries.filter(({ entry, asset }) => identityMatches(entry?.identity, need) || identityMatches(asset?.identity, need));
+}
+
+export function assignLibraryFont(fonts, need, asset, { source, license, evidence }) {
+  const { identity } = asset;
+  const ref = libraryId(identity.sha256);
+  fonts.faces[need.key] ??= {};
+  fonts.faces[need.key][need.lang] = ref;
+  const axes = Object.fromEntries(Object.entries(identity.axes).map(([axis, { min, max }]) => [axis, { min, max }]));
+  const weights = [...new Set([identity.weight, Math.round(identity.axes.wght?.default), ...identity.instances.map((instance) => instance.weight)]
+    .filter((weight) => Number.isSafeInteger(weight) && weight > 0))];
+  fonts.resources[ref] = { file: projectFontPath(identity), source, license, format: identity.container, weights, digest: 'sha256:' + identity.sha256,
+    ...(Object.keys(axes).length ? { axes } : {}), licenseReview: { status: 'confirmed', evidence } };
+  return ref;
+}
+
+export function rejectionKey(option, need) {
+  return sha256Hex({ id: option.id, origins: option.origins, need });
+}
+
+function matchedScans(remaining, fontDiscovery) {
+  const { index } = scanFonts(fontDiscovery);
+  const byDigest = new Map();
+  const partial = new Map();
+  for (const indexed of index) {
+    if (!remaining.some((need) => identityMatches(indexed.identity, need))) continue;
+    let asset;
+    try { asset = readFontAsset(indexed.path); } catch { continue; }
+    const { identity } = asset;
+    const matches = [];
+    for (const need of remaining) {
+      if (!identityMatches(identity, need)) continue;
+      const glyphs = coverageGaps(asset, need);
+      if (!glyphs.length) matches.push(need);
+      else {
+        const gaps = partial.get(need) || {};
+        gaps[identity.sha256] = glyphs;
+        partial.set(need, gaps);
+      }
+    }
+    if (!matches.length) continue;
+    const { warnings, licenseTexts } = scanLicense(asset, indexed.system);
+    const origin = { path: indexed.path, system: indexed.system, warnings, licenseTexts };
+    const existing = byDigest.get(identity.sha256);
+    if (existing) existing.origins.push(origin);
+    else byDigest.set(identity.sha256, { id: identity.sha256, identity, matches, origins: [origin] });
+  }
+  const rank = { ttf: 0, otf: 1, woff2: 2, woff: 3 };
+  const candidates = [...byDigest.values()].map((option) => {
+    const warnings = [...new Set(option.origins.flatMap((item) => item.warnings))];
+    return { ...option, warnings, severity: warnings.length ? 'danger' : 'info',
+      label: option.identity.family + ' · ' + (option.identity.variable ? 'VF' : option.identity.weight) + ' · ' + option.identity.container };
+  }).sort((left, right) => {
+    const variable = (option) => option.identity.variable && new Set(option.matches.map((match) => match.weight)).size > 1 ? 1 : 0;
+    return variable(right) - variable(left) || rank[left.identity.container] - rank[right.identity.container] || left.id.localeCompare(right.id);
+  });
+  return { candidates, partial };
+}
+
+export function verifyCandidate(option) {
+  let selected;
+  for (const origin of option.origins) {
+    const asset = readFontAsset(origin.path);
+    const license = scanLicense(asset, origin.system);
+    if (asset.identity.sha256 !== option.id || option.matches.some((need) => !identityMatches(asset.identity, need) || coverageGaps(asset, need).length)
+      || !isDeepStrictEqual(license, { warnings: origin.warnings, licenseTexts: origin.licenseTexts })) throw new Error('候选字体或许可已变化，请重新生成确认卡');
+    selected ??= asset;
+  }
+  if (!selected) throw new Error('候选没有可核查的来源');
+  return selected;
+}
+
+export function verifyManualFont(resource, configDir, needs) {
+  const resolved = resolveFontFile(resource, configDir);
+  if (!resolved.ok) throw new Error(resolved.missing);
+  const intended = pathResolve(realpathSync(configDir), resource.file);
+  if (intended !== resolved.path) throw new Error('不得用软链提供字体');
+  const asset = readFontAsset(resolved.path);
+  if (asset.identity.sha256 !== normalizeDigest(resource.digest) || asset.identity.container !== resource.format
+    || needs.some((need) => !identityMatches(asset.identity, need) || coverageGaps(asset, need).length)) throw new Error('手工字体的摘要、真实身份、字重、容器或字形覆盖不符');
+  return asset;
+}
+
+export function discoverFonts({ inventories, languages, baseLanguage = 'cn', translations, configDir,
+  fonts, fontDiscovery, rejected = {} }) {
+  const result = { fonts, questions: [], blockers: [], missing: [] };
+  if (!configDir || fontDiscovery === false || (fonts !== undefined && (!object(fonts) || !object(fonts.faces) || !object(fonts.resources)))) return result;
+  const options = { libraryDir: pathResolve(configDir, '../../fonts-library'), ...fontDiscovery };
+  const next = structuredClone(fonts ?? { faces: {}, resources: {} });
+  const needs = collectFaces(inventories).faces.flatMap((face) => listTargetLangs(languages, baseLanguage)
+    .map((lang) => makeNeed(face, lang, translations, baseLanguage)));
+  const relevant = needs.filter(({ key, lang }) => !Object.hasOwn(next.faces, key)
+    || (object(next.faces[key]) && (!Object.hasOwn(next.faces[key], lang) || managedFont(next.faces[key][lang]))));
+  if (!relevant.length) return result;
+  const { entries, error } = readFontLibrary(options.libraryDir);
+  const remaining = [];
+  for (const need of relevant) {
+    const hits = matchesFromLibrary(entries, need);
+    const ref = next.faces[need.key]?.[need.lang];
+    const valid = hits.length === 1 && hits[0].asset && !coverageGaps(hits[0].asset, need).length ? hits[0] : null;
+    if (managedFont(ref)) {
+      let reason = error || hits.find((row) => row.error)?.error || '公共库字体身份不唯一、不可用或缺字';
+      try {
+        if (!valid || libraryId(valid.entry.sha256) !== ref) throw new Error(reason);
+        const expected = { faces: {}, resources: {} };
+        assignLibraryFont(expected, need, valid.asset, valid.entry);
+        if (!isDeepStrictEqual(next.resources[ref], expected.resources[ref])) throw new Error('项目登记与公共字体库不一致');
+        const local = join(realpathSync(configDir), expected.resources[ref].file);
+        if (sha256File(readRegularFontFile(local)) !== valid.entry.sha256) throw new Error('项目字体原件摘要变化');
+        continue;
+      } catch (err) { reason = err.message; }
+      result.blockers.push({ ...need, object: need.key, code: 'FONT_FILE', missing: reason });
+      continue;
+    }
+    if (valid) {
+      try {
+        copyProjectFont(configDir, valid.asset);
+        assignLibraryFont(next, need, valid.asset, valid.entry);
+        result.fonts = next;
+        continue;
+      } catch (err) {
+        result.blockers.push({ ...need, object: need.key, code: 'FONT_FILE', missing: err.message });
+      }
+    }
+    remaining.push(need);
+  }
+  if (!remaining.length) return result;
+  const { candidates, partial } = matchedScans(remaining, options);
+  const proposed = candidates.map((option) => ({ ...option, matches: option.matches.filter((need) => !rejected[rejectionKey(option, need)]) }))
+    .filter((option) => option.matches.length);
+  const context = { configDir, libraryDir: options.libraryDir, needs: remaining };
+  if (proposed.length) {
+    const suggested = [];
+    const covered = new Set();
+    for (const option of proposed) {
+      const mappings = option.matches.filter((need) => !covered.has(need));
+      if (mappings.length) {
+        suggested.push({ id: option.id, mappings: mappings.map(({ key, lang }) => ({ key, lang })) });
+        for (const need of mappings) covered.add(need);
+      }
+    }
+    const body = { type: 'font-candidates', object: '页面字体候选', componentKey: 'font-candidates', options: proposed, suggested,
+      locations: [...new Set(proposed.flatMap((option) => option.matches).flatMap((need) => need.locations))], splitAllowed: false,
+      prompt: '请核实候选原件允许商用且允许随网页再分发，再明确确认或拒绝。红标表示风险或未知，不代表可用。' };
+    result.questions.push({ ...body, fingerprint: fingerprintOf(body), [FONT_CONTEXT]: context });
+  }
+  for (const need of remaining) {
+    if (proposed.some((option) => option.matches.includes(need))) continue;
+    const candidateMissing = { ...Object.fromEntries(matchesFromLibrary(entries, need).filter((row) => row.asset)
+      .map(({ asset }) => [asset.identity.sha256, coverageGaps(asset, need)])), ...partial.get(need) };
+    const glyphs = Object.values(candidateMissing).some((value) => value.length)
+      ? [...new Set(Object.values(candidateMissing).flat())] : need.glyphs;
+    result.missing.push({ ...need, glyphs, candidateMissing, axes: { wght: need.weight }, level: 3 });
+  }
+  result.context = context;
+  return result;
 }
 
 // licenseReview 最小合同（不作法律判断、不扫描）：
@@ -316,6 +514,7 @@ function sourceLicenseOk(resource, ref) {
   const base = typeof resource?.source === 'string' && resource.source.trim()
     && typeof resource?.license === 'string' && resource.license.trim();
   if (!base) return { ok: false, note: `缺来源或许可说明（资源 ${ref}）` };
+  if (licenseRisk(resource.license)) return { ok: false, note: '许可明确含非商用或需授权等限制（资源 ' + ref + '）' };
   const pending = licenseReviewNote(resource, ref);
   if (pending) return { ok: false, note: pending };
   // 裸 licenseConfirmed=true 而没有 licenseReview 的 confirmed+evidence：不得放行
