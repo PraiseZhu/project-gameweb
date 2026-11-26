@@ -80,3 +80,7 @@ PC/手机同一模块看 `sameModules`：先按 `sec` 编号限定对应屏，�
 
 带上：端、nodeId、现在前缀、期望前缀、症状（切图/滑动/点击/变体/unknown 被接线）、`fingerprint`。
 不要改 `standards/figma-naming`。
+
+## B4 变化包
+
+下游如消费 onepage-b-delta/v1，先核对外部传入的 basePackVersion、basePackDigest、baseScopeVersion 与消费者契约，再按 blackboxGuide 复验 affectedModules、affectedAssets、affectedLanguages 和 affectedSharedDeps。upgrade-to-full-pack 不得作为局部改稿输入；manualTweakAnchors 只交给后续冲突检测，不得静默覆盖人工微调。

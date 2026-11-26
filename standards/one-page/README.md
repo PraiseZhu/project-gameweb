@@ -64,7 +64,7 @@ node standards/one-page/scripts/check-integration.mjs
 npm --prefix standards/one-page test
 ```
 
-当前入口：[auto-one_page](SKILL.md)。A、B1、B2 和 B3 有独立命令；B4、C～H 不由这些命令执行，也未因此完成新真稿全链验收。
+当前入口：[auto-one_page](SKILL.md)。A、B1、B2、B3 和 B4 有独立命令；C～H 不由这些命令执行，也未因此完成新真稿全链验收。
 
 ## B2 三级找字
 
@@ -86,3 +86,9 @@ npm --prefix standards/one-page run handoff:check -- --pack <包目录> --expect
 - `production/` 是制作资料，`resources/fonts/` 是实际使用的完整原字体及来源许可。素材只交 Figma 来源、节点视觉指纹和导出计划。`validation/` 的 `testData: true` 样例只供该版本测试/QA，不得发布到产品；`evidence/` 留追溯摘要和待办，原稿快照、飞书整表留在 B。
 - 收包方通过独立交接取得 `--expect-version`、`--scope-version`，不要读取待验包反填这两个参数。消费者 JSON 声明 `schema: "onepage-b-handoff/v1"`、`contract: "onepage-naming/v1"` 和它真正支持的 `capabilities`，能力名见 `src/handoff-check.mjs` 的 `HANDOFF_CAPABILITIES`。包可原样迁移，收包无需访问原 B 目录。
 - 可用 `npm --prefix standards/one-page test` 复跑黄金合成与反例。通过证明可出包和收包，不证明已生成产品页，也不代替独立审核、CI 或 #151 新真稿全链验收。
+
+## B4 变化交接包
+
+npm --prefix standards/one-page run b:delta -- --run-dir <运行目录> --base-pack <B3包目录> --expect-version <B3包版本> --scope-version <B3范围版本> --consumer-contract <消费者合同JSON>
+
+B4 只消费外部传入且经 handoff:check 核验的 B3 基线，比较当前最新 B1/B2 与基线的节点事实、visualFingerprint、译文、字体和配置。产物写入 runs/<run>/b4.rN/，包含 delta-manifest.json 与 stage-record.json，使用 onepage-b-delta/v1。变化包只保存相对路径和摘要，可在断开原运行目录后独立通过 checkEntry。范围、端别、语言或跨端配对扩大时返回 upgrade-to-full-pack，不发布残缺小改包；fileVersion 变化但无法定位差异时明确返回 unlocated-version-change。

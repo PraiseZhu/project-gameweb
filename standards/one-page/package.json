@@ -12,7 +12,8 @@
     "b:answer": "node bin/b-answer.mjs",
     "b:handoff": "node bin/b-handoff.mjs",
     "handoff:check": "node bin/handoff-check.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "b:delta": "node bin/b-delta.mjs"
   },
   "engines": {
     "node": ">=20"
