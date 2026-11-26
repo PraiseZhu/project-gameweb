@@ -10,6 +10,7 @@ import { requiredEndsOf } from './design-sets.mjs';
 import { computeScopeVersion } from './scope-record.mjs';
 import { pairEnds } from './same-modules.mjs';
 import { aggregateLinkTodos } from './b-collect.mjs';
+import { compiledC2Declarations } from './c2-contract.mjs';
 
 export const HANDOFF_SCHEMA = 'onepage-b-handoff/v1';
 export const HANDOFF_CAPABILITIES = Object.freeze([
@@ -180,6 +181,15 @@ function checkContents(payloads, manifest, consumer) {
   }
   requireAt(!translationsByKey.size, PACK_FILES.todos, '缺译待办漏报');
   const data = read(PACK_FILES.dataContract);
+  if (config.dataContract?.c2 !== undefined || data.c2 !== undefined) {
+    const c2 = compiledC2Declarations(inventories, config, scope);
+    requireAt(c2.contract && !c2.faults.length && !c2.questions.length && same(data.c2, c2.contract), PACK_FILES.dataContract, 'C2 制作声明与范围、目标或合同不一致');
+    for (const input of c2.contract.componentInputs) {
+      const fields = data.fields.filter((field) => field.bindingKind === 'field' && field.target === 'component-input'
+        && field.locations.some((loc) => loc.end === input.end && loc.nodeId === input.nodeId));
+      requireAt(fields.length === 1 && fields[0].valueTypes.length && fields[0].valueTypes.every((type) => input.valueTypes.includes(type)), PACK_FILES.dataContract, 'C2 接收器未绑定对应数据字段');
+    }
+  }
   const samples = read(PACK_FILES.samples);
   const check = read(PACK_FILES.dataCheck);
   rejectTestData(data, PACK_FILES.dataContract);

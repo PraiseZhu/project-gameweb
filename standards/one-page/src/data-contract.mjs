@@ -179,6 +179,12 @@ function setPath(root, tokens, value) {
 }
 
 function sampleValue(field, flavor) {
+  if (field.target === 'component-input') {
+    if (flavor === 'missing') return undefined;
+    if (field.valueTypes.includes('number')) return flavor === 'zero' ? 0 : 7;
+    if (field.valueTypes.includes('boolean')) return flavor !== 'false';
+    return 'ok';
+  }
   if (field.bindingKind === 'show') {
     if (flavor === 'false') return false;
     if (flavor === 'empty') return null;
@@ -531,7 +537,7 @@ export function checkSamples(fields, samples, inventories) {
   return { ok: !issues.length, issues, status: issues.length ? 'fail' : 'pass' };
 }
 
-export function buildDataContractResult({ inventories, config, languages, baseLanguage = 'cn', b1Version }) {
+export function buildDataContractResult({ inventories, config, languages, baseLanguage = 'cn', b1Version, c2 }) {
   const fields = collectDataFields(inventories, { languages });
   const exceptions = config?.dataContract?.exceptions && typeof config.dataContract.exceptions === 'object'
     ? config.dataContract.exceptions
@@ -539,6 +545,13 @@ export function buildDataContractResult({ inventories, config, languages, baseLa
   const questions = [];
   const problems = [];
   for (const field of fields) {
+    if (field.target === 'component-input' && c2) {
+      const receivers = c2.componentInputs.filter((item) => field.locations.some((loc) => loc.end === item.end && loc.nodeId === item.nodeId));
+      if (receivers.length) {
+        field.valueTypes = receivers[0].valueTypes.filter((type) => receivers.every((item) => item.valueTypes.includes(type)));
+        if (!field.valueTypes.length) problems.push({ code:'C2_DECLARATION', object:field.path, locations:field.locations, missing:'同一数据字段的接收器没有共同值类型' });
+      }
+    }
     if (field.bindingKind === 'state' && !field.mapping) {
       problems.push({
         code: 'STATE_MAPPING',
@@ -576,6 +589,7 @@ export function buildDataContractResult({ inventories, config, languages, baseLa
     b1Version: b1Version || null,
     languages: [...(languages || [])],
     baseLanguage,
+    ...(c2 ? { c2 } : {}),
     fields: fields.map((row) => ({
       path: row.path,
       bindingKind: row.bindingKind,
