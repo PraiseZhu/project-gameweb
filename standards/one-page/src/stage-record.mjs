@@ -12,11 +12,11 @@ import {
   INVENTORY_SCHEMA as ONEPAGE_INVENTORY_SCHEMA,
 } from '../../figma-naming/spec/onepage.mjs';
 import { collectB2 } from './b-collect.mjs';
+import { checkHandoff } from './handoff-check.mjs';
 
 const STAGES = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
 const RESULTS = new Set(['pass', 'fail', 'stopped', 'needs-input']);
-/** 已知成果类型。未知 kind 一律拒绝，不默认成功。b-handoff 留给 B3，本环不实现。 */
-export const KNOWN_OUTPUT_KINDS = Object.freeze(['scope', 'b-extract', 'b-supplement']);
+export const KNOWN_OUTPUT_KINDS = Object.freeze(['scope', 'b-extract', 'b-supplement', 'b-handoff']);
 
 export function stageRecordBody(fields) {
   return {
@@ -906,7 +906,7 @@ function verifyBSupplementOutputInner(output, record, recordPath) {
   if (!sameCanonical(collected.dataCheck, dataCheck.value)) {
     return { ok: false, reason: 'data-check 与当前检查不一致' };
   }
-  return { ok: true };
+  return { ok: true, collected };
 }
 
 function verifyScopeOutput(output, record, expectedOutputVersion) {
@@ -972,6 +972,19 @@ export function checkEntry(recordPath, options = {}) {
     return { ok: false, reason: `未知成果类型：${expectedOutputKind}` };
   }
 
+  if (expectedOutputKind === 'b-handoff') {
+    const checked = checkHandoff({
+      pack: dirname(resolve(recordPath)),
+      expectVersion: expectedOutputVersion,
+      scopeVersion: options.scopeVersion,
+      consumerContract: options.consumerContract,
+    });
+    if (!checked.ok) return { ok: false, reason: checked.message };
+    return checked.stage.version === record.version
+      ? { ok: true, record }
+      : { ok: false, reason: '环节记录不属于该 B3 包' };
+  }
+
   if (!record.output?.path) {
     return { ok: false, reason: '环节记录没有成果路径' };
   }
@@ -996,6 +1009,7 @@ export function checkEntry(recordPath, options = {}) {
   } else if (expectedOutputKind === 'b-supplement') {
     const supplementOk = verifyBSupplementOutput(output, record, recordPath);
     if (!supplementOk.ok) return supplementOk;
+    return { ok: true, record, output, collected: supplementOk.collected };
   } else {
     return { ok: false, reason: `未知成果类型：${expectedOutputKind}` };
   }

@@ -81,7 +81,7 @@ npm --prefix standards/one-page run b:extract -- --run-dir "<A 的运行目录>"
 4. 清单与问题清单写入运行目录的 `b1.rN/`（N 为 B 轮次，同一运行目录重跑不覆盖旧轮）。问题每条含端、屏号、节点 ID、对象、缺什么、影响、退回去向（A／设计稿／B2）。
 5. 写 B 环节记录：`stage=B`，正整数 `round`，`output.kind='b-extract'`，inputs 恰好一项范围与一项快照（path/version/digest，不得缺、重复或夹带未知 kind），`result` 为 pass／fail／stopped。抽取清单绑定范围、快照、配置、各端 inventory、problems、pairing 的内容摘要。`checkEntry` 重算摘要，核当前最新范围及其精确对应的 A 环节 pass，并按生产者合同校验材料：快照 `document.id` 等于范围 `nodeId` 且 `type=CANVAS`；清单 schema 仅 `inventory/onepage-v1`，`contract`/`specVersion` 为 `onepage-naming/v1`，允许 blocked；端别由范围 platform 与快照设计集重算，未选端不得有 inventory；pairing 与 `pairEnds` 一致，problems 与清单 issues／配对派生一致。拒绝被改、被换路径、成果文件自身是符号链接、解析后越出本 run／错轮、缺文件或内容形状错误。父目录别名若 realpath 仍在本轮且摘要有效，不单独当越界。范围输入的 digest 用范围记录 `recordDigest`；快照/清单等材料 digest 用整份 JSON 的 canonical sha256，二者不要混比。
 
-`b-extract` 只表示 B1 抽取子步骤完成，供后续 B 内部（B2）读取。它不是完整 B，也不是 C 的开工证据。C 必须等未来 B3 最终交接产物（尚未实现；当前没有 `b-handoff`，对该 kind 调用 `checkEntry` 会拒绝）。后续入口必须同时传 `expectedStage`、`expectedOutputKind` 与输出版本；缺类型或未知 kind 一律失败。两端清单 blocked 可以让 B1 抽取步骤成功，但不等于整体 B ready。
+`b-extract` 只表示 B1 抽取子步骤完成，供 B2 读取；两端清单 blocked 时也可能完成抽取。只有经 B3 出包且独立收包检查通过的 `b-handoff` 才能作为 C 的开工依据。缺类型或未知 kind 一律失败。
 
 B1 不出交接包（归 B3）。不写回 Figma，不新增命名前缀。项目配置与运行记录不进 git。
 
@@ -110,7 +110,7 @@ npm --prefix standards/one-page run b:answer -- --run-dir "<同一运行目录>"
 3. 动效按编译器内置 MOTIONS 按元素类型自动套用，标准分层组合写 `composition=nested-standard`，不出卡；识别不唯一或组合未定的进 `todos.json`（动效未套用），不阻断。字体核验覆盖基础语言与外语，含 img 内 live 文字、混合样式和隐藏产品状态；bg/kv 例外。按文件真实身份/字重/字形核验，不信配置自报。数据字段说明与样例自动汇总；无动态数据记 n_a。数据未标 `@field` 但含数字/日期/金额的出「写死/会变」卡；会变须退回设计补 `@field`，不能用配置代替。
 4. 不出交接包、不导出素材、不写回 Figma、不新增依赖。
 
-B3 开工前检查读 `kind=b-supplement` 且 `result=pass` 的 B 环节记录。
+B3 从同一运行读取当前 A、B1 及 `kind=b-supplement`、`result=pass` 的 B2 成果，不回退旧版。两条 CLI、外部消费者声明及证据边界见 [B3 出包与收包](README.md#b3-出包与收包)。这一步不导图、不生成页面，不从包内文件反推调用方预期。
 
 ## Record keeping
 

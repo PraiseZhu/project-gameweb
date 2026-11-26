@@ -64,4 +64,17 @@ node standards/one-page/scripts/check-integration.mjs
 npm --prefix standards/one-page test
 ```
 
-当前固定 Skill 草案：[auto-one_page](SKILL.md)。A 模块已经写入；B～H 仍按模块讨论后补齐。
+当前入口：[auto-one_page](SKILL.md)。A、B1、B2 和 B3 有独立命令；B4、C～H 不由这些命令执行，也未因此完成新真稿全链验收。
+
+## B3 出包与收包
+
+```bash
+npm --prefix standards/one-page run b:handoff -- --run-dir <运行目录> --b2-version <B2成果SHA-256>
+npm --prefix standards/one-page run handoff:check -- --pack <包目录> --expect-version <包版本SHA-256> --scope-version <范围版本SHA-256> --consumer-contract <外部JSON文件>
+```
+
+- `--b2-version` 用 `b-supplement.json` 的 `version`，不是 B2 环节记录的版本。打包只读同一运行的当前 A/B1/B2 通过链，核配置、译文、字体和输入漂移。当前失败、损坏或有未完成的上游轮次时，不回退。
+- `onepage-b-handoff/v1` 发布到 `runs/<run>/b3.rN/`。交接目录内的 `stage-record.json` 跟目录一起原子发布，绑定 `manifest.json` 的实际字节；旧包保留，同输入重出版本不变。中断留下的 `.b3-writing-*` 不是交付物；若有 `.b3.lock`，先确认原进程已结束再按工作区清理授权处置。
+- `production/` 是制作资料，`resources/fonts/` 是实际使用的完整原字体及来源许可。素材只交 Figma 来源、节点视觉指纹和导出计划。`validation/` 的 `testData: true` 样例只供该版本测试/QA，不得发布到产品；`evidence/` 留追溯摘要和待办，原稿快照、飞书整表留在 B。
+- 收包方通过独立交接取得 `--expect-version`、`--scope-version`，不要读取待验包反填这两个参数。消费者 JSON 声明 `schema: "onepage-b-handoff/v1"`、`contract: "onepage-naming/v1"` 和它真正支持的 `capabilities`，能力名见 `src/handoff-check.mjs` 的 `HANDOFF_CAPABILITIES`。包可原样迁移，收包无需访问原 B 目录。
+- 可用 `npm --prefix standards/one-page test` 复跑黄金合成与反例。通过证明可出包和收包，不证明已生成产品页，也不代替独立审核、CI 或 #151 新真稿全链验收。
