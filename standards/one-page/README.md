@@ -64,7 +64,7 @@ node standards/one-page/scripts/check-integration.mjs
 npm --prefix standards/one-page test
 ```
 
-当前入口：[auto-one_page](SKILL.md)。A、B1、B2、B3 和 B4 有独立命令；C～H 不由这些命令执行，也未因此完成新真稿全链验收。
+当前入口：[auto-one_page](SKILL.md)。A、B1、B2、B3、B4 和 C1 有独立命令；尚未执行 C2～H，也未因此完成新真稿全链验收。
 
 ## B2 三级找字
 
@@ -92,3 +92,13 @@ npm --prefix standards/one-page run handoff:check -- --pack <包目录> --expect
 npm --prefix standards/one-page run b:delta -- --run-dir <运行目录> --base-pack <B3包目录> --expect-version <B3包版本> --scope-version <B3范围版本> --consumer-contract <消费者合同JSON>
 
 B4 只消费外部传入且经 handoff:check 核验的 B3 基线，比较当前最新 B1/B2 与基线的节点事实、visualFingerprint、译文、字体和配置。产物写入 runs/<run>/b4.rN/，包含 delta-manifest.json 与 stage-record.json，使用 onepage-b-delta/v1。变化包只保存相对路径和摘要，可在断开原运行目录后独立通过 checkEntry。范围、端别、语言或跨端配对扩大时返回 upgrade-to-full-pack，不发布残缺小改包；fileVersion 变化但无法定位差异时明确返回 unlocated-version-change。
+
+## C1 素材包
+
+    npm --prefix standards/one-page run c:assets -- --pack <B3包目录> --expect-version <B3包版本> --scope-version <范围版本> --consumer-contract <外部合同JSON> --run-dir <runs/运行目录> [--retained-dir <H23素材目录>]
+
+C1 先验证外传的 B3 版本、范围和消费契约，再按同一 Figma 版本只读核对视觉指纹并导出。调用 Figma 时沿用现有环境配置；不写回或保存 token、签名下载地址。素材中若有必须分离的独立网页文字，而只读导出不能剥离，明确阻断而不烘焙文字。没有导出计划时不访问 Figma。
+
+- 符合矢量子集的节点保留 SVG；不符时记录原因并保留完整无损 PNG。展示用 WebP 由现有 Python 3 / Pillow 编码：任何一个像素的 Alpha 小于 255 就走无损并复验每个 RGBA 字节；全不透明则走有损，并记录通道平均绝对误差。固定 quality=90、method=6，不缩放或裁切，解码后复验格式及尺寸。编码器不可用则停止。
+- 只复制 B3 索引中本语实际使用的字体及许可到 css/font/。额外保留的历史资料按 original/、backup/、history/ 分类放入独立的 H23 输入目录，支持中文和空格。清单的 source 原样记录相对源路径，path 使用按源路径生成的安全包内文件名；原字节保留，不改之前发布的轮次。单视频超过 15 MB 或素材与字体文件合计超过 120 MB 只告警，不删改素材。
+- 每轮先独立验暂存包、再原子发布到 c1.rN/。assets/manifest.json 使用 onepage-c-assets/v1，记录摘要、来源、尺寸与 POSIX 相对路径。迁移后用 checkEntry 对包内 stage-record.json 传 expectedStage=C、expectedOutputKind=c-assets、外部预期输出版本及 scopeVersion，无需原 B3、字体库、Figma 或编码器。C1 不生成页面。
