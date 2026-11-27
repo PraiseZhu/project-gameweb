@@ -96,6 +96,10 @@ function matchesBox(image, box, format) {
 async function exportAssets(input, nodes, root, options) {
   const scope = input.manifest.scope;
   const plans = checkedRead(input, PACK_FILES.assets).filter((item) => inLanguage(nodes[item.end].get(item.nodeId), nodes[item.end], scope.baseLanguage));
+  return exportSelectedAssets({ scope, plans, nodes, root, options });
+}
+
+export async function exportSelectedAssets({ scope, plans, nodes, root, options }) {
   if (!plans.length) return [];
   requireAssets(plans.every((item) => !item.exportPolicy?.excludeTextIds?.length), '含独立网页文字的素材无法只读分层导出；禁止以含字截图代替');
   const request = { fileKey: scope.fileKey, fileVersion: scope.fileVersion, fetchImpl: options.fetchImpl,
@@ -108,7 +112,7 @@ async function exportAssets(input, nodes, root, options) {
     const byId = nodes[item.end];
     const node = byId.get(item.nodeId);
     const sourceNode = findNode(snapshot.document, item.nodeId);
-    requireAssets(sourceNode && item.fileKey === scope.fileKey && fingerprints.get(item.nodeId) === item.visualFingerprint, 'Figma 节点视觉指纹与 B3 不符');
+    requireAssets(sourceNode && item.fileKey === scope.fileKey && fingerprints.get(item.nodeId) === item.visualFingerprint, 'Figma 节点视觉指纹与导出计划不符');
     const box = item.sliceExport?.box ?? node.pageBox ?? node.box;
     requireAssets([box?.x, box?.y, box?.w, box?.h].every(Number.isFinite) && box.w > 0 && box.h > 0, 'B3 缺少有效素材尺寸');
     const id = item.end + '-' + sha256Hex([item.scope, item.nodeId]);

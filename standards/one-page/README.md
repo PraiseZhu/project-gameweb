@@ -112,6 +112,24 @@ C1 先验证外传的 B3 版本、范围和消费契约，再按同一 Figma 版
 - 通过 --handoff-pack 与 --consumer-contract 传入 C2 对应的 B3；缺 B3 不签发通过凭据。HTTP 样例只在隔离 Chromium 上注入，不改产品。报告按 D01～D13 聚合：同项任何必需场景缺证，不能以同项其它场景通过顶替。像素用 6% / 0.1 暂定口径，不替代 #151 真稿与阈值验收。
 - 检查记录、日志及三图在产品目录外；收包用 checkEntry 的 c-single-page 分支，外传 pagePack、pageVersion、scopeVersion 与 expectedOutputVersion。可由程序提供修订函数以生成新 C2 版本、触发全量复测；命令本身不改产品或签发豁免。
 
+## C4 局部改稿（开发验证）
+
+    npm --prefix standards/one-page run c:patch -- --base-check <C3环节记录> --base-check-version <C3版本> --page-pack <C2包> --page-version <C2版本> --scope-version <范围版本> --delta-pack <B4包> --delta-version <B4版本> --handoff-pack <原B3包> --consumer-contract <合同JSON> --references <新参考索引> --references-sha256 <索引SHA-256> --run-dir <独立现有目录>
+
+- 换图沿用 C1 的只读、定版导出；仅请求 B4 指定节点，不重新生成 B3 或整页。独立参考索引额外绑定经 B4 验包返回的 b4Digest；变化节点、可定位的关联模块和原 C3 必验项保留局部或整屏比较。
+- 新版 c4.rN 原子发布；只部署 build/page/。check/c4-patch-meta.json、检查报告和三图都在产品外。历史素材保留原字节。迁移整轮后，用 c-single-page 的 checkEntry 验 check/stage-record.json，传 build、外传 pageVersion、scopeVersion 与 expectedOutputVersion，不需原来源目录或 Figma。
+- 已声明外链改动读取 B4 绑定的现行配置，复核原字节和语义摘要，只改集中配置，并重验所有屏与 TAB 状态；离网验打开动作，不请求外站。
+- 已有的原生文案叶节点可以按新版 B1 权威几何和对应节点指纹修改文字或同屏直接子节点的布局；结构、排版或来源不能唯一验证则阻断，不从截图猜坐标。基础语言已有字族的替换重新核对 B2 字体审计、原件和许可证，并扩大复验。仅目标语发生变化的译文不会写入基础语言页面；需要在对应语言阶段消费。
+- 从同一 B3 上的设计改稿接 B4 时，同端同屏上不论是否同一对象，只要换图对象与手调范围相交，就须附 --decision 和 --decision-fingerprint。keep-manual 保留冲突对象的旧素材与手调；overwrite 应用新素材并移除相交的手调规则；未参与冲突的对象继续保留。像素确认绑定输入成品版本、区域和实际裁决后的内容，不移用旧确认。共用依赖扩验由实际字节变化产生证据，不接受任意脚本或样式文本作为改稿指令。
+- B4 成品可接设计指令，同步核验继承的 B4 材料证据和当前设计指令；参考索引同时绑定 b4Digest 与 c4DesignDigest。连续 B4 换图须沿同一 B3 及当前 B1 累计声明，复用指纹未变的素材，只导出本轮指纹变化的对象；遗漏已更新对象、重复稿件版本或不能安全重放的混合变更明确拒绝。布局与手调相交时按权威旧/新框分别定位，裁决只影响已定位的对象。
+
+| 共用依赖 | C4 内合法生产路径 |
+| --- | --- |
+| styles.css、mobile.css、css/font/ | 已定位叶节点的相应端布局；已审计字体更新连同原件和许可；设计师指令只生成已知透明度规则。实际变更触发全部已声明屏/TAB 复验。 |
+| js/config.js | 已验 B4 的受约束外链更新，实际变更触发全部已声明屏/TAB 复验。 |
+| js/main.js、locales.css | 当前 C4 无合法生产者：运行时来自 C2，目标语变化另走对应语言环节。任意脚本/样式字段明确拒绝；仅覆盖摘要探测和缺关键屏/TAB 证据拒绝，不代表生产改写已验证。 |
+- 设计师入口用 --design <指令JSON> --design-sha256 <独立SHA-256> 替换 B4 参数。目前支持给已定位图片设 opacity。指令包括 schema: onepage-c4-design/v1、base: {pageVersion, checkVersion, checkDigest, scopeVersion}、target: {end, module, nodeId, domId}、property 和 value。可附 confirmation: {caseId, viewport, rect, basis, fingerprint}，其中指纹基于 {target, property, value} 的规范 JSON。参考索引绑定 c4DesignDigest。确认只豁免同屏、同状态、同视口的指定像素区域，仍实测目标几何和样式，不免其他局部复比。冲突时必须附指纹和 overwrite 或 keep-manual 裁决后才发布。
+
 ## C2 基础语言原生页
 
     npm --prefix standards/one-page run c:generate -- --pack <B3包> --expect-version <B3版本> --scope-version <范围版本> --consumer-contract <外部合同JSON> --assets-pack <C1包> --assets-version <C1版本> --assets-sha256 <C1清单SHA-256> --run-dir <runs/运行目录>

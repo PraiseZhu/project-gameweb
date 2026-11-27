@@ -54,9 +54,14 @@ export function checkPage({ pack, expectVersion, scopeVersion, beforePublish = f
     requireAssets(paths.includes(manifestPath), 'C2 缺素材清单');
     const assetBytes = readFileSync(join(pack, manifestPath));
     const { version: assetVersion, ...assetBody } = JSON.parse(assetBytes);
-    requireAssets(assetBody.schema === ASSET_SCHEMA && byteDigest(assetBytes) === body.c1.digest && assetVersion === body.c1.version
+    const assetBinding = body.c4?.assets ?? body.c1;
+    requireAssets(assetBody.schema === ASSET_SCHEMA && byteDigest(assetBytes) === assetBinding.digest && assetVersion === assetBinding.version
       && sha256Hex(assetBody) === assetVersion && assetBody.baseLanguage === body.baseLanguage && same(assetBody.b3,
         { version: body.b3.version, scopeVersion, manifestSha256: body.b3.digest }), 'C2 素材清单与 B3/C1 不匹配');
+    if (body.c4) requireAssets(isDigest(body.c4.materialDigest) && (isDigest(body.c4.deltaDigest) || isDigest(body.c4.designDigest))
+      && (isDigest(body.c4.deltaMaterialDigest) === (isDigest(body.c4.deltaDigest) && isDigest(body.c4.designDigest)))
+      && Array.isArray(body.c4.affectedDomIds) && body.c4.affectedDomIds.every((id) => body.nodes.some((node) => node.domId === id))
+      && stageIsPatch(pack), 'C4 缺素材变更绑定');
     const assets = assetFiles(assetBody);
     const expected = [...pageFiles(body.baseLanguage), ...assets.map((item) => item.path)].map((path) => 'page/' + path);
     requireAssets(expected.every(safeRelative) && new Set(expected).size === expected.length
@@ -72,6 +77,11 @@ export function checkPage({ pack, expectVersion, scopeVersion, beforePublish = f
   } catch (error) {
     return { ok: false, reason: 'C2 验包失败：' + error.message };
   }
+}
+
+function stageIsPatch(pack) {
+  const stage = JSON.parse(readFileSync(join(pack, PAGE_STAGE)));
+  return stage.tools?.some(({ name }) => name === 'c:patch');
 }
 
 export function checkPageEntry(recordPath, options) {

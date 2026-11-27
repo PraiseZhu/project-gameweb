@@ -8,6 +8,24 @@ export const finding = (check, target, status, detail) => ({ id: check + ':' + t
 export const observed = (check, target, ok, detail) => finding(check, target, ok ? 'pass' : 'fail', detail);
 export const usesData = (config) => Object.values(config?.bindings ?? {}).some((row) => row.data || Object.keys(row.fields ?? {}).length);
 
+function auditLocalReferences(html, styles, lang, files) {
+  const origin = 'https://onepage.invalid';
+  const references = [...html.matchAll(/\s(?:href|src|data-src|poster)="([^"]+)"/gi)]
+    .map(([, url]) => [lang + '.html',url]);
+  for (const [index, css] of styles.entries()) {
+    for (const match of css.matchAll(/\burl\(\s*(?:"([^"]+)"|'([^']+)'|([^\s'"()]+))\s*\)/gi)) {
+      references.push([['css/styles.css','css/mobile.css','css/locales.css'][index],match[1] ?? match[2] ?? match[3]]);
+    }
+  }
+  const invalid = references.filter(([from, reference]) => {
+    try {
+      const url = new URL(reference,origin + '/' + from);
+      return url.origin !== origin || !Object.hasOwn(files,'page' + decodeURIComponent(url.pathname));
+    } catch { return true; }
+  });
+  return observed('D03','local-references',invalid.length === 0,{ total:references.length,invalid });
+}
+
 export function auditStatic(pack, meta) {
   const read = (path) => readFileSync(join(pack, 'page', path), 'utf8');
   const html = read(meta.baseLanguage + '.html');
@@ -28,6 +46,7 @@ export function auditStatic(pack, meta) {
       && tags.map(([, attrs, body]) => !body.trim() && /\bsrc="([^"]+)"/.exec(attrs)?.[1]).join(',') === scripts.join(','),
     '原生 config/main；无逐节点静态 style、Figma 调试标记或外置样式导入'));
   const manifest = JSON.parse(read(ASSET_MANIFEST));
+  if (meta.c4) results.push(auditLocalReferences(html,styles,meta.baseLanguage,meta.files));
   const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
   const actual = measureAssets(assetFiles(manifest).map(({ path }) => describeFile(join(pack, 'page'), path)));
   results.push(observed('D06', 'bytes', actual.totalBytes === manifest.measurement.totalBytes, actual));
