@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { symlinkProbe } from './helpers/symlink.mjs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -216,7 +217,7 @@ test('扫描自定义与 Windows 字体树：递归、缓存失效、TTC、SHA �
   assert.equal(existsSync(join(windowsDiscovery.libraryDir, 'registry.json')), false);
 });
 
-test('风险候选红标；确认前篡改/软链不写库；Level 3 精确列出外语缺字', (context) => {
+test('风险候选红标；确认前篡改/软链不写库；Level 3 精确列出外语缺字', async (context) => {
   const { input, path, bytes, libraryDir, directory } = fixture(context);
   writeFileSync(path + '.license.txt', 'Noncommercial / 商用需授权');
   const risky = { ...input, fontDiscovery: { libraryDir, directories: [{ path: directory, system: true }] } };
@@ -228,8 +229,10 @@ test('风险候选红标；确认前篡改/软链不写库；Level 3 精确列�
   writeFileSync(path, Buffer.concat([bytes, Buffer.from([0])]));
   assert.throws(() => answer(risky, card, { confirmed: [{ id: card.options[0].id, license, evidence }] }));
   renameSync(path, path + '.target');
-  symlinkSync(path + '.target', path);
-  assert.throws(() => answer(risky, card, { confirmed: [{ id: card.options[0].id, license, evidence }] }));
+  await symlinkProbe(context, '确认前软链不写库', path + '.target', path, () => {
+    assert.throws(() => answer(risky, card, { confirmed: [{ id: card.options[0].id, license, evidence }] }));
+    assert.equal(existsSync(join(libraryDir, 'registry.json')), false);
+  });
   assert.equal(existsSync(join(libraryDir, 'registry.json')), false);
   const missing = discoverFonts({ ...input, languages: ['cn', 'en'], translations: { matched: [{ nodeId: '10:1', byLang: { en: '𐀀' } }] } }).missing;
   const gap = missing.find((row) => row.lang === 'en' && row.weight === 400);
@@ -238,7 +241,7 @@ test('风险候选红标；确认前篡改/软链不写库；Level 3 精确列�
   assert.equal(gap.locations[0].nodeId, '10:1');
 });
 
-test('Level 1 复用拒绝登记漂移、软链替换与许可失效', (context) => {
+test('Level 1 复用拒绝登记漂移、软链替换与许可失效', async (context) => {
   const { input, libraryDir, bytes } = fixture(context);
   const [card] = discoverFonts(input).questions;
   const approved = answer(input, card, { confirmed: [{ id: card.options[0].id, license, evidence }] });
@@ -250,9 +253,10 @@ test('Level 1 复用拒绝登记漂移、软链替换与许可失效', (context)
   assert.ok(replay().blockers.length);
   writeFileSync(registered, bytes);
   renameSync(registered, registered + '.backup');
-  symlinkSync(registered + '.backup', registered);
-  assert.ok(replay().blockers.length);
-  rmSync(registered);
+  await symlinkProbe(context, 'Level 1 拒绝软链替换', registered + '.backup', registered, () => {
+    assert.ok(replay().blockers.length);
+    rmSync(registered);
+  });
   renameSync(registered + '.backup', registered);
   writeFileSync(join(libraryDir, registry.entries[0].licenseFile), '非商用');
   assert.ok(replay().blockers.length);
