@@ -103,6 +103,15 @@ C1 先验证外传的 B3 版本、范围和消费契约，再按同一 Figma 版
 - 只复制 B3 索引中本语实际使用的字体及许可到 css/font/。额外保留的历史资料按 original/、backup/、history/ 分类放入独立的 H23 输入目录，支持中文和空格。清单的 source 原样记录相对源路径，path 使用按源路径生成的安全包内文件名；原字节保留，不改之前发布的轮次。单视频超过 15 MB 或素材与字体文件合计超过 120 MB 只告警，不删改素材。
 - 每轮先独立验暂存包、再原子发布到 c1.rN/。assets/manifest.json 使用 onepage-c-assets/v1，记录摘要、来源、尺寸与 POSIX 相对路径。迁移后用 checkEntry 对包内 stage-record.json 传 expectedStage=C、expectedOutputKind=c-assets、外部预期输出版本及 scopeVersion，无需原 B3、字体库、Figma 或编码器。C1 不生成页面。
 
+## C3 单页检查（开发验证）
+
+    npm --prefix standards/one-page run c:check -- --pack <C2包> --expect-version <C2版本> --scope-version <范围版本> --out <现有独立目录> --references <参考索引JSON> --references-sha256 <SHA-256> --handoff-pack <B3包> --consumer-contract <合同JSON>
+
+- 浏览器复用本地已安装的 Playwright/Chromium；可用 PLAYWRIGHT_MODULE_ROOT 和 CHROME_PATH 指向可信安装。检查在隔离的浏览器上下文与回环静态服务运行。
+- 参考索引使用 onepage-pixel-reference/v1，含 baseLanguage、scopeVersion、b3Digest 和 screens。每项给出 end/nodeId/viewport/path/sha256；可附本屏 TAB 状态 {kind:"tab",tabId}、局部 local:[{domId,region}] 与 live 文字遮罩 textMasks:[{domId,rect}]。矩形均为基准 CSS 像素 [x,y,width,height]。不得以待测页面截图作参考。
+- 通过 --handoff-pack 与 --consumer-contract 传入 C2 对应的 B3；缺 B3 不签发通过凭据。HTTP 样例只在隔离 Chromium 上注入，不改产品。报告按 D01～D13 聚合：同项任何必需场景缺证，不能以同项其它场景通过顶替。像素用 6% / 0.1 暂定口径，不替代 #151 真稿与阈值验收。
+- 检查记录、日志及三图在产品目录外；收包用 checkEntry 的 c-single-page 分支，外传 pagePack、pageVersion、scopeVersion 与 expectedOutputVersion。可由程序提供修订函数以生成新 C2 版本、触发全量复测；命令本身不改产品或签发豁免。
+
 ## C2 基础语言原生页
 
     npm --prefix standards/one-page run c:generate -- --pack <B3包> --expect-version <B3版本> --scope-version <范围版本> --consumer-contract <外部合同JSON> --assets-pack <C1包> --assets-version <C1版本> --assets-sha256 <C1清单SHA-256> --run-dir <runs/运行目录>

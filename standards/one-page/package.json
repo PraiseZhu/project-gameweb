@@ -15,7 +15,8 @@
     "test": "node --test test/*.test.mjs",
     "b:delta": "node bin/b-delta.mjs",
     "c:assets": "node bin/c-assets.mjs",
-    "c:generate": "node bin/c-generate.mjs"
+    "c:generate": "node bin/c-generate.mjs",
+    "c:check": "node bin/c-check.mjs"
   },
   "engines": {
     "node": ">=20"
