@@ -140,3 +140,14 @@ C1 先验证外传的 B3 版本、范围和消费契约，再按同一 Figma 版
 - 组件字段同样经过 B2 补问。当前支持叶节点的 text-content 接收器、scalar 形态，以及 string、number、boolean 的非空类型集合。缺值保留初始展示，非法值阻断响应投递，不执行自由文本合同。
 - 已明确母版、唯一状态轴及变体内容时，C2 可制作开合菜单与数据／动作驱动的状态；缺特定变体、实例覆盖对应关系或组件接收器时按对象阻断。不能把阻断当作该需求通过。
 - 浏览器回归需现有 `ego-browser`：`ONEPAGE_C2_BROWSER=1 node --test standards/one-page/test/c-page-generate.test.mjs`。合成夹具和本地静态测试只证明已测场景，不代表真实设计还原、开发组件、正式接口或 C3/C4 已验收。
+
+## D：单语言设计验收
+
+三个命令都接收外传的 `--check <C3 或 C4 的 stage-record.json>`、`--page-pack <C2 轮次或 C4 build>`、`--page-version`、`--check-version`、`--scope-version`。不要从待验包反填预期值。命令只复核当前成品、浏览器日志和像素三图，不重跑 C 的检查。
+
+- `npm --prefix standards/one-page run d:accept -- <公用参数>`：输出验收指纹和逐文件摘要。核对不通过，退回 C。
+- `d:preview`：打开它输出的本机 HTTP 地址。默认在外置同源 iframe 操作实际成品，不对照设计稿；不支持 `file://`。可选 `--handoff-pack` 提供同版 B3 样例；模拟时显示橙色横幅，只有 HTTP 响应替换数据入口。未传 B3 时只提供实际成品配置。预览和模拟均不写成品目录。
+- 在工具栏点选位置，再填写意见；无法定位时可直接添加。导出 JSON 区分已定位／未定位意见，包含验收指纹、节点、屏/TAB、视口与 iframe 内坐标。意见在当前壳页面内暂存，刷新或关闭前请导出。
+- 当前结构化局部改稿沿用 C4 支持的图片 `opacity`。按导出意见取精确 `target`，把 `target/property/value/fingerprint` 写入请求 JSON；设计师明确同意覆盖原稿局部基线时，另写对应的 `caseId` 和对话依据 `basis`。用 `d:accept --design <请求JSON> --design-sha256 <外传SHA-256>` 生成原生 C4 指令。坐标仅作定位用；可覆盖范围由已核验的源几何及参考视口计算，不能以点选坐标自报范围。新版 C4 必须重新验收。
+- 设计师在对话中确认**当前验收指纹**后，人工记录 `{"schema":"onepage-d-dialogue-confirmation/v1","designer":"…","basis":"对话依据…","fingerprint":"…"}`。用 `d:approve --confirmation <确认JSON> --confirmation-sha256 <外传SHA-256> --output <外置新目录>` 签发；页面没有签发入口，CLI 不代替设计师确认，也不认证对话身份。消费时 `checkEntry` 指定 D、`d-design-approved`、外传批准版本及上述 C 凭证参数；任一成品或证据漂移即拒绝。
+- D 浏览器定向：`ONEPAGE_D_BROWSER=1 node --test standards/one-page/test/d-accept.test.mjs`。浏览器全量同时开启 C2/C3/C4/D；不启用开关时只运行非浏览器覆盖。合成确认不代表真实设计师签发。
