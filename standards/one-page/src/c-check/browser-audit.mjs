@@ -768,6 +768,16 @@ export async function auditBrowser({ root, meta, config, manifest, samples, refe
           if (!bounds || [bounds.x, bounds.y, bounds.x + bounds.width, bounds.y + bounds.height].some((value, index) =>
             Math.abs(value - target.edges[index]) > 0.1)) throw new Error('实景局部目标与权威设计框不符：' + target.domId);
         }
+        for (const approval of reference.approved ?? []) {
+          const art = page.locator(idSelector(approval.domId) + ' > .art');
+          const measured = await art.boundingBox();
+          if (!measured || [measured.x, measured.y, measured.x + measured.width, measured.y + measured.height]
+            .some((value, index) => Math.abs(value - approval.edges[index]) > 0.1)
+            || Number(await art.evaluate((node) => getComputedStyle(node).opacity)) !== approval.value) {
+            throw new Error('设计确认区与当前目标范围或样式不符：' + approval.domId);
+          }
+          add('D04', reference.domId + ':' + reference.caseId + ':' + approval.domId + ':designer-confirmed', true, approval);
+        }
         const png = await page.screenshot({ animations: 'allow', scale: 'css' });
         screenshots.push(...await capture(reference, png, { ...ready, chromium: browser.version(), liveText }));
       } catch (error) {

@@ -22,6 +22,7 @@ import { buildPage, resolveTabBindings } from '../src/c-page-render.mjs';
 import { inspectC2Contract } from '../src/c2-contract.mjs';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
 import { launchChromium } from '../../stop1-figma-pixel/tool/src/resolve-playwright.mjs';
+import { browserCaseMs, checkCliMs, compositeCaseMs, measureStage } from './browser-test-budget.mjs';
 
 const nodeId = '1:2';
 const fileKey = 'C2GOLDEN';
@@ -113,7 +114,9 @@ async function golden(context, settings = {}) {
     scopeVersion: b3.scopeVersion, consumerContract: HANDOFF_CONSUMER, tokenValue, fetchImpl } };
 }
 import { runCGenerate } from '../src/c-page-generate.mjs';
-import { runCCheck } from '../src/c-check/index.mjs';
+import { runCCheck as checkPage } from '../src/c-check/index.mjs';
+
+const runCCheck = (...args) => measureStage('C3 c-check in-process',() => checkPage(...args));
 import { hasPagingResult } from '../src/c-check/pagination-audit.mjs';
 
 async function inputs(context, settings) {
@@ -155,7 +158,7 @@ test('A/B1/B2/B3/C1 → C2：真实工具链、两轮字节一致、断源迁移
 });
 
 test('C3：真实 C2 成品经 Chromium 与独立合成参考生成三图；缺参考不放行',
-  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: 90000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
     const { options, root } = await inputs(context, { mutateDocument(document) {
       document.children[0].children[0].children.find((node) => node.id === '10:7').absoluteBoundingBox.width = 100;
     } });
@@ -399,7 +402,7 @@ test('生产 B2→B3→C1→C2 CLI 保留反序绑定和受约束接收器', asy
 });
 
 test('C3 Chromium：以真实 B3 样例验证组件接收及未配置、404、失败状态',
-  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: 90000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
     const { root, options } = await inputs(context, productionSettings('same'));
     const product = runCGenerate(options);
     assert.ok(product.ok, JSON.stringify(product));
@@ -420,7 +423,7 @@ test('C3 Chromium：以真实 B3 样例验证组件接收及未配置、404、�
   });
 
 test('C3 Chromium：离网图片失败时恢复本地素材，实际复制按钮可写剪贴板',
-  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: 90000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
     const { root, options } = await inputs(context, { config: { actions: { 'copy-fixture': { type: 'copy-text', value: 'c3-fixture-copy' } } },
       downloads: { '10:91': vector },
       mutateDocument(document) {
@@ -451,7 +454,7 @@ test('C3 Chromium：离网图片失败时恢复本地素材，实际复制按钮
   });
 
 test('C3 Chromium：正式双端多屏每端九档，断点往返绑定同屏；漏参考拒绝下游',
-  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: 90000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
     const { root, options } = await inputs(context, { platform: 'pc+mobile', mutateDocument(document) {
       document.children = ['pc', 'mobile'].map((end, index) => {
         const prefix = String(30 + index);
@@ -478,7 +481,7 @@ test('C3 Chromium：正式双端多屏每端九档，断点往返绑定同屏；
   });
 
 test('C3 Chromium：生产双端 TAB、隐藏面板、弹层焦点与备案素材',
-  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: 90000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
     const tabs = ['pc','mobile'].flatMap((end, index) => ['5','6'].map((id, position) => ({ end,
       tabId: (50 + index) + ':' + id, switchId: (50 + index) + ':7', panelId: (50 + index) + ':' + (8 + position),
       source: '双端同义屏设计', selection: { kind: 'none' } })));
@@ -668,7 +671,7 @@ test('C3 Chromium：生产双端 TAB、隐藏面板、弹层焦点与备案素�
   });
 
 test('C3 Chromium：单页分页逐动作验隐藏并签发，错误显示阻断',
-  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: 90000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
     const { root, options } = await inputs(context, { config: {
       bindings: { 'sec/1::switch/单页': { pagination:{ kind:'panels', panels:['grp/卡片'] } } },
       actions: { next:{ type:'next-page', targets:['switch/单页'] }, previous:{ type:'previous-page', targets:['switch/单页'] } },
@@ -730,7 +733,7 @@ test('C3 Chromium：单页分页逐动作验隐藏并签发，错误显示阻断
   });
 
 test('C3 Chromium：同页先验第一屏非默认 TAB，再独立验证第二屏分页',
-  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: 90000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
     const sections = [20, 21];
     const tabs = sections.flatMap((section) => [0, 1].map((index) => ({ end:'pc', tabId:section + ':' + (5 + index),
       switchId:section + ':7', panelId:section + ':' + (8 + index), source:'双屏分页设计', selection:{ kind:'none' } })));
@@ -825,7 +828,7 @@ async function compositeReferences(root, meta) {
 }
 
 test('C3 Chromium：独立双端参考正式签发、移走来源后验包，并阻断漏图与错图',
-  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: 300000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: compositeCaseMs }, async (context) => {
     const { root, options } = await inputs(context, { platform: 'pc+mobile', config: {
       bindings: { 'sec/1::switch/轮播': { pagination: { kind: 'cards', list: 'list/奖励列表', perPage: 2 } },
         'sec/2::list/导航槽': { slotMapping: { kind: 'key', field: 'id', keys: ['home','shop'] }, missing: 'design-default' } },
@@ -862,14 +865,14 @@ test('C3 Chromium：独立双端参考正式签发、移走来源后验包，并
     const args = ['--pack', product.pack, '--expect-version', product.version, '--scope-version', product.scopeVersion,
       '--out', out, '--handoff-pack', options.pack, '--consumer-contract', contractPath, '--references', references.path];
     const cli = new URL('../bin/c-check.mjs', import.meta.url).pathname;
-    const run = async (digest) => {
+    const run = (stage, digest) => measureStage('C3 c-check CLI: ' + stage, async () => {
       try {
         const { stdout } = await promisify(execFile)(process.execPath, [cli, ...args, '--references-sha256', digest],
-          { maxBuffer: 8 * 1024 * 1024, timeout: 90000, killSignal: 'SIGKILL', signal: context.signal });
+          { maxBuffer: 8 * 1024 * 1024, timeout: checkCliMs, killSignal: 'SIGKILL', signal: context.signal });
         return { exit: 0, result: JSON.parse(stdout) };
       } catch (error) { if (error.code !== 1 || !error.stdout?.length) throw error; return { exit: error.code, result: JSON.parse(error.stdout) }; }
-    };
-    const issued = await run(references.digest);
+    });
+    const issued = await run('issue',references.digest);
     const checked = issued.result;
     const report = json(join(checked.rounds[0].root, 'check-report.json'));
     const lists = report.findings.filter((row) => row.check === 'D09' && row.target.includes(':presentation:'));
@@ -901,14 +904,14 @@ test('C3 Chromium：独立双端参考正式签发、移走来源后验包，并
       writeFileSync(references.path, bytes);
       return byteDigest(bytes);
     };
-    const missing = await run(writeIndex());
+    const missing = await run('missing reference',writeIndex());
     assert.equal(missing.exit, 1);
     assert.ok(missing.result.rounds[0].findings.some((row) => row.check === 'D04' && row.status === 'not_run'));
     archive(missing.result.rounds[0].root, 'composite-missing-reference');
     const wrongPng = execFileSync('python3', ['-B','-c','from PIL import Image; import sys; Image.new("RGB",(1280,720),"black").save(sys.stdout.buffer,"PNG")']);
     writeFileSync(join(references.directory, first.path), wrongPng);
     references.index.screens.unshift({ ...first, sha256: byteDigest(wrongPng) });
-    const wrong = await run(writeIndex());
+    const wrong = await run('wrong reference',writeIndex());
     assert.equal(wrong.exit, 1);
     assert.ok(wrong.result.rounds[0].findings.some((row) => row.check === 'D04' && row.status === 'fail'));
     archive(wrong.result.rounds[0].root, 'composite-wrong-reference');
@@ -1245,7 +1248,7 @@ function callBrowser(script) {
 }
 
 test('浏览器实跑：生成的反序 TAB，以及独立运行时夹具的切屏、轮播、弹层、数据、保护与端切换',
-  { skip: process.env.ONEPAGE_C2_BROWSER !== '1' && '使用 ONEPAGE_C2_BROWSER=1 与已安装的 ego-browser 运行', timeout:90000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C2_BROWSER !== '1' && '使用 ONEPAGE_C2_BROWSER=1 与已安装的 ego-browser 运行', timeout: browserCaseMs }, async (context) => {
     const { files } = buildPage(tabFixture());
     const pages = Object.fromEntries([['pc',['pc']],['mobile',['mobile']],['dual',['pc','mobile']]].map(([name, ends]) => [name,
       buildPage({baseLanguage:'cn',ends,inventories:Object.fromEntries(ends.map((end)=>[end,variantFixture(end)])),manifest:{assets:[],fonts:[]},pairing:{}}).files]));

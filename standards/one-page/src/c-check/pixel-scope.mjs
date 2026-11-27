@@ -38,8 +38,24 @@ export function targetRegion(meta, screen, target, viewport) {
 }
 
 export const criticalModules = (meta, screen, state) => meta.nodes.filter((node) => node.end === screen.end && node.module === screen.nodeId
-  && ['btn', 'tab', 'nav', 'title', 'kv'].includes(node.role)
-  && !state.hiddenPanels.some((id) => node.ancestors?.includes(id)));
+  && (['btn', 'tab', 'nav', 'title', 'kv'].includes(node.role) || meta.c4?.affectedDomIds.includes(node.domId))
+  && !state.hiddenPanels.some((id) => (meta.c4 && id === node.nodeId) || node.ancestors?.includes(id)));
+
+export function affectedDomIds(page, delta, material) {
+  const ids = new Set([...(material.leaves ?? []).map((row) => row.domId),...(material.manual?.plan.keptLeaves ?? [])]);
+  const targetsOf = (item) => page.nodes.filter((node) => node.end === item.end && node.nodeId === item.nodeId);
+  for (const asset of material.assets) {
+    const targets = targetsOf(asset).filter((node) => node.module);
+    if (!targets.length) throw new Error('变化素材无法定位到需要实测的屏');
+    for (const target of targets) ids.add(target.domId);
+  }
+  for (const related of delta.whiteboxScope.relatedModules) {
+    const targets = targetsOf(related);
+    if (!targets.length || targets.some((node) => !node.module)) throw new Error('B4 关联模块无法定位到需要实测的屏');
+    for (const target of targets) if (target.role !== 'sec') ids.add(target.domId);
+  }
+  return [...ids].sort();
+}
 
 export const hasHiddenPaginationEvidence = (rows, { end, screen, caseId }, actionId, action) =>
   ['next-page','previous-page'].includes(action?.type) && action.targets.length > 0 && action.targets.every((owner) => rows.some((row) => {
