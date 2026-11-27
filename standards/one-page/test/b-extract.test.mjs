@@ -215,10 +215,10 @@ test('文件版本变化停并退回 A', async () => {
   assert.equal(problems[0].returnTo, 'A');
   assert.match(problems[0].missing, /9999/);
   assert.equal(existsSync(result.snapshotPath), true);
-  assert.match(result.snapshotPath, /b1\.r1\/snapshot-9999\.json$/);
+  assert.match(result.snapshotPath, /b1\.r1[\\/]snapshot-9999\.json$/);
   const again = await runB(confirmed, { fetchImpl: fetchOf(canvasBody([namedPc()], '9999')) });
   assert.equal(again.code, 'source-version');
-  assert.match(again.snapshotPath, /b1\.r2\/snapshot-9999\.json$/);
+  assert.match(again.snapshotPath, /b1\.r2[\\/]snapshot-9999\.json$/);
   assert.equal(existsSync(result.snapshotPath), true);
 });
 
@@ -473,7 +473,7 @@ test('checkEntry：B1 原件通过；改 extract/引用/sidecar 或换路径都�
   assert.match(redirected.reason, /本轮 B1|抽取成果|kind/);
 });
 
-test('checkEntry：越界路径与符号链接拒绝', async () => {
+test('checkEntry：越界路径拒绝', async () => {
   const confirmed = await confirmA({ body: canvasBody([namedPc()]) });
   const result = await runB(confirmed);
   const extract = readJson(result.extractPath);
@@ -486,11 +486,19 @@ test('checkEntry：越界路径与符号链接拒绝', async () => {
   const outsideGate = checkB(result.stagePath, extract.version);
   assert.equal(outsideGate.ok, false);
   assert.match(outsideGate.reason, /运行目录|本轮 B1/);
+});
 
+test('checkEntry：符号链接拒绝', async (t) => {
   const confirmed2 = await confirmA({ body: canvasBody([namedPc()]) });
   const result2 = await runB(confirmed2);
   const link = join(confirmed2.runDir, 'b1.r1', 'extract-link.json');
-  symlinkSync(result2.extractPath, link);
+  try {
+    symlinkSync(result2.extractPath, link);
+  } catch (error) {
+    if (error.code !== 'EPERM') throw error;
+    t.skip('当前环境无创建文件符号链接的权限（EPERM），未执行符号链接拒绝探针');
+    return;
+  }
   const extract2 = readJson(result2.extractPath);
   rewriteStage(result2.stagePath, (body) => {
     body.output = { ...body.output, path: link };
@@ -767,7 +775,7 @@ test('checkEntry：同一 run 更新 A 后旧 B1 拒绝，重跑后新结果通�
   assert.equal(b2.ok, true, b2.message);
   assert.equal(checkB(b2.stagePath, readJson(b2.extractPath).version).ok, true);
   assert.equal(existsSync(b1.extractPath), true);
-  assert.match(b2.extractPath, /b1\.r2\//);
+  assert.match(b2.extractPath, /b1\.r2[\\/]/);
 });
 
 test('checkEntry：当前 A 缺失/被改/不通过则拒绝旧抽取', async () => {
