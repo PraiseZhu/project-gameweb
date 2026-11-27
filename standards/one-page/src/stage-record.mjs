@@ -18,10 +18,11 @@ import { ASSET_STAGE, checkAssets } from './assets-manifest.mjs';
 import { checkPageEntry, PAGE_KIND } from './c-page-check.mjs';
 import { checkSinglePageEntry, SINGLE_PAGE } from './c-check/evidence.mjs';
 import { APPROVED, checkDesignApproved } from './d-proof.mjs';
+import { E_KIND, checkEEntry } from './e-multilang/e-check.mjs';
 
 const STAGES = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']);
 const RESULTS = new Set(['pass', 'fail', 'stopped', 'needs-input']);
-export const KNOWN_OUTPUT_KINDS = Object.freeze(['scope', 'b-extract', 'b-supplement', 'b-handoff', 'b-delta-handoff', 'c-assets', PAGE_KIND, SINGLE_PAGE, APPROVED]);
+export const KNOWN_OUTPUT_KINDS = Object.freeze(['scope', 'b-extract', 'b-supplement', 'b-handoff', 'b-delta-handoff', 'c-assets', PAGE_KIND, SINGLE_PAGE, APPROVED, E_KIND]);
 
 export function stageRecordBody(fields) {
   return {
@@ -953,6 +954,7 @@ export function checkEntry(recordPath, options = {}) {
   if (expectedOutputKind === PAGE_KIND) return checkPageEntry(recordPath, options);
   if (expectedOutputKind === SINGLE_PAGE) return checkSinglePageEntry(recordPath, options);
   if (expectedOutputKind === APPROVED) return checkDesignApproved(recordPath, options);
+  if (expectedOutputKind === E_KIND) return checkEEntry(recordPath, options);
   if (expectedOutputKind === 'c-assets') {
     if (expectedStage !== 'C' || resolve(recordPath) !== join(dirname(resolve(recordPath)), ASSET_STAGE)) {
       return { ok: false, reason: 'C1 必须提供 C 环节及包内 stage-record.json' };

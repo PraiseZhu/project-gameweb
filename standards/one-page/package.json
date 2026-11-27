@@ -20,7 +20,8 @@
     "c:patch": "node bin/c-patch.mjs",
     "d:accept": "node bin/d-accept.mjs accept",
     "d:preview": "node bin/d-accept.mjs preview",
-    "d:approve": "node bin/d-accept.mjs approve"
+    "d:approve": "node bin/d-accept.mjs approve",
+    "e:build": "node bin/e-build.mjs"
   },
   "engines": {
     "node": ">=20"
