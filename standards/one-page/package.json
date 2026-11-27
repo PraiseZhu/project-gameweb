@@ -17,7 +17,10 @@
     "c:assets": "node bin/c-assets.mjs",
     "c:generate": "node bin/c-generate.mjs",
     "c:check": "node bin/c-check.mjs",
-    "c:patch": "node bin/c-patch.mjs"
+    "c:patch": "node bin/c-patch.mjs",
+    "d:accept": "node bin/d-accept.mjs accept",
+    "d:preview": "node bin/d-accept.mjs preview",
+    "d:approve": "node bin/d-accept.mjs approve"
   },
   "engines": {
     "node": ">=20"

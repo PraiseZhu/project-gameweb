@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One Page · 设计验收</title>
+<link rel="stylesheet" href="qa.css">
+<header>
+  <strong>One Page · 设计验收</strong>
+  <label>视口 <select id="devices"></select></label>
+  <label>数据 <select id="states"></select></label>
+  <button id="previous" type="button">上一屏</button><button id="next" type="button">下一屏</button>
+  <button id="return" type="button">回到产品</button>
+</header>
+<div id="simulation" role="status" hidden></div>
+<p id="status" role="status">请使用 d:preview 提供的本机 HTTP 地址；不支持 file://。</p>
+<main id="review" hidden>
+  <div id="stage"><div id="canvas"><iframe title="待验收产品" id="product" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" allow="clipboard-write"></iframe><button id="picker" type="button" aria-label="选取页面意见位置" hidden></button></div></div>
+  <aside aria-label="验收意见">
+    <form id="comments">
+      <label for="comment">验收意见</label><textarea id="comment" required maxlength="4000"></textarea>
+      <output id="location">未定位</output>
+      <button id="locate" type="button" aria-pressed="false">点选位置</button>
+      <button id="clear" type="button">清除位置</button>
+      <button type="submit">添加意见</button>
+    </form>
+    <ol id="notes"></ol><button id="export" type="button">导出意见</button>
+  </aside>
+</main>
+<script type="module" src="qa-toolbar.mjs"></script>
+</html>
