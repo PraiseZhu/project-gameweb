@@ -192,7 +192,8 @@ export function buildPage({ baseLanguage, ends, inventories, manifest, pairing, 
       const family = node.text && faces.get(node.text.fontFamily + '/' + (node.text.fontWeight ?? 400));
       if (node.text?.characters?.trim()) requireAssets(family, 'C1 缺本语正文核验字体：' + node.text.fontFamily);
       layouts[end].push(rule(node, parent, id, index, family, asset));
-      nodesTrace.push({ end, scope: node.scope, nodeId: node.id, module: section?.id ?? null, domId: id, asset: asset?.path ?? null });
+      nodesTrace.push({ end, scope: node.scope, nodeId: node.id, role: node.role ?? null, module: section?.id ?? null, domId: id,
+        asset: asset?.path ?? null, text: node.text?.characters ?? null, designBox: node.pageBox ?? null, ancestors: node.ancestorIds ?? [] });
       const children = nodes.filter((item) => item.parentId === node.id && item.scope === node.scope);
       const overlay = node.role === 'modal';
       let tag = node.role === 'sec' ? 'section' : node.role === 'nav' ? 'nav' : node.text ? 'p' : 'div';
@@ -346,6 +347,7 @@ export function buildPage({ baseLanguage, ends, inventories, manifest, pairing, 
     + markup + '<div id="page-footer" class="page-footer-mount" tabindex="-1" inert aria-hidden="true" aria-label="' + escape(footer) + '" hidden></div></main>'
     + '<output class="status" id="site-status" role="status" aria-live="polite"></output></body></html>\n';
   const styles = common + '\n' + fontCss.join('\n') + ':root{' + fontVariables + '}\n'
+    + '.no-js img:not([src]){visibility:hidden}\n'
     + (dual ? '[data-device="mobile"]{display:none}\n' : '') + layouts.pc.join('');
   const mobile = 'html[data-page-platform="mobile"]{font-size:calc(100vw / 3.75)}@media (min-aspect-ratio:750/1430){html[data-page-platform="mobile"]{font-size:calc(100vh / 7.15);font-size:calc(100dvh / 7.15)}}\n'
     + '@media (max-width:1024px){:root:not([data-page-platform="pc"]){font-size:calc(100vw / 3.75)}'
