@@ -151,3 +151,12 @@ C1 先验证外传的 B3 版本、范围和消费契约，再按同一 Figma 版
 - 当前结构化局部改稿沿用 C4 支持的图片 `opacity`。按导出意见取精确 `target`，把 `target/property/value/fingerprint` 写入请求 JSON；设计师明确同意覆盖原稿局部基线时，另写对应的 `caseId` 和对话依据 `basis`。用 `d:accept --design <请求JSON> --design-sha256 <外传SHA-256>` 生成原生 C4 指令。坐标仅作定位用；可覆盖范围由已核验的源几何及参考视口计算，不能以点选坐标自报范围。新版 C4 必须重新验收。
 - 设计师在对话中确认**当前验收指纹**后，人工记录 `{"schema":"onepage-d-dialogue-confirmation/v1","designer":"…","basis":"对话依据…","fingerprint":"…"}`。用 `d:approve --confirmation <确认JSON> --confirmation-sha256 <外传SHA-256> --output <外置新目录>` 签发；页面没有签发入口，CLI 不代替设计师确认，也不认证对话身份。消费时 `checkEntry` 指定 D、`d-design-approved`、外传批准版本及上述 C 凭证参数；任一成品或证据漂移即拒绝。
 - D 浏览器定向：`ONEPAGE_D_BROWSER=1 node --test standards/one-page/test/d-accept.test.mjs`。浏览器全量同时开启 C2/C3/C4/D；不启用开关时只运行非浏览器覆盖。合成确认不代表真实设计师签发。
+## E 多语言制作
+
+在同一范围取得 D 阶段批准、C3/C4 单页检查记录、B3 和 C1 后，使用：
+
+    npm --prefix standards/one-page run e:build -- --approval <D阶段记录> --approval-version <D版本> --check <C检查阶段记录> --check-version <C检查版本> --page-pack <单页包> --page-version <单页版本> --scope-version <A范围版本> --handoff-pack <B3包> --handoff-version <B3版本> --consumer-contract <当前消费契约JSON> --assets-pack <C1包> --assets-version <C1版本> --assets-sha256 <C1清单SHA256> --run-dir <独立运行目录>
+
+E 只读上述凭证；无外语返回 `skipped`，不创建页面。生成成功时在独立 `e.rN/page` 写基础页和每个目标语言的独立 HTML，并保留共用样式和脚本。阶段记录及 `locale-guide.json`、`locale-adjustments.json` 和浏览器证据在成品目录外。使用 E 阶段记录、期望成果版本及范围版本可独立回验清单与文件摘要。仅在外语图存在明确导出计划时复用 C1 的只读版本化导出；未匹配则不按名称或顺序猜。
+
+本地 Chromium 定向验证使用 `ONEPAGE_E_BROWSER=1`。检查失败不发布 E 目录；缺译标记、字体、排版锁和数据过滤失败应依据输出的对象定位核对，不可手工改通过记录。
