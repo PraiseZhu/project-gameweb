@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { symlinkProbe } from './helpers/symlink.mjs';
 import { execFile } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
@@ -79,7 +80,14 @@ test('B4 拒绝未绑定微调锚点、包内符号链接', async (context) => {
   const badAnchor = runBDelta({ runDir: input.runDir, basePack: input.b3.pack, expectVersion: input.b3.version, scopeVersion: input.scopeVersion, consumerContract: contract, manualTweakAnchors: [{ nodeId: 'n1' }] });
   assert.equal(badAnchor.ok, false); assert.equal(badAnchor.result, 'stopped'); assert.match(badAnchor.message, /微调锚点/);
   const first = runBDelta({ runDir: input.runDir, basePack: input.b3.pack, expectVersion: input.b3.version, scopeVersion: input.scopeVersion, consumerContract: contract }); assert.equal(first.ok, true, JSON.stringify(first));
-  const original = join(root, 'manifest-copy.json'); cpSync(first.manifestPath, original); rmSync(first.manifestPath); symlinkSync(original, first.manifestPath); const rejected = checkEntry(first.stagePath, { expectedStage: 'B', expectedOutputKind: 'b-delta-handoff', expectedOutputVersion: first.version, scopeVersion: input.scopeVersion, basePackVersion: input.b3.version }); assert.equal(rejected.ok, false); assert.match(rejected.reason, /普通文件|符号链接/);
+  const original = join(root, 'manifest-copy.json');
+  cpSync(first.manifestPath, original);
+  rmSync(first.manifestPath);
+  await symlinkProbe(context, 'B4 拒绝包内符号链接', original, first.manifestPath, () => {
+    const rejected = checkEntry(first.stagePath, { expectedStage: 'B', expectedOutputKind: 'b-delta-handoff', expectedOutputVersion: first.version, scopeVersion: input.scopeVersion, basePackVersion: input.b3.version });
+    assert.equal(rejected.ok, false);
+    assert.match(rejected.reason, /普通文件|符号链接/);
+  });
 });
 
 test('B4 屏幕新增优先升级完整 B3，不发布局部包', async (context) => {

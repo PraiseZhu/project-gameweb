@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
+import { symlinkProbe } from './helpers/symlink.mjs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { runAScope } from '../src/a-scope.mjs';
@@ -287,7 +288,6 @@ test('接收侧拒绝缺文件、改字节、坏引用、路径逃逸、错版�
   const variants = [
     ['missing', (pack) => rmSync(join(pack, PACK_FILES.fonts)), /缺文件/],
     ['changed', (pack) => write(join(pack, PACK_FILES.dataContract), {}), /SHA-256/],
-    ['boundary', (pack) => { rmSync(join(pack, PACK_FILES.assets)); symlinkSync(join(result.pack, PACK_FILES.assets), join(pack, PACK_FILES.assets)); }, /符号链接/],
     ['notPublished', (pack) => rmSync(join(pack, STAGE_FILE)), /缺文件/],
   ];
   for (const [name, alter, reason] of variants) {
@@ -298,6 +298,14 @@ test('接收侧拒绝缺文件、改字节、坏引用、路径逃逸、错版�
     assert.equal(checked.ok, false);
     assert.match(checked.message, reason);
   }
+  const linkedPack = join(root, 'boundary');
+  cpSync(result.pack, linkedPack, { recursive: true });
+  rmSync(join(linkedPack, PACK_FILES.assets));
+  await symlinkProbe(context, '接收侧拒绝包内符号链接', join(result.pack, PACK_FILES.assets), join(linkedPack, PACK_FILES.assets), () => {
+    const checked = verify(result, { pack: linkedPack });
+    assert.equal(checked.ok, false);
+    assert.match(checked.message, /符号链接/);
+  });
   for (const [name, change, reason] of [
     ['broken-guide', (body, pack) => {
       const path = PACK_FILES.guide;
@@ -337,7 +345,7 @@ test('发布端拒绝错 B2、损坏 A/B1/B2、更新 B2 失败和孤儿轮，�
   };
   reject('1'.repeat(64), /给定的 B2 版本/);
   for (const path of [readdirSync(runDir).find((name) => /^scope\.v/.test(name)), b1.snapshotPath, b2.translationsPath, fontPath, configPath]) {
-    const full = path.startsWith('/') ? path : join(runDir, path);
+    const full = isAbsolute(path) ? path : join(runDir, path);
     const stored = readFileSync(full);
     write(full, {});
     reject(b2Version, /范围|摘要|字体|配置/);
@@ -378,12 +386,14 @@ test('构建并发不串包，已有锁或半写目录不冒充发布', async (c
 test('中途改动合法 JSON 的字节仍算漂移，不发布且不覆盖', async (context) => {
   const input = await golden(join(temp(context), 'source'));
   const old = cli('b-handoff', buildArgs(input));
-  const preload = "import fs from 'node:fs'; import { syncBuiltinESMExports } from 'node:module';\n"
+  const before = readFileSync(input.configPath);
+  const preload = "import fs from 'node:fs'; import { basename } from 'node:path'; import { syncBuiltinESMExports } from 'node:module';\n"
     + "const write = fs.writeFileSync; fs.writeFileSync = (path, ...args) => {\n"
     + '  const result = write(path, ...args);\n'
-    + "  if (path.endsWith('/manifest.json')) fs.appendFileSync(" + JSON.stringify(input.configPath) + ", '\\n');\n"
+    + "  if (basename(path) === 'manifest.json') fs.appendFileSync(" + JSON.stringify(input.configPath) + ", '\\n');\n"
     + '  return result;\n}; syncBuiltinESMExports();';
   const child = spawnSync(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(preload), bin('b-handoff'), ...buildArgs(input)], { encoding: 'utf8', env: { ...process.env, ONEPAGE_FONT_DIRS: '' } });
+  assert.deepEqual(readFileSync(input.configPath), Buffer.concat([before, Buffer.from('\n')]));
   assert.equal(child.status, 1, child.stdout + child.stderr);
   const rejected = JSON.parse(child.stdout);
   assert.match(rejected.message, /发生漂移/);

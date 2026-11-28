@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { pillowPython } from './helpers/python.mjs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -36,7 +38,7 @@ function frame(id, name, children = [], props = {}) {
 }
 
 function png(alpha, width = 8, mode = 'RGBA') {
-  return execFileSync('python3', ['-B', '-c', 'from PIL import Image; import sys; im=Image.new(sys.argv[3], (int(sys.argv[2]),8)); color=(99,130,211,255); im.paste(color if sys.argv[3]=="RGBA" else color[:3], (0,0,im.width,8)); im.putpixel((1,1),(189,65,29,int(sys.argv[1])) if sys.argv[3]=="RGBA" else (189,65,29)); im.save(sys.stdout.buffer,"PNG")', String(alpha), String(width), mode]);
+  return execFileSync(pillowPython(), ['-B', '-c', 'from PIL import Image; import sys; im=Image.new(sys.argv[3], (int(sys.argv[2]),8)); color=(99,130,211,255); im.paste(color if sys.argv[3]=="RGBA" else color[:3], (0,0,im.width,8)); im.putpixel((1,1),(189,65,29,int(sys.argv[1])) if sys.argv[3]=="RGBA" else (189,65,29)); im.save(sys.stdout.buffer,"PNG")', String(alpha), String(width), mode]);
 }
 
 async function golden(context, settings = {}) {
@@ -111,7 +113,7 @@ async function golden(context, settings = {}) {
     return response({ images: { [id]: 'https://cdn.c1.test/' + id + '/' + format + '?signed=do-not-persist' } });
   };
   return { root, calls, bytes, foreign, downloads, options: { pack: isolated, runDir: join(root, 'runs', 'c1'), expectVersion: b3.version,
-    scopeVersion: b3.scopeVersion, consumerContract: HANDOFF_CONSUMER, tokenValue, fetchImpl } };
+    scopeVersion: b3.scopeVersion, consumerContract: HANDOFF_CONSUMER, tokenValue, fetchImpl, python: pillowPython() } };
 }
 import { runCGenerate } from '../src/c-page-generate.mjs';
 import { runCCheck as checkPage } from '../src/c-check/index.mjs';
@@ -235,7 +237,7 @@ test('CLI 按独立外传版本、清单 SHA 和契约出包', async (context) =
 function generateCli(root, options) {
   const contract = join(root, 'contract.json');
   writeFileSync(contract, JSON.stringify(options.consumerContract));
-  const result = JSON.parse(execFileSync(process.execPath, [new URL('../bin/c-generate.mjs', import.meta.url).pathname,
+  const result = JSON.parse(execFileSync(process.execPath, [fileURLToPath(new URL('../bin/c-generate.mjs', import.meta.url)),
     '--pack', options.pack, '--expect-version', options.expectVersion, '--scope-version', options.scopeVersion,
     '--consumer-contract', contract, '--assets-pack', options.assetsPack, '--assets-version', options.assetsVersion,
     '--assets-sha256', options.assetsSha256, '--run-dir', options.runDir], { env: { ...process.env, ONEPAGE_FONT_DIRS: '' } }));

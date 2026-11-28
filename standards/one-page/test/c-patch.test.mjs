@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { pillowPython } from './helpers/python.mjs';
 import { execFileSync } from 'node:child_process';
 import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -69,7 +70,7 @@ test('C4：拒绝隔离 checkout 的链接及非目录夹具父路径，不写�
       const temp = join(checkout,'_tmp');
       const path = component === '_tmp' ? temp : join(temp,'c4-fixtures');
       if (path !== temp) mkdirSync(temp);
-      if (type === 'link') symlinkSync(target,path,'dir');
+      if (type === 'link') symlinkSync(target,path,process.platform === 'win32' ? 'junction' : 'dir');
       else writeFileSync(path,'untouched');
       assert.throws(() => createFixture(context,checkout),/夹具路径必须是普通目录/);
       assert.deepEqual(readdirSync(target),[]);
@@ -100,7 +101,7 @@ async function setup(context,{ bitmap = false, design = false, link = false, lea
     if (url.hostname === 'c4.fixture') {
       assert.equal(request.headers,undefined);
       const color = design ? (url.searchParams.get('node') === '10:3' ? 'red' : (current === '111' ? 'blue' : 'green')) : colors[url.pathname.slice(1)];
-      if (bitmap) return new Response(execFileSync('python3',['-B','-c',
+      if (bitmap) return new Response(execFileSync(pillowPython(),['-B','-c',
         'from PIL import Image; import sys; Image.new("RGB",(200,100),sys.argv[1]).save(sys.stdout.buffer,"PNG")',color]));
       const width = design || link ? 100 : 200;
       return new Response('<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="100" viewBox="0 0 ' + width + ' 100"><path fill="' + color + '" d="M0 0H' + width + 'V100H0Z"/></svg>');
@@ -142,7 +143,7 @@ async function setup(context,{ bitmap = false, design = false, link = false, lea
   const b3 = runBHandoff({ runDir,b2Version:json(b2.supplementPath).version });
   assert.ok(b3.ok,JSON.stringify(b3));
   const upstream = { pack:b3.pack,expectVersion:b3.version,scopeVersion:b3.scopeVersion,consumerContract:HANDOFF_CONSUMER };
-  const c1 = await runCAssets({ ...upstream,runDir:join(root,'c1'),fetchImpl,tokenValue });
+  const c1 = await runCAssets({ ...upstream,runDir:join(root,'c1'),fetchImpl,tokenValue,python:pillowPython() });
   assert.ok(c1.ok,JSON.stringify(c1));
   const c2 = runCGenerate({ ...upstream,runDir:join(root,'c2'),assetsPack:c1.pack,assetsVersion:c1.version,assetsSha256:c1.manifestSha256 });
   assert.ok(c2.ok,JSON.stringify(c2));
@@ -197,7 +198,7 @@ function rawReference(root,meta,color,deltaDigest,{ local = true, designDigest, 
   const adjacent = (neighbor || link || leaf) && meta.nodes.find((item) => item.nodeId === (leaf ? '10:7' : '10:4'));
   const adjacentRegion = adjacent && targetRegion(meta,screen,adjacent,viewport).region;
   const rectangles = [[color,region],...(neighbor && adjacent ? [[neighbor,adjacentRegion]] : [])];
-  const reference = execFileSync('python3',['-B','-c',
+  const reference = execFileSync(pillowPython(),['-B','-c',
     'from PIL import Image, ImageDraw; import json,sys; image=Image.new("RGB",tuple(json.loads(sys.argv[2])),"white"); [(ImageDraw.Draw(image).rectangle((left,top,left+width-1,top+height-1),fill=color)) for color,(left,top,width,height) in json.loads(sys.argv[1])]; image.save(sys.stdout.buffer,"PNG")',
     JSON.stringify(rectangles),JSON.stringify([viewport.width,viewport.height])]);
   writeFileSync(join(ref,'reference.png'),reference);

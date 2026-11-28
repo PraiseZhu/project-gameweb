@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { pillowPython } from './helpers/python.mjs';
+import { symlinkProbe } from './helpers/symlink.mjs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -28,7 +32,7 @@ function frame(id, name, children = [], props = {}) {
 }
 
 function png(alpha, width = 8, mode = 'RGBA') {
-  return execFileSync('python3', ['-B', '-c', 'from PIL import Image; import sys; im=Image.new(sys.argv[3], (int(sys.argv[2]),8)); color=(99,130,211,255); im.paste(color if sys.argv[3]=="RGBA" else color[:3], (0,0,im.width,8)); im.putpixel((1,1),(189,65,29,int(sys.argv[1])) if sys.argv[3]=="RGBA" else (189,65,29)); im.save(sys.stdout.buffer,"PNG")', String(alpha), String(width), mode]);
+  return execFileSync(pillowPython(), ['-B', '-c', 'from PIL import Image; import sys; im=Image.new(sys.argv[3], (int(sys.argv[2]),8)); color=(99,130,211,255); im.paste(color if sys.argv[3]=="RGBA" else color[:3], (0,0,im.width,8)); im.putpixel((1,1),(189,65,29,int(sys.argv[1])) if sys.argv[3]=="RGBA" else (189,65,29)); im.save(sys.stdout.buffer,"PNG")', String(alpha), String(width), mode]);
 }
 
 async function golden(context, settings = {}) {
@@ -89,7 +93,7 @@ async function golden(context, settings = {}) {
     return response({ images: { [id]: 'https://cdn.c1.test/' + id + '/' + format + '?signed=do-not-persist' } });
   };
   return { root, calls, bytes, foreign, downloads, options: { pack: isolated, runDir: join(root, 'runs', 'c1'), expectVersion: b3.version,
-    scopeVersion: b3.scopeVersion, consumerContract: HANDOFF_CONSUMER, tokenValue, fetchImpl } };
+    scopeVersion: b3.scopeVersion, consumerContract: HANDOFF_CONSUMER, tokenValue, fetchImpl, python: pillowPython() } };
 }
 
 function verify(result, record = result.stagePath, overrides) {
@@ -124,7 +128,7 @@ test('真实 A/B1/B2/B3 → C1：断源输入、版本锁定 SVG/PNG、逐像素
   assert.equal(assets[1].quality, 90);
   assert.equal(assets[1].method, 6);
   assert.ok(assets[1].meanAbsoluteError.every((error) => error > 0 && error < 12));
-  execFileSync('python3', ['-B', '-c', 'from PIL import Image; import sys; original=Image.open(sys.argv[1]); delivery=Image.open(sys.argv[2]); assert delivery.format=="WEBP" and original.size==delivery.size; assert original.convert("RGBA").tobytes()==delivery.convert("RGBA").tobytes()',
+  execFileSync(pillowPython(), ['-B', '-c', 'from PIL import Image; import sys; original=Image.open(sys.argv[1]); delivery=Image.open(sys.argv[2]); assert delivery.format=="WEBP" and original.size==delivery.size; assert original.convert("RGBA").tobytes()==delivery.convert("RGBA").tobytes()',
     join(migrated, assets[2].original.path), join(migrated, assets[2].path)]);
   assert.deepEqual(fonts.map(({ language, sha256 }) => [language, sha256]), [['cn', byteDigest(bytes)]]);
   assert.deepEqual(readFileSync(join(migrated, fonts[0].path)), bytes);
@@ -275,8 +279,9 @@ test('H23 原样记录中文和空格路径；易同名素材分别保留、确�
   rmSync(retainedPath);
   const plainCopy = join(root, 'plain-copy.png');
   writeFileSync(plainCopy, entries.get(retained[0].source));
-  symlinkSync(plainCopy, retainedPath);
-  assert.match(verify(first, record).reason, /普通文件/);
+  await symlinkProbe(context, 'H23 拒绝留存文件软链替换', plainCopy, retainedPath, () => {
+    assert.match(verify(first, record).reason, /普通文件/);
+  });
 });
 
 test('H23 拒绝未知分类、不安全路径分隔符和符号链接，失败不发布', async (context) => {
@@ -286,16 +291,36 @@ test('H23 拒绝未知分类、不安全路径分隔符和符号链接，失败�
   mkdirSync(original, { recursive: true });
   const outside = join(root, 'outside.png');
   writeFileSync(outside, png(255));
-  const paths = [join(retainedDir, '未知分类.png'), join(original, '目录\\海报.png'), join(original, '外部 海报.png')];
-  for (const [index, pattern] of [/归入/, /路径/, /普通文件/].entries()) {
-    if (index === 2) symlinkSync(outside, paths[index]);
-    else writeFileSync(paths[index], 'test');
+  const paths = [join(retainedDir, '未知分类.png'), join(original, '目录\\海报.png')];
+  for (const [index, pattern] of [/归入/, /路径/].entries()) {
+    // Windows cannot create a literal backslash filename. Inject that directory
+    // entry at the filesystem boundary, then exercise the real rejection path.
+    const injectedEntry = index === 1 && process.platform === 'win32';
+    let listing;
+    if (injectedEntry) {
+      const read = fs.readdirSync;
+      listing = context.mock.method(fs, 'readdirSync', (dir, ...args) =>
+        dir === original ? [Buffer.from('目录\\海报.png')] : read(dir, ...args));
+      syncBuiltinESMExports();
+    } else writeFileSync(paths[index], 'test');
+    try {
+      const result = await runCAssets({ ...options, retainedDir });
+      assert.equal(result.ok, false);
+      assert.match(result.message, pattern);
+      assert.deepEqual(readdirSync(options.runDir), []);
+    } finally {
+      if (injectedEntry) {
+        listing.mock.restore();
+        syncBuiltinESMExports();
+      } else rmSync(paths[index]);
+    }
+  }
+  await symlinkProbe(context, 'H23 拒绝输入符号链接且不发布', outside, join(original, '外部 海报.png'), async () => {
     const result = await runCAssets({ ...options, retainedDir });
     assert.equal(result.ok, false);
-    assert.match(result.message, pattern);
+    assert.match(result.message, /普通文件/);
     assert.deepEqual(readdirSync(options.runDir), []);
-    rmSync(paths[index]);
-  }
+  });
 });
 
 test('H23 按实际目录拒绝父目录别名重叠，仍可复制独立外部目录', async (context) => {
@@ -309,7 +334,7 @@ test('H23 按实际目录拒绝父目录别名重叠，仍可复制独立外部�
     mkdirSync(join(source, 'original'), { recursive: true });
     writeFileSync(join(source, 'original/活动 海报.png'), bytes);
   }
-  symlinkSync(runParent, runAlias, 'dir');
+  symlinkSync(runParent, runAlias, process.platform === 'win32' ? 'junction' : 'dir');
   const aliasedRun = join(runAlias, 'c1');
   for (const [runDir, retainedDir] of [
     [options.runDir, join(aliasedRun, 'retained')],
@@ -322,7 +347,7 @@ test('H23 按实际目录拒绝父目录别名重叠，仍可复制独立外部�
     assert.deepEqual(readdirSync(options.runDir), ['retained']);
   }
   const rootLink = join(root, 'retained-link');
-  symlinkSync(external, rootLink, 'dir');
+  symlinkSync(external, rootLink, process.platform === 'win32' ? 'junction' : 'dir');
   assert.match((await runCAssets({ ...options, retainedDir: rootLink })).message, /普通目录/);
   assert.deepEqual(readdirSync(options.runDir), ['retained']);
   const result = await runCAssets({ ...options, runDir: aliasedRun, retainedDir: join(runAlias, 'c1-retained') });
