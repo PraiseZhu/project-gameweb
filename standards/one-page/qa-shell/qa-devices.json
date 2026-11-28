@@ -1,0 +1,86 @@
+{
+  "version": "1.0.0",
+  "source": "Chrome DevTools 内置设备列表（Standard，16 项）+ 桌面端补充档位",
+  "deviceGroups": [
+    {
+      "key": "PC",
+      "devices": [
+        {
+          "name": "老款笔记本",
+          "width": 1366,
+          "height": 768
+        },
+        {
+          "name": "MacBook Air",
+          "width": 1440,
+          "height": 900
+        },
+        {
+          "name": "笔记本 · 125% 缩放",
+          "width": 1536,
+          "height": 864
+        },
+        {
+          "name": "台式 1080p",
+          "width": 1920,
+          "height": 1080
+        },
+        {
+          "name": "2K 显示器",
+          "width": 2560,
+          "height": 1440
+        },
+        {
+          "name": "4K 显示器",
+          "width": 3840,
+          "height": 2160
+        }
+      ]
+    },
+    {
+      "key": "iPhone",
+      "devices": [
+        {
+          "name": "iPhone SE",
+          "width": 375,
+          "height": 667
+        },
+        {
+          "name": "iPhone 12 Pro",
+          "width": 390,
+          "height": 844
+        },
+        {
+          "name": "iPhone XR",
+          "width": 414,
+          "height": 896
+        },
+        {
+          "name": "iPhone 14 Pro Max",
+          "width": 430,
+          "height": 932
+        }
+      ]
+    },
+    {
+      "key": "Android",
+      "devices": [
+        {
+          "name": "Galaxy S8+",
+          "width": 360,
+          "height": 740
+        },
+        {
+          "name": "Pixel 7",
+          "width": 412,
+          "height": 915
+        },
+        {
+          "name": "Galaxy S20 Ultra",
+          "width": 412,
+          "height": 915
+        }
+      ]
+    }
+  ]
+}

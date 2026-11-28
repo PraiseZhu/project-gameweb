@@ -645,7 +645,7 @@ export function runtime() {
     else if (Math.abs(dy) >= (footerOpen && origin.touch ? 30 : 64) && Math.abs(dy) > 1.25 * Math.abs(dx) && (origin.touch || !origin.interactive)) step(-Math.sign(dy));
   });
   for (const type of ['contextmenu','copy','cut','selectstart','dragstart']) document.addEventListener(type, (event) => {
-    if (!event.target.closest(edit + ',[data-copy]')) event.preventDefault();
+    if (!event.target.closest?.(edit + ',[data-copy]')) event.preventDefault();
   });
   function dataValue(rootValue, path, row, listKey) {
     return (path ?? []).reduce((value, token) => typeof token === 'object' ? (token.itemOf === listKey || token.slotOf === listKey ? row : undefined) : own(value, token), rootValue);

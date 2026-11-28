@@ -103,6 +103,33 @@ C1 先验证外传的 B3 版本、范围和消费契约，再按同一 Figma 版
 - 只复制 B3 索引中本语实际使用的字体及许可到 css/font/。额外保留的历史资料按 original/、backup/、history/ 分类放入独立的 H23 输入目录，支持中文和空格。清单的 source 原样记录相对源路径，path 使用按源路径生成的安全包内文件名；原字节保留，不改之前发布的轮次。单视频超过 15 MB 或素材与字体文件合计超过 120 MB 只告警，不删改素材。
 - 每轮先独立验暂存包、再原子发布到 c1.rN/。assets/manifest.json 使用 onepage-c-assets/v1，记录摘要、来源、尺寸与 POSIX 相对路径。迁移后用 checkEntry 对包内 stage-record.json 传 expectedStage=C、expectedOutputKind=c-assets、外部预期输出版本及 scopeVersion，无需原 B3、字体库、Figma 或编码器。C1 不生成页面。
 
+## C3 单页检查（开发验证）
+
+    npm --prefix standards/one-page run c:check -- --pack <C2包> --expect-version <C2版本> --scope-version <范围版本> --out <现有独立目录> --references <参考索引JSON> --references-sha256 <SHA-256> --handoff-pack <B3包> --consumer-contract <合同JSON>
+
+- 浏览器复用本地已安装的 Playwright/Chromium；可用 PLAYWRIGHT_MODULE_ROOT 和 CHROME_PATH 指向可信安装。检查在隔离的浏览器上下文与回环静态服务运行。
+- 参考索引使用 onepage-pixel-reference/v1，含 baseLanguage、scopeVersion、b3Digest 和 screens。每项给出 end/nodeId/viewport/path/sha256；可附本屏 TAB 状态 {kind:"tab",tabId}、局部 local:[{domId,region}] 与 live 文字遮罩 textMasks:[{domId,rect}]。矩形均为基准 CSS 像素 [x,y,width,height]。不得以待测页面截图作参考。
+- 通过 --handoff-pack 与 --consumer-contract 传入 C2 对应的 B3；缺 B3 不签发通过凭据。HTTP 样例只在隔离 Chromium 上注入，不改产品。报告按 D01～D13 聚合：同项任何必需场景缺证，不能以同项其它场景通过顶替。像素用 6% / 0.1 暂定口径，不替代 #151 真稿与阈值验收。
+- 检查记录、日志及三图在产品目录外；收包用 checkEntry 的 c-single-page 分支，外传 pagePack、pageVersion、scopeVersion 与 expectedOutputVersion。可由程序提供修订函数以生成新 C2 版本、触发全量复测；命令本身不改产品或签发豁免。
+
+## C4 局部改稿（开发验证）
+
+    npm --prefix standards/one-page run c:patch -- --base-check <C3环节记录> --base-check-version <C3版本> --page-pack <C2包> --page-version <C2版本> --scope-version <范围版本> --delta-pack <B4包> --delta-version <B4版本> --handoff-pack <原B3包> --consumer-contract <合同JSON> --references <新参考索引> --references-sha256 <索引SHA-256> --run-dir <独立现有目录>
+
+- 换图沿用 C1 的只读、定版导出；仅请求 B4 指定节点，不重新生成 B3 或整页。独立参考索引额外绑定经 B4 验包返回的 b4Digest；变化节点、可定位的关联模块和原 C3 必验项保留局部或整屏比较。
+- 新版 c4.rN 原子发布；只部署 build/page/。check/c4-patch-meta.json、检查报告和三图都在产品外。历史素材保留原字节。迁移整轮后，用 c-single-page 的 checkEntry 验 check/stage-record.json，传 build、外传 pageVersion、scopeVersion 与 expectedOutputVersion，不需原来源目录或 Figma。
+- 已声明外链改动读取 B4 绑定的现行配置，复核原字节和语义摘要，只改集中配置，并重验所有屏与 TAB 状态；离网验打开动作，不请求外站。
+- 已有的原生文案叶节点可以按新版 B1 权威几何和对应节点指纹修改文字或同屏直接子节点的布局；结构、排版或来源不能唯一验证则阻断，不从截图猜坐标。基础语言已有字族的替换重新核对 B2 字体审计、原件和许可证，并扩大复验。仅目标语发生变化的译文不会写入基础语言页面；需要在对应语言阶段消费。
+- 从同一 B3 上的设计改稿接 B4 时，同端同屏上不论是否同一对象，只要换图对象与手调范围相交，就须附 --decision 和 --decision-fingerprint。keep-manual 保留冲突对象的旧素材与手调；overwrite 应用新素材并移除相交的手调规则；未参与冲突的对象继续保留。像素确认绑定输入成品版本、区域和实际裁决后的内容，不移用旧确认。共用依赖扩验由实际字节变化产生证据，不接受任意脚本或样式文本作为改稿指令。
+- B4 成品可接设计指令，同步核验继承的 B4 材料证据和当前设计指令；参考索引同时绑定 b4Digest 与 c4DesignDigest。连续 B4 换图须沿同一 B3 及当前 B1 累计声明，复用指纹未变的素材，只导出本轮指纹变化的对象；遗漏已更新对象、重复稿件版本或不能安全重放的混合变更明确拒绝。布局与手调相交时按权威旧/新框分别定位，裁决只影响已定位的对象。
+
+| 共用依赖 | C4 内合法生产路径 |
+| --- | --- |
+| styles.css、mobile.css、css/font/ | 已定位叶节点的相应端布局；已审计字体更新连同原件和许可；设计师指令只生成已知透明度规则。实际变更触发全部已声明屏/TAB 复验。 |
+| js/config.js | 已验 B4 的受约束外链更新，实际变更触发全部已声明屏/TAB 复验。 |
+| js/main.js、locales.css | 当前 C4 无合法生产者：运行时来自 C2，目标语变化另走对应语言环节。任意脚本/样式字段明确拒绝；仅覆盖摘要探测和缺关键屏/TAB 证据拒绝，不代表生产改写已验证。 |
+- 设计师入口用 --design <指令JSON> --design-sha256 <独立SHA-256> 替换 B4 参数。目前支持给已定位图片设 opacity。指令包括 schema: onepage-c4-design/v1、base: {pageVersion, checkVersion, checkDigest, scopeVersion}、target: {end, module, nodeId, domId}、property 和 value。可附 confirmation: {caseId, viewport, rect, basis, fingerprint}，其中指纹基于 {target, property, value} 的规范 JSON。参考索引绑定 c4DesignDigest。确认只豁免同屏、同状态、同视口的指定像素区域，仍实测目标几何和样式，不免其他局部复比。冲突时必须附指纹和 overwrite 或 keep-manual 裁决后才发布。
+
 ## C2 基础语言原生页
 
     npm --prefix standards/one-page run c:generate -- --pack <B3包> --expect-version <B3版本> --scope-version <范围版本> --consumer-contract <外部合同JSON> --assets-pack <C1包> --assets-version <C1版本> --assets-sha256 <C1清单SHA-256> --run-dir <runs/运行目录>
@@ -113,3 +140,23 @@ C1 先验证外传的 B3 版本、范围和消费契约，再按同一 Figma 版
 - 组件字段同样经过 B2 补问。当前支持叶节点的 text-content 接收器、scalar 形态，以及 string、number、boolean 的非空类型集合。缺值保留初始展示，非法值阻断响应投递，不执行自由文本合同。
 - 已明确母版、唯一状态轴及变体内容时，C2 可制作开合菜单与数据／动作驱动的状态；缺特定变体、实例覆盖对应关系或组件接收器时按对象阻断。不能把阻断当作该需求通过。
 - 浏览器回归需现有 `ego-browser`：`ONEPAGE_C2_BROWSER=1 node --test standards/one-page/test/c-page-generate.test.mjs`。合成夹具和本地静态测试只证明已测场景，不代表真实设计还原、开发组件、正式接口或 C3/C4 已验收。
+
+## D：单语言设计验收
+
+三个命令都接收外传的 `--check <C3 或 C4 的 stage-record.json>`、`--page-pack <C2 轮次或 C4 build>`、`--page-version`、`--check-version`、`--scope-version`。不要从待验包反填预期值。命令只复核当前成品、浏览器日志和像素三图，不重跑 C 的检查。
+
+- `npm --prefix standards/one-page run d:accept -- <公用参数>`：输出验收指纹和逐文件摘要。核对不通过，退回 C。
+- `d:preview`：打开它输出的本机 HTTP 地址。默认在外置同源 iframe 操作实际成品，不对照设计稿；不支持 `file://`。可选 `--handoff-pack` 提供同版 B3 样例；模拟时显示橙色横幅，只有 HTTP 响应替换数据入口。未传 B3 时只提供实际成品配置。预览和模拟均不写成品目录。
+- 在工具栏点选位置，再填写意见；无法定位时可直接添加。导出 JSON 区分已定位／未定位意见，包含验收指纹、节点、屏/TAB、视口与 iframe 内坐标。意见在当前壳页面内暂存，刷新或关闭前请导出。
+- 当前结构化局部改稿沿用 C4 支持的图片 `opacity`。按导出意见取精确 `target`，把 `target/property/value/fingerprint` 写入请求 JSON；设计师明确同意覆盖原稿局部基线时，另写对应的 `caseId` 和对话依据 `basis`。用 `d:accept --design <请求JSON> --design-sha256 <外传SHA-256>` 生成原生 C4 指令。坐标仅作定位用；可覆盖范围由已核验的源几何及参考视口计算，不能以点选坐标自报范围。新版 C4 必须重新验收。
+- 设计师在对话中确认**当前验收指纹**后，人工记录 `{"schema":"onepage-d-dialogue-confirmation/v1","designer":"…","basis":"对话依据…","fingerprint":"…"}`。用 `d:approve --confirmation <确认JSON> --confirmation-sha256 <外传SHA-256> --output <外置新目录>` 签发；页面没有签发入口，CLI 不代替设计师确认，也不认证对话身份。消费时 `checkEntry` 指定 D、`d-design-approved`、外传批准版本及上述 C 凭证参数；任一成品或证据漂移即拒绝。
+- D 浏览器定向：`ONEPAGE_D_BROWSER=1 node --test standards/one-page/test/d-accept.test.mjs`。浏览器全量同时开启 C2/C3/C4/D；不启用开关时只运行非浏览器覆盖。合成确认不代表真实设计师签发。
+## E 多语言制作
+
+在同一范围取得 D 阶段批准、C3/C4 单页检查记录、B3 和 C1 后，使用：
+
+    npm --prefix standards/one-page run e:build -- --approval <D阶段记录> --approval-version <D版本> --check <C检查阶段记录> --check-version <C检查版本> --page-pack <单页包> --page-version <单页版本> --scope-version <A范围版本> --handoff-pack <B3包> --handoff-version <B3版本> --consumer-contract <当前消费契约JSON> --assets-pack <C1包> --assets-version <C1版本> --assets-sha256 <C1清单SHA256> --run-dir <独立运行目录>
+
+E 只读上述凭证；无外语返回 `skipped`，不创建页面。生成成功时在独立 `e.rN/page` 写基础页和每个目标语言的独立 HTML，并保留共用样式和脚本。阶段记录及 `locale-guide.json`、`locale-adjustments.json` 和浏览器证据在成品目录外。使用 E 阶段记录、期望成果版本及范围版本可独立回验清单与文件摘要。仅在外语图存在明确导出计划时复用 C1 的只读版本化导出；未匹配则不按名称或顺序猜。
+
+本地 Chromium 定向验证使用 `ONEPAGE_E_BROWSER=1`。检查失败不发布 E 目录；缺译标记、字体、排版锁和数据过滤失败应依据输出的对象定位核对，不可手工改通过记录。

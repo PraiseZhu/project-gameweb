@@ -12,10 +12,16 @@
     "b:answer": "node bin/b-answer.mjs",
     "b:handoff": "node bin/b-handoff.mjs",
     "handoff:check": "node bin/handoff-check.mjs",
-    "test": "node --test test/*.test.mjs",
+    "test": "node test/run-tests.mjs",
     "b:delta": "node bin/b-delta.mjs",
     "c:assets": "node bin/c-assets.mjs",
-    "c:generate": "node bin/c-generate.mjs"
+    "c:generate": "node bin/c-generate.mjs",
+    "c:check": "node bin/c-check.mjs",
+    "c:patch": "node bin/c-patch.mjs",
+    "d:accept": "node bin/d-accept.mjs accept",
+    "d:preview": "node bin/d-accept.mjs preview",
+    "d:approve": "node bin/d-accept.mjs approve",
+    "e:build": "node bin/e-build.mjs"
   },
   "engines": {
     "node": ">=20"

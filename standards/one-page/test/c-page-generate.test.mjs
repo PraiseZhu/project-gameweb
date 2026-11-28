@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { pillowPython } from './helpers/python.mjs';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,6 +23,8 @@ import { computeScopeVersion } from '../src/scope-record.mjs';
 import { buildPage, resolveTabBindings } from '../src/c-page-render.mjs';
 import { inspectC2Contract } from '../src/c2-contract.mjs';
 import { compileOnePage } from '../../figma-naming/tool/src/onepage/compile.mjs';
+import { launchChromium } from '../../stop1-figma-pixel/tool/src/resolve-playwright.mjs';
+import { browserCaseMs, checkCliMs, compositeCaseMs, measureStage } from './browser-test-budget.mjs';
 
 const nodeId = '1:2';
 const fileKey = 'C2GOLDEN';
@@ -51,7 +54,7 @@ async function golden(context, settings = {}) {
   settings.mutateDocument?.(document);
   const snapshot = { version, nodes: { [nodeId]: { document } } };
   const scope = { url: 'https://www.figma.com/design/' + fileKey + '/name?node-id=1-2', languages: 'cn,en', baseLanguage: settings.baseLanguage ?? 'cn',
-    platform: 'pc', runRoot: producer, tokenValue, fetchImpl: async () => response(snapshot) };
+    platform: settings.platform ?? 'pc', runRoot: producer, tokenValue, fetchImpl: async () => response(snapshot) };
   const draft = await runAScope(scope);
   assert.equal(draft.ok, true, JSON.stringify(draft));
   const { runDir } = draft;
@@ -113,10 +116,19 @@ async function golden(context, settings = {}) {
     scopeVersion: b3.scopeVersion, consumerContract: HANDOFF_CONSUMER, tokenValue, fetchImpl, python: pillowPython() } };
 }
 import { runCGenerate } from '../src/c-page-generate.mjs';
+import { runCCheck as checkPage } from '../src/c-check/index.mjs';
+
+const runCCheck = (...args) => measureStage('C3 c-check in-process',() => checkPage(...args));
+import { hasPagingResult } from '../src/c-check/pagination-audit.mjs';
 
 async function inputs(context, settings) {
   const { root, options } = await golden(context, settings);
-  const assets = await runCAssets(options);
+  const retainedDir = settings?.retained ? join(root, 'retained') : undefined;
+  for (const [path, bytes] of Object.entries(settings?.retained ?? {})) {
+    mkdirSync(join(retainedDir, path, '..'), { recursive: true });
+    writeFileSync(join(retainedDir, path), bytes);
+  }
+  const assets = await runCAssets({ ...options, retainedDir });
   assert.equal(assets.ok, true, JSON.stringify(assets));
   return { root, options: { pack: options.pack, expectVersion: options.expectVersion, scopeVersion: assets.scopeVersion,
     consumerContract: options.consumerContract, runDir: join(root, 'runs', 'c2'), assetsPack: assets.pack,
@@ -146,6 +158,63 @@ test('A/B1/B2/B3/C1 → C2：真实工具链、两轮字节一致、断源迁移
   writeFileSync(join(transferred, 'page', 'cn.html'), 'tampered');
   assert.equal(checkEntry(stage, expected).ok, false);
 });
+
+test('C3：真实 C2 成品经 Chromium 与独立合成参考生成三图；缺参考不放行',
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
+    const { options, root } = await inputs(context, { mutateDocument(document) {
+      document.children[0].children[0].children.find((node) => node.id === '10:7').absoluteBoundingBox.width = 100;
+    } });
+    const product = runCGenerate(options);
+    assert.ok(product.ok, JSON.stringify(product));
+    const meta = json(join(product.pack, 'c2-build-meta.json'));
+    const copyId = meta.nodes.find((row) => row.nodeId === '10:7').domId;
+    const localId = meta.nodes.find((row) => row.nodeId === '10:3').domId;
+    const out = join(root, 'checks');
+    const refs = join(root, 'refs');
+    mkdirSync(out);
+    mkdirSync(refs);
+    const reference = execFileSync('python3', ['-c', 'from PIL import Image; import sys; Image.new("RGB", (1280,720), "white").save(sys.stdout.buffer, "PNG")']);
+    writeFileSync(join(refs, 'reference.png'), reference);
+    const index = Buffer.from(JSON.stringify({ schema: 'onepage-pixel-reference/v1', baseLanguage: meta.baseLanguage,
+      scopeVersion: meta.scopeVersion, b3Digest: meta.b3.digest,
+      screens: [{ end: 'pc', nodeId: '10:2', viewport: { width: 1280, height: 720 }, path: 'reference.png', sha256: byteDigest(reference),
+        textMasks: [{ domId: copyId, rect: [638,358,34,22] }] }] }));
+    const references = join(refs, 'index.json');
+    writeFileSync(references, index);
+    const checked = await runCCheck({ pack: product.pack, expectVersion: product.version, scopeVersion: product.scopeVersion,
+      out, references, referencesSha256: byteDigest(index), handoffPack: options.pack, consumerContract: HANDOFF_CONSUMER });
+    const report = json(join(checked.rounds[0].root, 'check-report.json'));
+    assert.equal(report.pixels.length, 1, JSON.stringify(report.findings.filter((row) => row.status !== 'pass')));
+    assert.ok(report.pixels[0].effectivePixels < 1280 * 720);
+    for (const path of Object.values(report.pixels[0].artifacts)) assert.ok(readFileSync(join(checked.rounds[0].root, path)).length);
+    assert.equal(report.findings.filter((row) => row.check === 'D07').length, 9);
+    const entry = { expectedStage: 'C', expectedOutputKind: 'c-single-page', expectedOutputVersion: report.version,
+      scopeVersion: product.scopeVersion, pagePack: product.pack, pageVersion: product.version };
+    assert.equal(checked.status, 'pass', JSON.stringify(report.findings.filter((row) => !['pass', 'n_a'].includes(row.status))));
+    assert.equal(checkEntry(join(checked.rounds[0].root, 'stage-record.json'), entry).ok, true);
+    if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) cpSync(checked.rounds[0].root,
+      join(process.env.ONEPAGE_C3_ARTIFACT_ROOT, 'single-screen'), { recursive: true, force: false, errorOnExist: true });
+    writeFileSync(join(checked.rounds[0].root, report.pixels[0].artifacts.diff), 'changed');
+    assert.equal(checkEntry(join(checked.rounds[0].root, 'stage-record.json'), entry).ok, false);
+    const localIndex = JSON.parse(index);
+    localIndex.screens[0].local = [{ domId: localId, region: [638,358,4,4] }];
+    const localBytes = Buffer.from(JSON.stringify(localIndex));
+    writeFileSync(references, localBytes);
+    const local = await runCCheck({ pack: product.pack, expectVersion: product.version, scopeVersion: product.scopeVersion,
+      out, references, referencesSha256: byteDigest(localBytes), handoffPack: options.pack, consumerContract: HANDOFF_CONSUMER });
+    const localReport = json(join(local.rounds[0].root, 'check-report.json'));
+    assert.deepEqual(localReport.pixels.map(({ status }) => status), ['pass','fail']);
+    assert.equal(localReport.pixels[1].effectivePixels, 16);
+    assert.equal(localReport.coverage.D13.status, 'fail');
+    if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) cpSync(local.rounds[0].root,
+      join(process.env.ONEPAGE_C3_ARTIFACT_ROOT, 'local-pixel-failure'), { recursive: true, force: false, errorOnExist: true });
+    const missing = await runCCheck({ pack: product.pack, expectVersion: product.version, scopeVersion: product.scopeVersion, out });
+    assert.equal(missing.status, 'needs-human-decision');
+    assert.equal(missing.rounds[0].findings.find((row) => row.check === 'D04').status, 'not_run');
+    assert.equal(checkEntry(join(missing.rounds[0].root, 'stage-record.json'), {
+      ...entry, expectedOutputVersion: missing.rounds[0].version,
+    }).ok, false);
+  });
 
 test('双门缺期望、错版本、错契约、错范围或 C1 实际字节变化均不发布', async (context) => {
   const { options } = await inputs(context);
@@ -333,6 +402,565 @@ test('生产 B2→B3→C1→C2 CLI 保留反序绑定和受约束接收器', asy
   assert.deepEqual(meta.tabBindings.map(({tab,panel})=>[tab.id,panel.id]),[['10:10','10:14'],['10:11','10:13']]);
   assert.equal(meta.componentInputs[0].receiver,'text-content');
 });
+
+test('C3 Chromium：以真实 B3 样例验证组件接收及未配置、404、失败状态',
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
+    const { root, options } = await inputs(context, productionSettings('same'));
+    const product = runCGenerate(options);
+    assert.ok(product.ok, JSON.stringify(product));
+    const out = join(root, 'checks');
+    mkdirSync(out);
+    const checked = await runCCheck({ pack: product.pack, expectVersion: product.version, scopeVersion: product.scopeVersion,
+      out, handoffPack: options.pack, consumerContract: HANDOFF_CONSUMER });
+    const data = checked.rounds[0].findings.filter((row) => row.check === 'D09');
+    for (const [scenario, state] of [['success-full', 'ready'], ['request-404', 'unpublished'],
+      ['request-missing', 'unpublished'], ['request-failure', 'unavailable']]) {
+      const observation = data.find((row) => row.target === 'pc:' + scenario);
+      assert.equal(observation?.status, 'pass', JSON.stringify(checked.rounds[0].findings.filter((row) => row.status !== 'pass')));
+      assert.equal(observation.detail.state, state);
+    }
+    assert.equal(checked.status, 'needs-human-decision');
+    if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) cpSync(checked.rounds[0].root,
+      join(process.env.ONEPAGE_C3_ARTIFACT_ROOT, 'data-samples'), { recursive: true, force: false, errorOnExist: true });
+  });
+
+test('C3 Chromium：离网图片失败时恢复本地素材，实际复制按钮可写剪贴板',
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
+    const { root, options } = await inputs(context, { config: { actions: { 'copy-fixture': { type: 'copy-text', value: 'c3-fixture-copy' } } },
+      downloads: { '10:91': vector },
+      mutateDocument(document) {
+        const screen = document.children[0].children[0];
+        Object.assign(screen.absoluteBoundingBox, { width: 3840, height: 2160 });
+        const headline = screen.children.find((node) => node.id === '10:7');
+        headline.absoluteBoundingBox = { x: 100, y: 125, width: 240, height: 90 };
+        screen.children = [screen.children[0], headline,
+          frame('10:91','bg/首屏底图',[frame('10:92','shape',[],{ type:'VECTOR', fills:[{ type:'SOLID' }] })]),
+          frame('10:90','btn/复制@action=copy-fixture', [],
+          { absoluteBoundingBox: { x: 300, y: 300, width: 250, height: 100 } })];
+        screen.children[0].name = 'img/封面@field=cover';
+      } });
+    const product = runCGenerate(options);
+    assert.ok(product.ok, JSON.stringify(product));
+    const out = join(root, 'checks');
+    mkdirSync(out);
+    const checked = await runCCheck({ pack: product.pack, expectVersion: product.version, scopeVersion: product.scopeVersion,
+      out, handoffPack: options.pack, consumerContract: HANDOFF_CONSUMER });
+    const report = json(join(checked.rounds[0].root, 'check-report.json'));
+    const fallback = report.findings.filter((row) => row.check === 'D11' && row.target.includes(':fallback:'));
+    assert.ok(fallback.length && fallback.every((row) => row.status === 'pass' && row.detail.expectedFallback), JSON.stringify(report.findings.filter((row) => !['pass','n_a'].includes(row.status))));
+    assert.ok(report.findings.some((row) => row.check === 'D12' && row.target.endsWith(':copy-control') && row.status === 'pass'));
+    assert.ok(report.findings.some((row) => row.check === 'D05' && row.target.endsWith(':text-geometry')
+      && row.status === 'pass' && row.detail.compared > 0), JSON.stringify(report.findings.filter((row) => row.check === 'D05')));
+    if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) cpSync(checked.rounds[0].root,
+      join(process.env.ONEPAGE_C3_ARTIFACT_ROOT, 'cover-copy'), { recursive: true, force: false, errorOnExist: true });
+  });
+
+test('C3 Chromium：正式双端多屏每端九档，断点往返绑定同屏；漏参考拒绝下游',
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
+    const { root, options } = await inputs(context, { platform: 'pc+mobile', mutateDocument(document) {
+      document.children = ['pc', 'mobile'].map((end, index) => {
+        const prefix = String(30 + index);
+        return frame(prefix + ':1', 'cn_' + end, [1, 2].map((number) => frame(prefix + ':' + (number + 1), 'sec/' + number + '-画面', [],
+          { absoluteBoundingBox: { x: 0, y: (number - 1) * 1080, width: end === 'pc' ? 3840 : 750, height: end === 'pc' ? 2160 : 1430 } })));
+      });
+    } });
+    const product = runCGenerate(options);
+    assert.ok(product.ok, JSON.stringify(product));
+    const out = join(root, 'checks');
+    mkdirSync(out);
+    const checked = await runCCheck({ pack: product.pack, expectVersion: product.version, scopeVersion: product.scopeVersion,
+      out, handoffPack: options.pack, consumerContract: HANDOFF_CONSUMER });
+    const report = json(join(checked.rounds[0].root, 'check-report.json'));
+    const devices = report.findings.filter((row) => row.check === 'D07');
+    assert.equal(devices.length, 19, JSON.stringify(report.findings.filter((row) => row.status !== 'pass')));
+    assert.ok(devices.every((row) => row.status === 'pass'), JSON.stringify(devices.filter((row) => row.status !== 'pass')));
+    assert.ok(devices.filter((row) => row.target !== 'breakpoint-roundtrip').every((row) => row.detail.length === 2));
+    assert.equal(report.coverage.D02.status, 'pass');
+    assert.equal(report.coverage.D04.status, 'not_run');
+    assert.equal(report.coverage.D13.status, 'fail');
+    if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) cpSync(checked.rounds[0].root,
+      join(process.env.ONEPAGE_C3_ARTIFACT_ROOT, 'dual-viewports'), { recursive: true, force: false, errorOnExist: true });
+  });
+
+test('C3 Chromium：生产双端 TAB、隐藏面板、弹层焦点与备案素材',
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
+    const tabs = ['pc','mobile'].flatMap((end, index) => ['5','6'].map((id, position) => ({ end,
+      tabId: (50 + index) + ':' + id, switchId: (50 + index) + ':7', panelId: (50 + index) + ':' + (8 + position),
+      source: '双端同义屏设计', selection: { kind: 'none' } })));
+    const retained = { 'original/活动 原图.png': png(120), 'backup/备用.png': png(140), 'history/旧稿.png': png(160) };
+    const settings = { platform: 'pc+mobile', retained, config: {
+      bindings: { 'sec/1::switch/介绍': { pagination: { kind: 'panels', panels: ['grp/第一','grp/第二'] } },
+        'sec/1::switch/内页': { pagination: { kind:'panels', panels:['grp/单项'] } } },
+      actions: { details: { type: 'open-modal', targets: ['modal/详情'] }, innerNext: { type:'next-page', targets:['switch/内页'] },
+        innerPrevious: { type:'previous-page', targets:['switch/内页'] } },
+      links: { download: { url: null } },
+      dataContract: { c2: { fileVersion: version, tabs, componentInputs: [] } },
+    }, mutateDocument(document) {
+      document.children = ['pc','mobile'].flatMap((end, index) => {
+        const prefix = String(50 + index) + ':';
+        const box = (x,y,width,height) => ({ absoluteBoundingBox: { x: x + index * 5000,y,width,height } });
+        const node = (id, name, x, y, width, height, children = []) => frame(prefix + id, name, children, box(x,y,width,height));
+        const panel = node('7','switch/介绍',90,220,500,400, [node('8','grp/第一',90,220,500,400),
+          node('9','grp/第二',90,220,500,400,[node('14','btn/更多@action=details',140,290,220,90),
+            node('18','switch/内页',130,390,400,210,[node('19','grp/单项',130,390,400,210)]),
+            node('20','btn/上一页@action=innerPrevious',140,430,160,80), node('21','btn/下一页@action=innerNext',330,430,160,80)])]);
+        const first = node('2','sec/1-首页',0,0,end === 'pc' ? 3840 : 750,end === 'pc' ? 2160 : 1430, [
+          node('5','tab/第一@for=switch/介绍',80,60,180,85), node('6','tab/第二@for=switch/介绍',285,60,180,85),
+          node('10','btn/详情@action=details',480,60,180,85), panel,
+          node('13','btn/下载@link=download',80,650,260,95),
+        ]);
+        return [node('1','cn_' + end,0,0,750,1430,[first]), node('11','modal/详情',90,690,420,300,[node('12','grp/内容',90,690,420,300)])];
+      });
+    } };
+    await assert.rejects(golden(context, { ...settings, mutateDocument(document) {
+      settings.mutateDocument(document);
+      document.children[0].children[0].children.find((node) => node.id === '50:10').name = 'btn/详情@go=modal/详情';
+    } }), /production\/inventory-pc\.json：节点动作存在坏引用：50:10/);
+    const { root, options } = await inputs(context, settings);
+    const product = runCGenerate(options);
+    assert.ok(product.ok, JSON.stringify(product));
+    const out = join(root, 'checks');
+    mkdirSync(out);
+    const checked = await runCCheck({ pack: product.pack, expectVersion: product.version, scopeVersion: product.scopeVersion,
+      out, handoffPack: options.pack, consumerContract: HANDOFF_CONSUMER });
+    const report = json(join(checked.rounds[0].root, 'check-report.json'));
+    const selected = report.findings.filter((row) => row.target.endsWith(':tab-roundtrip'));
+    const dialogs = report.findings.filter((row) => row.target.endsWith(':overlay-roundtrip') || row.target.endsWith(':overlay'));
+    assert.equal(selected.length, 2, JSON.stringify(report.findings.filter((row) => row.status === 'not_run')));
+    assert.ok(selected.every((row) => row.status === 'pass'), JSON.stringify(selected));
+    const tabActions = report.findings.filter((row) => row.check === 'D08' && row.target.endsWith(':activation'));
+    assert.equal(tabActions.length, 4);
+    assert.ok(tabActions.every((row) => row.status === 'pass' && row.detail.inactivePanels), JSON.stringify(tabActions));
+    assert.equal(dialogs.length, 6, JSON.stringify(dialogs));
+    assert.ok(dialogs.every((row) => row.status === 'pass'), JSON.stringify(dialogs));
+    const links = report.findings.filter((row) => row.check === 'D10' && /:(stub-http|blocked-protocol)$/.test(row.target));
+    assert.equal(links.length, 4, JSON.stringify(links));
+    assert.ok(links.every((row) => row.status === 'pass'), JSON.stringify(links));
+    const assets = json(join(product.pack, 'page', 'assets', 'manifest.json')).retained;
+    assert.deepEqual(assets.map((item) => item.kind).sort(), ['backup','history','original']);
+    for (const asset of assets) {
+      assert.deepEqual(readFileSync(join(product.pack, 'page', asset.path)), retained[asset.source]);
+      assert.ok(report.findings.some((row) => row.check === 'D06' && row.target === asset.path && row.status === 'pass'));
+    }
+    assert.equal(report.coverage.D13.status, 'fail');
+    if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) cpSync(checked.rounds[0].root,
+      join(process.env.ONEPAGE_C3_ARTIFACT_ROOT, 'paired-controls'), { recursive: true, force: false, errorOnExist: true });
+    const changed = join(product.pack, 'page', assets[0].path);
+    const retainedOriginal = readFileSync(changed);
+    writeFileSync(changed, 'bad retained bytes');
+    await assert.rejects(runCCheck({ pack: product.pack, expectVersion: product.version, scopeVersion: product.scopeVersion,
+      out, handoffPack: options.pack, consumerContract: HANDOFF_CONSUMER }), /SHA-256|大小|字节/);
+    writeFileSync(changed, retainedOriginal);
+    const meta = json(join(product.pack, 'c2-build-meta.json'));
+    const referenceDir = join(root, 'tab-references');
+    mkdirSync(referenceDir);
+    const references = join(referenceDir, 'index.json');
+    const screens = [];
+    const { browser } = await launchChromium();
+    try {
+      for (const [end, prefix, viewport, scale] of [['pc','50',{ width:1280,height:720 },1/3], ['mobile','51',{ width:375,height:715 },1/2]]) {
+        const page = await browser.newPage({ viewport });
+        for (const state of [null, '5', '6']) {
+          const boxes = [['5','第一',80,60,180,85],['6','第二',285,60,180,85],['10','详情',480,60,180,85],['13','下载',80,650,260,95]];
+          if (state === '6') boxes.push(['14','更多',140,290,220,90]);
+          await page.setContent('<!doctype html><meta charset="utf-8"><style>body{margin:0;font:' + (scale * 32) + 'px sans-serif}button{box-sizing:border-box;position:absolute;display:grid;font:inherit}</style>'
+            + boxes.map(([id, text, x, y, width, height]) => '<button id="target-' + id + '" style="left:' + x * scale + 'px;top:' + y * scale + 'px;width:' + width * scale + 'px;height:' + height * scale + 'px">' + text + '</button>').join(''));
+          if (state) await page.locator('#target-' + state).click();
+          const bytes = await page.screenshot();
+          const path = end + '-' + (state ?? 'default') + '.png';
+          writeFileSync(join(referenceDir, path), bytes);
+          const local = boxes.map(([id, , x,y,width,height]) => ({ domId: meta.nodes.find((row) => row.nodeId === prefix + ':' + id).domId,
+            region: [Math.floor(x * scale + 1e-6), Math.floor(y * scale + 1e-6),
+              Math.ceil((x + width) * scale - 1e-6) - Math.floor(x * scale + 1e-6), Math.ceil((y + height) * scale - 1e-6) - Math.floor(y * scale + 1e-6)] }));
+          screens.push({ end, nodeId: prefix + ':2', ...(state ? { state: { kind:'tab', tabId:prefix + ':' + state } } : {}), viewport, path, sha256: byteDigest(bytes), local });
+        }
+        await page.close();
+      }
+    } finally { await browser.close(); }
+    const runReference = async (screens) => {
+      const index = Buffer.from(JSON.stringify({ schema:'onepage-pixel-reference/v1', baseLanguage: meta.baseLanguage,
+        scopeVersion: meta.scopeVersion, b3Digest: meta.b3.digest, screens }));
+      writeFileSync(references, index);
+      return runCCheck({ pack: product.pack, expectVersion: product.version, scopeVersion: product.scopeVersion, out,
+        handoffPack: options.pack, consumerContract: HANDOFF_CONSUMER, references, referencesSha256: byteDigest(index) });
+    };
+    const signed = await runReference(screens);
+    assert.equal(signed.status, 'pass', JSON.stringify(signed.rounds[0].problems));
+    const hidden = signed.rounds[0].findings.filter((row) => row.target.endsWith(':pagination-hidden'));
+    assert.equal(hidden.length, 4, JSON.stringify(hidden));
+    assert.ok(hidden.every((row) => row.status === 'pass' && row.detail.pages === 1 && row.detail.sampleId === '@initial'
+      && row.detail.caseId === meta.nodes.find((node) => node.end === row.detail.end && ['50:6','51:6'].includes(node.nodeId)).domId));
+    const innerId = meta.nodes.find((row) => row.nodeId === '51:14').domId;
+    const activeTab = meta.nodes.find((row) => row.nodeId === '51:6').domId;
+    const localProof = json(join(signed.rounds[0].root, 'check-report.json')).pixels.filter((pixel) => pixel.domId === innerId);
+    assert.deepEqual(localProof.map((pixel) => pixel.caseId), [activeTab]);
+    const missingLocal = structuredClone(screens);
+    const activeReference = missingLocal.find((reference) => reference.state?.tabId === '51:6');
+    activeReference.local = activeReference.local.filter((row) => row.domId !== innerId);
+    const withoutLocal = await runReference(missingLocal);
+    assert.ok(withoutLocal.rounds[0].problems.some((row) => row.check === 'D04' && row.target === innerId + ':' + activeTab + ':local'));
+    const omitted = await runReference(screens.slice(0,-1));
+    assert.ok(omitted.rounds[0].problems.some((row) => row.check === 'D04' && /必验视觉/.test(row.detail)));
+    for (const region of [[0,0,1,1], [1,1,60,29]]) {
+      const bad = structuredClone(screens);
+      bad[0].local[0].region = region;
+      const rejected = await runReference(bad);
+      assert.ok(rejected.rounds[0].problems.some((row) => row.check === 'D04' && /权威设计框/.test(row.detail)));
+    }
+    const signedEvidence = signed.rounds[0].root;
+    if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) {
+      for (const [label, path] of [['tab-state-signed', signedEvidence], ['tab-state-missing', omitted.rounds[0].root], ['tab-reference-source', referenceDir]]) {
+        cpSync(path, join(process.env.ONEPAGE_C3_ARTIFACT_ROOT, label), { recursive:true, force:false, errorOnExist:true });
+      }
+    }
+    const signedReport = json(join(signedEvidence, 'check-report.json'));
+    const signedPath = join(signedEvidence, 'stage-record.json');
+    const entry = { expectedStage:'C', expectedOutputKind:'c-single-page', expectedOutputVersion:signedReport.version,
+      scopeVersion: product.scopeVersion, pageVersion: product.version, pagePack: product.pack };
+    rmSync(options.pack, { recursive:true });
+    rmSync(referenceDir, { recursive:true });
+    assert.equal(checkEntry(signedPath, entry).ok, true);
+    const reportPath = join(signedEvidence, 'check-report.json');
+    const logPath = join(signedEvidence, 'browser-log.json');
+    const originalLog = readFileSync(logPath);
+    const originalStage = readFileSync(signedPath);
+    const { version: baselineVersion, ...wrongStateReport } = structuredClone(signedReport);
+    assert.equal(baselineVersion, entry.expectedOutputVersion);
+    const wrongLog = JSON.parse(originalLog);
+    const scopeId = hidden[0].id;
+    for (const rows of [wrongStateReport.findings, wrongLog.findings]) rows.find((row) => row.id === scopeId).detail.caseId = 'default';
+    const wrongLogBytes = Buffer.from(JSON.stringify(wrongLog));
+    wrongStateReport.evidence['browser-log.json'] = { bytes:wrongLogBytes.length, sha256:byteDigest(wrongLogBytes) };
+    const wrongVersion = sha256Hex(wrongStateReport);
+    const wrongReportBytes = Buffer.from(JSON.stringify({ ...wrongStateReport, version:wrongVersion }));
+    const originalRecord = JSON.parse(originalStage);
+    writeFileSync(logPath, wrongLogBytes);
+    writeFileSync(reportPath, wrongReportBytes);
+    writeFileSync(signedPath, JSON.stringify(buildStageRecord({ ...originalRecord,
+      output:{ ...originalRecord.output, version:wrongVersion, digest:byteDigest(wrongReportBytes) } })));
+    assert.match(checkEntry(signedPath, { ...entry, expectedOutputVersion:wrongVersion }).reason, /D08 缺精确分页动作证据/);
+    writeFileSync(logPath, originalLog);
+    writeFileSync(signedPath, originalStage);
+    const omittedPixels = signedReport.pixels.filter((pixel) => pixel.caseId === meta.nodes.find((node) => node.nodeId === '51:6').domId);
+    const { version: oldVersion, ...body } = signedReport;
+    assert.equal(oldVersion, entry.expectedOutputVersion);
+    body.pixels = body.pixels.filter((pixel) => !omittedPixels.includes(pixel));
+    for (const pixel of omittedPixels) for (const path of Object.values(pixel.artifacts)) delete body.evidence[path];
+    const newVersion = sha256Hex(body);
+    const changedReport = Buffer.from(JSON.stringify({ ...body, version: newVersion }));
+    writeFileSync(reportPath, changedReport);
+    const signedStage = json(signedPath);
+    writeFileSync(signedPath, JSON.stringify(buildStageRecord({ ...signedStage, output: { ...signedStage.output, version: newVersion, digest: byteDigest(changedReport) } })));
+    assert.match(checkEntry(signedPath, { ...entry, expectedOutputVersion: newVersion }).reason, /必验屏状态/);
+    const obstruction = await inputs(context, { ...settings, mutateDocument(document) {
+      settings.mutateDocument(document);
+      for (const [index, prefix] of [[0,'50'],[2,'51']]) {
+        const second = document.children[index].children[0].children.find((node) => node.id === prefix + ':7').children[1];
+        const box = { x:120 + index * 2500, y:260, width:220, height:95 };
+        second.children.push(frame(prefix + ':90','btn/独立详情@action=details',[],{ absoluteBoundingBox:box }),
+          frame(prefix + ':91','grp/遮挡',[],{ absoluteBoundingBox:{ ...box, x: box.x + (index ? 300 : 0) } }));
+      }
+    } });
+    const badPage = runCGenerate(obstruction.options);
+    assert.ok(badPage.ok, JSON.stringify(badPage));
+    const badMeta = json(join(badPage.pack, 'c2-build-meta.json'));
+    const hiddenAction = badMeta.nodes.find((row) => row.nodeId === '50:90').domId;
+    const badResult = await runCCheck({ pack:badPage.pack, expectVersion:badPage.version, scopeVersion:badPage.scopeVersion,
+      out, handoffPack:obstruction.options.pack, consumerContract:HANDOFF_CONSUMER });
+    assert.ok(badResult.rounds[0].problems.some((row) => row.check === 'D08' && row.detail?.actionId === hiddenAction
+      && row.status === 'fail'), JSON.stringify(badResult.rounds[0].problems.filter((row) => row.check === 'D08')));
+    assert.equal(badResult.status, 'needs-human-decision');
+  });
+
+test('C3 Chromium：单页分页逐动作验隐藏并签发，错误显示阻断',
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
+    const { root, options } = await inputs(context, { config: {
+      bindings: { 'sec/1::switch/单页': { pagination:{ kind:'panels', panels:['grp/卡片'] } } },
+      actions: { next:{ type:'next-page', targets:['switch/单页'] }, previous:{ type:'previous-page', targets:['switch/单页'] } },
+    }, mutateDocument(document) {
+      const screen = document.children[0].children[0];
+      Object.assign(screen.absoluteBoundingBox, { width:3840, height:2160 });
+      const box = (x,y,width,height) => ({ absoluteBoundingBox:{ x,y,width,height } });
+      screen.children = [frame('10:32','switch/单页',[frame('10:33','grp/卡片',[],box(100,100,480,300))],box(100,100,480,300)),
+        frame('10:34','btn/上一页@action=previous',[],box(100,480,210,70)),
+        frame('10:35','btn/下一页@action=next',[],box(350,480,210,70))];
+    } });
+    const product = runCGenerate(options);
+    assert.ok(product.ok, JSON.stringify(product));
+    const metaPath = join(product.pack,'c2-build-meta.json');
+    const meta = json(metaPath);
+    const out = join(root,'checks');
+    const refDir = join(root,'refs');
+    mkdirSync(out);
+    mkdirSync(refDir);
+    const reference = execFileSync('python3',['-B','-c','from PIL import Image; import sys; Image.new("RGB",(1280,720),"white").save(sys.stdout.buffer,"PNG")']);
+    writeFileSync(join(refDir,'default.png'),reference);
+    const index = Buffer.from(JSON.stringify({ schema:'onepage-pixel-reference/v1', baseLanguage:meta.baseLanguage, scopeVersion:meta.scopeVersion,
+      b3Digest:meta.b3.digest, screens:[{ end:'pc',nodeId:'10:2',viewport:{width:1280,height:720},path:'default.png',sha256:byteDigest(reference) }] }));
+    const references = join(refDir,'index.json');
+    writeFileSync(references,index);
+    const run = (expectVersion) => runCCheck({ pack:product.pack, expectVersion, scopeVersion:product.scopeVersion,
+      out, handoffPack:options.pack, consumerContract:HANDOFF_CONSUMER, references, referencesSha256:byteDigest(index) });
+    const signed = await run(product.version);
+    assert.equal(signed.status,'pass',JSON.stringify(signed.rounds[0].problems));
+    const actual = json(join(signed.rounds[0].root,'check-report.json'));
+    const actions = meta.nodes.filter((row) => ['10:34','10:35'].includes(row.nodeId)).map((row) => row.domId).sort();
+    const proofs = actual.findings.filter((row) => row.target.endsWith(':pagination-hidden'));
+    assert.deepEqual(proofs.map((row) => row.detail.actionId).sort(),actions);
+    assert.ok(proofs.every((row) => row.status === 'pass' && row.detail.pages === 1 && row.detail.hidden));
+    assert.equal(checkEntry(join(signed.rounds[0].root,'stage-record.json'), { expectedStage:'C', expectedOutputKind:'c-single-page',
+      expectedOutputVersion:actual.version, scopeVersion:product.scopeVersion, pageVersion:product.version, pagePack:product.pack }).ok,true);
+    const script = 'page/js/main.js';
+    const runtime = readFileSync(join(product.pack,script),'utf8');
+    const broken = Buffer.from(runtime.replace('hide(control, count <= 1)', 'hide(control, false)'));
+    assert.notEqual(broken.toString(),runtime);
+    const { version: before, ...body } = meta;
+    assert.equal(before, product.version);
+    body.files[script] = { bytes:broken.length, sha256:byteDigest(broken) };
+    const version = sha256Hex(body);
+    const metadata = Buffer.from(JSON.stringify({ ...body,version }));
+    const stagePath = join(product.pack,'stage-record.json');
+    const stage = json(stagePath);
+    writeFileSync(join(product.pack,script),broken);
+    writeFileSync(metaPath,metadata);
+    writeFileSync(stagePath,JSON.stringify(buildStageRecord({ ...stage, output:{ ...stage.output,version,digest:byteDigest(metadata) } })));
+    const rejected = await run(version);
+    assert.equal(rejected.status,'needs-human-decision');
+    const rejectedProofs = rejected.rounds[0].problems.filter((row) => row.target.endsWith(':pagination-hidden'));
+    assert.deepEqual(rejectedProofs.map((row) => row.detail.actionId).sort(),actions);
+    assert.ok(rejectedProofs.every((row) => row.status === 'fail' && row.detail.pages === 1 && !row.detail.hidden));
+    if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) for (const [name,result] of [['single-page-signed',signed],['single-page-visible-rejected',rejected]]) {
+      cpSync(result.rounds[0].root,join(process.env.ONEPAGE_C3_ARTIFACT_ROOT,name),{ recursive:true,force:false,errorOnExist:true });
+    }
+  });
+
+test('C3 Chromium：同页先验第一屏非默认 TAB，再独立验证第二屏分页',
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: browserCaseMs }, async (context) => {
+    const sections = [20, 21];
+    const tabs = sections.flatMap((section) => [0, 1].map((index) => ({ end:'pc', tabId:section + ':' + (5 + index),
+      switchId:section + ':7', panelId:section + ':' + (8 + index), source:'双屏分页设计', selection:{ kind:'none' } })));
+    const { root, options } = await inputs(context, { config:{
+      dataContract:{ c2:{ fileVersion:version, tabs, componentInputs:[] } },
+      bindings:Object.fromEntries(sections.flatMap((section, index) => [
+        ['sec/' + (index + 1) + '::switch/分页' + section, { pagination:{ kind:'panels', panels:['grp/前'] } }],
+        ['sec/' + (index + 1) + '::switch/分组' + section, { pagination:{ kind:'panels', panels:['grp/第一','grp/第二'] } }],
+      ])),
+      actions:Object.fromEntries(sections.flatMap((section) => ['next','previous'].map((direction) =>
+        [direction + section, { type:direction + '-page', targets:['switch/分页' + section] }]))),
+    }, mutateDocument(document) {
+      document.children[0].children = sections.map((section, index) => {
+        const node = (id, name, x, y, width, height, children = []) => frame(section + ':' + id, name, children,
+          { absoluteBoundingBox:{ x, y:y + index * 2300, width, height } });
+        return node(2,'sec/' + (index + 1) + '-分页',0,0,3840,2160,[
+          node(5,'tab/第一@for=switch/分组' + section,80,60,180,85), node(6,'tab/第二@for=switch/分组' + section,285,60,180,85),
+          node(7,'switch/分组' + section,80,180,500,150,[node(8,'grp/第一',80,180,500,150),node(9,'grp/第二',80,180,500,150)]),
+          node(10,'switch/分页' + section,80,350,500,150,[node(11,'grp/前',80,350,500,150)]),
+          node(13,'btn/下一页@action=next' + section,80,530,180,85), node(14,'btn/上一页@action=previous' + section,285,530,180,85),
+        ]);
+      });
+    } });
+    const product = runCGenerate(options);
+    assert.ok(product.ok, JSON.stringify(product));
+    const meta = json(join(product.pack,'c2-build-meta.json'));
+    const out = join(root,'checks');
+    mkdirSync(out);
+    const result = await runCCheck({ pack:product.pack, expectVersion:product.version, scopeVersion:product.scopeVersion,
+      out, handoffPack:options.pack, consumerContract:HANDOFF_CONSUMER });
+    const evidence = result.rounds[0].root;
+    if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) cpSync(evidence,join(process.env.ONEPAGE_C3_ARTIFACT_ROOT,'two-screen-pagination'),
+      { recursive:true,force:false,errorOnExist:true });
+    const report = json(join(evidence,'check-report.json'));
+    const rows = report.findings.filter((row) => row.check === 'D08' && /:pagination-(action|hidden|unavailable)$/.test(row.target));
+    const domId = (section, id) => meta.nodes.find((node) => node.nodeId === section + ':' + id).domId;
+    const expected = sections.flatMap((section) => ['default',domId(section,5),domId(section,6)].flatMap((caseId) =>
+      [13,14].map((action) => ({ end:'pc', screen:domId(section,2), caseId, sampleId:'@initial',
+        owner:domId(section,10), actionId:domId(section,action) }))));
+    assert.equal(rows.length,expected.length,JSON.stringify(rows));
+    const firstActive = rows.findIndex((row) => row.detail.caseId === domId(20,6));
+    const secondActive = rows.findIndex((row) => row.detail.caseId === domId(21,5));
+    assert.ok(firstActive >= 0 && secondActive > firstActive);
+    for (const scope of expected) {
+      assert.ok(hasPagingResult(rows,scope),JSON.stringify(rows.filter((row) => row.status !== 'pass')));
+      const same = (row) => Object.entries(scope).every(([key,value]) => row.detail[key] === value);
+      const proof = rows.find(same);
+      assert.equal(proof.detail.pages,1);
+      assert.equal(hasPagingResult(rows.filter((row) => !same(row)),scope),false);
+    }
+  });
+
+async function compositeReferences(root, meta) {
+  const directory = join(root, 'references');
+  mkdirSync(directory);
+  const screens = [];
+  const font = readFileSync(new URL('./fixtures/fonts/one-page-static.otf', import.meta.url)).toString('base64');
+  const { browser } = await launchChromium();
+  try {
+    for (const [end, prefix, viewport, scale] of [
+      ['pc','40',{ width: 1280, height: 720 },1 / 3], ['mobile','41',{ width: 375, height: 715 },1 / 2],
+    ]) {
+      const page = await browser.newPage({ viewport });
+      try {
+        for (const number of [1, 2]) {
+          const nodeId = prefix + ':' + (number + 1);
+          const path = end + '-' + number + '.png';
+          const style = (x, y, width, height) => 'position:absolute;left:' + x * scale + 'px;top:' + y * scale
+            + 'px;width:' + width * scale + 'px;height:' + height * scale + 'px';
+          const content = number === 1
+            ? '<button style="' + style(100, 475, 260, 100) + ';display:grid;font-size:' + (viewport.width / 19.2) + 'px">下一屏</button>'
+            : [100, 280].map((x) => '<span style="' + style(x, 90, 150, 60) + '">首页</span>').join('');
+          await page.setContent('<!doctype html><meta charset="utf-8"><style>@font-face{font-family:oracle;src:url(data:font/otf;base64,'
+            + font + ')}*{box-sizing:border-box}body{background:white;margin:0;font:' + 24 * scale + 'px oracle}</style>' + content);
+          await page.evaluate(() => document.fonts.ready);
+          const bytes = await page.screenshot();
+          writeFileSync(join(directory, path), bytes);
+          const button = meta.nodes.find((row) => row.end === end && row.nodeId === prefix + ':13');
+          const local = number === 1 ? [{ domId: button.domId, region: [Math.floor(100 * scale), Math.floor(475 * scale),
+            Math.ceil(360 * scale) - Math.floor(100 * scale), Math.ceil(575 * scale) - Math.floor(475 * scale)] }] : [];
+          screens.push({ end, nodeId, path, viewport, local, sha256: byteDigest(bytes) });
+        }
+      } finally { await page.close(); }
+    }
+  } finally { await browser.close(); }
+  const index = { schema: 'onepage-pixel-reference/v1', baseLanguage: meta.baseLanguage, scopeVersion: meta.scopeVersion,
+    b3Digest: meta.b3.digest, screens };
+  const path = join(directory, 'index.json');
+  const bytes = Buffer.from(JSON.stringify(index));
+  writeFileSync(path, bytes);
+  return { directory, index, path, digest: byteDigest(bytes) };
+}
+
+test('C3 Chromium：独立双端参考正式签发、移走来源后验包，并阻断漏图与错图',
+  { skip: process.env.ONEPAGE_C3_BROWSER !== '1', timeout: compositeCaseMs }, async (context) => {
+    const { root, options } = await inputs(context, { platform: 'pc+mobile', config: {
+      bindings: { 'sec/1::switch/轮播': { pagination: { kind: 'cards', list: 'list/奖励列表', perPage: 2 } },
+        'sec/2::list/导航槽': { slotMapping: { kind: 'key', field: 'id', keys: ['home','shop'] }, missing: 'design-default' } },
+      actions: { nextCard: { type:'next-page', targets:['switch/轮播'] }, previousCard: { type:'previous-page', targets:['switch/轮播'] } },
+    }, mutateDocument(document) {
+      document.children = ['pc','mobile'].map((end, index) => {
+        const prefix = String(40 + index) + ':';
+        const box = (x, y, width, height) => ({ absoluteBoundingBox: { x, y, width, height } });
+        const text = (id, caption, name, x, y) => frame(prefix + id, name, [], { ...box(x,y,150,60), type: 'TEXT',
+          characters: caption, style: { fontFamily: 'One Page Fixture', fontWeight: 400, fontSize: 24 } });
+        const list = frame(prefix + '5', 'list/奖励列表@data=list:rewards', [frame(prefix + '6', 'item/条目@template', [
+          text('7','金币','名称@field=name',100,200),
+        ], box(100,200,200,100))], { ...box(100,200,500,200), layoutMode: 'HORIZONTAL' });
+        const slots = frame(prefix + '8', 'list/导航槽@data=slots:navs', [
+          frame(prefix + '9', 'item/首槽', [text('10','首页','名称@field=label',100,2250)], box(100,2250,180,80)),
+          frame(prefix + '11', 'item/次槽', [text('12','首页','名称@field=label',320,2250)], box(320,2250,180,80)),
+        ], { ...box(100,2250,500,180), layoutMode: 'HORIZONTAL' });
+        const width = end === 'pc' ? 3840 : 750;
+        const height = end === 'pc' ? 2160 : 1430;
+        return frame(prefix + '1', 'cn_' + end, [frame(prefix + '2','sec/1-首页', [frame(prefix + '4','switch/轮播',[list], box(100,200,500,200)),
+          frame(prefix + '14','btn/前一页@action=previousCard', [], box(410,850,150,80)),
+          frame(prefix + '15','btn/后一页@action=nextCard', [], box(580,850,150,80)),
+          frame(prefix + '13','btn/下一屏@sec=2', [], box(100,475,260,100))], box(0,0,width,height)),
+          frame(prefix + '3','sec/2-导航',[slots], box(0,2160,width,height))]);
+      });
+    } });
+    const product = runCGenerate(options);
+    assert.ok(product.ok, JSON.stringify(product));
+    const out = join(root, 'checks');
+    mkdirSync(out);
+    const references = await compositeReferences(root, json(join(product.pack, 'c2-build-meta.json')));
+    const contractPath = join(root, 'consumer-contract.json');
+    writeFileSync(contractPath, JSON.stringify(HANDOFF_CONSUMER));
+    const args = ['--pack', product.pack, '--expect-version', product.version, '--scope-version', product.scopeVersion,
+      '--out', out, '--handoff-pack', options.pack, '--consumer-contract', contractPath, '--references', references.path];
+    const cli = new URL('../bin/c-check.mjs', import.meta.url).pathname;
+    const run = (stage, digest) => measureStage('C3 c-check CLI: ' + stage, async () => {
+      try {
+        const { stdout } = await promisify(execFile)(process.execPath, [cli, ...args, '--references-sha256', digest],
+          { maxBuffer: 8 * 1024 * 1024, timeout: checkCliMs, killSignal: 'SIGKILL', signal: context.signal });
+        return { exit: 0, result: JSON.parse(stdout) };
+      } catch (error) { if (error.code !== 1 || !error.stdout?.length) throw error; return { exit: error.code, result: JSON.parse(error.stdout) }; }
+    });
+    const issued = await run('issue',references.digest);
+    const checked = issued.result;
+    const report = json(join(checked.rounds[0].root, 'check-report.json'));
+    const lists = report.findings.filter((row) => row.check === 'D09' && row.target.includes(':presentation:'));
+    assert.ok(lists.some((row) => row.detail.count === 0 && row.detail.active === 0), JSON.stringify(report.findings.filter((row) => row.status !== 'pass')));
+    assert.ok(lists.some((row) => row.detail.pageCount > 1));
+    assert.ok(lists.every((row) => row.status === 'pass'), JSON.stringify(lists.filter((row) => row.status !== 'pass')));
+    const gestures = report.findings.filter((row) => row.check === 'D08' && row.target.includes(':touch:'));
+    assert.ok(new Set(gestures.map((row) => row.target.split(':')[0])).size >= 2);
+    assert.ok(gestures.every((row) => row.status === 'pass'), JSON.stringify(gestures.filter((row) => row.status !== 'pass')));
+    const dragClicks = report.findings.filter((row) => row.check === 'D08' && row.target.includes(':drag-click:'));
+    assert.equal(dragClicks.length, gestures.length);
+    assert.ok(dragClicks.every((row) => row.status === 'pass'), JSON.stringify(dragClicks.filter((row) => row.status !== 'pass')));
+    const clicks = report.findings.filter((row) => row.target.endsWith(':pagination-action'));
+    assert.equal(new Set(clicks.map((row) => row.detail.actionId)).size, 4, JSON.stringify(clicks));
+    assert.ok(clicks.every((row) => row.status === 'pass' && row.detail.sampleId !== '@initial' && row.detail.pages > 1), JSON.stringify(clicks.filter((row) => row.status !== 'pass' || row.detail.sampleId === '@initial')));
+    assert.equal(issued.exit, 0, JSON.stringify(report.findings.filter((row) => !['pass','n_a'].includes(row.status))));
+    assert.equal(report.coverage.D13.status, 'pass');
+    assert.ok(report.findings.some((row) => row.check === 'D11' && row.target === 'video-stub-lifecycle' && row.status === 'pass'));
+    const archive = (directory, name) => {
+      if (process.env.ONEPAGE_C3_ARTIFACT_ROOT) cpSync(directory, join(process.env.ONEPAGE_C3_ARTIFACT_ROOT, name),
+        { recursive: true, force: false, errorOnExist: true });
+    };
+    archive(checked.rounds[0].root, 'dual-composite');
+    archive(references.directory, 'independent-references');
+    const first = references.index.screens.shift();
+    const correctPng = readFileSync(join(references.directory, first.path));
+    const writeIndex = () => {
+      const bytes = Buffer.from(JSON.stringify(references.index));
+      writeFileSync(references.path, bytes);
+      return byteDigest(bytes);
+    };
+    const missing = await run('missing reference',writeIndex());
+    assert.equal(missing.exit, 1);
+    assert.ok(missing.result.rounds[0].findings.some((row) => row.check === 'D04' && row.status === 'not_run'));
+    archive(missing.result.rounds[0].root, 'composite-missing-reference');
+    const wrongPng = execFileSync('python3', ['-B','-c','from PIL import Image; import sys; Image.new("RGB",(1280,720),"black").save(sys.stdout.buffer,"PNG")']);
+    writeFileSync(join(references.directory, first.path), wrongPng);
+    references.index.screens.unshift({ ...first, sha256: byteDigest(wrongPng) });
+    const wrong = await run('wrong reference',writeIndex());
+    assert.equal(wrong.exit, 1);
+    assert.ok(wrong.result.rounds[0].findings.some((row) => row.check === 'D04' && row.status === 'fail'));
+    archive(wrong.result.rounds[0].root, 'composite-wrong-reference');
+    references.index.screens[0] = first;
+    writeFileSync(join(references.directory, first.path), correctPng);
+    const brokenPack = join(root, 'broken-paging');
+    cpSync(product.pack, brokenPack, { recursive:true });
+    const script = 'page/js/main.js';
+    const runtime = readFileSync(join(brokenPack, script), 'utf8');
+    const broken = Buffer.from(runtime.replace("case 'next-page': case 'previous-page': targets.forEach", "case 'next-page': break; case 'previous-page': targets.forEach"));
+    assert.notEqual(broken.toString(), runtime);
+    const metaPath = join(brokenPack,'c2-build-meta.json');
+    const { version: before, ...body } = json(metaPath);
+    assert.equal(before, product.version);
+    body.files[script] = { bytes:broken.length, sha256:byteDigest(broken) };
+    const version = sha256Hex(body);
+    const metadata = Buffer.from(JSON.stringify({ ...body,version }));
+    const stagePath = join(brokenPack,'stage-record.json');
+    const stage = json(stagePath);
+    writeFileSync(join(brokenPack,script),broken);
+    writeFileSync(metaPath,metadata);
+    writeFileSync(stagePath,JSON.stringify(buildStageRecord({ ...stage, output:{ ...stage.output,version,digest:byteDigest(metadata) } })));
+    const brokenResult = await runCCheck({ pack:brokenPack, expectVersion:version, scopeVersion:product.scopeVersion, out,
+      handoffPack:options.pack, consumerContract:HANDOFF_CONSUMER,
+      references:references.path, referencesSha256:writeIndex() });
+    const badReport = json(join(brokenResult.rounds[0].root,'check-report.json'));
+    const ids = body.nodes.filter((row) => ['40:15','41:15'].includes(row.nodeId)).map((row) => row.domId);
+    for (const actionId of ids) {
+      assert.ok(badReport.findings.some((row) => row.detail?.actionId === actionId && row.target.endsWith(':pagination-hidden') && row.status === 'pass'));
+      assert.ok(badReport.findings.some((row) => row.detail?.actionId === actionId && row.target.endsWith(':pagination-action') && row.status === 'fail'
+        && row.detail.steps[0].hit.ok));
+    }
+    assert.ok(badReport.findings.some((row) => row.target.includes(':touch:') && row.status === 'pass'));
+    assert.equal(badReport.coverage.D04.status, 'pass');
+    assert.equal(badReport.coverage.D13.status, 'fail');
+    archive(brokenResult.rounds[0].root, 'composite-broken-pagination');
+    const migrated = join(root, 'received');
+    mkdirSync(migrated);
+    const evidence = join(migrated, 'evidence');
+    const pagePack = join(migrated, 'page-pack');
+    cpSync(checked.rounds[0].root, evidence, { recursive: true });
+    cpSync(product.pack, pagePack, { recursive: true });
+    for (const path of [options.pack, options.assetsPack, options.runDir, references.directory, out]) rmSync(path, { recursive: true, force: true });
+    const entry = checkEntry(join(evidence, 'stage-record.json'), { expectedStage: 'C', expectedOutputKind: 'c-single-page',
+      expectedOutputVersion: report.version, scopeVersion: product.scopeVersion, pageVersion: product.version, pagePack });
+    assert.equal(entry.ok, true, JSON.stringify(entry));
+  });
 
 test('P1：基础语 TAB 仍需映射，外语 TAB 及外语固定根的子树不进入 C2', async (context) => {
   const fixture = tabFixture();
@@ -622,7 +1250,7 @@ function callBrowser(script) {
 }
 
 test('浏览器实跑：生成的反序 TAB，以及独立运行时夹具的切屏、轮播、弹层、数据、保护与端切换',
-  { skip: process.env.ONEPAGE_C2_BROWSER !== '1' && '使用 ONEPAGE_C2_BROWSER=1 与已安装的 ego-browser 运行', timeout:90000 }, async (context) => {
+  { skip: process.env.ONEPAGE_C2_BROWSER !== '1' && '使用 ONEPAGE_C2_BROWSER=1 与已安装的 ego-browser 运行', timeout: browserCaseMs }, async (context) => {
     const { files } = buildPage(tabFixture());
     const pages = Object.fromEntries([['pc',['pc']],['mobile',['mobile']],['dual',['pc','mobile']]].map(([name, ends]) => [name,
       buildPage({baseLanguage:'cn',ends,inventories:Object.fromEntries(ends.map((end)=>[end,variantFixture(end)])),manifest:{assets:[],fonts:[]},pairing:{}}).files]));
