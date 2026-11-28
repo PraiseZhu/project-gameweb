@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { pillowPython } from './helpers/python.mjs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchChromium } from '../../stop1-figma-pixel/tool/src/resolve-playwright.mjs';
 import { runAScope } from '../src/a-scope.mjs';
 import { runBExtract } from '../src/b-extract.mjs';
@@ -145,11 +146,12 @@ test('E CLI：隔离 .env 认证外语图快照及渲染，父进程 token 优�
     delete env.FIGMA_ACCESS_TOKEN;
     delete env.NODE_OPTIONS;
     if (name==='inherited') env.FIGMA_ACCESS_TOKEN = inherited;
-    const child = spawnSync(process.execPath,['--import',preload,join(mirror,'one-page/bin/e-build.mjs'),
+    const child = spawnSync(process.execPath,['--import',pathToFileURL(preload).href,join(mirror,'one-page/bin/e-build.mjs'),
       '--page-pack',input,'--handoff-pack',input,'--assets-pack',input,'--approval',join(input,'approval.json'),
       '--check',join(input,'check.json'),'--run-dir',join(root,name)],{ cwd:root,env,encoding:'utf8',timeout:10000 });
     assert.equal((child.stdout+child.stderr).includes(token),false);
     assert.equal(child.status,1,child.error?.message);
+    assert.notEqual(child.stdout.trim(),'',child.stderr);
     assert.match(JSON.parse(child.stdout).reason,/没有权限/);
     assert.deepEqual(jsonFile(requests),[{ path:'/v1/files/ETEST/nodes',authorized:true },{ path:'/v1/images/ETEST',authorized:true }]);
   }
@@ -279,7 +281,7 @@ test('E Chromium：同版 A→D 合成凭证生成英语页，基础文件不变
     const b3 = runBHandoff({ runDir:draft.runDir, b2Version:jsonFile(supplemented.supplementPath).version });
     assert.ok(b3.ok, JSON.stringify(b3));
     const upstream = { pack:b3.pack, expectVersion:b3.version, scopeVersion:b3.scopeVersion, consumerContract:HANDOFF_CONSUMER };
-    const c1 = await runCAssets({ ...upstream, runDir:join(root,'c1'), fetchImpl, tokenValue:options.tokenValue });
+    const c1 = await runCAssets({ ...upstream, runDir:join(root,'c1'), fetchImpl, tokenValue:options.tokenValue, python:pillowPython() });
     assert.ok(c1.ok, JSON.stringify(c1));
     const assets = { assetsPack:c1.pack, assetsVersion:c1.version, assetsSha256:c1.manifestSha256 };
     const c2 = runCGenerate({ ...upstream, ...assets, runDir:join(root,'c2') });
@@ -300,7 +302,7 @@ test('E Chromium：同版 A→D 合成凭证生成英语页，基础文件不变
     writeFileSync(metaPath,metaBytes);
     writeFileSync(stagePath,JSON.stringify(buildStageRecord({ ...stageBody,output:{ ...stageBody.output,version:meta.version,digest:byteDigest(metaBytes) } })));
     const viewport = { width:1280,height:720 };
-    const png = execFileSync('python3',['-B','-c','from PIL import Image; import sys; Image.new("RGB",(1280,720),"white").save(sys.stdout.buffer,"PNG")']);
+    const png = execFileSync(pillowPython(),['-B','-c','from PIL import Image; import sys; Image.new("RGB",(1280,720),"white").save(sys.stdout.buffer,"PNG")']);
     const refs = join(root,'refs');
     mkdirSync(refs);
     writeFileSync(join(refs,'screen.png'),png);

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { pillowPython } from './helpers/python.mjs';
 import { execFileSync } from 'node:child_process';
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -102,7 +103,7 @@ async function produce(context) {
   const b3 = runBHandoff({ runDir:args.runDir, b2Version:json(b2.supplementPath).version });
   assert.ok(b3.ok, JSON.stringify(b3));
   const upstream = { pack:b3.pack, expectVersion:b3.version, scopeVersion:b3.scopeVersion, consumerContract:HANDOFF_CONSUMER };
-  const c1 = await runCAssets({ ...upstream, runDir:join(root,'c1'), fetchImpl, tokenValue:scope.tokenValue });
+  const c1 = await runCAssets({ ...upstream, runDir:join(root,'c1'), fetchImpl, tokenValue:scope.tokenValue, python:pillowPython() });
   assert.ok(c1.ok, JSON.stringify(c1));
   const c2 = runCGenerate({ ...upstream, runDir:join(root,'c2'), assetsPack:c1.pack, assetsVersion:c1.version, assetsSha256:c1.manifestSha256 });
   assert.ok(c2.ok, JSON.stringify(c2));
@@ -116,7 +117,7 @@ function references(root, meta, art, designDigest) {
     const region = index === 0 ? targetRegion(meta, screen, art, viewport).region : null;
     const actions = meta.nodes.filter((item) => item.module === screen.nodeId && item.nodeId === '10:4');
     const rectangles = [...(region ? [['red',region]] : []), ...actions.map((action) => ['#efefef',targetRegion(meta,screen,action,viewport).region])];
-    const bytes = execFileSync('python3',['-B','-c','from PIL import Image, ImageDraw; import json,sys; image=Image.new("RGB",(1280,720),"white"); [(ImageDraw.Draw(image).rectangle((x,y,x+w-1,y+h-1),fill=color)) for color,(x,y,w,h) in json.loads(sys.argv[1])]; image.save(sys.stdout.buffer,"PNG")',JSON.stringify(rectangles)]);
+    const bytes = execFileSync(pillowPython(),['-B','-c','from PIL import Image, ImageDraw; import json,sys; image=Image.new("RGB",(1280,720),"white"); [(ImageDraw.Draw(image).rectangle((x,y,x+w-1,y+h-1),fill=color)) for color,(x,y,w,h) in json.loads(sys.argv[1])]; image.save(sys.stdout.buffer,"PNG")',JSON.stringify(rectangles)]);
     const path = 'screen-' + index + '.png';
     writeFileSync(join(dir,path),bytes);
     return { end:screen.end, nodeId:screen.nodeId, viewport, path, sha256:byteDigest(bytes), local:[
